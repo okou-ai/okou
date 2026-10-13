@@ -11,7 +11,7 @@ fail() {
 }
 
 RUNNER_GUEST_INVENTORY_PATH="${TMPDIR}/guests.json"
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
 
 cat >"$RUNNER_GUEST_INVENTORY_PATH" <<'JSON'
 [

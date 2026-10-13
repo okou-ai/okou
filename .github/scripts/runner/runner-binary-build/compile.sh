@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SOURCE_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 CRATES_DIR="${SOURCE_ROOT}/crates"
 . "${SCRIPT_DIR}/contract.env"
 

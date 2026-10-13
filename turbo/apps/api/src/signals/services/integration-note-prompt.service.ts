@@ -16,7 +16,6 @@ const INTEGRATION_NOTE_HEADING = "# Integration Note";
 
 interface IntegrationNotePromptInputs {
   readonly triggerSource: TriggerSource;
-  readonly privateArtifactsEnabled: boolean;
   readonly larkEnabled: boolean;
 }
 
@@ -55,27 +54,19 @@ function integrationNoteLines(
     case "slack": {
       return [
         "- Slack messaging and files: only your final reply is delivered to the originating thread, so do not duplicate it; nothing you produce while the run is in progress reaches Slack on its own. Use Slack commands for different channels/threads or explicit extra messages. Use `okou slack download-file -h` for `[Slack file]` blocks and `okou web download-file -h` for canonical `[Web file]` blocks. `okou slack upload-file -h` can attach a local file to Slack when file delivery is needed. Never use SLACK_TOKEN directly — it's a user OAuth token.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "Slack",
-                uploadCommand: "okou slack upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "Slack",
+          uploadCommand: "okou slack upload-file",
+        }),
       ];
     }
     case "discord": {
       return [
         "- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`; nothing you produce while the run is in progress reaches Discord on its own. Use Discord commands only for a different channel or thread, or for an explicit extra message or file. Files attached to the Discord message arrive as canonical `[Web file]` blocks; read them with `okou web download-file -h`. Use `okou discord download-file -h` for another guild channel or thread attachment identified by its channel, message, and attachment IDs. `okou discord upload-file -h` can attach a local file to a Discord channel or thread when file delivery is needed; use the Channel ID from the integration context to deliver into this conversation.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "Discord",
-                uploadCommand: "okou discord upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "Discord",
+          uploadCommand: "okou discord upload-file",
+        }),
       ];
     }
     case "feishu":
@@ -84,66 +75,46 @@ function integrationNoteLines(
       const providerName = FEISHU_PLATFORMS[platform].name;
       return [
         `- ${providerName} messaging and files: use \`okou ${platform} --help\`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches ${providerName} on its own, so ${providerName} commands are for a different chat, DM, reply target, or explicit extra message/file. Use \`okou ${platform} message send --help\` for extra messages, \`okou ${platform} download-file -h\` for \`[${providerName} file]\` blocks, and \`okou ${platform} upload-file -h\` when file delivery is needed. The current installation, chat, message, and sender IDs are in the integration context. Specify the installation (\`--as <installation-id>\` for \`message send\` and \`upload-file\`, \`--installation\` for \`download-file\`) when the organization has multiple ${providerName} bots.`,
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: providerName,
-                uploadCommand: `okou ${platform} upload-file`,
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: providerName,
+          uploadCommand: `okou ${platform} upload-file`,
+        }),
       ];
     }
     case "teams": {
       return [
         "- Microsoft Teams messaging and files: use `okou teams --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress reaches Teams on its own, so Teams commands are for different conversations, thread replies, or explicit extra messages/files. Use `okou teams message send -h` for extra messages, `okou teams download-file -h` for `[Teams file]` blocks, and `okou teams upload-file -h` when file delivery is needed. Do not use Slack or Telegram commands for Microsoft Teams delivery.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "Microsoft Teams",
-                uploadCommand: "okou teams upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "Microsoft Teams",
+          uploadCommand: "okou teams upload-file",
+        }),
       ];
     }
     case "github": {
       return [
         "- GitHub issue/PR files: use `okou github --help`. Only your final reply is delivered to the originating issue or pull request, and nothing you produce while the run is in progress is posted there on its own, so GitHub commands are for explicit extra file delivery. Use `okou github download-file -h` for `[GitHub file]` blocks. `okou github upload-file -h` can share a local file back to the issue or pull request when file delivery is needed.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "GitHub",
-                uploadCommand: "okou github upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "GitHub",
+          uploadCommand: "okou github upload-file",
+        }),
       ];
     }
     case "telegram": {
       return [
         "- Telegram messaging and files: use `okou telegram --help`. Only your final reply is delivered to the originating chat, and nothing you produce while the run is in progress reaches Telegram on its own, so Telegram commands are for different chats, topics, reply targets, or explicit extra messages. Use `okou telegram message send -h` for extra messages, `okou telegram download-file -h` for `[Telegram file]` blocks, and `okou telegram upload-file -h` when file delivery is needed. All Telegram commands use the official Okou bot.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "Telegram",
-                uploadCommand: "okou telegram upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "Telegram",
+          uploadCommand: "okou telegram upload-file",
+        }),
       ];
     }
     case "agentphone": {
       return [
         "- Phone messaging and files: use `okou phone --help`. Only your final reply is delivered to the originating conversation, and nothing you produce while the run is in progress is sent on its own, so phone commands are for explicit extra messages or file delivery. Use `okou phone download-file -h` for `[Phone file]` blocks. `okou phone upload-file -h` can share a local file when the phone channel supports the requested file delivery.",
-        ...(args.privateArtifactsEnabled
-          ? [
-              privateArtifactFinalReplyLine({
-                surface: "the phone channel",
-                uploadCommand: "okou phone upload-file",
-              }),
-            ]
-          : []),
+        privateArtifactFinalReplyLine({
+          surface: "the phone channel",
+          uploadCommand: "okou phone upload-file",
+        }),
       ];
     }
     default: {
@@ -166,10 +137,6 @@ export function resolveIntegrationNotePrompt(args: {
 }): string {
   return buildIntegrationNotePrompt({
     triggerSource: args.triggerSource,
-    privateArtifactsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PrivateArtifacts,
-      args.featureSwitchContext,
-    ),
     larkEnabled: isFeatureEnabled(
       FeatureSwitchKey.LarkIntegration,
       args.featureSwitchContext,

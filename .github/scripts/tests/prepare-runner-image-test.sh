@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PREPARE="${SCRIPT_DIR}/prepare-runner-image.sh"
+PREPARE="${SCRIPT_DIR}/runner/prepare-runner-image.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -134,8 +134,8 @@ if JOB_REF=pr-123 \
 fi
 grep -q "missing required env: RUNNER_PATH" "${TMPDIR}/missing-runner.err" || fail "expected missing runner path message"
 
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${SCRIPT_DIR}/runner-binary-build/contract.env"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
+. "${SCRIPT_DIR}/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 runner="${TMPDIR}/runner"
 cat > "$runner" <<'BASH'

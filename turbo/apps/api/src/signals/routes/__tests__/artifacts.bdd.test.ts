@@ -213,17 +213,6 @@ async function artifactActor(
   return { actor, agentId: agent.agentId, runnerGroup, objectStore };
 }
 
-async function useLegacyPublicArtifacts(owner: ArtifactActor): Promise<void> {
-  if (!owner.actor.orgId) {
-    throw new Error("Expected an organization for the public artifact opt-out");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { ...owner.actor, orgId: owner.actor.orgId },
-    { [FeatureSwitchKey.PrivateArtifacts]: false },
-  );
-}
-
 async function sendChatRun(
   actor: ApiTestUser,
   body: {
@@ -467,93 +456,85 @@ describe("hosted Artifact previews", () => {
     },
   );
 
-  it.each(["public", "private"] as const)(
-    "keeps the latest catalog cover when an older %s preview finishes rendering",
-    async (storage) => {
-      const owner = await artifactActor("Overlapping hosted previews");
-      if (storage === "public") {
-        await useLegacyPublicArtifacts(owner);
+  it("keeps the latest catalog cover when an older private preview finishes rendering", async () => {
+    const owner = await artifactActor("Overlapping hosted previews");
+    mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
+    mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
+    const started = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
       }
-      mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
-      mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
-      const started = createDeferredPromise<void>(context.signal);
-      const release = createDeferredPromise<void>(context.signal);
-      onTestFinished(() => {
-        if (!release.settled()) {
-          release.resolve(undefined);
-        }
-      });
-      mockCloudflareSnapshot([
-        {
-          beforeResponse: async () => {
-            started.resolve(undefined);
-            await release.promise;
-          },
+    });
+    mockCloudflareSnapshot([
+      {
+        beforeResponse: async () => {
+          started.resolve(undefined);
+          await release.promise;
         },
-        {},
-      ]);
-      const site = `overlapping-preview-${randomUUID().slice(0, 8)}`;
-      const run = await sendChatRun(owner.actor, {
-        agentId: owner.agentId,
-        prompt: "Publish two versions with overlapping previews",
-      });
-      const { claim, sandboxHeaders } = await claimChatRun(
-        owner.runnerGroup,
-        run.runId,
-      );
-      const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
-      const body = {
-        site,
-        artifactKind: "hosted-site" as const,
-        spaFallback: false,
-        files: [
-          hostedTextFile("/index.html", "<main>Overlapping previews</main>"),
-        ],
-      };
-      const older = await chat.prepareHostedSiteWithBearer(bearer, body);
-      await chat.completeHostedSiteWithBearer(bearer, older.deploymentId);
-      await started.promise;
-      const latest = await chat.prepareHostedSiteWithBearer(bearer, body);
-      await chat.completeHostedSiteWithBearer(bearer, latest.deploymentId);
-      await expect
-        .poll(async () => {
-          return (await findCatalogArtifact(owner.actor, site))?.thumbnail?.url;
-        })
-        .toStrictEqual(expect.any(String));
-      const latestCover = (await findCatalogArtifact(owner.actor, site))
-        ?.thumbnail?.url;
-      release.resolve(undefined);
-      await flushWaitUntilForTest();
+      },
+      {},
+    ]);
+    const site = `overlapping-preview-${randomUUID().slice(0, 8)}`;
+    const run = await sendChatRun(owner.actor, {
+      agentId: owner.agentId,
+      prompt: "Publish two versions with overlapping previews",
+    });
+    const { claim, sandboxHeaders } = await claimChatRun(
+      owner.runnerGroup,
+      run.runId,
+    );
+    const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+    const body = {
+      site,
+      artifactKind: "hosted-site" as const,
+      spaFallback: false,
+      files: [
+        hostedTextFile("/index.html", "<main>Overlapping previews</main>"),
+      ],
+    };
+    const older = await chat.prepareHostedSiteWithBearer(bearer, body);
+    await chat.completeHostedSiteWithBearer(bearer, older.deploymentId);
+    await started.promise;
+    const latest = await chat.prepareHostedSiteWithBearer(bearer, body);
+    await chat.completeHostedSiteWithBearer(bearer, latest.deploymentId);
+    await expect
+      .poll(async () => {
+        return (await findCatalogArtifact(owner.actor, site))?.thumbnail?.url;
+      })
+      .toStrictEqual(expect.any(String));
+    const latestCover = (await findCatalogArtifact(owner.actor, site))
+      ?.thumbnail?.url;
+    release.resolve(undefined);
+    await flushWaitUntilForTest();
 
-      expect(
-        (await findCatalogArtifact(owner.actor, site))?.thumbnail?.url,
-      ).toBe(latestCover);
-      const threadFiles = await chat.listThreadArtifacts(
-        owner.actor,
-        run.threadId,
-      );
-      const olderFile = threadFiles.runs[0]?.files.find((file) => {
-        return file.url === older.artifactUrl;
-      });
-      expect(olderFile?.previewImageUrl).toStrictEqual(expect.any(String));
-      expect(olderFile?.previewImageUrl).not.toBe(latestCover);
-      expect(threadFiles.runs[0]?.files).toContainEqual(
-        expect.objectContaining({
-          url: latest.artifactUrl,
-          previewImageUrl: latestCover,
-        }),
-      );
-      expect(
-        (await host.readHostedSiteDeployments(owner.actor, site))
-          .activeDeploymentId,
-      ).toBe(latest.deploymentId);
-      if (storage === "private") {
-        await resolvePrivatePreviewReference(olderFile?.previewImageUrl ?? "");
-        await resolvePrivatePreviewReference(latestCover ?? "");
-      }
-      await completeChatRunOk(run.runId, sandboxHeaders);
-    },
-  );
+    expect((await findCatalogArtifact(owner.actor, site))?.thumbnail?.url).toBe(
+      latestCover,
+    );
+    const threadFiles = await chat.listThreadArtifacts(
+      owner.actor,
+      run.threadId,
+    );
+    const olderFile = threadFiles.runs[0]?.files.find((file) => {
+      return file.url === older.artifactUrl;
+    });
+    expect(olderFile?.previewImageUrl).toStrictEqual(expect.any(String));
+    expect(olderFile?.previewImageUrl).not.toBe(latestCover);
+    expect(threadFiles.runs[0]?.files).toContainEqual(
+      expect.objectContaining({
+        url: latest.artifactUrl,
+        previewImageUrl: latestCover,
+      }),
+    );
+    expect(
+      (await host.readHostedSiteDeployments(owner.actor, site))
+        .activeDeploymentId,
+    ).toBe(latest.deploymentId);
+    await resolvePrivatePreviewReference(olderFile?.previewImageUrl ?? "");
+    await resolvePrivatePreviewReference(latestCover ?? "");
+    await completeChatRunOk(run.runId, sandboxHeaders);
+  });
 
   // A hosted site is a public publication, so its screenshot renders from the
   // publication URL and follows the owner's current artifact storage.
@@ -563,9 +544,6 @@ describe("hosted Artifact previews", () => {
       throw new Error("Expected organization");
     }
     const actor = { ...owner.actor, orgId: owner.actor.orgId };
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
     const snapshots = mockCloudflareSnapshot([{}]);
@@ -614,9 +592,6 @@ describe("hosted Artifact previews", () => {
       key: `private-artifacts/${reference.id}/${filename}`,
       size: 3,
     });
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: false,
-    });
     const preview = await accept(
       setupApp({ context, routes: webFileUrlRoutes })(webFilesContract).fileUrl(
         {
@@ -643,7 +618,6 @@ describe("hosted Artifact previews", () => {
 
   it("renders current-layout deployments from their hosted-site domain", async () => {
     const owner = await artifactActor("Artifacts API Okou preview image agent");
-    await useLegacyPublicArtifacts(owner);
     mockEnv("CLOUDFLARE_BROWSER_RENDERING_API_TOKEN", "preview-token");
     mockEnv("ARTIFACT_PREVIEW_WAF_SECRET", ARTIFACT_PREVIEW_WAF_SECRET);
     mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
@@ -675,14 +649,16 @@ describe("hosted Artifact previews", () => {
     });
     const previewedArtifact = await findCatalogArtifact(owner.actor, site);
     expect(previewedArtifact?.thumbnail?.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.webp$/u,
+      /^http:\/\/localhost:3002\/artifacts\/[0-9a-z]{10}\.webp$/u,
     );
     expect(owner.objectStore.puts).toStrictEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          bucket: "test-user-artifacts",
+          bucket: "test-private-artifacts",
           contentType: "image/webp",
-          metadata: expect.objectContaining({ "public-brand": "okou" }),
+          metadata: expect.objectContaining({
+            "artifact-id": expect.any(String),
+          }),
         }),
       ]),
     );

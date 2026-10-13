@@ -41,7 +41,8 @@ export const captureDiscordApprovalFragment$ = command(
     );
     set(approvalSucceeded$, false);
     const parsed =
-      window.location.pathname === "/works" &&
+      (window.location.pathname === "/works" ||
+        window.location.pathname === "/settings/discord") &&
       fragment.get("discord_oauth") === "approve"
         ? discordOauthContract.approve.body.safeParse({
             state: fragment.get("state"),

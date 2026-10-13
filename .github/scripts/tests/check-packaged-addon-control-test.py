@@ -25,9 +25,13 @@ class PackagedArchiveTests(unittest.TestCase):
         for name in (
             "check-packaged-addon-control.sh",
             "download-verified.sh",
-            "runner-image-target.sh",
         ):
             shutil.copyfile(SOURCE_ROOT / ".github/scripts" / name, scripts / name)
+        (scripts / "runner").mkdir()
+        shutil.copyfile(
+            SOURCE_ROOT / ".github/scripts/runner/runner-image-target.sh",
+            scripts / "runner/runner-image-target.sh",
+        )
         self.script = scripts / "check-packaged-addon-control.sh"
         (self.root / "crates/runner/mitm-addon").mkdir(parents=True)
         self.binary = b"fixture standalone runtime\n"

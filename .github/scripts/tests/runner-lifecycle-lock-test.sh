@@ -3,8 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 barrier_script="${repo_root}/.github/scripts/cancel-superseded-merge-group-runs.sh"
-lock_script="${repo_root}/.github/scripts/with-runner-lifecycle-lock.sh"
-namespace_cleanup_script="${repo_root}/.github/scripts/cleanup-pr-runner-namespace.sh"
+lock_script="${repo_root}/.github/scripts/runner/with-runner-lifecycle-lock.sh"
+namespace_cleanup_script="${repo_root}/.github/scripts/runner/cleanup-pr-runner-namespace.sh"
 tmp_dir=$(mktemp -d)
 background_pids=()
 

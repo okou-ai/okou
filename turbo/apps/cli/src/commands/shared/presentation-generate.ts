@@ -125,8 +125,8 @@ ${formatPresentationTemplateListing(templates)}`;
         const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}${previewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`;
         const deliveryInstructions = [
           options.visibility === undefined
-            ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
-            : `- Deliver the final deck with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
+            ? "- Uploaded and generated files default to only-me. Hosted sites are public."
+            : `- Deliver the final deck with ${options.visibility} visibility.`,
           "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
           `- For file delivery, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
         ];

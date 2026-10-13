@@ -10,8 +10,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   discordAuthorizationFailed$,
   DiscordPopupBlockedError,
-  startDiscordAuthorization$,
 } from "../../signals/okou-page/discord.ts";
+import { connectDiscordAccount$ } from "../../signals/okou-page/discord-connect-signals.ts";
 import {
   discordApprovalAvailable$,
   discordApprovalSucceeded$,
@@ -47,7 +47,7 @@ export function discordDescription(data: DiscordOrgStatus): string {
   });
 }
 
-function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
+export function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
   return (
     data.isAvailable &&
     ((!data.isInstalled && data.isAdmin) ||
@@ -58,15 +58,13 @@ function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
 export function DiscordAuthorizationActions({
   data,
   disabled,
-  guildId,
 }: {
   data: DiscordOrgStatus | null;
   disabled: boolean;
-  guildId?: string;
 }) {
   const { t } = useTranslation();
   const [authorizationState, authorize] = useLoadableSet(
-    startDiscordAuthorization$,
+    connectDiscordAccount$,
   );
   const authorizationFailed = useGet(discordAuthorizationFailed$);
   const approvalAvailable = useGet(discordApprovalAvailable$);
@@ -102,7 +100,7 @@ export function DiscordAuthorizationActions({
             detach(
               authorize(
                 data.isInstalled ? "connect" : "install",
-                guildId ?? data.guildId,
+                data.guildId,
                 pageSignal,
               ),
               Reason.DomCallback,

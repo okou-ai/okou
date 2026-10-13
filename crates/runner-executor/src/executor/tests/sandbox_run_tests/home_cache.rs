@@ -181,6 +181,7 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
         assert_eq!(
             configs[0].home_drive,
             Some(sandbox::HomeDriveConfig {
+                space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 size_mb: 16,
                 seed_image: Some(sandbox::HomeDriveSeedImage::Move(expected_seed.clone(),)),
             })
@@ -188,6 +189,7 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
         assert_eq!(
             configs[1].home_drive,
             Some(sandbox::HomeDriveConfig {
+                space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 size_mb: 16,
                 seed_image: None,
             })
@@ -303,6 +305,7 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(expected_seed.clone(),)),
         })
@@ -310,6 +313,7 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     assert_eq!(
         configs[1].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: None,
         })
@@ -398,6 +402,7 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(expected_seed.clone(),)),
         })
@@ -405,6 +410,7 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
     assert_eq!(
         configs[1].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: None,
         })
@@ -478,6 +484,7 @@ async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: params.home_disk_mb,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(expected_seed.clone(),)),
         })
@@ -716,6 +723,7 @@ async fn execute_inner_waits_for_transient_home_cache_lock() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(seeded_cache)),
         })
@@ -780,6 +788,7 @@ async fn execute_inner_immediate_lock_policy_still_consumes_available_cache() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: Some(sandbox::HomeDriveSeedImage::Move(seeded_cache)),
         })
@@ -843,6 +852,7 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: None,
         })
@@ -922,6 +932,7 @@ async fn execute_inner_logs_home_cache_lock_error_separately() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 16,
             seed_image: None,
         })

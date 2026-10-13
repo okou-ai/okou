@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=.github/scripts/cloudflare-ssh-diagnostics.sh
+# shellcheck source=.github/scripts/runner/cloudflare-ssh-diagnostics.sh
 . "${SCRIPT_DIR}/cloudflare-ssh-diagnostics.sh"
 
 usage() {

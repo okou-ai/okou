@@ -11,8 +11,6 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -20,7 +18,6 @@ import { createRouteMocks } from "./helpers/route-test";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
-import { featureSwitchesRoutes } from "../feature-switches";
 
 const uploadsTestRoutes = Object.freeze([
   ...uploadsCompleteRoutes,
@@ -39,17 +36,8 @@ function authHeaders() {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function useLegacyPublicUploads(userId: string, orgId: string) {
-  mocks.clerk.session(userId, orgId);
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: authHeaders(),
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
-    }),
-    [200],
-  );
+function useOrganizationlessUploads(userId: string) {
+  mocks.clerk.session(userId, null);
 }
 
 describe("multipart user artifact uploads", () => {
@@ -89,8 +77,7 @@ describe("multipart user artifact uploads", () => {
 
   it("prepares 5 MiB parts for a large upload", async () => {
     const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await useLegacyPublicUploads(userId, orgId);
+    useOrganizationlessUploads(userId);
     let publicRegistration: unknown;
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       if (command instanceof ListObjectsV2Command) {
@@ -190,7 +177,7 @@ describe("multipart user artifact uploads", () => {
   });
 
   it("stores the declared text charset when preparing a multipart artifact", async () => {
-    await useLegacyPublicUploads(`user_${randomUUID()}`, `org_${randomUUID()}`);
+    useOrganizationlessUploads(`user_${randomUUID()}`);
     context.mocks.s3.send.mockImplementation((command) => {
       if (command instanceof ListObjectsV2Command) {
         return Promise.resolve({ Contents: [] });
@@ -231,8 +218,7 @@ describe("multipart user artifact uploads", () => {
 
   it("keeps the legacy single PUT response for small multipart requests", async () => {
     const userId = `user_${randomUUID()}`;
-    const orgId = `org_${randomUUID()}`;
-    await useLegacyPublicUploads(userId, orgId);
+    useOrganizationlessUploads(userId);
     mocks.s3.listObjects([]);
 
     const response = await accept(

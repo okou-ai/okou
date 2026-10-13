@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-PRECONNECT="$REPO_ROOT/.github/scripts/cloudflare-ssh-preconnect.sh"
+PRECONNECT="$REPO_ROOT/.github/scripts/runner/cloudflare-ssh-preconnect.sh"
 SSH_ACTION="$REPO_ROOT/.github/actions/setup-ssh-tunnel/action.yml"
 ANSIBLE_CONFIG="$REPO_ROOT/ansible/ansible.cfg"
 

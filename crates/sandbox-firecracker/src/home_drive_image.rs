@@ -2,7 +2,9 @@ use std::os::unix::fs::MetadataExt;
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use sandbox::{HomeDriveSeedImage, SandboxError, SandboxInitializationPhase};
+use sandbox::{
+    HomeDriveSeedImage, HomeDriveSpaceReserve, SandboxError, SandboxInitializationPhase,
+};
 
 use crate::command;
 
@@ -73,6 +75,7 @@ pub(crate) async fn prepare_home_drive_image(
                 path,
                 source_image,
                 home_drive_size_bytes(config.size_mb),
+                config.space_reserve,
                 observer,
             )
             .await;
@@ -85,12 +88,20 @@ pub(crate) async fn prepare_home_drive_image(
                 path,
                 source_image,
                 home_drive_size_bytes(config.size_mb),
+                config.space_reserve,
                 observer,
             )
             .await;
         }
         None => {}
     }
+
+    ensure_home_image_headroom(
+        path,
+        home_drive_size_bytes(config.size_mb),
+        config.space_reserve,
+    )
+    .await?;
 
     // Lazy journal initialization is safe only on this fresh path: create
     // truncates the regular file, and extending it makes the new range read as
@@ -137,16 +148,27 @@ async fn copy_home_drive_seed_image(
     target: &Path,
     source: &Path,
     expected_size_bytes: u64,
+    space_reserve: HomeDriveSpaceReserve,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
-    validate_home_seed_source(source, expected_size_bytes).await?;
-    copy_validated_home_drive_seed_image(target, source, expected_size_bytes, observer).await
+    let metadata = validate_home_seed_source(source, expected_size_bytes).await?;
+    copy_validated_home_drive_seed_image(
+        target,
+        source,
+        expected_size_bytes,
+        metadata.blocks().saturating_mul(512),
+        space_reserve,
+        observer,
+    )
+    .await
 }
 
 async fn copy_validated_home_drive_seed_image(
     target: &Path,
     source: &Path,
     expected_size_bytes: u64,
+    allocated_bytes: u64,
+    space_reserve: HomeDriveSpaceReserve,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
     let source_str = source
@@ -161,6 +183,8 @@ async fn copy_validated_home_drive_seed_image(
             phase: SandboxInitializationPhase::SandboxAllocation,
             message: format!("home image path is not UTF-8: {}", target.display()),
         })?;
+
+    ensure_home_image_headroom(target, allocated_bytes, space_reserve).await?;
 
     let stage_started = Instant::now();
     let result = command::exec_status_with_timeout(
@@ -187,14 +211,22 @@ async fn move_home_drive_seed_image(
     target: &Path,
     source: &Path,
     expected_size_bytes: u64,
+    space_reserve: HomeDriveSpaceReserve,
     observer: Option<&mut dyn HomeDriveImagePrepareObserver>,
 ) -> sandbox::Result<()> {
-    validate_home_seed_source(source, expected_size_bytes).await?;
+    let metadata = validate_home_seed_source(source, expected_size_bytes).await?;
     match std::fs::rename(source, target) {
         Ok(()) => validate_home_seed_target(target, expected_size_bytes, "moved").await,
         Err(e) if e.kind() == std::io::ErrorKind::CrossesDevices => {
-            copy_validated_home_drive_seed_image(target, source, expected_size_bytes, observer)
-                .await?;
+            copy_validated_home_drive_seed_image(
+                target,
+                source,
+                expected_size_bytes,
+                metadata.blocks().saturating_mul(512),
+                space_reserve,
+                observer,
+            )
+            .await?;
             std::fs::remove_file(source).map_err(|e| SandboxError::Initialization {
                 phase: SandboxInitializationPhase::SandboxAllocation,
                 message: format!("remove copied home seed image {}: {e}", source.display()),
@@ -211,7 +243,10 @@ async fn move_home_drive_seed_image(
     }
 }
 
-async fn validate_home_seed_source(source: &Path, expected_size_bytes: u64) -> sandbox::Result<()> {
+async fn validate_home_seed_source(
+    source: &Path,
+    expected_size_bytes: u64,
+) -> sandbox::Result<std::fs::Metadata> {
     let source_metadata =
         tokio::fs::symlink_metadata(source)
             .await
@@ -239,7 +274,55 @@ async fn validate_home_seed_source(source: &Path, expected_size_bytes: u64) -> s
             ),
         });
     }
-    Ok(())
+    Ok(source_metadata)
+}
+
+async fn ensure_home_image_headroom(
+    target: &Path,
+    allocated_bytes: u64,
+    reserve: HomeDriveSpaceReserve,
+) -> sandbox::Result<()> {
+    // The parent has already been created on the actual receiving filesystem.
+    // Never infer its capacity from the cache's source filesystem. This only
+    // observes headroom; it does not serialize arbitrary concurrent writers.
+    let parent = target
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."))
+        .to_owned();
+    let target = target.to_owned();
+    tokio::task::spawn_blocking(move || {
+        let stats = nix::sys::statvfs::statvfs(&parent).map_err(|error| {
+            SandboxError::Initialization {
+                phase: SandboxInitializationPhase::SandboxAllocation,
+                message: format!("query home image filesystem {}: {error}", parent.display()),
+            }
+        })?;
+        let capacity = stats.blocks().saturating_mul(stats.fragment_size());
+        let available = stats.blocks_available().saturating_mul(stats.fragment_size());
+        // Account for small filesystem metadata allocations as well as image
+        // blocks. Fresh images use their full logical size; sparse seeds use
+        // physical blocks and retain their source until transfer completes.
+        let required = reserve
+            .bytes_for_capacity(capacity)
+            .saturating_add(allocated_bytes)
+            .saturating_add(8192);
+        if available < required {
+            return Err(SandboxError::Initialization {
+                phase: SandboxInitializationPhase::SandboxAllocation,
+                message: format!(
+                    "insufficient home image headroom for {}: available {available} bytes, required {required} bytes",
+                    target.display()
+                ),
+            });
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| SandboxError::Initialization {
+        phase: SandboxInitializationPhase::SandboxAllocation,
+        message: format!("home image filesystem check failed: {error}"),
+    })?
 }
 
 async fn validate_home_seed_target(
@@ -374,6 +457,157 @@ mod tests {
         }
     }
 
+    fn pressured_reserve(parent: &Path) -> HomeDriveSpaceReserve {
+        let stats = nix::sys::statvfs::statvfs(parent).unwrap();
+        HomeDriveSpaceReserve::new(stats.blocks().saturating_mul(stats.fragment_size()), 0)
+    }
+
+    #[tokio::test]
+    async fn copy_reserve_accounts_sparse_blocks_instead_of_logical_image_size() {
+        let source_root = tempfile::tempdir().unwrap();
+        let target_root = tempfile::tempdir_in("/dev/shm").unwrap();
+        let source = source_root.path().join("sparse.ext4");
+        let target = target_root.path().join("home.ext4");
+        let mut file = tokio::fs::File::create(&source).await.unwrap();
+        file.set_len(home_drive_size_bytes(64)).await.unwrap();
+        file.seek(SeekFrom::Start(4096)).await.unwrap();
+        file.write_all(b"sparse-marker").await.unwrap();
+        file.flush().await.unwrap();
+        drop(file);
+        let stats = nix::sys::statvfs::statvfs(target_root.path()).unwrap();
+        let available = stats
+            .blocks_available()
+            .saturating_mul(stats.fragment_size());
+        let headroom = home_drive_size_bytes(32);
+        assert!(
+            available > headroom,
+            "sparse-copy fixture requires 32 MiB of tmpfs headroom"
+        );
+        let reserve = HomeDriveSpaceReserve::new(available - headroom, 0);
+        // The logical image cannot fit above this reserve, but its physical
+        // allocation can. Use real copy/target bytes rather than a sizing mock.
+        prepare_home_drive_image(
+            &target,
+            &sandbox::HomeDriveConfig {
+                size_mb: 64,
+                seed_image: Some(HomeDriveSeedImage::Copy(source.clone())),
+                space_reserve: reserve,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        assert!(source.exists());
+        let metadata = std::fs::metadata(&target).unwrap();
+        assert_eq!(metadata.len(), home_drive_size_bytes(64));
+        assert!(metadata.blocks().saturating_mul(512) < home_drive_size_bytes(1));
+        let mut file = tokio::fs::File::open(target).await.unwrap();
+        file.seek(SeekFrom::Start(4096)).await.unwrap();
+        let mut marker = [0; 13];
+        file.read_exact(&mut marker).await.unwrap();
+        assert_eq!(&marker, b"sparse-marker");
+    }
+
+    #[tokio::test]
+    async fn reserve_refuses_fresh_and_copy_before_mutating_images_but_allows_move() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.ext4");
+        tokio::fs::write(&source, b"preserved-seed").await.unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source)
+            .unwrap();
+        file.set_len(home_drive_size_bytes(1)).unwrap();
+        drop(file);
+        let identity = std::fs::metadata(&source).unwrap();
+        let expected = tokio::fs::read(&source).await.unwrap();
+        let reserve = pressured_reserve(dir.path());
+        for seed_image in [None, Some(HomeDriveSeedImage::Copy(source.clone()))] {
+            let target = dir.path().join("target.ext4");
+            tokio::fs::write(&target, b"untouched-target")
+                .await
+                .unwrap();
+            let mut observer = RecordingObserver::default();
+            let error = prepare_home_drive_image(
+                &target,
+                &sandbox::HomeDriveConfig {
+                    size_mb: 1,
+                    seed_image,
+                    space_reserve: reserve,
+                },
+                Some(&mut observer),
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                SandboxError::Initialization {
+                    phase: SandboxInitializationPhase::SandboxAllocation,
+                    ..
+                }
+            ));
+            assert_eq!(tokio::fs::read(&target).await.unwrap(), b"untouched-target");
+            assert_eq!(tokio::fs::read(&source).await.unwrap(), expected);
+            assert!(
+                observer.stages.is_empty(),
+                "refusal must precede copy or format"
+            );
+        }
+        let target = dir.path().join("moved.ext4");
+        prepare_home_drive_image(
+            &target,
+            &sandbox::HomeDriveConfig {
+                size_mb: 1,
+                seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
+                space_reserve: reserve,
+            },
+            None,
+        )
+        .await
+        .unwrap();
+        let moved = std::fs::metadata(&target).unwrap();
+        assert_eq!((moved.dev(), moved.ino()), (identity.dev(), identity.ino()));
+        assert!(!source.exists());
+        assert_eq!(tokio::fs::read(target).await.unwrap(), expected);
+    }
+
+    #[tokio::test]
+    async fn cross_device_pressure_refusal_keeps_sole_source_and_creates_no_copy() {
+        let source_root = tempfile::tempdir_in("/dev/shm").unwrap();
+        let target_root = tempfile::tempdir().unwrap();
+        assert_ne!(
+            std::fs::metadata(source_root.path()).unwrap().dev(),
+            std::fs::metadata(target_root.path()).unwrap().dev()
+        );
+        let source = source_root.path().join("seed.ext4");
+        tokio::fs::write(&source, b"sole-seed").await.unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source)
+            .unwrap();
+        file.set_len(home_drive_size_bytes(1)).unwrap();
+        drop(file);
+        let expected = tokio::fs::read(&source).await.unwrap();
+        let target = target_root.path().join("home.ext4");
+        let mut observer = RecordingObserver::default();
+        assert!(
+            prepare_home_drive_image(
+                &target,
+                &sandbox::HomeDriveConfig {
+                    size_mb: 1,
+                    seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
+                    space_reserve: pressured_reserve(target_root.path()),
+                },
+                Some(&mut observer),
+            )
+            .await
+            .is_err()
+        );
+        assert_eq!(tokio::fs::read(source).await.unwrap(), expected);
+        assert!(!target.exists());
+        assert!(observer.stages.is_empty());
+    }
+
     #[tokio::test]
     async fn invalid_home_shape_or_path_cannot_consume_seed_or_format_another_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -388,6 +622,7 @@ mod tests {
             let error = prepare_home_drive_image(
                 &source,
                 &sandbox::HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 1,
                     seed_image: Some(seed),
                 },
@@ -407,6 +642,7 @@ mod tests {
             prepare_home_drive_image(
                 &hard_link,
                 &sandbox::HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 1,
                     seed_image: Some(HomeDriveSeedImage::Move(source.clone()))
                 },
@@ -421,6 +657,7 @@ mod tests {
             prepare_home_drive_image(
                 &zero,
                 &sandbox::HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 0,
                     seed_image: None
                 },
@@ -436,6 +673,7 @@ mod tests {
             prepare_home_drive_image(
                 &link,
                 &sandbox::HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 1,
                     seed_image: None
                 },
@@ -470,6 +708,7 @@ mod tests {
                 prepare_home_drive_image(
                     &target,
                     &sandbox::HomeDriveConfig {
+                        space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                         size_mb: 1,
                         seed_image: Some(seed)
                     },
@@ -485,6 +724,7 @@ mod tests {
             prepare_home_drive_image(
                 &alias.join("target.ext4"),
                 &sandbox::HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 1,
                     seed_image: None
                 },
@@ -515,6 +755,7 @@ mod tests {
         prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 16,
                 seed_image: None,
             },
@@ -590,6 +831,7 @@ mod tests {
         prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Copy(source.clone())),
             },
@@ -633,6 +875,7 @@ mod tests {
         let err = prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Copy(source)),
             },
@@ -675,6 +918,7 @@ mod tests {
         prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
@@ -730,6 +974,7 @@ mod tests {
         prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
@@ -778,6 +1023,7 @@ mod tests {
         let err = prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
@@ -816,6 +1062,7 @@ mod tests {
         let err = prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source.clone())),
             },
@@ -850,6 +1097,7 @@ mod tests {
         let err = prepare_home_drive_image(
             &target,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: 1,
                 seed_image: Some(HomeDriveSeedImage::Move(source_link.clone())),
             },

@@ -244,7 +244,7 @@ CHECK
     repo = directory / 'repo'
     repo.mkdir()
     for relative in ['scripts/crate-changed.sh', '.github/scripts/checks/changed-base-ref.sh',
-                     '.github/scripts/runner-image-context.sh', '.github/scripts/runner-image-target.sh']:
+                     '.github/scripts/runner/runner-image-context.sh', '.github/scripts/runner/runner-image-target.sh']:
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / relative, destination)

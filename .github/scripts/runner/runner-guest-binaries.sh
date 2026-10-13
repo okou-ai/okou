@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 RUNNER_GUEST_HELPER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RUNNER_GUEST_REPO_ROOT="$(cd "${RUNNER_GUEST_HELPER_DIR}/../.." && pwd)"
+RUNNER_GUEST_REPO_ROOT="$(cd "${RUNNER_GUEST_HELPER_DIR}/../../.." && pwd)"
 RUNNER_GUEST_INVENTORY_PATH="${RUNNER_GUEST_INVENTORY_PATH:-${RUNNER_GUEST_REPO_ROOT}/crates/runner/guest-binaries.json}"
 
 RUNNER_GUEST_PACKAGES=()

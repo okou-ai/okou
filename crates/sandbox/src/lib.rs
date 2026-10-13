@@ -35,8 +35,8 @@ mod types;
 pub use backing_process::{BackingProcessIdentity, SandboxBackingProcess};
 pub use config::{
     BlockRateLimits, DeviceRateLimits, FactoryConfig, HomeDriveConfig, HomeDriveSeedImage,
-    HostCpuPlacementConfig, HostCpuPlacementMode, NetworkRateLimits, ResourceLimits, RuntimeConfig,
-    SandboxConfig, SandboxId, SnapshotRef,
+    HomeDriveSpaceReserve, HostCpuPlacementConfig, HostCpuPlacementMode, NetworkRateLimits,
+    ResourceLimits, RuntimeConfig, SandboxConfig, SandboxId, SnapshotRef,
 };
 pub use control::{
     RemoteExecResult, RemoteKillResult, SandboxControl, SandboxControlError, SandboxControlTarget,

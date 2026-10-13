@@ -87,6 +87,11 @@ test.each(["install", "connect"] as const)(
     await waitFor(() => {
       expect(popup.location.href).toBe(authorizationUrl);
     });
+    expect(getAction("button", "Connecting...")).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Complete authorization in the Discord window",
+    );
+    expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
     expect(requestBody).toStrictEqual({ flow, guildId });
     expect(completionBody).toBeUndefined();
     popup.close();
@@ -98,8 +103,115 @@ test.each(["install", "connect"] as const)(
       expect(completed).toBeInTheDocument();
     });
     expect(completionBody).toStrictEqual({ state, completionToken });
+    await waitFor(() => {
+      expect(
+        Object.fromEntries(new URLSearchParams(window.location.search)),
+      ).toStrictEqual(
+        flow === "connect"
+          ? { status: "connected", workspace: "Design team", guild_id: guildId }
+          : { guild_id: guildId },
+      );
+    });
+    expect(
+      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
+    ).toBe(flow === "connect" ? `discord://-/channels/${guildId}` : null);
+    expect(
+      queryAction("link", "Open in browser")?.getAttribute("href") ?? null,
+    ).toBe(
+      flow === "connect" ? `https://discord.com/channels/${guildId}` : null,
+    );
   },
 );
+
+test.each([false, true])(
+  "The Discord success URL uses verified connection data (connected: %s)",
+  async (isConnected) => {
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, status({ isConnected }));
+    });
+    await setupPage({
+      context,
+      path: `${path}&status=connected&workspace=Unverified+server`,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    expect(screen.queryByText(/Unverified server/u)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: isConnected ? "Connected to Discord" : "Connect to Discord",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/You're connected to Design team/u) !== null,
+    ).toBe(isConnected);
+    expect(
+      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
+    ).toBe(isConnected ? `discord://-/channels/${guildId}` : null);
+    const action = isConnected
+      ? getAction("link", "Open Discord")
+      : getAction("button", "Connect");
+    expect(action).not.toBeDisabled();
+  },
+);
+
+test("A blocked Discord popup shows a retry action on the connection page", async () => {
+  context.mocks.browser.open(null);
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status());
+  });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  click(getAction("button", "Connect"));
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Allow popups to authorize Discord, then try again.",
+  );
+  expect(getAction("button", "Retry")).toBeEnabled();
+  expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
+});
+
+test("Closing Discord consent without approval keeps the page retryable without a success URL", async () => {
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status());
+  });
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", {
+    configurable: true,
+    value: { href: "" },
+  });
+  context.mocks.browser.open(popup);
+  const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
+  context.mocks.api(discordOauthContract.start, ({ respond }) => {
+    return respond(200, { authorizationUrl, completionToken: "c".repeat(43) });
+  });
+  context.mocks.api(discordOauthContract.complete, ({ respond }) => {
+    return respond(400, {
+      error: {
+        code: "BAD_REQUEST",
+        message: "Discord consent has not been approved",
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  click(getAction("button", "Connect"));
+  await waitFor(() => {
+    expect(popup.location.href).toBe(authorizationUrl);
+  });
+  popup.close();
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+    "Discord authorization could not be completed",
+  );
+  expect(getAction("button", "Retry")).toBeEnabled();
+  expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
+  expect(new URLSearchParams(window.location.search).get("status")).not.toBe(
+    "connected",
+  );
+});
 
 test("A Discord DM link can connect without a server hint", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
@@ -151,18 +263,31 @@ test("A link for another server does not connect the wrong workspace", async () 
   expect(queryAction("button", "Connect")).not.toBeInTheDocument();
 });
 
-test("A disabled Discord integration offers no authorization action", async () => {
-  await setupPage({
-    context,
-    path,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
-  });
-  expect(
-    screen.getByText("Discord is not configured for this organization yet."),
-  ).toBeInTheDocument();
-  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
-  expect(queryAction("button", "Install to Discord")).not.toBeInTheDocument();
-});
+test.each([
+  path,
+  `/settings/discord?status=pending#discord_oauth=approve&state=${"s".repeat(43)}&approval_proof=${"p".repeat(43)}`,
+])(
+  "A disabled Discord integration at %s offers no authorization action",
+  async (disabledPath) => {
+    const approvals: unknown[] = [];
+    context.mocks.api(discordOauthContract.approve, ({ body, respond }) => {
+      approvals.push(body);
+      return respond(200, { approved: true });
+    });
+    await setupPage({
+      context,
+      path: disabledPath,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: false },
+    });
+    expect(
+      screen.getByText("Discord is not configured for this organization yet."),
+    ).toBeInTheDocument();
+    expect(queryAction("button", "Connect")).not.toBeInTheDocument();
+    expect(queryAction("button", "Install to Discord")).not.toBeInTheDocument();
+    expect(approvals).toStrictEqual([]);
+    expect(window.location.hash).toBe("");
+  },
+);
 
 test("A Discord connection link requires sign-in and preserves its server", async () => {
   await startPage({ context, path, host: "app.okou.ai", auth: null });

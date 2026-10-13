@@ -222,7 +222,7 @@ jobs:
         env:
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           RUNNER_CHANGED: ${{ steps.detect.outputs.runner-changed }}
-        run: .github/scripts/runner-image-context.sh crates-consumer
+        run: .github/scripts/runner/runner-image-context.sh crates-consumer
 
       - name: Select runner job refs
         id: runner-job-ref
@@ -322,11 +322,11 @@ jobs:
           SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
         run: |
           if [ "$RUNNER_CONSUMER_NEEDED" = "true" ]; then
-            PLAN=$(.github/scripts/runner-host-architecture-groups.sh selection-plan "$SELECTION_KEY")
+            PLAN=$(.github/scripts/runner/runner-host-architecture-groups.sh selection-plan "$SELECTION_KEY")
             MATRIX=$(jq -c '.matrix' <<<"$PLAN")
             echo "selected-target=$(jq -r '.selectedTarget' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
           else
-            MATRIX=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+            MATRIX=$(.github/scripts/runner/runner-host-architecture-groups.sh matrix)
           fi
           GROUP_COUNT=$(jq -r 'length' <<<"$MATRIX")
           if [ "$GROUP_COUNT" -lt 1 ]; then
@@ -931,13 +931,13 @@ jobs:
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
           JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
         run: |
-          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOSTS=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           NUM_HOSTS=$(printf '%s\n' "$HOSTS" | tr ',' '\n' | grep -c . || true)
           if [ "$NUM_HOSTS" -lt 1 ]; then
             echo "::error::No metal hosts found for runner host group $RUNNER_HOST_GROUP_ID"
             exit 1
           fi
-          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
           echo "host=${HOST}" >> "$GITHUB_OUTPUT"
           echo "Selected $RUNNER_HOST_GROUP_ID metal host: ${HOST} (${NUM_HOSTS} host(s) in group)"
 
@@ -1019,8 +1019,8 @@ jobs:
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
           JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
         run: |
-          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
-          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          HOSTS=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
           REMOTE="${METAL_USER}@${HOST}"
           REMOTE_BIN="/tmp/runner-rootfs-process-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RUNNER_HOST_GROUP_ID}"
           scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
@@ -1083,7 +1083,7 @@ jobs:
           SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
           EXPECTED_TARGET: ${{ needs.runner-host-groups.outputs.selected-target }}
         run: |
-          CONTEXT=$(.github/scripts/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
+          CONTEXT=$(.github/scripts/runner/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
           HOST=$(jq -r '.host' <<<"$CONTEXT")
           GROUP_ID=$(jq -r '.groupId' <<<"$CONTEXT")
           TARGET=$(jq -r '.target' <<<"$CONTEXT")
@@ -1111,7 +1111,7 @@ jobs:
           SELECTED_HOST: ${{ steps.selected-host.outputs.host }}
           TARGET: ${{ steps.selected-host.outputs.target }}
           PROFILE: vm0/default
-        run: .github/scripts/wait-runner-image.sh
+        run: .github/scripts/runner/wait-runner-image.sh
 
   # Keep containment alone; run the shorter cancel and systemd reload scenarios
   # after exec to balance the parallel lanes. The bounded balloon scenario stays
@@ -1311,7 +1311,7 @@ jobs:
 
       - name: Cross-compile host CPU fairness test
         id: build
-        run: bash .github/scripts/runner-native-test-artifact.sh build
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh build
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -1323,7 +1323,7 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh publish
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
 
       - name: Report peak memory
         if: always()
@@ -1371,10 +1371,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh download
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh download
 
       - name: Validate native test
-        run: bash .github/scripts/runner-native-test-artifact.sh validate
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -1427,7 +1427,7 @@ jobs:
 
       - name: Cross-compile native Guest RPC and duplex test
         id: build
-        run: bash .github/scripts/runner-native-test-artifact.sh build
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh build
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -1439,7 +1439,7 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh publish
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
 
       - name: Save pinned Kerberos dependencies
         if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
@@ -1485,10 +1485,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh download
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh download
 
       - name: Validate native test
-        run: bash .github/scripts/runner-native-test-artifact.sh validate
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel

@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          hosts=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           if [ -z "$hosts" ]; then
             echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}."
             exit 1

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TRANSPORT="${SCRIPT_DIR}/runner-binary-transport.sh"
+TRANSPORT="${SCRIPT_DIR}/runner/runner-binary-transport.sh"
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
 
@@ -71,8 +71,8 @@ export PRODUCER_EVENT=pull_request PRODUCER_PR_NUMBER=123
 export PRODUCER_HEAD_SHA=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 guest_sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${SCRIPT_DIR}/runner-binary-build/contract.env"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
+. "${SCRIPT_DIR}/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 guests=$(printf '%s\n' "${RUNNER_GUEST_BINARIES[@]}" | jq -Rn \
   --arg sha "$guest_sha" '[inputs | {key: ., value: $sha}] | from_entries')

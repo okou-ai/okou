@@ -276,6 +276,7 @@ pub async fn run_benchmark(
         home_drive: Some(sandbox::HomeDriveConfig {
             size_mb: profile_config.home_disk_mb,
             seed_image: None,
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
         }),
     };
     let (result, timing) = run_sandbox(&args, &env_pairs, &*factory, &mitm, sandbox_config).await;
@@ -926,6 +927,7 @@ mod tests {
             },
             device_rate_limits: None,
             home_drive: Some(sandbox::HomeDriveConfig {
+                space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 size_mb: 1024,
                 seed_image: None,
             }),

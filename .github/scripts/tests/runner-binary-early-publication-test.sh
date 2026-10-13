@@ -116,11 +116,11 @@ end
 Dir.mktmpdir("runner-index-") do |fixture|
   # A helper-only change must reach the real image selection boundary.
   selector = "#{fixture}/selector"
-  FileUtils.mkdir_p("#{selector}/.github/scripts")
+  FileUtils.mkdir_p("#{selector}/.github/scripts/runner")
   %w[runner-image-context.sh runner-image-target.sh].each do |name|
-    FileUtils.cp("#{root}/.github/scripts/#{name}", "#{selector}/.github/scripts/#{name}")
+    FileUtils.cp("#{root}/.github/scripts/runner/#{name}", "#{selector}/.github/scripts/runner/#{name}")
   end
-  helper = "#{selector}/.github/scripts/runner-binary-github.sh"
+  helper = "#{selector}/.github/scripts/runner/runner-binary-github.sh"
   File.write(helper, "# baseline\n")
   command!({}, selector, "git", "init", "-q", "-b", "main")
   command!({}, selector, "git", "config", "user.email", "fixture@example.invalid")
@@ -151,13 +151,13 @@ Dir.mktmpdir("runner-index-") do |fixture|
     "RUNNER_BINARY_CACHE_FORCE_MISS" => "false", "REPO" => "okou-ai/okou", "GITHUB_REPOSITORY_OWNER" => "okou-ai"}
   targets = %w[aarch64-unknown-linux-musl x86_64-unknown-linux-musl]
   digests = targets.to_h do |target|
-    output = command!(environment, root, "#{root}/.github/scripts/runner-binary-build/digest.sh", target)
+    output = command!(environment, root, "#{root}/.github/scripts/runner/runner-binary-build/digest.sh", target)
     [target, output.lines.find { |line| line.start_with?("binary-input-digest=") }.strip.split("=", 2).last]
   end
   guest_names = JSON.parse(File.read("#{root}/crates/runner/guest-binaries.json")).map { |guest| guest.fetch("binary") }
   guest_hashes = guest_names.to_h { |name| [name, Digest::SHA256.hexdigest(name)] }
   toolchain = command!(environment, root, "bash", "-c",
-    '. .github/scripts/runner-binary-build/contract.env; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"')
+    '. .github/scripts/runner/runner-binary-build/contract.env; printf %s "$RUNNER_BINARY_TOOLCHAIN_IMAGE"')
   matrix = targets.each_with_index.map do |target, i|
     {id: i.zero? ? "arm64" : "x86_64", label: i.zero? ? "arm64" : "x86_64", target: target,
      unameM: i.zero? ? "aarch64" : "x86_64", cacheSuffix: i.zero? ? "arm64" : "x86_64",
@@ -165,12 +165,12 @@ Dir.mktmpdir("runner-index-") do |fixture|
   end
   make_producer = lambda do |run, target, bytes = "fresh #{target}\n"|
     cwd = "#{fixture}/producer-#{run}-#{target}"
-    FileUtils.mkdir_p(["#{cwd}/.github/scripts/runner-binary-build", "#{cwd}/crates/runner",
+    FileUtils.mkdir_p(["#{cwd}/.github/scripts/runner/runner-binary-build", "#{cwd}/crates/runner",
       "#{cwd}/crates/target/#{target}/ci", "#{cwd}/runner-binary-fresh"])
     %w[runner-binary-cache.sh runner-binary-github.sh runner-binary-transport.sh runner-binary-download.sh runner-image-target.sh runner-guest-binaries.sh].each do |name|
-      FileUtils.cp("#{root}/.github/scripts/#{name}", "#{cwd}/.github/scripts/#{name}")
+      FileUtils.cp("#{root}/.github/scripts/runner/#{name}", "#{cwd}/.github/scripts/runner/#{name}")
     end
-    FileUtils.cp("#{root}/.github/scripts/runner-binary-build/contract.env", "#{cwd}/.github/scripts/runner-binary-build/contract.env")
+    FileUtils.cp("#{root}/.github/scripts/runner/runner-binary-build/contract.env", "#{cwd}/.github/scripts/runner/runner-binary-build/contract.env")
     FileUtils.cp("#{root}/crates/runner/guest-binaries.json", "#{cwd}/crates/runner/guest-binaries.json")
     File.write("#{cwd}/crates/target/#{target}/ci/runner", bytes)
     metadata = {schemaVersion: 1, target: target, binaryInputDigest: digests.fetch(target), toolchainImage: toolchain,
@@ -233,7 +233,7 @@ Dir.mktmpdir("runner-index-") do |fixture|
     File.write(out, "")
     command!(environment.merge("RUNNER_HOST_GROUPS_MATRIX" => JSON.generate(matrix),
       "RESOLVE_OUTPUT_DIR" => "#{fixture}/plan-#{name}", "GITHUB_OUTPUT" => out), root,
-      "#{root}/.github/scripts/runner-binary-cache-plan.sh")
+      "#{root}/.github/scripts/runner/runner-binary-cache-plan.sh")
     parse_outputs(out)
   end
   before_upload = publication.take_while { |step| step["id"] != "shadow" }
@@ -259,13 +259,13 @@ Dir.mktmpdir("runner-index-") do |fixture|
     destination = "#{fixture}/download-#{target}"
     command!(environment.merge("EXPECTED_TARGET" => target, "EXPECTED_BINARY_INPUT_DIGEST" => digests.fetch(target),
       "CACHE_REFERENCE" => JSON.generate(JSON.parse(ready.fetch("hit-references")).fetch(target)), "RESOLVE_OUTPUT_DIR" => destination),
-      root, "#{root}/.github/scripts/runner-binary-cache.sh", "download-reference")
+      root, "#{root}/.github/scripts/runner/runner-binary-cache.sh", "download-reference")
     raise "cached bytes differ from the verified producer" unless File.read("#{destination}/runner") == "fresh #{target}\n"
   end
   # The same current-run transport remains readable by a later consumer attempt.
   command!(environment.merge("CURRENT_RUN_ID" => "20", "EXPECTED_TARGET" => targets[0],
     "EXPECTED_BINARY_INPUT_DIGEST" => digests.fetch(targets[0]), "GITHUB_RUN_ATTEMPT" => "2",
-    "OUTPUT_DIR" => "#{fixture}/consumer-rerun"), root, "#{root}/.github/scripts/runner-binary-transport.sh", "download")
+    "OUTPUT_DIR" => "#{fixture}/consumer-rerun"), root, "#{root}/.github/scripts/runner/runner-binary-transport.sh", "download")
   raise "consumer rerun changed producer provenance" unless JSON.parse(File.read("#{fixture}/consumer-rerun/manifest.json")).dig("producer", "runAttempt") == 1
   old_index = Dir["#{indices}/20/*/manifest.json"].fetch(0)
   old_bytes = File.read(old_index)

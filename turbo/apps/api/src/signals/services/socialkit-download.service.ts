@@ -44,7 +44,6 @@ import { uploadedArtifactObject$ } from "./uploaded-artifact.service";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled$,
 } from "./private-artifact-storage.service";
 import {
   checkManagedCredits$,
@@ -1064,12 +1063,6 @@ export const createSocialKitDownload$ = command(
       return creditError;
     }
 
-    const privateArtifacts = await set(
-      privateArtifactCreationEnabled$,
-      args.auth.orgId,
-      args.auth.userId,
-      signal,
-    );
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [created] = await writeDb
@@ -1078,7 +1071,7 @@ export const createSocialKitDownload$ = command(
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: runId(args.auth),
-        request: { ...args.body, privateArtifacts },
+        request: { ...args.body, privateArtifacts: true },
       })
       .onConflictDoNothing()
       .returning();

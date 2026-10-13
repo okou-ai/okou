@@ -159,6 +159,7 @@ async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_disc
     write_image(&image, b"replacement", SIZE);
     let config = lease.home_drive_config().unwrap();
     assert!(config.seed_image.is_none());
+    assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     assert!(!lease.is_cache_hit());
     assert!(lease.history_proof_binding().is_none());
     assert!(lease.previous_storage().is_none());
@@ -298,4 +299,157 @@ async fn no_key_unsafe_cwd_and_reserve_pressure_are_safe_nonfatal_misses() {
         })
         .await;
     assert_eq!(lease.result(), HomeCacheCheckoutResult::DiskPressure);
+}
+
+#[tokio::test]
+async fn pressured_hit_ignores_busy_capacity_and_remains_owned_during_gc() {
+    use std::time::Duration;
+    let mut f = Fixture::new().await;
+    let selected = f
+        .commit("selected", b"selected-bytes", "2026-10-09T09:00:00Z")
+        .await;
+    let other = f
+        .commit("other", b"other-bytes", "2026-10-09T09:00:01Z")
+        .await;
+    f.cache = f.cache_under_pressure();
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("selected"))
+        .await
+        .unwrap();
+    assert!(lease.is_cache_hit());
+    let config = lease.home_drive_config().unwrap();
+    assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
+    let Some(sandbox::HomeDriveSeedImage::Move(source)) = config.seed_image else {
+        panic!("pressured hit must expose its owned Move seed");
+    };
+    let expected = tokio::fs::read(&source).await.unwrap();
+    assert_eq!(&expected[4096..4110], b"selected-bytes");
+    assert_eq!(f.cache.gc_root_scan_count(), 0);
+    drop(capacity);
+    let cache = f.cache.clone();
+    let gc = tokio::spawn(async move { cache.gc(false).await });
+    assert!(
+        tokio::time::timeout(Duration::from_secs(10), gc)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+            > 0
+    );
+    assert!(!f.image("other", &other).exists());
+    assert_eq!(source, f.image("selected", &selected));
+    assert_eq!(tokio::fs::read(&source).await.unwrap(), expected);
+    let active = f.dir.path().join("consumed/home.ext4");
+    std::fs::create_dir_all(active.parent().unwrap()).unwrap();
+    std::fs::rename(&source, &active).unwrap();
+    assert_eq!(tokio::fs::read(active).await.unwrap(), expected);
+}
+
+#[tokio::test]
+async fn pressured_miss_does_not_wait_for_capacity_or_start_reclamation() {
+    use std::time::Duration;
+    let mut f = Fixture::new().await;
+    let unrelated = f
+        .commit("other", b"keep-other", "2026-10-09T09:00:00Z")
+        .await;
+    f.cache = f.cache_under_pressure();
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let mut lease = tokio::time::timeout(Duration::from_secs(10), f.lease("missing"))
+        .await
+        .unwrap();
+    assert_eq!(lease.result(), HomeCacheCheckoutResult::DiskPressure);
+    let config = lease.home_drive_config().unwrap();
+    assert!(config.seed_image.is_none());
+    assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
+    assert_eq!(f.cache.gc_root_scan_count(), 0);
+    assert!(f.image("other", &unrelated).exists());
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(f.cache.capacity_lock_path())
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Busy
+    ));
+    drop(capacity);
+}
+
+#[tokio::test]
+async fn pressured_entry_wait_cancellation_preserves_commit_and_unlocks_for_retry() {
+    use std::time::Duration;
+    let mut f = Fixture::new().await;
+    let committed = f
+        .commit("thread", b"cancel-safe", "2026-10-09T09:00:00Z")
+        .await;
+    f.cache = f.cache_under_pressure();
+    let entry = runner_host::lock::acquire(f.cache.entry_lock_path(&f.key("thread")))
+        .await
+        .unwrap();
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let gate = HomeImagePrepareLockTestGate::default();
+    let immediate = tokio::time::timeout(
+        Duration::from_secs(10),
+        f.cache.prepare_with_lock_policy(
+            HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
+                    run_id: RunId::new_v4(),
+                    sandbox_id: sandbox::SandboxId::new_v4(),
+                    profile_name: PROFILE,
+                    rootfs_hash: ROOTFS,
+                    reuse_key: Some("thread"),
+                    working_dir: CWD,
+                    image_size_bytes: SIZE,
+                },
+                home_drive_required: true,
+            },
+            HomeImagePrepareLockPolicy::ImmediateFallback,
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(immediate.result(), HomeCacheCheckoutResult::LockBusy);
+    let cache = f.cache.clone().with_prepare_lock_test_gate(gate.clone());
+    let pending = tokio::spawn(async move {
+        cache
+            .prepare(HomeImagePrepareRequest {
+                identity: HomeImageLeaseIdentity {
+                    run_id: RunId::new_v4(),
+                    sandbox_id: sandbox::SandboxId::new_v4(),
+                    profile_name: PROFILE,
+                    rootfs_hash: ROOTFS,
+                    reuse_key: Some("thread"),
+                    working_dir: CWD,
+                    image_size_bytes: SIZE,
+                },
+                home_drive_required: true,
+            })
+            .await
+    });
+    gate.wait_entered(Duration::from_secs(10)).await;
+    pending.abort();
+    assert!(matches!(pending.await, Err(error) if error.is_cancelled()));
+    assert!(f.cache.entry_paths(&f.key("thread")).metadata().exists());
+    assert_eq!(
+        &tokio::fs::read(f.image("thread", &committed))
+            .await
+            .unwrap()[4096..4107],
+        b"cancel-safe"
+    );
+    drop(entry);
+    let lease = tokio::time::timeout(Duration::from_secs(10), f.lease("thread"))
+        .await
+        .unwrap();
+    assert!(lease.is_cache_hit());
+    drop(lease);
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(f.cache.entry_lock_path(&f.key("thread")))
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Acquired(_)
+    ));
+    drop(capacity);
 }

@@ -195,7 +195,7 @@ describe.each(surfaces)("$label visibility", (surface) => {
   );
 
   it.each(["only-me", "org", "public"])(
-    "rejects explicit %s before creating when the feature is off",
+    "rejects explicit %s before creating when the serving API cannot create privately",
     async (visibility) => {
       available(false);
       await expect(
@@ -204,7 +204,9 @@ describe.each(surfaces)("$label visibility", (surface) => {
           { from: "user" },
         ),
       ).rejects.toThrow("CLI exit");
-      expect(error.mock.calls.flat().join("\n")).toContain("privateArtifacts");
+      expect(error.mock.calls.flat().join("\n")).toContain(
+        "Artifact visibility is unavailable",
+      );
       expect(log).not.toHaveBeenCalled();
     },
   );

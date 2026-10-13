@@ -864,6 +864,7 @@ function ThreeColumnNav() {
       <LabeledNavRail />
       {!chatListHidden && <ChatListColumn />}
     </>,
+    { measureWidth: true },
   );
 }
 

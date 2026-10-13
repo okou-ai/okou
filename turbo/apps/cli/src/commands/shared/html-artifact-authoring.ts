@@ -202,8 +202,8 @@ export function createHtmlArtifactAuthoringInstructions(
       ? []
       : [
           options.visibility === undefined
-            ? "With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting keeps its existing behavior."
-            : `Publish the final artifact with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
+            ? "Uploaded and generated files default to only-me. Hosted sites are public."
+            : `Publish the final artifact with ${options.visibility} visibility.`,
         ]),
     `When everything is OK, publish it with:`,
     "",

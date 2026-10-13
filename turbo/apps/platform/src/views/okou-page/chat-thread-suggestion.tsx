@@ -54,7 +54,9 @@ function ComposerMentionSuggestionItem({
 export function ComposerMentionSuggestionMenu({
   menuRef,
   anchor,
+  side,
   composerAnchored,
+  reversed,
   agents,
   chatThreads,
   selectedIndex,
@@ -63,7 +65,10 @@ export function ComposerMentionSuggestionMenu({
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
+  readonly side: "top" | "bottom";
   readonly composerAnchored: boolean;
+  /** The menu opens above the composer, so its most relevant row is last. */
+  readonly reversed: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
   readonly selectedIndex: number;
@@ -74,7 +79,8 @@ export function ComposerMentionSuggestionMenu({
 }) {
   const { t } = useTranslation();
   // Preserve relevance indices for keyboard selection and insertion while
-  // rendering both groups and their candidates in bottom-first priority order.
+  // rendering both groups and their candidates in bottom-first priority order
+  // when the menu opens above the composer.
   const agentSection = agents.length > 0 && (
     <div key="agents">
       <div className="px-1 pt-2 pb-1 text-xs font-medium text-muted-foreground">
@@ -82,25 +88,21 @@ export function ComposerMentionSuggestionMenu({
           return $.chat.composer.agentSuggestions;
         })}
       </div>
-      {(composerAnchored ? [...agents].reverse() : agents).map(
-        (agent, visualIndex) => {
-          const index = composerAnchored
-            ? agents.length - 1 - visualIndex
-            : visualIndex;
-          const selected = index === selectedIndex;
-          return (
-            <ComposerMentionSuggestionItem
-              key={agent.id}
-              name={agent.name}
-              avatarUrl={agent.avatarUrl}
-              selected={selected}
-              onSelect={() => {
-                onSelectAgent(agent);
-              }}
-            />
-          );
-        },
-      )}
+      {(reversed ? [...agents].reverse() : agents).map((agent, visualIndex) => {
+        const index = reversed ? agents.length - 1 - visualIndex : visualIndex;
+        const selected = index === selectedIndex;
+        return (
+          <ComposerMentionSuggestionItem
+            key={agent.id}
+            name={agent.name}
+            avatarUrl={agent.avatarUrl}
+            selected={selected}
+            onSelect={() => {
+              onSelectAgent(agent);
+            }}
+          />
+        );
+      })}
     </div>
   );
   const threadSection = chatThreads.length > 0 && (
@@ -110,9 +112,9 @@ export function ComposerMentionSuggestionMenu({
           return $.chat.composer.threadSuggestions;
         })}
       </div>
-      {(composerAnchored ? [...chatThreads].reverse() : chatThreads).map(
+      {(reversed ? [...chatThreads].reverse() : chatThreads).map(
         (chatThread, visualIndex) => {
-          const index = composerAnchored
+          const index = reversed
             ? chatThreads.length - 1 - visualIndex
             : visualIndex;
           const selected = agents.length + index === selectedIndex;
@@ -135,7 +137,7 @@ export function ComposerMentionSuggestionMenu({
     <PopoverContent
       ref={menuRef}
       anchor={anchor}
-      side="top"
+      side={side}
       align="start"
       sideOffset={8}
       collisionAvoidance={composerAnchored ? { side: "none" } : undefined}
@@ -150,7 +152,7 @@ export function ComposerMentionSuggestionMenu({
       data-testid="chat-thread-suggestion-menu"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
-        {composerAnchored
+        {reversed
           ? [threadSection, agentSection]
           : [agentSection, threadSection]}
       </div>

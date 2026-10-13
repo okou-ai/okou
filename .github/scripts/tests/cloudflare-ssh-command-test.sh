@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-WRAPPER="${REPO_ROOT}/.github/scripts/cloudflare-ssh-command.sh"
+WRAPPER="${REPO_ROOT}/.github/scripts/runner/cloudflare-ssh-command.sh"
 SSH_ACTION="${REPO_ROOT}/.github/actions/setup-ssh-tunnel/action.yml"
 SECURITY_WORKFLOW="${REPO_ROOT}/.github/workflows/security.yml"
 
@@ -294,7 +294,7 @@ invoke_wrapper() {
   OKOU_CLOUDFLARE_SSH_REAL_SSH="$fake_ssh" \
   OKOU_CLOUDFLARE_SSH_REAL_SCP="$fake_scp" \
   OKOU_CLOUDFLARE_SSH_REAL_SFTP="$fake_sftp" \
-  OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR="${REPO_ROOT}/.github/scripts" \
+  OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR="${REPO_ROOT}/.github/scripts/runner" \
   OKOU_CLOUDFLARE_SSH_STATE_DIR="$case_dir/state" \
   OKOU_CLOUDFLARE_SSH_USER=metal \
   OKOU_CLOUDFLARE_SSH_DEFAULT_CONTROL_PATH=/tmp/default-control \
@@ -681,7 +681,7 @@ assert_contains "$SSH_ACTION" \
 assert_contains "$SSH_ACTION" \
   "OKOU_CLOUDFLARE_SSH_DEFAULT_CONTROL_PATH=\$HOME/.ssh/vm0-ssh-%C"
 assert_contains "$SECURITY_WORKFLOW" \
-  ".github/scripts/cloudflare-ssh-command.sh"
+  ".github/scripts/runner/cloudflare-ssh-command.sh"
 assert_contains "$SECURITY_WORKFLOW" \
   ".github/scripts/tests/cloudflare-ssh-command-test.sh"
 assert_not_contains "$SECURITY_WORKFLOW" \

@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=.github/scripts/runner-image-target.sh
+# shellcheck source=.github/scripts/runner/runner-image-target.sh
 source "$SCRIPT_DIR/runner-image-target.sh"
-# shellcheck source=.github/scripts/runner-binary-download.sh
+# shellcheck source=.github/scripts/runner/runner-binary-download.sh
 source "$SCRIPT_DIR/runner-binary-download.sh"
 
 MAX_BINARY_BYTES=134217728
@@ -87,7 +87,7 @@ case "${1:-}" in
     cargo_output=$(mktemp)
     trap 'rm -f "$cargo_output"' EXIT
     (
-      cd "$SCRIPT_DIR/../../crates"
+      cd "$SCRIPT_DIR/../../../crates"
       cargo test --no-run "${profile_args[@]}" --target "$TARGET_TRIPLE" \
         -p sandbox-firecracker --test "$TEST_NAME" --message-format=json-render-diagnostics
     ) >"$cargo_output"

@@ -1,8 +1,4 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
+import { deleteFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createHash, randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
@@ -1100,13 +1096,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           return seedRunScoped();
         },
       );
-      await fixture.run(() => {
-        return updateFeatureSwitchesForUser(
-          context,
-          { userId, orgId },
-          { [FeatureSwitchKey.PrivateArtifacts]: false },
-        );
-      });
       const { slackUserId } = await fixture.run(() => {
         return connectMember({
           orgId,
@@ -1159,8 +1148,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
       });
 
       objectStore.addObject({
-        bucket: "test-user-artifacts",
-        key: `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`,
+        bucket: "test-private-artifacts",
+        key: `private-artifacts/${canonicalAssetId}/report.csv`,
         size: 42,
         body: Buffer.alloc(42, "a"),
         metadata: {
@@ -1216,14 +1205,9 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     });
   });
 
-  it.each([
-    { privateFiles: false, artifactUpload: false },
-    { privateFiles: true, artifactUpload: false },
-    { privateFiles: false, artifactUpload: true },
-    { privateFiles: true, artifactUpload: true },
-  ])(
-    "keeps one canonical output across Slack and Drive after a flag change (private=$privateFiles, artifactUpload=$artifactUpload)",
-    async ({ privateFiles, artifactUpload }) => {
+  it.each([false, true])(
+    "keeps one private canonical output across Slack and Drive (artifactUpload=%s)",
+    async (artifactUpload) => {
       const fixture = createUploadFixture();
       const { seedRunScoped, okouToken, sandboxToken, claimRun } = fixture;
       await fixture.run(async () => {
@@ -1231,13 +1215,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           await fixture.run(() => {
             return seedRunScoped();
           });
-        await fixture.run(() => {
-          return updateFeatureSwitchesForUser(
-            context,
-            { userId, orgId },
-            { [FeatureSwitchKey.PrivateArtifacts]: privateFiles },
-          );
-        });
         const objectStore = chatCallbacks.acceptChatObjectStorage();
         const operationId = randomUUID();
         const token = okouToken({
@@ -1282,40 +1259,16 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
         }
         const canonicalAssetId = initialized.body.assetId;
         expect(initialized.body.kind).toBe("canonical");
-        expect(initialized.body.uploadHeaders).toStrictEqual(
-          privateFiles
-            ? {
-                "x-amz-meta-artifact-id": canonicalAssetId,
-              }
-            : {
-                "x-amz-meta-artifact-id": canonicalAssetId,
-                "x-amz-meta-filename": "report.csv",
-                "x-amz-meta-public-brand": "okou",
-                "x-amz-meta-user-id": encodeURIComponent(userId),
-              },
-        );
+        expect(initialized.body.uploadHeaders).toStrictEqual({
+          "x-amz-meta-artifact-id": canonicalAssetId,
+        });
         expect(
           context.mocks.slack.files.getUploadURLExternal,
         ).not.toHaveBeenCalled();
-        const storageKey = privateFiles
-          ? `private-artifacts/${canonicalAssetId}/report.csv`
-          : `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`;
-        if (privateFiles) {
-          expect(initialized.body.url).toMatch(
-            /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.csv$/u,
-          );
-        } else {
-          expect(initialized.body.url).toMatch(
-            /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.csv$/u,
-          );
-        }
-        await fixture.run(() => {
-          return updateFeatureSwitchesForUser(
-            context,
-            { userId, orgId },
-            { [FeatureSwitchKey.PrivateArtifacts]: !privateFiles },
-          );
-        });
+        const storageKey = `private-artifacts/${canonicalAssetId}/report.csv`;
+        expect(initialized.body.url).toMatch(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.csv$/u,
+        );
         const retry = await fixture.run(() => {
           return accept(
             initClient.init({
@@ -1344,16 +1297,12 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1],
         ).toMatchObject({
           input: {
-            Bucket: privateFiles
-              ? "test-private-artifacts"
-              : "test-user-artifacts",
+            Bucket: "test-private-artifacts",
             Key: storageKey,
           },
         });
         objectStore.addObject({
-          bucket: privateFiles
-            ? "test-private-artifacts"
-            : "test-user-artifacts",
+          bucket: "test-private-artifacts",
           key: storageKey,
           size: 42,
           body: Buffer.alloc(42, "a"),
@@ -1442,33 +1391,30 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           assetId: canonicalAssetId,
           deliveryStatus: "delivered",
         });
-
-        if (privateFiles) {
-          await fixture.run(() => {
-            return chatApi.requestSendEvent(
-              actorFor({ orgId, userId }),
-              {
-                agentId,
-                prompt: "Reuse the existing output as an attachment",
-                userMessage: {
-                  version: 1,
-                  parts: [
-                    {
-                      type: "file",
-                      fileId: canonicalAssetId,
-                      filenameSnapshot: "report.csv",
-                      contentType: "text/csv",
-                    },
-                  ],
-                },
+        await fixture.run(() => {
+          return chatApi.requestSendEvent(
+            actorFor({ orgId, userId }),
+            {
+              agentId,
+              prompt: "Reuse the existing output as an attachment",
+              userMessage: {
+                version: 1,
+                parts: [
+                  {
+                    type: "file",
+                    fileId: canonicalAssetId,
+                    filenameSnapshot: "report.csv",
+                    contentType: "text/csv",
+                  },
+                ],
               },
-              [201],
-            );
-          });
-          await fixture.run(() => {
-            return flushWaitUntilForTest();
-          });
-        }
+            },
+            [201],
+          );
+        });
+        await fixture.run(() => {
+          return flushWaitUntilForTest();
+        });
         const files = await fixture.run(() => {
           return visibleUploadedFiles({
             orgId,
@@ -1887,16 +1833,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           );
         });
         expect(driveUploadBodies).toHaveLength(4);
-
-        // Public upload writers have no canonical materialization state. They
-        // remain independently uploadable both with and without a catalog row.
-        await fixture.run(() => {
-          return updateFeatureSwitchesForUser(
-            context,
-            { userId, orgId },
-            { [FeatureSwitchKey.PrivateArtifacts]: false },
-          );
-        });
         const ordinary = await fixture.run(() => {
           return chatApi.prepareUpload(actor, {
             filename: "ordinary.csv",
@@ -1906,8 +1842,8 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
           });
         });
         objectStore.addObject({
-          bucket: "test-user-artifacts",
-          key: `artifacts/${new URL(ordinary.url).pathname.replace(/^\/+/u, "")}`,
+          bucket: "test-private-artifacts",
+          key: `private-artifacts/${ordinary.id}/ordinary.csv`,
           size: 42,
           body: Buffer.alloc(42, "b"),
           metadata: {

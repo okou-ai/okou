@@ -31,7 +31,7 @@ function buildIntegrationToolsPrompt(
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
-    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`.",
+    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     ...(deliveryFormatGuidanceEnabled
       ? [
@@ -58,7 +58,6 @@ function buildIntegrationToolsPrompt(
 export interface AgentToolsPromptInputs {
   readonly artifactPreviewsEnabled: boolean;
   readonly walletEnabled: boolean;
-  readonly privateArtifactsEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -77,10 +76,6 @@ export function buildAgentToolsPromptInputs(args: {
   return {
     artifactPreviewsEnabled: isFeatureEnabled(
       FeatureSwitchKey.ArtifactPreviews,
-      context,
-    ),
-    privateArtifactsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PrivateArtifacts,
       context,
     ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
@@ -112,12 +107,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "# Agent Tools",
     "You have access to the Okou CLI. Run commands with: `okou <command>`.",
     "- Discover available commands: `okou --help`.",
-    ...(args.privateArtifactsEnabled
-      ? [
-          "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
-        ]
-      : []),
+    "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+    "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     ...(args.vncEnabled

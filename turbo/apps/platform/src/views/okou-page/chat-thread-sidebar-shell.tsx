@@ -160,5 +160,6 @@ export function ChatThreadSidebarShell({
         panes
       )}
     </div>,
+    { measureWidth: true },
   );
 }

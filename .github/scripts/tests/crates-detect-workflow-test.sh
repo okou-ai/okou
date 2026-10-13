@@ -57,7 +57,7 @@ jq -e '
   ) and
   any($detect.steps[]?;
     .id == "runner-tests" and
-    .run == ".github/scripts/runner-image-context.sh crates-consumer"
+    .run == ".github/scripts/runner/runner-image-context.sh crates-consumer"
   ) and
   any($detect.steps[]?;
     .id == "runner-job-ref" and
@@ -100,7 +100,7 @@ jq -e '
   ] | sort) and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
   any($host_cpu_build.steps[]?;
-    .run == "bash .github/scripts/runner-native-test-artifact.sh build"
+    .run == "bash .github/scripts/runner/runner-native-test-artifact.sh build"
   ) and
   any($host_cpu.steps[]?;
     .run == ".github/scripts/runner-behavior-host-cpu-fairness.sh"

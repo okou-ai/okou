@@ -110,7 +110,7 @@ jobs = YAML.load_file(ARGV.fetch(0)).fetch('jobs')
 native = jobs.fetch('guest-rpc-firecracker-test')
 raise 'native test must follow its selected image and compiled binary' unless native.fetch('needs') == ['runner-test-prepare', 'guest-rpc-firecracker-build']
 raise 'container steps require Bash' unless native.dig('defaults', 'run', 'shell') == 'bash'
-validation = native.fetch('steps').index { |step| step['run'] == 'bash .github/scripts/runner-native-test-artifact.sh validate' }
+validation = native.fetch('steps').index { |step| step['run'] == 'bash .github/scripts/runner/runner-native-test-artifact.sh validate' }
 ssh_setup = native.fetch('steps').index { |step| step['uses'] == './.github/actions/setup-ssh-tunnel' }
 raise 'native artifact must be validated before contacting metal' unless validation && ssh_setup && validation < ssh_setup
 %w[rootfs snapshot].each do |kind|

@@ -6,7 +6,6 @@ import {
   artifactSharesContract,
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -311,7 +310,6 @@ test("Share permission radios own their arrows without changing the lightbox ima
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   const dialog = await openGallery();
   await user.click(getNamedButton("Share", dialog));

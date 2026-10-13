@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ChatResourcePanel]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat resources",
+    description:
+      "Show a responsive panel of outputs and links from the current chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.TailscaleAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Tailscale setup",
@@ -319,13 +327,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
-  },
-  // Every artifact privacy slice in #32492 uses this same rollout switch.
-  [FeatureSwitchKey.PrivateArtifacts]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Use private artifact storage, the Okou viewer, and organization and public sharing.",
-    enabled: true,
   },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",

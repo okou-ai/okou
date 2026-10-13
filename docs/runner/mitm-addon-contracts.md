@@ -493,6 +493,15 @@ record (4096 bytes). Non-pipe stderr and transport setup/write errors also drop
 the event. Input validation and serialization errors still propagate. This
 best-effort policy does not change billing delivery or run-local JSONL logging.
 
+Model usage parse-error diagnostics retain at most four initial warnings per
+SSE response or activated Responses WebSocket flow. The quota is spent before
+JSON serialization, so cumulative warnings stay bounded even when the JSONL
+writer drains continuously. WebSocket parser-error kinds share one quota;
+valid later messages and correlation transitions do not refill it. Inspection,
+parse-error accounting, independent correlation diagnostics, message forwarding,
+and valid usage recovery continue after exhaustion. Each WebSocket flow owns its
+budget, released with its state by the end or connection-error hook.
+
 ### Capture header inspection
 
 Opt-in network capture serializes a header prefix bounded to 512 raw fields

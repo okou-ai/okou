@@ -1,6 +1,5 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -182,7 +181,6 @@ test.each([false, true])(
             },
           }
         : {}),
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
     });
 
     const card = await screen.findByTestId("markdown-artifact-preview-html");

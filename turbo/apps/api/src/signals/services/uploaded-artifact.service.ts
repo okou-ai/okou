@@ -18,7 +18,6 @@ import {
 } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
-  privateArtifactCreationEnabled$,
   completePrivateArtifact$,
   privateArtifactRecord$,
   privateArtifactUrl,
@@ -35,29 +34,17 @@ export const allocateUploadedArtifact$ = command(
       readonly contentType: string;
       readonly size: number;
       readonly purpose?: "artifact";
-      readonly privateArtifacts?: boolean;
       readonly id?: string;
       readonly variant?: string;
     },
     signal: AbortSignal,
   ) => {
     if (args.orgId) {
-      const privateArtifacts =
-        args.privateArtifacts ??
-        (await set(
-          privateArtifactCreationEnabled$,
-          args.orgId,
-          args.userId,
-          signal,
-        ));
-      signal.throwIfAborted();
-      if (privateArtifacts) {
-        return await set(
-          allocatePrivateArtifact$,
-          { ...args, orgId: args.orgId },
-          signal,
-        );
-      }
+      return await set(
+        allocatePrivateArtifact$,
+        { ...args, orgId: args.orgId },
+        signal,
+      );
     }
     const artifact = await set(allocateArtifactObject$, args, signal);
     return {
@@ -117,8 +104,7 @@ export const uploadedArtifactObject$ = command(
   async ({ get, set }, args: UploadedArtifactIdentity, signal: AbortSignal) => {
     const record = await set(privateArtifactRecord$, args.id, signal);
     if (record) {
-      // This check never consults the rollout switch. Disabling creation must
-      // not remove authorization or try the public bucket for a private ID.
+      // A private ID must pass ownership checks before any storage access.
       if (record.userId !== args.userId || record.orgId !== args.orgId) {
         return null;
       }

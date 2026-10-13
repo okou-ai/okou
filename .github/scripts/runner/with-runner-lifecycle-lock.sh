@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# shellcheck source=.github/scripts/cloudflare-ssh-diagnostics.sh
+# shellcheck source=.github/scripts/runner/cloudflare-ssh-diagnostics.sh
 source "$(dirname "${BASH_SOURCE[0]}")/cloudflare-ssh-diagnostics.sh"
 
 usage() {

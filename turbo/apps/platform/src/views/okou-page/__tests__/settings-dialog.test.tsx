@@ -76,6 +76,7 @@ function createPreferences(
     pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault: true,
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,
