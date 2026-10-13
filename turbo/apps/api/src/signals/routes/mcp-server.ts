@@ -1,5 +1,8 @@
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatEventsContract,
   chatThreadEventsContract,
@@ -29,6 +32,7 @@ import { serveMcpRequest } from "../external/mcp-server";
 import type { RouteEntry } from "../route-entry";
 import { getMemberRoleAndUpdateCache$ } from "../services/auth.service";
 import { mcpChatSearch } from "../services/mcp-chat-search.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { awaitWithSignal, settle } from "../utils";
 import { agentsRoutes } from "./agents";
 import { chatEventsRoutes } from "./chat-events";
@@ -59,6 +63,7 @@ const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
     chatThreadEventsContract.rows,
     mcpChatSearchContract.search,
     chatThreadActivitySummaryContract.summarize,
+    chatInputStatusContract.get,
     chatEventsContract.send,
     chatThreadRenameContract.rename,
     chatThreadModelSelectionContract.update,
@@ -186,10 +191,20 @@ const mcpRequest$ = command(async ({ get, set }, rootSignal: AbortSignal) => {
   if (membership.value.kind !== "member") {
     return challenge(config.metadataUrl, "invalid_token");
   }
+  const featureContext = await set(
+    loadUserFeatureSwitchContext$,
+    principal.orgId,
+    principal.userId,
+    signal,
+  );
   return await serveMcpRequest(
     new Request(original, { signal }),
     {
       scopes: principal.scopes,
+      chatInputStatusEnabled: isFeatureEnabled(
+        FeatureSwitchKey.ChatInputStatus,
+        featureContext,
+      ),
       requestWebApi: async (webRequest, operationSignal) => {
         const headers = new Headers(webRequest.headers);
         headers.set("Authorization", authorization);

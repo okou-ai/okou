@@ -7,6 +7,7 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
   chatEventsContract,
@@ -44,6 +45,7 @@ import { onRejection, settleIncludingAbort } from "../utils";
 
 interface McpChatAccess {
   readonly scopes: readonly string[];
+  readonly chatInputStatusEnabled: boolean;
   readonly requestWebApi: (
     request: Request,
     signal: AbortSignal,
@@ -541,11 +543,42 @@ const activity = chatThreadActivitySummaryContract.summarize;
 const rename = chatThreadRenameContract.rename;
 const model = chatThreadModelSelectionContract.update;
 
+function registerInputStatusTool(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  if (access.chatInputStatusEnabled) {
+    registerWebTool(
+      server,
+      access,
+      {
+        name: "get_chat_input_status",
+        scope: "okou:chat:read",
+        description: chatInputStatusContract.get.description,
+        inputSchema: chatInputStatusContract.get.pathParams,
+        outputSchema: chatInputStatusContract.get.responses[200],
+        annotations: readAnnotations,
+        operation: (pathParams, signal) => {
+          return requestWebApi(
+            access,
+            chatInputStatusContract.get,
+            { pathParams },
+            signal,
+          );
+        },
+      },
+      requestSignal,
+    );
+  }
+}
+
 function registerReadTools(
   server: McpServer,
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  registerInputStatusTool(server, access, requestSignal);
   registerWebTool(
     server,
     access,
@@ -741,7 +774,11 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Does not wait for a Run or provide safe retries after a lost acknowledgement.",
+        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. " +
+        (access.chatInputStatusEnabled
+          ? "Use get_chat_input_status with threadId and eventId for a bounded read of its queue/consumption state and matching Run outcome. "
+          : "") +
+        "Does not wait for a Run or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,
