@@ -18,6 +18,7 @@ import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { clerk$, currentOrgInfo$, user$ } from "./auth.ts";
 import { isOrgAdmin$ } from "./org.ts";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
+import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
 import { onRef, resetSignal } from "./utils.ts";
 
 const cloudflareAccessChangedPayloadSchema = z
@@ -68,6 +69,7 @@ export const invalidateCloudflareAccess$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateRemoteAccess$);
 });
 
 export const cloudflareAccessConfigs$ = computed(async (get) => {
@@ -313,7 +315,11 @@ async function updateCloudflareAccessConfig(
     return result.status === 204 ? null : result.body.error.code;
   }
   const name = textField(form, "accessName").trim();
-  if (name === config.name && !editor.replace) {
+  if (
+    editor.reviewedRevision === null &&
+    name === config.name &&
+    !editor.replace
+  ) {
     return null;
   }
   const result = await accept(
@@ -322,7 +328,7 @@ async function updateCloudflareAccessConfig(
       query: { view: "scoped" },
       body: {
         expectedRevision,
-        ...(name !== config.name ? { name } : {}),
+        name,
         ...(editor.replace ? { credentials: credentialsFromForm(form) } : {}),
       },
       fetchOptions: { signal },
@@ -558,6 +564,7 @@ export const reviewCloudflareAccessConversion$ = command(({ set }) => {
 });
 
 export const cloudflareAccessConversionPreview$ = computed(async (get) => {
+  get(reload$);
   get(conversionPreviewReload$);
   const dialog = await get(cloudflareAccessConversionDialog$);
   if (!dialog) {
@@ -732,6 +739,7 @@ export const reviewCloudflareAccessDeletion$ = command(({ set }) => {
   set(invalidateCloudflareAccess$);
 });
 export const cloudflareAccessDeletionPreview$ = computed(async (get) => {
+  get(reload$);
   get(deletionReload$);
   const dialog = await get(cloudflareAccessDeletionDialog$);
   if (!dialog) {
