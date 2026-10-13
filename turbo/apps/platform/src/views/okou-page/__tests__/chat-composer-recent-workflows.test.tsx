@@ -2,14 +2,13 @@ import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   click,
   fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
   AGENT_ID,
@@ -71,14 +70,28 @@ function workflowNames(): string[] {
     });
 }
 
-function seedHistory(
-  ids: readonly string[],
-  user = "test-user-123",
-  org = "org_default",
+function mockHistory(
+  histories: readonly {
+    readonly ids: readonly string[];
+    readonly user?: string;
+    readonly org?: string;
+  }[],
 ) {
-  // Browser storage is the external persistence boundary, not composer state.
-  const storage = localStorageSignals(`recent-workflows:${user}:${org}`);
-  context.store.set(storage.set$, JSON.stringify(ids));
+  const values = new Map(
+    histories.map(({ ids, user = "test-user-123", org = "org_default" }) => {
+      return [`okou_recent-workflows:${user}:${org}`, JSON.stringify(ids)];
+    }),
+  );
+  vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+    return values.get(key) ?? null;
+  });
+  vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    values.set(key, value);
+  });
+  vi.spyOn(localStorage, "removeItem").mockImplementation((key) => {
+    values.delete(key);
+  });
+  return values;
 }
 
 async function openComposer(enabled = true, path = `/chats/${THREAD_ID}`) {
@@ -210,15 +223,58 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
   });
 });
 
+test("An accepted use retains history written by another browser tab", async () => {
+  const workflows = mockWorkflows();
+  const history = mockHistory([]);
+  const [zulu, , echo] = workflows;
+  if (!zulu || !echo) {
+    throw new Error("Expected workflow fixtures");
+  }
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  const editor = await openComposer();
+  for (const name of ["zulu", "delta"]) {
+    await fill(editor, `/${name}`);
+    await waitFor(() => {
+      expect(button("Send")).toBeEnabled();
+    });
+    click(button("Send"));
+    await waitFor(() => {
+      expect(editor.textContent).toBe("");
+    });
+    await fill(editor, "Next draft");
+    await waitFor(() => {
+      expect(button("Send")).toBeEnabled();
+    });
+    if (name === "zulu") {
+      // Supply another tab's write at the browser Storage boundary.
+      history.set(
+        "okou_recent-workflows:test-user-123:org_default",
+        JSON.stringify([echo.id, zulu.id]),
+      );
+    }
+  }
+  await fill(editor, "Draft /");
+  await waitFor(() => {
+    expect(workflowNames()).toStrictEqual([
+      "/delta",
+      "/echo",
+      "/zulu",
+      "/alpha",
+    ]);
+  });
+});
+
 test("Persisted recency is isolated by user and workspace and ignores unavailable workflow ids", async () => {
   const workflows = mockWorkflows();
   const [zulu, , echo, , alpha] = workflows;
   if (!zulu || !echo || !alpha) {
     throw new Error("Expected workflow fixtures");
   }
-  seedHistory(["deleted-workflow", echo.id]);
-  seedHistory([zulu.id], "another-user");
-  seedHistory([alpha.id], "test-user-123", "another-org");
+  mockHistory([
+    { ids: ["deleted-workflow", echo.id] },
+    { ids: [zulu.id], user: "another-user" },
+    { ids: [alpha.id], org: "another-org" },
+  ]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   expect(workflowNames()).toStrictEqual([
@@ -231,11 +287,13 @@ test("Persisted recency is isolated by user and workspace and ignores unavailabl
 
 test("Recency leaves typed search order unchanged", async () => {
   const workflows = mockWorkflows();
-  seedHistory(
-    workflows.map((workflow) => {
-      return workflow.id;
-    }),
-  );
+  mockHistory([
+    {
+      ids: workflows.map((workflow) => {
+        return workflow.id;
+      }),
+    },
+  ]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   const user = userEvent.setup();
@@ -252,11 +310,13 @@ test("Recency leaves typed search order unchanged", async () => {
 
 test("Disabling anchored suggestions retains the original full workflow order", async () => {
   const workflows = mockWorkflows();
-  seedHistory(
-    [...workflows].reverse().map((workflow) => {
-      return workflow.id;
-    }),
-  );
+  mockHistory([
+    {
+      ids: [...workflows].reverse().map((workflow) => {
+        return workflow.id;
+      }),
+    },
+  ]);
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer(false);
   expect(workflowNames()).toStrictEqual([

@@ -17,6 +17,12 @@ function workflowStorageKey(identity: { userId: string; orgId: string }) {
   return `recent-workflows:${identity.userId}:${identity.orgId}`;
 }
 
+const recentWorkflowStorage$ = computed(async (get) => {
+  return localStorageSignals(
+    workflowStorageKey(await get(authenticatedIdentity$)),
+  );
+});
+
 function readRecentWorkflowIds(value: string | null): readonly string[] {
   const parsed = recentWorkflowIdsSchema.safeParse(
     jsonParseOr<unknown>(value ?? "[]", null),
@@ -49,7 +55,7 @@ export function createRecentWorkflowIds(
 }
 
 interface RecentWorkflowUse {
-  readonly identity: Promise<{ userId: string; orgId: string }>;
+  readonly storage: Promise<ReturnType<typeof localStorageSignals>>;
   readonly workflowIds: readonly string[];
 }
 
@@ -58,7 +64,7 @@ export const captureRecentWorkflowUse$ = command(
     if (!get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
       return null;
     }
-    return { identity: get(authenticatedIdentity$), workflowIds };
+    return { storage: get(recentWorkflowStorage$), workflowIds };
   },
 );
 
@@ -95,17 +101,15 @@ export const prepareRecentWorkflowUse$ = command(
 
 export const recordRecentWorkflowUse$ = command(
   async (
-    { get, set },
+    { set },
     usage: RecentWorkflowUse,
     signal: AbortSignal,
   ): Promise<void> => {
     // Read fresh storage on every accepted use, including updates from tabs
     // that share this user and workspace.
-    const storage = localStorageSignals(
-      workflowStorageKey(await usage.identity),
-    );
+    const storage = await usage.storage;
     signal.throwIfAborted();
-    const previous = readRecentWorkflowIds(get(storage.get$));
+    const previous = readRecentWorkflowIds(set(storage.readFresh$));
     const ids = [...new Set([...usage.workflowIds, ...previous])];
     set(storage.set$, JSON.stringify(ids));
   },
