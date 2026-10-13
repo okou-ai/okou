@@ -55,13 +55,13 @@ async fn desktop(
     let bridge = async {
         let mut forwarded = h.accept_forwarded().await;
         let mut target = TcpStream::connect(peer.address).await.unwrap();
-        tokio::spawn(async move {
+        BridgeTask(tokio::spawn(async move {
             let _ = tokio::io::copy_bidirectional(&mut forwarded, &mut target).await;
             let _ = forwarded.shutdown().await;
             let _ = target.shutdown().await;
-        })
+        }))
     };
-    let (started, bridge) = tokio::join!(start, bridge);
+    let (started, BridgeTask(bridge)) = tokio::join!(start, bridge);
     assert_eq!(terminal(&started)["outcome"], "started");
     let session = terminal(&started)["session"]["sessionId"]
         .as_str()
