@@ -227,7 +227,7 @@ test("is unavailable with a flag-off token and rejects a previously issued token
   await accept(client().connect({ headers: active.headers, body: {} }), [403]);
 });
 
-test("returns hosted PKCE consent, binds the callback to the session owner, and consumes state once", async () => {
+test("accepts hosted PKCE consent after 20 minutes, binds the callback to the session owner, and consumes state once", async () => {
   const fixture = await carrier();
   let verifierMatches = false;
   const started = await accept(
@@ -276,6 +276,7 @@ test("returns hosted PKCE consent, binds the callback to the session owner, and 
     [400],
   );
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  mockNow(now() + 20 * 60_000);
   const callback = await accept(
     callbackClient().callback({
       headers: sessionHeaders,
@@ -336,7 +337,7 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
     client().connect({ headers: fixture.headers, body: {} }),
     [200],
   );
-  mockNow(now() + 11 * 60_000);
+  mockNow(new Date(expired.body.expiresAt).getTime());
   await accept(
     callbackClient().callback({
       headers: sessionHeaders,

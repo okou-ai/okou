@@ -2959,6 +2959,7 @@
       "genericLabel": "連接器",
       "githubLabel": "GitHub",
       "invalidUrl": "連接器回呼 URL 無效。",
+      "linkLabel": "Link",
       "mercuryAttribution": "由 Mercury 提供支援",
       "mercuryDisclosure": "Mercury 是一家金融科技公司，不是受 FDIC 承保的銀行。銀行服務由 Choice Financial Group 和 Column N.A. 提供，兩者均為 FDIC 成員。",
       "mercuryDisclosureLabel": "Mercury 銀行服務披露",
