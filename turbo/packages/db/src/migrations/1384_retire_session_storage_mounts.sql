@@ -1,0 +1,1 @@
+ALTER TABLE "agent_sessions" DROP COLUMN "storage_mounts";

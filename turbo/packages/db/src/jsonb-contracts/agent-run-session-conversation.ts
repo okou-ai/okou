@@ -41,4 +41,3 @@ export interface AgentRunOfficialWorkflowProvenance {
 }
 export type AgentRunResult = JsonValue;
 export type AgentRunStorageMounts = PersistedStorageMount[];
-export type AgentSessionStorageMounts = PersistedStorageMount[];
