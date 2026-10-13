@@ -273,7 +273,7 @@ impl Service {
                     let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
                     assert_eq!(
                         body,
-                        serde_json::json!({"expirySeconds":86400,"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}})
+                        serde_json::json!({"expirySeconds":7200,"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}})
                     );
                 }
                 _ => {
@@ -407,7 +407,7 @@ pub(super) fn key_response() -> Vec<u8> {
     let created = chrono::Utc::now();
     serde_json::to_vec(&serde_json::json!({
         "id":"captured/?other#id", "key":"tskey-auth-synthetic-one-use",
-        "created":created.to_rfc3339(), "expires":(created+chrono::Duration::days(1)).to_rfc3339(),
+        "created":created.to_rfc3339(), "expires":(created+chrono::Duration::hours(2)).to_rfc3339(),
         "capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}
     })).unwrap()
 }

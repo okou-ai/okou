@@ -19,6 +19,7 @@ const TOKEN_PATH: &str = "/api/v2/oauth/token";
 // The first-party OAuth contract defines '-' as the access token's own tailnet.
 // No user-controlled tailnet selector or discovery scope is needed.
 const KEYS_PATH: &str = "/api/v2/tailnet/-/keys";
+const AUTH_KEY_EXPIRY_SECONDS: u32 = 2 * 60 * 60;
 
 struct Token {
     secret: SecretText<4096>,
@@ -111,7 +112,7 @@ impl<D: Dial> Provider<D> {
             tags: &'a [String],
         }
         let request = Create {
-            expiry_seconds: 86400,
+            expiry_seconds: AUTH_KEY_EXPIRY_SECONDS,
             capabilities: Capabilities {
                 devices: Devices {
                     create: Permission {
@@ -169,7 +170,7 @@ impl<D: Dial> Provider<D> {
         let now = chrono::Utc::now();
         if expires <= now
             || created > now + chrono::Duration::seconds(60)
-            || (expires - created).num_seconds() != 86400
+            || (expires - created).num_seconds() != i64::from(AUTH_KEY_EXPIRY_SECONDS)
         {
             return Err(Failure::DomainFailed);
         }
