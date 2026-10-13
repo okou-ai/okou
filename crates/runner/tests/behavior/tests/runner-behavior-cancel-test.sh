@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-cancel_script=${1:-"$repo_root/.github/scripts/runner-behavior-cancel-remote.sh"}
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
+cancel_script=${1:-"$repo_root/crates/runner/tests/behavior/runner-behavior-cancel-remote.sh"}
 fixture_root=$(mktemp -d)
 declare -a worker_pids=()
 declare -a held_fds=()

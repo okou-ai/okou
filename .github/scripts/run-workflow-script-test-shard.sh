@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 TESTS_DIR="${WORKFLOW_SCRIPT_TESTS_DIR:-${SCRIPT_DIR}/tests}"
 MANIFEST="${WORKFLOW_SCRIPT_TEST_MANIFEST:-${SCRIPT_DIR}/workflow-script-test-shards.txt}"
 SHARD_COUNT="${WORKFLOW_SCRIPT_TEST_SHARD_COUNT:-4}"
@@ -27,8 +28,20 @@ ACTUAL_TESTS="${WORK_DIR}/actual-tests"
 MANIFEST_TESTS="${WORK_DIR}/manifest-tests"
 NORMALIZED_MANIFEST="${WORK_DIR}/manifest"
 
-find "$TESTS_DIR" -maxdepth 1 -type f -name '*.sh' -printf '%f\n' |
-  LC_ALL=C sort > "$ACTUAL_TESTS"
+find "$TESTS_DIR" -maxdepth 1 -type f -name '*.sh' -printf '%f\n' > "$ACTUAL_TESTS"
+# Native suites keep their actual owners while retaining the existing shards.
+# An explicit CI test-directory override selects only that isolated fixture.
+if [[ -z "${WORKFLOW_SCRIPT_TESTS_DIR:-}" ]]; then
+  (
+    cd "$REPO_ROOT"
+    find crates/runner/tests/behavior/tests \
+      crates/sandbox-firecracker/tests/native/tests \
+      crates/nbd-cow/tests/infrastructure \
+      crates/kerberos-worker/tests/infrastructure \
+      -maxdepth 1 -type f -name '*.sh' -print
+  ) >> "$ACTUAL_TESTS"
+fi
+LC_ALL=C sort -o "$ACTUAL_TESTS" "$ACTUAL_TESTS"
 
 line_number=0
 while read -r shard test_script extra; do
@@ -40,14 +53,28 @@ while read -r shard test_script extra; do
     continue
   fi
   if [[ -n "${extra:-}" ]]; then
-    fail "manifest line ${line_number} must contain exactly a shard and test filename"
+    fail "manifest line ${line_number} must contain exactly a shard and test path"
   fi
   if [[ ! "${shard:-}" =~ ^[1-9][0-9]*$ ]] || ((shard > SHARD_COUNT)); then
     fail "manifest line ${line_number} has invalid shard: ${shard:-<empty>}"
   fi
-  if [[ -z "${test_script:-}" || "$test_script" != "${test_script##*/}" || "$test_script" != *-test.sh ]]; then
-    fail "manifest line ${line_number} has invalid test filename: ${test_script:-<empty>}"
+  if [[ -z "${test_script:-}" || "$test_script" != *-test.sh ]]; then
+    fail "manifest line ${line_number} has invalid test path: ${test_script:-<empty>}"
   fi
+  case "$test_script" in
+    */*)
+      [[ -z "${WORKFLOW_SCRIPT_TESTS_DIR:-}" ]] || fail "native paths cannot use a CI test-directory override"
+      # Only a direct file under an owned root is accepted; no traversal/nesting.
+      native_directory=${test_script%/*}
+      case "$native_directory" in
+        crates/runner/tests/behavior/tests | \
+        crates/sandbox-firecracker/tests/native/tests | \
+        crates/nbd-cow/tests/infrastructure | \
+        crates/kerberos-worker/tests/infrastructure) ;;
+        *) fail "manifest line ${line_number} has invalid native test path: ${test_script}" ;;
+      esac
+      ;;
+  esac
   printf '%s %s\n' "$shard" "$test_script" >> "$NORMALIZED_MANIFEST"
   printf '%s\n' "$test_script" >> "$MANIFEST_TESTS"
 done < "$MANIFEST"
@@ -99,7 +126,11 @@ while read -r shard test_script; do
   echo "::group::${test_script}"
   test_started_ns="$(date +%s%N)"
   set +e
-  bash "${TESTS_DIR}/${test_script}"
+  if [[ "$test_script" == crates/* ]]; then
+    bash "${REPO_ROOT}/${test_script}"
+  else
+    bash "${TESTS_DIR}/${test_script}"
+  fi
   test_status=$?
   set -e
   test_elapsed_ms=$((( $(date +%s%N) - test_started_ns ) / 1000000))

@@ -22,8 +22,8 @@ if [[ ! -e "$archive" ]]; then
   bash .github/scripts/download-verified.sh https://download.qemu.org/qemu-9.2.0.tar.xz f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894 "$archive"
 fi
 printf '%s  %s\n' f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894 "$archive" | sha256sum -c -
-python3 -B .github/scripts/tests/test-qemu-gssapi-producer.py
-runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py --source-archive "$archive")
+python3 -B crates/rfb-client/tests/fixtures/test-qemu-gssapi-producer.py
+runtime=$(python3 -B crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py --source-archive "$archive")
 python3 -B - "$runtime" "$receipt" <<'PY'
 import hashlib,json,os,pathlib,platform,shutil,subprocess,sys
 root,out=map(pathlib.Path,sys.argv[1:])

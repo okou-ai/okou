@@ -4,6 +4,15 @@
 
 Rust crates live in `crates/` and use `cargo test` for testing. The same principles from [testing.md](../testing.md) apply: integration tests are primary, mock at the boundary, use real infrastructure.
 
+Native command/fixture invocation belongs with its owning tests:
+[Runner behavior](../../crates/runner/tests/behavior/),
+[sandbox-firecracker native drivers](../../crates/sandbox-firecracker/tests/native/),
+[nbd-cow native execution](../../crates/nbd-cow/tests/README.md),
+[Kerberos worker](../../crates/kerberos-worker/README.md) and
+[RFB/GSSAPI fixtures](../../crates/rfb-client/tests/QEMU_GSSAPI.md).
+Their local infrastructure regressions remain registered in the existing CI
+script shards; GitHub-specific artifact and workflow adapters stay in `.github`.
+
 Runner's full suite includes a real Rust/Python registry-control round trip.
 First run `uv sync --locked --project crates/runner/mitm-addon` from the repository
 root, as described in the [addon guide](mitm-addon-testing.md). The test uses that

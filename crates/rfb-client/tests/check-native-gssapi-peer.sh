@@ -4,8 +4,8 @@
 # namespaces. No host packages, policy, /run, external KDCs or real credentials.
 set -euo pipefail
 [[ $# == 0 ]] || { echo 'usage: check-native-gssapi-peer.sh' >&2; exit 1; }
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
-source .github/scripts/native-test-environment.sh
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.."
+source crates/kerberos-worker/tests/native-test-environment.sh
 arch=$(uname -m)
 case "$arch" in x86_64|aarch64) ;; *) echo 'unsupported native GSSAPI architecture' >&2; exit 1 ;; esac
 receipt="$PWD/crates/target/native-gssapi-peer-receipt"
@@ -20,7 +20,7 @@ done
 # provisioning/native execution. A failed preflight cannot retain old success.
 native_build python3 -B -m unittest discover -s crates/rfb-client/tests/fixtures \
   -p qemu_gssapi_runtime_test.py
-runtime=$(native_build python3 .github/scripts/prepare-kerberos-peer-fixture.py)
+runtime=$(native_build python3 crates/rfb-client/tests/fixtures/prepare-kerberos-peer-fixture.py)
 native_build cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
   -p rfb-client --test qemu_gssapi --no-run --message-format=json-render-diagnostics \
   > "$receipt/compiler.json"

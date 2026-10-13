@@ -15,7 +15,7 @@ set -euo pipefail
 [[ "$DEFAULT_ROOTFS_HASH" =~ ^[0-9a-f]{64}$ && "$DEFAULT_SNAPSHOT_HASH" =~ ^[0-9a-f]{64}$ ]]
 test -x "$TEST_BIN"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 FC_VERSION=$(sed -n 's/^pub const FIRECRACKER_VERSION: &str = "\([^"]*\)";$/\1/p' "$REPO_ROOT/crates/runner/src/deps.rs")
 KERNEL_VERSION=$(sed -n 's/^pub const KERNEL_VERSION: &str = "\([^"]*\)";$/\1/p' "$REPO_ROOT/crates/runner/src/deps.rs")
 [[ "$FC_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$KERNEL_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]

@@ -39,7 +39,7 @@ QEMU_SOURCE_EPOCH = 1733874468
 # disable the extraction filter. Exact source identity/shape still covers it.
 EXCLUDED_SOURCE_ALIAS = ("qemu-9.2.0/roms/edk2/EmulatorPkg/Unix/Host/X11IncludeHack", "/opt/X11/include")
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[4]
 QEMU_SHA256 = "f859f0bc65e1f533d040bbe8c92bcfecee5af2c921a6687c652fb44d089bd894"
 VNC_SHA256 = "3dfd2c4be76597983641fde3d99b64ac5b0d6a56b59e4d6a08edacc95075bc2d"
 FIRMWARE = {

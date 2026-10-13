@@ -48,5 +48,5 @@ scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
 
 # The durable worker receives the full run/attempt key as its job reference.
 BIN_DIR=/tmp JOB_REF="$EXECUTION_KEY" \
-  "${SCRIPT_DIR}/runner-behavior-durable.sh" host-cpu-fairness \
+  "${SCRIPT_DIR}/../../../runner/tests/behavior/runner-behavior-durable.sh" host-cpu-fairness \
   "${SCRIPT_DIR}/runner-behavior-host-cpu-fairness-remote.sh" "$DEFAULT_ROOTFS_HASH"

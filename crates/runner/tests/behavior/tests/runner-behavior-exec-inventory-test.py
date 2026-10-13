@@ -7,8 +7,8 @@ import tempfile
 import unittest
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-WORKER = REPO_ROOT / ".github/scripts/runner-behavior-exec-remote.sh"
+REPO_ROOT = Path(__file__).resolve().parents[5]
+WORKER = REPO_ROOT / "crates/runner/tests/behavior/runner-behavior-exec-remote.sh"
 EXPECTED_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EXPECTED_ENV = {
     "LANG": "C.UTF-8",
