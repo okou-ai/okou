@@ -1326,7 +1326,6 @@ const persistTeamsChatMessage$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly activity: TeamsMessageActivity;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
@@ -1503,11 +1502,10 @@ const runAgentForTeams$ = command(
       "nested",
       nowDate().getTime(),
     );
-    const db = set(writeDb$);
+    set(writeDb$);
     const persisted = await set(
       persistTeamsChatMessage$,
       {
-        db,
         activity: args.activity,
         installation: args.installation,
         connection: args.connection,
