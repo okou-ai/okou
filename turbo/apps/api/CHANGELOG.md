@@ -9,6 +9,33 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.730.0](https://github.com/okou-ai/okou/compare/api-v1.729.2...api-v1.730.0) (2026-10-13)
+
+
+### Features
+
+* **workflows:** allow ordinary and official workflows to share a name ([#39430](https://github.com/okou-ai/okou/issues/39430)) ([12e59dc](https://github.com/okou-ai/okou/commit/12e59dce01d61d3e7a5373e7dbaa90dc8c239d65))
+
+
+### Bug Fixes
+
+* **api:** start a fresh official forms interval on manual re-enable ([#39647](https://github.com/okou-ai/okou/issues/39647)) ([2b8454e](https://github.com/okou-ai/okou/commit/2b8454eac9a6684c80c802e58a498058d3540561))
+
+
+### Refactoring
+
+* **api:** own active browser instance reads ([#39646](https://github.com/okou-ai/okou/issues/39646)) ([fa290f3](https://github.com/okou-ai/okou/commit/fa290f34be207163bdc7e6252f8d5dbf936b9ee3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.554.0
+    * @okouai/core bumped to 8.748.4
+    * @okouai/db bumped to 1.333.0
+    * @okouai/pi-agent-runtime bumped to 1.49.21
+
 ## [1.729.2](https://github.com/okou-ai/okou/compare/api-v1.729.1...api-v1.729.2) (2026-10-13)
 
 

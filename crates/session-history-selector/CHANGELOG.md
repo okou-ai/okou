@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.151](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.150...session-history-selector-v0.3.151) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
 ## [0.3.150](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.149...session-history-selector-v0.3.150) (2026-10-12)
 
 ## [0.3.149](https://github.com/okou-ai/okou/compare/session-history-selector-v0.3.148...session-history-selector-v0.3.149) (2026-10-12)
