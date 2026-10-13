@@ -1092,9 +1092,9 @@ jobs:
           PROFILE: vm0/default
         run: .github/scripts/wait-runner-image.sh
 
-  # Balance by recent step medians: lanes A-D are about 139s, 138s, 151s, and
-  # 138s before per-job overhead. The bounded balloon scenario stays in lane A
-  # and caps deliberate Guest pressure allocation at 512 MiB.
+  # Keep containment alone; run the shorter cancel and systemd reload scenarios
+  # after exec to balance the parallel lanes. The bounded balloon scenario stays
+  # in lane A and caps deliberate Guest pressure allocation at 512 MiB.
   runner-behavior-lane-a:
     runs-on: ubuntu-latest
     needs: [runner-test-prepare]
@@ -1159,6 +1159,18 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: .github/scripts/runner-behavior-exec.sh
 
+      - name: Test runner local cancel
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-cancel.sh
+
+      - name: Test systemd reload coordination
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: .github/scripts/runner-behavior-systemd-reload.sh
+
   runner-behavior-lane-c:
     runs-on: ubuntu-latest
     needs: [runner-test-prepare]
@@ -1187,18 +1199,6 @@ jobs:
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: .github/scripts/runner-behavior-process-containment.sh
-
-      - name: Test runner local cancel
-        timeout-minutes: 5
-        env:
-          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-cancel.sh
-
-      - name: Test systemd reload coordination
-        timeout-minutes: 5
-        env:
-          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-systemd-reload.sh
 
   runner-behavior-lane-d:
     runs-on: ubuntu-latest
