@@ -593,7 +593,11 @@ async fn assert_codex_catalog_prefetch_skipped(
             &context,
             &config,
             RunStart {
-                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
+                sandbox_startup_path: if reuse_result == SandboxReuseResult::Reused {
+                    runner_types::types::SandboxStartupPath::Sandbox
+                } else {
+                    runner_types::types::SandboxStartupPath::Cold
+                },
                 restore_guest_state: false,
                 reuse_result,
                 home_reuse_result: if reuse_result == SandboxReuseResult::Reused {
