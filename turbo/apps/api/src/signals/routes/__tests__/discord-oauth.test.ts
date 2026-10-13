@@ -9,6 +9,7 @@ import {
 import { http, HttpResponse } from "msw";
 import { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -18,9 +19,11 @@ import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { discordOauthRoutes } from "../discord-oauth";
+import { featureSwitchesRoutes } from "../feature-switches";
 import { integrationsDiscordRoutes } from "../integrations-discord";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 const routes = Object.freeze([
@@ -485,7 +488,29 @@ async function installed(
 describe("Discord product OAuth", () => {
   it("installs the verified bot, connects the admin and welcomes only a newly committed connection", async () => {
     const f = await fixture();
-    const admin = await f.actor();
+    const admin: Actor = {
+      orgId: `org_${randomUUID()}`,
+      userId: `user_${randomUUID()}`,
+      orgRole: "org:admin",
+    };
+    f.actors.push(admin);
+    createRouteMocks(context).clerk.session(
+      admin.userId,
+      admin.orgId,
+      admin.orgRole,
+    );
+    const featureApp = await setupApp({
+      context,
+      routes: featureSwitchesRoutes,
+      isolatePg: true,
+    });
+    await accept(
+      featureApp(featureSwitchesContract).update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.DiscordIntegration]: true } },
+      }),
+      [200],
+    );
     await expect(status(admin)).resolves.toMatchObject({
       isInstalled: false,
       isConnected: false,
