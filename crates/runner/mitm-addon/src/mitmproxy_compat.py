@@ -1,4 +1,10 @@
-"""Version-locked bridges for mitmproxy state that public hooks omit."""
+"""Version-locked bridges for mitmproxy state that public hooks omit.
+
+Prefer public addon hooks and dependency APIs. Keep monkey patches and private
+state access to the minimum required by a demonstrated missing capability,
+delegate protocol logic to upstream, and retire bridges when public APIs suffice.
+See the compatibility policy in docs/runner/mitm-addon-contracts.md.
+"""
 
 import asyncio
 from contextvars import ContextVar
@@ -84,6 +90,10 @@ def _install_http_stream_bridge() -> None:
             isinstance(event, (ResponseData, ResponseTrailers, ResponseEndOfMessage))
             and self.server_state == self.state_stream_response_body
         )
+        if request_end_stream is None and not inspect_response:
+            yield from current_handler(self, event)
+            return
+
         command_generator = current_handler(self, event)
         try:
             command = next(command_generator)

@@ -5,6 +5,25 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Dependency compatibility policy
+
+Prefer documented addon hooks and public dependency APIs. Minimize monkey patches
+and reliance on private dependency logic: each adaptation must address a concrete
+capability unavailable through the public interface. Keep its affected events,
+replaced methods/classes, private state access and ordering assumptions as narrow
+as possible. A smaller replacement count alone does not establish lower risk.
+
+Keep adaptations in `mitmproxy_compat.py` and `websocket_framing.py`, delegate
+protocol state machines to upstream, and use public extension hooks when local
+behavior is required. Pass unrelated events through without adapting their command
+generators. Avoid copying upstream algorithms or accessing private compression
+state. Preserve authentication, accounting, cancellation and resource boundaries
+when simplifying an adapter.
+
+Retain exact version gates and real protocol coverage for necessary adaptations.
+Re-audit private integration when upgrading dependencies, and remove a bridge when
+a supported public API provides the required capability.
+
 ## Cooperative response inspection
 
 Model SSE scanners and opted-in connector parsers use bounded owner-loop work
