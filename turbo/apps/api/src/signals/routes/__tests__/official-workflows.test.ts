@@ -1980,6 +1980,71 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief explicit installation", () => {
+  it.each(["ordinary-first", "official-first"] as const)(
+    "keeps Morning Brief enrollment on the Official identity with same-name user content (%s)",
+    async (order) => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      await bdd.completeOnboarding(actor, { timezone: "Asia/Shanghai" });
+      const onboarding = await bdd.readOnboardingStatus(actor);
+      if (!onboarding.defaultAgentId) {
+        throw new Error("Expected the default Agent");
+      }
+      const headers = authHeaders(actor);
+      const enable = () => {
+        return accept(
+          morningBriefPreferenceClient().update({
+            headers,
+            body: { enabled: true },
+          }),
+          [200],
+        );
+      };
+      if (order === "official-first") {
+        await enable();
+      }
+      const ordinaryId = await workflowBdd.createWorkflow(actor, {
+        agentId: onboarding.defaultAgentId,
+        name: "morning-brief",
+        visibility: "private",
+        instruction: "The user's Morning Brief instructions",
+      });
+      if (order === "ordinary-first") {
+        await enable();
+      }
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation) {
+        throw new Error("Expected the enrolled Official installation");
+      }
+      expect(installation.id).not.toBe(ordinaryId);
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      expect(automation).toMatchObject({ enabled: true });
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await expect(
+        readMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([{ id: automation?.id, enabled: false }]);
+      const ordinary = await accept(
+        workflowClient().get({ headers, params: { workflowId: ordinaryId } }),
+        [200],
+      );
+      expect(ordinary.body).toMatchObject({
+        id: ordinaryId,
+        name: "morning-brief",
+        instruction: "The user's Morning Brief instructions",
+        official: null,
+      });
+    },
+  );
+
   it("installs only from the preference toggle, not initialization or onboarding", async () => {
     const { actor } = await prepareBriefMember();
     const headers = authHeaders(actor);
@@ -3149,26 +3214,44 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
   });
 
-  it("rejects an Official installation when an ordinary workflow owns the agent name", async () => {
-    const { actor, definitionName, headers, installBody, installed } =
+  it("installs an Official Workflow beside an existing same-name Private workflow", async () => {
+    const { actor, definitionName, headers, installBody } =
       await installOfficialWorkflowLifecycleScenario();
     const { agentId: ordinaryAgentId } = await workflowBdd.createAgent(actor);
 
-    await workflowBdd.createWorkflow(actor, {
+    const ordinaryId = await workflowBdd.createWorkflow(actor, {
       agentId: ordinaryAgentId,
       name: definitionName,
       visibility: "private",
+      instruction: "Preserved ordinary instructions",
     });
-    const ordinaryConflict = await accept(
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { ...installBody, agentId: ordinaryAgentId },
+      }),
+      [201],
+    );
+    expect(installed.body.workflow.id).not.toBe(ordinaryId);
+
+    const ordinary = await accept(
+      workflowClient().get({ headers, params: { workflowId: ordinaryId } }),
+      [200],
+    );
+    expect(ordinary.body).toMatchObject({
+      id: ordinaryId,
+      name: definitionName,
+      instruction: "Preserved ordinary instructions",
+      official: null,
+    });
+    await accept(
       officialClient().install({
         headers,
         params: { definitionName },
         body: { ...installBody, agentId: ordinaryAgentId },
       }),
       [409],
-    );
-    expect(ordinaryConflict.body.error.message).toBe(
-      `A private workflow named "${definitionName}" already exists on this agent`,
     );
 
     const unchanged = await accept(
@@ -3181,9 +3264,15 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
   });
 
-  it("retains the shared Private-name guard for ordinary writes beside an Official installation", async () => {
-    const { actor, agentId, definitionName, headers, installed } =
+  it("keeps ordinary creation, rename, demotion, copy and deletion independent of same-name Official identity", async () => {
+    const { actor, agentId, definitionName, headers, installed, installBody } =
       await installOfficialWorkflowLifecycleScenario();
+    const ordinary = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: definitionName,
+      visibility: "private",
+      instruction: "Preserved user content",
+    });
     await accept(
       workflowCollectionClient().create({
         headers,
@@ -3191,19 +3280,13 @@ describe("Official Workflow installations", () => {
       }),
       [409],
     );
-    const ordinary = await workflowBdd.createWorkflow(actor, {
-      agentId,
-      name: `${definitionName}-user`,
-      visibility: "private",
-      instruction: "Preserved user content",
-    });
     await accept(
       workflowClient().update({
         headers,
         params: { workflowId: ordinary },
-        body: { name: definitionName },
+        body: { name: `${definitionName}-user` },
       }),
-      [409],
+      [200],
     );
     const publicWorkflow = await workflowBdd.createWorkflow(actor, {
       agentId,
@@ -3216,7 +3299,7 @@ describe("Official Workflow installations", () => {
         headers,
         params: { workflowId: publicWorkflow },
       }),
-      [409],
+      [200],
     );
     await accept(
       workflowClient().copy({
@@ -3225,6 +3308,60 @@ describe("Official Workflow installations", () => {
         body: { toAgentId: agentId },
       }),
       [409],
+    );
+    await accept(
+      workflowClient().delete({
+        headers,
+        params: { workflowId: publicWorkflow },
+      }),
+      [204],
+    );
+    const copySource = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: definitionName,
+      visibility: "public",
+      instruction: "Public content",
+    });
+    const copied = await accept(
+      workflowClient().copy({
+        headers,
+        params: { workflowId: copySource },
+        body: { toAgentId: agentId },
+      }),
+      [201],
+    );
+    expect(copied.body).toMatchObject({
+      name: definitionName,
+      official: null,
+      visibility: "private",
+    });
+    const ordinaryAutomation = await accept(
+      automationClient().create({
+        headers,
+        params: { workflowId: copied.body.id },
+        body: { schedule: { type: "loop", intervalSeconds: 7200 } },
+      }),
+      [201],
+    );
+    await accept(
+      installationClient().reconfigure({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+        body: { blueprints: installBody.blueprints },
+      }),
+      [200],
+    );
+    const automation = installed.body.workflow.automations[0];
+    if (!automation) {
+      throw new Error("Expected an Official automation");
+    }
+    await accept(
+      automationClient().disable({ headers, params: { id: automation.id } }),
+      [200],
+    );
+    await accept(
+      automationClient().enable({ headers, params: { id: automation.id } }),
+      [200],
     );
     const unchanged = await accept(
       installationClient().get({
@@ -3236,7 +3373,6 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject({
       id: installed.body.workflow.id,
       official: installed.body.workflow.official,
-      automations: installed.body.workflow.automations,
     });
     const unchangedOrdinary = await accept(
       workflowClient().get({
@@ -3256,18 +3392,23 @@ describe("Official Workflow installations", () => {
       }),
       [204],
     );
-    const copied = await accept(
-      workflowClient().copy({
-        headers,
-        params: { workflowId: publicWorkflow },
-        body: { toAgentId: agentId },
-      }),
-      [201],
+    const surviving = await accept(
+      workflowClient().get({ headers, params: { workflowId: copied.body.id } }),
+      [200],
     );
-    expect(copied.body).toMatchObject({
-      name: definitionName,
+    expect(surviving.body).toMatchObject(copied.body);
+    const survivingAutomation = await accept(
+      automationClient().get({
+        headers,
+        params: { id: ordinaryAutomation.body.id },
+      }),
+      [200],
+    );
+    expect(survivingAutomation.body).toMatchObject({
+      id: ordinaryAutomation.body.id,
+      enabled: true,
       official: null,
-      visibility: "private",
+      schedule: { type: "loop", intervalSeconds: 7200 },
     });
   });
 
@@ -3297,14 +3438,20 @@ describe("Official Workflow installations", () => {
       }),
       [409],
     );
-    await accept(
+    const forked = await accept(
       workflowClient().copy({
         headers,
         params: { workflowId: firstWorkflowId },
         body: { toAgentId: agentId },
       }),
-      [409],
+      [201],
     );
+    expect(forked.body).toMatchObject({
+      name: installed.body.workflow.name,
+      official: null,
+      visibility: "private",
+    });
+    expect(forked.body.id).not.toBe(firstWorkflowId);
     await accept(
       workflowClient().chatThread({
         headers,
@@ -3354,7 +3501,10 @@ describe("Official Workflow installations", () => {
       }),
       [200],
     );
-    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+    expect(unchanged.body.workflow).toMatchObject({
+      ...installed.body.workflow,
+      shadowedBy: expect.objectContaining({ id: forked.body.id }),
+    });
   });
 
   it("uninstalls and reinstalls Official Workflows, including zero-Blueprint installations", async () => {
@@ -5683,10 +5833,16 @@ describe("Official Workflow Run admission", () => {
     owned.ownsFeatureSwitches();
     const setup = await owned.run(async () => {
       await selectPersonalDefaultModel(owned.actor);
-      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+      const publicWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
         agentId: owned.agentId,
         name,
         visibility: "public",
+        instruction: "Use the public Workflow instructions.",
+      });
+      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name,
+        visibility: "private",
         instruction: "Use the user's ordinary Workflow instructions.",
       });
       await setOfficialWorkflowsEnabled(owned.actor, true);
@@ -5731,7 +5887,12 @@ describe("Official Workflow Run admission", () => {
           return workflow.id;
         }),
       ).toStrictEqual([ordinaryWorkflowId]);
-      return { ordinaryWorkflowId, installation: installed.body, automation };
+      return {
+        ordinaryWorkflowId,
+        publicWorkflowId,
+        installation: installed.body,
+        automation,
+      };
     });
     const ordinary = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -5745,6 +5906,11 @@ describe("Official Workflow Run admission", () => {
       expect(mounts).toContainEqual(
         expect.objectContaining({
           name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getCustomSkillStorageName(setup.publicWorkflowId),
         }),
       );
       expect(mounts).not.toContainEqual(
@@ -5855,6 +6021,11 @@ describe("Official Workflow Run admission", () => {
     expect(mounts).not.toContainEqual(
       expect.objectContaining({
         name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+      }),
+    );
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.publicWorkflowId),
       }),
     );
     expect(mounts).not.toContainEqual(
@@ -5980,6 +6151,71 @@ describe("Official Workflow Run admission", () => {
         versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
       }),
     ]);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: nextOfficial.runId, exitCode: 1 },
+        { authorization: `Bearer ${nextClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await accept(
+        workflowClient().update({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.ordinaryWorkflowId },
+          body: { name: `${name}-renamed` },
+        }),
+        [200],
+      );
+    });
+    const publicRun = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const { claim: publicClaim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      publicRun.runId,
+    );
+    expect(
+      expectCanonicalStorageManifest(
+        publicClaim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.publicWorkflowId),
+      }),
+    ]);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: publicRun.runId, exitCode: 1 },
+        { authorization: `Bearer ${publicClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await accept(
+        workflowClient().delete({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.publicWorkflowId },
+        }),
+        [204],
+      );
+    });
+    const withoutOrdinary = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const { claim: withoutOrdinaryClaim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      withoutOrdinary.runId,
+    );
+    expect(
+      expectCanonicalStorageManifest(
+        withoutOrdinaryClaim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([]);
   });
 
   it("pins ordinary Workflow publications across a normal revision", async () => {
