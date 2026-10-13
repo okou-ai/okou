@@ -16,8 +16,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CRATES_DIR="$PROJECT_ROOT/crates"
-. "$PROJECT_ROOT/.github/scripts/runner-image-target.sh"
-. "$PROJECT_ROOT/.github/scripts/runner-guest-binaries.sh"
+. "$PROJECT_ROOT/.github/scripts/runner/runner-image-target.sh"
+. "$PROJECT_ROOT/.github/scripts/runner/runner-guest-binaries.sh"
 
 log() { echo "[runner] $1" >&2; }
 

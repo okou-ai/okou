@@ -96,7 +96,7 @@ jobs:
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           CHECK_PR_OPEN: "true"
-        run: .github/scripts/runner-image-context.sh resolve
+        run: .github/scripts/runner/runner-image-context.sh resolve
 
       - name: Determine base ref
         id: base
@@ -163,14 +163,14 @@ jobs:
           CRATES_CHANGED="$crates_changed" \
           CI_CHANGED="$ci_changed" \
           E2E_CHANGED="$e2e_changed" \
-          .github/scripts/runner-image-context.sh turbo-consumer
+          .github/scripts/runner/runner-image-context.sh turbo-consumer
 
           API_CHANGED="$api_changed" \
           PLATFORM_CHANGED="$platform_changed" \
           CLI_CHANGED="$cli_changed" \
           CI_CHANGED="$ci_changed" \
           E2E_CHANGED="$e2e_changed" \
-          .github/scripts/runner-image-context.sh playwright-consumer
+          .github/scripts/runner/runner-image-context.sh playwright-consumer
 
       - name: Detect Crates runner image consumers
         id: crates
@@ -208,7 +208,7 @@ jobs:
 
           CI_CHANGED="$ci_changed" \
           RUNNER_CHANGED="$runner_changed" \
-          .github/scripts/runner-image-context.sh crates-consumer
+          .github/scripts/runner/runner-image-context.sh crates-consumer
 
       - name: Detect runner image input changes
         id: image-inputs
@@ -219,13 +219,13 @@ jobs:
           set -euo pipefail
 
           runner_image_ci_changed=false
-          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/runner-binary-build/|^\.github/scripts/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-github|runner-binary-transport|runner-host-architecture-groups|runner-image-architecture|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml|tasks/provision-runner-caddy\.yml|files/validate-runner-wss-namespace\.py|templates/(runner-caddy\.Caddyfile|okou-runner-caddy\.service)\.j2|playbooks/host_vars/.*)$"; then
+          if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(turbo|staging|benchmark|crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision)/|^\.github/scripts/runner/runner-binary-build/|^\.github/scripts/runner/(prepare-runner-image|runner-binary-cache|runner-binary-cache-plan|runner-binary-download|runner-binary-github|runner-binary-transport|runner-host-architecture-groups|runner-image-architecture|runner-image-context|runner-image-manifest|runner-image-target|wait-runner-image)\.sh$|^ansible/(ansible\.cfg|playbooks/(build-runner|provision-runner|promote-runner|rollback-runner)\.yml|tasks/provision-runner-caddy\.yml|files/validate-runner-wss-namespace\.py|templates/(runner-caddy\.Caddyfile|okou-runner-caddy\.service)\.j2|playbooks/host_vars/.*)$"; then
             runner_image_ci_changed=true
           fi
 
           RUNNER_CHANGED="${{ steps.crates.outputs.runner-changed }}" \
           RUNNER_IMAGE_CI_CHANGED="$runner_image_ci_changed" \
-          .github/scripts/runner-image-context.sh image-inputs
+          .github/scripts/runner/runner-image-context.sh image-inputs
 
       - name: Detect runner host architecture groups
         id: host-group-presence
@@ -257,7 +257,7 @@ jobs:
           PLAYWRIGHT_RUNNER_CONSUMER_NEEDED: ${{ steps.turbo.outputs.playwright-runner-consumer-needed }}
           CRATES_RUNNER_CONSUMER_NEEDED: ${{ steps.crates.outputs.crates-runner-consumer-needed }}
           RUNNER_IMAGE_INPUTS_CHANGED: ${{ steps.image-inputs.outputs.runner-image-inputs-changed }}
-        run: .github/scripts/runner-image-context.sh needed
+        run: .github/scripts/runner/runner-image-context.sh needed
 
       - name: Setup SSH via Cloudflare Tunnel
         if: steps.needed.outputs.current-runner-image-needed == 'true'
@@ -283,7 +283,7 @@ jobs:
             exit 0
           fi
 
-          matrix=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+          matrix=$(.github/scripts/runner/runner-host-architecture-groups.sh matrix)
           echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
           echo "Configured runner host architecture groups: $(jq -r 'map(.id) | join(",") // ""' <<<"$matrix")"
 
@@ -349,7 +349,7 @@ jobs:
           RUNNER_BINARY_GIT_REVISION: ${{ steps.identity.outputs.head-sha }}
           GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
           GUEST_CLI_MANIFEST_PATH: runner-cli-intermediate/manifest.json
-        run: .github/scripts/runner-binary-cache-plan.sh
+        run: .github/scripts/runner/runner-binary-cache-plan.sh
 
   # Main normally reuses PR/queue binaries, so its miss-only compiler cannot
   # seed dependency caches. Warm only binary-hit targets; actual main compiler
@@ -437,7 +437,7 @@ jobs:
         env:
           RUNNER_BINARY_METADATA_PATH: runner-rust-cache-prewarm/metadata.json
         # Reuse the canonical ci build, but publish none of its runner outputs.
-        run: .github/scripts/runner-binary-build/build.sh build
+        run: .github/scripts/runner/runner-binary-build/build.sh build
 
       - name: Summarize dependency cache prewarm
         if: always()

@@ -2027,7 +2027,7 @@ jobs:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          . .github/scripts/runner-image-target.sh
+          . .github/scripts/runner/runner-image-target.sh
           runner_image_validate_target "$TARGET_TRIPLE"
           cache_suffix=$(runner_image_cache_suffix "$TARGET_TRIPLE")
           sccache_architecture=$(runner_image_sccache_architecture "$TARGET_TRIPLE")
@@ -2076,7 +2076,7 @@ jobs:
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: |
-          . .github/scripts/runner-guest-binaries.sh
+          . .github/scripts/runner/runner-guest-binaries.sh
           runner_guest_binaries_load
           guest_cargo_args=()
           for package in "${RUNNER_GUEST_PACKAGES[@]}"; do
@@ -2091,7 +2091,7 @@ jobs:
           GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
           GUEST_CLI_MANIFEST_PATH: ${{ github.workspace }}/runner-cli-intermediate/manifest.json
         run: |
-          . .github/scripts/runner-guest-binaries.sh
+          . .github/scripts/runner/runner-guest-binaries.sh
           runner_guest_binaries_load
           cd crates
           TARGET_DIR="target/${TARGET_TRIPLE}/release"
@@ -2108,7 +2108,7 @@ jobs:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: |
           set -euo pipefail
-          . .github/scripts/runner-image-target.sh
+          . .github/scripts/runner/runner-image-target.sh
           TAG=$(runner_image_release_tag "$VERSION")
           ASSET_NAME=$(runner_image_release_asset_name "$VERSION" "$TARGET_TRIPLE")
           ASSET_NAME_ENCODED=$(jq -rn --arg value "$ASSET_NAME" '$value|@uri')
@@ -2248,7 +2248,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          matrix=$(.github/scripts/runner-host-architecture-groups.sh target-matrix)
+          matrix=$(.github/scripts/runner/runner-host-architecture-groups.sh target-matrix)
           group_count=$(jq -r 'length' <<<"$matrix")
           if [ "$group_count" -lt 1 ]; then
             echo "::error::No production runner host architecture groups found"
@@ -2329,7 +2329,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          hosts=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           if [ -z "$hosts" ]; then
             echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}"
             exit 1
@@ -2347,7 +2347,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          . .github/scripts/runner-image-target.sh
+          . .github/scripts/runner/runner-image-target.sh
           TAG=$(runner_image_release_tag "$VERSION")
           ASSET_NAME=$(runner_image_release_asset_name "$VERSION" "$TARGET_TRIPLE")
           EXPECTED_ELF_MACHINE=$(runner_image_elf_machine_hex "$TARGET_TRIPLE")
@@ -2579,7 +2579,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          hosts=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           if [ -z "$hosts" ]; then
             echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}"
             exit 1

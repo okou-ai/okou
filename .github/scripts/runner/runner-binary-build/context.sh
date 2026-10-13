@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SOURCE_ROOT="$(cd "${SCRIPT_DIR}/../../../.." && pwd)"
 
 fail() {
   echo "runner binary context: $1" >&2
@@ -36,11 +36,11 @@ emit_inventory() {
   local required_path
   local -a tree_entries=()
   local -a required_paths=(
-    ".github/scripts/runner-binary-build/build.sh"
-    ".github/scripts/runner-binary-build/compile.sh"
-    ".github/scripts/runner-binary-build/context.sh"
-    ".github/scripts/runner-binary-build/contract.env"
-    ".github/scripts/runner-binary-build/digest.sh"
+    ".github/scripts/runner/runner-binary-build/build.sh"
+    ".github/scripts/runner/runner-binary-build/compile.sh"
+    ".github/scripts/runner/runner-binary-build/context.sh"
+    ".github/scripts/runner/runner-binary-build/contract.env"
+    ".github/scripts/runner/runner-binary-build/digest.sh"
     "crates/Cargo.lock"
     "crates/Cargo.toml"
   )
@@ -51,7 +51,7 @@ emit_inventory() {
 
   mapfile -d '' -t tree_entries < <(
     git -C "$repo_root" ls-tree --full-tree -r -z "$revision" -- \
-      .github/scripts/runner-binary-build \
+      .github/scripts/runner/runner-binary-build \
       crates
   )
   for record in "${tree_entries[@]}"; do

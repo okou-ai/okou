@@ -80,7 +80,7 @@ runs:
           > "$HOME/.ssh/cf-access.env"
         chmod 600 "$HOME/.ssh/cf-access.env"
 
-        install -m 755 "$GITHUB_WORKSPACE/.github/scripts/cloudflare-ssh-proxy.sh" "$HOME/.ssh/cf-proxy.sh"
+        install -m 755 "$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-proxy.sh" "$HOME/.ssh/cf-proxy.sh"
 
         # Cloudflare Access setup and the origin SSH banner share this timeout.
         # ConnectionAttempts does not restart an active ProxyCommand.
@@ -116,7 +116,7 @@ runs:
         SSH_USER: ${{ inputs.ssh-user }}
         SSH_HOSTS: ${{ inputs.ssh-hosts }}
         REQUIRE_ALL_HOSTS: ${{ inputs.require-all-hosts }}
-      run: bash "$GITHUB_WORKSPACE/.github/scripts/cloudflare-ssh-preconnect.sh" "$SSH_USER" "$SSH_HOSTS" "$REQUIRE_ALL_HOSTS"
+      run: bash "$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-preconnect.sh" "$SSH_USER" "$SSH_HOSTS" "$REQUIRE_ALL_HOSTS"
 
     - name: Guard subsequent SSH operations
       shell: bash
@@ -133,7 +133,7 @@ runs:
         real_ssh="${OKOU_CLOUDFLARE_SSH_REAL_SSH:-$(command -v ssh)}"
         real_scp="${OKOU_CLOUDFLARE_SSH_REAL_SCP:-$(command -v scp)}"
         real_sftp="${OKOU_CLOUDFLARE_SSH_REAL_SFTP:-$(command -v sftp)}"
-        wrapper="$GITHUB_WORKSPACE/.github/scripts/cloudflare-ssh-command.sh"
+        wrapper="$GITHUB_WORKSPACE/.github/scripts/runner/cloudflare-ssh-command.sh"
         ln -s "$wrapper" "${wrapper_bin}/ssh"
         ln -s "$wrapper" "${wrapper_bin}/scp"
         ln -s "$wrapper" "${wrapper_bin}/sftp"
@@ -142,7 +142,7 @@ runs:
           echo "OKOU_CLOUDFLARE_SSH_REAL_SSH=${real_ssh}"
           echo "OKOU_CLOUDFLARE_SSH_REAL_SCP=${real_scp}"
           echo "OKOU_CLOUDFLARE_SSH_REAL_SFTP=${real_sftp}"
-          echo "OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=$GITHUB_WORKSPACE/.github/scripts"
+          echo "OKOU_CLOUDFLARE_SSH_SCRIPTS_DIR=$GITHUB_WORKSPACE/.github/scripts/runner"
           echo "OKOU_CLOUDFLARE_SSH_STATE_DIR=${state_dir}"
           echo "OKOU_CLOUDFLARE_SSH_USER=${SSH_USER}"
           echo "OKOU_CLOUDFLARE_SSH_DEFAULT_CONTROL_PATH=$HOME/.ssh/vm0-ssh-%C"

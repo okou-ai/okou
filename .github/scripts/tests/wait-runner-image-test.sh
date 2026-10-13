@@ -7,7 +7,7 @@ unset GITHUB_REPOSITORY
 export GITHUB_EVENT_NAME=push
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WAIT="${SCRIPT_DIR}/wait-runner-image.sh"
+WAIT="${SCRIPT_DIR}/runner/wait-runner-image.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 

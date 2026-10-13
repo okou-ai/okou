@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ruby -rjson -ropen3 -rtmpdir -rfileutils -ryaml - "$repo_root" <<'RUBY'
 root = ARGV.fetch(0)
-helper = File.join(root, ".github/scripts/runner-native-test-artifact.sh")
+helper = File.join(root, ".github/scripts/runner/runner-native-test-artifact.sh")
 
 def run_helper(helper, env, operation, success: true)
   output, error, status = Open3.capture3(env, "bash", helper, operation)
@@ -243,8 +243,8 @@ Dir.mktmpdir("native-test-artifact") do |dir|
   %w[host-cpu-fairness guest-rpc-firecracker].each do |prefix|
     producer = jobs.fetch("#{prefix}-build")
     consumer = jobs.fetch("#{prefix}-test")
-    upload = producer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner-native-test-artifact.sh publish" }
-    download = consumer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner-native-test-artifact.sh download" }
+    upload = producer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner/runner-native-test-artifact.sh publish" }
+    download = consumer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner/runner-native-test-artifact.sh download" }
     raise "missing R2 transport" unless upload && download
     raise "R2 failures must fail jobs" if upload["continue-on-error"] || download["continue-on-error"]
     raise "consumer must retain producer attempt" unless consumer.dig("env", "PRODUCER_ATTEMPT") == "${{ needs.#{prefix}-build.outputs.producer-attempt }}"

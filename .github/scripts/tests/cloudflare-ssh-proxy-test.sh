@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-PROXY="$REPO_ROOT/.github/scripts/cloudflare-ssh-proxy.sh"
+PROXY="$REPO_ROOT/.github/scripts/runner/cloudflare-ssh-proxy.sh"
 
 assert_contains() {
   local file="$1"

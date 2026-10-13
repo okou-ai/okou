@@ -59,7 +59,7 @@ jq -e '
     .with.name == $steps[$upload].with.name) and
   .jobs.build.with["head-sha"] == .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION and
   any(.architecture.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.PRODUCER_HEAD_SHA == "${{ inputs.producer-head-sha }}"
   )
 ' <<<"$runner_json" >/dev/null || {
