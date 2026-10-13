@@ -502,7 +502,7 @@ async function openManyWorkflows(): Promise<HTMLElement> {
 test("The workflow overview expands without losing the token or its selectable workflows", async () => {
   const user = userEvent.setup();
   const editor = await openManyWorkflows();
-  expect(querySlashButton("/daily-12")).toBeNull();
+  expect(querySlashButton("/daily-9")).toBeNull();
   expect(slashButton("Website")).toBeInTheDocument();
   expect(slashButton("Browse all templates")).toBeInTheDocument();
 
@@ -522,13 +522,13 @@ test("Keyboard navigation reveals collapsed workflows and reopening restores the
 
   await user.keyboard("{ArrowUp>7/}");
 
-  expect(slashButton("/daily-5")).toHaveAttribute("data-active", "true");
+  expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
   expect(querySlashButton("Show all workflows")).toBeNull();
   await user.keyboard("{Escape}");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   await fill(editor, "Draft /");
   expect(slashButton("Show all workflows")).toBeInTheDocument();
-  expect(querySlashButton("/daily-12")).toBeNull();
+  expect(querySlashButton("/daily-9")).toBeNull();
 
   await fill(editor, "Draft /daily");
   expect(querySlashButton("Show all workflows")).toBeNull();

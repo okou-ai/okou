@@ -2,6 +2,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import type { Editor } from "@tiptap/core";
@@ -20,6 +21,7 @@ import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
+  orderRecentWorkflows,
   type ComposerSlashWorkflow,
   type ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain";
@@ -424,8 +426,10 @@ function useSlashTemplatePanelActions(
 function useComposerWorkflowSuggestions(
   composer: ComposerSignals,
   query: string | undefined,
+  composerAnchored: boolean,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
+  const recentIds = useLoadable(composer.suggestion.recentWorkflowIds$);
   // Null means the list is not requested yet; the last loadable keeps that
   // null while the first request is in flight.
   const requested =
@@ -434,10 +438,20 @@ function useComposerWorkflowSuggestions(
     agentId: composer.agentId,
     workflows: requested ?? [],
   });
+  const recentOverview = composerAnchored && query === "";
+  const ordered = recentOverview
+    ? orderRecentWorkflows(
+        workflows,
+        recentIds.state === "hasData" ? recentIds.data : [],
+      )
+    : workflows;
   return {
     workflows:
-      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
-    loading: workflowsLoadable.state === "loading" || requested === null,
+      query === undefined ? [] : findWorkflowQueryMatches(ordered, query),
+    loading:
+      workflowsLoadable.state === "loading" ||
+      requested === null ||
+      (recentOverview && recentIds.state === "loading"),
   };
 }
 
@@ -581,6 +595,7 @@ function useComposerSuggestionMenu({
   const workflowResult = useComposerWorkflowSuggestions(
     composer,
     slashRange?.query,
+    reversedSuggestions,
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
