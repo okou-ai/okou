@@ -1012,11 +1012,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0424",
-      "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0431",
       "file": "turbo/packages/db/scripts/test-usage-allowance-retirement.ts",
       "owner": "<module>"
