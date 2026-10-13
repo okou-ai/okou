@@ -355,7 +355,10 @@ describe("admitted application peer", () => {
       socket = await h.ready({ fs: 2, diagnostics: 1 });
     await expect(
       h.peer.call(sandboxFsList, { path: [] }, h.controller.signal),
-    ).rejects.toMatchObject({ code: "category_version_mismatch" });
+    ).rejects.toMatchObject({
+      code: "category_version_mismatch",
+      details: { category: "fs", expectedVersion: 1, receivedVersion: 2 },
+    });
     const echo = h.peer.call(
       sandboxDiagnosticsEcho,
       { payload: "" },
@@ -389,7 +392,12 @@ describe("admitted application peer", () => {
     });
     expect(await socket.frames.next()).toMatchObject({
       type: "response",
-      error: { code: "category_version_mismatch" },
+      error: {
+        code: "category_version_mismatch",
+        category: "fs",
+        expectedVersion: 1,
+        receivedVersion: 2,
+      },
     });
     expect(h.peer.state).toBe("ready");
   });

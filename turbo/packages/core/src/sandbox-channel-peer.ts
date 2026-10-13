@@ -596,7 +596,7 @@ export class SandboxChannelPeer {
       throw new SandboxChannelError("category_version_mismatch", {
         category,
         expectedVersion: local,
-        receivedVersion: version,
+        receivedVersion: local !== version ? version : remote,
       });
   }
   private receive(frame: ArrayBuffer): void {
