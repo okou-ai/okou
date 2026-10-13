@@ -22,10 +22,7 @@ import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
-import {
-  ARTIFACT_PUBLICATION_INSTRUCTION,
-  artifactPreviewInstructions,
-} from "@okouai/core/artifact-preview-instructions";
+import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
@@ -287,9 +284,6 @@ function buildCustomGenerationTemplatePrompt(
       `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
       "",
       `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names for content, visual style, and content QA.`,
-      ...(mounted.kind === "presentation"
-        ? [`- ${ARTIFACT_PUBLICATION_INSTRUCTION}`]
-        : []),
       "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
     ].join("\n"),
   };
