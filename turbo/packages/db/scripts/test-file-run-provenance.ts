@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { Client } from "pg";
+import { z } from "zod";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -42,7 +43,7 @@ const migration = await readFile(
 );
 
 // This case owns temporarily committed historical tables in the same disposable
-// test database. Close its session before the positive transaction starts.
+// test database. Close its session before the positive probe starts.
 const negativeClient = new Client({ connectionString: databaseUrl });
 const negativeSchema = `file_provenance_rejection_${randomUUID().replaceAll("-", "")}`;
 let negativeSchemaCreated = false;
@@ -179,12 +180,33 @@ const client = new Client({ connectionString: databaseUrl });
 const schema = `file_provenance_${randomUUID().replaceAll("-", "")}`;
 
 const positiveErrors: unknown[] = [];
+const recordPositiveClientError = (error: Error) => {
+  positiveErrors.push(error);
+};
+client.on("error", recordPositiveClientError);
+const searchPathRows = z.tuple([z.strictObject({ search_path: z.string() })]);
+const namespaceRows = z.array(z.strictObject({ nspname: z.string() }));
+let originalSearchPath: string | undefined;
+let schemaCreated = false;
 try {
   await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0386; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  originalSearchPath = searchPathRows.parse(
+    (await client.query("SHOW search_path")).rows,
+  )[0].search_path;
+  assert.deepEqual(
+    namespaceRows.parse(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+          [schema],
+        )
+      ).rows,
+    ),
+    [],
+  );
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaCreated = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(historicalFixture);
   const runId = randomUUID();
   const threadId = randomUUID();
@@ -257,22 +279,57 @@ try {
     (await client.query("SELECT * FROM owned_file_children")).rowCount,
     0,
   );
-  console.log(
-    "File provenance: association guard, Run/thread retention, stable upserts and file-owned cleanup passed",
-  );
 } catch (error) {
   positiveErrors.push(error);
 } finally {
-  try {
-    await client.query("ROLLBACK");
-  } catch (error) {
-    positiveErrors.push(error);
-  } finally {
+  // Only an acknowledged CREATE owns cleanup. Uncertain acknowledgement or
+  // transport loss can leave committed residue until disposable DB teardown.
+  if (schemaCreated) {
     try {
-      await client.end();
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
     } catch (error) {
       positiveErrors.push(error);
     }
+    try {
+      assert.deepEqual(
+        namespaceRows.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+              [schema],
+            )
+          ).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      positiveErrors.push(error);
+    }
+  }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      positiveErrors.push(error);
+    }
+    try {
+      assert.equal(
+        searchPathRows.parse((await client.query("SHOW search_path")).rows)[0]
+          .search_path,
+        originalSearchPath,
+      );
+    } catch (error) {
+      positiveErrors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    positiveErrors.push(error);
+  } finally {
+    client.removeListener("error", recordPositiveClientError);
   }
 }
 if (positiveErrors.length > 0) {
@@ -281,3 +338,6 @@ if (positiveErrors.length > 0) {
     "File provenance positive probe failed",
   );
 }
+console.log(
+  "File provenance: association guard, Run/thread retention, stable upserts and file-owned cleanup passed",
+);
