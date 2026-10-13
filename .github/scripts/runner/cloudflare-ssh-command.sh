@@ -429,11 +429,8 @@ emit_probe_failure() {
     cloudflare_ssh_sanitize_diagnostics "$diagnostics_file" \
       | tail -n 20 >&2
   fi
-  if [ -n "$master_diagnostics_file" ] \
-    && [ -s "$master_diagnostics_file" ]; then
-    echo "----- recovery SSH master stderr (last 20 lines, redacted) -----" >&2
-    cloudflare_ssh_sanitize_diagnostics "$master_diagnostics_file" \
-      | tail -n 20 >&2
+  if [ -n "$master_diagnostics_file" ]; then
+    cloudflare_ssh_emit_master_diagnostics "$master_diagnostics_file" || true
   fi
 }
 
@@ -445,13 +442,16 @@ probe_transport() {
     control_args=(-S "$control_path")
   fi
 
-  GITHUB_STEP_SUMMARY="" \
-    timeout \
-      --kill-after="${PROBE_KILL_AFTER_SECONDS}s" \
-      "${PROBE_TIMEOUT_SECONDS}s" \
-      "$REAL_SSH" "${control_args[@]}" -n -T \
-      "${TARGET_USER}@${TARGET_HOST}" true \
-      </dev/null > /dev/null 2> "$diagnostics_file"
+  (
+    umask 077
+    GITHUB_STEP_SUMMARY="" \
+      timeout \
+        --kill-after="${PROBE_KILL_AFTER_SECONDS}s" \
+        "${PROBE_TIMEOUT_SECONDS}s" \
+        "$REAL_SSH" "${control_args[@]}" -v -n -T \
+        "${TARGET_USER}@${TARGET_HOST}" true \
+        </dev/null > /dev/null 2> "$diagnostics_file"
+  )
 }
 
 close_transport() {
@@ -497,12 +497,15 @@ probe_transport "$current_control_path" "$first_probe_stderr" \
   || probe_status=$?
 
 selected_control_path="$current_control_path"
+caller_probe_stderr="$first_probe_stderr"
+master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
+  "$TARGET_USER" "$TARGET_HOST" "$current_control_path")
 if [ "$probe_status" -ne 0 ]; then
   if ! is_transient_probe_status "$probe_status" \
     || cloudflare_ssh_is_permanent_failure "$first_probe_stderr"; then
     emit_probe_failure \
       1 "$probe_status" "$first_probe_stderr" error \
-      "${current_control_path:+${current_control_path}.stderr}"
+      "$master_diagnostics_file"
     rm -rf "$probe_dir"
     release_transport_lock
     exit "$probe_status"
@@ -510,7 +513,7 @@ if [ "$probe_status" -ne 0 ]; then
 
   emit_probe_failure \
     1 "$probe_status" "$first_probe_stderr" warning \
-    "${current_control_path:+${current_control_path}.stderr}"
+    "$master_diagnostics_file"
   # OpenSSH appends a temporary suffix while binding a control socket. Keep
   # this directory name short enough for Linux's Unix socket path limit.
   recovery_dir=$(mktemp -d "${STATE_DIR}/r.XXXXXX")
@@ -547,12 +550,16 @@ if [ "$probe_status" -ne 0 ]; then
   fi
 
   selected_control_path="$recovery_control_path"
+  caller_probe_stderr="$second_probe_stderr"
+  master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
+    "$TARGET_USER" "$TARGET_HOST" "$selected_control_path")
   state_file_tmp=$(mktemp "${state_file}.tmp.XXXXXX")
   printf '%s\n' "$selected_control_path" > "$state_file_tmp"
   mv "$state_file_tmp" "$state_file"
 fi
 
-rm -rf "$probe_dir"
+# With ControlMaster=auto, even a successful probe may have created a detached
+# default master. Keep its verbose stderr addressable until job cleanup.
 release_transport_lock
 trap - EXIT
 
@@ -570,6 +577,7 @@ fi
 
 operation_pid=""
 cleanup_pid=""
+operation_started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 # GNU timeout creates a separate process group for the caller. Keep this shell
 # alive so GitHub cancellation can terminate that group and its ProxyCommand.
 trap '
@@ -600,4 +608,13 @@ operation_status=0
 wait "$operation_pid" || operation_status=$?
 trap - EXIT HUP INT TERM
 operation_pid=""
+if [ "$operation_status" -ne 0 ]; then
+  # A failed caller may have executed remotely. Diagnostics must neither
+  # reconnect nor replay it, and must not change its stdout or exit status.
+  echo "::group::Cloudflare SSH caller diagnostics" >&2
+  echo "Tool: ${TOOL}; host: ${TARGET_HOST}; exit: ${operation_status}; started: ${operation_started_at}; finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+  cloudflare_ssh_emit_master_diagnostics \
+    "$master_diagnostics_file" "$caller_probe_stderr" || true
+  echo "::endgroup::" >&2
+fi
 exit "$operation_status"

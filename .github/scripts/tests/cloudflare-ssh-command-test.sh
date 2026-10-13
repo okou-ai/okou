@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WRAPPER="${REPO_ROOT}/.github/scripts/runner/cloudflare-ssh-command.sh"
+PRECONNECT="${REPO_ROOT}/.github/scripts/runner/cloudflare-ssh-preconnect.sh"
 SSH_ACTION="${REPO_ROOT}/.github/actions/setup-ssh-tunnel/action.yml"
 SECURITY_WORKFLOW="${REPO_ROOT}/.github/workflows/security.yml"
 
@@ -76,6 +77,10 @@ assert_process_gone() {
 
 tmp=$(mktemp -d)
 cleanup() {
+  if [ -s "$tmp/auto-master-failure/auto-master.pid" ] \
+    && [ ! -e "$tmp/auto-master-failure/auto-master.completed" ]; then
+    kill -TERM "$(< "$tmp/auto-master-failure/auto-master.pid")" 2>/dev/null || true
+  fi
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -131,6 +136,7 @@ fi
 if [[ " $* " == *" -M "* ]] \
   && [[ " $* " == *" -N "* ]] \
   && [[ " $* " == *" -f "* ]]; then
+  echo "debug1: master ready" >&2
   exit 0
 fi
 
@@ -148,6 +154,18 @@ if [ "$is_probe" = "true" ]; then
 
   case "$FAKE_SSH_SCENARIO" in
     healthy|actual-failure|actual-hang)
+      exit 0
+      ;;
+    auto-master-failure)
+      # Simulate the detached master retaining the probe's stderr descriptor.
+      # Emit its failure only after caller execution has started.
+      (
+        printf '%s\n' "$BASHPID" > "$FAKE_MASTER_PID_FILE"
+        IFS= read -r _ < "$FAKE_MASTER_TRIGGER"
+        echo "debug1: probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=probe-secret" >&2
+        printf 'done\n' > "$FAKE_MASTER_DONE"
+        : > "$FAKE_MASTER_COMPLETED"
+      ) > /dev/null &
       exit 0
       ;;
     stale-success)
@@ -206,6 +224,18 @@ cat > "$fake_scp" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_SCP_INVOCATIONS"
+if [ "$FAKE_SSH_SCENARIO" = "actual-failure" ]; then
+  printf 'debug1: connection closed TUNNEL_SERVICE_TOKEN_SECRET=master-secret\n' \
+    >> "$FAKE_MASTER_DIAGNOSTICS_FILE"
+  echo "lost connection" >&2
+  exit 1
+fi
+if [ "$FAKE_SSH_SCENARIO" = "auto-master-failure" ]; then
+  printf 'caller-started\n' > "$FAKE_MASTER_TRIGGER"
+  IFS= read -r _ < "$FAKE_MASTER_DONE"
+  echo "lost connection" >&2
+  exit 1
+fi
 EOF
 
 fake_sftp="${fake_bin}/real-sftp"
@@ -215,6 +245,9 @@ set -euo pipefail
 printf '%s\n' "$*" >> "$FAKE_SFTP_INVOCATIONS"
 if [[ " $* " == *" -b - "* ]]; then
   cat > "$FAKE_ACTUAL_SFTP_STDIN"
+fi
+if [ "$FAKE_SSH_SCENARIO" = "actual-failure" ]; then
+  exit 17
 fi
 EOF
 
@@ -271,6 +304,10 @@ invoke_wrapper() {
   local scenario=$2
   local tool=$3
   shift 3
+  local program="${wrapper_bin}/${tool}"
+  if [ "$tool" = "preconnect" ]; then
+    program="$PRECONNECT"
+  fi
 
   PATH="$fake_bin:$PATH" \
   FAKE_SSH_INVOCATIONS="$case_dir/ssh.log" \
@@ -287,10 +324,16 @@ invoke_wrapper() {
   FAKE_SSH_SCENARIO="$scenario" \
   FAKE_STALE_CONTROL_PATH="${FAKE_STALE_CONTROL_PATH:-}" \
   FAKE_TIMEOUT_MODE="${FAKE_TIMEOUT_MODE:-passthrough}" \
+  FAKE_MASTER_DIAGNOSTICS_FILE="${FAKE_MASTER_DIAGNOSTICS_FILE:-}" \
+  FAKE_MASTER_PID_FILE="$case_dir/auto-master.pid" \
+  FAKE_MASTER_TRIGGER="$case_dir/auto-master.trigger" \
+  FAKE_MASTER_DONE="$case_dir/auto-master.done" \
+  FAKE_MASTER_COMPLETED="$case_dir/auto-master.completed" \
   GITHUB_STEP_SUMMARY="$case_dir/summary" \
   RUNNER_TEMP="$case_dir/runner-temp" \
   SYSTEM_SLEEP="$system_sleep" \
   SYSTEM_TIMEOUT="$system_timeout" \
+  CLOUDFLARE_SSH_BIN="$fake_ssh" \
   OKOU_CLOUDFLARE_SSH_REAL_SSH="$fake_ssh" \
   OKOU_CLOUDFLARE_SSH_REAL_SCP="$fake_scp" \
   OKOU_CLOUDFLARE_SSH_REAL_SFTP="$fake_sftp" \
@@ -299,7 +342,7 @@ invoke_wrapper() {
   OKOU_CLOUDFLARE_SSH_USER=metal \
   OKOU_CLOUDFLARE_SSH_DEFAULT_CONTROL_PATH=/tmp/default-control \
   OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS="${OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS:-600}" \
-    "${wrapper_bin}/${tool}" "$@"
+    "$program" "$@"
 }
 
 run_wrapper() {
@@ -322,7 +365,7 @@ run_wrapper "$healthy" healthy ssh \
   metal@dev-1.aws.vm3.ai touch /tmp/healthy-operation
 assert_contains "$healthy/status" "0"
 assert_line_count "$healthy/ssh.log" 1 \
-  "-n -T metal@dev-1.aws.vm3.ai true"
+  "-v -n -T metal@dev-1.aws.vm3.ai true"
 assert_line_count "$healthy/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai touch /tmp/healthy-operation"
 assert_not_contains "$healthy/ssh.log" "-M -N -f"
@@ -336,20 +379,74 @@ run_wrapper "$default_user" stale-success ssh \
 default_user_control_path=$(< "$(find "$default_user/state" -name '*.control-path' -print -quit)")
 assert_contains "$default_user/status" "0"
 assert_line_count "$default_user/ssh.log" 1 \
-  "-n -T metal@dev-1.aws.vm3.ai true"
+  "-v -n -T metal@dev-1.aws.vm3.ai true"
 assert_line_count "$default_user/actual-ssh.log" 1 \
   "-o User=metal -o ControlPath=${default_user_control_path} dev-1.aws.vm3.ai touch /tmp/default-user"
 
 actual_failure="${tmp}/actual-failure"
+setup_case "$actual_failure"
+invoke_wrapper "$actual_failure" healthy preconnect metal dev-1.aws.vm3.ai \
+  > "$actual_failure/preconnect.stdout" 2> "$actual_failure/preconnect.stderr"
 run_wrapper "$actual_failure" actual-failure ssh \
   metal@dev-1.aws.vm3.ai run-once
 assert_contains "$actual_failure/status" "42"
 assert_line_count "$actual_failure/ssh.log" 1 \
-  "-n -T metal@dev-1.aws.vm3.ai true"
+  "-v -n -T metal@dev-1.aws.vm3.ai true"
 assert_line_count "$actual_failure/actual-ssh.log" 1 \
   "metal@dev-1.aws.vm3.ai run-once"
 assert_line_count "$actual_failure/stdout" 1 "actual stdout"
 assert_line_count "$actual_failure/stderr" 1 "actual stderr"
+assert_contains "$actual_failure/stderr" "SSH master stderr"
+assert_contains "$actual_failure/stderr" "debug1: master ready"
+assert_contains "$actual_failure/stderr" "Tool: ssh; host: dev-1.aws.vm3.ai; exit: 42; started:"
+
+scp_failure="${tmp}/scp-failure"
+setup_case "$scp_failure"
+invoke_wrapper "$scp_failure" healthy preconnect metal dev-1.aws.vm3.ai \
+  > "$scp_failure/preconnect.stdout" 2> "$scp_failure/preconnect.stderr"
+scp_master_log=$(find "$scp_failure/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
+[ -n "$scp_master_log" ] || fail "setup must retain initial master diagnostics"
+for index in {1..150}; do
+  printf 'debug1: earlier channel event %s\n' "$index" >> "$scp_master_log"
+done
+printf '::error title=Cloudflare tunnel failed::--secret proxy-secret --id proxy-id\n' \
+  >> "$scp_master_log"
+FAKE_MASTER_DIAGNOSTICS_FILE="$scp_master_log" \
+  run_wrapper "$scp_failure" actual-failure scp \
+    /tmp/source metal@dev-1.aws.vm3.ai:/tmp/target
+assert_contains "$scp_failure/status" "1"
+assert_line_count "$scp_failure/scp.log" 1 \
+  "/tmp/source metal@dev-1.aws.vm3.ai:/tmp/target"
+assert_line_count "$scp_failure/stderr" 1 "lost connection"
+assert_contains "$scp_failure/stderr" "Tool: scp; host: dev-1.aws.vm3.ai; exit: 1; started:"
+assert_contains "$scp_failure/stderr" "earlier channel event 150"
+assert_line_count "$scp_failure/stderr" 0 "debug1: earlier channel event 1"
+assert_contains "$scp_failure/stderr" "TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
+assert_contains "$scp_failure/stderr" "--secret [redacted] --id [redacted]"
+assert_not_contains "$scp_failure/stderr" "master-secret"
+assert_not_contains "$scp_failure/stderr" "proxy-secret"
+assert_not_contains "$scp_failure/stderr" "proxy-id"
+assert_not_contains "$scp_failure/stderr" "::error"
+if [ -s "$scp_failure/stdout" ]; then
+  fail "failed transfer diagnostics must stay out of caller stdout"
+fi
+
+auto_master="${tmp}/auto-master-failure"
+setup_case "$auto_master"
+mkfifo "$auto_master/auto-master.trigger" "$auto_master/auto-master.done"
+run_wrapper "$auto_master" auto-master-failure scp \
+  /tmp/source metal@dev-1.aws.vm3.ai:/tmp/target
+assert_contains "$auto_master/status" "1"
+assert_line_count "$auto_master/scp.log" 1 \
+  "/tmp/source metal@dev-1.aws.vm3.ai:/tmp/target"
+assert_contains "$auto_master/stderr" \
+  "probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
+assert_not_contains "$auto_master/stderr" "probe-secret"
+auto_master_stderr=$(find "$auto_master/state" -name attempt-1.stderr -print -quit)
+[ -n "$auto_master_stderr" ] || fail "probe-created master log must remain addressable"
+if [ "$(stat -c '%a' "$auto_master_stderr")" != 600 ]; then
+  fail "probe-created master log must have restricted permissions"
+fi
 
 invalid_timeout="${tmp}/invalid-timeout"
 OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=0 \
@@ -434,7 +531,7 @@ if [ -s "$recovery/stdout" ]; then
   fail "transport recovery must not pollute caller stdout"
 fi
 assert_line_count "$recovery/ssh.log" 1 \
-  "-n -T metal@dev-11.gcp.vm3.ai true"
+  "-v -n -T metal@dev-11.gcp.vm3.ai true"
 
 state_file=$(find "$recovery/state" -name '*.control-path' -print -quit)
 [ -n "$state_file" ] || fail "expected recovery control-path state"
@@ -445,11 +542,11 @@ if [ "$control_path_bind_length" -gt 107 ]; then
   fail "recovery control path exceeds the Linux Unix socket path limit"
 fi
 assert_line_count "$recovery/ssh.log" 1 \
-  "-S ${selected_control_path} -n -M -N -f metal@dev-11.gcp.vm3.ai"
+  "-S ${selected_control_path} -v -n -M -N -f metal@dev-11.gcp.vm3.ai"
 assert_line_count "$recovery/ssh.log" 1 \
   "-S ${selected_control_path} -n -O check metal@dev-11.gcp.vm3.ai"
 assert_line_count "$recovery/ssh.log" 1 \
-  "-S ${selected_control_path} -n -T metal@dev-11.gcp.vm3.ai true"
+  "-S ${selected_control_path} -v -n -T metal@dev-11.gcp.vm3.ai true"
 assert_line_count "$recovery/actual-ssh.log" 1 \
   "-o ControlPath=${selected_control_path} metal@dev-11.gcp.vm3.ai touch /tmp/recovered-operation"
 assert_not_contains "$recovery/ssh.log" "-n -O exit metal@dev-11.gcp.vm3.ai"
@@ -458,7 +555,7 @@ run_wrapper "$recovery" stale-success scp \
   /tmp/nbd-cow-test metal@dev-11.gcp.vm3.ai:/tmp/nbd-cow-test
 assert_contains "$recovery/status" "0"
 assert_line_count "$recovery/ssh.log" 2 \
-  "-S ${selected_control_path} -n -T metal@dev-11.gcp.vm3.ai true"
+  "-S ${selected_control_path} -v -n -T metal@dev-11.gcp.vm3.ai true"
 assert_line_count "$recovery/scp.log" 1 \
   "-o ControlPath=${selected_control_path} /tmp/nbd-cow-test metal@dev-11.gcp.vm3.ai:/tmp/nbd-cow-test"
 assert_match_count "$recovery/ssh.log" 1 "-M -N -f"
@@ -517,7 +614,7 @@ if [ -s "$stdin_case/probe-stdin" ]; then
   fail "transport probe consumed SSH stdin"
 fi
 assert_contains "$stdin_case/ssh.log" \
-  "-n -T metal@dev-2.aws.vm3.ai true"
+  "-v -n -T metal@dev-2.aws.vm3.ai true"
 
 old_control_path="$selected_control_path"
 printf 'master channel failed TUNNEL_SERVICE_TOKEN_SECRET=master-secret\n' \
@@ -538,6 +635,31 @@ assert_not_contains "$recovery/ssh.log" \
 assert_contains "$recovery/stderr" \
   "TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
 assert_not_contains "$recovery/stderr" "master-secret"
+
+# A recovered connection owns a different log; report that connection's late
+# failure without reading another master's log or submitting the transfer again.
+printf 'debug1: recovered master closed TUNNEL_SERVICE_TOKEN_SECRET=recovery-secret\n' \
+  > "${new_control_path}.stderr"
+run_wrapper "$recovery" actual-failure sftp \
+  metal@dev-11.gcp.vm3.ai
+assert_contains "$recovery/status" "17"
+assert_line_count "$recovery/sftp.log" 1 \
+  "-o ControlPath=${new_control_path} metal@dev-11.gcp.vm3.ai"
+assert_contains "$recovery/stderr" "recovered master closed TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
+assert_not_contains "$recovery/stderr" "recovery-secret"
+
+large_log="${tmp}/large-log"
+setup_case "$large_log"
+invoke_wrapper "$large_log" healthy preconnect metal dev-1.aws.vm3.ai \
+  > "$large_log/preconnect.stdout" 2> "$large_log/preconnect.stderr"
+large_master_log=$(find "$large_log/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
+printf '%100000s\n' '' >> "$large_master_log"
+run_wrapper "$large_log" actual-failure ssh \
+  metal@dev-1.aws.vm3.ai run-once
+assert_contains "$large_log/status" "42"
+if [ "$(wc -c < "$large_log/stderr")" -gt 66000 ]; then
+  fail "master diagnostics must be limited to 64 KiB plus caller context"
+fi
 
 exhaustion="${tmp}/exhaustion"
 run_wrapper "$exhaustion" stale-exhaustion scp \
