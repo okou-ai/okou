@@ -67,7 +67,10 @@ pub use sandbox::{
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,
 };
-pub use storage_manifest_timing::{StorageManifestRequestTiming, StorageManifestTiming};
+pub use storage_manifest_timing::{
+    StorageManifestGuestTiming, StorageManifestRequestTiming, StorageManifestResources,
+    StorageManifestTiming,
+};
 pub use types::{
     CodexSessionCleanupRequest, CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT,
     EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_7_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecOutputLimits,
