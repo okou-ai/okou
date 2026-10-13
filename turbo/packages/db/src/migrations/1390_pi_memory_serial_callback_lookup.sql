@@ -1,0 +1,1 @@
+CREATE INDEX "idx_agent_run_callbacks_pi_memory" ON "agent_run_callbacks" USING btree (("payload"->>'memoryStorageId'),"run_id") WHERE "agent_run_callbacks"."internal_kind" = 'pi-memory:phase2';

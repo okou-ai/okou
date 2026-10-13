@@ -198,13 +198,13 @@ export function createPiMemoryPhase2Worker() {
       signal.throwIfAborted();
       const recovered = await set(recoverMaintenanceRun$, currentTime, signal);
       signal.throwIfAborted();
-      if (recovered) {
+      if (recovered && recovered.outcome !== "dispatched") {
         return recovered;
       }
       const claim = await set(claimPiMemoryPhase2Job$, { currentTime });
       signal.throwIfAborted();
       if (!claim) {
-        return { outcome: "no_work" };
+        return recovered ?? { outcome: "no_work" };
       }
       const dispatched = await settle(
         set(startMaintenanceRun$, claim, signal),
