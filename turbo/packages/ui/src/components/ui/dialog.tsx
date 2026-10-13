@@ -142,7 +142,9 @@ const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
     return (
       <DialogPortal
         container={portalContainer}
-        className={portalContainer ? "relative z-50" : undefined}
+        // Keep late-mounted page popovers below the modal. Nested portals stay
+        // inside this context, above their owning dialog.
+        className="relative z-50"
       >
         <DialogOverlay className={overlayClassName} forceRender />
         <DialogPrimitive.Viewport
