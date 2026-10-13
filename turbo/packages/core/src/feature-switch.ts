@@ -380,13 +380,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatInputStatus]: {
-    maintainer: "liangyou@okou.ai",
-    description:
-      "Read retained chat input and consuming Run status without message bodies, through the native API and MCP.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
     maintainer: "ethan@okou.ai",
     description:

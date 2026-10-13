@@ -1,6 +1,4 @@
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -9,7 +7,6 @@ import { setResHeader$ } from "../context/hono";
 import { pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { chatInputStatus } from "../services/chat-input-status.service";
-import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 
 const identity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
@@ -19,16 +16,10 @@ const identity$ = computed((get) => {
     ...get(pathParamsOf(chatInputStatusContract.get)),
   });
 });
-const featureContext$ = createUserFeatureSwitchContext(identity$);
 const observation$ = chatInputStatus(identity$);
 
 const readInputStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
-  const featureContext = await get(featureContext$);
-  signal.throwIfAborted();
-  if (!isFeatureEnabled(FeatureSwitchKey.ChatInputStatus, featureContext)) {
-    return notFound("Chat input status is not available");
-  }
   const result = await get(observation$);
   signal.throwIfAborted();
   if (result.kind === "thread-not-found") {

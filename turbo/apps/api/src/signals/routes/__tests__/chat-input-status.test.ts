@@ -9,7 +9,6 @@ import {
   chatInputStatusResponseSchema,
 } from "@okouai/api-contracts/contracts/chat-input-status";
 import { mcpSendChatMessageOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-tools";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -23,10 +22,6 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import {
-  deleteFeatureSwitchesForUser,
-  updateFeatureSwitchesForUser,
-} from "./helpers/feature-switches";
 import { createMcpWebApi } from "./helpers/mcp-web-api";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicChatAdmissionFixture } from "./helpers/public-chat-admission-fixture";
@@ -48,19 +43,9 @@ function statusPath(threadId: string, eventId: string): string {
   return `/api/chat-threads/${threadId}/inputs/${eventId}/status`;
 }
 
-async function fixture(enabled = true) {
+async function fixture() {
   const f = await publicChatActor(context, {
     stripeTransport: "http",
-  });
-  f.ownsFeatureSwitches();
-  if (!f.actor.orgId) {
-    throw new Error("Expected a chat workspace");
-  }
-  const actor = { ...f.actor, orgId: f.actor.orgId };
-  await f.run(async () => {
-    await updateFeatureSwitchesForUser(context, actor, {
-      [FeatureSwitchKey.ChatInputStatus]: enabled,
-    });
   });
   return { ...f, token: mcp.authorize(f.actor) };
 }
@@ -343,14 +328,6 @@ describe("retained chat input observation", () => {
       f.registerAgent(agent.agentId);
       await f.activateWithoutCredits();
       await f.suspend(0);
-      if (!f.actor.orgId) {
-        throw new Error("Expected the owned admission workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...f.actor, orgId: f.actor.orgId },
-        { [FeatureSwitchKey.ChatInputStatus]: true },
-      );
       const eventId = randomUUID();
       const sent = await chat.requestSendEvent(
         f.actor,
@@ -379,37 +356,11 @@ describe("retained chat input observation", () => {
     });
   });
 
-  it("gates discovery and native reads and enforces the read scope", async () => {
-    const f = await fixture(false);
+  it("exposes observation by default and enforces the read scope and validation", async () => {
+    const f = await fixture();
     await f.run(async () => {
       const thread = await chat.createThread(f.actor, { agentId: f.agentId });
       const eventId = randomUUID();
-      expect(
-        (await tools(f.token())).map((tool) => {
-          return tool.name;
-        }),
-      ).not.toContain("get_chat_input_status");
-      expect(
-        (await mcp.web(f.token(), statusPath(thread.id, eventId))).status,
-      ).toBe(404);
-      expect(
-        z.object({ error: z.object({ code: z.number() }) }).safeParse(
-          await mcp.rpc(f.token(), "tools/call", {
-            name: "get_chat_input_status",
-            arguments: { threadId: thread.id, eventId },
-          }),
-        ).success,
-      ).toBeTruthy();
-      if (!f.actor.orgId) {
-        throw new Error("Expected a chat workspace");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...f.actor, orgId: f.actor.orgId },
-        {
-          [FeatureSwitchKey.ChatInputStatus]: true,
-        },
-      );
       expect(
         (await tools(f.token())).find((tool) => {
           return tool.name === "get_chat_input_status";
@@ -428,6 +379,14 @@ describe("retained chat input observation", () => {
       await expect(read(f.token(), thread.id, eventId)).resolves.toMatchObject({
         status: "unavailable",
       });
+      expect(
+        toolBody(
+          await mcp.call(f.token(), "get_chat_input_status", {
+            threadId: thread.id,
+            eventId,
+          }),
+        ),
+      ).toMatchObject({ status: "unavailable" });
       expect(
         (await mcp.web(f.token(), statusPath(thread.id, "not-an-event-id")))
           .status,
@@ -467,13 +426,6 @@ describe("retained chat input observation", () => {
         { ...f.actor, userId: `user_${randomUUID()}`, orgId },
         { ...f.actor, orgId: `org_${randomUUID()}` },
       ]) {
-        await updateFeatureSwitchesForUser(
-          context,
-          { ...actor, orgId: actor.orgId },
-          {
-            [FeatureSwitchKey.ChatInputStatus]: true,
-          },
-        );
         context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
           {
             data: [
@@ -501,7 +453,6 @@ describe("retained chat input observation", () => {
             })
           ).isError,
         ).toBeTruthy();
-        await deleteFeatureSwitchesForUser(context, actor);
       }
     });
   });
