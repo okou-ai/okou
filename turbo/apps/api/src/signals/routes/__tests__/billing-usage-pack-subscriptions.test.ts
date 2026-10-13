@@ -5174,6 +5174,129 @@ describe("usage pack allocation management", () => {
     }
   });
 
+  it.each(["Plan-only", "mixed package"] as const)(
+    "replaces an unpaid %s quote with a Plan-only quote",
+    async (configuration) => {
+      const lifecycle = createPublicBillingScenario(context);
+      const {
+        purchaseManagedUsagePack,
+        managedUsagePackSubscription,
+        mockUsagePackSubscriptionPackagePreviews,
+        readManagedUsagePacks,
+        readDeferredReplayCredits,
+      } = createManagedUsagePackHelpers(lifecycle);
+      return await withNowScopeForTest(() => {
+        return lifecycle.run(async () => {
+          mockNow(new Date("2035-01-16T00:00:00.000Z"));
+          const firstUserId = `user_${randomUUID()}`;
+          const secondUserId = `user_${randomUUID()}`;
+          const members = [
+            { userId: firstUserId, usagePackUsd: 20 as const },
+            { userId: secondUserId, usagePackUsd: 50 as const },
+          ];
+          const fixture = await purchaseManagedUsagePack(members);
+          context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+            managedUsagePackSubscription(
+              fixture,
+              new Map([
+                [TEST_PRICE_USAGE_PACK_20, 1],
+                [TEST_PRICE_USAGE_PACK_50, 1],
+              ]),
+            ),
+          );
+          lifecycle.captureExternalState();
+          mockUsagePackSubscriptionPackagePreviews({
+            immediateAmountCents: 8000,
+            nextRecurringAmountCents: 23_000,
+            sourcePriceId: TEST_PRICE_USAGE_PACK_PLAN_PRO,
+            targetPriceId: TEST_PRICE_USAGE_PACK_PLAN_TEAM,
+          });
+          const managementBefore = await readManagedUsagePacks(fixture);
+          const creditsBefore = await readDeferredReplayCredits(fixture);
+          const client = setupApp({ context, routes: billingCheckoutRoutes })(
+            billingUsagePackManagementContract,
+          );
+          const first = await lifecycle.run(() => {
+            return accept(
+              client.previewSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: {
+                  targetTier: "team",
+                  memberUsagePacks: members.map((member) => {
+                    return {
+                      memberId: member.userId,
+                      usagePackUsd:
+                        configuration === "mixed package"
+                          ? member.usagePackUsd === 20
+                            ? 50
+                            : 20
+                          : member.usagePackUsd,
+                    };
+                  }),
+                },
+              }),
+              [200],
+            );
+          });
+          const replacement = await lifecycle.run(() => {
+            return accept(
+              client.previewSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: {
+                  targetTier: "team",
+                  memberUsagePacks: members.map((member) => {
+                    return {
+                      memberId: member.userId,
+                      usagePackUsd: member.usagePackUsd,
+                    };
+                  }),
+                },
+              }),
+              [200],
+            );
+          });
+          expect(replacement.body.changeId).not.toBe(first.body.changeId);
+          expect(replacement.body).toMatchObject({
+            sourceTier: "pro",
+            targetTier: "team",
+            immediateAmountCents: 8000,
+            nextRecurringAmountCents: 23_000,
+            currency: "usd",
+            immediateCreditGrant: {
+              purchasedCredits: 0,
+              bonusCredits: 0,
+              totalCredits: 0,
+            },
+          });
+          await lifecycle.run(() => {
+            return accept(
+              client.confirmSubscriptionChange({
+                headers: { authorization: "Bearer clerk-session" },
+                body: { changeId: first.body.changeId },
+              }),
+              [409],
+            );
+          });
+          await expect(readManagedUsagePacks(fixture)).resolves.toStrictEqual(
+            managementBefore,
+          );
+          await expect(
+            readDeferredReplayCredits(fixture),
+          ).resolves.toStrictEqual(creditsBefore);
+          expect(
+            context.mocks.stripe.subscriptions.update,
+          ).not.toHaveBeenCalled();
+          expect(
+            context.mocks.stripe.subscriptionSchedules.create,
+          ).not.toHaveBeenCalled();
+          expect(
+            context.mocks.stripe.subscriptionSchedules.update,
+          ).not.toHaveBeenCalled();
+        });
+      });
+    },
+  );
+
   it.each([
     [20, 50],
     [50, 20],
