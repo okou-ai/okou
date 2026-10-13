@@ -124,7 +124,11 @@ describe("Maps generateContent usage and citations", () => {
         [502],
       );
       expect(search.body).toMatchObject({
-        error: { code: "MAPS_GROUNDING_ERROR" },
+        error: {
+          code: "MAPS_CITATION_INVALID",
+          message:
+            "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",
+        },
       });
       expect(search.body).not.toHaveProperty("answer");
       expect((await billing.readBillingStatus(actor)).credits).toBe(
