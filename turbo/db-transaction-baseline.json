@@ -887,11 +887,6 @@
       "owner": "validateCanonicalRowLock"
     },
     {
-      "id": "TX-0373",
-      "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
-      "owner": "rejects"
-    },
-    {
       "id": "TX-0374",
       "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
       "owner": "<module>"
