@@ -184,7 +184,8 @@ try {
   ]) {
     const child = new Client({ connectionString: databaseUrl });
     const childSchema = `legacy_free_unsafe_${randomUUID().replaceAll("-", "")}`;
-    const childOccurrences: ErrorOccurrence[] = [];
+    // Share only plain observations so both actors retain actual failure order.
+    const childOccurrences = parentOccurrences;
     let rejectChildError: (error: unknown) => void;
     const childNativeError = new Promise<never>((_resolve, reject) => {
       rejectChildError = reject;
@@ -361,7 +362,8 @@ try {
         childOccurrences.push({ stage: "end", error });
       }
     }
-    throwFailures(childOccurrences);
+    // Propagate the first original object; aggregate only after parent disposal.
+    observeNativeErrors(childOccurrences);
     observeNativeErrors(parentOccurrences);
     assert.deepEqual(await snapshot("org_metadata"), metadataBefore);
     assert.deepEqual(
