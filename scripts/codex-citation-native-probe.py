@@ -173,12 +173,12 @@ verify();
 
 
 def compress_synthetic_rollout(home):
-    # Simulate a restored compressed checkpoint only inside this temporary fixture.
+    # Simulate restored compressed history only inside this temporary fixture.
     paths = list(home.glob("codex/sessions/*/*/*/*.jsonl"))
     assert len(paths) == 1
     path = paths[0]
     library = ctypes.util.find_library("zstd")
-    assert library, "libzstd is required for restored-checkpoint acceptance"
+    assert library, "libzstd is required for restored-history acceptance"
     zstd = ctypes.CDLL(library)
     zstd.ZSTD_compressBound.argtypes = [ctypes.c_size_t]
     zstd.ZSTD_compressBound.restype = ctypes.c_size_t
@@ -223,7 +223,7 @@ def main():
         server.shutdown()
     print(json.dumps({"runtime": version, "rawCharacters": len(TEXT), "nativeCharacters": len(PREFIX),
                       "safeCharacters": len(SAFE), "fresh": "pass", "newProcessResume": "pass",
-                      "guestFreshResume": "pass", "compressedCheckpointResume": "pass",
+                      "guestFreshResume": "pass", "compressedHistoryResume": "pass",
                       "oldNewPublicReaders": "pass"}))
 
 

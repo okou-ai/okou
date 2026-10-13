@@ -48,6 +48,10 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 use super::cli_framework::EffectiveCliFramework;
+use super::session_history_attribution::{
+    HistoryAttemptOutcome, HistoryAttemptTiming, HistoryTimingWindow,
+    SessionHistoryDownloadAttribution,
+};
 use super::session_history_cpu::{
     SessionHistoryCpuJob, SessionHistoryCpuMaterialization, SessionHistoryCpuPool,
     SessionHistoryCpuTimings, SessionHistoryPrefixOutcome,
@@ -221,6 +225,7 @@ struct SessionHistoryDownloadTaskResult {
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct SessionHistoryDownloadTimings {
     metadata: Option<SessionHistoryTelemetryMetadata>,
+    attribution: Option<SessionHistoryDownloadAttribution>,
     request_status: Option<SessionHistoryDownloadPhaseTiming>,
     body_read: Option<SessionHistoryDownloadPhaseTiming>,
     validation: Option<SessionHistoryDownloadPhaseTiming>,
@@ -235,6 +240,10 @@ pub(super) struct SessionHistoryDownloadPhaseTiming {
 }
 
 impl SessionHistoryDownloadTimings {
+    pub(super) fn attribution(&self) -> Option<SessionHistoryDownloadAttribution> {
+        self.attribution
+    }
+
     #[cfg(test)]
     pub(super) fn encoding(&self) -> Option<&'static str> {
         self.metadata.map(SessionHistoryTelemetryMetadata::encoding)
@@ -304,6 +313,10 @@ impl SessionHistoryDownloadTimings {
     }
 
     fn merge_cpu(&mut self, timings: SessionHistoryCpuTimings) {
+        if let Some(attribution) = &mut self.attribution {
+            attribution.cpu_admission = timings.admission_window();
+            attribution.cpu_queue = timings.queue_window();
+        }
         if let Some(phase) = timings.validation() {
             self.add_validation(phase.elapsed(), phase.success());
         }
@@ -572,6 +585,9 @@ impl SessionHistoryMaterializer {
         let cpu = cpu.clone();
         let session = session.clone();
         let started_at = Instant::now();
+        let attribution = SessionHistoryDownloadAttribution::new(started_at);
+        let mut download_timings = SessionHistoryDownloadTimings::for_metadata(metadata);
+        download_timings.attribution = Some(attribution);
         let task_cancel = cancel.child_token();
         let task_cancel_for_task = task_cancel.clone();
         let task_probe_registration = probe_registration.clone();
@@ -592,7 +608,7 @@ impl SessionHistoryMaterializer {
                         cpu,
                         session,
                         framework,
-                        metadata,
+                        download_timings,
                         prefix_attribution,
                         task_cancel_for_task,
                     )
@@ -668,11 +684,16 @@ impl SessionHistoryMaterializer {
                 let metadata = *metadata;
                 if cancel.is_cancelled() || task_cancel.is_cancelled() {
                     task_cancel.cancel();
-                    if let Some(task) = task.take() {
-                        let _ = task.await;
-                    }
+                    let result = if let Some(task) = task.take() {
+                        task.await.unwrap_or_else(|_| {
+                            SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                        })
+                    } else {
+                        SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                    };
                     finish_session_history_probe(probe_registration);
-                    return SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                    return result
+                        .into_cancelled(started_at, metadata)
                         .into_materialization();
                 }
                 let Some(mut task) = task.take() else {
@@ -689,12 +710,12 @@ impl SessionHistoryMaterializer {
                     biased;
                     _ = cancel.cancelled() => {
                         task_cancel.cancel();
-                        let _ = task.await;
-                        SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                        task.await.unwrap_or_else(|_| SessionHistoryDownloadTaskResult::cancelled(started_at, metadata))
+                            .into_cancelled(started_at, metadata)
                     }
                     _ = task_cancel.cancelled() => {
-                        let _ = task.await;
-                        SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                        task.await.unwrap_or_else(|_| SessionHistoryDownloadTaskResult::cancelled(started_at, metadata))
+                            .into_cancelled(started_at, metadata)
                     }
                     joined = &mut task => {
                         joined.unwrap_or_else(|error| {
@@ -712,7 +733,8 @@ impl SessionHistoryMaterializer {
                 // Re-check after joining because the task itself can observe
                 // cancellation while still producing a successful result.
                 if cancel.is_cancelled() || task_cancel.is_cancelled() {
-                    return SessionHistoryDownloadTaskResult::cancelled(started_at, metadata)
+                    return result
+                        .into_cancelled(started_at, metadata)
                         .into_materialization();
                 }
                 result.into_materialization()
@@ -722,6 +744,18 @@ impl SessionHistoryMaterializer {
 }
 
 impl SessionHistoryDownloadTaskResult {
+    fn into_cancelled(
+        self,
+        started_at: Instant,
+        metadata: SessionHistoryTelemetryMetadata,
+    ) -> Self {
+        // Preserve legacy cancellation's omitted phase metrics and elapsed
+        // origin while retaining the new, independently meaningful attempts.
+        let mut cancelled = Self::cancelled(started_at, metadata);
+        cancelled.timings.attribution = self.timings.attribution;
+        cancelled
+    }
+
     fn into_materialization(self) -> SessionHistoryMaterialization {
         match self.result {
             Ok(materialization) => SessionHistoryMaterialization::Downloaded {
@@ -776,14 +810,18 @@ async fn download_resume_session_history_timed(
     cpu: SessionHistoryCpuPool,
     session: ResumeSession,
     framework: EffectiveCliFramework,
-    metadata: SessionHistoryTelemetryMetadata,
+    mut timings: SessionHistoryDownloadTimings,
     prefix_attribution: Option<RestoredSessionHistoryPrefixAttribution>,
     cancel: CancellationToken,
 ) -> SessionHistoryDownloadTaskResult {
     let started_at = Instant::now();
-    let mut timings = SessionHistoryDownloadTimings::for_metadata(metadata);
+    let initial_metadata = timings.metadata;
     if cancel.is_cancelled() {
-        return SessionHistoryDownloadTaskResult::cancelled(started_at, metadata);
+        return SessionHistoryDownloadTaskResult {
+            elapsed: started_at.elapsed(),
+            timings,
+            result: Err(RunnerError::Cancelled),
+        };
     }
     let result = download_resume_session_history(
         http,
@@ -796,7 +834,15 @@ async fn download_resume_session_history_timed(
     )
     .await;
     if cancel.is_cancelled() {
-        return SessionHistoryDownloadTaskResult::cancelled(started_at, metadata);
+        return SessionHistoryDownloadTaskResult {
+            elapsed: started_at.elapsed(),
+            timings: SessionHistoryDownloadTimings {
+                metadata: initial_metadata,
+                attribution: timings.attribution,
+                ..Default::default()
+            },
+            result: Err(RunnerError::Cancelled),
+        };
     }
     SessionHistoryDownloadTaskResult {
         elapsed: started_at.elapsed(),
@@ -1013,10 +1059,16 @@ async fn download_body_with_retries(
                 );
                 // The caller's cancellation owns this wait and the next request.
                 // Each attempt starts with an empty body buffer.
-                retry
-                    .wait()
-                    .await
-                    .map_err(|_| session_history_download_budget_error())?;
+                {
+                    let _observation = HistoryBackoffObservation {
+                        timings,
+                        started_at: Instant::now(),
+                    };
+                    retry
+                        .wait()
+                        .await
+                        .map_err(|_| session_history_download_budget_error())?;
+                }
             }
         }
     }
@@ -1039,71 +1091,90 @@ async fn download_body_once(
     timings: &mut SessionHistoryDownloadTimings,
 ) -> Result<Vec<u8>, SessionHistoryDownloadBodyError> {
     let request_started = Instant::now();
+    let mut attempt = HistoryAttemptObservation::new(timings, request_started);
     let response = http
         .get(url)
         .timeout(OBJECT_DOWNLOAD_TIMEOUT)
         .send()
         .await
         .map_err(|error| {
-            timings.record_request_status(request_started.elapsed(), false);
+            attempt.finish_request(false);
             SessionHistoryDownloadBodyError::from_reqwest("GET", url, error)
         })?;
     if let Err(error) = response.error_for_status_ref() {
-        timings.record_request_status(request_started.elapsed(), false);
+        attempt.finish_request(false);
+        attempt.observation.response =
+            Some(session_history_response_metadata(&response, expected_size));
         let mut failure = SessionHistoryDownloadBodyError::from_reqwest("GET status", url, error);
         failure.retry_after = object_download_http_retry_after(&response);
         return Err(failure);
     }
-    timings.record_request_status(request_started.elapsed(), true);
+    attempt.finish_request(true);
     let mut response = response;
 
     let response_metadata = session_history_response_metadata(&response, expected_size);
-    timings.record_response_metadata(response_metadata);
+    attempt.observation.response = Some(response_metadata);
+    attempt.timings.record_response_metadata(response_metadata);
 
     let validation_started = Instant::now();
     if let Some(content_length) = response.content_length() {
         if content_length > RESUME_SESSION_HISTORY_MAX_BYTES {
-            timings.add_validation(validation_started.elapsed(), false);
-            return Err(SessionHistoryDownloadBodyError::downloaded_too_large(
+            attempt
+                .timings
+                .add_validation(validation_started.elapsed(), false);
+            return Err(attempt.fail(SessionHistoryDownloadBodyError::downloaded_too_large(
                 format!(
                     "session history is too large: {content_length} bytes exceeds {RESUME_SESSION_HISTORY_MAX_BYTES} bytes",
                 ),
-            ));
+            )));
         }
         if let Some(expected_size) = expected_size
             && content_length != expected_size
         {
-            timings.add_validation(validation_started.elapsed(), false);
-            return Err(SessionHistoryDownloadBodyError::content_length_mismatch(
+            attempt
+                .timings
+                .add_validation(validation_started.elapsed(), false);
+            return Err(attempt.fail(SessionHistoryDownloadBodyError::content_length_mismatch(
                 format!(
                     "session history content-length mismatch: expected {expected_size} bytes, got {content_length} bytes",
                 ),
-            ));
+            )));
         }
     }
-    timings.add_validation(validation_started.elapsed(), true);
+    attempt
+        .timings
+        .add_validation(validation_started.elapsed(), true);
 
     let capacity = expected_size
         .unwrap_or(64 * 1024)
         .min(RESUME_SESSION_HISTORY_MAX_BYTES)
         .min(usize::MAX as u64) as usize;
+    let allocation_started = Instant::now();
     let mut body = Vec::with_capacity(capacity);
+    attempt.observation.allocation = Some(allocation_started.elapsed());
     let mut downloaded = 0u64;
     let body_started = Instant::now();
-    while let Some(chunk) = match response.chunk().await {
-        Ok(chunk) => chunk,
-        Err(error) => {
-            timings.record_body_read(body_started.elapsed(), false);
-            return Err(SessionHistoryDownloadBodyError::from_reqwest(
-                "read", url, error,
-            ));
-        }
-    } {
+    attempt.phase = Some(HistoryAttemptPhase::Body(body_started));
+    loop {
+        attempt.chunk_started = Some(Instant::now());
+        let chunk = response.chunk().await;
+        attempt.finish_chunk_wait();
+        let Some(chunk) = (match chunk {
+            Ok(chunk) => chunk,
+            Err(error) => {
+                attempt.finish_body(false);
+                return Err(SessionHistoryDownloadBodyError::from_reqwest(
+                    "read", url, error,
+                ));
+            }
+        }) else {
+            break;
+        };
         downloaded += chunk.len() as u64;
         if let Some(expected_size) = expected_size
             && downloaded > expected_size
         {
-            timings.record_body_read(body_started.elapsed(), false);
+            attempt.finish_body(false);
             return Err(SessionHistoryDownloadBodyError::downloaded_size_mismatch(
                 format!(
                     "session history downloaded size mismatch: expected {expected_size} bytes, got more than {expected_size} bytes",
@@ -1111,28 +1182,136 @@ async fn download_body_once(
             ));
         }
         if downloaded > RESUME_SESSION_HISTORY_MAX_BYTES {
-            timings.record_body_read(body_started.elapsed(), false);
+            attempt.finish_body(false);
             return Err(SessionHistoryDownloadBodyError::downloaded_too_large(
                 format!(
                     "session history is too large: {downloaded} bytes exceeds {RESUME_SESSION_HISTORY_MAX_BYTES} bytes",
                 ),
             ));
         }
+        let copy_started = Instant::now();
         body.extend_from_slice(&chunk);
+        attempt.observation.copy += copy_started.elapsed();
+        attempt.observation.chunks = attempt.observation.chunks.saturating_add(1);
     }
     if let Some(expected_size) = expected_size
         && downloaded != expected_size
     {
-        timings.record_body_read(body_started.elapsed(), false);
+        attempt.finish_body(false);
         return Err(SessionHistoryDownloadBodyError::downloaded_size_mismatch(
             format!(
                 "session history downloaded size mismatch: expected {expected_size} bytes, got {downloaded} bytes",
             ),
         ));
     }
-    timings.record_body_read(body_started.elapsed(), true);
+    attempt.finish_body(true);
 
     Ok(body)
+}
+
+enum HistoryAttemptPhase {
+    Request(Instant),
+    Body(Instant),
+}
+
+/// Dropping an attempt future is an observed interruption, not an inferred
+/// transport failure. No bytes, URLs or error strings are retained here.
+struct HistoryAttemptObservation<'a> {
+    timings: &'a mut SessionHistoryDownloadTimings,
+    observation: HistoryAttemptTiming,
+    phase: Option<HistoryAttemptPhase>,
+    chunk_started: Option<Instant>,
+}
+
+impl<'a> HistoryAttemptObservation<'a> {
+    fn new(timings: &'a mut SessionHistoryDownloadTimings, started_at: Instant) -> Self {
+        Self {
+            timings,
+            observation: HistoryAttemptTiming::new(started_at),
+            phase: Some(HistoryAttemptPhase::Request(started_at)),
+            chunk_started: None,
+        }
+    }
+
+    fn finish_request(&mut self, success: bool) {
+        let Some(HistoryAttemptPhase::Request(start)) = self.phase.take() else {
+            return;
+        };
+        let window = HistoryTimingWindow::new(start, Instant::now());
+        self.timings
+            .record_request_status(window.elapsed(), success);
+        self.observation.request = Some(window);
+        if !success {
+            self.observation.outcome = HistoryAttemptOutcome::Failed;
+        }
+    }
+
+    fn finish_chunk_wait(&mut self) {
+        if let Some(started) = self.chunk_started.take() {
+            let elapsed = started.elapsed();
+            self.observation.chunk_wait += elapsed;
+            self.observation.chunk_wait_max = self.observation.chunk_wait_max.max(elapsed);
+        }
+    }
+
+    fn finish_body(&mut self, success: bool) {
+        let Some(HistoryAttemptPhase::Body(start)) = self.phase.take() else {
+            return;
+        };
+        let window = HistoryTimingWindow::new(start, Instant::now());
+        self.timings.record_body_read(window.elapsed(), success);
+        self.observation.body = Some(window);
+        self.observation.outcome = if success {
+            HistoryAttemptOutcome::Succeeded
+        } else {
+            HistoryAttemptOutcome::Failed
+        };
+    }
+
+    fn fail<T>(&mut self, error: T) -> T {
+        self.observation.outcome = HistoryAttemptOutcome::Failed;
+        error
+    }
+}
+
+impl Drop for HistoryAttemptObservation<'_> {
+    fn drop(&mut self) {
+        self.finish_chunk_wait();
+        let end = Instant::now();
+        // Interrupted legacy phases remain omitted as before. Only the new
+        // attempt observation gets a partial boundary; it is not a completed
+        // request/body measurement or an inferred transport failure.
+        if let Some(phase) = self.phase.take() {
+            match phase {
+                HistoryAttemptPhase::Request(start) => {
+                    self.observation.request = Some(HistoryTimingWindow::new(start, end))
+                }
+                HistoryAttemptPhase::Body(start) => {
+                    self.observation.body = Some(HistoryTimingWindow::new(start, end))
+                }
+            }
+            self.observation.outcome = HistoryAttemptOutcome::Interrupted;
+        }
+        self.observation.window.end = end;
+        if let Some(attribution) = &mut self.timings.attribution
+            && let Some(slot) = attribution.attempts.iter_mut().find(|slot| slot.is_none())
+        {
+            *slot = Some(self.observation);
+        }
+    }
+}
+
+struct HistoryBackoffObservation<'a> {
+    timings: &'a mut SessionHistoryDownloadTimings,
+    started_at: Instant,
+}
+
+impl Drop for HistoryBackoffObservation<'_> {
+    fn drop(&mut self) {
+        if let Some(attribution) = &mut self.timings.attribution {
+            attribution.backoff += self.started_at.elapsed();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1424,6 +1603,38 @@ mod tests {
 
     fn start_materializer(session: &ResumeSession) -> SessionHistoryMaterializer {
         start_materializer_with_framework(session, EffectiveCliFramework::ClaudeCode)
+    }
+
+    fn assert_attempt_outcomes(
+        timings: &SessionHistoryDownloadTimings,
+        expected: &[HistoryAttemptOutcome],
+    ) -> SessionHistoryDownloadAttribution {
+        let attribution = timings.attribution().unwrap();
+        let attempts: Vec<_> = attribution.attempts.iter().flatten().collect();
+        assert_eq!(
+            attempts
+                .iter()
+                .map(|attempt| attempt.outcome)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        for attempt in &attempts {
+            let request = attempt.request.unwrap();
+            assert!(request.start >= attribution.origin);
+            assert!(request.end >= request.start);
+            assert!(attempt.window.end >= request.end);
+            if let Some(body) = attempt.body {
+                assert!(body.start >= request.end);
+                assert!(body.end >= body.start);
+                assert!(attempt.window.end >= body.end);
+                assert!(attempt.chunk_wait_max <= attempt.chunk_wait);
+                assert!(attempt.copy + attempt.chunk_wait <= body.elapsed());
+            }
+        }
+        for (earlier, later) in attempts.iter().zip(attempts.iter().skip(1)) {
+            assert!(later.window.start >= earlier.window.end);
+        }
+        attribution
     }
 
     fn prefix_attribution(local_history: &[u8]) -> RestoredSessionHistoryPrefixAttribution {
@@ -2238,6 +2449,18 @@ mod tests {
                 assert_phase_success(timings.validation());
                 assert_phase_success(timings.decompression());
                 assert_phase_success(timings.hash_verification());
+                let attribution =
+                    assert_attempt_outcomes(&timings, &[HistoryAttemptOutcome::Succeeded]);
+                let attempt = attribution.attempts.iter().flatten().next().unwrap();
+                assert!(attempt.body.is_some());
+                assert!(attempt.allocation.is_some());
+                assert!(attempt.chunks > 0);
+                let admission = attribution.cpu_admission.unwrap();
+                let queue = attribution.cpu_queue.unwrap();
+                assert!(admission.start >= attempt.body.unwrap().end);
+                assert!(admission.end >= admission.start);
+                assert!(queue.start >= admission.end);
+                assert!(queue.end >= queue.start);
             }
             _ => panic!("expected downloaded session"),
         }
@@ -3053,6 +3276,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn preparation_drain_uploads_interrupted_attempt_without_restore_wait_fields() {
+        use crate::telemetry::JobTelemetry;
+        use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+        use runner_types::ids::RunId;
+
+        let history = b"history\n";
+        let history_server = MultiShotSessionHistoryServer::respond_many(vec![
+            MultiShotSessionHistoryResponse::ok(Vec::new(), Some(history.len() as u64)).stalled(),
+        ])
+        .await;
+        let session = ref_session(
+            history_server.url(),
+            hex::encode(Sha256::digest(history)),
+            history.len() as u64,
+            history.len() as u64,
+        );
+        let materializer = start_materializer(&session);
+        history_server.wait_for_response(1).await;
+
+        let receiver = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let http = HttpClient::new(HttpClientConfig {
+            api_url: receiver.url(),
+            vercel_bypass: None,
+            client_session_id: "history-drain-test".to_owned(),
+            runner_version: "9.8.7",
+        })
+        .unwrap();
+        let mut telemetry =
+            JobTelemetry::new(http, RunId::from(uuid::Uuid::nil()), "tok".to_owned(), None);
+        super::super::session_history_restore_plan::SessionHistoryRestorePlan::Prestarted {
+            materializer,
+            fallback: None,
+        }
+        .cancel_and_drain(&mut telemetry)
+        .await;
+        telemetry.flush().await;
+
+        let requests = receiver.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operations = payload["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        let mut operations = operations.iter();
+        let attempt = operations.next().unwrap();
+        let summary = operations.next().unwrap();
+        assert_eq!(attempt["action_type"], "session_history_download_attempt");
+        assert_eq!(attempt["outcome"], "interrupted");
+        assert_eq!(attempt["success"], false);
+        assert_eq!(
+            summary["action_type"],
+            "session_history_download_attribution"
+        );
+        assert_eq!(summary["session_history_observation_stage"], "cancel_drain");
+        assert_eq!(summary["outcome"], "cancelled");
+        assert_eq!(summary["session_history_attempt_count"], 1);
+        assert_eq!(summary["session_history_interrupted_attempt_count"], 1);
+        assert_eq!(summary["session_history_retry_count"], 0);
+        assert_eq!(
+            summary["session_history_timing_origin_unix_ms"],
+            attempt["session_history_timing_origin_unix_ms"]
+        );
+        assert!(
+            summary
+                .get("session_history_restore_wait_start_offset_ms")
+                .is_none()
+        );
+        assert!(
+            summary
+                .get("session_history_restore_wait_end_offset_ms")
+                .is_none()
+        );
+        assert!(!body.contains("token=secret"));
+        history_server.assert_served(1).await;
+    }
+
+    #[tokio::test]
     async fn cancellable_materializer_aborts_pending_download_before_finish() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
@@ -3105,6 +3409,10 @@ mod tests {
                 assert_no_phase(timings.validation());
                 assert_no_phase(timings.decompression());
                 assert_no_phase(timings.hash_verification());
+                let attribution =
+                    assert_attempt_outcomes(&timings, &[HistoryAttemptOutcome::Interrupted]);
+                assert!(attribution.cpu_admission.is_none());
+                assert!(attribution.cpu_queue.is_none());
             }
             _ => panic!("expected cancelled download"),
         }

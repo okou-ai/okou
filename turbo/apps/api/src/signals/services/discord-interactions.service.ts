@@ -7,6 +7,7 @@ import { command } from "ccstate";
 import { delay } from "signal-timers";
 
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
+import { discordConnectMessage } from "../../lib/discord-connect-message";
 import {
   discordAccountLabel,
   discordAccountMessage,
@@ -46,10 +47,6 @@ import {
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 
-function discordSetupGuidance(): string {
-  const worksUrl = new URL("/works", env("APP_URL")).toString();
-  return `Please connect your account to use Okou in this workspace.\n\nOpen [Works](${worksUrl}), sign in to Okou, and follow the steps to connect your Discord account. If Okou hasn't been set up for this workspace, ask a workspace admin to install it in your Discord server.`;
-}
 const UNCONFIRMED_REQUEST =
   "Discord could not confirm this request in time, so no changes were made. Run the command again.";
 // Discord's 3 s initial-response deadline plus a margin for in-flight delivery.
@@ -157,7 +154,7 @@ const discordOrgPicker$ = command(
     const bindings = await get(discordSenderBindings(args.actor.discordUserId));
     signal.throwIfAborted();
     if (bindings.length === 0) {
-      return discordAccountMessage(discordSetupGuidance());
+      return discordConnectMessage();
     }
     if (
       bindings.length === 1 &&
@@ -307,7 +304,7 @@ const discordAccountAction$ = command(
       return set(discordOrgPicker$, { actor, botToken }, signal);
     }
     if (current.kind !== "connected") {
-      return discordAccountMessage(discordSetupGuidance());
+      return discordConnectMessage(actor.guildId);
     }
     if (control && control.connectionId !== current.binding.connectionId) {
       return discordAccountMessage(STALE_CONTROL);

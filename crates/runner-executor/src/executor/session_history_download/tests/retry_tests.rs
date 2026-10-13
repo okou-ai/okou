@@ -27,6 +27,13 @@ async fn materializer_retries_interrupted_zstd_body_without_reusing_partial_byte
             assert_phase_failure(timings.body_read());
             assert_phase_success(timings.decompression());
             assert_phase_success(timings.hash_verification());
+            assert_attempt_outcomes(
+                &timings,
+                &[
+                    HistoryAttemptOutcome::Failed,
+                    HistoryAttemptOutcome::Succeeded,
+                ],
+            );
         }
         _ => panic!("expected verified history after retry"),
     }
@@ -61,6 +68,29 @@ async fn materializer_recovers_from_temporary_http_failures() {
                 assert_eq!(session.history_bytes(), body);
                 assert_phase_failure(timings.request_status());
                 assert_phase_success(timings.hash_verification());
+                let attribution = assert_attempt_outcomes(
+                    &timings,
+                    &[
+                        HistoryAttemptOutcome::Failed,
+                        HistoryAttemptOutcome::Succeeded,
+                    ],
+                );
+                assert!(
+                    attribution
+                        .attempts
+                        .iter()
+                        .flatten()
+                        .next()
+                        .unwrap()
+                        .body
+                        .is_none()
+                );
+                let mut attempts = attribution.attempts.iter().flatten();
+                let first = attempts.next().unwrap();
+                let second = attempts.next().unwrap();
+                assert!(first.response.is_some());
+                assert!(second.response.is_some());
+                assert_ne!(first.response, second.response);
             }
             _ => panic!("expected verified history after {status}"),
         }
@@ -118,6 +148,10 @@ async fn materializer_stops_after_three_transient_failures() {
             assert!(error.to_string().contains("503"), "{error}");
             assert_phase_failure(timings.request_status());
             assert_no_phase(timings.hash_verification());
+            assert_attempt_outcomes(
+                &timings,
+                &[HistoryAttemptOutcome::Failed; SESSION_HISTORY_DOWNLOAD_MAX_ATTEMPTS],
+            );
         }
         _ => panic!("expected exhausted download to fail"),
     }
@@ -266,8 +300,16 @@ async fn materializer_limits_total_time_spent_on_stalled_downloads() {
     }
 
     match download.await.unwrap() {
-        SessionHistoryMaterialization::Failed { error, .. } => {
+        SessionHistoryMaterialization::Failed { error, timings, .. } => {
             assert!(error.to_string().contains("retry budget"), "{error}");
+            assert_attempt_outcomes(
+                &timings,
+                &[
+                    HistoryAttemptOutcome::Failed,
+                    HistoryAttemptOutcome::Failed,
+                    HistoryAttemptOutcome::Interrupted,
+                ],
+            );
         }
         _ => panic!("expected total download budget to expire"),
     }

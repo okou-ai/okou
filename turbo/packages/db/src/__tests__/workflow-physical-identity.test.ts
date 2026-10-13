@@ -169,7 +169,6 @@ describe("workflow schema physical identity", () => {
           "idx_workflows_ordinary_private_owner_agent_name_unique",
           "idx_workflows_org",
           "idx_workflows_org_owner",
-          "idx_workflows_private_owner_agent_name_unique",
           "idx_workflows_public_agent_name_unique",
         ],
         checks: ["workflows_official_installation_check"],

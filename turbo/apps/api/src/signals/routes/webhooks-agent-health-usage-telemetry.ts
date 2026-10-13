@@ -3,6 +3,7 @@ import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  sessionHistoryDownloadAttributionFields,
   type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
@@ -10,6 +11,7 @@ import {
   type RunnerResourceBudgetUtilizationBucket,
   type RunnerStartupPath,
   type SandboxReuseResult,
+  type SessionHistoryDownloadAttribution,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -61,7 +63,7 @@ const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
 
-interface SandboxOperationDimensionInput {
+interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownloadAttribution> {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
@@ -294,6 +296,7 @@ function sandboxOperationDimensions(
     ...runnerResourceBudgetDimensions(op),
     ...workspaceHistoryRestoreDimensions(op),
     ...historyTransferDimensions(op),
+    ...historyDownloadAttributionDimensions(op),
     ...(op.encoding ? { encoding: op.encoding } : {}),
     ...(op.session_history_raw_size_bucket
       ? {
@@ -346,6 +349,19 @@ function sandboxOperationDimensions(
       ? { session_history_download_source: op.session_history_download_source }
       : {}),
   };
+}
+
+function historyDownloadAttributionDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  const dimensions: Record<string, string | number> = {};
+  for (const key of sessionHistoryDownloadAttributionFields) {
+    const value = op[key];
+    if (value !== undefined) {
+      dimensions[key] = value;
+    }
+  }
+  return dimensions;
 }
 
 function historyTransferDimensions(

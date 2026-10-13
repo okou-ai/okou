@@ -1692,6 +1692,13 @@ export {
 } from "./chat-thread-activity-summary";
 
 export {
+  CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
+  chatInputStatusContract,
+  chatInputStatusResponseSchema,
+  type ChatInputStatusResponse,
+} from "./chat-input-status";
+
+export {
   HOME_TASK_RECOMMENDATION_LIMIT,
   HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY,
   HOME_TASK_RECOMMENDATION_REFRESH_MS,

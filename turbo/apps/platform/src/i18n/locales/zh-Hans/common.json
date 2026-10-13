@@ -903,7 +903,7 @@
     },
     "viewer": {
       "continuePrompt": "帮我处理这个成果：{{url}}",
-      "continueWithBrand": "用{{brandName}}继续"
+      "continueWithBrand": "用 {{brandName}} 继续"
     }
   },
   "auth": {
@@ -911,7 +911,7 @@
       "signIn": "登录",
       "signUp": "注册"
     },
-    "homeLink": "前往{{brandName}}首页",
+    "homeLink": "前往 {{brandName}} 首页",
     "loading": "正在加载身份验证",
     "theme": {
       "darkEnabled": "已开启深色主题",
@@ -921,7 +921,7 @@
   },
   "authorization": {
     "browser": {
-      "description": "{{assistantName}}会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
+      "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
       "linkExpires": "链接将于{{date}}过期。",
@@ -933,12 +933,12 @@
       "authorize": "授权",
       "authorized": "已授权",
       "checkingCompatibility": "正在检查兼容性",
-      "description": "选择一台在线的电脑，供{{assistantName}}在{{source}}中使用。",
+      "description": "选择一台在线的电脑，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下载 macOS 版",
       "lastSeen": "最后在线于{{date}}",
       "linkExpires": "链接将于{{date}}过期。",
       "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
-      "noHostsDescription": "在 Mac 上打开{{desktopApplicationName}}，等它上线后刷新本页。",
+      "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，等它上线后刷新本页。",
       "noHostsTitle": "没有在线的电脑",
       "sources": {
         "chat": "这个聊天会话",
@@ -974,10 +974,10 @@
       },
       "expiration": {
         "expired": "已过期",
-        "inDays_one": "{{count}}天后过期",
-        "inDays_other": "{{count}}天后过期",
-        "inHours_one": "{{count}}小时后过期",
-        "inHours_other": "{{count}}小时后过期",
+        "inDays_one": "{{count}} 天后过期",
+        "inDays_other": "{{count}} 天后过期",
+        "inHours_one": "{{count}} 小时后过期",
+        "inHours_other": "{{count}} 小时后过期",
         "lessThanHour": "不到 1 小时后过期",
         "lessThanHourShort": "< 1 小时",
         "prefix": "剩余 "
@@ -1028,7 +1028,7 @@
       "activeUntil": "有效期至{{date}}",
       "addSlots": "增加名额",
       "billedMonthly": "按月计费",
-      "buyAmount": "购买{{amount}}",
+      "buyAmount": "购买 {{amount}}",
       "buyButton": "购买并发",
       "buyTitle": "购买并发",
       "cancelDescription": "这会在当前账单周期结束时停止续订，已有名额在那之前仍然有效。",
@@ -1037,8 +1037,8 @@
       "changeButton": "变更",
       "changeQuantityOptionDescription": "增加立即生效，减少从下个账单日开始。",
       "changeTitle": "变更并发",
-      "concurrentRun_one": "{{value}}个并发运行",
-      "concurrentRun_other": "{{value}}个并发运行",
+      "concurrentRun_one": "{{value}} 个并发运行",
+      "concurrentRun_other": "{{value}} 个并发运行",
       "decreaseAria": "减少额外并发数量",
       "dueNow": "现在应付",
       "dueToday": "今日应付",
@@ -1062,24 +1062,24 @@
       "scheduleChange": "安排变更",
       "scheduledChange": "将于{{date}}变更为{{quantity}}",
       "scheduledReviewDescription": "你当前的名额在本账单周期内仍然有效。较少的数量从续订时开始生效，不退款，也不返还账户余额。",
-      "slot_one": "{{value}}个名额",
-      "slot_other": "{{value}}个名额",
+      "slot_one": "{{value}} 个名额",
+      "slot_other": "{{value}} 个名额",
       "slots": "名额",
       "title": "并发",
       "updateSlots": "更新名额"
     },
     "credits": {
       "amount": "金额",
-      "amountRangeError": "请输入{{minimum}}到{{maximum}}之间的数值",
+      "amountRangeError": "请输入 {{minimum}} 到 {{maximum}} 之间的数值",
       "anyAmount": "任意金额",
       "creditsAdded": "积分已到账",
       "custom": "自定义",
       "customAmountAria": "自定义美元金额",
       "dueNow": "现在应付",
-      "exchangeRate": "积分永不过期。1 美元={{credits}}积分。",
+      "exchangeRate": "积分永不过期。1 美元={{credits}} 积分。",
       "payAndAddCredits": "支付并添加积分",
       "quickBuy": "快速购买",
-      "quickBuyAmount": "快速购买{{amount}}",
+      "quickBuyAmount": "快速购买 {{amount}}",
       "reviewDescription": "用你已保存的支付方式确认这笔一次性扣款。",
       "reviewError": "这笔积分购买没能完成。请检查账单信息后重试。",
       "reviewTitle": "确认积分购买",
@@ -1126,7 +1126,7 @@
       "custom": {
         "name": "定制"
       },
-      "customAccess": "定制权益，{{value}}个并发运行",
+      "customAccess": "定制权益，{{value}} 个并发运行",
       "customCancellationNotice": "你的定制套餐将于{{date}}结束。",
       "downgrade": "降级",
       "downgradeNotice": "你的{{currentPlan}}套餐将于{{date}}降级为{{targetPlan}}。",
@@ -1143,14 +1143,14 @@
         "builtInResearchData": "内置 SEO、线索、网页和市场数据",
         "chatIntegrations": "Slack 和 Telegram 集成",
         "computerUse": "智能体直接操作你电脑上的应用",
-        "concurrentAgents": "{{slots}}个智能体同时运行",
+        "concurrentAgents": "{{slots}} 个智能体同时运行",
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，并为团队打造",
         "included": "已包含",
         "liveBrowser": "实时观看智能体的浏览器，随时接管",
         "moreConnectorsChannels": "更多自定义连接器和渠道集成",
         "supportEmail": "邮件支持",
         "supportPriority": "优先支持",
-        "voiceInput": "语音输入，每天{{requests}}次请求、{{minutes}}分钟",
+        "voiceInput": "语音输入，每天 {{requests}} 次请求、{{minutes}} 分钟",
         "webhookAutomations": "一个 webhook 就能从任何系统发起运行"
       },
       "legacy": "旧版",
@@ -1176,7 +1176,7 @@
       "upgradeTo": "升级到{{plan}}",
       "usagePacks": {
         "bonusCredits": "赠送积分",
-        "bonusIncluded": "含{{credits}}赠送积分",
+        "bonusIncluded": "含 {{credits}} 赠送积分",
         "choosePlan": "选择套餐",
         "concurrentSlots": "并发名额",
         "configurePackages": "配置成员套包",
@@ -1225,19 +1225,19 @@
         "noPackage": "无套包",
         "orderSummary": "订单摘要",
         "packagePerMemberNote": "下一步为每位成员选择付费套包，或选择「无套包」。",
-        "packCredits": "{{credits}}积分",
-        "packCreditsDiscount": "{{credits}}积分 · 省{{discount}}%",
-        "packOption": "{{price}} · {{credits}}积分 · 省{{discount}}%",
+        "packCredits": "{{credits}} 积分",
+        "packCreditsDiscount": "{{credits}} 积分 · 省 {{discount}}%",
+        "packOption": "{{price}} · {{credits}} 积分 · 省 {{discount}}%",
         "paidPackageRequired": "至少为一位成员选择付费套包才能继续。",
         "planChangeError": "无法准备这次订阅变更，请重试。",
-        "planPlusPackages": "套餐{{plan}} · 成员套包每人{{lowest}}–{{highest}}",
+        "planPlusPackages": "套餐 {{plan}} · 成员套包每人 {{lowest}}–{{highest}}",
         "planStep": "套餐",
         "priceFrom": "起价",
         "purchasedCredits": "已购积分",
         "selectPlan": "从{{plan}}开始",
         "selectUsage": "{{name}}的用量",
-        "stepOfTotal": "第{{current}}步，共{{total}}步",
-        "totalCreditsWithBonus": "{{credits}}积分 · 赠送{{bonus}}"
+        "stepOfTotal": "第 {{current}} 步，共 {{total}} 步",
+        "totalCreditsWithBonus": "{{credits}} 积分 · 赠送 {{bonus}}"
       }
     },
     "restore": {
@@ -1435,8 +1435,8 @@
           "alreadyRedeemed": "帖子已被使用",
           "authorAlreadyRewarded": "该账号已领取过奖励",
           "authorUnavailable": "无法确认作者",
-          "officialAccount": "{{assistantName}}官方帖子不计入",
-          "postMustMention": "需要提到{{assistantName}}"
+          "officialAccount": "{{assistantName}} 官方帖子不计入",
+          "postMustMention": "需要提到 {{assistantName}}"
         },
         "rewardsNote": "奖励在发放后 7 天过期。签到在 UTC 00:00 重置。Slack 奖励归入组织，其他奖励进入你的个人余额。",
         "share": {
@@ -1900,18 +1900,18 @@
     "feedback": {
       "emailDraftDescription": "邮件草稿",
       "forwardPartHeading": "转发自「{{title}}」",
-      "forwardPartsHeading_one": "从「{{title}}」转发了{{count}}段内容",
-      "forwardPartsHeading_other": "从「{{title}}」转发了{{count}}段内容",
+      "forwardPartsHeading_one": "从「{{title}}」转发了 {{count}} 段内容",
+      "forwardPartsHeading_other": "从「{{title}}」转发了 {{count}} 段内容",
       "partHeading": "引用自你的回复",
-      "partsHeading_one": "引用了你回复中的{{count}}段内容",
-      "partsHeading_other": "引用了你回复中的{{count}}段内容",
+      "partsHeading_one": "引用了你回复中的 {{count}} 段内容",
+      "partsHeading_other": "引用了你回复中的 {{count}} 段内容",
       "placeholder": "针对引用内容提问或评论",
       "quote": "引用",
       "remove": "移除反馈",
       "sentEmailDescription": "已发送的邮件",
       "sourcePartHeading": "引用自{{description}}",
-      "sourcePartsHeading_one": "从{{description}}引用了{{count}}段内容",
-      "sourcePartsHeading_other": "从{{description}}引用了{{count}}段内容"
+      "sourcePartsHeading_one": "从{{description}}引用了 {{count}} 段内容",
+      "sourcePartsHeading_other": "从{{description}}引用了 {{count}} 段内容"
     },
     "forward": {
       "action": "转发",
@@ -2005,10 +2005,10 @@
       "deny": "拒绝",
       "duration": "权限有效期",
       "expired": "已过期",
-      "expiresInDays_one": "{{count}}天后过期",
-      "expiresInDays_other": "{{count}}天后过期",
-      "expiresInHours_one": "{{count}}小时后过期",
-      "expiresInHours_other": "{{count}}小时后过期",
+      "expiresInDays_one": "{{count}} 天后过期",
+      "expiresInDays_other": "{{count}} 天后过期",
+      "expiresInHours_one": "{{count}} 小时后过期",
+      "expiresInHours_other": "{{count}} 小时后过期",
       "loadFailed": "无法加载权限状态",
       "otherEndpoints": "其他接口",
       "unknown": "未知权限",
@@ -2022,12 +2022,12 @@
       "automationEvent": "自动化事件",
       "automationEventDescription": "排队等待，可以开始时自动执行。",
       "cancellationRecoveryPending": "正在收尾已取消的运行，之后继续处理排队中的任务。",
-      "event_one": "{{count}}个事件",
-      "event_other": "{{count}}个事件",
+      "event_one": "{{count}} 个事件",
+      "event_other": "{{count}} 个事件",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
-      "message_one": "{{count}}条消息",
-      "message_other": "{{count}}条消息",
+      "message_one": "{{count}} 条消息",
+      "message_other": "{{count}} 条消息",
       "pendingAutomationEvent": "待处理的自动化事件",
       "queuedMessage": "排队消息",
       "queuedMessageDescription": "排队等待，可以开始时自动发送。",
@@ -2081,8 +2081,8 @@
       "keepGoingAt": "继续 · {{timestamp}}",
       "modelChangedTo": "模型已切换为{{model}}",
       "queueEllipsis": "队列…",
-      "relatedArtifactCount_one": "{{formattedCount}}个成果",
-      "relatedArtifactCount_other": "{{formattedCount}}个成果",
+      "relatedArtifactCount_one": "{{formattedCount}} 个成果",
+      "relatedArtifactCount_other": "{{formattedCount}} 个成果",
       "relatedArtifacts": "相关成果",
       "selectedModelAppliesAfterCurrentRun": "下次运行将使用{{model}}",
       "thinking": {
@@ -2105,7 +2105,7 @@
       "linkCopied": "链接已复制",
       "messageShareFailed": "分享链接创建失败，请重试。",
       "publicDescription": "选中的消息及其附件将公开可见。",
-      "selectedCount_other": "已选{{count}}条",
+      "selectedCount_other": "已选 {{count}} 条",
       "selectGroup": "选择该组消息",
       "shareLink": "分享对话链接",
       "shareLinkCopied": "分享链接已复制",
@@ -2798,6 +2798,14 @@
       "transcribing": "正在转写",
       "transcriptionFailed": "语音转写失败，请重试。"
     },
+    "walletAction": {
+      "approveButton": "审核",
+      "approveTitle": "审核购买",
+      "connectButton": "授权",
+      "connectTitle": "授权 Link 钱包",
+      "continueButton": "继续",
+      "continueTitle": "继续 Link 钱包操作"
+    },
     "workflows": {
       "named": "工作流 {{title}}",
       "open": "打开工作流 {{title}}"
@@ -2857,12 +2865,12 @@
     "scope": "谁可以使用",
     "sectionEmpty": "这里还没有配置。",
     "select": "选择 Cloudflare Access",
-    "summary_other": "已配置{{count}}个 Cloudflare Access",
+    "summary_other": "已配置 {{count}} 个 Cloudflare Access",
     "title": "Cloudflare Access",
     "tokenHelp": "使用 Cloudflare Access 服务令牌访问受保护的应用。",
     "unavailable": "该账号无法使用 Cloudflare Access。",
     "unused": "你的主机尚未使用",
-    "usedBy_other": "你的{{count}}台主机正在使用："
+    "usedBy_other": "你的 {{count}} 台主机正在使用："
   },
   "connectors": {
     "access": {
@@ -2984,7 +2992,7 @@
       "access": {
         "add": "添加访问权限",
         "manage": "管理{{connector}}访问权限",
-        "summaryMany": "{{value}}个智能体",
+        "summaryMany": "{{value}} 个智能体",
         "unavailable": "无法访问",
         "usedBy": "使用方： "
       },
@@ -3043,7 +3051,7 @@
         }
       },
       "description": "连接第三方服务，供你的智能体使用。",
-      "descriptionWithCount": "连接{{value}}个服务，供你的智能体使用。",
+      "descriptionWithCount": "连接 {{value}} 个服务，供你的智能体使用。",
       "directory": {
         "browse": "浏览",
         "builtin": "内置连接器",
@@ -3095,8 +3103,8 @@
       "shelf": {
         "moreCategories": "更多分类",
         "popular": "热门",
-        "seeMore_one": "查看{{names}}及其他{{count}}个",
-        "seeMore_other": "查看{{names}}及其他{{count}}个",
+        "seeMore_one": "查看{{names}}及其他 {{count}} 个",
+        "seeMore_other": "查看{{names}}及其他 {{count}} 个",
         "top": "热门连接器"
       },
       "title": "连接器",
@@ -3264,10 +3272,10 @@
       "reconnecting": "正在重新连接…"
     },
     "expiration": {
-      "inDays_one": "{{count}}天后过期",
-      "inDays_other": "{{count}}天后过期",
-      "inHours_one": "{{count}}小时后过期",
-      "inHours_other": "{{count}}小时后过期",
+      "inDays_one": "{{count}} 天后过期",
+      "inDays_other": "{{count}} 天后过期",
+      "inHours_one": "{{count}} 小时后过期",
+      "inHours_other": "{{count}} 小时后过期",
       "lessThanHour": "不到 1 小时后过期"
     },
     "permissions": {
@@ -3312,8 +3320,8 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回{{brandName}}",
-        "connectDescription": "把这个电话号码关联到你的{{brandName}}账号，就可以通过短信与{{assistantName}}交流。",
+        "back": "返回 {{brandName}}",
+        "connectDescription": "把这个电话号码关联到你的 {{brandName}} 账号，就可以通过短信与 {{assistantName}} 交流。",
         "connectTitle": "连接电话号码",
         "documentTitle": "连接 Messages",
         "errorFallback": "我们无法连接这个电话号码。请从短信中重试。",
@@ -3323,7 +3331,7 @@
         "invalidTimestamp": "此链接的时间戳无效。",
         "invalidTitle": "连接链接无效",
         "risk": "短信和彩信回复可能无法稳定送达。为获得最可靠的体验，请用 iMessage 与这个号码通信。",
-        "successDescription": "{{phone}}已连接。发送一条短信，即可开始与{{assistantName}}对话。",
+        "successDescription": "{{phone}}已连接。发送一条短信，即可开始与 {{assistantName}} 对话。",
         "successTitle": "电话号码已连接"
       },
       "common": {
@@ -3343,8 +3351,8 @@
         "back": "返回工作流",
         "checkingConnectionDescription": "我们正在检查你的 GitHub 连接，请稍候。",
         "checkingConnectionTitle": "正在检查连接…",
-        "checkingSession": "我们正在验证你的{{brandName}}登录状态，请稍候。",
-        "connectDescription": "把你的{{brandName}}账号关联到{{account}}，就可以在 issue 和 pull request 中通过@提及运行你的智能体。",
+        "checkingSession": "我们正在验证你的 {{brandName}} 登录状态，请稍候。",
+        "connectDescription": "把你的 {{brandName}} 账号关联到{{account}}，就可以在 issue 和 pull request 中通过@提及运行你的智能体。",
         "connectTitle": "连接到 GitHub",
         "errorFallback": "我们无法连接 GitHub。请从 GitHub 重试。",
         "invalidInstallation": "此链接中的 GitHub 安装信息无效。",
@@ -3358,9 +3366,9 @@
         "notInstalledDescription": "请先让组织管理员安装 GitHub，再连接你的账号。",
         "notInstalledTitle": "尚未安装 GitHub",
         "refresh": "请刷新此页面后重试。",
-        "signInButton": "登录{{brandName}}",
+        "signInButton": "登录 {{brandName}}",
         "signInCheckFailed": "无法检查登录状态",
-        "signInDescription": "连接此 GitHub 用户前，请先登录你的{{brandName}}账号。",
+        "signInDescription": "连接此 GitHub 用户前，请先登录你的 {{brandName}} 账号。",
         "signInTitle": "登录后继续",
         "successDescription": "你已以{{account}}身份连接。在 GitHub issue 或 pull request 中@你的智能体，即可开始对话。",
         "successTitle": "已连接到 GitHub！",
@@ -3407,7 +3415,7 @@
         "back": "返回 Telegram 设置",
         "checkingConnectionDescription": "我们正在检查你的 Telegram 连接，请稍候。",
         "checkingConnectionTitle": "正在检查连接…",
-        "checkingSession": "我们正在验证你的{{brandName}}登录状态，请稍候。",
+        "checkingSession": "我们正在验证你的 {{brandName}} 登录状态，请稍候。",
         "connectDescription": "把你的账号关联到这个 Telegram 机器人，就可以直接在 Telegram 里与你的智能体交流。",
         "connectTitle": "连接到 Telegram",
         "continue": "使用 Telegram 继续",
@@ -3421,9 +3429,9 @@
         "linkIncompleteTitle": "连接链接不完整",
         "open": "打开 Telegram",
         "refresh": "请刷新此页面后重试。",
-        "signInButton": "登录{{brandName}}",
+        "signInButton": "登录 {{brandName}}",
         "signInCheckFailed": "无法检查登录状态",
-        "signInDescription": "连接此 Telegram 用户前，请先登录你的{{brandName}}账号。",
+        "signInDescription": "连接此 Telegram 用户前，请先登录你的 {{brandName}} 账号。",
         "signInTitle": "登录后继续",
         "successDescription": "你已连接到{{bot}}。在 Telegram 中发送消息，即可开始对话。",
         "successTitle": "已连接到 Telegram！"
@@ -3445,7 +3453,7 @@
         "copySuccess": "电话号码已复制",
         "createCodeError": "无法创建连接码，请重试。",
         "creatingCode": "正在创建连接码…",
-        "description": "通过短信使用{{assistantName}}",
+        "description": "通过短信使用 {{assistantName}}",
         "destination": "iMessage 或短信发送至",
         "openMessages": "打开 Messages",
         "options": "手机选项",
@@ -3475,10 +3483,10 @@
         "create": {
           "descriptionAfter": "，创建企业自建应用并选择 Agent 类型。名称和图标可以自行决定；Agent 模板已包含机器人能力。",
           "descriptionBefore": "在 ",
-          "downloadIcon": "下载可选的{{brandName}}图标",
-          "iconAlt": "可选的{{brandName}}应用图标",
+          "downloadIcon": "下载可选的 {{brandName}} 图标",
+          "iconAlt": "可选的 {{brandName}} 应用图标",
           "iconHint": "，也可以使用你喜欢的任意图标。",
-          "iconTitle": "可选的{{brandName}}应用图标",
+          "iconTitle": "可选的 {{brandName}} 应用图标",
           "imageAlt": "飞书创建应用表单，高亮显示应用名称、图标和「创建」按钮",
           "title": "创建 Agent 应用"
         },
@@ -3543,7 +3551,7 @@
           "title": "发布应用"
         },
         "redirect": {
-          "descriptionAfter": "，打开「开发配置 → 安全设置」。在重定向 URL 中添加下方地址，让工作区成员可以把飞书账号连接到{{brandName}}。",
+          "descriptionAfter": "，打开「开发配置 → 安全设置」。在重定向 URL 中添加下方地址，让工作区成员可以把飞书账号连接到 {{brandName}}。",
           "descriptionBefore": "在 ",
           "imageAlt": "飞书安全设置页面，显示添加 OAuth 重定向 URL 的位置",
           "label": "OAuth 重定向 URL",
@@ -3586,7 +3594,7 @@
           "title": "填写事件验证令牌",
           "verificationToken": "Verification Token"
         },
-        "uninstallDescription": "此操作会从工作区卸载{{bot}}，并断开所有使用它的{{brandName}}账号。操作无法撤销。",
+        "uninstallDescription": "此操作会从工作区卸载{{bot}}，并断开所有使用它的 {{brandName}} 账号。操作无法撤销。",
         "uninstallTargetFallback": "此机器人",
         "uninstallTitle": "卸载飞书机器人？"
       },
@@ -3607,10 +3615,10 @@
         "create": {
           "descriptionAfter": "，创建企业自建应用并选择 Agent 类型。名称和图标可以自行决定；Agent 模板已包含机器人能力。",
           "descriptionBefore": "在 ",
-          "downloadIcon": "下载可选的{{brandName}}图标",
-          "iconAlt": "可选的{{brandName}}应用图标",
+          "downloadIcon": "下载可选的 {{brandName}} 图标",
+          "iconAlt": "可选的 {{brandName}} 应用图标",
           "iconHint": "，也可以使用你喜欢的任意图标。",
-          "iconTitle": "可选的{{brandName}}应用图标",
+          "iconTitle": "可选的 {{brandName}} 应用图标",
           "imageAlt": "Lark 创建应用表单，高亮显示应用名称、图标和「创建」按钮",
           "title": "创建 Agent 应用"
         },
@@ -3676,7 +3684,7 @@
           "title": "发布应用"
         },
         "redirect": {
-          "descriptionAfter": "，打开「开发配置 → 安全设置」。在重定向 URL 中添加下方地址，让工作区成员可以把 Lark 账号连接到{{brandName}}。",
+          "descriptionAfter": "，打开「开发配置 → 安全设置」。在重定向 URL 中添加下方地址，让工作区成员可以把 Lark 账号连接到 {{brandName}}。",
           "descriptionBefore": "在 ",
           "imageAlt": "飞书安全设置页面，显示添加 OAuth 重定向 URL 的位置",
           "label": "OAuth 重定向 URL",
@@ -3719,7 +3727,7 @@
           "title": "填写事件验证令牌",
           "verificationToken": "Verification Token"
         },
-        "uninstallDescription": "此操作会从工作区卸载{{bot}}，并断开所有使用它的{{brandName}}账号。操作无法撤销。",
+        "uninstallDescription": "此操作会从工作区卸载{{bot}}，并断开所有使用它的 {{brandName}} 账号。操作无法撤销。",
         "uninstallTargetFallback": "此机器人",
         "uninstallTitle": "卸载 Lark 机器人？"
       },
@@ -3732,7 +3740,7 @@
         "moreOptions": "{{bot}}的更多选项",
         "notConnected": "未连接",
         "officialBot": "Telegram 官方机器人",
-        "officialDescription": "由{{brandName}}提供的官方机器人。",
+        "officialDescription": "由 {{brandName}} 提供的官方机器人。",
         "officialMissing": "缺少官方机器人配置。",
         "pageDescription": "管理此工作区的机器人路由"
       },
@@ -3758,13 +3766,13 @@
       }
     },
     "redirect": {
-      "back": "返回{{brandName}}",
-      "errorDescription": "请返回{{brandName}}后重新连接。",
+      "back": "返回 {{brandName}}",
+      "errorDescription": "请返回 {{brandName}} 后重新连接。",
       "errorStatus": "无法发起连接",
       "errorTitle": "无法打开{{connector}}",
-      "mobileWarning": "{{connector}}应用可能不支持这个 OAuth 链接。请在电脑上用{{brandName}}网页版完成连接。",
+      "mobileWarning": "{{connector}}应用可能不支持这个 OAuth 链接。请在电脑上用 {{brandName}} 网页版完成连接。",
       "preparing": "正在准备安全连接",
-      "redirectDescription": "接下来你将在{{connector}}上授权{{brandName}}。",
+      "redirectDescription": "接下来你将在{{connector}}上授权 {{brandName}}。",
       "redirectTitle": "正在跳转到{{connector}}…"
     },
     "toasts": {
@@ -3795,7 +3803,7 @@
   "lifecycle": {
     "emailUnsubscribe": {
       "action": "退订",
-      "body": "你将不再收到{{brandName}}发出的系统邮件通知。",
+      "body": "你将不再收到 {{brandName}} 发出的系统邮件通知。",
       "confirmTitle": "退订邮件通知？",
       "documentTitle": "退订",
       "doneTitle": "已退订",
@@ -3803,20 +3811,20 @@
       "errorTitle": "出了点问题"
     },
     "pwaInstall": {
-      "banner": "安装{{assistantName}}，用起来更顺手",
-      "description": "把{{assistantName}}添加到主屏幕，随时快速打开。",
+      "banner": "安装 {{assistantName}}，用起来更顺手",
+      "description": "把 {{assistantName}} 添加到主屏幕，随时快速打开。",
       "dismiss": "关闭安装提示",
       "gotIt": "知道了",
       "install": "安装",
       "installApp": "安装应用",
       "stepOne": "在 Safari 中点按「分享」按钮。",
-      "stepThree": "确认名称是{{assistantName}}，然后点按「添加」。",
+      "stepThree": "确认名称是 {{assistantName}}，然后点按「添加」。",
       "stepTwo": "选择「添加到主屏幕」。",
-      "title": "安装{{assistantName}}"
+      "title": "安装 {{assistantName}}"
     },
     "redeemCampaign": {
       "actions": {
-        "back": "返回{{brandName}}",
+        "back": "返回 {{brandName}}",
         "redeem": "兑换积分"
       },
       "documentTitle": "领取你的积分",
@@ -3860,13 +3868,13 @@
   "onboarding": {
     "common": {
       "next": "下一步",
-      "stepProgress": "第{{current}}步，共{{total}}步"
+      "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {
-      "make": "欢迎使用{{brandName}}"
+      "make": "欢迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "你可以在下面改一改，也可以直接运行，接下来交给{{assistantName}}。你的工具都在沙箱里运行，数据不会离开你的工作区。",
+      "promptDescription": "你可以在下面改一改，也可以直接运行，接下来交给 {{assistantName}}。你的工具都在沙箱里运行，数据不会离开你的工作区。",
       "promptLabel": "新手引导提示词",
       "promptTitle": "试试这个提示词"
     },
@@ -4385,8 +4393,8 @@
     }
   },
   "queue": {
-    "concurrentRuns_one": "{{count}}个并发运行",
-    "concurrentRuns_other": "{{count}}个并发运行",
+    "concurrentRuns_one": "{{count}} 个并发运行",
+    "concurrentRuns_other": "{{count}} 个并发运行",
     "description": "查看正在使用的并发运行数，升级即可免去等待。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
@@ -4394,20 +4402,20 @@
       "addOn": "附加包",
       "addsToLimit": "在当前上限基础上叠加",
       "appliedAfterCheckout": "支付完成后生效",
-      "buy": "购买{{price}}/月",
+      "buy": "购买 {{price}}/月",
       "decreaseQuantity": "减少并发数量",
       "description": "为该工作区增加专属并发运行，按月计费。",
       "increaseQuantity": "增加并发数量",
       "quantity": "数量",
-      "subscription_one": "{{count}}个名额的月度订阅",
-      "subscription_other": "{{count}}个名额月度订阅",
+      "subscription_one": "{{count}} 个名额的月度订阅",
+      "subscription_other": "{{count}} 个名额月度订阅",
       "title": "增加并发数"
     },
     "redirecting": "正在跳转…",
     "status": {
       "availableNow": "当前可用",
-      "inUse_one": "{{limit}}个名额中已使用{{active}}个",
-      "inUse_other": "{{limit}}个名额中已使用{{active}}个"
+      "inUse_one": "{{limit}} 个名额中已使用 {{active}} 个",
+      "inUse_other": "{{limit}} 个名额中已使用 {{active}} 个"
     },
     "tiers": {
       "custom": "自定义",
@@ -4419,7 +4427,7 @@
     "upgrade": {
       "action": "升级到{{plan}}",
       "features": {
-        "creditsPerMonth": "每月{{credits}}积分",
+        "creditsPerMonth": "每月 {{credits}} 积分",
         "emailSupport": "邮件支持",
         "payAsYouGo": "超出后按量付费",
         "prioritySupport": "优先支持",
@@ -4469,8 +4477,8 @@
   "settings": {
     "accountMenu": {
       "addAccount": "添加账号",
-      "creditBalance_one": "{{value}}积分",
-      "creditBalance_other": "{{value}}积分",
+      "creditBalance_one": "{{value}} 积分",
+      "creditBalance_other": "{{value}} 积分",
       "exportData": "导出数据",
       "lab": "实验室",
       "settings": "设置",
@@ -4556,8 +4564,8 @@
         "start": "导出我的数据",
         "starting": "正在开始导出"
       },
-      "backToAssistant": "返回{{assistantName}}",
-      "description": "下载你在{{assistantName}}中的对话、记忆，以及你可访问的智能体和工作流指令。",
+      "backToAssistant": "返回 {{assistantName}}",
+      "description": "下载你在 {{assistantName}} 中的对话、记忆，以及你可访问的智能体和工作流指令。",
       "documentTitle": "导出数据",
       "duration": {
         "soon": "很快"
@@ -4627,7 +4635,7 @@
           "connectTitle": "连接 Claude",
           "error": "Claude 连接失败。请重新开始并重试。",
           "expired": "Claude 连接会话已过期。请重新开始并重试。",
-          "instructions": "先点击「打开 Claude 授权页面」。然后在 Claude 中为{{brandName}}授权，并复制授权后显示的授权码。最后把授权码粘贴到这里，点击「连接」。",
+          "instructions": "先点击「打开 Claude 授权页面」。然后在 Claude 中为 {{brandName}} 授权，并复制授权后显示的授权码。最后把授权码粘贴到这里，点击「连接」。",
           "openApproval": "打开 Claude 授权页面",
           "preparing": "准备中…",
           "reconnectAction": "重新连接 Claude",
@@ -4642,9 +4650,9 @@
           "deviceCode": "设备码",
           "error": "ChatGPT 连接失败。请重新开始并重试。",
           "expired": "Codex 连接会话已过期。请重新开始并重试。",
-          "freePlanRejected": "免费版 ChatGPT 套餐无法通过{{brandName}}使用 Codex。请升级到 Plus 或 Pro 后重试。",
-          "instructions": "先使用复制按钮复制设备码，再打开授权页面。然后按 OpenAI 的提示粘贴设备码。最后确认授权，并在{{brandName}}完成连接前保持这个对话框打开。",
-          "invalidTokenFormat": "Codex 返回的登录令牌格式{{brandName}}无法识别。请更新 Codex 后重试。",
+          "freePlanRejected": "免费版 ChatGPT 套餐无法通过 {{brandName}} 使用 Codex。请升级到 Plus 或 Pro 后重试。",
+          "instructions": "先使用复制按钮复制设备码，再打开授权页面。然后按 OpenAI 的提示粘贴设备码。最后确认授权，并在 {{brandName}} 完成连接前保持这个对话框打开。",
+          "invalidTokenFormat": "Codex 返回的登录令牌格式 {{brandName}} 无法识别。请更新 Codex 后重试。",
           "openApproval": "打开授权页面",
           "preparing": "准备中…",
           "reconnectAction": "重新连接 ChatGPT",
@@ -4653,7 +4661,7 @@
         }
       },
       "personal": {
-        "accountFallback": "账号{{number}}",
+        "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
         "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
@@ -4672,7 +4680,7 @@
         "status": {
           "connected": "已连接",
           "fiveHour": "5 小时",
-          "left": "剩余{{percent}}",
+          "left": "剩余 {{percent}}",
           "stale": "需处理",
           "week": "本周"
         },
@@ -4711,11 +4719,11 @@
       "reset": {
         "confirmDescription": "消耗一次 Codex 重置额度，重置当前的用量周期。你还有{{remaining}}。",
         "progress": "正在重置…",
-        "remaining_one": "还剩{{value}}次重置",
-        "remaining_other": "还剩{{value}}次重置",
+        "remaining_one": "还剩 {{value}} 次重置",
+        "remaining_other": "还剩 {{value}} 次重置",
         "remainingUnavailable": "剩余重置次数不可用",
         "remainingUnknown": "重置 —",
-        "remainingWithExpiry_other": "还剩{{value}}次重置 · {{expiry}}过期",
+        "remainingWithExpiry_other": "还剩 {{value}} 次重置 · {{expiry}}过期",
         "title": "重置 Codex 用量？"
       },
       "toasts": {
@@ -4726,12 +4734,12 @@
         "resetUnneeded": "Codex 用量当前不需要重置"
       },
       "usage": {
-        "inDays": "{{days}}天后",
-        "inDaysHours": "{{days}}天{{hours}}小时后",
-        "inHours": "{{hours}}小时后",
-        "inHoursMinutes": "{{hours}}小时{{minutes}}分钟后",
+        "inDays": "{{days}} 天后",
+        "inDaysHours": "{{days}} 天 {{hours}} 小时后",
+        "inHours": "{{hours}} 小时后",
+        "inHoursMinutes": "{{hours}} 小时 {{minutes}} 分钟后",
         "inLessThanMinute": "1 分钟内",
-        "inMinutes": "{{minutes}}分钟后",
+        "inMinutes": "{{minutes}} 分钟后",
         "resetsAt": "{{date}}重置",
         "resetsRaw": "{{value}}重置",
         "resetsRelative": "{{relative}}重置",
@@ -4836,8 +4844,8 @@
       "debug": {
         "capture": {
           "disabled": "已关闭",
-          "enabled_one": "已对接下来{{count}}次运行启用",
-          "enabled_other": "已对接下来{{count}}次运行启用",
+          "enabled_one": "已对接下来 {{count}} 次运行启用",
+          "enabled_other": "已对接下来 {{count}} 次运行启用",
           "title": "抓取网络请求内容"
         },
         "indexedDb": {
@@ -4905,7 +4913,7 @@
         "unavailableDescription": "请在「账号与安全」中检查你的邮箱；如果邮件被拦截，请联系客服。"
       },
       "language": {
-        "description": "选择{{brandName}}界面的显示语言",
+        "description": "选择 {{brandName}} 界面的显示语言",
         "label": "语言",
         "options": {
           "chineseSimplified": "简体中文",
@@ -5106,8 +5114,8 @@
       },
       "validation": {
         "imageUnreadable": "无法读取图片文件",
-        "logoTooLarge": "标识尺寸过大（{{width}}×{{height}}px），最大为{{maximum}}×{{maximum}}px。",
-        "logoTooSmall": "标识尺寸过小（{{width}}×{{height}}px），最小为{{minimum}}×{{minimum}}px。"
+        "logoTooLarge": "标识尺寸过大（{{width}}×{{height}}px），最大为 {{maximum}}×{{maximum}}px。",
+        "logoTooSmall": "标识尺寸过小（{{width}}×{{height}}px），最小为 {{minimum}}×{{minimum}}px。"
       }
     }
   },
@@ -5137,7 +5145,7 @@
     },
     "forceUpgrade": {
       "action": "刷新",
-      "description": "当前版本的{{brandName}}已不再支持，请刷新以加载最新版本。",
+      "description": "当前版本的 {{brandName}} 已不再支持，请刷新以加载最新版本。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -5160,7 +5168,7 @@
     }
   },
   "sharedThread": {
-    "handoffDescription": "{{assistantName}}会把上下文带进新的对话",
+    "handoffDescription": "{{assistantName}} 会把上下文带进新的对话",
     "handoffPrompt": "和我一起继续这段分享的对话：{{url}}",
     "makeConversationYours": "把这段对话变成你自己的",
     "notFoundTitle": "未找到分享的对话",
@@ -5191,7 +5199,7 @@
       "accessProtocolFailure": "Cloudflare Access 未能建立 SSH 隧道。请检查对外发布的主机名和 Tunnel 路由。",
       "accessRejected": "Cloudflare Access 拒绝了此次连接。请检查 Service Token 和该应用的 Service Auth 策略。",
       "accessTlsFailure": "无法验证到 Cloudflare Access 的安全连接。请检查主机名和 TLS 证书。",
-      "attention_other": "{{count}}台 SSH 主机需要处理",
+      "attention_other": "{{count}} 台 SSH 主机需要处理",
       "authenticationFailed": "SSH 认证失败。请检查所选凭据的用户名、私钥或密码，以及服务器的授权设置。你可以编辑该凭据，或为该主机选择其他凭据。",
       "credentialResourceLimit": "该私钥超出了支持的处理上限。请用受支持的加密设置重新导出，然后替换凭据。",
       "hostKeyMismatch": "服务器的主机密钥与已保存的身份不一致。请先自行核实服务器，再使用「重置主机密钥」。",
@@ -5220,8 +5228,8 @@
       "password": "密码",
       "replaceAuthentication": "替换认证信息",
       "select": "选择凭据",
-      "sharedHelp_other": "登录信息的更改会应用到全部{{count}}台主机：",
-      "summary_other": "已配置{{count}}个凭据",
+      "sharedHelp_other": "登录信息的更改会应用到全部 {{count}} 台主机：",
+      "summary_other": "已配置 {{count}} 个凭据",
       "unused": "未被任何主机使用"
     },
     "credentialsHelp": "凭据只写入不回显，并且保存在沙箱之外。请粘贴完整的密钥，空白字符会原样保留。关闭此表单时各字段会被清空。",
@@ -5275,8 +5283,8 @@
       "resourceIdConflict": "该资源 ID 无法使用。请关闭表单并重新打开后再试。",
       "uncertain": "我们无法确认你的更改是否已保存。请重试这次保存，或关闭后先查看列表，再决定是否重新添加。"
     },
-    "summary_one": "已配置{{count}}台主机",
-    "summary_other": "已配置{{count}}台主机",
+    "summary_one": "已配置 {{count}} 台主机",
+    "summary_other": "已配置 {{count}} 台主机",
     "tailscale": {
       "editUnavailable": "此主机现已使用 Tailscale。此处尚未提供 Tailscale 编辑和重新绑定功能。请取消此次编辑以保留已保存的传输方式。",
       "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。"
@@ -5313,7 +5321,7 @@
     "replace": "替换 OAuth 凭据",
     "select": "选择 Tailscale 网络",
     "setupHelp": "使用仅允许这些标签的 OAuth 客户端。Tailnet 策略须允许 SSH 端口。保存不会测试连接或授权聊天访问。",
-    "summary_other": "已配置{{count}}个Tailscale",
+    "summary_other": "已配置 {{count}} 个 Tailscale",
     "tags": "注册标签",
     "tagsHelp": "用逗号分隔标签，例如 tag:okou",
     "title": "Tailscale",
@@ -5339,7 +5347,7 @@
     },
     "detail": {
       "back": "自定义模板",
-      "page": "第{{number}}页"
+      "page": "第 {{number}} 页"
     },
     "empty": {
       "description": "Okou 会把你文件里的设计变成可以反复使用的模板。",
@@ -5412,8 +5420,8 @@
     "units": {
       "credit_one": "{{value}}积分",
       "credit_other": "{{value}}积分",
-      "thread_one": "{{value}}个会话",
-      "thread_other": "{{value}}个会话"
+      "thread_one": "{{value}} 个会话",
+      "thread_other": "{{value}} 个会话"
     }
   },
   "vnc": {
@@ -5450,9 +5458,9 @@
       "replace": "更换密码",
       "replaceHelp": "保持关闭即继续使用已保存的密码。更换密码会影响所有使用该凭据的主机。",
       "select": "选择凭据",
-      "sharedHelp_one": "有{{count}}台主机正在使用。修改密码会影响这台主机。",
-      "sharedHelp_other": "有{{count}}台主机正在使用。修改密码会影响所有这些主机。",
-      "summary_other": "已配置{{count}}条凭据",
+      "sharedHelp_one": "有 {{count}} 台主机正在使用。修改密码会影响这台主机。",
+      "sharedHelp_other": "有 {{count}} 台主机正在使用。修改密码会影响所有这些主机。",
+      "summary_other": "已配置 {{count}} 条凭据",
       "unused": "没有已保存的主机在使用。",
       "username": "用户名",
       "usernameHelp": "1–255 个 UTF-8 字节，不允许使用 NUL。",
@@ -5567,8 +5575,8 @@
       "x509Vnc": "加密 VNC（X509Vnc）",
       "x509VncHelp": "需要 VeNCrypt X509Vnc。TLS 会在发送 VNC 密码之前验证服务器。"
     },
-    "summary_one": "已配置{{count}}台主机",
-    "summary_other": "已配置{{count}}台主机",
+    "summary_one": "已配置 {{count}} 台主机",
+    "summary_other": "已配置 {{count}} 台主机",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP 请填写 127.0.0.1 或 ::1；这是通过所选 SSH 主机访问的 Mac 本机回环地址。",
@@ -5676,12 +5684,12 @@
         "webhookAutomation": "Webhook 自动化"
       },
       "duration": {
-        "hour_one": "{{count}}小时",
-        "hour_other": "{{count}}小时",
-        "minute_one": "{{count}}分钟",
-        "minute_other": "{{count}}分钟",
-        "second_one": "{{count}}秒",
-        "second_other": "{{count}}秒"
+        "hour_one": "{{count}} 小时",
+        "hour_other": "{{count}} 小时",
+        "minute_one": "{{count}} 分钟",
+        "minute_other": "{{count}} 分钟",
+        "second_one": "{{count}} 秒",
+        "second_other": "{{count}} 秒"
       },
       "forms": {
         "addAction": "添加 Google Forms 自动化",
@@ -5852,8 +5860,8 @@
         "addMessageTitle": "添加 Gmail 自动化",
         "allInboundMessages": "所有收到的邮件",
         "anyMessageRule": "当收到任意 Gmail 邮件时",
-        "conditionField": "条件{{number}}的字段",
-        "conditionOperator": "条件{{number}}的运算符",
+        "conditionField": "条件 {{number}} 的字段",
+        "conditionOperator": "条件 {{number}} 的运算符",
         "editLabel": "编辑标签",
         "editMatch": "编辑匹配条件",
         "enterValue": "输入一个值",
@@ -5879,7 +5887,7 @@
           "doesNotContain": "不包含",
           "is": "等于"
         },
-        "removeCondition": "移除条件{{number}}",
+        "removeCondition": "移除条件 {{number}}",
         "saveLabel": "保存标签",
         "saveMatch": "保存匹配条件",
         "summary": {
@@ -5975,7 +5983,7 @@
         "everyDay": "每天",
         "everyDayAt": "每天{{time}}",
         "everyMonth": "每月",
-        "everyMonthAt": "每月{{day}}日{{time}}",
+        "everyMonthAt": "每月 {{day}} 日{{time}}",
         "everyWeek": "每周",
         "everyWeekAt": "每周{{time}}",
         "everyWeekday": "每个工作日",
@@ -6123,8 +6131,8 @@
         "privateReady": "私有副本已创建。",
         "removalAlert": "原工作流会被删除",
         "removalNoAutomations": "这个工作流会从{{agent}}删除。",
-        "removalWithAutomations_one": "{{agent}}上的{{count}}个自动化会暂停，这个工作流会被删除。",
-        "removalWithAutomations_other": "{{agent}}上的{{count}}个自动化会暂停，这个工作流会被删除。",
+        "removalWithAutomations_one": "{{agent}}上的 {{count}} 个自动化会暂停，这个工作流会被删除。",
+        "removalWithAutomations_other": "{{agent}}上的 {{count}} 个自动化会暂停，这个工作流会被删除。",
         "removeOriginal": "复制后从{{agent}}移除原工作流",
         "selectAgent": "选择智能体",
         "title": "复制工作流",
@@ -6251,8 +6259,8 @@
       "activeInstallationDescription": "这个官方工作流仍在正常运行，其托管内容保持只读。",
       "activeInstallationTitle": "官方工作流",
       "agent": "智能体",
-      "automationCount_one": "{{count}}个自动化",
-      "automationCount_other": "{{count}}个自动化",
+      "automationCount_one": "{{count}} 个自动化",
+      "automationCount_other": "{{count}} 个自动化",
       "badge": "官方",
       "browse": "浏览官方工作流",
       "chooseValue": "选择一个值",
@@ -6275,8 +6283,8 @@
       "noParameters": "无需填写参数。",
       "noResults": "没有匹配的官方工作流。",
       "notFound": "未找到这个官方工作流。",
-      "parameterCount_one": "{{count}}个参数",
-      "parameterCount_other": "{{count}}个参数",
+      "parameterCount_one": "{{count}} 个参数",
+      "parameterCount_other": "{{count}} 个参数",
       "parameterRequired": "{{key}}（必填）",
       "reconciliationState": "{{state}} · {{intended}}",
       "reconfigure": "重新配置",
@@ -6345,6 +6353,8 @@
       "authorizing": "正在授权…",
       "browserConsent": "在 Discord 窗口中完成授权，此页面会自动更新。",
       "chooseDmServer": "选择服务器",
+      "connectedTitle": "已连接 Discord",
+      "connectTitle": "连接 Discord",
       "description": "在服务器中提及 Okou，或给机器人发送私信。",
       "disconnect": "断开 Discord 连接",
       "dmServer": "私信默认服务器",
@@ -6360,7 +6370,8 @@
       "unconfigured": "此组织尚未配置 Discord。",
       "uninstall": "移除 Discord",
       "uninstallDescription": "这会断开此组织所有成员与 Discord 的连接。其他组织的连接会保留。",
-      "uninstallTitle": "从此组织移除 Discord？"
+      "uninstallTitle": "从此组织移除 Discord？",
+      "workspaceMismatch": "此链接对应另一个 Discord 服务器。请切换到对应的 Okou 工作区，然后重新打开链接。"
     },
     "documentTitle": "工作渠道",
     "feishuConnected": "飞书连接成功",
@@ -6394,7 +6405,7 @@
       "permissionsUpdated": "Microsoft Teams 权限已更新",
       "title": "Microsoft Teams",
       "uninstall": "卸载 Microsoft Teams",
-      "uninstallDescription": "这会为你的工作区移除{{brandName}}中的 Microsoft Teams 集成。所有已连接的用户都会断开连接，在管理员重新连接之前，{{displayName}}不再回复这个工作区的 Teams 消息。",
+      "uninstallDescription": "这会为你的工作区移除 {{brandName}} 中的 Microsoft Teams 集成。所有已连接的用户都会断开连接，在管理员重新连接之前，{{displayName}}不再回复这个工作区的 Teams 消息。",
       "uninstallTitle": "卸载 Microsoft Teams 集成？"
     },
     "telegram": {

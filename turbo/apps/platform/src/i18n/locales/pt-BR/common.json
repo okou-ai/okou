@@ -2857,6 +2857,14 @@
       "transcribing": "Transcrevendo",
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
+    "walletAction": {
+      "approveButton": "Revisar",
+      "approveTitle": "Revisar compra",
+      "connectButton": "Autorizar",
+      "connectTitle": "Autorizar carteira Link",
+      "continueButton": "Continuar",
+      "continueTitle": "Continuar no Link"
+    },
     "workflows": {
       "named": "Fluxo de trabalho {{title}}",
       "open": "Abrir fluxo de trabalho {{title}}"
@@ -6455,6 +6463,8 @@
       "authorizing": "Autorizando…",
       "browserConsent": "Conclua a autorização na janela do Discord. Esta página será atualizada automaticamente.",
       "chooseDmServer": "Escolha um servidor",
+      "connectedTitle": "Conectado ao Discord",
+      "connectTitle": "Conectar ao Discord",
       "description": "Mencione o Okou em um servidor ou envie uma mensagem direta ao bot.",
       "disconnect": "Desconectar Discord",
       "dmServer": "Servidor padrão para mensagens diretas",
@@ -6470,7 +6480,8 @@
       "unconfigured": "O Discord ainda não está configurado para esta organização.",
       "uninstall": "Remover Discord",
       "uninstallDescription": "Isso desconecta do Discord todas as pessoas desta organização. As outras organizações mantêm suas conexões.",
-      "uninstallTitle": "Remover o Discord desta organização?"
+      "uninstallTitle": "Remover o Discord desta organização?",
+      "workspaceMismatch": "Este link é para outro servidor do Discord. Mude para o espaço de trabalho correspondente no Okou e abra o link novamente."
     },
     "documentTitle": "Integrações",
     "feishuConnected": "Feishu conectado com sucesso",

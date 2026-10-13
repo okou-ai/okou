@@ -174,7 +174,7 @@ pub(super) fn run_echo_jsonl_mode(payload: &str, hang_after_output: bool) -> Exi
 
 /// Emit the init + result JSONL pair shared by post-result mock test
 /// prefixes, flush stdout so guest-agent sees them, and write the
-/// session history checkpoint file. Caller decides which post-result
+/// native session-history file. Caller decides which post-result
 /// behavior follows (hang / exit / ignore SIGTERM / orphan stdout).
 fn emit_post_result_pair() {
     let _ = emit_result_pair(false, "Done.");

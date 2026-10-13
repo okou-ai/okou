@@ -67,13 +67,14 @@ readonly CHAT_THREAD_SNAPSHOT_JSONB_DROP_PATH=turbo/packages/db/src/migrations/1
 readonly STRIPE_PORTAL_PURPOSE_ONLY_PATH=.github/rollback-floors/stripe-portal-purpose-only
 readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-event-schema-header-retired
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
-readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
+readonly PI_MEMORY_INPUT_REVISION_WRITER_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
+readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -90,7 +91,7 @@ readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrat
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
-readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1385_drop_official_result_email_storage.sql
+readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1386_drop_official_result_email_storage.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -169,6 +170,19 @@ if [[ ! "$session_storage_mount_runtime_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$session_storage_mount_runtime_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Session storage-mount runtime preparation: ${session_storage_mount_runtime_commit}."
+fi
+
+# Removing the shared Private-name index allows ordinary and Official rows with
+# the same name. Earlier APIs resolve both by name and can recover an Official
+# installation through the ordinary row. Keep already-deployed preparation
+# releases eligible rather than requiring the later index-drop release.
+workflow_name_scopes_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$WORKFLOW_NAME_SCOPES_PREPARATION_PATH" | sed -n '1p')
+if [[ ! "$workflow_name_scopes_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Workflow namespace preparation on main."
+fi
+if ! git merge-base --is-ancestor "$workflow_name_scopes_preparation_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Workflow namespace preparation: ${workflow_name_scopes_preparation_commit}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a
@@ -562,15 +576,15 @@ if ! git merge-base --is-ancestor "$desktop_migration_hop_commit" "$TARGET_COMMI
   fail "Rollback target predates the frozen Desktop migration-hop policy: ${desktop_migration_hop_commit}."
 fi
 
-# Generic checkpoint contraction requires the already deployed explicit-column
-# memory revision writer. Resolve its actual merged preparation commit.
-checkpoint_writer_preparation_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$CHECKPOINT_WRITER_PREPARATION_PATH" | sed -n '1p')
-if [[ ! "$checkpoint_writer_preparation_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged checkpoint writer preparation on main."
+# Retired Run snapshot storage requires the already deployed explicit-column
+# Pi memory input-revision writer. Resolve its actual merged preparation commit.
+pi_memory_input_revision_writer_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$PI_MEMORY_INPUT_REVISION_WRITER_PATH" | sed -n '1p')
+if [[ ! "$pi_memory_input_revision_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Pi memory input-revision writer on main."
 fi
-if ! git merge-base --is-ancestor "$checkpoint_writer_preparation_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates checkpoint writer preparation: ${checkpoint_writer_preparation_commit}."
+if ! git merge-base --is-ancestor "$pi_memory_input_revision_writer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Pi memory input-revision writer preparation: ${pi_memory_input_revision_writer_commit}."
 fi
 
 # Migration 1282 drops the retired integration agent preference and

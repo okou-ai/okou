@@ -147,7 +147,7 @@ are enforced by the integration ingress tests.
 
 - `scripts/test-official-result-email-retirement-preparation.ts` replays
   migration `1382_retire_official_result_email_runtime` and the actual
-  contraction `1385_drop_official_result_email_storage`. Release 1 rows and
+  contraction `1386_drop_official_result_email_storage`. Release 1 rows and
   frozen outgoing ORM statements (Official `false`/`true` writes, ordinary
   NULLs, implicit `SELECT`/`RETURNING`, metadata updates, claims and sourced
   outbox inserts) survive 1382 byte-for-byte and stay legal. Runtime mappings
@@ -161,7 +161,7 @@ are enforced by the integration ingress tests.
   advancing the journal. Only release 2's bounded legacy consumer (#39524)
   still writes the dropped storage, so the contraction ships after the
   normal-channel callback drain gate. The production rollback resolver enforces
-  floors on the first-parent `main` commits that add 1382 and 1385. Run
+  floors on the first-parent `main` commits that add 1382 and 1386. Run
   `pnpm test:official-result-email-retirement-preparation` with an owned
   PostgreSQL `DATABASE_URL`. Retain the validator and its outgoing fixture
   through the contraction's production release and drain/rollback acceptance.
@@ -201,11 +201,11 @@ are enforced by the integration ingress tests.
   and permanent schema invariant coverage remain in the repository.
 
 - `scripts/test-pi-memory-phase2-input-revision.ts` executes the production Phase 2
-  input-revision SQL before and after the real generic checkpoint contraction. It
+  input-revision SQL before and after the historical Run snapshot contraction. It
   retains the outgoing ORM mapping to prove the preparation boundary and covers
   first insert, conflict revision advancement, active lease preservation and
-  unleased retry reset. Keep it until the checkpoint contraction is deployed and
-  the retained invariants have permanent coverage.
+  unleased retry reset. Preserve the historical replay and writer invariants when
+  updating this validator; its outgoing mapping documents the preparation boundary.
 
 - `scripts/test-runner-state-storage-permanent.ts` protects the canonical physical
   and runtime Runner-state contract on replayed and freshly generated schemas.
