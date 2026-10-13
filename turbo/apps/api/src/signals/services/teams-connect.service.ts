@@ -604,125 +604,131 @@ async function resolveTeamsWelcomeConversationId(
   return args.conversationType === "personal" ? args.conversationId : undefined;
 }
 
-async function notifyTeamsConnect(
-  args: {
-    readonly db: Db;
-    readonly connectionId: string;
-    readonly installation: TeamsInstallation;
-    readonly orgId: string;
-    readonly tenantId: string;
-    readonly serviceUrl: string | undefined;
-    readonly conversationId: string | undefined;
-    readonly conversationType: string | undefined;
-    readonly teamsUserId: string | undefined;
-    readonly teamsUserDisplayName: string | undefined;
-  },
-  signal: AbortSignal,
-): Promise<void> {
-  const [connection] = await args.db
-    .select({ dmWelcomeSent: teamsOrgConnections.dmWelcomeSent })
-    .from(teamsOrgConnections)
-    .where(eq(teamsOrgConnections.id, args.connectionId))
-    .limit(1);
-  signal.throwIfAborted();
-
-  if (!connection || connection.dmWelcomeSent || !args.serviceUrl) {
-    return;
-  }
-
-  const conversationId = await resolveTeamsWelcomeConversationId(
-    {
-      tenantId: args.tenantId,
-      serviceUrl: args.serviceUrl,
-      teamsUserId: args.teamsUserId,
-      teamsUserDisplayName: args.teamsUserDisplayName,
-      botId: args.installation.botId,
-      botName: args.installation.botName,
-      conversationId: args.conversationId,
-      conversationType: args.conversationType,
+const notifyTeamsConnect$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectionId: string;
+      readonly installation: TeamsInstallation;
+      readonly orgId: string;
+      readonly tenantId: string;
+      readonly serviceUrl: string | undefined;
+      readonly conversationId: string | undefined;
+      readonly conversationType: string | undefined;
+      readonly teamsUserId: string | undefined;
+      readonly teamsUserDisplayName: string | undefined;
     },
-    signal,
-  );
-  signal.throwIfAborted();
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const writeDb = set(writeDb$);
+    const [connection] = await writeDb
+      .select({ dmWelcomeSent: teamsOrgConnections.dmWelcomeSent })
+      .from(teamsOrgConnections)
+      .where(eq(teamsOrgConnections.id, args.connectionId))
+      .limit(1);
+    signal.throwIfAborted();
 
-  if (!conversationId) {
-    return;
-  }
+    if (!connection || connection.dmWelcomeSent || !args.serviceUrl) {
+      return;
+    }
 
-  const sendResult = await sendTeamsMessageReply(
-    {
-      serviceUrl: args.serviceUrl,
-      conversationId,
-      tenantId: args.tenantId,
-      text: `You're connected to ${BRAND_PRESENTATION.assistantName}!`,
-      card: buildTeamsWelcomeCard(args.installation),
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+    const conversationId = await resolveTeamsWelcomeConversationId(
+      {
+        tenantId: args.tenantId,
+        serviceUrl: args.serviceUrl,
+        teamsUserId: args.teamsUserId,
+        teamsUserDisplayName: args.teamsUserDisplayName,
+        botId: args.installation.botId,
+        botName: args.installation.botName,
+        conversationId: args.conversationId,
+        conversationType: args.conversationType,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
-  if (sendResult.kind === "teams-error") {
-    L.warn("Failed to send Teams connect welcome", {
-      tenantId: args.tenantId,
-      conversationId,
-      status: sendResult.status,
-      error: sendResult.error,
-    });
-    return;
-  }
+    if (!conversationId) {
+      return;
+    }
 
-  await args.db
-    .update(teamsOrgConnections)
-    .set({ dmWelcomeSent: true, updatedAt: nowDate() })
-    .where(eq(teamsOrgConnections.id, args.connectionId));
-  signal.throwIfAborted();
-}
+    const sendResult = await sendTeamsMessageReply(
+      {
+        serviceUrl: args.serviceUrl,
+        conversationId,
+        tenantId: args.tenantId,
+        text: `You're connected to ${BRAND_PRESENTATION.assistantName}!`,
+        card: buildTeamsWelcomeCard(args.installation),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
 
-async function finalizeTeamsConnection(
-  args: {
-    readonly db: Db;
-    readonly connectArgs: ConnectTeamsInstallationArgs;
-    readonly installation: TeamsInstallation;
-    readonly role: "admin" | "member";
+    if (sendResult.kind === "teams-error") {
+      L.warn("Failed to send Teams connect welcome", {
+        tenantId: args.tenantId,
+        conversationId,
+        status: sendResult.status,
+        error: sendResult.error,
+      });
+      return;
+    }
+
+    await writeDb
+      .update(teamsOrgConnections)
+      .set({ dmWelcomeSent: true, updatedAt: nowDate() })
+      .where(eq(teamsOrgConnections.id, args.connectionId));
+    signal.throwIfAborted();
   },
-  signal: AbortSignal,
-): Promise<Extract<TeamsConnectResult, { readonly kind: "ok" }>> {
-  const { connectArgs } = args;
-  const connectionId = await upsertTeamsConnection(args.db, {
-    teamsUserId: connectArgs.teamsUserId,
-    teamsAadObjectId: connectArgs.teamsAadObjectId,
-    teamsTenantId: connectArgs.tenantId,
-    userId: connectArgs.userId,
-    teamsUserDisplayName: connectArgs.teamsUserDisplayName,
-    teamsUserPrincipalName: connectArgs.teamsUserPrincipalName,
-  });
-  signal.throwIfAborted();
+);
 
-  await notifyTeamsConnect(
-    {
-      db: args.db,
-      connectionId,
-      installation: args.installation,
-      orgId: connectArgs.orgId,
-      tenantId: connectArgs.tenantId,
-      serviceUrl:
-        connectArgs.serviceUrl ?? args.installation.serviceUrl ?? undefined,
-      conversationId: connectArgs.conversationId,
-      conversationType: connectArgs.conversationType,
+const finalizeTeamsConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectArgs: ConnectTeamsInstallationArgs;
+      readonly installation: TeamsInstallation;
+      readonly role: "admin" | "member";
+    },
+    signal: AbortSignal,
+  ): Promise<Extract<TeamsConnectResult, { readonly kind: "ok" }>> => {
+    const { connectArgs } = args;
+    const writeDb = set(writeDb$);
+    const connectionId = await upsertTeamsConnection(writeDb, {
       teamsUserId: connectArgs.teamsUserId,
+      teamsAadObjectId: connectArgs.teamsAadObjectId,
+      teamsTenantId: connectArgs.tenantId,
+      userId: connectArgs.userId,
       teamsUserDisplayName: connectArgs.teamsUserDisplayName,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
+      teamsUserPrincipalName: connectArgs.teamsUserPrincipalName,
+    });
+    signal.throwIfAborted();
 
-  return {
-    kind: "ok",
-    connectionId,
-    role: args.role,
-    installation: args.installation,
-  };
-}
+    await set(
+      notifyTeamsConnect$,
+      {
+        connectionId,
+        installation: args.installation,
+        orgId: connectArgs.orgId,
+        tenantId: connectArgs.tenantId,
+        serviceUrl:
+          connectArgs.serviceUrl ?? args.installation.serviceUrl ?? undefined,
+        conversationId: connectArgs.conversationId,
+        conversationType: connectArgs.conversationType,
+        teamsUserId: connectArgs.teamsUserId,
+        teamsUserDisplayName: connectArgs.teamsUserDisplayName,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+
+    return {
+      kind: "ok",
+      connectionId,
+      role: args.role,
+      installation: args.installation,
+    };
+  },
+);
 
 export const prepareTeamsInstallation$ = command(
   async (
@@ -863,9 +869,9 @@ export const connectTeamsInstallation$ = command(
         boundInstallation = existing;
       }
 
-      return finalizeTeamsConnection(
+      return set(
+        finalizeTeamsConnection$,
         {
-          db: writeDb,
           connectArgs: args,
           installation: boundInstallation,
           role: "admin",
@@ -890,9 +896,9 @@ export const connectTeamsInstallation$ = command(
       .where(eq(teamsOrgInstallations.teamsTenantId, args.tenantId));
     signal.throwIfAborted();
 
-    return finalizeTeamsConnection(
+    return set(
+      finalizeTeamsConnection$,
       {
-        db: writeDb,
         connectArgs: args,
         installation,
         role: args.orgRole,
