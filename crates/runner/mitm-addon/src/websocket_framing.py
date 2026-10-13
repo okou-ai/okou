@@ -264,6 +264,8 @@ class _BoundedPerMessageDeflate(Extension):
         self._outbound = self._negotiated_outbound(source)
         self._budget = budget
         self._decoder = None
+        self._window_bits = zlib.MAX_WBITS
+        self._history = b""
         self._data_frame = False
         self._message_compressed = False
 
@@ -287,6 +289,7 @@ class _BoundedPerMessageDeflate(Extension):
 
     def _discard_inbound_state(self) -> None:
         self._decoder = None
+        self._history = b""
         self._data_frame = False
         self._message_compressed = False
         self._budget.reset()
@@ -301,18 +304,37 @@ class _BoundedPerMessageDeflate(Extension):
         decoder = self._decoder
         if decoder is None:
             raise RuntimeError("compressed WebSocket data arrived without a decompressor")
-        remaining = self._budget.remaining_bytes
-        try:
-            decoded = decoder.decompress(data, remaining + 1)
-        except zlib.error:
-            self._discard_inbound_state()
-            return CloseReason.INVALID_FRAME_PAYLOAD_DATA
+        limit = self._budget.remaining_bytes
+        remaining = limit
+        chunks: list[bytes] = []
+        while True:
+            try:
+                decoded = decoder.decompress(data, remaining + 1)
+            except zlib.error:
+                self._discard_inbound_state()
+                return CloseReason.INVALID_FRAME_PAYLOAD_DATA
 
-        if len(decoded) > remaining or decoder.unconsumed_tail:
-            self._budget.reject_bounded_decode_output(remaining + 1)
-            self._discard_inbound_state()
-            return CloseReason.MESSAGE_TOO_BIG
-        return decoded
+            if len(decoded) > remaining or decoder.unconsumed_tail:
+                self._budget.reject_bounded_decode_output(limit + 1)
+                self._discard_inbound_state()
+                return CloseReason.MESSAGE_TOO_BIG
+            if decoded:
+                chunks.append(decoded)
+                remaining -= len(decoded)
+                window_size = 1 << self._window_bits
+                self._history = (self._history + decoded[-window_size:])[-window_size:]
+            if not decoder.eof:
+                break
+
+            # RFC 7692 permits further byte-aligned blocks after BFINAL=1.
+            # Python's EOF inflater cannot resume; seed its replacement with
+            # the negotiated sliding window, including prior streams/messages.
+            data = decoder.unused_data
+            decoder = zlib.decompressobj(-self._window_bits, zdict=self._history)
+            self._decoder = decoder
+            if not data:
+                break
+        return b"".join(chunks)
 
     def frame_inbound_header(
         self,
@@ -329,12 +351,12 @@ class _BoundedPerMessageDeflate(Extension):
         if opcode in (Opcode.TEXT, Opcode.BINARY):
             self._message_compressed = rsv.rsv1
             if self._message_compressed and self._decoder is None:
-                bits = (
+                self._window_bits = (
                     self._outbound.server_max_window_bits
                     if proto.client
                     else self._outbound.client_max_window_bits
                 )
-                self._decoder = zlib.decompressobj(-bits)
+                self._decoder = zlib.decompressobj(-self._window_bits)
 
         return RsvBits(True, False, False)
 
@@ -370,6 +392,7 @@ class _BoundedPerMessageDeflate(Extension):
         )
         if no_context_takeover:
             self._decoder = None
+            self._history = b""
 
         self._message_compressed = False
         return decoded
