@@ -1,5 +1,27 @@
 # Changelog
 
+## [9.387.4](https://github.com/okou-ai/okou/compare/cli-v9.387.3...cli-v9.387.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* let agents select presentation delivery format ([#39650](https://github.com/okou-ai/okou/issues/39650)) ([264b178](https://github.com/okou-ai/okou/commit/264b17803dafe5243656a898078250880efe0a16))
+
+
+### Refactoring
+
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.555.0
+    * @okouai/core bumped to 8.749.0
+    * @okouai/pi-agent-runtime bumped to 1.49.22
+
 ## [9.387.3](https://github.com/okou-ai/okou/compare/cli-v9.387.2...cli-v9.387.3) (2026-10-13)
 
 

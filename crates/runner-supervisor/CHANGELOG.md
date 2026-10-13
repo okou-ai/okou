@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.1...runner-supervisor-v0.12.2) (2026-10-13)
+
+
+### Refactoring
+
+* **runner-supervisor:** converge early startup failure cleanup ([#39687](https://github.com/okou-ai/okou/issues/39687)) ([0bb4f3d](https://github.com/okou-ai/okou/commit/0bb4f3d023e59462f30f7e491d03dcb42f5c8ba2))
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.0...runner-supervisor-v0.12.1) (2026-10-13)
 
 

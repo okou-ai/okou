@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.10...runner-executor-v0.10.11) (2026-10-13)
+
+
+### Refactoring
+
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
 ## [0.10.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.9...runner-executor-v0.10.10) (2026-10-13)
 
 ## [0.10.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.8...runner-executor-v0.10.9) (2026-10-13)

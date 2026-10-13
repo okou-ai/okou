@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.61](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.60...guest-control-tests-v0.12.61) (2026-10-13)
+
+
+### Refactoring
+
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+
 ## [0.12.60](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.59...guest-control-tests-v0.12.60) (2026-10-13)
 
 ## [0.12.59](https://github.com/okou-ai/okou/compare/guest-control-tests-v0.12.58...guest-control-tests-v0.12.59) (2026-10-12)

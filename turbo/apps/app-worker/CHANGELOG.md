@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.22](https://github.com/okou-ai/okou/compare/app-worker-v1.9.21...app-worker-v1.9.22) (2026-10-13)
+
+
+### Bug Fixes
+
+* support copper oauth form callbacks and deployment credentials ([#39709](https://github.com/okou-ai/okou/issues/39709)) ([2c5f4e3](https://github.com/okou-ai/okou/commit/2c5f4e3d8291959922a0d19b0d27a96a8218d12a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+    * @okouai/core bumped to 8.749.0
+
 ## [1.9.21](https://github.com/okou-ai/okou/compare/app-worker-v1.9.20...app-worker-v1.9.21) (2026-10-13)
 
 
