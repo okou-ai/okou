@@ -406,58 +406,46 @@ describe("canonical Discord ingress", () => {
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
 
-  it.each([false, true])(
-    "tells a Discord run how its final reply and files reach Discord (private artifacts %s)",
-    async (privateArtifacts) => {
-      const actor = await connected();
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-      });
-      const provider = mockDiscordProvider(actor);
-      const message = discordMessageForTest(actor, {
-        channelId: provider.guildChannelId,
-        content: `<@${actor.botUserId}> make me a report file`,
-      });
-      provider.messages.set(message.id, message);
-      await postDiscordMessage(context, message);
-      await flushWaitUntilForTest();
-      const [thread] = await discordChatThreads(context, actor);
-      if (!thread) {
-        throw new Error("Expected canonical Discord thread");
-      }
-      const [input] = currentInputs(await events(actor, thread.id));
-      if (!input?.runId) {
-        throw new Error("Expected Discord run launch");
-      }
-      await runsApi.heartbeatRunner(actor.runnerGroup);
-      const claim = await runsApi.claimRunnerJob(input.runId);
+  it("tells a Discord run how its final reply and files reach Discord", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> make me a report file`,
+    });
+    provider.messages.set(message.id, message);
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected canonical Discord thread");
+    }
+    const [input] = currentInputs(await events(actor, thread.id));
+    if (!input?.runId) {
+      throw new Error("Expected Discord run launch");
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
 
-      expect(claim.appendSystemPrompt).toContain(
-        "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
-      );
-      expect(claim.appendSystemPrompt).not.toContain(
-        "Only your own bot DM is accessible",
-      );
-      const privateArtifactRule =
-        "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
-      if (privateArtifacts) {
-        expect(claim.appendSystemPrompt).toContain(privateArtifactRule);
-        expect(claim.appendSystemPrompt).toContain(
-          "upload it with `okou discord upload-file` so the user has something they can open there",
-        );
-      } else {
-        expect(claim.appendSystemPrompt).not.toContain(
-          "Private artifacts in the final reply",
-        );
-      }
-    },
-  );
+    expect(claim.appendSystemPrompt).toContain(
+      "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
+    );
+    expect(claim.appendSystemPrompt).not.toContain(
+      "Only your own bot DM is accessible",
+    );
+    const privateArtifactRule =
+      "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
+    expect(claim.appendSystemPrompt).toContain(privateArtifactRule);
+    expect(claim.appendSystemPrompt).toContain(
+      "upload it with `okou discord upload-file` so the user has something they can open there",
+    );
+  });
 
   it.each(["sender", "bot"] as const)(
     "requires %s public-thread creation permission even when the other party is an administrator",
@@ -1582,7 +1570,6 @@ describe("canonical Discord ingress", () => {
     mockDiscordApplication(1 << 19);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.DiscordIntegration]: true,
-      [FeatureSwitchKey.PrivateArtifacts]: true,
     });
     const objects = new Map<
       string,

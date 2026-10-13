@@ -158,7 +158,7 @@ describe("okou generate image command", () => {
     ).rejects.toThrow("process.exit called");
     expect(generated).toBe(false);
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--visibility requires privateArtifacts to be enabled",
+      "Artifact visibility is unavailable on this API",
     );
   });
 

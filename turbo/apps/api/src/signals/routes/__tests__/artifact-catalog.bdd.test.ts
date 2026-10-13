@@ -1,7 +1,5 @@
 import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { randomUUID } from "node:crypto";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -491,9 +489,6 @@ describe("GET /api/artifacts/catalog", () => {
 
   it("catalogues an artifact upload but never a chat attachment", async () => {
     const owner = await catalogActor("Artifact catalog attachment owner");
-    await createBillingMediaApi(context).updateFeatureSwitches(owner.actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
     const storage = chatCallbacks.acceptChatObjectStorage();
     const stagePrivateObject = (id: string, filename: string, size: number) => {
       storage.addObject({

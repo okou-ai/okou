@@ -483,11 +483,9 @@ export function createAgentPhoneBddApi(context: TestContext) {
      */
     acceptAgentPhoneObjectStorage(): {
       addArtifactObject(object: {
-        readonly userId: string;
         readonly uploadId: string;
         readonly filename: string;
         readonly size: number;
-        readonly privateFiles?: boolean;
       }): void;
     } {
       const objects: {
@@ -544,11 +542,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
       installArtifactReferenceStorage(context);
       return {
         addArtifactObject(object): void {
-          const bucket = env(
-            object.privateFiles === false
-              ? "R2_USER_ARTIFACTS_BUCKET_NAME"
-              : "R2_PRIVATE_ARTIFACTS_BUCKET_NAME",
-          );
+          const bucket = env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME");
           if (!bucket) {
             throw new Error(
               "Expected the phone artifact bucket to be configured",
@@ -556,10 +550,7 @@ export function createAgentPhoneBddApi(context: TestContext) {
           }
           objects.push({
             bucket,
-            key:
-              object.privateFiles === false
-                ? `artifacts/${object.userId}/${object.uploadId}/${object.filename}`
-                : `private-artifacts/${object.uploadId}/${object.filename}`,
+            key: `private-artifacts/${object.uploadId}/${object.filename}`,
             size: object.size,
           });
         },

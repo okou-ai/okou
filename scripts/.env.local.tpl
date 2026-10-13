@@ -23,7 +23,7 @@ R2_USER_STORAGES_BUCKET_NAME=op://Development/cloudflare/R2_USER_STORAGES_BUCKET
 R2_STATIC_ACCESS_KEY_ID=op://Development/cloudflare/R2_STATIC_ACCESS_KEY_ID
 R2_STATIC_SECRET_ACCESS_KEY=op://Development/cloudflare/R2_STATIC_SECRET_ACCESS_KEY
 
-# Configure scoped private-bucket credentials before enabling privateArtifacts.
+# Private uploads and generation require scoped private-bucket credentials.
 R2_PRIVATE_ARTIFACTS_BUCKET_NAME=user-artifact-private-dev
 R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID=
 R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY=

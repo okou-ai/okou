@@ -34,7 +34,6 @@ import { imageIoGenerateRoutes } from "../image-io-generate";
 import { usageRecordRoutes } from "../usage-record";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1172,13 +1171,10 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
-  it("generates image files on the Okou CDN for Okou run-scoped agent tokens", async () => {
+  it("generates private image files for Okou run-scoped agent tokens", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);
     await fixture.run(async () => {
-      await updateFeatureSwitchesForUser(context, fixture, {
-        privateArtifacts: false,
-      });
       const creditsCharged = 50;
       let falCalls = 0;
       let observedAuthorization: string | null = null;
@@ -1249,7 +1245,7 @@ describe("POST /api/image-io/generate", () => {
         context.mocks.s3.send.mock.calls.filter(([command]) => {
           return (
             command instanceof PutObjectCommand &&
-            command.input.Key?.startsWith("artifacts/")
+            command.input.Key?.startsWith("private-artifacts/")
           );
         }),
       ).toHaveLength(1);
@@ -1292,8 +1288,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "webp",
         moderation: "auto",
         revisedPrompt: "A small robot paints a sunflower.",
-        sourceUrl: FAL_GPT_MEDIA_URL,
+        privateArtifacts: true,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
+      expect(body).not.toHaveProperty("embedUrl");
       expect(body).not.toHaveProperty("usage");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
@@ -1322,21 +1320,10 @@ describe("POST /api/image-io/generate", () => {
       expect(filename).toBe(`image-${fileId.slice(0, 8)}.webp`);
 
       const putInput = putObjectInput();
-      expect(putInput.Bucket).toBe(TEST_BUCKET);
-      expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.webp$/u);
-      const publicPath = String(putInput.Key).replace(/^artifacts\//u, "");
-      expect(url).toBe(`https://a.okou.io/${publicPath}`);
-      // Short file URLs use the policy-aware Worker thumbnail endpoint, which
-      // also resolves historical generated files in the shared namespace.
-      expect(body).toMatchObject({
-        embedUrl: `https://a.okou.io/${publicPath}?thumbnail=1&fit=scale-down&quality=85`,
-      });
-      expect(putInput.Metadata).toStrictEqual({
-        "artifact-id": fileId,
-        filename: encodeURIComponent(filename),
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(fixture.userId),
-      });
+      expect(putInput.Bucket).toBe("test-private-artifacts");
+      expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
+      expect(url).toMatch(/^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.webp$/u);
+      expect(putInput.Metadata).toStrictEqual({ "artifact-id": fileId });
       expect(putInput.ContentType).toBe("image/webp");
       const putBody = putInput.Body;
       expect(Buffer.isBuffer(putBody)).toBeTruthy();

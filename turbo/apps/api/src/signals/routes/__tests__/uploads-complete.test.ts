@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createRouteMocks } from "./helpers/route-test";
 
@@ -138,17 +135,21 @@ async function createRunUploadFixture(
   };
 }
 
-async function useLegacyPublicUploads(actor: ApiTestUser) {
-  createRouteMocks(context).clerk.session(actor.userId, requireOrgId(actor));
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
+async function prepareOrganizationlessUpload(
+  actor: ApiTestUser,
+  body: { filename: string; contentType: string; size: number },
+) {
+  createRouteMocks(context).clerk.session(actor.userId, null);
+  const prepared = await accept(
+    setupApp({ context, routes: uploadsPrepareRoutes })(
+      uploadsContract,
+    ).prepare({
       headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
+      body,
     }),
     [200],
   );
+  return prepared.body;
 }
 
 function addUploadObject(
@@ -171,15 +172,6 @@ describe("POST /api/uploads/complete", () => {
     createRouteMocks(context).clerk.session(
       fixture.actor.userId,
       fixture.actor.orgId,
-    );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: true } },
-      }),
-      [200],
     );
     const prepared = await accept(
       setupApp({ context, routes: uploadsPrepareRoutes })(
@@ -405,8 +397,7 @@ describe("POST /api/uploads/complete", () => {
 
   it("resolves the CDN from the immutable object layout marker", async () => {
     const fixture = await createRunUploadFixture();
-    await useLegacyPublicUploads(fixture.actor);
-    const prepared = await chat.prepareUpload(fixture.actor, {
+    const prepared = await prepareOrganizationlessUpload(fixture.actor, {
       filename: "okou-report.pdf",
       contentType: "application/pdf",
       size: 17,
@@ -440,8 +431,7 @@ describe("POST /api/uploads/complete", () => {
 
   it("keeps completion idempotent while an Okou artifact adopts its short URL", async () => {
     const fixture = await createRunUploadFixture();
-    await useLegacyPublicUploads(fixture.actor);
-    const prepared = await chat.prepareUpload(fixture.actor, {
+    const prepared = await prepareOrganizationlessUpload(fixture.actor, {
       filename: "okou-cutover.pdf",
       contentType: "application/pdf",
       size: 17,

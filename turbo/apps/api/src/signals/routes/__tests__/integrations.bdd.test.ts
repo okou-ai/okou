@@ -2249,249 +2249,226 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
   });
 
-  it.each([false, true])(
-    "deduplicates canonical Slack retries and preserves same-name mention identities (private=%s)",
-    async (privateFiles) => {
-      const actor = bdd.user();
-      runs.acceptStorageDownloads();
-      runs.acceptTelemetryIngest();
-      const runnerGroup = runs.configureRunnerGroup();
-      integrations.configureSlackAppMocks();
-      await runs.grantProEntitlement(actor);
-      await runs.ensurePersonalSubscriptionModel(actor, {
-        model: "claude-fable-5-1",
-      });
-      const slackUserId = uniqueSlackUserId();
-      const mentionedSlackUserId = uniqueSlackUserId();
-      const secondMentionedSlackUserId = uniqueSlackUserId();
-      const { teamId, botUserId } = await integrations.installSlackWorkspace(
-        actor,
+  it("deduplicates canonical Slack retries and preserves same-name mention identities", async () => {
+    const actor = bdd.user();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    integrations.configureSlackAppMocks();
+    await runs.grantProEntitlement(actor);
+    await runs.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+    const slackUserId = uniqueSlackUserId();
+    const mentionedSlackUserId = uniqueSlackUserId();
+    const secondMentionedSlackUserId = uniqueSlackUserId();
+    const { teamId, botUserId } = await integrations.installSlackWorkspace(
+      actor,
+      {
+        installerSlackUserId: slackUserId,
+      },
+    );
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    const uploads = captureIntegrationInputUploads(context);
+    const channelId = "C_BDD_CANONICAL_INGRESS";
+    const threadTs = "2900.000100";
+    const eventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
+    const fileUrl = "https://files.slack.com/F_CANONICAL_INPUT";
+    const fileBody = "canonical Slack attachment";
+    const originalMessageText = `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}> and <@${secondMentionedSlackUserId}>`;
+    const visibleMessageText =
+      "@Slack User admit this event once with @Slack User and @Slack User";
+    context.mocks.slack.fetchFile.mockResolvedValue(
+      new Response(fileBody, {
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+    const event = {
+      type: "app_mention",
+      user: slackUserId,
+      text: originalMessageText,
+      ts: threadTs,
+      channel: channelId,
+      channel_type: "channel",
+      files: [
         {
-          installerSlackUserId: slackUserId,
+          id: "F_CANONICAL_INPUT",
+          // Resolve a generic MIME type from the validated download response.
+          name: "source-notes.txt",
+          mimetype: "application/octet-stream",
+          size: fileBody.length,
+          url_private_download: fileUrl,
         },
-      );
-      if (!actor.orgId) {
-        throw new Error("Expected organization");
-      }
-      const flagActor = { ...actor, orgId: actor.orgId };
-      await updateFeatureSwitchesForUser(context, flagActor, {
-        [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
-      });
-      const uploads = captureIntegrationInputUploads(context);
-      const channelId = "C_BDD_CANONICAL_INGRESS";
-      const threadTs = "2900.000100";
-      const eventId = `EvBDD${randomUUID().replace(/-/g, "")}`;
-      const fileUrl = "https://files.slack.com/F_CANONICAL_INPUT";
-      const fileBody = "canonical Slack attachment";
-      const originalMessageText = `<@${botUserId}> admit this event once with <@${mentionedSlackUserId}> and <@${secondMentionedSlackUserId}>`;
-      const visibleMessageText =
-        "@Slack User admit this event once with @Slack User and @Slack User";
-      context.mocks.slack.fetchFile.mockResolvedValue(
-        new Response(fileBody, {
-          headers: { "Content-Type": "text/plain" },
-        }),
-      );
-      const event = {
-        type: "app_mention",
-        user: slackUserId,
-        text: originalMessageText,
-        ts: threadTs,
-        channel: channelId,
-        channel_type: "channel",
-        files: [
-          {
-            id: "F_CANONICAL_INPUT",
-            // Resolve a generic MIME type from the validated download response.
-            name: "source-notes.txt",
-            mimetype: "application/octet-stream",
-            size: fileBody.length,
-            url_private_download: fileUrl,
-          },
-        ],
-      };
-      const eventBody = JSON.stringify({
-        type: "event_callback",
-        team_id: teamId,
-        event_id: eventId,
-        event,
-      });
+      ],
+    };
+    const eventBody = JSON.stringify({
+      type: "event_callback",
+      team_id: teamId,
+      event_id: eventId,
+      event,
+    });
+    await integrations.requestSlackEvent(
+      eventBody,
+      integrations.signedSlackIngressHeaders(eventBody),
+      [200],
+    );
+    for (const retryNum of ["1", "2", "3"]) {
       await integrations.requestSlackEvent(
         eventBody,
-        integrations.signedSlackIngressHeaders(eventBody),
-        [200],
-      );
-      for (const retryNum of ["1", "2", "3"]) {
-        await integrations.requestSlackEvent(
-          eventBody,
-          {
-            ...integrations.signedSlackIngressHeaders(eventBody),
-            "x-slack-retry-num": retryNum,
-          },
-          [200],
-        );
-      }
-      await flushWaitUntilForTest();
-
-      // The original delivery and its three provider retries admit one
-      // input on one thread and launch exactly one Slack run.
-      const { chatThreadId: canonicalChatThreadId } = await ownedThreadWhere(
-        actor,
-        hasSlackSource,
-      );
-      const slackRuns = await listSlackRunLogs(actor);
-      expect(slackRuns).toHaveLength(1);
-      expect(slackRuns[0]?.prompt).toContain("admit this event once");
-      expect(context.mocks.slack.apiCall).toHaveBeenCalledOnce();
-      expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
-        "agents.sessions.setStatus",
         {
-          channel_id: channelId,
-          thread_ts: threadTs,
-          status: "processing",
+          ...integrations.signedSlackIngressHeaders(eventBody),
+          "x-slack-retry-num": retryNum,
         },
-      );
-      const run1Id = await pollSlackRun(runnerGroup);
-      const claim1 = await runs.claimRunnerJob(run1Id);
-
-      const visibleThreadEvents = await chat.requestThreadEvents(
-        actor,
-        {},
         [200],
       );
-      expect(visibleThreadEvents.status).toBe(200);
-      if (visibleThreadEvents.status !== 200) {
-        throw new Error("Expected visible thread events to load");
-      }
-      expect(
-        visibleThreadEvents.body.events.map((threadEvent) => {
-          return threadEvent.chatThreadId;
+    }
+    await flushWaitUntilForTest();
+
+    // The original delivery and its three provider retries admit one
+    // input on one thread and launch exactly one Slack run.
+    const { chatThreadId: canonicalChatThreadId } = await ownedThreadWhere(
+      actor,
+      hasSlackSource,
+    );
+    const slackRuns = await listSlackRunLogs(actor);
+    expect(slackRuns).toHaveLength(1);
+    expect(slackRuns[0]?.prompt).toContain("admit this event once");
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledOnce();
+    expect(context.mocks.slack.apiCall).toHaveBeenCalledWith(
+      "agents.sessions.setStatus",
+      {
+        channel_id: channelId,
+        thread_ts: threadTs,
+        status: "processing",
+      },
+    );
+    const run1Id = await pollSlackRun(runnerGroup);
+    const claim1 = await runs.claimRunnerJob(run1Id);
+
+    const visibleThreadEvents = await chat.requestThreadEvents(
+      actor,
+      {},
+      [200],
+    );
+    expect(visibleThreadEvents.status).toBe(200);
+    if (visibleThreadEvents.status !== 200) {
+      throw new Error("Expected visible thread events to load");
+    }
+    expect(
+      visibleThreadEvents.body.events.map((threadEvent) => {
+        return threadEvent.chatThreadId;
+      }),
+    ).toContain(canonicalChatThreadId);
+    expect(
+      visibleThreadEvents.body.events.filter((threadEvent) => {
+        return (
+          threadEvent.chatThreadId === canonicalChatThreadId &&
+          threadEvent.kind === "created"
+        );
+      }),
+    ).toHaveLength(1);
+    expect(
+      (await chat.requestReadThread(actor, canonicalChatThreadId, [200]))
+        .status,
+    ).toBe(200);
+    const visibleMessages = (
+      await chat.listThreadEvents(actor, canonicalChatThreadId)
+    ).events;
+    const canonicalInputAssetId =
+      requireCanonicalSlackInputAssetId(visibleMessages);
+    await expectIntegrationInputPreview(context, {
+      actor,
+      fileId: canonicalInputAssetId,
+      contentType: "text/plain",
+      bytes: Buffer.from(fileBody),
+      uploads,
+      okouToken: claim1.platformEnvironment.OKOU_TOKEN,
+    });
+    const canonicalInputMessage = slackInputMessageByText(
+      visibleMessages,
+      visibleMessageText,
+    );
+    if (!canonicalInputMessage) {
+      throw new Error("Expected the canonical Slack input message");
+    }
+    expect(visibleMessages).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "input.prompt",
+          content: null,
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "file",
+                fileId: canonicalInputAssetId,
+                filenameSnapshot: "source-notes.txt",
+                contentType: "text/plain",
+              },
+              {
+                type: "text",
+                text: visibleMessageText,
+              },
+              {
+                type: "source",
+                kind: "slack",
+                href: "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
+              },
+            ],
+          },
         }),
-      ).toContain(canonicalChatThreadId);
-      expect(
-        visibleThreadEvents.body.events.filter((threadEvent) => {
+      ]),
+    );
+    expect(
+      visibleMessages
+        .filter((message) => {
           return (
-            threadEvent.chatThreadId === canonicalChatThreadId &&
-            threadEvent.kind === "created"
+            message.eventType === "input.prompt" ||
+            message.eventType === "input.rejected"
           );
+        })
+        .every((message) => {
+          return message.content === null;
         }),
-      ).toHaveLength(1);
-      expect(
-        (await chat.requestReadThread(actor, canonicalChatThreadId, [200]))
-          .status,
-      ).toBe(200);
-      const visibleMessages = (
-        await chat.listThreadEvents(actor, canonicalChatThreadId)
-      ).events;
-      const canonicalInputAssetId =
-        requireCanonicalSlackInputAssetId(visibleMessages);
-      await updateFeatureSwitchesForUser(context, flagActor, {
-        [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
-      });
-      await expectIntegrationInputPreview(context, {
-        actor,
-        privateFiles,
-        fileId: canonicalInputAssetId,
-        contentType: "text/plain",
-        bytes: Buffer.from(fileBody),
-        uploads,
-        okouToken: claim1.platformEnvironment.OKOU_TOKEN,
-      });
-      const canonicalInputMessage = slackInputMessageByText(
-        visibleMessages,
-        visibleMessageText,
-      );
-      if (!canonicalInputMessage) {
-        throw new Error("Expected the canonical Slack input message");
-      }
-      expect(visibleMessages).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            eventType: "input.prompt",
-            content: null,
-            userMessage: {
-              version: 1,
-              parts: [
-                {
-                  type: "file",
-                  fileId: canonicalInputAssetId,
-                  filenameSnapshot: "source-notes.txt",
-                  contentType: "text/plain",
-                },
-                {
-                  type: "text",
-                  text: visibleMessageText,
-                },
-                {
-                  type: "source",
-                  kind: "slack",
-                  href: "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
-                },
-              ],
-            },
-          }),
-        ]),
-      );
-      expect(
-        visibleMessages
-          .filter((message) => {
-            return (
-              message.eventType === "input.prompt" ||
-              message.eventType === "input.rejected"
-            );
-          })
-          .every((message) => {
-            return message.content === null;
-          }),
-      ).toBeTruthy();
-      expectClaimedSlackDisplayMessage(
-        visibleMessages,
-        "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
-      );
-      const canonicalInputRun = await runs.readRun(actor, run1Id);
-      expect(canonicalInputRun.prompt).toBe(
-        `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId}) and @Slack User (${secondMentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
-      );
-      // The Slack delivery rules follow the integration block as their own
-      // section rather than sitting in `# Agent Tools`.
-      expect(canonicalInputRun.appendSystemPrompt).toContain(
-        `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}\n\n# Integration Note\n\n- Slack messaging and files: only your final reply is delivered to the originating thread,`,
-      );
-      // A private artifact address is unopenable from Slack, so the note asks
-      // for an upload while retaining the address for Web, only when private
-      // artifacts are on for this member.
-      // This member holds the switch through an override, not a staff
-      // organization, so it also pins that the note reads the same
-      // override-aware evaluation as `# Agent Tools`.
-      const privateArtifactRule =
-        "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in Slack. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to Slack unless the user explicitly requests it. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou slack upload-file`, so the owner can open the original artifact after returning to the web app.";
-      if (privateFiles) {
-        expect(canonicalInputRun.appendSystemPrompt).toContain(
-          privateArtifactRule,
-        );
-      } else {
-        expect(canonicalInputRun.appendSystemPrompt).not.toContain(
-          "Private artifacts in the final reply",
-        );
-      }
-      expect(canonicalInputRun.appendSystemPrompt).toContain(
-        "okou web download-file -h",
-      );
-      expect(context.mocks.slack.chat.getPermalink).toHaveBeenCalledWith({
-        channel: channelId,
-        message_ts: threadTs,
-      });
-      await completeSlackTriggeredRun({
-        runId: run1Id,
-        sandboxToken: claim1.sandboxToken,
-        cliAgentType: claim1.cliAgentType,
-        assistantText: "Canonical Slack retry answer",
-      });
-      await flushWaitUntilForTest();
-      if (!actor.orgId) {
-        throw new Error("Expected canonical Slack actor to belong to an org");
-      }
-    },
-  );
+    ).toBeTruthy();
+    expectClaimedSlackDisplayMessage(
+      visibleMessages,
+      "https://vm0.slack.com/archives/C_BDD_CANONICAL_INGRESS/p2900000100",
+    );
+    const canonicalInputRun = await runs.readRun(actor, run1Id);
+    expect(canonicalInputRun.prompt).toBe(
+      `@Slack User (${botUserId}) admit this event once with @Slack User (${mentionedSlackUserId}) and @Slack User (${secondMentionedSlackUserId})\n\n[Web file] source-notes.txt (text/plain)\n   [ID] ${canonicalInputAssetId}`,
+    );
+    // The Slack delivery rules follow the integration block as their own
+    // section rather than sitting in `# Agent Tools`.
+    expect(canonicalInputRun.appendSystemPrompt).toContain(
+      `# Current Integration\nYou are currently running inside: Slack\nYour bot user ID: ${botUserId}\nChannel ID: ${channelId}\nChannel type: Channel\nThread ID: ${threadTs}\n\n# Integration Note\n\n- Slack messaging and files: only your final reply is delivered to the originating thread,`,
+    );
+    // A private artifact address is unopenable from Slack, so the note asks
+    // for an upload while retaining the address for Web.
+    const privateArtifactRule =
+      "- Private artifacts in the final reply: weigh this only while composing the final reply, never during the run. This upload guidance applies to replies in Slack. If the user continues the conversation in Web chat, deliver files there and do not continue uploading to Slack unless the user explicitly requests it. A private `/artifacts/...` address is not openable from Slack, so a link alone shows the user nothing. When you judge that Slack can display that kind of file — a hosted website or HTML page never qualifies — upload it with `okou slack upload-file` so the user has something they can open there. If you upload it, also keep the original private `/artifacts/...` address from before the upload in the final reply, not the address returned by `okou slack upload-file`, so the owner can open the original artifact after returning to the web app.";
+    expect(canonicalInputRun.appendSystemPrompt).toContain(privateArtifactRule);
+    expect(canonicalInputRun.appendSystemPrompt).toContain(
+      "okou web download-file -h",
+    );
+    expect(context.mocks.slack.chat.getPermalink).toHaveBeenCalledWith({
+      channel: channelId,
+      message_ts: threadTs,
+    });
+    await completeSlackTriggeredRun({
+      runId: run1Id,
+      sandboxToken: claim1.sandboxToken,
+      cliAgentType: claim1.cliAgentType,
+      assistantText: "Canonical Slack retry answer",
+    });
+    await flushWaitUntilForTest();
+    if (!actor.orgId) {
+      throw new Error("Expected canonical Slack actor to belong to an org");
+    }
+  });
 
   it("keeps queued Web and Slack inputs on one canonical route", async () => {
     const actor = bdd.user();

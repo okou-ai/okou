@@ -12,11 +12,11 @@ export type ArtifactVisibility = "only-me" | "org" | "public";
 export function createArtifactVisibilityOption(): Option {
   return new Option(
     "--visibility <visibility>",
-    "Who can access the result (requires privateArtifacts; defaults to only-me when enabled)",
+    "Who can access the result (defaults to only-me)",
   ).choices(["only-me", "org", "public"]);
 }
 
-/** Omission retains the server's existing, feature-gated creation policy. */
+/** Omission uses the server's default-private creation policy. */
 export async function prepareArtifactVisibility(
   visibility: ArtifactVisibility | undefined,
 ): Promise<true | undefined> {
@@ -34,11 +34,11 @@ export async function prepareArtifactVisibility(
     })
   ) {
     throw new Error(
-      "--visibility requires a new run with privateArtifacts enabled and artifact sharing capabilities.",
+      "--visibility requires artifact sharing capabilities. Start a new run.",
     );
   }
   if (!(await getArtifactSharingAvailability()).enabled) {
-    throw new Error("--visibility requires privateArtifacts to be enabled.");
+    throw new Error("Artifact visibility is unavailable on this API.");
   }
   return true;
 }

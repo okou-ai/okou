@@ -2,7 +2,6 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import {
@@ -60,7 +59,6 @@ test("a signed-out recipient can preview, copy, and download a public image", as
     path,
     host: "app.okou.ai",
     auth: null,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 
   await expect(
@@ -119,7 +117,6 @@ test("a signed-out legacy HTML link previews its requested slide on the isolated
     path,
     host: "app.okou.ai",
     auth: null,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 
   const frame = await screen.findByTitle("index.html preview");
@@ -203,7 +200,6 @@ test.each([403] as const)(
       context,
       path: imagePath,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
     });
 
     await expect(

@@ -177,16 +177,12 @@ export function ArtifactShareButton({
   url: string;
 }) {
   const { t } = useTranslation();
-  const features = useLastResolved(featureSwitch$);
   const label =
     ariaLabel ??
     t(($) => {
       return $.artifacts.actions.share;
     });
-  if (
-    features?.[FeatureSwitchKey.PrivateArtifacts] &&
-    isShareableArtifactReference(url)
-  ) {
+  if (isShareableArtifactReference(url)) {
     return (
       <ArtifactShareMenu
         url={url}

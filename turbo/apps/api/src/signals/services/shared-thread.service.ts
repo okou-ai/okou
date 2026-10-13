@@ -44,7 +44,6 @@ import {
   canonicalChatEventUserMessage,
 } from "./canonical-chat-event-read.service";
 import { readSharedThreadChatEventHistory$ } from "./chat-event-history.service";
-import { privateArtifactCreationEnabled$ } from "./private-artifact-storage.service";
 import {
   type SharedThreadArtifactPlan,
   prepareSharedThreadArtifacts$,
@@ -591,27 +590,14 @@ const prepareAndPersistSharedThread$ = command(
   ) => {
     const { id, messages, attachmentCopies, title } = snapshot;
     const preparationStartedAt = performance.now();
-    const enabled = await set(
-      privateArtifactCreationEnabled$,
-      args.orgId,
-      args.userId,
+    const preparation = await settle(
+      set(
+        prepareSharedThreadArtifacts$,
+        { ...args, threadId: id, messages },
+        signal,
+      ),
       signal,
     );
-    signal.throwIfAborted();
-    const preparation =
-      enabled ||
-      [...attachmentCopies.values()].some((copy) => {
-        return copy.isPrivate;
-      })
-        ? await settle(
-            set(
-              prepareSharedThreadArtifacts$,
-              { ...args, threadId: id, messages },
-              signal,
-            ),
-            signal,
-          )
-        : { ok: true as const, value: { messages, plan: null } };
     recordSharedThreadPhase({
       shareId: id,
       phase: "prepare",
