@@ -973,6 +973,20 @@ test.each([
     reason: "access_token_expired",
   },
   {
+    body: { error: "expired_token" },
+    source: "error",
+    reason: "token_expired",
+  },
+  {
+    body: {
+      error: {
+        message: "Access token is missing required scopes: balances:read",
+      },
+    },
+    source: "error.message",
+    reason: "insufficient_scope",
+  },
+  {
     body: { message: "Missing authorization header" },
     source: "message",
     reason: "missing_authorization",
@@ -1017,7 +1031,7 @@ test.each([
     expect(rejected.body.error.message).toContain(`message source: ${source}`);
     expect(rejected.body.error.message).toContain(`reason: ${reason}`);
     expect(rejected.body.error.message).not.toMatch(
-      /liwlaccess_private_fixture|private-client-fixture|private-user@example.test/,
+      /liwlaccess_private_fixture|private-client-fixture|private-user@example.test|balances:read/,
     );
     expect(creates).toBe(1);
     const status = await accept(

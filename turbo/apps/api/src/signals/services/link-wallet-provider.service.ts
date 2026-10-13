@@ -58,6 +58,7 @@ const providerAuthMessageReasons = [
     "access_token_expired",
     /^(?:expired access token|access token (?:has |is )?expired)(?:[.:]|$)/,
   ],
+  ["token_expired", /^expired token(?:[.:]|$)/],
   [
     "invalid_refresh_token",
     /^(?:invalid refresh token|refresh token (?:is )?invalid)(?:[.:]|$)/,
@@ -74,7 +75,7 @@ const providerAuthMessageReasons = [
   ],
   [
     "insufficient_scope",
-    /^(?:insufficient scope|missing required scope|insufficient permissions)(?:[.:]|$)/,
+    /^(?:insufficient scope|missing required scopes?|access token is missing required scopes?|insufficient permissions)(?:[.:]|$)/,
   ],
   [
     "unauthorized",
