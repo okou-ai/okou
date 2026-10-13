@@ -11643,9 +11643,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(prompt).toContain(
               "Only after the agent selects PPTX as the delivery format",
             );
-            expect(prompt).toContain(
-              "Successful conversion needs no additional AI review or rendered-page comparison",
-            );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
             expect(prompt).not.toContain("okou presentation convert");
