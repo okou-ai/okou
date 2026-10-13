@@ -605,7 +605,7 @@ if [ "$match_count" -ne 1 ]; then
 fi
 api_deployment_url="https://$(jq -r '.[0].url' <<<"$matches")"
 
-. "${script_dir}/runner-image-target.sh"
+. "${script_dir}/../runner-image-target.sh"
 runner_version=$(git show "${TARGET_COMMIT}:crates/runner/Cargo.toml" \
   | sed -nE 's/^version = "([^"]+)"/\1/p' \
   | head -1)
@@ -625,7 +625,7 @@ if ! git merge-base --is-ancestor "$PROVIDER_BALANCE_FAILURE_COMMIT" "$runner_ta
   fail "Runner release ${runner_tag} predates structured provider balance failures: ${PROVIDER_BALANCE_FAILURE_COMMIT}."
 fi
 
-runner_matrix=$("${script_dir}/runner-host-architecture-groups.sh" target-matrix)
+runner_matrix=$("${script_dir}/../runner-host-architecture-groups.sh" target-matrix)
 runner_group_count=$(jq -r 'length' <<<"$runner_matrix")
 if [ "$runner_group_count" -lt 1 ]; then
   fail "No production Runner host groups found."

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET="${SCRIPT_DIR}/../update-rollback-dashboard-body.sh"
+TARGET="${SCRIPT_DIR}/../release/update-rollback-dashboard-body.sh"
 
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT

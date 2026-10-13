@@ -376,7 +376,7 @@ jobs:
       - name: Pass ci-gate checks for release PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/scripts/pass-release-pr-ci-gates.sh
+        run: bash .github/scripts/release/pass-release-pr-ci-gates.sh
 
   validate-db-release-coupling:
     needs: release-please
@@ -651,11 +651,11 @@ jobs:
             sleep 10
           done
 
-          bash .github/scripts/fetch-okou-desktop-artifact.sh \
+          bash .github/scripts/artifacts/fetch-okou-desktop-artifact.sh \
             "$r2_endpoint" \
             "$artifact_uri" \
             "$artifact_dir"
-          bash .github/scripts/verify-okou-desktop-artifact.sh \
+          bash .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             "$artifact_dir" \
             "$ARTIFACT_SHA" \
             "$DESKTOP_VERSION"
@@ -1123,7 +1123,7 @@ jobs:
           ARTIFACT_SHA: ${{ needs.release-please.outputs.release_target }}
           RELEASE_MANIFEST_PATH: .release-please-manifest.json
           OUTPUT_DIR: runner-cli-intermediate
-        run: bash .github/scripts/publish-okou-cli-versioned-artifact.sh
+        run: bash .github/scripts/release/publish-okou-cli-versioned-artifact.sh
 
       # Reuse the verified canonical bytes downloaded by the publisher; do not
       # rebuild CLI separately for Runner or use an older versioned manifest.
@@ -1296,10 +1296,10 @@ jobs:
           curl -fsSL \
             "${artifact_base_url}/package.tgz" \
             --output "${artifact_dir}/package.tgz"
-          bash .github/scripts/verify-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             "$artifact_dir" \
             "$ARTIFACT_SHA"
-          bash .github/scripts/smoke-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             "$artifact_dir/package.tgz"
           echo "package-url=${artifact_base_url}/package.tgz" >> "$GITHUB_OUTPUT"
 
@@ -1732,11 +1732,11 @@ jobs:
             sleep 10
           done
 
-          bash .github/scripts/fetch-okou-app-artifact.sh \
+          bash .github/scripts/artifacts/fetch-okou-app-artifact.sh \
             "$r2_endpoint" \
             "$artifact_uri" \
             "$canonical_dist"
-          bash .github/scripts/verify-okou-app-artifact.sh \
+          bash .github/scripts/artifacts/verify-okou-app-artifact.sh \
             "$canonical_dist" \
             "$ARTIFACT_SHA"
           mkdir "$worker_shell"
@@ -1934,7 +1934,7 @@ jobs:
 
           gh api "repos/${{ github.repository }}/issues/${ISSUE_NUMBER}" \
             --jq '.body' > /tmp/rollback-dashboard.md
-          updated_body=$(bash .github/scripts/update-rollback-dashboard-body.sh \
+          updated_body=$(bash .github/scripts/release/update-rollback-dashboard-body.sh \
             /tmp/rollback-dashboard.md \
             "$RELEASE_TARGET" \
             "$ROLLBACK_URL" \

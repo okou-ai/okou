@@ -7,10 +7,10 @@ trap 'rm -rf "$tmp_dir"' EXIT
 fixture="${tmp_dir}/repo"
 mkdir -p "${fixture}/turbo/apps/cli/scripts" "${fixture}/turbo/apps/cli/dist" \
   "${fixture}/turbo/packages/pi-agent-runtime" "${fixture}/turbo/patches" \
-  "${fixture}/.github/scripts"
+  "${fixture}/.github/scripts/artifacts"
 cp "${repo_root}/turbo/apps/cli/scripts/write-dist-package.mjs" "${fixture}/turbo/apps/cli/scripts/"
 for script in build-okou-cli-artifact.sh verify-okou-cli-artifact.sh read-okou-cli-package-identity.py; do
-  cp "${repo_root}/.github/scripts/${script}" "${fixture}/.github/scripts/"
+  cp "${repo_root}/.github/scripts/artifacts/${script}" "${fixture}/.github/scripts/artifacts/"
 done
 # The unchanged postbuild projection supplies this dist package; exercise the
 # new identity writer and the actual artifact packer against synthetic JS assets.
@@ -36,7 +36,7 @@ jq -e --arg sdk "0.86.1+okou.${expected_sdk_patch_set}" '(.scripts == null) and 
   "${fixture}/turbo/apps/cli/dist/package.json" >/dev/null
 
 build() {
-  (cd "$fixture" && bash .github/scripts/build-okou-cli-artifact.sh "$1" "$2")
+  (cd "$fixture" && bash .github/scripts/artifacts/build-okou-cli-artifact.sh "$1" "$2")
 }
 build aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${tmp_dir}/first" >/dev/null
 first_sha="$(jq -r '.package.sha256' "${tmp_dir}/first/manifest.json")"
@@ -58,7 +58,7 @@ build bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb "${tmp_dir}/third" >/dev/null
 }
 
 # Exercise the real bounded reader on invalid tar/JSON inputs, without extraction.
-python3 - "$tmp_dir" "${repo_root}/.github/scripts/read-okou-cli-package-identity.py" <<'PY'
+python3 - "$tmp_dir" "${repo_root}/.github/scripts/artifacts/read-okou-cli-package-identity.py" <<'PY'
 import io, json, pathlib, subprocess, sys, tarfile
 root = pathlib.Path(sys.argv[1])
 reader = sys.argv[2]

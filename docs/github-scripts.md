@@ -21,6 +21,9 @@ checkers separate from their regression fixtures. Group related tools by purpose
 preserve useful existing modules. Local invocation instructions belong next to
 the owner, and task progress belongs in the issue or PR.
 
+[Artifact tools](../.github/scripts/artifacts/) own build/fetch/verify/smoke phases;
+[release tools](../.github/scripts/release/) own promotion and publication adapters.
+
 ## Writing Scripts
 
 - Use Bash for simple process orchestration and existing Python/JavaScript modules
