@@ -2067,6 +2067,11 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   await expect(
     sharp(Buffer.from(await image.body.arrayBuffer())).metadata(),
   ).resolves.toMatchObject({ width: 600, height: 900 });
+  const compactQuery = { ...imageQuery, variant: "slack" as const };
+  const compact = await accept(og.image({ query: compactQuery }), [200]);
+  await expect(
+    sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
+  ).resolves.toMatchObject({ width: 333, height: 500 });
   const brand = await accept(og.defaultImage(), [302]);
   expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
   await accept(
@@ -2113,6 +2118,20 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
     const denied = await accept(og.image({ query: imageQuery }), [302]);
     expect(denied.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
     expect(denied.headers.get("cache-control")).toBe("private, no-store");
+    const compactDenied = await accept(
+      og.image({ query: compactQuery }),
+      [302],
+    );
+    const compactBrand = new URL(compactDenied.headers.get("location")!);
+    expect(compactBrand.origin).toBe(
+      new URL(ARTIFACT_OG_BRAND.imageUrl).origin,
+    );
+    expect(compactBrand.pathname).toContain(
+      "/cdn-cgi/image/width=360,height=500,",
+    );
+    expect(compactDenied.headers.get("cache-control")).toBe(
+      "private, no-store",
+    );
   }
   await accept(
     api()(artifactSharesContract).update({

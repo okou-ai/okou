@@ -15,6 +15,7 @@ import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { SLACK_PREVIEW_IMAGE_SIZE } from "../../lib/slack-preview-image";
 import { db$ } from "../external/db";
 import {
   downloadHostedSitesS3Buffer,
@@ -368,6 +369,7 @@ export const artifactOgImage$ = command(
     { get, set },
     target: ArtifactOgTarget,
     version: string,
+    variant: "slack" | undefined,
     signal: AbortSignal,
   ): Promise<Buffer | null> => {
     const source = await set(authorizedOgSource$, target, signal);
@@ -408,7 +410,15 @@ export const artifactOgImage$ = command(
     ) {
       return null;
     }
-    const normalized = await image.rotate().png().toBuffer();
+    image.rotate();
+    if (variant === "slack") {
+      image.resize({
+        ...SLACK_PREVIEW_IMAGE_SIZE,
+        fit: "inside",
+        withoutEnlargement: true,
+      });
+    }
+    const normalized = await image.png().toBuffer();
     signal.throwIfAborted();
     return normalized.length <= 5 * 1024 * 1024 ? normalized : null;
   },

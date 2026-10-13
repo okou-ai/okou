@@ -1,7 +1,11 @@
 import { WebClient } from "@slack/web-api";
 
 import type { ChatSlackMessageFile } from "@okouai/db/jsonb-contracts/chat-slack-context";
-import type { SlackAnyBlock, SlackView } from "./slack-block-kit";
+import type {
+  SlackAnyBlock,
+  SlackKnownBlock,
+  SlackView,
+} from "./slack-block-kit";
 import { optionalEnv } from "../../lib/env";
 import { settle } from "../utils";
 
@@ -201,10 +205,7 @@ function buildWebClient(token: string): WebClient {
 }
 
 export interface SlackLinkUnfurl {
-  readonly fallback: string;
-  readonly title: string;
-  readonly title_link: string;
-  readonly image_url: string;
+  readonly blocks: SlackKnownBlock[];
 }
 
 /** Bound optional previews independently of the longer-lived chat client. */
