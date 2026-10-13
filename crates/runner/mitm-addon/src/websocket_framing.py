@@ -459,9 +459,7 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
         return cast(bytes, bytearray(data))
 
     def _ensure_mutable_fragment(self) -> None:
-        if not self.frame_buf:
-            self.frame_buf.append(self._mutable_fragment())
-        elif isinstance(self.frame_buf[-1], bytes):
+        if isinstance(self.frame_buf[-1], bytes):
             self.frame_buf[-1] = self._mutable_fragment(self.frame_buf[-1])
 
     def _clear_partial_state(self) -> None:
@@ -471,18 +469,15 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
             extension.clear()
 
     def events(self) -> Generator[events.Event, None, None]:
-        try:
-            for event in super().events():
-                if isinstance(event, events.CloseConnection):
-                    self._clear_partial_state()
-                try:
-                    yield event
-                finally:
-                    if isinstance(event, events.Message) and event.message_finished:
-                        self._message_limit._budget.finish_message()
-                    self._ensure_mutable_fragment()
-        finally:
-            self._ensure_mutable_fragment()
+        for event in super().events():
+            if isinstance(event, events.CloseConnection):
+                self._clear_partial_state()
+            try:
+                yield event
+            finally:
+                if isinstance(event, events.Message) and event.message_finished:
+                    self._message_limit._budget.finish_message()
+                self._ensure_mutable_fragment()
 
     def send2(self, event: events.Event) -> commands.SendData:
         if isinstance(event, events.CloseConnection):

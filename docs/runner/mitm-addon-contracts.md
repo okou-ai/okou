@@ -23,7 +23,10 @@ until consumed, but rejected expansion overshoot is released before yielding.
 This does not introduce a byte-exact Brotli allocation guarantee. This is not a
 lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
-The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
+The exact mitmproxy 12.2.3 compatibility bridge wraps `HttpStream._handle_event`
+once to expose request-header framing and insert response inspection checkpoints.
+The original request and response state methods retain protocol ownership.
+The response bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
 complete native hook task outside the connection event lock before the connection
 reads again. Joining includes `HookCompleted` and any buffered events resumed by
