@@ -706,9 +706,9 @@ test("fails closed for a non-Link action URL instead of exposing a phishing link
   expect(denied.status).toBe(502);
 });
 
-test.each([false, true])(
+test.each([null, 503, 401] as const)(
   "obtains a separate hosted approval link and preserves its intent across refresh (initial approval failure: %s)",
-  async (failApproval) => {
+  async (failureStatus) => {
     const fixture = await carrier();
     server.use(tokenHandler({ expiresIn: 120 }));
     await connect(fixture);
@@ -724,21 +724,32 @@ test.each([false, true])(
         return HttpResponse.json({ id: params.id, approval_link: approvalUrl });
       }),
     );
-    if (failApproval) {
+    if (failureStatus !== null) {
       server.use(
         http.post(
           approvalPath,
           () => {
-            return HttpResponse.json({}, { status: 503 });
+            return HttpResponse.json(
+              { error: "insufficient_scope" },
+              { status: failureStatus },
+            );
           },
           { once: true },
         ),
       );
       const failed = await accept(
         client().createSpend({ headers: fixture.headers, body: input }),
-        [502],
+        [failureStatus === 401 ? 409 : 502],
       );
-      expect(failed.body.error.code).toBe("WALLET_PROVIDER_ERROR");
+      expect(failed.body.error.code).toBe(
+        failureStatus === 401
+          ? "WALLET_PROVIDER_AUTH_REJECTED"
+          : "WALLET_PROVIDER_ERROR",
+      );
+      expect(failed.body.error.message).toContain("operation: spend_approval");
+      expect(failed.body.error.message).toContain(
+        "provider: insufficient_scope",
+      );
     }
     const created = await accept(
       client().createSpend({ headers: fixture.headers, body: input }),
@@ -903,4 +914,162 @@ test("returns a configuration error without exposing secrets or requiring disabl
   );
   expect(response.body.error.code).toBe("WALLET_NOT_CONFIGURED");
   expect(JSON.stringify(response.body)).not.toContain("wallet-secret-fixture");
+});
+
+test("keeps a rejected spend intent recoverable without prescribing repeated wallet consent", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  spendProvider(input);
+  server.use(
+    http.post(
+      "https://api.link.com/spend_requests",
+      () => {
+        return HttpResponse.json(
+          { error: { code: "unauthorized_client" } },
+          { status: 401, headers: { "request-id": "req_walletDiagnostic" } },
+        );
+      },
+      { once: true },
+    ),
+  );
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_PROVIDER_AUTH_REJECTED");
+  expect(rejected.body.error.message).toContain("operation: spend_create");
+  expect(rejected.body.error.message).toContain(
+    "provider: unauthorized_client",
+  );
+  expect(rejected.body.error.message).toMatch(/reference: [\da-f-]{36}/);
+  const status = await accept(
+    client().status({ headers: fixture.headers }),
+    [200],
+  );
+  expect(status.body.connected).toBeTruthy();
+  const recovered = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  expect(recovered.body).toMatchObject({
+    intentId: input.intentId,
+    status: "pending_approval",
+  });
+});
+
+test("identifies OAuth client rejection separately from a wallet needing consent", async () => {
+  const fixture = await carrier();
+  const started = await accept(
+    client().connect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  const state = new URL(started.body.url).searchParams.get("state");
+  if (!state) {
+    throw new Error("Missing OAuth state");
+  }
+  server.use(
+    http.post("https://login.link.com/auth/token", () => {
+      return HttpResponse.json({ error: "invalid_client" }, { status: 401 });
+    }),
+  );
+  const rejected = await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: { state, code: "wallet-code-fixture", responseMode: "json" },
+    }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_PROVIDER_AUTH_REJECTED");
+  expect(rejected.body.error.message).toContain("operation: oauth_exchange");
+  expect(rejected.body.error.message).toContain("provider: invalid_client");
+});
+
+test("requires reconnecting when Link explicitly rejects a rotating refresh grant", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler({ expiresIn: 30 }));
+  await connect(fixture);
+  server.use(
+    http.post("https://login.link.com/auth/token", () => {
+      return HttpResponse.json({ error: "invalid_grant" }, { status: 400 });
+    }),
+  );
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: purchase() }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_RECONNECT_REQUIRED");
+  expect(rejected.body.error.message).toContain("operation: oauth_refresh");
+  expect(rejected.body.error.message).toContain("provider: invalid_grant");
+  const status = await accept(
+    client().status({ headers: fixture.headers }),
+    [200],
+  );
+  expect(status.body.connected).toBeFalsy();
+});
+
+test("keeps Link credentials and provider free text out of diagnostic responses", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  server.use(
+    http.post("https://api.link.com/spend_requests", () => {
+      return HttpResponse.json(
+        {
+          error: {
+            code: "wallet-access-fixture",
+            message:
+              "wallet-secret-fixture wallet-refresh-fixture private-address-fixture",
+          },
+          card: { number: "private-card-fixture", cvc: "private-cvc-fixture" },
+        },
+        {
+          status: 401,
+          headers: {
+            "request-id": "wallet-secret-fixture",
+            "www-authenticate": 'Bearer error="wallet-refresh-fixture"',
+          },
+        },
+      );
+    }),
+  );
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: purchase() }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_PROVIDER_AUTH_REJECTED");
+  expect(rejected.body.error.message).toContain("provider: unrecognized");
+  const exposed = JSON.stringify(rejected.body);
+  for (const secret of [
+    "wallet-access-fixture",
+    "wallet-refresh-fixture",
+    "wallet-secret-fixture",
+    "private-address-fixture",
+    "private-card-fixture",
+    "private-cvc-fixture",
+  ]) {
+    expect(exposed).not.toContain(secret);
+  }
+});
+
+test("preserves authentication rejection when Link returns an oversized error document", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  server.use(
+    http.post("https://api.link.com/spend_requests", () => {
+      return new HttpResponse("x".repeat(20 * 1024), {
+        status: 401,
+        headers: { "content-type": "text/html" },
+      });
+    }),
+  );
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: purchase() }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_PROVIDER_AUTH_REJECTED");
+  expect(rejected.body.error.message).toContain("operation: spend_create");
+  expect(rejected.body.error.message).toContain("provider: unavailable");
 });

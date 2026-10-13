@@ -509,6 +509,20 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         "/home/user/.claude/projects/-home-user-workspace/sess-zstd-ref-123.jsonl"
     );
     assert_eq!(writes[0].content, history);
+    let attribution_ops = telemetry.pending_ops_snapshot();
+    for action in [
+        "session_history_download_attempt",
+        "session_history_download_attribution",
+    ] {
+        assert_eq!(
+            attribution_ops
+                .iter()
+                .filter(|op| op.0 == action && op.1)
+                .count(),
+            1,
+            "expected one successful {action} observation"
+        );
+    }
     let ops = telemetry.pending_ops_with_session_history_metadata_snapshot();
     assert_successful_action_with_session_history_metadata(
         &ops,

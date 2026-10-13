@@ -294,6 +294,7 @@ async fn shutdown_startup_resources_after_startup_failure(
     context: &'static str,
 ) {
     resources.memory_prefetch.cancel();
+    resources.memory_prefetch.drain().await;
     resources.provider.shutdown().await;
     if let Err(error) = resources.dns_handle.stop().await {
         warn!(%error, "failed to clean up network-log helper after startup failure");
@@ -307,7 +308,6 @@ async fn shutdown_startup_resources_after_startup_failure(
     if let Err(error) = resources.kmsg_handle.stop().await {
         warn!(%error, "failed to clean up network-log helper after startup failure");
     }
-    resources.memory_prefetch.drain().await;
     if let Err(error) = resources.status.set_mode(RunnerMode::Stopped).await {
         warn!(%error, context, "failed to persist stopped status after startup failure");
     }
@@ -2340,6 +2340,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         .test_observer
         .notify_destroy_tasks_drain_completed();
     teardown.phase_complete("destroy_tasks_drain", phase);
+    let phase = teardown.phase_start("memory_prefetch_drain");
+    memory_prefetch.drain().await;
+    teardown.phase_complete("memory_prefetch_drain", phase);
     let phase = teardown.phase_start("background_fill_shutdown");
     exec_config.background_fill.shutdown().await;
     exec_config.decoded_cache.shutdown().await;
@@ -2397,10 +2400,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("kmsg_stop", phase);
-    let phase = teardown.phase_start("memory_prefetch_drain");
-    memory_prefetch.drain().await;
-    teardown.phase_complete("memory_prefetch_drain", phase);
-
     let phase = teardown.phase_start("status_stopped");
     if let Err(error) = shared.status.set_mode(RunnerMode::Stopped).await {
         warn!(%error, "failed to persist final stopped runner status");

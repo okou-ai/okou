@@ -1,8 +1,8 @@
 //! Shared final session-history identity metadata.
 //!
 //! The guest-agent writes this run-private metadata after a successful
-//! checkpoint. Runner consumes it to decide whether a parked idle sandbox can
-//! safely skip session-history restore on a later same-session run.
+//! session-history upload. Runner consumes it to decide whether a parked idle
+//! sandbox can safely skip session-history restore on a later same-session run.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -259,7 +259,7 @@ impl SessionHistoryRefKind {
 }
 
 /// Expected final identity fields supplied by runner when verifying a parked
-/// sandbox's checkpointed metadata.
+/// sandbox's saved session-history metadata.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SessionHistoryIdentityExpectation {

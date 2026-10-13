@@ -122,6 +122,7 @@ describe("thin MCP Web adapters", () => {
           "cancel_run",
           "get_chat_activity_summary",
           "get_chat_indicators",
+          "get_chat_input_status",
           "get_chat_messages",
           "get_chat_thread",
           "list_agents",

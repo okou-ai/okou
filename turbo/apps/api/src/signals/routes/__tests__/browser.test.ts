@@ -9062,6 +9062,122 @@ describe("okou browser route", () => {
     });
   }, 120_000);
 
+  it("rereads applied screen sizes and restores the newest height across provider replacements", async () => {
+    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const chat = createChatFilesBddApi(context);
+    let threadId: string | undefined;
+    const providerIds = [randomUUID(), randomUUID(), randomUUID()] as const;
+    acceptBrowserUseCdpSessions(providerIds);
+    const stoppedProviders = new Set<string>();
+    let providerIndex = 0;
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        const id = providerIds[providerIndex];
+        providerIndex += 1;
+        if (!id) {
+          return HttpResponse.json(
+            { error: "unexpected browser create" },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json(providerBrowser(id), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        const id = String(params.id);
+        return HttpResponse.json(
+          providerBrowser(id, {
+            status: stoppedProviders.has(id) ? "stopped" : "active",
+          }),
+        );
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        const id = String(params.id);
+        stoppedProviders.add(id);
+        return HttpResponse.json(providerBrowser(id, { status: "stopped" }));
+      }),
+    );
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+      clockTime: STARTED_AT_MS,
+      beforeWorkspaceCleanup: async (actor) => {
+        if (threadId) {
+          await chat.deleteThread(actor, threadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
+    await owned.run(async () => {
+      const sent = await chat.sendAndLaunch(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Keep my preferred browser window size when reconnecting",
+        cloudBrowserEnabled: true,
+      });
+      threadId = sent.threadId;
+      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const headers = {
+        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+      };
+      const params = { threadId: sent.threadId };
+      let active = await accept(client().use({ headers, body: {} }), [200]);
+      expect(active.body.browser.screen).toStrictEqual({
+        width: 1440,
+        height: 900,
+        resizable: true,
+      });
+
+      for (const { aspectRatio, height } of [
+        { aspectRatio: 0.75, height: 1920 },
+        { aspectRatio: 2, height: 720 },
+      ]) {
+        const expectedScreen = { width: 1440, height, resizable: true };
+        const resized = await accept(
+          client().resizeByThread({ headers, params, body: { aspectRatio } }),
+          [200],
+        );
+        expect(resized.body.browser.screen).toStrictEqual(expectedScreen);
+        const current = await accept(client().get({ headers, params }), [200]);
+        expect(current.body.browser.screen).toStrictEqual(expectedScreen);
+        const leased = await accept(
+          client().leaseByThread({ headers, params, body: {} }),
+          [200],
+        );
+        expect(leased.body.browser.screen).toStrictEqual(expectedScreen);
+        const reused = await accept(client().use({ headers, body: {} }), [200]);
+        expect(reused.body.cdpUrl).toBe(active.body.cdpUrl);
+        expect(reused.body.browser.screen).toStrictEqual(expectedScreen);
+
+        const providerId = new URL(active.body.cdpUrl).hostname.split(".")[0];
+        if (!providerId) {
+          throw new Error("Expected a Browser Use provider ID");
+        }
+        stoppedProviders.add(providerId);
+        const resumed = await accept(
+          client().use({ headers, body: {} }),
+          [200],
+        );
+        expect(resumed.body.cdpUrl).not.toBe(active.body.cdpUrl);
+        expect(resumed.body.browser).toMatchObject({
+          threadId: sent.threadId,
+          status: "active",
+          screen: expectedScreen,
+        });
+        active = resumed;
+      }
+    });
+  });
+
   it("keeps the browser live across runs and reuses its renewable lease", async () => {
     const { routeMocks, runs, chat, webhooks, actor, runnerGroup, agent } =
       await setupBrowserScenario();
@@ -9280,6 +9396,146 @@ describe("okou browser route", () => {
     await chat.deleteThread(actor, threadId);
     await flushWaitUntilForTest();
   }, 120_000);
+
+  it("reads and renews the replacement Browser after its old provider becomes unavailable", async () => {
+    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const chat = createChatFilesBddApi(context);
+    let threadId: string | undefined;
+    const providerIds = [randomUUID(), randomUUID()] as const;
+    acceptBrowserUseCdpSessions(providerIds);
+    const stoppedProviders = new Set<string>();
+    const unavailableProviders = new Set<string>();
+    let providerIndex = 0;
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        const id = providerIds[providerIndex];
+        providerIndex += 1;
+        if (!id) {
+          return HttpResponse.json(
+            { error: "unexpected browser create" },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json(providerBrowser(id), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        const id = String(params.id);
+        if (unavailableProviders.has(id)) {
+          return HttpResponse.json(
+            { detail: "retired provider is unavailable" },
+            { status: 503 },
+          );
+        }
+        const stopped = stoppedProviders.has(id);
+        return HttpResponse.json({
+          ...providerBrowser(id, { status: stopped ? "stopped" : "active" }),
+          liveUrl: stopped ? null : `https://live.browser-use.com/?wss=${id}`,
+        });
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        const id = String(params.id);
+        stoppedProviders.add(id);
+        return HttpResponse.json(providerBrowser(id, { status: "stopped" }));
+      }),
+    );
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+      clockTime: STARTED_AT_MS,
+      beforeWorkspaceCleanup: async (actor) => {
+        if (threadId) {
+          await chat.deleteThread(actor, threadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
+    await owned.run(async () => {
+      const sent = await chat.sendAndLaunch(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Reconnect to my browser after the provider stops",
+        cloudBrowserEnabled: true,
+      });
+      threadId = sent.threadId;
+      const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+      const headers = {
+        authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+      };
+      const params = { threadId: sent.threadId };
+      const original = await accept(client().use({ headers, body: {} }), [200]);
+      expect(original.body.browser).toMatchObject({
+        status: "active",
+        idleExpiresAt: isoAt(10 * MINUTE_MS),
+      });
+
+      const originalId = new URL(original.body.cdpUrl).hostname.split(".")[0];
+      if (!originalId) {
+        throw new Error("Expected a Browser Use provider ID");
+      }
+      stoppedProviders.add(originalId);
+      mockNow(STARTED_AT_MS + 2 * MINUTE_MS);
+      const replacement = await accept(
+        client().use({ headers, body: {} }),
+        [200],
+      );
+      expect(replacement.body.cdpUrl).not.toBe(original.body.cdpUrl);
+      const replacementId = new URL(replacement.body.cdpUrl).hostname.split(
+        ".",
+      )[0];
+      if (!replacementId) {
+        throw new Error("Expected a replacement Browser Use provider ID");
+      }
+      unavailableProviders.add(originalId);
+      const expectedLiveUrl = `https://live.browser-use.com/?wss=${replacementId}`;
+      const current = await accept(client().get({ headers, params }), [200]);
+      expect(current.body.browser).toMatchObject({
+        threadId: sent.threadId,
+        status: "active",
+        liveUrl: expectedLiveUrl,
+        idleExpiresAt: isoAt(12 * MINUTE_MS),
+      });
+
+      mockNow(STARTED_AT_MS + 3 * MINUTE_MS);
+      const leased = await accept(
+        client().leaseByThread({ headers, params, body: {} }),
+        [200],
+      );
+      expect(leased.body.browser.idleExpiresAt).toBe(isoAt(13 * MINUTE_MS));
+      mockNow(STARTED_AT_MS + 4 * MINUTE_MS);
+      const resized = await accept(
+        client().resizeByThread({
+          headers,
+          params,
+          body: { aspectRatio: 2 },
+        }),
+        [200],
+      );
+      expect(resized.body.browser).toMatchObject({
+        liveUrl: expectedLiveUrl,
+        idleExpiresAt: isoAt(14 * MINUTE_MS),
+        screen: { width: 1440, height: 720, resizable: true },
+      });
+      const observed = await accept(client().get({ headers, params }), [200]);
+      expect(observed.body.browser).toMatchObject({
+        liveUrl: expectedLiveUrl,
+        idleExpiresAt: isoAt(14 * MINUTE_MS),
+        screen: resized.body.browser.screen,
+      });
+      const reused = await accept(client().use({ headers, body: {} }), [200]);
+      expect(reused.body.cdpUrl).toBe(replacement.body.cdpUrl);
+      expect(reused.body.browser.liveUrl).toBe(expectedLiveUrl);
+    });
+  });
 
   it("keeps viewer close actions separate from Browser and thread deletion", async () => {
     const { routeMocks, runs, chat, actor, agent } =

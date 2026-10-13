@@ -72,7 +72,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Expose personal subscription linking below the composer and in the account menu.",
+      "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -383,7 +383,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Anchor slash and mention suggestions above the full composer, with the highest-priority candidate at the bottom and no template preview flyout on mobile.",
+      "Anchor slash and mention suggestions above the full composer, without a template preview flyout on mobile.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

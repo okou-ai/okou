@@ -52,7 +52,7 @@ jq -e '
   all($required_outputs | to_entries[]; $detect.outputs[.key] == .value) and
   any($detect.steps[]?;
     .id == "detect" and
-    (.run // "" | contains(".github/scripts/changed-base-ref.sh")) and
+    (.run // "" | contains(".github/scripts/checks/changed-base-ref.sh")) and
     (.run // "" | contains("./scripts/crate-changed.sh"))
   ) and
   any($detect.steps[]?;

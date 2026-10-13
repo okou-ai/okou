@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.230.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.0...runner-rs-v0.230.1) (2026-10-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.229.1...runner-rs-v0.230.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** own pressure-gated snapshot prefetch ([#39624](https://github.com/okou-ai/okou/issues/39624)) ([d4eb35a](https://github.com/okou-ai/okou/commit/d4eb35a53cf3859cc2702cded172449c1fbc3f2c))
+
+
+### Bug Fixes
+
+* **runner:** isolate cached template transfers and report ci timeouts ([#39494](https://github.com/okou-ai/okou/issues/39494)) ([2bef8ac](https://github.com/okou-ai/okou/commit/2bef8ac573e047ab16351df6a1655d7401174f40))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.229.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.229.0...runner-rs-v0.229.1) (2026-10-13)
 
 

@@ -295,7 +295,6 @@
     "src/lib/morning-brief-email-renderer.ts",
     "src/lib/agent-notification-email-renderer.ts",
     "src/lib/debug-morning-brief-email.ts",
-    "src/lib/legacy-official-result-email.ts",
     "src/lib/morning-brief-notification-source.ts",
     "src/signals/services/official-workflow-catalog-read.service.ts",
     "src/signals/services/official-workflow-context.signals.ts",

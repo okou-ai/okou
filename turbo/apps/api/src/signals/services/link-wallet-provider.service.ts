@@ -1,8 +1,89 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
-import { settle } from "../utils";
+import { logger } from "../../lib/log";
+import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
 import { walletSpendStatusSchema } from "@okouai/api-contracts/contracts/wallet";
+
+const L = logger("api:link-wallet");
+type LinkOperation =
+  | "oauth_exchange"
+  | "oauth_refresh"
+  | "oauth_revoke"
+  | "spend_create"
+  | "spend_read"
+  | "spend_cancel"
+  | "spend_approval";
+
+// Unknown provider strings can contain credentials or personal data.
+const providerErrorCodeSchema = z.enum([
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope",
+  "invalid_token",
+  "insufficient_scope",
+  "access_denied",
+  "temporarily_unavailable",
+  "server_error",
+]);
+const providerErrorSchema = z.object({
+  error: z.union([z.string(), z.object({ code: z.string().optional() })]),
+});
+const providerRequestIdSchema = z.string().regex(/^req_[A-Za-z0-9]{1,80}$/);
+
+function providerErrorCode(body: unknown, response: Response): string {
+  const parsed = providerErrorSchema.safeParse(body);
+  const error = parsed.success ? parsed.data.error : undefined;
+  const candidate = typeof error === "string" ? error : error?.code;
+  const code = providerErrorCodeSchema.safeParse(candidate);
+  if (code.success) {
+    return code.data;
+  }
+  const challenge = response.headers
+    .get("www-authenticate")
+    ?.match(/\berror="([a-z_]+)"/i)?.[1];
+  const challengeCode = providerErrorCodeSchema.safeParse(challenge);
+  if (challengeCode.success) {
+    return challengeCode.data;
+  }
+  return candidate === undefined && challenge === undefined
+    ? "unavailable"
+    : "unrecognized";
+}
+
+async function providerFailure(response: Response, operation: LinkOperation) {
+  const read = await settle(readBoundedResponseText(response, 16 * 1024));
+  const body =
+    read.ok && read.value.kind === "text"
+      ? safeJsonParse(read.value.text)
+      : undefined;
+  const requestId = providerRequestIdSchema.safeParse(
+    response.headers.get("request-id") ?? response.headers.get("x-request-id"),
+  );
+  const contentType = z
+    .enum([
+      "application/json",
+      "application/problem+json",
+      "text/html",
+      "text/plain",
+    ])
+    .safeParse(response.headers.get("content-type")?.split(";")[0]?.trim());
+  const diagnostic = {
+    diagnosticId: randomUUID(),
+    operation,
+    providerStatus: response.status,
+    providerErrorCode: providerErrorCode(body, response),
+    providerRequestId: requestId.success ? requestId.data : null,
+    responseType: contentType.success ? contentType.data : "unrecognized",
+    responseBodyRead: read.ok ? read.value.kind : "unreadable",
+  };
+  L.warn("Link wallet provider request failed", diagnostic);
+  return diagnostic;
+}
 
 export class LinkWalletError extends Error {
   constructor(
@@ -123,17 +204,29 @@ async function linkFetch(
   return result.value;
 }
 
-async function responseJson(response: Response): Promise<unknown> {
+async function responseJson(
+  response: Response,
+  operation: LinkOperation,
+): Promise<unknown> {
   if (!response.ok) {
-    // Never attach provider bodies or token-bearing request options to errors.
+    const diagnostic = await providerFailure(response, operation);
+    const reconnect = ["invalid_token", "invalid_grant"].includes(
+      diagnostic.providerErrorCode,
+    );
+    const authRejected = response.status === 401;
+    const message = reconnect
+      ? "Reconnect your Link wallet"
+      : authRejected
+        ? "Link rejected wallet authentication; investigate the diagnostic reference before reconnecting"
+        : "Link could not complete the operation; check the existing request before retrying";
     throw new LinkWalletError(
-      response.status === 401 ? 409 : 502,
-      response.status === 401
+      authRejected || reconnect ? 409 : 502,
+      reconnect
         ? "WALLET_RECONNECT_REQUIRED"
-        : "WALLET_PROVIDER_ERROR",
-      response.status === 401
-        ? "Reconnect your Link wallet"
-        : "Link could not complete the operation; check the existing request before retrying",
+        : authRejected
+          ? "WALLET_PROVIDER_AUTH_REJECTED"
+          : "WALLET_PROVIDER_ERROR",
+      `${message} (operation: ${operation}; HTTP ${response.status}; provider: ${diagnostic.providerErrorCode}; reference: ${diagnostic.diagnosticId})`,
     );
   }
   const result = await settle(response.json() as Promise<unknown>);
@@ -168,7 +261,14 @@ export async function linkTokenRequest(
     },
     signal,
   );
-  const parsed = linkTokenSchema.safeParse(await responseJson(response));
+  const parsed = linkTokenSchema.safeParse(
+    await responseJson(
+      response,
+      params.grant_type === "refresh_token"
+        ? "oauth_refresh"
+        : "oauth_exchange",
+    ),
+  );
   if (
     !parsed.success ||
     !parsed.data.scope.split(/[ ,]+/).includes("payment_methods.agentic")
@@ -205,10 +305,11 @@ export async function revokeLinkToken(
     signal,
   );
   if (!response.ok) {
+    const diagnostic = await providerFailure(response, "oauth_revoke");
     throw new LinkWalletError(
       502,
       "WALLET_REVOCATION_INCOMPLETE",
-      "Wallet access is disabled locally; Link revocation must be retried",
+      `Wallet access is disabled locally; Link revocation must be retried (reference: ${diagnostic.diagnosticId})`,
     );
   }
 }
@@ -252,7 +353,15 @@ export async function linkSpendRequest(
       "The existing purchase intent could not be recovered; do not create a replacement purchase",
     );
   }
-  const parsed = linkSpendSchema.safeParse(await responseJson(response));
+  const operation =
+    path === ""
+      ? "spend_create"
+      : method === "GET"
+        ? "spend_read"
+        : "spend_cancel";
+  const parsed = linkSpendSchema.safeParse(
+    await responseJson(response, operation),
+  );
   if (!parsed.success) {
     throw new LinkWalletError(
       502,
@@ -278,7 +387,7 @@ export async function requestLinkApproval(
   );
   const parsed = z
     .object({ id: z.literal(id), approval_link: z.string() })
-    .safeParse(await responseJson(response));
+    .safeParse(await responseJson(response, "spend_approval"));
   if (!parsed.success) {
     throw new LinkWalletError(
       502,

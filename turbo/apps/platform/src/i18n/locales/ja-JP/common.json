@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
       "importFile": "テンプレートをインポート",
+      "importImage": "自分の画像を取り込む",
+      "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",
@@ -2797,6 +2799,14 @@
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
       "transcriptionFailed": "音声の転写に失敗しました。もう一度やり直してください。"
+    },
+    "walletAction": {
+      "approveButton": "確認",
+      "approveTitle": "購入内容を確認",
+      "connectButton": "認証",
+      "connectTitle": "Link ウォレットを認証",
+      "continueButton": "続ける",
+      "continueTitle": "Link で続ける"
     },
     "workflows": {
       "named": "ワークフロー {{title}}",
@@ -5284,17 +5294,6 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
-  "subscriptionLinking": {
-    "connect": "サブスクリプションを接続",
-    "description": "お使いの ChatGPT または Claude のサブスクリプションを {{brandName}} に接続します。",
-    "dismiss": "サブスクリプションの案内を閉じる",
-    "hint": "ChatGPT / Claude を契約済みですか？",
-    "limits": "利用可能な機能と利用上限はサブスクリプションによって異なります。",
-    "manage": "AI サブスクリプションを管理",
-    "menuConnect": "AI サブスクリプションを接続",
-    "menuLoading": "AI サブスクリプション",
-    "title": "サブスクリプションを接続"
-  },
   "tailscale": {
     "add": "Tailscale を追加",
     "addressHelp": "登録された Tailnet ピアの IP、完全なホスト名、または短い名前を使用してください。SSH ログインとホスト鍵の検証は別途必要です。",
@@ -6356,6 +6355,8 @@
       "authorizing": "認証中…",
       "browserConsent": "Discord のウィンドウで認証を完了してください。このページは自動的に更新されます。",
       "chooseDmServer": "サーバーを選択",
+      "connectedTitle": "Discord に接続済み",
+      "connectTitle": "Discord に接続",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
       "dmServer": "ダイレクトメッセージの既定のサーバー",
@@ -6371,7 +6372,8 @@
       "unconfigured": "この組織では、Discord がまだ設定されていません。",
       "uninstall": "Discord を削除",
       "uninstallDescription": "この組織の全員が Discord から切断されます。他の組織の接続は維持されます。",
-      "uninstallTitle": "この組織から Discord を削除しますか？"
+      "uninstallTitle": "この組織から Discord を削除しますか？",
+      "workspaceMismatch": "このリンクは別の Discord サーバー用です。対応する Okou ワークスペースに切り替えて、リンクをもう一度開いてください。"
     },
     "documentTitle": "連携先",
     "feishuConnected": "Feishu は正常に接続されました",

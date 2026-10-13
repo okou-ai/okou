@@ -1589,6 +1589,12 @@ function createCardRefRegistrar({
             signals: set(bankingCardSignals.register$, descriptor.descriptor),
           };
         }
+        case "wallet-action": {
+          return {
+            kind: descriptor.type,
+            descriptor: descriptor.descriptor,
+          };
+        }
         case "browser-user-action": {
           return {
             kind: descriptor.type,

@@ -34,11 +34,24 @@ for name, compiler in consumers:
     assert steps.index(configure) < steps.index(restore) < steps.index(compile_step)
     assert not any("secrets." in str(value) for value in (configure, restore))
 
+
+def kerberos_writer(step):
+    if not step.get("uses", "").startswith("actions/cache/save@"):
+        return False
+    inputs = step["with"]
+    # Either input can identify a misrouted writer before its pair is validated.
+    return (
+        inputs["path"] == producer_restore["with"]["path"]
+        or "steps.kerberos-cache.outputs." in inputs["key"]
+        or inputs["key"].startswith("kerberos-native-")
+    )
+
+
 writers = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])
-           if s.get("uses", "").startswith("actions/cache/save@")]
+           if kerberos_writer(s)]
 assert len(writers) == 2 and {name for name, _ in writers} == {"check", "guest-rpc-firecracker-build"}
 for name in ("check-docs", "host-cpu-fairness-build"):
-    assert not any(s.get("uses", "").startswith("actions/cache/save@") for s in jobs[name]["steps"])
+    assert not any(kerberos_writer(s) for s in jobs[name]["steps"])
 for name, save in writers:
     steps = jobs[name]["steps"]
     restore = next(s for s in steps if s.get("id") == "kerberos-cache")

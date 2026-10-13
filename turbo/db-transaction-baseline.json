@@ -997,22 +997,12 @@
       "owner": "validateMigrationRunnerTimeouts"
     },
     {
-      "id": "TX-0402",
-      "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
-      "owner": "validatePermanentModelCatalogConstraints/rejects"
-    },
-    {
       "id": "TX-0403",
       "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
       "owner": "validatePermanentModelCatalogConstraints"
     },
     {
       "id": "TX-0407",
-      "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0408",
       "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
       "owner": "<module>"
     },
@@ -1057,19 +1047,9 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0425",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "rejects"
-    },
-    {
       "id": "TX-0426",
       "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0428",
-      "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
-      "owner": "expectCheckViolation"
     },
     {
       "id": "TX-0429",
@@ -1100,11 +1080,6 @@
       "id": "TX-0435",
       "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0436",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "rejects"
     },
     {
       "id": "TX-0437",

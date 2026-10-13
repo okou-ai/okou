@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.7](https://github.com/okou-ai/okou/compare/runner-host-v0.7.6...runner-host-v0.7.7) (2026-10-13)
+
+## [0.7.6](https://github.com/okou-ai/okou/compare/runner-host-v0.7.5...runner-host-v0.7.6) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** retry transient home cache publication contention ([#39602](https://github.com/okou-ai/okou/issues/39602)) ([7c35423](https://github.com/okou-ai/okou/commit/7c35423142ce6b0446cf84d1ecd81a503fcbcfaa))
+
 ## [0.7.5](https://github.com/okou-ai/okou/compare/runner-host-v0.7.4...runner-host-v0.7.5) (2026-10-12)
 
 

@@ -42,8 +42,6 @@ interface AttachmentPresignedToken {
   readonly contentType?: string;
   /** Stable reference to the independent screenshot or video poster. */
   readonly previewImageUrl?: string | null;
-  /** Signed bytes served as an attachment, distinct from a hosted preview. */
-  readonly downloadUrl?: string;
   /** Stable resource identity returned while resolving an artifact reference. */
   readonly artifactShareIdentity?: ArtifactShareIdentity;
   /**
@@ -81,7 +79,6 @@ function createArtifactReferencePresignedToken$(
       expiresAt: response.body.expiresAt,
       contentType: response.body.contentType,
       previewImageUrl: response.body.previewImageUrl,
-      downloadUrl: response.body.downloadUrl,
       artifactShareIdentity: {
         target: response.body.target,
         ...(response.body.sharedThreadSnapshot

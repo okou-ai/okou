@@ -3229,7 +3229,7 @@ pub mod webhooks {
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct RequestMaintenanceAttestation {
-                    /// Maintenance checkpoint attestation version.
+                    /// Memory publication attestation version.
                     pub schema_version: i64,
                     /// Opaque token fencing the maintenance claim.
                     pub lease_token: String,
@@ -3304,7 +3304,7 @@ pub mod webhooks {
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct RequestMaintenanceAttestation {
-                    /// Maintenance checkpoint attestation version.
+                    /// Memory publication attestation version.
                     pub schema_version: i64,
                     /// Opaque token fencing the maintenance claim.
                     pub lease_token: String,

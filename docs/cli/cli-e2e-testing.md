@@ -60,6 +60,10 @@ The local fixture integration suite (`cd e2e && pnpm test`) exercises this
 lifecycle through the real Playwright runner, Chromium and a loopback HTTP server.
 It requires the Chromium headless shell (`pnpm exec playwright install --only-shell
 chromium` from `e2e`), but not a deployed preview or Clerk credentials.
+The focused runner sign-in and Clerk bootstrap fixture files also accept
+`E2E_CHROMIUM_EXECUTABLE_PATH` for an installed Chromium executable. Such a local
+run verifies that browser version; the PR pipeline still verifies the locked
+Playwright headless shell.
 
 Before adding a case, verify that it:
 
@@ -223,8 +227,26 @@ omitted-record counts, and best-effort page/Clerk readiness. Status and response
 timing are present only once the browser reports them; their absence is not
 proof that the server sent nothing. Pending script requests can explain a
 missing `DOMContentLoaded` milestone.
+The additional Chromium CDP `network` section retains the first 64 request hops
+independently, including separate redirect responses with the same CDP request
+ID. It aggregates `dataEvents`, `decodedDataBytes`, `encodedDataBytes`, and
+`firstDataMs`/`lastDataMs` without collecting body content. Response metadata
+includes protocol, DNS/connection/TLS/send/header timing, cache/service-worker
+flags, and strictly validated `cfRay` values when available. Timing fields are
+milliseconds relative to the request's CDP timing baseline; -1 means that phase
+is unavailable. Terminal events distinguish `finished`, `failed`, and
+`redirected` from `pending`. `totalEncodedBytes` comes only from loadingFinished
+and can include headers; it is not the sum of encoded data-event lengths.
+An interrupted session is marked, and unavailable setup is reported explicitly.
+Setup and session disposal each have a one-second deadline. Observation freezes
+before failure capture and intentional detachment, so cleanup cannot become a
+network failure in the report. Browser buffering and cached responses affect
+byte events: zero observed data does not prove that the server sent nothing.
+These client-side observations can locate a stalled transfer or script but
+cannot alone distinguish a Worker stall from a remote edge/transport failure.
 Page-state capture has its own one-second deadline and can be unavailable.
-These reports exclude URL queries/fragments/userinfo, headers, cookies, payloads,
+These reports exclude URL queries/fragments/userinfo, headers other than the
+validated cf-ray identifier, cookies, payloads,
 raw console/error text, screenshots and raw traces. Successful sign-in writes
 no report; diagnostic failure preserves the original sign-in error and does not
 retry authentication or increase its deadlines. This evidence diagnoses future

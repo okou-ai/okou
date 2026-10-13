@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-CHECKER="${SCRIPT_DIR}/action-pins-test.py"
+CHECKER="${SCRIPT_DIR}/../checks/check-action-pins.py"
 
 python3 "$CHECKER" "$REPO_ROOT"
 approved_reference() {

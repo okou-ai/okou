@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.0...runner-supervisor-v0.12.1) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.11.1...runner-supervisor-v0.12.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** own pressure-gated snapshot prefetch ([#39624](https://github.com/okou-ai/okou/issues/39624)) ([d4eb35a](https://github.com/okou-ai/okou/commit/d4eb35a53cf3859cc2702cded172449c1fbc3f2c))
+
 ## [0.11.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.11.0...runner-supervisor-v0.11.1) (2026-10-13)
 
 

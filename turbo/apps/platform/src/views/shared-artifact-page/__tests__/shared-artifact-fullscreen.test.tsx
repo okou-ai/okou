@@ -93,6 +93,7 @@ function mockFullscreen(mode: "native" | "unsupported") {
 async function openHtmlViewer(): Promise<void> {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", previewUrl).href,
       url: previewUrl,
       expiresAt: "2099-01-01T00:00:00Z",
       filename,
@@ -199,6 +200,7 @@ async function openMarkdownViewer() {
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "plan.md",
