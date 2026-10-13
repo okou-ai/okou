@@ -5284,15 +5284,7 @@
     "username": "SSH ユーザー名"
   },
   "subscriptionLinking": {
-    "connect": "サブスクリプションを接続",
-    "description": "お使いの ChatGPT または Claude のサブスクリプションを {{brandName}} に接続します。",
-    "dismiss": "サブスクリプションの案内を閉じる",
-    "hint": "ChatGPT / Claude を契約済みですか？",
-    "limits": "利用可能な機能と利用上限はサブスクリプションによって異なります。",
-    "manage": "AI サブスクリプションを管理",
-    "menuConnect": "AI サブスクリプションを接続",
-    "menuLoading": "AI サブスクリプション",
-    "title": "サブスクリプションを接続"
+    "menuConnect": "AI サブスクリプションを接続"
   },
   "tailscale": {
     "add": "Tailscale を追加",

@@ -5284,15 +5284,7 @@
     "username": "SSH 用户名"
   },
   "subscriptionLinking": {
-    "connect": "连接订阅",
-    "description": "将已有的 ChatGPT 或 Claude 订阅连接到 {{brandName}}。",
-    "dismiss": "关闭订阅提示",
-    "hint": "已有 ChatGPT / Claude 订阅？",
-    "limits": "可用功能和使用额度取决于你的订阅。",
-    "manage": "管理 AI 订阅",
-    "menuConnect": "连接 AI 订阅",
-    "menuLoading": "AI 订阅",
-    "title": "连接你的订阅"
+    "menuConnect": "连接 AI 订阅"
   },
   "tailscale": {
     "add": "添加 Tailscale",

@@ -5284,15 +5284,7 @@
     "username": "Nama pengguna SSH"
   },
   "subscriptionLinking": {
-    "connect": "Hubungkan langganan",
-    "description": "Gunakan langganan ChatGPT atau Claude Anda dengan {{brandName}}.",
-    "dismiss": "Tutup petunjuk langganan",
-    "hint": "Sudah berlangganan ChatGPT atau Claude?",
-    "limits": "Ketersediaan dan batas penggunaan bergantung pada langganan Anda.",
-    "manage": "Kelola langganan AI",
-    "menuConnect": "Hubungkan langganan AI",
-    "menuLoading": "Langganan AI",
-    "title": "Hubungkan langganan Anda"
+    "menuConnect": "Hubungkan langganan AI"
   },
   "tailscale": {
     "add": "Tambahkan Tailscale",

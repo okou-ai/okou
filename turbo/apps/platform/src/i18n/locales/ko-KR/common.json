@@ -5284,15 +5284,7 @@
     "username": "SSH 사용자 이름"
   },
   "subscriptionLinking": {
-    "connect": "구독 연결",
-    "description": "기존 ChatGPT 또는 Claude 구독을 {{brandName}}에 연결하세요.",
-    "dismiss": "구독 안내 닫기",
-    "hint": "ChatGPT / Claude를 구독 중이신가요?",
-    "limits": "사용 가능한 기능과 사용 한도는 구독에 따라 다릅니다.",
-    "manage": "AI 구독 관리",
-    "menuConnect": "AI 구독 연결",
-    "menuLoading": "AI 구독",
-    "title": "구독 연결"
+    "menuConnect": "AI 구독 연결"
   },
   "tailscale": {
     "add": "Tailscale 추가",

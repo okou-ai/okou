@@ -5300,15 +5300,7 @@
     "username": "SSH username"
   },
   "subscriptionLinking": {
-    "connect": "Connect subscription",
-    "description": "Use your existing ChatGPT or Claude subscription with {{brandName}}.",
-    "dismiss": "Dismiss subscription hint",
-    "hint": "Already have ChatGPT or Claude?",
-    "limits": "Availability and usage limits depend on your subscription.",
-    "manage": "Manage AI subscriptions",
-    "menuConnect": "Connect AI subscription",
-    "menuLoading": "AI subscriptions",
-    "title": "Connect your subscription"
+    "menuConnect": "Connect AI subscription"
   },
   "tailscale": {
     "add": "Add Tailscale",

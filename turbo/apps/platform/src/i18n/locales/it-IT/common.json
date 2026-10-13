@@ -5380,15 +5380,7 @@
     "username": "Nome utente SSH"
   },
   "subscriptionLinking": {
-    "connect": "Collega abbonamento",
-    "description": "Usa il tuo abbonamento ChatGPT o Claude con {{brandName}}.",
-    "dismiss": "Chiudi avviso abbonamento",
-    "hint": "Hai già ChatGPT o Claude?",
-    "limits": "La disponibilità e i limiti di utilizzo dipendono dal tuo abbonamento.",
-    "manage": "Gestisci abbonamenti IA",
-    "menuConnect": "Collega abbonamento IA",
-    "menuLoading": "Abbonamenti IA",
-    "title": "Collega il tuo abbonamento"
+    "menuConnect": "Collega abbonamento IA"
   },
   "tailscale": {
     "add": "Aggiungi Tailscale",

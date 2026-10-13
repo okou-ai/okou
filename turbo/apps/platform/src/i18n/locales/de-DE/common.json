@@ -5308,15 +5308,7 @@
     "username": "SSH-Benutzername"
   },
   "subscriptionLinking": {
-    "connect": "Abo verbinden",
-    "description": "Nutze dein bestehendes ChatGPT- oder Claude-Abo mit {{brandName}}.",
-    "dismiss": "Abo-Hinweis schließen",
-    "hint": "Schon ein ChatGPT- oder Claude-Abo?",
-    "limits": "Verfügbarkeit und Nutzungslimits hängen von deinem Abo ab.",
-    "manage": "KI-Abos verwalten",
-    "menuConnect": "KI-Abo verbinden",
-    "menuLoading": "KI-Abos",
-    "title": "Dein Abo verbinden"
+    "menuConnect": "KI-Abo verbinden"
   },
   "tailscale": {
     "add": "Tailscale hinzufügen",

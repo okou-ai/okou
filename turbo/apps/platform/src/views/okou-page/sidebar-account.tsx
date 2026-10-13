@@ -361,6 +361,7 @@ function AccountUsageGroupWithSubscriptions({
           onOpenCreditBalance={onOpenCreditBalance}
         />
       ) : null}
+      <SubscriptionLinkingMenuItem />
       {showCredit && showSubscriptions ? <DropdownMenuSeparator /> : null}
       {showSubscriptions ? (
         <AccountMenuSubscriptionsPanel
@@ -395,6 +396,7 @@ function AccountCreditBalanceGroup({
         loading={loading}
         onOpenCreditBalance={onOpenCreditBalance}
       />
+      <SubscriptionLinkingMenuItem />
       <DropdownMenuSeparator />
     </>
   );
@@ -845,7 +847,6 @@ export function AccountDropdown({
               subscriptionsEnabled={subscriptionsEnabled}
             />
           )}
-          {!hidePreferences && <SubscriptionLinkingMenuItem />}
           {!hidePreferences && (
             <UnifiedSettingsGroup
               labEnabled={labEnabled}

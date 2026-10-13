@@ -5380,15 +5380,7 @@
     "username": "Nome de usuário SSH"
   },
   "subscriptionLinking": {
-    "connect": "Conectar assinatura",
-    "description": "Use sua assinatura atual do ChatGPT ou Claude com {{brandName}}.",
-    "dismiss": "Fechar aviso de assinatura",
-    "hint": "Já assina o ChatGPT ou Claude?",
-    "limits": "A disponibilidade e os limites de uso dependem da sua assinatura.",
-    "manage": "Gerenciar assinaturas de IA",
-    "menuConnect": "Conectar assinatura de IA",
-    "menuLoading": "Assinaturas de IA",
-    "title": "Conecte sua assinatura"
+    "menuConnect": "Conectar assinatura de IA"
   },
   "tailscale": {
     "add": "Adicionar Tailscale",
