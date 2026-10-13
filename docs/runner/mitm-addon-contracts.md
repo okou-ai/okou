@@ -696,6 +696,10 @@ adapter neither inherits nor reads/writes upstream private compression state.
 Terminal cleanup replaces that opaque sender through public construction,
 releasing its prior resources while preserving close-frame encoding.
 
+Compressed input uses the shared bounded cursor: fresh chunks and copied EOF
+tails stay within 1 KiB, and carried tails are consumed before fresh source
+input. All chunks in one callback share a cumulative decoded-output allowance.
+
 It asks zlib for at most one byte beyond the remaining message and
 aggregate budgets. Extra output or a non-empty zlib unconsumed tail is treated as
 an overflow lower bound, clears the decompressor and message budget, and closes

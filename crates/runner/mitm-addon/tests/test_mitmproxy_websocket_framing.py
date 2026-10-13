@@ -52,7 +52,7 @@ class _RunningWebSocket:
 
 
 class _ZlibDecompressor(Protocol):
-    def decompress(self, data: bytes, /, max_length: int = 0) -> bytes: ...
+    def decompress(self, data: bytes | memoryview, /, max_length: int = 0) -> bytes: ...
 
     @property
     def eof(self) -> bool: ...
@@ -69,6 +69,8 @@ class _DecompressionStats:
     window_bits: list[int] = field(default_factory=list)
     dictionary_sizes: list[int] = field(default_factory=list)
     max_lengths: list[int] = field(default_factory=list)
+    input_sizes: list[int] = field(default_factory=list)
+    unused_tail_sizes: list[int] = field(default_factory=list)
     output_sizes: list[int] = field(default_factory=list)
     instances: list[weakref.ReferenceType["_TrackingDecompressor"]] = field(default_factory=list)
 
@@ -78,9 +80,11 @@ class _TrackingDecompressor:
         self._inner = inner
         self._stats = stats
 
-    def decompress(self, data: bytes, /, max_length: int = 0) -> bytes:
+    def decompress(self, data: bytes | memoryview, /, max_length: int = 0) -> bytes:
         decoded = self._inner.decompress(data, max_length)
         self._stats.max_lengths.append(max_length)
+        self._stats.input_sizes.append(len(data))
+        self._stats.unused_tail_sizes.append(len(self._inner.unused_data))
         self._stats.output_sizes.append(len(decoded))
         return decoded
 
@@ -1996,6 +2000,102 @@ async def test_final_deflate_blocks_share_output_limit(
             permessage_deflate=_PERMESSAGE_DEFLATE,
             expected=[exact],
         )
+
+
+@pytest.mark.parametrize("from_client", [True, False])
+@pytest.mark.parametrize("limit", ["message", "aggregate"])
+@pytest.mark.parametrize("over_limit", [False, True])
+async def test_many_empty_final_deflate_streams_bound_input_and_share_output_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    from_client: bool,
+    limit: str,
+    over_limit: bool,
+) -> None:
+    output_limit = 4096
+    monkeypatch.setattr(
+        websocket_framing,
+        "MAX_DECODED_MESSAGE_BYTES",
+        output_limit if limit == "message" else 2 * output_limit,
+    )
+    monkeypatch.setattr(
+        websocket_framing,
+        "MAX_AGGREGATE_DECODED_BYTES",
+        output_limit if limit == "aggregate" else 2 * output_limit,
+    )
+    content = hashlib.shake_256(b"bounded websocket compressed input").digest(
+        output_limit + int(over_limit)
+    )
+    empty_stream = _deflate_stream(b"")
+    # Empty streams create EOF tails without spending decoded-byte or frame
+    # budgets. Nonempty output spans fresh input chunks; trailing empty streams
+    # must still be accepted after an exact decoded-output boundary.
+    payload = empty_stream * 4097 + _deflate_stream(content) + empty_stream * 1025 + b"\x00"
+    wire = _wire_frame(payload, from_client=from_client, opcode=Opcode.BINARY, compressed=True)
+    assert (
+        len(wire) <= 65535
+    )  # One read of the pinned mitmproxy reader can supply the entire frame.
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+    ):
+        running = await _start_websocket(addon_context, permessage_deflate=_PERMESSAGE_DEFLATE)
+        source = _source_connection(running, from_client=from_client)
+        with monkeypatch.context() as codec_patch:
+            stats = _track_zlib_decompression(codec_patch)
+            observed = await _handle_event(
+                addon_context, running, events.DataReceived(source, wire)
+            )
+        if over_limit:
+            assert _message_hooks(observed) == []
+            assert _data_sends(observed) == []
+            assert running.flow.websocket is not None
+            assert running.flow.websocket.close_code == 1009
+            assert running.flow.websocket.messages == []
+        else:
+            _assert_forwarded_messages(
+                running,
+                [observed],
+                from_client=from_client,
+                permessage_deflate=_PERMESSAGE_DEFLATE,
+                expected=[content],
+            )
+            assert len(_message_hooks(observed)) == 1
+            await asyncio.sleep(0)  # Release the completed message's aggregate reservation.
+            following = content[-512:]
+            following_wire = _wire_frame(
+                _deflate_stream(following, history=content, final=False),
+                from_client=from_client,
+                opcode=Opcode.BINARY,
+                compressed=True,
+            )
+            following_commands = await _handle_event(
+                addon_context, running, events.DataReceived(source, following_wire)
+            )
+            _assert_forwarded_messages(
+                running,
+                [observed, following_commands],
+                from_client=from_client,
+                permessage_deflate=_PERMESSAGE_DEFLATE,
+                expected=[content, following],
+            )
+            assert len(_message_hooks(following_commands)) == 1
+            await _handle_event(
+                addon_context,
+                running,
+                events.DataReceived(
+                    source,
+                    _peer(from_client=from_client).send(wsproto.events.CloseConnection(code=1000)),
+                ),
+            )
+        _assert_bounded_source_state_cleared(running, from_client=True)
+        _assert_bounded_source_state_cleared(running, from_client=False)
+        await asyncio.sleep(0)
+        assert websocket_framing._aggregate_decoded_budget.decoded_bytes == 0
+        assert stats.input_sizes
+        assert max(stats.input_sizes) <= 1024
+        assert stats.unused_tail_sizes
+        assert 0 < max(stats.unused_tail_sizes) <= 1024
 
 
 @pytest.mark.parametrize("from_client", [True, False])

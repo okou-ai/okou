@@ -23,6 +23,7 @@ from wsproto.frame_protocol import CloseReason, FrameDecoder, FrameProtocol, Opc
 import deferred_callbacks
 import flow_metadata
 from logging_utils import log_proxy_entry
+from zlib_input import ZlibInputCursor
 
 MAX_DECODED_MESSAGE_BYTES = 256 * 1024 * 1024
 MAX_AGGREGATE_DECODED_BYTES = 1024 * 1024 * 1024
@@ -307,9 +308,11 @@ class _BoundedPerMessageDeflate(Extension):
         limit = self._budget.remaining_bytes
         remaining = limit
         output: bytes | bytearray = b""
+        input_cursor = ZlibInputCursor(data)
+        # Empty callbacks still let the current inflater process buffered state.
         while True:
             try:
-                decoded = decoder.decompress(data, remaining + 1)
+                decoded = decoder.decompress(input_cursor.take(), remaining + 1)
             except zlib.error:
                 self._discard_inbound_state()
                 return CloseReason.INVALID_FRAME_PAYLOAD_DATA
@@ -328,16 +331,14 @@ class _BoundedPerMessageDeflate(Extension):
                 remaining -= len(decoded)
                 window_size = 1 << self._window_bits
                 self._history = (self._history + decoded[-window_size:])[-window_size:]
-            if not decoder.eof:
-                break
-
-            # RFC 7692 permits further byte-aligned blocks after BFINAL=1.
-            # Python's EOF inflater cannot resume; seed its replacement with
-            # the negotiated sliding window, including prior streams/messages.
-            data = decoder.unused_data
-            decoder = zlib.decompressobj(-self._window_bits, zdict=self._history)
-            self._decoder = decoder
-            if not data:
+            if decoder.eof:
+                # RFC 7692 permits further byte-aligned blocks after BFINAL=1.
+                # Python's EOF inflater cannot resume; seed its replacement with
+                # the negotiated sliding window, including prior streams/messages.
+                input_cursor.carry(decoder.unused_data)
+                decoder = zlib.decompressobj(-self._window_bits, zdict=self._history)
+                self._decoder = decoder
+            if not input_cursor:
                 break
         return bytes(output)
 
