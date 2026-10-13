@@ -9,6 +9,50 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.729.1](https://github.com/okou-ai/okou/compare/api-v1.729.0...api-v1.729.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **api:** drain legacy official result email callbacks in release 2 ([#39527](https://github.com/okou-ai/okou/issues/39527)) ([13caaad](https://github.com/okou-ai/okou/commit/13caaadf0b18776e434fab185a7bb5c4205d74ad))
+
+
+### Refactoring
+
+* **api:** certify tx-0174 invoice billing atomicity ([#39512](https://github.com/okou-ai/okou/issues/39512)) ([3e944fb](https://github.com/okou-ai/okou/commit/3e944fb5de7f35a084cf231fb4480d9129eb221c))
+* **api:** connect slack user installation request graphs ([#39503](https://github.com/okou-ai/okou/issues/39503)) ([a2b4f5b](https://github.com/okou-ai/okou/commit/a2b4f5b4af9bffac9e6bb07c4c0c942f43a06640)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** inline discord reply delivery in its owner ([#39518](https://github.com/okou-ai/okou/issues/39518)) ([14ce908](https://github.com/okou-ai/okou/commit/14ce908ad98630c8894d58a79244ff0158a85c9f))
+* **api:** keep low-credit organization name query in its owner ([#39495](https://github.com/okou-ai/okou/issues/39495)) ([9b21e0c](https://github.com/okou-ai/okou/commit/9b21e0c4c6b4fc138627abaf1a5451fc9e8c2a34))
+* **api:** own browser stuck-application normalization ([#39454](https://github.com/okou-ai/okou/issues/39454)) ([9ec3b27](https://github.com/okou-ai/okou/commit/9ec3b273021699ff5334d5edcbce48288e69c03e))
+* **api:** own browser user-action preparation ([#39488](https://github.com/okou-ai/okou/issues/39488)) ([7a3a4f6](https://github.com/okou-ai/okou/commit/7a3a4f65ca44690ebba8382405c221d817c70882))
+* **api:** own teams dispatch installation fallback read ([#39465](https://github.com/okou-ai/okou/issues/39465)) ([1a88662](https://github.com/okou-ai/okou/commit/1a88662cee61b342890a619440a0b3bc079fcc18)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** retire official workflow result email runtime ([#39514](https://github.com/okou-ai/okou/issues/39514)) ([991bc6b](https://github.com/okou-ai/okou/commit/991bc6b7a73e34d079a42da3ecdb5e51bc94b3a8))
+* **api:** retire tx-0074 expired browser transaction ([#39513](https://github.com/okou-ai/okou/issues/39513)) ([3bac3ea](https://github.com/okou-ai/okou/commit/3bac3ea72df0b3a974fae5703b399cba7647274a))
+* **api:** retire tx-0120 coherent custom runtime transaction ([#39528](https://github.com/okou-ai/okou/issues/39528)) ([1992dd2](https://github.com/okou-ai/okou/commit/1992dd25d34db4a77adfaf3423a9bbc528d36f5c))
+* **api:** retire tx-0121 membership cache transaction ([#39540](https://github.com/okou-ai/okou/issues/39540)) ([05ad364](https://github.com/okou-ai/okou/commit/05ad364653d3d5470365f7635afb41317d220315))
+* **api:** retire tx-0207 dormant materialization read transaction ([#39510](https://github.com/okou-ai/okou/issues/39510)) ([f7fa9bc](https://github.com/okou-ai/okou/commit/f7fa9bc817a882ab57adca792f4e0b8c4d739d5e))
+* **api:** retire tx-0288 deferred schedule transaction ([#39511](https://github.com/okou-ai/okou/issues/39511)) ([7bac97e](https://github.com/okou-ai/okou/commit/7bac97eb9170e9626ed2e46e92b007ac9294fa22))
+* **api:** retire tx-0289 preview admission transaction ([#39525](https://github.com/okou-ai/okou/issues/39525)) ([ad84493](https://github.com/okou-ai/okou/commit/ad84493d53fb7ca082c4063668242cc2f5aafb7c))
+* **api:** retire tx-0290 failure publication transaction ([#39520](https://github.com/okou-ai/okou/issues/39520)) ([b076a14](https://github.com/okou-ai/okou/commit/b076a14cf0cb28e8d5aaa234766a3d46a54d0d25))
+* **api:** retire tx-0291 invoice publication transaction ([#39523](https://github.com/okou-ai/okou/issues/39523)) ([a797b97](https://github.com/okou-ai/okou/commit/a797b97c5cdc0de7f255e1119d60f8e799bbff4b))
+* **api:** retire tx-0292 restoration completion transaction ([#39519](https://github.com/okou-ai/okou/issues/39519)) ([0f85a07](https://github.com/okou-ai/okou/commit/0f85a07e5abd0ae7a6e0aca185be8181464a1f1b))
+* **api:** retire tx-0295 unpaid preview transaction ([#39553](https://github.com/okou-ai/okou/issues/39553)) ([10fac4b](https://github.com/okou-ai/okou/commit/10fac4b11c1ef0ac4b4a989b0e72a36919abe350))
+* **api:** retire tx-0297 revision intent transaction ([#39538](https://github.com/okou-ai/okou/issues/39538)) ([b40a7e1](https://github.com/okou-ai/okou/commit/b40a7e151714dd9bdf80dda427347f9e6db4e348))
+* **api:** retire tx-0300 migration confirmation wrapper ([#39535](https://github.com/okou-ai/okou/issues/39535)) ([7ec8398](https://github.com/okou-ai/okou/commit/7ec839830e34a924442085de049c9a8801e1754a))
+* **api:** retire tx-0301 checkout correlation transaction ([#39533](https://github.com/okou-ai/okou/issues/39533)) ([172ce94](https://github.com/okou-ai/okou/commit/172ce9402c7b2cae3adb1ceb5d8e9a985f3a8509))
+* **api:** retire tx-0302 unpaid purchase claim transaction ([#39534](https://github.com/okou-ai/okou/issues/39534)) ([cc0417b](https://github.com/okou-ai/okou/commit/cc0417bfa46813eca5df20d1c9c474af8884bc7e))
+* **mcp:** use iso datetimes for search filters ([#39453](https://github.com/okou-ai/okou/issues/39453)) ([c09bcde](https://github.com/okou-ai/okou/commit/c09bcdee094b0a47e39850a4aa4d3ae3cb005396))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.553.1
+    * @okouai/core bumped to 8.748.2
+    * @okouai/db bumped to 1.332.1
+    * @okouai/pi-agent-runtime bumped to 1.49.19
+
 ## [1.729.0](https://github.com/okou-ai/okou/compare/api-v1.728.2...api-v1.729.0) (2026-10-12)
 
 

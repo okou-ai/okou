@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.11.0...runner-supervisor-v0.11.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** retain required pool saving custody ([#39468](https://github.com/okou-ai/okou/issues/39468)) ([596aa18](https://github.com/okou-ai/okou/commit/596aa189a2baf22192a1574dc07d001bcf5c7853))
+
 ## [0.11.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.10.4...runner-supervisor-v0.11.0) (2026-10-12)
 
 

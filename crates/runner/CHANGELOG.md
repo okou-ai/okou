@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.229.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.229.0...runner-rs-v0.229.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** retain required pool saving custody ([#39468](https://github.com/okou-ai/okou/issues/39468)) ([596aa18](https://github.com/okou-ai/okou/commit/596aa189a2baf22192a1574dc07d001bcf5c7853))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.229.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.228.5...runner-rs-v0.229.0) (2026-10-12)
 
 
