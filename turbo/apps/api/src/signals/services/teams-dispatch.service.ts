@@ -546,47 +546,6 @@ async function sendTeamsRunStartIndicator(
   await bestEffort(indicator, signal);
 }
 
-async function getWorkspaceAgent(
-  db: Db,
-  composeId: string,
-  orgId: string,
-): Promise<TeamsAgent | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, composeId), eq(agents.orgId, orgId)))
-    .limit(1);
-  return agent;
-}
-
-async function getVisibleWorkspaceAgent(args: {
-  readonly db: Db;
-  readonly composeId: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<TeamsAgent | undefined> {
-  const [agent] = await args.db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(
-      and(
-        eq(agents.id, args.composeId),
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
-      ),
-    )
-    .limit(1);
-  return agent;
-}
-
 async function resolveEffectiveCompose(args: {
   readonly db: Db;
   readonly userId: string;
@@ -603,20 +562,44 @@ async function resolveEffectiveCompose(args: {
   if (!defaultAgentId) {
     return { status: "not_configured" };
   }
-  const configuredDefaultAgent = await getWorkspaceAgent(
-    args.db,
-    defaultAgentId,
-    args.orgId,
-  );
+  const configuredAgentDb = args.db;
+  const configuredAgentOrgId = args.orgId;
+  const [configuredDefaultAgent] = await configuredAgentDb
+    .select({
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, defaultAgentId),
+        eq(agents.orgId, configuredAgentOrgId),
+      ),
+    )
+    .limit(1);
   if (!configuredDefaultAgent) {
     return { status: "not_found" };
   }
-  const visibleDefaultAgent = await getVisibleWorkspaceAgent({
-    db: args.db,
-    composeId: defaultAgentId,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
+  const visibleAgentDb = args.db;
+  const visibleComposeId = defaultAgentId;
+  const visibleOrgId = args.orgId;
+  const visibleUserId = args.userId;
+  const [visibleDefaultAgent] = await visibleAgentDb
+    .select({
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, visibleComposeId),
+        eq(agents.orgId, visibleOrgId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, visibleUserId)),
+      ),
+    )
+    .limit(1);
   if (!visibleDefaultAgent) {
     return { status: "not_accessible" };
   }
