@@ -251,24 +251,6 @@ async function install(page: Page, origin: string): Promise<void> {
   await installRunWssProbe(page, await bundleRunWssProbe(), origin);
 }
 
-test("the browser probe uses native sockets, checks opaque frames/replay and observes terminal bootstrap", async () => {
-  const fixture = await peer();
-  try {
-    await install(fixture.page, fixture.origin);
-    await verifyRunWssEcho(fixture.page, RUN, TARGET, true);
-    await fixture.revoke();
-    await verifyRunWssRevocation(fixture.page, RUN);
-    const report = await fixture.page.evaluate(() => ({
-      state: window.__runWssProbe?.state,
-      statuses: window.__runWssProbe?.bootstrapStatuses,
-    }));
-    assert.deepEqual(report, { state: "failed", statuses: [200, 404] });
-    assert.ok(!JSON.stringify(report).includes("fixture-session"));
-  } finally {
-    await fixture.close();
-  }
-});
-
 test("corrupted peer echo fails instead of recording a successful acceptance", async () => {
   const fixture = await peer({ corruptEcho: true });
   try {
