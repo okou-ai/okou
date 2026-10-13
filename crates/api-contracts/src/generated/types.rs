@@ -1462,6 +1462,16 @@ pub mod runners {
             ConfigurationChanged,
         }
 
+        /// VNC-only authority eviction, never an authorization grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct InvalidateNotification {
+            /// Affected active Run UUID.
+            pub run_id: String,
+            /// Affected VNC connection UUID, or explicit null for every VNC connection in the Run.
+            pub connection_id: Option<String>,
+        }
+
         /// Immutable winning official Runner process.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]

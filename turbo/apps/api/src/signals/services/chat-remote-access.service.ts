@@ -20,7 +20,7 @@ import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { publishSshClientInvalidation } from "./ssh-client-invalidation.service";
-import { publishSshRunnerInvalidation$ } from "./ssh-runtime-wakeup.service";
+import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
 import { commitThreadSshOverride$ } from "./chat-ssh-override.service";
 
 const L = logger("ChatRemoteAccess");
@@ -116,12 +116,16 @@ const notifyRemoteAccessChange$ = command(
     const [client, runner] = await Promise.all([
       settle(publishSshClientInvalidation(owner)),
       settle(
-        set(publishSshRunnerInvalidation$, {
-          orgId: owner.orgId,
-          userId: owner.userId,
-          ...(chatThreadId === undefined ? {} : { chatThreadId }),
-          connectionId: protocol === "ssh" ? owner.connectionId : null,
-        }),
+        set(
+          publishRemoteRunnerInvalidation$,
+          {
+            orgId: owner.orgId,
+            userId: owner.userId,
+            ...(chatThreadId === undefined ? {} : { chatThreadId }),
+            connectionId: owner.connectionId,
+          },
+          protocol,
+        ),
       ),
     ]);
     if (!client.ok || !runner.ok) {

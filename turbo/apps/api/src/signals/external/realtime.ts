@@ -1,5 +1,6 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
+import type { RunnerVncInvalidate } from "@okouai/api-contracts/contracts/runner-vnc";
 import {
   foregroundChannelName,
   sessionOutputChannelName,
@@ -595,6 +596,14 @@ export async function publishSshInvalidationToRunnerGroup(
 ): Promise<void> {
   const channel = ablyClient().channels.get(`runner-group:${group}`);
   await channel.publish("ssh-authority-invalidated", notification);
+}
+
+export async function publishVncInvalidationToRunnerGroup(
+  group: string,
+  notification: RunnerVncInvalidate,
+): Promise<void> {
+  const channel = ablyClient().channels.get(`runner-group:${group}`);
+  await channel.publish("vnc-authority-invalidated", notification);
 }
 
 export async function publishActiveInputToRunnerGroup(

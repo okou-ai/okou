@@ -3,6 +3,7 @@ mod delivery;
 mod harness;
 mod list;
 mod list_lifecycle;
+mod notifications;
 pub(crate) mod peer;
 mod rsa_aes;
 

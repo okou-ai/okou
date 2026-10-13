@@ -32,6 +32,11 @@ const expectedBindings = [
     rustTypeName: "ConsumeResponse",
     direction: "response",
   },
+  {
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "InvalidateNotification",
+    direction: "response",
+  },
   ...["Resolve", "Check"].flatMap((name) => {
     return [
       {

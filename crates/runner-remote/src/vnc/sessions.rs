@@ -1,7 +1,6 @@
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::{
-    collections::HashMap,
     io,
     pin::Pin,
     sync::{Arc, Mutex},
@@ -19,6 +18,7 @@ use uuid::Uuid;
 use super::{
     Failure, Scope, VncRuntime,
     authority::{Authentication, Transport},
+    invalidation::{Admission, Entries, Registry},
     network,
     protocol::{Info, Start},
 };
@@ -71,7 +71,6 @@ impl AsyncWrite for DirectOrSshStream {
 }
 
 pub(super) type Engine = rfb_client::Session<DirectOrSshStream>;
-type Registry = Arc<Mutex<HashMap<Uuid, Arc<Session>>>>;
 
 /// Kept by lifecycle cleanup and pending DNS, independently of guest streams.
 struct Capacity {
@@ -136,13 +135,19 @@ impl Run {
             cancel,
             ssh,
             capacity: Arc::new(Semaphore::new(2)),
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(Mutex::new(Entries::default())),
             tasks: TaskTracker::new(),
         }
     }
 
     pub(crate) fn close(&self) {
         self.cancel.cancel();
+    }
+
+    pub(super) fn invalidate(&self, connection: Option<Uuid>, ssh: bool) {
+        if let Ok(entries) = self.sessions.lock() {
+            entries.invalidate(connection, ssh);
+        }
     }
 
     pub(crate) async fn shutdown(&self) {
@@ -155,6 +160,7 @@ impl Run {
         self.sessions
             .lock()
             .map_err(|_| Failure::Protocol)?
+            .sessions
             .get(&id)
             .cloned()
             .ok_or(Failure::SessionNotFound)
@@ -165,6 +171,7 @@ impl Run {
             .sessions
             .lock()
             .map_err(|_| Failure::Protocol)?
+            .sessions
             .values()
             .cloned()
             .collect();
@@ -190,6 +197,16 @@ impl Run {
                 .try_acquire_owned()
                 .map_err(|_| Failure::ResourceExhausted)?,
         });
+        let session_cancel = self.cancel.child_token();
+        let admission = Admission::new(
+            Arc::clone(&self.sessions),
+            request.connection_id,
+            session_cancel.clone(),
+        )?;
+        let scope = &Scope {
+            session: session_cancel.clone(),
+            ..scope.clone()
+        };
         let mut root_builder = tempfile::Builder::new();
         let root_prefix = format!("okou-vnc-kerberos-{}-", self.id);
         root_builder.prefix(&root_prefix);
@@ -216,7 +233,13 @@ impl Run {
                 Some((&private_root, Arc::clone(&native_owner), scope.deadline)),
             ))
             .await??;
-        let session_cancel = self.cancel.child_token();
+        admission.bind(
+            credential.transport,
+            match &credential.authentication {
+                Authentication::Kerberos { binding, .. } => Some(*binding),
+                _ => None,
+            },
+        )?;
         let mut transport = credential.transport;
         let stream = match transport {
             Transport::Direct => {
@@ -421,10 +444,7 @@ impl Run {
             closed: CancellationToken::new(),
             engine: tokio::sync::Mutex::new(engine),
         });
-        self.sessions
-            .lock()
-            .map_err(|_| Failure::Protocol)?
-            .insert(session.info.session_id, Arc::clone(&session));
+        admission.admit(Arc::clone(&session))?;
         self.tasks.spawn(cleanup(
             Arc::clone(&session),
             Arc::clone(&self.sessions),
@@ -456,6 +476,13 @@ impl Run {
 impl Drop for Run {
     fn drop(&mut self) {
         self.close();
+        let mut runs = self.runtime.runs.lock().unwrap_or_else(|p| p.into_inner());
+        if runs
+            .get(&self.id)
+            .is_some_and(|owner| std::ptr::eq(owner.as_ptr(), self))
+        {
+            runs.remove(&self.id);
+        }
     }
 }
 
@@ -476,7 +503,7 @@ async fn cleanup(
     // mutex. Taking it proves no RFB operation still owns the socket.
     session.engine.lock().await.close();
     if let Ok(mut entries) = registry.lock() {
-        entries.remove(&session.info.session_id);
+        entries.sessions.remove(&session.info.session_id);
     }
     // Metadata snapshots may still retain Session handles. Only the lifecycle
     // task owns capacity: holding the engine mutex through image delivery makes

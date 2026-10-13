@@ -1,4 +1,7 @@
-import { runnerVncContract } from "../contracts/runner-vnc";
+import {
+  runnerVncContract,
+  runnerVncInvalidateSchema,
+} from "../contracts/runner-vnc";
 import { VNC_USERNAME_PASSWORD_MAX_BYTES } from "../contracts/vnc-credentials";
 import type { RustTypeBinding, RustTypeDeclarationDoc } from "./types";
 
@@ -43,6 +46,24 @@ function kdcTransportDocs(name: string): RustTypeDeclarationDoc {
 }
 
 export const vncTypeBindings = [
+  {
+    schema: runnerVncInvalidateSchema,
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "InvalidateNotification",
+    direction: "response",
+    declarations: [
+      {
+        rustTypeName: "InvalidateNotification",
+        rustDoc: ["VNC-only authority eviction, never an authorization grant."],
+        fields: {
+          runId: ["Affected active Run UUID."],
+          connectionId: [
+            "Affected VNC connection UUID, or explicit null for every VNC connection in the Run.",
+          ],
+        },
+      },
+    ],
+  },
   {
     schema: runnerVncContract.resolve.body,
     rustModulePath: ["runners", "vnc"],
