@@ -2,9 +2,8 @@ import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contract
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
-import { db$ } from "../external/db";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 function addCreditsUrl(): string {
   const appUrl = env("APP_URL");
@@ -18,7 +17,7 @@ function comparePlansUrl(): string {
 
 export const formatIntegrationRunError$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -34,10 +33,9 @@ export const formatIntegrationRunError$ = command(
       });
     }
 
-    const db = get(db$);
     const [membership, capabilities] = await Promise.all([
       set(getMemberRoleAndUpdateCache$, args.orgId, args.userId, signal),
-      loadOrgPlanCapabilities(db, args.orgId),
+      set(loadOrgPlanCapabilities$, args.orgId),
     ]);
     signal.throwIfAborted();
 
