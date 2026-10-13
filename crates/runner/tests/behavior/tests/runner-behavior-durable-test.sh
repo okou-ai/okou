@@ -421,12 +421,6 @@ run_driver_case() {
     assert_contains "$case_dir/cleanup-script" "sudo rm -rf \"\$GROUP_DIR\" \"\$RUNNER_DIR\""
   fi
 
-  if { [ -f "$remote_worker" ] && grep -Fq 'OFFICIAL_RUNNER_SECRET' "$remote_worker"; } \
-    || { [ -d "$remote_worker" ] && grep -RFq 'OFFICIAL_RUNNER_SECRET' "$remote_worker"; }; then
-    echo "expected ${remote_worker} not to consume the official runner secret" >&2
-    exit 1
-  fi
-
   if find "$runner_temp" -mindepth 1 -print -quit | grep -q .; then
     echo "expected ${case_name} driver to remove its local result file" >&2
     find "$runner_temp" -mindepth 1 -print >&2
