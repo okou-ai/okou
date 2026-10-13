@@ -1,3 +1,4 @@
+import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-watches";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import {
   createChatEventsFixture,
@@ -16,6 +17,7 @@ import {
 import {
   cronExecuteWorkflowAutomationsContract,
   cronOfficialWorkflowCatalogContract,
+  cronRenewGoogleFormsWatchesContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -46,7 +48,15 @@ import {
 } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
-import { createHash, randomUUID } from "node:crypto";
+import {
+  createHash,
+  generateKeyPairSync,
+  randomUUID,
+  sign as signData,
+} from "node:crypto";
+import { createApp } from "../../../app-factory";
+import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -1387,6 +1397,780 @@ async function ordinaryDelegationScenario() {
 
 beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Official Forms system configuration pause", () => {
+  it.each([
+    [false, false, "none"],
+    [true, false, "none"],
+    [true, true, "none"],
+    [false, false, "watch creation interruption"],
+    [false, false, "late stop success"],
+    [false, false, "late stop failure"],
+    [false, false, "late renew success"],
+    [false, false, "late renew failure"],
+    [false, false, "manual stop during recovery"],
+    [false, false, "source replacement during recovery"],
+    [false, false, "access revocation"],
+    [false, false, "account removal"],
+  ] as const)(
+    "retains same-source backlog after a genuine system configuration pause, shared watch=%s, provider interruption=%s, interleaving=%s",
+    async (sharedWatch, interrupted, interleaving) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = "forms-system-pause-" + suffix;
+      const startedAt = now();
+      mockNow(startedAt);
+      const responseTime = (minutes: number) => {
+        // Preserve Google's microseconds while advancing the application phases.
+        return new Date(startedAt + minutes * 60 * 1000)
+          .toISOString()
+          .replace("Z", "456Z");
+      };
+      const responseDuringPause = responseTime(10);
+      const resumeBaseline = responseDuringPause;
+      let responseAfterPause = responseTime(16);
+      let seed = responseTime(0);
+      let pending = false;
+      let failResumeSeed = false;
+      let watchId = "";
+      const watchIds = new Map<
+        string,
+        { readonly formId: string; readonly expireTime: string }
+      >();
+      let seedInterleaving: (() => Promise<void>) | null = null;
+      let failCreateOnRecovery = false;
+      let stopInterleaving: (() => Promise<void>) | null = null;
+      let renewInterleaving: (() => Promise<void>) | null = null;
+      const providerKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const providerIssuedAt = Math.floor(now() / 1000);
+      const push = async (formId: string, watchId: string) => {
+        const encode = (value: unknown) => {
+          return Buffer.from(JSON.stringify(value)).toString("base64url");
+        };
+        const issuedAt = providerIssuedAt;
+        const jwtBody =
+          encode({ alg: "RS256", kid: "forms-system-key", typ: "JWT" }) +
+          "." +
+          encode({
+            aud: GOOGLE_FORMS_PUSH_AUDIENCE,
+            email: GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT,
+            email_verified: true,
+            exp: issuedAt + 600,
+            iat: issuedAt,
+            iss: "https://accounts.google.com",
+            sub: "genuine-provider-fixture",
+          });
+        const token =
+          jwtBody +
+          "." +
+          signData(
+            "RSA-SHA256",
+            Buffer.from(jwtBody),
+            providerKeys.privateKey,
+          ).toString("base64url");
+        const response = await createApp({
+          signal: context.signal,
+          routes: webhooksGoogleFormsRoutes,
+        }).request("/api/webhooks/google-forms", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: {
+              messageId: randomUUID(),
+              attributes: {
+                formId,
+                watchId,
+                eventType: "RESPONSES",
+              },
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as unknown;
+      };
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_TOPIC_NAME",
+        GOOGLE_FORMS_TOPIC_NAME,
+      );
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
+        GOOGLE_FORMS_PUSH_AUDIENCE,
+      );
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+        GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT,
+      );
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/forms-system-pause");
+      server.use(
+        http.get("https://www.googleapis.com/oauth2/v1/certs", () => {
+          return HttpResponse.json(
+            {
+              "forms-system-key": providerKeys.publicKey.export({
+                type: "spki",
+                format: "pem",
+              }),
+            },
+            { headers: { "cache-control": "no-cache" } },
+          );
+        }),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId",
+          ({ params }) => {
+            return HttpResponse.json({
+              formId: params.formId,
+              info: { title: "System pause survey" },
+              publishSettings: {
+                publishState: { isPublished: true, isAcceptingResponses: true },
+              },
+            });
+          },
+        ),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          async ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter === null && failResumeSeed) {
+              failResumeSeed = false;
+              return HttpResponse.json(
+                { error: { message: "Interrupted provider preparation" } },
+                { status: 500 },
+              );
+            }
+            if (filter === null) {
+              const held = seedInterleaving;
+              seedInterleaving = null;
+              if (held) {
+                await held();
+              }
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "baseline",
+                    createTime: responseTime(0),
+                    lastSubmittedTime: responseTime(0),
+                  },
+                  ...(seed === responseDuringPause
+                    ? [
+                        {
+                          responseId: "response-during-system-pause",
+                          createTime: responseDuringPause,
+                          lastSubmittedTime: responseDuringPause,
+                          respondentEmail: "during-system-pause@example.test",
+                        },
+                      ]
+                    : []),
+                ],
+              });
+            }
+            const cutoff = filter.replace("timestamp > ", "");
+            const responses = [
+              {
+                responseId: "response-during-system-pause",
+                createTime: responseDuringPause,
+                lastSubmittedTime: responseDuringPause,
+                respondentEmail: "during-system-pause@example.test",
+              },
+              {
+                responseId: "response-after-system-pause",
+                createTime: responseAfterPause,
+                lastSubmittedTime: responseAfterPause,
+                respondentEmail: "after-system-pause@example.test",
+              },
+            ];
+            return HttpResponse.json({
+              responses: pending
+                ? responses.filter((response) => {
+                    return response.lastSubmittedTime > cutoff;
+                  })
+                : [],
+            });
+          },
+        ),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/watches",
+          ({ params }) => {
+            return HttpResponse.json({
+              watches: [...watchIds]
+                .filter(([, resource]) => {
+                  return resource.formId === params.formId;
+                })
+                .map(([id, { expireTime }]) => {
+                  return {
+                    id,
+                    expireTime,
+                    eventType: "RESPONSES",
+                    target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+                  };
+                }),
+            });
+          },
+        ),
+        http.post(
+          "https://forms.googleapis.com/v1/forms/:formId/watches",
+          ({ params }) => {
+            const formId = String(params.formId);
+            if (
+              [...watchIds.values()].some((resource) => {
+                return resource.formId === formId;
+              })
+            ) {
+              return HttpResponse.json(
+                {
+                  error: {
+                    status: "FAILED_PRECONDITION",
+                    message: "Duplicate subscriber",
+                  },
+                },
+                { status: 400 },
+              );
+            }
+            watchId = "system-watch-" + randomUUID();
+            const expireTime = new Date(now() + 30 * 60 * 1000).toISOString();
+            watchIds.set(watchId, { formId, expireTime });
+            if (failCreateOnRecovery) {
+              failCreateOnRecovery = false;
+              return HttpResponse.json(
+                { error: { message: "Lost watch creation response" } },
+                { status: 500 },
+              );
+            }
+            return HttpResponse.json({
+              id: watchId,
+              expireTime,
+              eventType: "RESPONSES",
+              target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+            });
+          },
+        ),
+        http.delete(
+          "https://forms.googleapis.com/v1/forms/:formId/watches/:watchId",
+          async ({ params }) => {
+            watchIds.delete(String(params.watchId));
+            const held = stopInterleaving;
+            stopInterleaving = null;
+            if (held) {
+              await held();
+              if (interleaving === "late stop failure") {
+                return HttpResponse.json(
+                  { error: { message: "Lost stop response" } },
+                  { status: 503 },
+                );
+              }
+            }
+            return HttpResponse.json({});
+          },
+        ),
+        http.post(
+          String.raw`https://forms.googleapis.com/v1/forms/:formId/watches/:watchId\:renew`,
+          async ({ params }) => {
+            const id = String(params.watchId);
+            const expireTime = new Date(
+              now() + 7 * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            watchIds.set(id, { formId: String(params.formId), expireTime });
+            const held = renewInterleaving;
+            renewInterleaving = null;
+            if (held) {
+              await held();
+              if (interleaving === "late renew failure") {
+                return HttpResponse.json(
+                  { error: { message: "Lost renewal response" } },
+                  { status: 503 },
+                );
+              }
+            }
+            return HttpResponse.json({
+              id,
+              expireTime,
+              eventType: "RESPONSES",
+              target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+            });
+          },
+        ),
+      );
+      const formsBlueprint = {
+        ...googleFormsBlueprint(4),
+        parameters: [
+          {
+            key: "form-url",
+            type: "string" as const,
+            format: "url" as const,
+            required: false,
+            default: GOOGLE_FORM_URL,
+          },
+        ],
+        desiredState: {
+          ...googleFormsBlueprint(4).desiredState,
+          eventConfig: {
+            provider: "google-forms" as const,
+            event: "response_submitted" as const,
+            formUrl: { parameter: "form-url" },
+          },
+        },
+      };
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [formsBlueprint])]),
+      );
+      const { actor } = await workflowBdd.setupWorkflowOrg();
+      const { agentId } = await workflowBdd.createAgent(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+      await workflowBdd.connectConnector(actor, "google-forms");
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [
+              { blueprintKey: "google-forms-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      const automation = installed.body.workflow.automations[0];
+      if (!automation?.chatThreadId) {
+        throw new Error("Expected installed Forms thread");
+      }
+      const sourceIdentity = (row: WorkflowAutomationSummary) => {
+        if (
+          row.kind !== "event" ||
+          row.eventType !== "google-forms-response-submitted"
+        ) {
+          throw new Error("Expected a Google Forms source");
+        }
+        return {
+          id: row.id,
+          orgId: actor.orgId,
+          workflowId: installed.body.workflow.id,
+          ownerUserId: row.ownerUserId,
+          kind: row.kind,
+          eventType: row.eventType,
+          eventConfig: row.eventConfig,
+        };
+      };
+      let sharedId: string | undefined;
+      if (sharedWatch) {
+        const ordinaryId = await workflowBdd.createWorkflow(actor, {
+          agentId,
+          name: "forms-shared-system-" + suffix,
+        });
+        const shared = await accept(
+          automationClient().create({
+            headers,
+            params: { workflowId: ordinaryId },
+            body: {
+              kind: "event",
+              eventType: "google-forms-response-submitted",
+              eventConfig: {
+                provider: "google-forms",
+                event: "response_submitted",
+                formUrl: GOOGLE_FORM_URL,
+              },
+            },
+          }),
+          [201],
+        );
+        sharedId = shared.body.id;
+      }
+      const base = formsBlueprint;
+      const requiredBudget = {
+        ...base,
+        parameters: [
+          ...base.parameters,
+          { key: "budget", type: "integer" as const, required: true },
+        ],
+        desiredState: {
+          ...base.desiredState,
+          autonomyBudget: { parameter: "budget" },
+        },
+      };
+      mockNow(startedAt + 5 * 60 * 1000);
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [requiredBudget])]),
+      );
+      let recoveryFormUrl = GOOGLE_FORM_URL;
+      const recoveryBindings = () => {
+        return [
+          { key: "budget", value: 7 },
+          { key: "form-url", value: recoveryFormUrl },
+        ];
+      };
+      const resume = async () => {
+        mockNow(startedAt + 15 * 60 * 1000);
+        return await accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "google-forms-trigger",
+                  bindings: recoveryBindings(),
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+      };
+      let pausedObservation: WorkflowAutomationSummary | null = null;
+      const observePause = async () => {
+        const response = await accept(
+          automationClient().get({ headers, params: { id: automation.id } }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          enabled: false,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "needs_reconfiguration",
+          },
+        });
+        expect(sourceIdentity(response.body)).toStrictEqual(
+          sourceIdentity(automation),
+        );
+        pausedObservation = response.body;
+      };
+      if (interleaving.startsWith("late stop")) {
+        stopInterleaving = async () => {
+          await observePause();
+          seed = resumeBaseline;
+          await resume();
+          await accept(
+            setupApp({ context, routes: cronRenewGoogleFormsWatchesRoutes })(
+              cronRenewGoogleFormsWatchesContract,
+            ).renew({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+            [200],
+          );
+        };
+      }
+      if (interleaving.startsWith("late renew")) {
+        renewInterleaving = async () => {
+          await executeAutomationCron();
+          await observePause();
+          seed = resumeBaseline;
+          await resume();
+        };
+        await accept(
+          setupApp({ context, routes: cronRenewGoogleFormsWatchesRoutes })(
+            cronRenewGoogleFormsWatchesContract,
+          ).renew({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+          [200],
+        );
+      } else {
+        await executeAutomationCron();
+      }
+      if (pausedObservation === null) {
+        await observePause();
+      }
+      const paused = { body: pausedObservation };
+      expect(paused.body).toMatchObject({
+        enabled: false,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "needs_reconfiguration",
+        },
+      });
+      if (paused.body === null) {
+        throw new Error("Expected a publicly observed system pause");
+      }
+      expect(sourceIdentity(paused.body)).toStrictEqual(
+        sourceIdentity(automation),
+      );
+      mockNow(startedAt + 15 * 60 * 1000);
+      seed = resumeBaseline;
+      const interruptRecovery = async () => {
+        if (
+          interleaving === "manual stop during recovery" ||
+          interleaving === "source replacement during recovery"
+        ) {
+          seedInterleaving = async () => {
+            if (interleaving === "manual stop during recovery") {
+              const stopped = await accept(
+                automationClient().disable({
+                  headers,
+                  params: { id: automation.id },
+                }),
+                [200],
+              );
+              expect(stopped.body).toMatchObject({
+                enabled: false,
+                official: { intendedEnabled: false },
+              });
+            } else {
+              recoveryFormUrl = `https://docs.google.com/forms/d/${GOOGLE_FORM_ID}${suffix}/edit`;
+              await resume();
+            }
+          };
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "google-forms-trigger",
+                    bindings: recoveryBindings(),
+                  },
+                ],
+              },
+            }),
+            [409],
+          );
+        }
+        if (interleaving === "access revocation") {
+          mockNow(now() + 2 * 60 * 60 * 1000);
+          server.use(
+            http.post("https://oauth2.googleapis.com/token", () => {
+              return HttpResponse.json(
+                { error: "invalid_grant" },
+                { status: 400 },
+              );
+            }),
+          );
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "google-forms-trigger",
+                    bindings: recoveryBindings(),
+                  },
+                ],
+              },
+            }),
+            [409],
+          );
+          const rejected = await accept(
+            automationClient().get({ headers, params: { id: automation.id } }),
+            [200],
+          );
+          expect(rejected.body).toMatchObject({
+            enabled: false,
+            official: { intendedEnabled: true },
+          });
+          if (
+            automation.kind !== "event" ||
+            automation.eventType !== "google-forms-response-submitted"
+          ) {
+            throw new Error("Expected a reconnectable Forms account");
+          }
+          await expect(push(GOOGLE_FORM_ID, watchId)).resolves.toMatchObject({
+            dispatched: 0,
+          });
+          mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+          const reconnect = await connectors.startOauth(
+            actor,
+            "google-forms",
+            "oauth",
+            agentId,
+            {
+              intent: "reconnect",
+              connectionId: automation.eventConfig.connectorId,
+            },
+          );
+          const reconnectState = new URL(
+            reconnect.authorizationUrl,
+          ).searchParams.get("state");
+          if (!reconnectState) {
+            throw new Error("Expected a public OAuth reconnect state");
+          }
+          await connectors.completeOauthCallback("google-forms", {
+            code: "forms-reconnected",
+            state: reconnectState,
+          });
+          // The OAuth client uses its own clock; allow the provider's normal
+          // refresh after the application clock advanced past the old token.
+          server.use(
+            http.post("https://oauth2.googleapis.com/token", () => {
+              return HttpResponse.json({
+                access_token: "google-forms-access-token",
+                expires_in: 3600,
+                token_type: "Bearer",
+                scope:
+                  "https://www.googleapis.com/auth/forms.body.readonly https://www.googleapis.com/auth/forms.responses.readonly",
+              });
+            }),
+          );
+        }
+        if (interleaving === "account removal") {
+          if (
+            automation.kind !== "event" ||
+            automation.eventType !== "google-forms-response-submitted"
+          ) {
+            throw new Error("Expected a Forms account");
+          }
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "google-forms",
+            automation.eventConfig.connectorId,
+          );
+          await expect(push(GOOGLE_FORM_ID, watchId)).resolves.toMatchObject({
+            watchStates: 0,
+            dispatched: 0,
+          });
+          mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+          await workflowBdd.connectConnector(actor, "google-forms");
+        }
+      };
+      await interruptRecovery();
+      failCreateOnRecovery = interleaving === "watch creation interruption";
+      if (interrupted || failCreateOnRecovery) {
+        failResumeSeed = interrupted;
+        await accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "google-forms-trigger",
+                  bindings: recoveryBindings(),
+                },
+              ],
+            },
+          }),
+          [409],
+        );
+        const failed = await accept(
+          automationClient().get({ headers, params: { id: automation.id } }),
+          [200],
+        );
+        expect(failed.body).toMatchObject({
+          enabled: false,
+          official: { intendedEnabled: true },
+        });
+      }
+      const resumed = await accept(
+        installationClient().reconfigure({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+          body: {
+            blueprints: [
+              {
+                blueprintKey: "google-forms-trigger",
+                bindings: recoveryBindings(),
+              },
+            ],
+          },
+        }),
+        [200],
+      );
+      if (interleaving === "manual stop during recovery") {
+        const stopped = resumed.body.workflow.automations.find((row) => {
+          return row.id === automation.id;
+        });
+        expect(stopped).toMatchObject({
+          enabled: false,
+          official: { intendedEnabled: false },
+        });
+        await accept(
+          automationClient().enable({ headers, params: { id: automation.id } }),
+          [200],
+        );
+      }
+      const recoveredResponse = await accept(
+        automationClient().get({ headers, params: { id: automation.id } }),
+        [200],
+      );
+      const recovered = recoveredResponse.body;
+      expect(resumed.body.workflow.id).toBe(installed.body.workflow.id);
+      expect(recovered).toMatchObject({
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      });
+      if (interleaving === "source replacement during recovery") {
+        expect(recovered).toMatchObject({
+          eventConfig: {
+            connectorId: sourceIdentity(automation).eventConfig.connectorId,
+            form: { id: GOOGLE_FORM_ID + suffix },
+          },
+        });
+      } else if (interleaving === "account removal") {
+        expect(sourceIdentity(recovered).eventConfig.connectorId).not.toBe(
+          sourceIdentity(automation).eventConfig.connectorId,
+        );
+      } else {
+        expect(sourceIdentity(recovered)).toStrictEqual(
+          sourceIdentity(automation),
+        );
+      }
+      if (sharedId) {
+        await accept(
+          automationClient().disable({ headers, params: { id: sharedId } }),
+          [200],
+        );
+      }
+      const expectedDeliveries =
+        interleaving === "manual stop during recovery" ||
+        interleaving === "source replacement during recovery" ||
+        interleaving === "account removal"
+          ? 1
+          : 2;
+      const currentFormId = sourceIdentity(recovered).eventConfig.form.id;
+      const remoteWatch = [...watchIds].find(([, resource]) => {
+        return resource.formId === currentFormId;
+      });
+      if (!remoteWatch) {
+        throw new Error(
+          "Expected a surviving provider watch for the recovered source",
+        );
+      }
+      watchId = remoteWatch[0];
+      responseAfterPause = new Date(now() + 60 * 1000)
+        .toISOString()
+        .replace("Z", "456Z");
+      mockNow(now() + 2 * 60 * 1000);
+      pending = true;
+      const result = await push(currentFormId, watchId);
+      const { events } = await chat.listThreadEvents(
+        actor,
+        automation.chatThreadId,
+      );
+      expect(result).toMatchObject({ dispatched: expectedDeliveries });
+      const delivered = events.filter((event) => {
+        return event.eventType === "input.automation";
+      });
+      if (expectedDeliveries === 2) {
+        expect(delivered.map(chatEventDisplayText).join("\n")).toContain(
+          "during-system-pause@example.test",
+        );
+      } else {
+        expect(delivered.map(chatEventDisplayText).join("\n")).not.toContain(
+          "during-system-pause@example.test",
+        );
+      }
+      expect(delivered.map(chatEventDisplayText).join("\n")).toContain(
+        "after-system-pause@example.test",
+      );
+      await expect(push(currentFormId, watchId)).resolves.toMatchObject({
+        dispatched: 0,
+      });
+      expect(
+        (await allThreadEventRows(actor, automation.chatThreadId)).filter(
+          (event) => {
+            return event.eventType === "input.automation";
+          },
+        ),
+      ).toHaveLength(expectedDeliveries);
+      expect(
+        events.filter((event) => {
+          return event.eventType === "input.automation";
+        }),
+      ).toHaveLength(expectedDeliveries);
+    },
+  );
 });
 
 describe("Morning Brief preference", () => {

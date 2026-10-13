@@ -52,10 +52,6 @@ const TOPIC = "projects/test/topics/forms";
 const AUDIENCE = "https://api.okou.ai/api/webhooks/google-forms";
 const EMAIL = "forms-push@test.iam.gserviceaccount.com";
 const CRON_SECRET = "forms-manual-reenable-local-analysis-cron";
-const BEFORE = "2026-10-13T04:00:00.123456Z";
-const CLOSED = "2026-10-13T04:05:00.123456Z";
-const RESUME = "2026-10-13T04:10:00.123456Z";
-const AFTER = "2026-10-13T04:11:00.123456Z";
 const keyPair = generateKeyPairSync("rsa", { modulusLength: 2048 });
 
 beforeEach(() => {
@@ -206,12 +202,50 @@ function mockCatalogObjects() {
 }
 
 function formsProvider() {
+  const startedAt = now();
+  const responseTime = (minutes: number) => {
+    return new Date(startedAt + minutes * 60 * 1000)
+      .toISOString()
+      .replace("Z", "456Z");
+  };
+  const times = {
+    before: responseTime(0),
+    closed: responseTime(5),
+    preparedCursor: responseTime(5),
+    after: responseTime(11),
+  };
+  const clock = {
+    stoppedAt: startedAt + 2 * 60 * 1000,
+    preparingAt: startedAt + 10 * 60 * 1000,
+    observedAt: startedAt + 12 * 60 * 1000,
+  };
+  const seedResponse = (cursor: string) => {
+    return HttpResponse.json({
+      responses: [
+        {
+          responseId: "provider-baseline",
+          createTime: times.before,
+          lastSubmittedTime: times.before,
+        },
+        ...(cursor === times.preparedCursor
+          ? [
+              {
+                responseId: "closed-period-response",
+                createTime: times.closed,
+                lastSubmittedTime: times.closed,
+                respondentEmail: "closed@example.test",
+              },
+            ]
+          : []),
+      ],
+    });
+  };
   const expireTime = new Date(now() + 7 * 24 * 60 * 60 * 1000).toISOString();
   const watches = new Map<string, string>();
   const allWatches = new Map<string, { id: string; token: string }>();
   const seeds: (() => Promise<Response>)[] = [];
   const filters: string[] = [];
-  let seed = BEFORE;
+  let seed = times.before;
   let failStop = false;
   let failSeed = false;
   let pending = false;
@@ -240,29 +274,21 @@ function formsProvider() {
               { status: 500 },
             );
           }
-          return HttpResponse.json({
-            responses: [
-              {
-                responseId: "provider-baseline",
-                createTime: seed,
-                lastSubmittedTime: seed,
-              },
-            ],
-          });
+          return seedResponse(seed);
         }
         filters.push(filter);
         const cutoff = filter.replace("timestamp > ", "");
         const candidates = [
           {
             responseId: "closed-period-response",
-            createTime: CLOSED,
-            lastSubmittedTime: CLOSED,
+            createTime: times.closed,
+            lastSubmittedTime: times.closed,
             respondentEmail: "closed@example.test",
           },
           {
             responseId: "after-resume-response",
-            createTime: AFTER,
-            lastSubmittedTime: AFTER,
+            createTime: times.after,
+            lastSubmittedTime: times.after,
             respondentEmail: "after@example.test",
           },
         ];
@@ -323,6 +349,9 @@ function formsProvider() {
     ),
   );
   return {
+    times,
+    clock,
+    issuedAt: Math.floor(startedAt / 1000),
     filters,
     watch(token: string) {
       const id = watches.get("Bearer " + token);
@@ -349,15 +378,7 @@ function formsProvider() {
       seeds.push(async () => {
         started.resolve();
         await release.promise;
-        return HttpResponse.json({
-          responses: [
-            {
-              responseId: "held-provider-baseline",
-              createTime: value,
-              lastSubmittedTime: value,
-            },
-          ],
-        });
+        return seedResponse(value);
       });
       return {
         started: started.promise,
@@ -433,7 +454,8 @@ async function setupOfficial() {
   };
 }
 
-function signedPushToken() {
+function signedPushToken(issuedAt: number) {
+  // Issuer time was captured before the controlled application phases advanced.
   const encode = (value: unknown) => {
     return Buffer.from(JSON.stringify(value)).toString("base64url");
   };
@@ -441,8 +463,8 @@ function signedPushToken() {
     aud: AUDIENCE,
     email: EMAIL,
     email_verified: true,
-    exp: Math.floor(now() / 1000) + 600,
-    iat: Math.floor(now() / 1000),
+    exp: issuedAt + 600,
+    iat: issuedAt,
     iss: "https://accounts.google.com",
     sub: "provider-push",
   });
@@ -459,14 +481,14 @@ function signedPushToken() {
   );
 }
 
-async function push(watchId: string) {
+async function push(watchId: string, issuedAt: number) {
   const response = await createApp({
     signal: context.signal,
     routes: webhooksGoogleFormsRoutes,
   }).request("/api/webhooks/google-forms", {
     method: "POST",
     headers: {
-      authorization: "Bearer " + signedPushToken(),
+      authorization: "Bearer " + signedPushToken(issuedAt),
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -510,11 +532,13 @@ describe("Official Forms manual delivery intervals", () => {
           )
         : null;
       provider.failStop(true);
+      mockNow(provider.clock.stoppedAt);
       await accept(
         automations().disable({ headers, params: { id: automation.id } }),
         [200],
       );
-      provider.setSeed(RESUME);
+      provider.setSeed(provider.times.preparedCursor);
+      mockNow(provider.clock.preparingAt);
       await accept(
         automations().enable({ headers, params: { id: automation.id } }),
         [200],
@@ -525,8 +549,11 @@ describe("Official Forms manual delivery intervals", () => {
           [200],
         );
       }
+      mockNow(provider.clock.observedAt);
       provider.pending(true);
-      await expect(push(provider.watch("account-a"))).resolves.toMatchObject({
+      await expect(
+        push(provider.watch("account-a"), provider.issuedAt),
+      ).resolves.toMatchObject({
         dispatched: 1,
       });
       await flushWaitUntilForTest();
@@ -544,11 +571,13 @@ describe("Official Forms manual delivery intervals", () => {
   );
   it("leaves a genuinely stopped Official automation inactive after provider preparation fails", async () => {
     const { automation, provider, headers } = await setupOfficial();
+    mockNow(provider.clock.stoppedAt);
     await accept(
       automations().disable({ headers, params: { id: automation.id } }),
       [200],
     );
     provider.failSeed(true);
+    mockNow(provider.clock.preparingAt);
     await accept(
       automations().enable({ headers, params: { id: automation.id } }),
       [400],
@@ -562,7 +591,8 @@ describe("Official Forms manual delivery intervals", () => {
       official: { intendedEnabled: false },
     });
     provider.failSeed(false);
-    provider.setSeed(RESUME);
+    provider.setSeed(provider.times.preparedCursor);
+    mockNow(provider.clock.preparingAt);
     await accept(
       automations().enable({ headers, params: { id: automation.id } }),
       [200],
@@ -570,11 +600,19 @@ describe("Official Forms manual delivery intervals", () => {
   });
   it("rejects same-clock stale preparation after a repeated manual stop and accepts a fresh enable", async () => {
     const { automation, provider, headers } = await setupOfficial();
+    mockNow(provider.clock.stoppedAt);
     await accept(
       automations().disable({ headers, params: { id: automation.id } }),
       [200],
     );
-    const baseline = provider.holdSeed(RESUME);
+    mockNow(provider.clock.preparingAt);
+    // Two repeated stops share the preparation clock, while the original stop
+    // already closed the interval before the provider's response arrived.
+    await accept(
+      automations().disable({ headers, params: { id: automation.id } }),
+      [200],
+    );
+    const baseline = provider.holdSeed(provider.times.preparedCursor);
     const enabling = automations().enable({
       headers,
       params: { id: automation.id },
@@ -594,25 +632,33 @@ describe("Official Forms manual delivery intervals", () => {
       enabled: false,
       official: { intendedEnabled: false },
     });
-    provider.setSeed(RESUME);
+    provider.setSeed(provider.times.preparedCursor);
+    mockNow(provider.clock.preparingAt);
     await accept(
       automations().enable({ headers, params: { id: automation.id } }),
       [200],
     );
+    mockNow(provider.clock.observedAt);
     provider.pending(true);
-    await expect(push(provider.watch("account-a"))).resolves.toMatchObject({
+    await expect(
+      push(provider.watch("account-a"), provider.issuedAt),
+    ).resolves.toMatchObject({
       dispatched: 1,
     });
   });
   it("preserves the already-enabled Official refresh backlog instead of starting a manual interval", async () => {
     const { automation, provider, headers } = await setupOfficial();
-    provider.setSeed(RESUME);
+    provider.setSeed(provider.times.preparedCursor);
+    mockNow(provider.clock.preparingAt);
     await accept(
       automations().enable({ headers, params: { id: automation.id } }),
       [200],
     );
+    mockNow(provider.clock.observedAt);
     provider.pending(true);
-    await expect(push(provider.watch("account-a"))).resolves.toMatchObject({
+    await expect(
+      push(provider.watch("account-a"), provider.issuedAt),
+    ).resolves.toMatchObject({
       dispatched: 2,
     });
     await flushWaitUntilForTest();
@@ -649,13 +695,14 @@ test("replaces an earlier account-repair baseline only after manual re-enable is
       "Expected second account returned by public connection list",
     );
   }
-  const repairBaseline = provider.holdSeed(BEFORE);
+  const repairBaseline = provider.holdSeed(provider.times.before);
   const changingDefault = connectors.setDefaultBuiltinConnectorAccount(
     actor,
     "google-forms",
     second.id,
   );
   await repairBaseline.started;
+  mockNow(provider.clock.stoppedAt);
   const stopped = await accept(
     automations().disable({
       headers,
@@ -667,7 +714,8 @@ test("replaces an earlier account-repair baseline only after manual re-enable is
     enabled: false,
     official: { intendedEnabled: false },
   });
-  const manualBaseline = provider.holdSeed(RESUME);
+  mockNow(provider.clock.preparingAt);
+  const manualBaseline = provider.holdSeed(provider.times.preparedCursor);
   const enabling = automations().enable({
     headers,
     params: { id: automation.id },
@@ -677,8 +725,9 @@ test("replaces an earlier account-repair baseline only after manual re-enable is
   await changingDefault;
   manualBaseline.release();
   await accept(enabling, [200]);
+  mockNow(provider.clock.observedAt);
   provider.pending(true);
-  const result = await push(provider.watch("account-b"));
+  const result = await push(provider.watch("account-b"), provider.issuedAt);
   await flushWaitUntilForTest();
   expect(result).toMatchObject({ dispatched: 1 });
   const events = await workflows.readThreadEvents(automation.chatThreadId);
@@ -688,7 +737,9 @@ test("replaces an earlier account-repair baseline only after manual re-enable is
   expect(delivered.map(chatEventDisplayText)).toStrictEqual([
     'A new response from after@example.test was submitted to Google Form "Boundary survey".',
   ]);
-  expect(provider.filters).toContain("timestamp > " + RESUME);
+  expect(provider.filters).toContain(
+    "timestamp > " + provider.times.preparedCursor,
+  );
 });
 
 test.each(["change default", "delete account"])(
@@ -713,11 +764,13 @@ test.each(["change default", "delete account"])(
     if (!first || !second) {
       throw new Error("Expected both public Forms accounts");
     }
+    mockNow(provider.clock.stoppedAt);
     await accept(
       automations().disable({ headers, params: { id: automation.id } }),
       [200],
     );
-    const baseline = provider.holdSeed(RESUME);
+    mockNow(provider.clock.preparingAt);
+    const baseline = provider.holdSeed(provider.times.preparedCursor);
     const enabling = createApp({
       signal: context.signal,
       routes: workflowAutomationsRoutes,
@@ -753,13 +806,17 @@ test.each(["change default", "delete account"])(
       enabled: false,
       official: { intendedEnabled: false },
     });
-    provider.setSeed(RESUME);
+    provider.setSeed(provider.times.preparedCursor);
+    mockNow(provider.clock.preparingAt);
     await accept(
       automations().enable({ headers, params: { id: automation.id } }),
       [200],
     );
+    mockNow(provider.clock.observedAt);
     provider.pending(true);
-    await expect(push(provider.watch("account-b"))).resolves.toMatchObject({
+    await expect(
+      push(provider.watch("account-b"), provider.issuedAt),
+    ).resolves.toMatchObject({
       dispatched: 1,
     });
   },
@@ -767,11 +824,13 @@ test.each(["change default", "delete account"])(
 
 test("rejects manual preparation superseded by a public source reconfiguration", async () => {
   const { automation, provider, headers, workflowId } = await setupOfficial();
+  mockNow(provider.clock.stoppedAt);
   await accept(
     automations().disable({ headers, params: { id: automation.id } }),
     [200],
   );
-  const baseline = provider.holdSeed(RESUME);
+  mockNow(provider.clock.preparingAt);
+  const baseline = provider.holdSeed(provider.times.preparedCursor);
   const enabling = automations().enable({
     headers,
     params: { id: automation.id },
