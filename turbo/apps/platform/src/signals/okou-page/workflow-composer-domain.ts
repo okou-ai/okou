@@ -1,5 +1,24 @@
 import type { ComposerWorkflow } from "@okouai/api-contracts/contracts/workflows";
 
+export function orderRecentWorkflows(
+  workflows: readonly ComposerSlashWorkflow[],
+  recentIds: readonly string[],
+): readonly ComposerSlashWorkflow[] {
+  const recency = new Map(
+    recentIds.map((id, index) => {
+      return [id, index] as const;
+    }),
+  );
+  return [...workflows].sort((left, right) => {
+    return (
+      (recency.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+        (recency.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
+      left.name.localeCompare(right.name, "en") ||
+      left.id.localeCompare(right.id, "en")
+    );
+  });
+}
+
 export function findWorkflowQueryMatches(
   workflows: readonly ComposerSlashWorkflow[],
   query: string,
