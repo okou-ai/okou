@@ -1519,7 +1519,6 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
-      "empty": "현재 제안이 없습니다.",
       "existingThread": "기존 대화",
       "label": "제안",
       "loadFailed": "제안을 불러올 수 없습니다.",

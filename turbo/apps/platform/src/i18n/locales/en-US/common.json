@@ -1520,7 +1520,6 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
-      "empty": "No suggestions right now.",
       "existingThread": "Existing conversation",
       "label": "Suggestions",
       "loadFailed": "Suggestions could not be loaded.",

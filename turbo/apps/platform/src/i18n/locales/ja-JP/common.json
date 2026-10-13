@@ -1519,7 +1519,6 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "empty": "現在、提案はありません。",
       "existingThread": "既存の会話",
       "label": "提案",
       "loadFailed": "提案を読み込めませんでした。",

@@ -48,6 +48,7 @@ import {
 } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
+import { gunzipSync } from "node:zlib";
 import {
   createHash,
   generateKeyPairSync,
@@ -2961,6 +2962,109 @@ describe("Morning Brief explicit installation", () => {
     );
     expect(saved.body.timezone).toBe("Asia/Tokyo");
   });
+});
+
+describe("Morning Brief suggestion instruction rollout", () => {
+  it.each([
+    { enabled: false, secondary: false, expected: false },
+    { enabled: true, secondary: false, expected: true },
+    { enabled: true, secondary: true, expected: false },
+  ])(
+    "scopes suggestion guidance to enabled=$enabled and secondary=$secondary scheduled runs",
+    async ({ enabled, secondary, expected }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        installCatalogStorageFixture();
+        await syncDeployedCatalog();
+        const sharedBrief = context.mocks.s3.send.mock.calls.flatMap(
+          ([command]) => {
+            if (
+              !(command instanceof PutObjectCommand) ||
+              !command.input.Key?.endsWith("/archive.tar.gz") ||
+              !(command.input.Body instanceof Uint8Array)
+            ) {
+              return [];
+            }
+            const content = gunzipSync(command.input.Body).toString("utf8");
+            return content.includes("# Morning Brief") ? [content] : [];
+          },
+        );
+        expect(sharedBrief).toHaveLength(1);
+        expect(sharedBrief[0]).not.toContain("okou suggestion");
+
+        const { actor } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Shanghai",
+        });
+        if (!actor.orgId) {
+          throw new Error("Expected an organization-scoped actor");
+        }
+        await connectBriefSource(actor);
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: enabled },
+        );
+        let workflowId: string;
+        if (secondary) {
+          await setOfficialWorkflowsEnabled(actor, true);
+          const agent = await bdd.createAgent(actor, {
+            displayName: "Secondary Brief Agent",
+            visibility: "private",
+          });
+          workflowId = await installMorningBriefFromCatalog(
+            actor,
+            agent.agentId,
+          );
+        } else {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
+          );
+          const [installation] = await listMorningBriefInstallations(actor);
+          if (!installation) {
+            throw new Error("Expected the primary Morning Brief installation");
+          }
+          workflowId = installation.id;
+        }
+        const [automation] = await readMorningBriefAutomations(
+          actor,
+          workflowId,
+        );
+        if (!automation) {
+          throw new Error("Expected a Morning Brief schedule");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        const { runId } = await fireOfficialSchedule(actor, automation);
+        const claim = await runs.claimRunnerJob(runId);
+        onTestFinished(async () => {
+          await webhooks.requestAgentComplete(
+            {
+              runId,
+              exitCode: 1,
+              error: "Morning Brief suggestion fixture cleanup",
+            },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          await flushWaitUntilForTest();
+        });
+        if (expected) {
+          expect(claim.appendSystemPrompt).toContain(
+            "Curate next-step suggestions when available",
+          );
+          expect(claim.appendSystemPrompt).toContain(
+            "okou suggestion list --json",
+          );
+        } else {
+          expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
+        }
+      });
+    },
+  );
 });
 
 describe("Official schedule expiry", () => {

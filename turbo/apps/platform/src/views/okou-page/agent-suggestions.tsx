@@ -38,13 +38,7 @@ export function AgentSuggestions() {
   }
   const items = result.data;
   if (items.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.agentSuggestions.empty;
-        })}
-      </p>
-    );
+    return null;
   }
   return (
     <section
