@@ -502,11 +502,6 @@
       "owner": "ensureOrgLimitedFreeBootstrap$/bootstrap"
     },
     {
-      "id": "TX-0219",
-      "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
-      "owner": "disableDepartedMemberAutomations$"
-    },
-    {
       "id": "TX-0220",
       "file": "turbo/apps/api/src/signals/services/org-member-cleanup.service.ts",
       "owner": "revokeOrgMemberRunAuthority"

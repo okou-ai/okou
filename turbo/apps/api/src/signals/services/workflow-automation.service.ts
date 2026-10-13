@@ -1,3 +1,4 @@
+import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import {
   connectorCatalog,
   connectorCatalogEntries,
@@ -6883,6 +6884,14 @@ const activateInactiveGoogleFormsAutomation$ = command(
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
+    const automationSnapshot = workflowAutomationSnapshot(
+      args.previousAutomation,
+    );
+    if (automationSnapshot === undefined) {
+      throw new Error(
+        "Google Forms activation requires its observed automation",
+      );
+    }
     const connectorId = await set(
       readGoogleFormsActivationAccount$,
       {
@@ -6914,6 +6923,7 @@ const activateInactiveGoogleFormsAutomation$ = command(
         connectorId: eventConfig.connectorId,
         resetAutomationId: args.previousAutomation.id,
         activation: {
+          automationSnapshot,
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,

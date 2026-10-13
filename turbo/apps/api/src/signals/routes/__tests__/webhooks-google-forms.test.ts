@@ -5,6 +5,7 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { HttpResponse, http } from "msw";
+import { Webhook } from "svix";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -23,10 +24,12 @@ import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
+import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
 
 const TEST_APP_ROUTES = Object.freeze([
   ...webhooksGoogleFormsRoutes,
@@ -401,6 +404,336 @@ async function setupGoogleFormsAutomation() {
 }
 
 describe("Google Forms Pub/Sub webhook", () => {
+  it.each([
+    "later timestamp",
+    "same timestamp",
+    "rejoin at the same timestamp",
+    "signed repeated Clerk departure at the same timestamp",
+  ])(
+    "rejects re-enable preparation that outlives the owner's membership: %s",
+    async (schedule) => {
+      const preparedAt = now();
+      mockNow(preparedAt);
+      const { actor, automationId, formsApi } =
+        await setupGoogleFormsAutomation();
+      const org = createAuthOrgAgentsBddApi(context);
+      const auditor = workflows.user({
+        orgId: actor.orgId,
+        orgRole: "org:admin",
+      });
+      const cli =
+        schedule === "rejoin at the same timestamp"
+          ? await org.createCliToken(actor)
+          : null;
+      mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+      await accept(
+        automationsClient().disable({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200],
+      );
+      const membershipId = `orgmem_${randomUUID()}`;
+      org.mockClerkOrg(auditor, {
+        members: [
+          { actor: auditor, role: "org:admin" },
+          { actor, role: "org:member", membershipId },
+        ],
+      });
+      let departed = false;
+      server.use(
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          async ({ request }) => {
+            if (new URL(request.url).searchParams.has("filter")) {
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "response-after-departure-and-rejoin",
+                    createTime: new Date(preparedAt + 10000).toISOString(),
+                    lastSubmittedTime: new Date(
+                      preparedAt + 10000,
+                    ).toISOString(),
+                    respondentEmail: "after-departure@example.test",
+                  },
+                ],
+              });
+            }
+            if (departed) {
+              return HttpResponse.json({ responses: [] });
+            }
+            departed = true;
+            // Only the external provider response overlaps real production requests.
+            // No SQL statement or private publication step is paused.
+            mockNow(preparedAt + (schedule === "later timestamp" ? 1000 : 0));
+            if (
+              schedule ===
+              "signed repeated Clerk departure at the same timestamp"
+            ) {
+              org.mockClerkOrg(auditor, {
+                members: [{ actor: auditor, role: "org:admin" }],
+              });
+              const secret = `whsec_${Buffer.from("tx0219-case-owned-clerk-provider-secret").toString("base64")}`;
+              mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
+              const verifier = new Webhook(secret);
+              context.mocks.clerk.verifyWebhook.mockImplementation(
+                async (incoming) => {
+                  if (!(incoming instanceof Request)) {
+                    throw new Error(
+                      "Expected the production Clerk webhook request",
+                    );
+                  }
+                  const payload = await incoming.text();
+                  verifier.verify(
+                    payload,
+                    Object.fromEntries(incoming.headers),
+                  );
+                  const event: unknown = JSON.parse(payload);
+                  return event;
+                },
+              );
+              const body = JSON.stringify({
+                type: "organizationMembership.deleted",
+                data: {
+                  id: membershipId,
+                  organization_id: actor.orgId,
+                  user_id: actor.userId,
+                },
+              });
+              for (let delivery = 0; delivery < 2; delivery++) {
+                const id = `msg_${randomUUID()}`;
+                const timestamp = new Date(preparedAt);
+                const response = await createApp({
+                  signal: context.signal,
+                  routes: webhooksClerkRoutes,
+                }).request("/api/webhooks/clerk", {
+                  method: "POST",
+                  body,
+                  headers: {
+                    "content-type": "application/json",
+                    "svix-id": id,
+                    "svix-timestamp": String(
+                      Math.floor(timestamp.getTime() / 1000),
+                    ),
+                    "svix-signature": verifier.sign(id, timestamp, body),
+                  },
+                });
+                expect(response.status).toBe(200);
+                await response.text();
+                await flushWaitUntilForTest();
+                await flushWaitUntilForTest();
+              }
+              mocks.clerk.session(
+                auditor.userId,
+                auditor.orgId,
+                auditor.orgRole,
+              );
+            } else {
+              await org.removeMember(auditor, { email: actor.email });
+              org.mockClerkOrg(auditor, {
+                members: [{ actor: auditor, role: "org:admin" }],
+              });
+            }
+            const afterDeparture = await workflows.readAutomation(automationId);
+            expect(afterDeparture.enabled).toBe(false);
+            if (cli) {
+              // Clerk grants a real rejoin; the existing public PAT authenticates it
+              // and repopulates the membership cache through the production route.
+              org.mockClerkOrg(auditor, {
+                members: [
+                  { actor: auditor, role: "org:admin" },
+                  {
+                    actor,
+                    role: "org:member",
+                    membershipId: `orgmem_${randomUUID()}`,
+                  },
+                ],
+              });
+              await runs.ensurePersonalSubscriptionModel(actor);
+              org.mockClerkOrg(auditor, {
+                members: [
+                  { actor: auditor, role: "org:admin" },
+                  { actor, role: "org:member" },
+                ],
+              });
+              const rejoined = await accept(
+                automationsClient().get({
+                  headers: { authorization: `Bearer ${cli.token}` },
+                  params: { id: automationId },
+                }),
+                [200],
+              );
+              expect(rejoined.body.enabled).toBe(false);
+            }
+            mockNow(preparedAt + (schedule === "later timestamp" ? 2000 : 0));
+            return HttpResponse.json({ responses: [] });
+          },
+        ),
+      );
+      mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+      const enabled = await accept(
+        automationsClient().enable({
+          headers: authHeaders(),
+          params: { id: automationId },
+        }),
+        [200, 409],
+      );
+      mocks.clerk.session(auditor.userId, auditor.orgId, auditor.orgRole);
+      const current = await workflows.readAutomation(automationId);
+      const watchId = formsApi.watchIds.at(-1);
+      if (!watchId) {
+        throw new Error("Expected the prepared Google Forms watch");
+      }
+      mockNow(preparedAt + 11000);
+      const delivered = await postWebhook(
+        formsPushBody("response-after-owner-departure", watchId),
+      );
+      expect({
+        enableStatus: enabled.status,
+        enabled: current.enabled,
+        delivered,
+      }).toEqual({
+        enableStatus: 409,
+        enabled: false,
+        delivered: {
+          status: 200,
+          body: { success: true, watchStates: 1, dispatched: 0, duplicates: 0 },
+        },
+      });
+    },
+  );
+
+  it("starts a fresh custom Forms delivery interval after departure and rejoin", async () => {
+    const preparedAt = now();
+    mockNow(preparedAt);
+    const { actor, automationId, formsApi } =
+      await setupGoogleFormsAutomation();
+    const org = createAuthOrgAgentsBddApi(context);
+    const auditor = workflows.user({
+      orgId: actor.orgId,
+      orgRole: "org:admin",
+    });
+    const cli = await org.createCliToken(actor);
+    await accept(
+      automationsClient().disable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    const enabledBeforeDeparture = await accept(
+      automationsClient().enable({
+        headers: authHeaders(),
+        params: { id: automationId },
+      }),
+      [200],
+    );
+    expect(enabledBeforeDeparture.body.enabled).toBe(true);
+    const before = await workflows.readAutomation(automationId);
+    if (
+      before.kind !== "event" ||
+      before.eventType !== "google-forms-response-submitted"
+    ) {
+      throw new Error("Expected the publicly created Forms automation");
+    }
+    org.mockClerkOrg(auditor, {
+      members: [
+        { actor: auditor, role: "org:admin" },
+        { actor, role: "org:member" },
+      ],
+    });
+    await org.removeMember(auditor, { email: actor.email });
+    org.mockClerkOrg(auditor, {
+      members: [{ actor: auditor, role: "org:admin" }],
+    });
+    const departed = await workflows.readAutomation(automationId);
+    expect(departed).toMatchObject({
+      enabled: false,
+      eventConfig: before.eventConfig,
+    });
+    org.mockClerkOrg(auditor, {
+      members: [
+        { actor: auditor, role: "org:admin" },
+        { actor, role: "org:member", membershipId: `orgmem_${randomUUID()}` },
+      ],
+    });
+    await runs.ensurePersonalSubscriptionModel(actor);
+    org.mockClerkOrg(auditor, {
+      members: [
+        { actor: auditor, role: "org:admin" },
+        { actor, role: "org:member" },
+      ],
+    });
+    const headers = { authorization: `Bearer ${cli.token}` };
+    const rejoined = await accept(
+      automationsClient().get({ headers, params: { id: automationId } }),
+      [200],
+    );
+    expect(rejoined.body.enabled).toBe(false);
+    const baseline = new Date(preparedAt + 1000).toISOString();
+    const fresh = new Date(preparedAt + 2000).toISOString();
+    server.use(
+      http.get(
+        "https://forms.googleapis.com/v1/forms/:formId/responses",
+        ({ request }) => {
+          const filter = new URL(request.url).searchParams.get("filter");
+          if (filter === null) {
+            return HttpResponse.json({
+              responses: [
+                {
+                  responseId: "submitted-while-departed",
+                  createTime: baseline,
+                  lastSubmittedTime: baseline,
+                },
+              ],
+            });
+          }
+          expect(filter).toBe(`timestamp > ${baseline}`);
+          return HttpResponse.json({
+            responses: [
+              {
+                responseId: "submitted-after-fresh-enable",
+                createTime: fresh,
+                lastSubmittedTime: fresh,
+                respondentEmail: "fresh@example.test",
+              },
+            ],
+          });
+        },
+      ),
+    );
+    mockNow(preparedAt + 1000);
+    const enabled = await accept(
+      automationsClient().enable({ headers, params: { id: automationId } }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      enabled: true,
+      eventConfig: before.eventConfig,
+    });
+    const watchId = formsApi.watchIds.at(-1);
+    if (!watchId || !enabled.body.chatThreadId) {
+      throw new Error("Expected the resumed Forms watch and chat thread");
+    }
+    mockNow(preparedAt + 3000);
+    const delivered = await postWebhook(
+      formsPushBody("fresh-after-rejoin", watchId),
+    );
+    expect(delivered).toMatchObject({ status: 200, body: { dispatched: 1 } });
+    await flushWaitUntilForTest();
+    mocks.clerk.session(actor.userId, actor.orgId, "org:member");
+    const events = await workflows.readThreadEvents(enabled.body.chatThreadId);
+    expect(
+      events
+        .filter((event) => {
+          return event.eventType === "input.automation";
+        })
+        .map(chatEventDisplayText),
+    ).toEqual([
+      `A new response from fresh@example.test was submitted to Google Form "${FORM_TITLE}".`,
+    ]);
+  });
+
   it("keeps pending responses when an already enabled automation refreshes its watch binding", async () => {
     const { automationId, chatThreadId, formsApi } =
       await setupGoogleFormsAutomation();
