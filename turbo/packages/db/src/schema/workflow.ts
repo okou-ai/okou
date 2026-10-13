@@ -235,10 +235,6 @@ export const workflowAutomations = pgTable(
         return connectors.id;
       },
     ),
-    // Migration-only storage for the retired platform completion email. The
-    // runtime mapping omits it; outgoing APIs still name it until release 3 of
-    // #39378 drops it after they drain and rollback excludes them.
-    legacyOfficialResultEmailEnabled: boolean("official_result_email_enabled"),
   },
   (table) => {
     return [
@@ -304,7 +300,6 @@ export const workflowAutomations = pgTable(
           AND ${table.officialReconciliationStatus} IS NULL
           AND ${table.officialParameterBindings} IS NULL
           AND ${table.officialIntendedEnabled} IS NULL
-          AND ${table.legacyOfficialResultEmailEnabled} IS NULL
         ) OR (
           ${table.officialBlueprintKey} IS NOT NULL
           AND ${table.officialAppliedFingerprint} ~ '^[0-9a-f]{64}$'

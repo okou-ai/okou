@@ -19,12 +19,7 @@ import type {
   WorkflowScheduleType,
 } from "../schema/workflow";
 
-/**
- * Shared physical and runtime `workflow_automations` column builders.
- *
- * The retired `official_result_email_enabled` column is declared only by the
- * physical schema, so runtime statements never name it.
- */
+/** Shared physical and runtime `workflow_automations` column builders. */
 export function workflowAutomationColumns(
   workflowId: () => AnyPgColumn,
   connectorId: () => AnyPgColumn,

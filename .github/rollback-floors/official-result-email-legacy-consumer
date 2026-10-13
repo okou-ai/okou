@@ -1,6 +1,0 @@
-The first-parent main commit that adds this marker is the minimum API rollback
-version after release 2 of the Official result-email retirement (#39378). It
-adds the bounded consumer that drains completion-email callbacks and outbox
-entries captured by draining release-1 APIs (#39524). APIs with the release-2
-retirement but without this consumer fail those callbacks and block the email
-outbox. See docs/deployment-compatibility.md.
