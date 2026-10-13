@@ -12,6 +12,14 @@ async fn ordinary_blank_needs_current_pressure_and_publishes_exact_prepared_inve
     let result = owner.ready().await;
     let prepared = result.snapshot();
     assert!(prepared.prepared && prepared.retained_resource);
+    assert_eq!(
+        owner.overrides.create_configs()[0]
+            .home_drive
+            .as_ref()
+            .unwrap()
+            .space_reserve,
+        runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE
+    );
     assert!(!prepared.retired_exact && !prepared.published);
     assert_eq!(owner.fixture.budget.allocated(), (2, 2048, 1));
     owner.publish(&result).await.unwrap();

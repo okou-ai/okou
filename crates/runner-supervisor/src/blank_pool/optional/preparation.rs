@@ -30,6 +30,7 @@ pub(super) async fn prepare(
         home_drive: Some(sandbox::HomeDriveConfig {
             size_mb: context.plan.profile.home_disk_mb,
             seed_image: None,
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
         }),
     };
     let custody = sandbox::SandboxCreateCustody::new(Arc::new(CreateCustody {
