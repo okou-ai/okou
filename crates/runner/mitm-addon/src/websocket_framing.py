@@ -7,6 +7,7 @@ private adaptation.
 
 from __future__ import annotations
 
+import time
 import zlib
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -14,9 +15,12 @@ from typing import Literal, cast
 
 import wsproto
 from mitmproxy import connection, http
-from mitmproxy.proxy import commands
+from mitmproxy.proxy import commands, layer
+from mitmproxy.proxy import events as proxy_events
 from mitmproxy.proxy.layers import websocket
+from mitmproxy.proxy.utils import expect
 from wsproto import events
+from wsproto.connection import Connection as WsprotoConnection
 from wsproto.extensions import Extension, PerMessageDeflate
 from wsproto.frame_protocol import CloseReason, FrameDecoder, FrameProtocol, Opcode, RsvBits
 
@@ -27,11 +31,14 @@ from logging_utils import log_proxy_entry
 MAX_DECODED_MESSAGE_BYTES = 256 * 1024 * 1024
 MAX_AGGREGATE_DECODED_BYTES = 1024 * 1024 * 1024
 MAX_MESSAGE_DATA_FRAMES = 8_192
+MAX_EXTENSION_NEGOTIATION_WORK_UNITS = 8_192
 
 _EMPTY_DEFLATE_BLOCK = b"\x00\x00\xff\xff"
 _CONNECTION_MARKER_ATTRIBUTE = "_bounded_websocket_framing"
+_LAYER_MARKER_ATTRIBUTE = "_bounded_websocket_negotiation"
 _MESSAGE_LIMIT_VIOLATION_ATTRIBUTE = "_websocket_message_limit_violation"
 _ORIGINAL_WEBSOCKET_CONNECTION = websocket.WebsocketConnection
+_ORIGINAL_WEBSOCKET_LAYER = websocket.WebsocketLayer
 
 _MessageLimitReason = Literal[
     "decoded_message_bytes",
@@ -493,6 +500,71 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
 setattr(_BoundedWebsocketConnection, _CONNECTION_MARKER_ATTRIBUTE, True)
 
 
+def _valid_extension_negotiation(headers: http.Headers) -> bool:
+    fields = headers.fields
+    work_units = len(fields)
+    if work_units > MAX_EXTENSION_NEGOTIATION_WORK_UNITS:
+        return False
+
+    deflate_seen = False
+    header_name = b"sec-websocket-extensions"
+    for name, value in fields:
+        if len(name) != len(header_name) or name.lower() != header_name:
+            continue
+        work_units += len(value)
+        if work_units > MAX_EXTENSION_NEGOTIATION_WORK_UNITS:
+            return False
+        # Match the pinned parser's comma/name rules without combining or
+        # decoding raw fields. Parameter negotiation remains with wsproto.
+        for extension in value.split(b","):
+            if extension.split(b";", 1)[0].strip() != b"permessage-deflate":
+                continue
+            if deflate_seen:
+                return False
+            deflate_seen = True
+    return True
+
+
+class _BoundedWebsocketLayer(_ORIGINAL_WEBSOCKET_LAYER):
+    """Validate response negotiation before mitmproxy constructs extensions."""
+
+    @expect(proxy_events.Start)
+    def start(self, event: proxy_events.Start) -> layer.CommandGenerator[None]:
+        response = self.flow.response
+        websocket_data = self.flow.websocket
+        if response is None or websocket_data is None:
+            raise RuntimeError("WebSocket startup requires an upgraded response")
+        if _valid_extension_negotiation(response.headers):
+            yield from super().start(event)
+            return
+
+        # Follow the pinned terminal lifecycle without constructing extensions
+        # or allowing invalid negotiation to reach a message hook or encoder.
+        close = events.CloseConnection(
+            code=CloseReason.PROTOCOL_ERROR,
+            reason="Invalid WebSocket extension negotiation",
+        )
+        websocket_data.timestamp_end = time.time()
+        websocket_data.closed_by_client = False
+        websocket_data.close_code = close.code
+        websocket_data.close_reason = close.reason
+        for conn, connection_type in (
+            (self.context.server, wsproto.ConnectionType.CLIENT),
+            (self.context.client, wsproto.ConnectionType.SERVER),
+        ):
+            sender = WsprotoConnection(connection_type)
+            yield commands.SendData(conn, sender.send(close))
+            yield commands.CloseConnection(conn)
+        yield websocket.WebsocketEndHook(self.flow)
+        self.flow.live = False
+        self._handle_event = lambda event: self.done(event)
+
+    _handle_event = start
+
+
+setattr(_BoundedWebsocketLayer, _LAYER_MARKER_ATTRIBUTE, True)
+
+
 def log_limit_violation(flow: http.HTTPFlow) -> None:
     """Write and consume content-free framing diagnostics for a terminal flow."""
     for direction, conn in (
@@ -534,10 +606,20 @@ def reset_aggregate_budget_for_tests() -> None:
 
 
 def install_websocket_framing() -> None:
-    """Install the pinned connection class once."""
+    """Validate both pinned shapes before installing either adaptation."""
     current_connection = websocket.WebsocketConnection
-    if hasattr(current_connection, _CONNECTION_MARKER_ATTRIBUTE):
-        return
-    if current_connection is not _ORIGINAL_WEBSOCKET_CONNECTION:
+    current_layer = websocket.WebsocketLayer
+    if (
+        not hasattr(current_connection, _CONNECTION_MARKER_ATTRIBUTE)
+        and current_connection is not _ORIGINAL_WEBSOCKET_CONNECTION
+    ):
         raise RuntimeError("mitmproxy WebsocketConnection has an incompatible shape")
-    websocket.WebsocketConnection = _BoundedWebsocketConnection
+    if (
+        not hasattr(current_layer, _LAYER_MARKER_ATTRIBUTE)
+        and current_layer is not _ORIGINAL_WEBSOCKET_LAYER
+    ):
+        raise RuntimeError("mitmproxy WebsocketLayer has an incompatible shape")
+    if not hasattr(current_connection, _CONNECTION_MARKER_ATTRIBUTE):
+        websocket.WebsocketConnection = _BoundedWebsocketConnection
+    if not hasattr(current_layer, _LAYER_MARKER_ATTRIBUTE):
+        websocket.WebsocketLayer = _BoundedWebsocketLayer

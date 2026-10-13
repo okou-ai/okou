@@ -630,8 +630,9 @@ wait for the runner rollout.
 ## WebSocket Framing Contract
 
 [`websocket_framing.py`](../../crates/runner/mitm-addon/src/websocket_framing.py)
-is a version-pinned private replacement for mitmproxy's WebSocket connection
-class. It bounds decoded data before a complete message reaches mitmproxy's
+is a version-pinned private adaptation of mitmproxy's WebSocket layer and
+connection classes. It validates extension negotiation before construction and
+bounds decoded data before a complete message reaches mitmproxy's
 WebSocket addon hooks. The [real-layer integration
 tests](../../crates/runner/mitm-addon/tests/test_mitmproxy_websocket_framing.py)
 are the executable contract for the behavior described here.
@@ -666,6 +667,24 @@ state is kept in a mutable `frame_buf` so repeated reads do not repeatedly copy
 an immutable prefix.
 
 ### Bounded permessage-deflate
+
+Before mitmproxy combines response extension headers or constructs extensions,
+the layer validates raw `Headers.fields`. Extension-negotiation work has an
+inclusive 8,192-unit limit: the total raw field count plus the bytes in all
+`Sec-WebSocket-Extensions` values. Field names are matched case-insensitively;
+supported extension names use the pinned parser's case and whitespace rules.
+A second `permessage-deflate` selection is rejected across repeated fields and
+parameter variations. Every bounded field is checked before accepting the
+negotiation; an early singleton cannot hide an invalid or over-budget suffix.
+Single-selection parameters and unknown extensions remain with mitmproxy and
+wsproto, without deduplication or parameter rewriting.
+
+Duplicate or over-budget negotiation sends code 1002 (`PROTOCOL_ERROR`) to both
+peers using extension-free wire encoders, closes both transports and invokes
+the terminal WebSocket hook. It creates no deflate instances or compressors,
+dispatches no startup/message hook, and makes the flow non-live and inert to
+later input. This local check bounds negotiation work, not upstream HTTP-head
+buffering.
 
 When permessage-deflate is negotiated, the framing adapter implements the
 public wsproto `Extension` hooks and owns its inbound compression state. It
@@ -731,16 +750,18 @@ diagnostic state without emitting a record.
 
 ### Installation and version re-audit
 
-`install_websocket_framing()` is idempotent: it returns when the marked bounded
-connection class is already installed, and rejects an unexpected unmarked
-mitmproxy connection class. `mitm_addon.load()` installs the adaptation through
+`install_websocket_framing()` validates both the layer and connection classes
+before installing either adaptation. It preserves already marked classes and
+rejects unexpected unmarked mitmproxy classes without a partial installation.
+`mitm_addon.load()` installs the adaptations through
 the [exact-version compatibility gate](../../crates/runner/mitm-addon/src/mitmproxy_compat.py)
 before registering addon options. The gate requires mitmproxy `12.2.3` and
 wsproto `1.3.2`; the [runner dependency contract](../../crates/runner/src/deps.rs)
 and the addon `pyproject.toml`/`uv.lock` keep those pins aligned.
 
 Before either dependency is upgraded, re-audit the private mitmproxy
-connection, frame-buffer and generator integration, plus the public wsproto
+layer startup/rejection lifecycle, connection, frame-buffer and generator
+integration, plus the public wsproto
 extension contract and negotiated parameter behavior described above, and
 update the compatibility gate, runner artifact metadata, Python dependency
 metadata, and this contract together. The

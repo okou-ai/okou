@@ -35,6 +35,14 @@ _HOST = "websocket.example.com"
 _PERMESSAGE_DEFLATE = "permessage-deflate"
 
 
+class _LengthOnlyExtensionValue(bytes):
+    def split(self, sep: bytes | None = None, maxsplit: int = -1) -> list[bytes]:
+        raise AssertionError("Over-budget extension value must not be split")
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        raise AssertionError("Over-budget extension value must not be decoded")
+
+
 @pytest.fixture(autouse=True)
 async def _reset_aggregate_decoded_budget() -> AsyncGenerator[None, None]:
     websocket_framing.reset_aggregate_budget_for_tests()
@@ -49,6 +57,7 @@ class _RunningWebSocket:
     flow: http.HTTPFlow
     client: connection.Client
     server: connection.Server
+    start_commands: list[commands.Command] = field(default_factory=list)
 
 
 class _ZlibDecompressor(Protocol):
@@ -144,6 +153,8 @@ async def _start_websocket(
     permessage_deflate: str | None = None,
     run_id: str | None = None,
     proxy_log_path: Path | None = None,
+    extension_fields: Sequence[tuple[bytes, bytes]] = (),
+    expect_rejection: bool = False,
 ) -> _RunningWebSocket:
     client = connection.Client(
         peername=(_CLIENT_IP, 12345),
@@ -171,6 +182,7 @@ async def _start_websocket(
     if permessage_deflate is not None:
         response_headers["Sec-WebSocket-Extensions"] = permessage_deflate
     flow.response = http.Response.make(101, headers=response_headers)
+    flow.response.headers.fields += tuple(extension_fields)
     flow.websocket = WebSocketData()
     if run_id is not None:
         flow.metadata[metadata_keys.SANDBOX_RUN_ID] = run_id
@@ -183,8 +195,10 @@ async def _start_websocket(
         client=context.client,
         server=context.server,
     )
-    start_commands = await _handle_event(addon_context, running, events.Start())
-    assert sum(isinstance(command, websocket.WebsocketStartHook) for command in start_commands) == 1
+    running.start_commands = await _handle_event(addon_context, running, events.Start())
+    assert sum(
+        isinstance(command, websocket.WebsocketStartHook) for command in running.start_commands
+    ) == (0 if expect_rejection else 1)
     return running
 
 
@@ -496,6 +510,267 @@ async def _assert_compressed_fragmented_frame_limit(
     assert running.flow.websocket.messages == []
     assert not running.flow.live
     _assert_bounded_source_state_cleared(running, from_client=from_client)
+
+
+@pytest.mark.parametrize(
+    "extension_fields",
+    [
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b"permessage-deflate, permessage-deflate"),),
+            id="same-field",
+        ),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b", ".join([b"permessage-deflate"] * 128)),),
+            id="128-selections",
+        ),
+        pytest.param(
+            (
+                (b"Sec-WebSocket-Extensions", b"permessage-deflate; client_max_window_bits=9"),
+                (b"sEc-WeBsOcKeT-eXtEnSiOnS", b"permessage-deflate; server_no_context_takeover"),
+            ),
+            id="repeated-fields-with-different-parameters",
+        ),
+        pytest.param(
+            (
+                (
+                    b"Sec-WebSocket-Extensions",
+                    b"unknown, \tpermessage-deflate ; server_max_window_bits=10,"
+                    b" permessage-deflate; client_no_context_takeover",
+                ),
+            ),
+            id="unknown-prefix-and-whitespace",
+        ),
+        pytest.param(
+            (
+                (
+                    b"Sec-WebSocket-Extensions",
+                    b"permessage-deflate; client_max_window_bits=invalid, permessage-deflate",
+                ),
+            ),
+            id="validate-cardinality-before-parameters",
+        ),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b"permessage-deflate" + b" " * 8192),),
+            id="oversized-value",
+        ),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", _LengthOnlyExtensionValue(b"\xff" * (1024 * 1024))),),
+            id="check-raw-length-before-split-or-decode",
+        ),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b"permessage-deflate" + b" " * (8189 - 18)),),
+            id="one-over-work-limit",
+        ),
+        pytest.param(
+            (
+                (b"Sec-WebSocket-Extensions", b"unknown" + b" " * 4090),
+                (b"Sec-WebSocket-Extensions", b"permessage-deflate" + b" " * 4090),
+            ),
+            id="aggregate-value-budget",
+        ),
+        pytest.param(((b"X-Unrelated", b"x"),) * 8190, id="one-over-field-limit"),
+    ],
+)
+async def test_invalid_extension_negotiation_closes_before_compressor_allocation(
+    tmp_path: Path,
+    extension_fields: Sequence[tuple[bytes, bytes]],
+) -> None:
+    original_init = wsproto.extensions.PerMessageDeflate.__init__
+    original_get = http.Headers.get
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        patch.object(
+            wsproto.extensions.PerMessageDeflate,
+            "__init__",
+            autospec=True,
+            side_effect=original_init,
+        ) as deflate_constructors,
+        patch.object(zlib, "compressobj", wraps=zlib.compressobj) as compressor_constructors,
+        patch.object(http.Headers, "get", autospec=True, side_effect=original_get) as header_get,
+    ):
+        running = await _start_websocket(
+            addon_context,
+            extension_fields=extension_fields,
+            expect_rejection=True,
+        )
+
+        assert running.flow.websocket is not None
+        assert running.flow.websocket.close_code == 1002
+        assert running.flow.websocket.closed_by_client is False
+        assert running.flow.websocket.timestamp_end is not None
+        assert running.flow.websocket.messages == []
+        assert not running.flow.live
+        assert _message_hooks(running.start_commands) == []
+        assert (
+            sum(
+                isinstance(command, websocket.WebsocketEndHook)
+                for command in running.start_commands
+            )
+            == 1
+        )
+        closes = [
+            command
+            for command in running.start_commands
+            if isinstance(command, commands.CloseConnection)
+        ]
+        assert {command.connection for command in closes} == {running.client, running.server}
+        assert _data_sends(running.start_commands) == []
+        sends = [
+            command for command in running.start_commands if isinstance(command, commands.SendData)
+        ]
+        assert len(sends) == 2
+        for send in sends:
+            receiver = _peer(from_client=send.connection is running.client)
+            receiver.receive_data(send.data)
+            received = list(receiver.events())
+            assert len(received) == 1
+            assert isinstance(received[0], wsproto.events.CloseConnection)
+            assert received[0].code == 1002
+
+        peer = _peer(from_client=False)
+        after_close = await _handle_event(
+            addon_context,
+            running,
+            events.DataReceived(running.server, peer.send(_message_event(b"x"))),
+        )
+        assert after_close == []
+        assert deflate_constructors.call_count == 0
+        assert compressor_constructors.call_count == 0
+        assert not any(
+            call.args[1].lower() == "sec-websocket-extensions" for call in header_get.call_args_list
+        )
+        assert websocket_framing._aggregate_decoded_budget.decoded_bytes == 0
+
+
+@pytest.mark.parametrize("from_client", [False, True])
+@pytest.mark.parametrize(
+    ("extension_fields", "negotiation"),
+    [
+        pytest.param((), None, id="no-extension"),
+        pytest.param(((b"X-Unrelated", b"x"),) * 8189, None, id="inclusive-field-limit"),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b"permessage-deflate" + b" " * (8188 - 18)),),
+            _PERMESSAGE_DEFLATE,
+            id="inclusive-work-limit",
+        ),
+        pytest.param(((b"Sec-WebSocket-Extensions", b"unknown"),), None, id="unknown-extension"),
+        pytest.param(
+            (
+                (b"Sec-WebSocket-Extensions", b"permessage-deflate-other, PerMessage-Deflate"),
+                (
+                    b"sEc-WeBsOcKeT-eXtEnSiOnS",
+                    b" \tpermessage-deflate; client_max_window_bits=9; server_max_window_bits=12;"
+                    b" client_no_context_takeover; server_no_context_takeover \t",
+                ),
+            ),
+            "permessage-deflate; client_max_window_bits=9; server_max_window_bits=12;"
+            " client_no_context_takeover; server_no_context_takeover",
+            id="single-with-parameters-across-unknown-fields",
+        ),
+    ],
+)
+async def test_valid_extension_negotiation_preserves_forwarding_at_work_limit(
+    tmp_path: Path,
+    extension_fields: Sequence[tuple[bytes, bytes]],
+    negotiation: str | None,
+    *,
+    from_client: bool,
+) -> None:
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+    ):
+        running = await _start_websocket(addon_context, extension_fields=extension_fields)
+        sender = _peer(from_client=from_client, permessage_deflate=negotiation)
+        receiver = _peer(from_client=not from_client, permessage_deflate=negotiation)
+        observed = await _handle_event(
+            addon_context,
+            running,
+            events.DataReceived(
+                _source_connection(running, from_client=from_client),
+                sender.send(_message_event(b"valid payload")),
+            ),
+        )
+        for send in _data_sends(observed):
+            assert send.connection is (running.server if from_client else running.client)
+            receiver.receive_data(send.data)
+        messages = list(receiver.events())
+        assert len(messages) == 1
+        assert isinstance(messages[0], wsproto.events.BytesMessage)
+        assert messages[0].data == b"valid payload"
+        assert messages[0].message_finished
+        assert len(_message_hooks(observed)) == 1
+        assert running.flow.websocket is not None
+        assert running.flow.websocket.timestamp_end is None
+        await _handle_event(
+            addon_context,
+            running,
+            events.DataReceived(
+                _source_connection(running, from_client=from_client),
+                sender.send(wsproto.events.CloseConnection(code=1000)),
+            ),
+        )
+
+
+@pytest.mark.parametrize("incompatible_symbol", ["WebsocketConnection", "WebsocketLayer"])
+def test_install_websocket_framing_checks_both_shapes_before_mutating(
+    monkeypatch: pytest.MonkeyPatch,
+    incompatible_symbol: str,
+) -> None:
+    class IncompatibleWebsocketShape:
+        pass
+
+    monkeypatch.setattr(
+        websocket, "WebsocketConnection", websocket_framing._ORIGINAL_WEBSOCKET_CONNECTION
+    )
+    monkeypatch.setattr(websocket, "WebsocketLayer", websocket_framing._ORIGINAL_WEBSOCKET_LAYER)
+    monkeypatch.setattr(websocket, incompatible_symbol, IncompatibleWebsocketShape)
+    connection_before = websocket.WebsocketConnection
+    layer_before = websocket.WebsocketLayer
+
+    with pytest.raises(
+        RuntimeError, match=f"mitmproxy {incompatible_symbol} has an incompatible shape"
+    ):
+        websocket_framing.install_websocket_framing()
+
+    assert websocket.WebsocketConnection is connection_before
+    assert websocket.WebsocketLayer is layer_before
+
+
+def test_install_websocket_framing_preserves_marked_layer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MarkedWebsocketLayer:
+        pass
+
+    setattr(MarkedWebsocketLayer, websocket_framing._LAYER_MARKER_ATTRIBUTE, True)
+    monkeypatch.setattr(websocket, "WebsocketLayer", MarkedWebsocketLayer)
+    connection_before = websocket.WebsocketConnection
+
+    websocket_framing.install_websocket_framing()
+
+    assert websocket.WebsocketLayer is MarkedWebsocketLayer
+    assert websocket.WebsocketConnection is connection_before
+
+
+def test_install_websocket_framing_is_idempotent_for_both_shapes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        websocket, "WebsocketConnection", websocket_framing._ORIGINAL_WEBSOCKET_CONNECTION
+    )
+    monkeypatch.setattr(websocket, "WebsocketLayer", websocket_framing._ORIGINAL_WEBSOCKET_LAYER)
+
+    websocket_framing.install_websocket_framing()
+    connection_once = websocket.WebsocketConnection
+    layer_once = websocket.WebsocketLayer
+    websocket_framing.install_websocket_framing()
+
+    assert connection_once is websocket_framing._BoundedWebsocketConnection
+    assert layer_once is websocket_framing._BoundedWebsocketLayer
+    assert websocket.WebsocketConnection is connection_once
+    assert websocket.WebsocketLayer is layer_once
 
 
 # Only process composition can introduce a conflicting connection class; no
