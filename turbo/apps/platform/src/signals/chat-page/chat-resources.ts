@@ -75,21 +75,23 @@ export interface ChatResourceLink {
   readonly title: string;
 }
 
-function messageLinks(content: string): ChatResourceLink[] {
+async function messageLinks(content: string): Promise<ChatResourceLink[]> {
   const links: ChatResourceLink[] = [];
-  marked.walkTokens(marked.lexer(content), (token) => {
-    if (token.type !== "link" || !URL.canParse(token.href)) {
-      return;
-    }
-    const parsed = new URL(token.href);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return;
-    }
-    links.push({
-      url: token.href,
-      title: token.text.trim() || parsed.hostname,
-    });
-  });
+  await Promise.all(
+    marked.walkTokens(marked.lexer(content), (token) => {
+      if (token.type !== "link" || !URL.canParse(token.href)) {
+        return;
+      }
+      const parsed = new URL(token.href);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return;
+      }
+      links.push({
+        url: token.href,
+        title: token.text.trim() || parsed.hostname,
+      });
+    }),
+  );
   return links;
 }
 
@@ -159,7 +161,7 @@ function createChatResourceContentSignals(
             : "userMessage" in event
               ? messageDocumentToDisplayText(event.userMessage)
               : "";
-        for (const link of messageLinks(text ?? "")) {
+        for (const link of await messageLinks(text ?? "")) {
           const key = publicAttachmentUrl(link.url);
           if (!seen.has(key)) {
             seen.add(key);
