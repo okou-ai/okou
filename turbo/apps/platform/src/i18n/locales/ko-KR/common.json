@@ -5450,6 +5450,26 @@
     "cancel": "취소",
     "close": "닫기",
     "configured": "구성됨",
+    "connectionStatus": {
+      "loading": "연결 기록을 불러오는 중…",
+      "observedAt": "기록 시각 {{time}}",
+      "reasons": {
+        "authentication_failed": "인증 또는 서버 신원 확인에 실패했습니다.",
+        "disconnected": "연결 시도 중 서버가 연결을 끊었습니다.",
+        "invalid_credential": "저장된 자격 증명을 사용할 수 없습니다.",
+        "kerberos_expired": "Kerberos 자격 증명이 만료되었습니다.",
+        "kerberos_non_renewable": "Kerberos 자격 증명을 갱신할 수 없습니다.",
+        "kerberos_renewal_exhausted": "Kerberos 자격 증명의 갱신 한도에 도달했습니다.",
+        "network_failure": "연결 전송에 실패했습니다.",
+        "protocol": "서버가 선택한 연결 프로토콜을 완료하지 못했습니다.",
+        "timed_out": "연결 시도 시간이 초과되었습니다.",
+        "unsafe_destination": "네트워크 정책에 의해 대상이 거부되었습니다.",
+        "unsupported_profile": "서버가 선택한 보안 프로필을 지원하지 않습니다."
+      },
+      "succeeded": "최근 기록된 연결 시도가 성공했습니다.",
+      "unavailable": "연결 기록을 사용할 수 없습니다.",
+      "unobserved": "이 설정에 대한 연결 시도 기록이 없습니다."
+    },
     "credential": {
       "add": "자격 증명 추가",
       "appleDhFieldHelp": "각 항목은 UTF-8 기준 1~63바이트여야 합니다. NUL은 허용되지 않습니다.",

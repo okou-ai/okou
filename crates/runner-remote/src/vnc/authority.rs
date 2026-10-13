@@ -774,6 +774,71 @@ mod apple_rsa_srp_tests {
 }
 
 impl Authority {
+    pub(super) async fn observe(
+        &self,
+        run: RunId,
+        connection: Uuid,
+        observation: super::observation::Observation,
+    ) {
+        let transport = |route| match route {
+            Transport::Direct => ObservationRequestExpectedTransport::Direct,
+            Transport::Ssh {
+                connection,
+                generation,
+            } => ObservationRequestExpectedTransport::Ssh {
+                connection_id: connection.to_string(),
+                generation,
+            },
+        };
+        let request = ObservationRequest {
+            connection_id: connection.to_string(),
+            runner_identity: ObservationRequestRunnerIdentity {
+                runner_id: self.identity.runner_id().to_string(),
+                heartbeat_generation: self.identity.heartbeat_generation() as i64,
+            },
+            expected_generation: observation.attempt.generation,
+            expected_transport: transport(observation.attempt.transport),
+            expected_credential_revision: observation
+                .attempt
+                .kerberos
+                .map(|binding| binding.revision),
+            expected_kdc_transport: observation
+                .attempt
+                .kerberos
+                .and_then(|binding| binding.kdc)
+                .map(|route| match route {
+                    Transport::Direct => ObservationRequestExpectedKdcTransport::Direct,
+                    Transport::Ssh {
+                        connection,
+                        generation,
+                    } => ObservationRequestExpectedKdcTransport::Ssh {
+                        connection_id: connection.to_string(),
+                        generation,
+                    },
+                }),
+            observed_at: observation
+                .observed_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            failure_reason: observation.failure,
+        };
+        let report = async {
+            let body = serde_json::to_value(request).ok()?;
+            let request = self
+                .http
+                .json_request(
+                    routes::observations::route(routes::observations::Params {
+                        run_id: &run.to_string(),
+                    }),
+                    &self.token,
+                    &body,
+                )
+                .ok()?;
+            self.transport.execute(request).await.ok().map(|_| ())
+        };
+        // An old API's missing route and reporting outages never change connection results.
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), report).await;
+    }
+
     pub(super) fn new(
         http: HttpClient,
         token: String,

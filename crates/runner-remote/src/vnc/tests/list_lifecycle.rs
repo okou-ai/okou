@@ -32,6 +32,10 @@ impl PendingList {
         for _ in 0..2 {
             actions.push(RawHttpAction::Respond(resolved.clone()));
             actions.push(valid());
+            actions.push(RawHttpAction::Respond(json_response(
+                "200 OK",
+                r#"{"outcome":"recorded"}"#,
+            )));
         }
         actions.push(gate);
         actions.extend((0..subsequent_checks).map(|_| valid()));
@@ -51,6 +55,10 @@ impl PendingList {
             mode(&h, 1).await;
             server.next_request("resolve before session start").await;
             server.next_request("check after session start").await;
+            let report = server
+                .next_request("connection observation after session start")
+                .await;
+            assert!(report.contains("/vnc/observations "));
         }
         let mut guest = h.run.open().await;
         send(

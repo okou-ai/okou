@@ -5450,6 +5450,26 @@
     "cancel": "キャンセル",
     "close": "閉じる",
     "configured": "設定済み",
+    "connectionStatus": {
+      "loading": "接続記録を読み込み中…",
+      "observedAt": "記録日時 {{time}}",
+      "reasons": {
+        "authentication_failed": "認証またはサーバーの識別情報の検証に失敗しました。",
+        "disconnected": "接続試行中にサーバーが切断しました。",
+        "invalid_credential": "保存済みの認証情報を使用できませんでした。",
+        "kerberos_expired": "Kerberos 認証情報の有効期限が切れました。",
+        "kerberos_non_renewable": "Kerberos 認証情報を更新できません。",
+        "kerberos_renewal_exhausted": "Kerberos 認証情報の更新上限に達しました。",
+        "network_failure": "接続の通信に失敗しました。",
+        "protocol": "サーバーが選択した接続プロトコルを完了しませんでした。",
+        "timed_out": "接続試行がタイムアウトしました。",
+        "unsafe_destination": "ネットワークポリシーにより接続先が拒否されました。",
+        "unsupported_profile": "サーバーは選択したセキュリティ設定に対応していません。"
+      },
+      "succeeded": "最後に記録された接続試行は成功しました。",
+      "unavailable": "接続記録を利用できません。",
+      "unobserved": "この設定での接続試行はまだ記録されていません。"
+    },
     "credential": {
       "add": "認証情報を追加",
       "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",

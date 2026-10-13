@@ -21,6 +21,7 @@ import {
   installedSharedDatabaseBridge$,
 } from "./shared-database-bridge-state.ts";
 import { subscribeSshChanged$ } from "./ssh.ts";
+import { subscribeVncObservations$ } from "./vnc.ts";
 import { detach, Reason, waitForOperation } from "./utils.ts";
 
 const runAppRealtimeDaemons$ = command(
@@ -44,6 +45,7 @@ const runAppRealtimeDaemons$ = command(
     set(subscribeAgentConnectorAccess$, signal);
     set(subscribeCustomTemplatesChanged$, signal);
     set(subscribeSshChanged$, signal);
+    set(subscribeVncObservations$, signal);
     set(subscribeCloudflareAccessChanged$, signal);
     set(subscribeTailscaleChanged$, signal);
   },

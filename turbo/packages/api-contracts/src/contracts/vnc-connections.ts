@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { vncConnectionObservationSchema } from "./vnc-connection-observations";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import {
@@ -232,6 +233,18 @@ const errors = {
 };
 
 export const vncConnectionsContract = c.router({
+  observations: {
+    method: "GET",
+    path: "/api/vnc/connections/observations",
+    headers: authHeadersSchema,
+    responses: {
+      200: z
+        .object({ observations: z.array(vncConnectionObservationSchema) })
+        .strict(),
+      ...errors,
+    },
+    summary: "Read the owner's latest VNC connection observations",
+  },
   inspectRsaKey: {
     method: "POST",
     path: "/api/vnc/rsa-key-pin",

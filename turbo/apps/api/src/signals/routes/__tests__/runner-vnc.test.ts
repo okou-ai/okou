@@ -7,6 +7,7 @@ import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners
 import {
   runnerVncContract,
   type RunnerVncCheckRequest,
+  type RunnerVncObservationRequest,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -200,6 +201,323 @@ describe("private Runner VNC authority", () => {
       credentialId: requireVncCredentialId(connection.body),
     };
   }
+
+  async function observe(
+    f: VncRuntimeFixture,
+    overrides: Partial<RunnerVncObservationRequest> = {},
+  ) {
+    return (
+      await accept(
+        api.runner().observe({
+          headers: vncRunnerHeaders,
+          params: { runId: f.runId },
+          body: {
+            connectionId: f.connectionId,
+            runnerIdentity: f.runnerIdentity,
+            expectedGeneration: 1,
+            expectedTransport: { type: "direct" },
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+            ...overrides,
+          },
+        }),
+        [200],
+      )
+    ).body;
+  }
+
+  async function observations(f: Pick<VncRuntimeFixture, "orgId" | "userId">) {
+    api.authenticate(f);
+    const result = await accept(
+      api.connections().observations({ headers: vncSessionHeaders }),
+      [200],
+    );
+    expect(result.headers.get("cache-control")).toBe("no-store");
+    return result.body.observations;
+  }
+
+  it("records bounded owner evidence, recovers and ignores reordered, duplicate and future VNC observations", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+    await expect(observations(f)).resolves.toStrictEqual([
+      {
+        connectionId: f.connectionId,
+        generation: 1,
+        observedAt: "2026-10-14T00:00:00.000Z",
+        failureReason: "authentication_failed",
+      },
+    ]);
+    await expect(
+      observe(f, {
+        observedAt: "2026-10-14T00:03:00.000Z",
+      }),
+    ).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(
+      observe(f, {
+        runnerIdentity: { ...f.runnerIdentity, runnerId: randomUUID() },
+      }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(
+      observe(f, {
+        runnerIdentity: {
+          ...f.runnerIdentity,
+          heartbeatGeneration: f.runnerIdentity.heartbeatGeneration + 1,
+        },
+      }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    await Promise.all([
+      observe(f, {
+        observedAt: "2026-10-14T00:00:10.000Z",
+        failureReason: "network_failure",
+      }),
+      observe(f, {
+        observedAt: "2026-10-14T00:00:20.000Z",
+        failureReason: null,
+      }),
+    ]);
+    await expect(observations(f)).resolves.toStrictEqual([
+      {
+        connectionId: f.connectionId,
+        generation: 1,
+        observedAt: "2026-10-14T00:00:20.000Z",
+        failureReason: null,
+      },
+    ]);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(
+      observe(f, { observedAt: "2026-10-14T00:00:20.000Z" }),
+    ).resolves.toStrictEqual({ outcome: "ignored" });
+    expect((await observations(f))[0]?.failureReason).toBeNull();
+  });
+
+  it("isolates VNC observations by owner, configuration generation and deletion", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    const other = await claimedFixture();
+    api.authenticate(f);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+    await expect(observations(other)).resolves.toStrictEqual([]);
+    await expect(
+      observe(other, { connectionId: f.connectionId }),
+    ).resolves.toStrictEqual({ outcome: "unavailable" });
+    api.authenticate(f);
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 1, displayName: "Updated desktop" },
+      }),
+      [200],
+    );
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
+      outcome: "recorded",
+    });
+    expect((await observations(f))[0]?.generation).toBe(2);
+    await accept(
+      api.connections().delete({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 2 },
+      }),
+      [204],
+    );
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(observe(f, { expectedGeneration: 2 })).resolves.toStrictEqual({
+      outcome: "unavailable",
+    });
+  });
+
+  it("rejects secret-bearing and non-connection observation payloads without reflecting their values", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    for (const invalid of [
+      { failureReason: "sensitive-secret-provider-error" },
+      { failureReason: "cancelled" },
+      { failureReason: "stale_geometry" },
+      { observedAt: "invalid" },
+      { password: "sensitive-secret-provider-error" },
+    ]) {
+      const response = await setupRawAppRequest({
+        context,
+        routes: runnerVncRoutes,
+      })(`/api/runners/runs/${f.runId}/vnc/observations`, {
+        method: "POST",
+        headers: { ...vncRunnerHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          expectedGeneration: 1,
+          expectedTransport: { type: "direct" },
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: null,
+          ...invalid,
+        }),
+      });
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(response.body)).not.toContain(
+        "sensitive-secret-provider-error",
+      );
+    }
+    await expect(observations(f)).resolves.toStrictEqual([]);
+  });
+
+  it.each(["rfb", "kdc"] as const)(
+    "hides old %s carrier evidence and accepts its successor despite clock skew",
+    async (route) => {
+      mockNow(new Date("2026-10-14T00:00:30.000Z"));
+      const f = await claimedFixture();
+      const sshApi = setupApp({ context, routes: sshConnectionsRoutes })(
+        sshConnectionsContract,
+      );
+      const ssh = await accept(
+        sshApi.create({
+          headers: vncSessionHeaders,
+          body: {
+            id: randomUUID(),
+            displayName: "Diagnostic carrier",
+            host: "gateway.example.com",
+            credential: inlineSshKey("deploy", "private-key"),
+          },
+        }),
+        [201],
+      );
+      await api.enableDefault(f, "ssh", ssh.body.id);
+      const carrier = {
+        type: "ssh" as const,
+        connectionId: ssh.body.id,
+        generation: 1,
+      };
+      if (route === "rfb") {
+        await accept(
+          api.connections().update({
+            headers: vncSessionHeaders,
+            params: { connectionId: f.connectionId },
+            body: {
+              expectedGeneration: 1,
+              transport: { type: "ssh", connectionId: ssh.body.id },
+            },
+          }),
+          [200],
+        );
+      } else {
+        const initiator = { realm: "EXAMPLE.INVALID", components: ["alice"] };
+        await accept(
+          api.connections().update({
+            headers: vncSessionHeaders,
+            params: { connectionId: f.connectionId },
+            body: {
+              expectedGeneration: 1,
+              security: {
+                type: "qemu_x509_gssapi",
+                trust: { mode: "system" },
+                service: {
+                  realm: initiator.realm,
+                  components: ["vnc", "desktop.example.com"],
+                },
+                kdc: {
+                  host: "127.0.0.1",
+                  port: 88,
+                  transport: { type: "ssh", connectionId: ssh.body.id },
+                  ticketLifetimeSeconds: 1200,
+                  renewableLifetimeSeconds: 7200,
+                },
+              },
+              credential: {
+                create: {
+                  name: "Diagnostic source",
+                  authentication: {
+                    method: "qemu_kerberos_password",
+                    initiator,
+                    password: "synthetic exact source",
+                  },
+                },
+              },
+            },
+          }),
+          [200],
+        );
+      }
+      const binding =
+        route === "rfb"
+          ? { expectedTransport: carrier }
+          : {
+              expectedTransport: { type: "direct" as const },
+              expectedCredentialRevision: 1,
+              expectedKdcTransport: carrier,
+            };
+      await expect(
+        observe(f, {
+          expectedGeneration: 2,
+          observedAt: "2026-10-14T00:00:20.000Z",
+          ...binding,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+      await expect(observations(f)).resolves.toHaveLength(1);
+      await accept(
+        sshApi.update({
+          headers: vncSessionHeaders,
+          params: { connectionId: ssh.body.id },
+          body: { expectedGeneration: 1, host: "rotated-gateway.example.com" },
+        }),
+        [200],
+      );
+      const currentHosts = await accept(
+        api.connections().list({ headers: vncSessionHeaders }),
+        [200],
+      );
+      expect(
+        currentHosts.body.connections.find((item) => {
+          return item.id === f.connectionId;
+        })?.generation,
+      ).toBe(2);
+      await expect(observations(f)).resolves.toStrictEqual([]);
+      await expect(
+        observe(f, { expectedGeneration: 2, ...binding }),
+      ).resolves.toStrictEqual({ outcome: "ignored" });
+      const successor = { ...carrier, generation: 2 };
+      const updatedBinding =
+        route === "rfb"
+          ? { expectedTransport: successor }
+          : {
+              expectedTransport: { type: "direct" as const },
+              expectedCredentialRevision: 1,
+              expectedKdcTransport: successor,
+            };
+      await expect(
+        observe(f, {
+          expectedGeneration: 2,
+          observedAt: "2026-10-14T00:00:10.000Z",
+          failureReason: null,
+          ...updatedBinding,
+        }),
+      ).resolves.toStrictEqual({ outcome: "recorded" });
+      await expect(observations(f)).resolves.toStrictEqual([
+        {
+          connectionId: f.connectionId,
+          generation: 2,
+          observedAt: "2026-10-14T00:00:10.000Z",
+          failureReason: null,
+        },
+      ]);
+    },
+  );
+
+  it("does not record VNC evidence after chat authority is revoked or membership is lost", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    await api.setDefault(f, "vnc", f.connectionId, false);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await api.setDefault(f, "vnc", f.connectionId, true);
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      { data: [], totalCount: 0 },
+    );
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "unavailable" });
+  });
 
   it("admits exact online Kerberos capabilities before KMS and independently fences source revision and KDC route", async () => {
     const f = await claimedFixture();

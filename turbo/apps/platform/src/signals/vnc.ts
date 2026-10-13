@@ -30,6 +30,8 @@ import {
   canonicalKerberosTicket,
 } from "@okouai/api-contracts/contracts/vnc-kerberos-format";
 import { now } from "../lib/time.ts";
+import { vncObservationChangedPayloadSchema } from "@okouai/api-contracts/contracts/vnc-connection-observations";
+import { setAblyPayloadLoop$ } from "./realtime.ts";
 import {
   isVncRsaAesSecurityType,
   isVncRsaAesAuthenticationOnly,
@@ -41,7 +43,12 @@ import {
   type RsaAesProfile,
 } from "./vnc-rsa-aes.ts";
 import { accept } from "../lib/accept.ts";
-import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
+import {
+  authenticatedSessionKey$,
+  clerk$,
+  currentOrgInfo$,
+  user$,
+} from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
@@ -98,6 +105,7 @@ export const vncClients$ = computed(async (get) => {
 });
 
 const reload$ = state(0);
+const observationsReload$ = state(0);
 export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
@@ -122,6 +130,60 @@ export const vncConnections$ = computed(async (get) => {
   );
   return result.status === 200 ? result.body.connections : null;
 });
+
+export const vncObservationsSnapshot$ = computed(async (get) => {
+  get(reload$);
+  get(observationsReload$);
+  const identity = await get(vncIdentity$);
+  if (!identity) {
+    return { identity, observations: null };
+  }
+  const result = await accept(
+    (await get(vncClients$)).connections.observations(),
+    [200, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  return {
+    identity,
+    observations: result.status === 200 ? result.body.observations : null,
+  };
+});
+
+export const invalidateVncObservations$ = command(({ set }) => {
+  set(observationsReload$, (value) => {
+    return value + 1;
+  });
+  return false;
+});
+const onVncObservationChanged$ = command(
+  async ({ get, set }, payload: unknown, signal: AbortSignal) => {
+    const parsed = vncObservationChangedPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return false;
+    }
+    const org = await get(currentOrgInfo$);
+    signal.throwIfAborted();
+    if (org?.id === parsed.data.orgId) {
+      set(invalidateVncObservations$);
+    }
+    return false;
+  },
+);
+export const subscribeVncObservations$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "vnc:observations-changed",
+        loopCommand$: onVncObservationChanged$,
+        initializeCommand$: invalidateVncObservations$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  },
+);
 
 export const vncCredentials$ = computed(async (get) => {
   get(reload$);

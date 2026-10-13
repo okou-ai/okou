@@ -4,6 +4,7 @@ mod harness;
 mod list;
 mod list_lifecycle;
 mod notifications;
+mod observations;
 pub(crate) mod peer;
 mod rsa_aes;
 

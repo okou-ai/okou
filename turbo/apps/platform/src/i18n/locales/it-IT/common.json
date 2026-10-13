@@ -5552,6 +5552,26 @@
     "cancel": "Annulla",
     "close": "Chiudi",
     "configured": "Configurato",
+    "connectionStatus": {
+      "loading": "Caricamento delle osservazioni di connessione…",
+      "observedAt": "Osservato {{time}}",
+      "reasons": {
+        "authentication_failed": "Autenticazione o verifica dell’identità del server non riuscita.",
+        "disconnected": "Il server si è disconnesso durante il tentativo di connessione.",
+        "invalid_credential": "Impossibile utilizzare la credenziale salvata.",
+        "kerberos_expired": "La credenziale Kerberos è scaduta.",
+        "kerberos_non_renewable": "La credenziale Kerberos non può essere rinnovata.",
+        "kerberos_renewal_exhausted": "È stato raggiunto il limite di rinnovo della credenziale Kerberos.",
+        "network_failure": "Il trasporto della connessione non è riuscito.",
+        "protocol": "Il server non ha completato il protocollo di connessione selezionato.",
+        "timed_out": "Il tentativo di connessione è scaduto.",
+        "unsafe_destination": "La destinazione è stata rifiutata dalla politica di rete.",
+        "unsupported_profile": "Il server non supporta il profilo di sicurezza selezionato."
+      },
+      "succeeded": "L’ultimo tentativo di connessione registrato è riuscito.",
+      "unavailable": "Le osservazioni di connessione non sono disponibili.",
+      "unobserved": "Nessun tentativo di connessione registrato per questa configurazione."
+    },
     "credential": {
       "add": "Aggiungi credenziali",
       "appleDhFieldHelp": "Ogni campo deve contenere da 1 a 63 byte UTF-8. NUL non è consentito.",

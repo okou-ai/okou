@@ -4,6 +4,7 @@ mod authority;
 mod invalidation;
 mod kerberos;
 mod network;
+mod observation;
 mod operations;
 mod protocol;
 mod scope;
@@ -137,6 +138,7 @@ pub struct VncRuntime {
     network: Arc<dyn Network>,
     capacity: Arc<Semaphore>,
     runs: Mutex<HashMap<RunId, Weak<Run>>>,
+    reports: Arc<Semaphore>,
 }
 
 impl VncRuntime {
@@ -157,6 +159,7 @@ impl VncRuntime {
             network: Arc::new(PublicNetwork),
             capacity: Arc::new(Semaphore::new(4)),
             runs: Mutex::new(HashMap::new()),
+            reports: Arc::new(Semaphore::new(4)),
         })))
     }
 

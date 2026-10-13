@@ -5450,6 +5450,26 @@
     "cancel": "取消",
     "close": "关闭",
     "configured": "已配置",
+    "connectionStatus": {
+      "loading": "正在加载连接记录…",
+      "observedAt": "记录于 {{time}}",
+      "reasons": {
+        "authentication_failed": "身份验证或服务器身份校验失败。",
+        "disconnected": "服务器在连接尝试期间断开。",
+        "invalid_credential": "无法使用已保存的凭证。",
+        "kerberos_expired": "Kerberos 凭证已过期。",
+        "kerberos_non_renewable": "Kerberos 凭证无法续期。",
+        "kerberos_renewal_exhausted": "Kerberos 凭证已达到续期上限。",
+        "network_failure": "连接传输失败。",
+        "protocol": "服务器未完成所选连接协议。",
+        "timed_out": "连接尝试超时。",
+        "unsafe_destination": "网络策略拒绝了目标地址。",
+        "unsupported_profile": "服务器不支持所选安全配置。"
+      },
+      "succeeded": "最近一次有记录的连接尝试成功。",
+      "unavailable": "连接记录暂不可用。",
+      "unobserved": "此配置尚无连接尝试记录。"
+    },
     "credential": {
       "add": "添加凭据",
       "appleDhFieldHelp": "每项 1–63 个 UTF-8 字节，不允许 NUL 字符。",

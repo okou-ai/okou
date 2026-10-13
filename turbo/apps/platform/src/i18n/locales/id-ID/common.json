@@ -5450,6 +5450,26 @@
     "cancel": "Batal",
     "close": "Tutup",
     "configured": "Terkonfigurasi",
+    "connectionStatus": {
+      "loading": "Memuat catatan koneksi…",
+      "observedAt": "Diamati {{time}}",
+      "reasons": {
+        "authentication_failed": "Autentikasi atau verifikasi identitas server gagal.",
+        "disconnected": "Server terputus selama percobaan koneksi.",
+        "invalid_credential": "Kredensial tersimpan tidak dapat digunakan.",
+        "kerberos_expired": "Kredensial Kerberos telah kedaluwarsa.",
+        "kerberos_non_renewable": "Kredensial Kerberos tidak dapat diperbarui.",
+        "kerberos_renewal_exhausted": "Batas pembaruan kredensial Kerberos telah tercapai.",
+        "network_failure": "Transport koneksi gagal.",
+        "protocol": "Server tidak menyelesaikan protokol koneksi yang dipilih.",
+        "timed_out": "Percobaan koneksi kehabisan waktu.",
+        "unsafe_destination": "Tujuan ditolak oleh kebijakan jaringan.",
+        "unsupported_profile": "Server tidak mendukung profil keamanan yang dipilih."
+      },
+      "succeeded": "Percobaan koneksi terakhir yang tercatat berhasil.",
+      "unavailable": "Catatan koneksi tidak tersedia.",
+      "unobserved": "Belum ada percobaan koneksi yang tercatat untuk konfigurasi ini."
+    },
     "credential": {
       "add": "Tambah kredensial",
       "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
