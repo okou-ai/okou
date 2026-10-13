@@ -355,7 +355,7 @@ impl Drop for PreparedCowSlot {
             path = %self.workspace.display(),
             "prepared COW slot dropped without explicit checkout or cleanup; starting cleanup"
         );
-        drop(runtime.spawn(run_prepared_slot_cleanup(self.take_cleanup())));
+        drop(runtime.spawn(run_prepared_slot_cleanup(self.take_cleanup(), None)));
     }
 }
 
@@ -441,9 +441,25 @@ pub(super) fn destroy_slot_async(slot: PrewarmedSlot) -> impl std::future::Futur
 /// tells that owner whether the device lifecycle makes target files safe to
 /// delete.
 pub(crate) fn destroy_prepared_slot_async(
-    mut slot: PreparedCowSlot,
+    slot: PreparedCowSlot,
 ) -> impl std::future::Future<Output = CowCleanupOutcome> {
-    let teardown = tokio::spawn(run_prepared_slot_cleanup(slot.take_cleanup()));
+    start_prepared_slot_cleanup(slot, None)
+}
+
+/// Creation rollback custody belongs to the eager physical producer, not to
+/// its completion observer. Accepted blocking removal retains it separately.
+pub(crate) fn destroy_prepared_slot_with_custody_async(
+    slot: PreparedCowSlot,
+    custody: sandbox::SandboxCreateCustody,
+) -> impl std::future::Future<Output = CowCleanupOutcome> {
+    start_prepared_slot_cleanup(slot, Some(custody))
+}
+
+fn start_prepared_slot_cleanup(
+    mut slot: PreparedCowSlot,
+    custody: Option<sandbox::SandboxCreateCustody>,
+) -> impl std::future::Future<Output = CowCleanupOutcome> {
+    let teardown = tokio::spawn(run_prepared_slot_cleanup(slot.take_cleanup(), custody));
 
     async move {
         match teardown.await {
@@ -456,7 +472,11 @@ pub(crate) fn destroy_prepared_slot_async(
     }
 }
 
-async fn run_prepared_slot_cleanup(slot: PreparedCowSlotCleanup) -> CowCleanupOutcome {
+async fn run_prepared_slot_cleanup(
+    slot: PreparedCowSlotCleanup,
+    custody: Option<sandbox::SandboxCreateCustody>,
+) -> CowCleanupOutcome {
+    let _custody = custody.clone();
     let PreparedCowSlotCleanup {
         id,
         workspace,
@@ -474,7 +494,11 @@ async fn run_prepared_slot_cleanup(slot: PreparedCowSlotCleanup) -> CowCleanupOu
 
     if outcome.backing_files_safe_to_delete() {
         if let Some(cleanup) = cleanup {
-            let removed = tokio::task::spawn_blocking(move || cleanup.remove_best_effort()).await;
+            let removed = tokio::task::spawn_blocking(move || {
+                let _custody = custody;
+                cleanup.remove_best_effort()
+            })
+            .await;
             match removed {
                 Ok(removed_workspace) => {
                     #[cfg(test)]
