@@ -1177,7 +1177,7 @@ async fn execute_inner_nonzero_with_stderr_and_guest_error_skips_bootstrap_diagn
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_wait_process_exit(ProcessExit::new(1, 7, Vec::new(), b"guest stderr".to_vec()));
     overrides.push_read_file_result(Ok(None));
-    overrides.push_read_file_result(Ok(Some(b"guest checkpoint error".to_vec())));
+    overrides.push_read_file_result(Ok(Some(b"guest transcript error".to_vec())));
     let factory = sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides));
 
     let (result, events) = capture_async_events(run_new_sandbox_status(

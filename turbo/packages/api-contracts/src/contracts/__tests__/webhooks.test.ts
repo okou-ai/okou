@@ -681,7 +681,7 @@ function manifestFile(path: string) {
 }
 
 describe("storage webhook manifest limits", () => {
-  it("accepts the exact v2 maintenance checkpoint attestation", () => {
+  it("accepts the exact v2 maintenance publication attestation", () => {
     const body = {
       runId: "run-id",
       storageId,

@@ -463,7 +463,7 @@ function followups(
     },
     {
       kind: "talk",
-      prompt: "Compare this run with the previous synthetic checkpoint.",
+      prompt: "Compare this run with the previous synthetic run.",
     },
   ];
 }

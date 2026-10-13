@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { server } from "../../../../mocks/server";
 
-export function mockPiCheckpointUploads(
+export function mockPiHistoryUploads(
   context: TestContext,
   objects: Map<string, Buffer>,
 ): void {
@@ -20,7 +20,7 @@ export function mockPiCheckpointUploads(
       const bucket = command.input.Bucket;
       const key = command.input.Key;
       if (!bucket || !key) {
-        throw new Error("Expected a checkpoint upload object identity");
+        throw new Error("Expected a history upload object identity");
       }
       const url = new URL("https://r2.example.com/upload");
       url.searchParams.set("sig", "bdd");
@@ -35,7 +35,7 @@ export function mockPiCheckpointUploads(
     http.put("https://r2.example.com/upload", async ({ request }) => {
       const objectKey = uploadObjects.get(request.url);
       if (!objectKey) {
-        throw new Error("Expected the prepared checkpoint upload identity");
+        throw new Error("Expected the prepared history upload identity");
       }
       objects.set(objectKey, Buffer.from(await request.arrayBuffer()));
       return new HttpResponse(null, { status: 200 });

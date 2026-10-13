@@ -35,7 +35,7 @@ fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
 #[tokio::test]
 async fn zstd_sources_restore_both_frameworks_at_all_sizes_and_fail_before_spawn_on_bad_hash() {
     for repeats in [1, 320_000] {
-        let history = b"{\"type\":\"message\",\"content\":\"synthetic checkpoint history\"}\n"
+        let history = b"{\"type\":\"message\",\"content\":\"synthetic native CLI history\"}\n"
             .repeat(repeats);
         let source = zstd::encode_all(history.as_slice(), 3).unwrap();
         let expected: [u8; 32] = Sha256::digest(&history).into();

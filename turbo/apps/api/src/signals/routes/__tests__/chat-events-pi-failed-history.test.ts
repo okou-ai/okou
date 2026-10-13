@@ -172,7 +172,7 @@ describe("Pi failed native history completion", () => {
       const next = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
-        prompt: "resume from the completed checkpoint",
+        prompt: "resume from the completed native history",
       });
       const nextClaim = await claimChatRun(runnerGroup, next.runId);
       expect(nextClaim.claim.resumeSession).toMatchObject({
