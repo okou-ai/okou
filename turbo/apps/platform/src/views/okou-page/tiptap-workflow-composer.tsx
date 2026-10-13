@@ -521,7 +521,6 @@ interface SuggestionRowActions {
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
 }
 
-/** The template category row for an index, if it is one. */
 function suggestionRowCount(rows: SuggestionRows): number {
   if (!rows.showWorkflows) {
     return rows.agents.length + rows.chatThreads.length;
@@ -531,6 +530,7 @@ function suggestionRowCount(rows: SuggestionRows): number {
     : rows.expandIndex + 1;
 }
 
+/** The template category row for an index, if it is one. */
 function suggestionHeadRow(
   index: number,
   rows: SuggestionRows,
