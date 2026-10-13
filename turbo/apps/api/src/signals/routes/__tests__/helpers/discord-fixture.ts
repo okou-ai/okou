@@ -163,7 +163,9 @@ const sendBodySchema = z.object({
 /** Discord deduplicates an enforced nonce for "the past few minutes". */
 const DISCORD_NONCE_DEDUPE_MS = 5 * 60_000;
 
-export function mockDiscordProvider(actor: ConnectedDiscordActor) {
+export function mockDiscordProvider(
+  actor: Pick<ConnectedDiscordActor, "guildId" | "discordUserId" | "botUserId">,
+) {
   const guildChannelId = uniqueDiscordSnowflake();
   const dmChannelId = uniqueDiscordSnowflake();
   const botRoleId = uniqueDiscordSnowflake();
@@ -456,7 +458,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
 }
 
 export function discordMessageForTest(
-  actor: ConnectedDiscordActor,
+  actor: Pick<ConnectedDiscordActor, "guildId" | "discordUserId" | "botUserId">,
   args: {
     readonly id?: string;
     readonly channelId: string;
@@ -517,7 +519,7 @@ export function postDiscordGatewayEnvelope(
 
 export async function discordChatThreads(
   context: TestContext,
-  actor: ConnectedDiscordActor,
+  actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
 ) {
   createRouteMocks(context).clerk.session(
     actor.userId,
