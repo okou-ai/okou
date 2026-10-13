@@ -2548,6 +2548,92 @@ describe("Browser user-action route", () => {
     expect(browserInputWrites()).toHaveLength(1);
   });
 
+  it.each([0, 1])(
+    "expires pending native file actions at the idle deadline +%ims",
+    async (offset) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create } = await setupNativeFileScenario(owned);
+        const created = await create();
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { requestToken: created.body.action.requestToken };
+        const observed = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+        if (!fingerprint) {
+          throw new Error("Expected the owner's observed file fingerprint");
+        }
+        const body = {
+          values: [
+            {
+              key: "document",
+              observedFingerprint: fingerprint,
+              operation: "clear" as const,
+              files: [],
+            },
+          ],
+        };
+        const leased = await accept(
+          client().leaseByThread({
+            headers,
+            params: { threadId: owned.current.threadId },
+            body: {},
+          }),
+          [200],
+        );
+        const idleExpiresAt = leased.body.browser.idleExpiresAt;
+        if (!idleExpiresAt) {
+          throw new Error("Expected a live Browser idle lease");
+        }
+        const deadline = Date.parse(idleExpiresAt);
+        const live = await withMockNowForTest(deadline - 1, () => {
+          return accept(userActionClient().get({ headers, params }), [200]);
+        });
+        expect(live.body.state).toBe("pending");
+
+        const expiredResponses = await withMockNowForTest(
+          deadline + offset,
+          async () => {
+            return [
+              await userActionClient().get({ headers, params }),
+              await userActionClient().prepareFileUpload({
+                headers,
+                params,
+                body: { key: "document", index: 0, size: 4 },
+              }),
+              await userActionClient().preflight({ headers, params, body: {} }),
+              await userActionClient().apply({ headers, params, body }),
+              await userActionClient().cancel({ headers, params, body: {} }),
+            ];
+          },
+        );
+        for (const response of expiredResponses) {
+          expect(response).toMatchObject({
+            status: 410,
+            body: { error: { code: "BROWSER_USER_ACTION_EXPIRED" } },
+          });
+        }
+
+        const pending = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(pending.body.state).toBe("pending");
+        const cancelled = await accept(
+          userActionClient().cancel({ headers, params, body: {} }),
+          [200],
+        );
+        expect(cancelled.body.state).toBe("cancelled");
+        const terminal = await withMockNowForTest(deadline + offset, () => {
+          return accept(userActionClient().get({ headers, params }), [200]);
+        });
+        expect(terminal.body.state).toBe("cancelled");
+      });
+    },
+  );
+
   it("keeps native file cancellation idempotent after the browser lease expires", async () => {
     const owned = await setupOwnedNativeFileBrowserScenario();
     await owned.run(async () => {
