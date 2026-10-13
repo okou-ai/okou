@@ -70,6 +70,7 @@ const constraintsSchema = z.array(
   }),
 );
 const searchPathSchema = z.array(z.strictObject({ search_path: z.string() }));
+const namespacesSchema = z.array(z.strictObject({ nspname: z.string() }));
 const metadataRowsSql =
   "SELECT org_id, to_jsonb(row_value)::text AS value FROM org_metadata AS row_value ORDER BY org_id";
 const entitlementRowsSql =
@@ -99,6 +100,9 @@ async function expectCheckViolations(input: {
   const negativeClient = new Client({ connectionString: databaseUrl });
   const negativeSchema = `pro_suspend_negative_${randomUUID().replaceAll("-", "")}`;
   const errors: unknown[] = [];
+  negativeClient.on("error", (error: unknown) => {
+    errors.push(error);
+  });
   let owned = false;
   let originalSearchPath: string | undefined;
   try {
@@ -267,15 +271,27 @@ async function expectCheckViolations(input: {
 }
 
 const failures: unknown[] = [];
-let transactionStarted = false;
+client.on("error", (error: unknown) => {
+  failures.push(error);
+});
+let owned = false;
+let originalSearchPath: string | undefined;
 
 try {
   await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0424; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  transactionStarted = true;
+  const paths = searchPathSchema.parse(
+    (await client.query("SHOW search_path")).rows,
+  );
+  assert.equal(paths.length, 1);
+  originalSearchPath = paths[0]?.search_path;
+  assert.ok(originalSearchPath !== undefined);
+  assert.deepEqual(
+    namespacesSchema.parse((await client.query(namespaceSql, [schema])).rows),
+    [],
+  );
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  owned = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(historicalDdl);
 
   await client.query(
@@ -708,30 +724,41 @@ try {
     rowImagesSchema.parse((await client.query(entitlementRowsSql)).rows),
     entitlementRows,
   );
-
-  console.log(
-    "✅ pro-suspend metadata, pending targets, and complete entitlement capabilities migrate to limited-free-1",
-  );
-  console.log(
-    "✅ unrelated rows and billing provenance remain unchanged, and validated constraints reject the retired tier",
-  );
 } catch (error) {
   failures.push(error);
 } finally {
-  if (transactionStarted) {
-    let rolledBack = false;
+  if (owned) {
     try {
-      await client.query("ROLLBACK");
-      rolledBack = true;
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
     } catch (error) {
       failures.push(error);
     }
-    if (rolledBack) {
-      try {
-        assert.deepEqual((await client.query(namespaceSql, [schema])).rows, []);
-      } catch (error) {
-        failures.push(error);
-      }
+    try {
+      assert.deepEqual(
+        namespacesSchema.parse(
+          (await client.query(namespaceSql, [schema])).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        searchPathSchema.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: originalSearchPath }],
+      );
+    } catch (error) {
+      failures.push(error);
     }
   }
   try {
@@ -746,3 +773,9 @@ if (failures.length === 1) {
 if (failures.length > 1) {
   throw new AggregateError(failures, "Parent validation or disposal failed");
 }
+console.log(
+  "✅ pro-suspend metadata, pending targets, and complete entitlement capabilities migrate to limited-free-1",
+);
+console.log(
+  "✅ unrelated rows and billing provenance remain unchanged, and validated constraints reject the retired tier",
+);
