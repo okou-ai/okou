@@ -194,11 +194,14 @@ export const selectDiscordDmBinding$ = command(
 );
 
 export const watchDiscordConnection$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+  async ({ get, set }, signal: AbortSignal) => {
     set(setShowDiscordUninstallDialog$, false);
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
     }
+    await get(discordOrgData$);
+    signal.throwIfAborted();
+
     set(
       setAblyInvalidationLoop$,
       {
