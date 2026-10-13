@@ -10,6 +10,15 @@ Before storing any service ticket, the pinned MIT decoder/encoder requires exact
 
 ## Native package and updates
 
+Native containment is invoked from the repository root with
+`bash crates/kerberos-worker/tests/check-native-kerberos.sh [--privileged-synthetic]`.
+The shared `tests/native-test-environment.sh` preserves the host caller by default;
+CI's explicit `NATIVE_TEST_OWNER` builds without capabilities and reserves namespace
+privilege for synthetic runtime. The RFB peer harness consumes the same helper.
+Local build-cache regressions live in `tests/infrastructure/kerberos-native-cache-test.sh`;
+the CI shard invokes them by owner-relative path. Workflow cache-policy checks and
+native artifact transport remain GitHub adapters.
+
 The native package build targets are Linux x86_64/aarch64, static musl, MIT **1.22.2** (`8570e77819563e036027e1da789d08ec9333ed4d`), built-in crypto, no shared-library/runtime executable override. Official source archive SHA256: `3243ffbc8ea4d4ac22ddc7dd2a1dc54c57874c40648b60ff97009763554eaf13`. Zig **0.15.2** has separately pinned official x86_64/aarch64 host archives in `native/build-dependencies.sh`. `native_package()` validates and exposes the exact build-selected helper ELF, notices and target/digest identity without a helper/library override. K2 does not make Runner's saved profiles call this backend or add Runner redistribution commands. Native engine tests are not proof of an optimized/distributed Runner release.
 
 An SDK/toolchain update must verify official source/archive provenance, update the notices, review the mirrored private `encode_krb5_ticket` declaration against MIT `src/include/k5-int.h`, review syscall/constructor/plugin behavior and repeat both-target closure/runtime and independent interoperability. Library cache identity includes source/toolchain/architecture and the build recipe, so an old existing archive cannot survive a pin/flag change as a newly labeled package. Attribution is checked byte-for-byte against fetched sources, accompanies the helper build as versioned notice files, and is exported as `NATIVE_NOTICES`. `Resources::create` verifies the notice digest through a live reference, and the native driver checks retention in actual linked test consumers. The complete joined notices returned by `native_package()` must accompany a separately exported helper; they are not embedded in the standalone helper ELF. Product/distribution integration remains separately scoped and unverified.

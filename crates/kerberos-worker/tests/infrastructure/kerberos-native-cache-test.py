@@ -14,7 +14,7 @@ import tempfile
 import unittest
 
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[4]
 RECIPE = ROOT / "crates/kerberos-worker/native/build-dependencies.sh"
 LIBRARIES = ["gssapi_krb5", "krb5", "k5crypto", "com_err", "krb5support"]
 

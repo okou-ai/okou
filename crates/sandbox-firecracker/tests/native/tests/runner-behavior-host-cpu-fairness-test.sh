@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-fairness_script=${1:-"${repo_root}/.github/scripts/runner-behavior-host-cpu-fairness.sh"}
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
+fairness_script=${1:-"${repo_root}/crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh"}
 tmp_dir=$(mktemp -d)
 
 cleanup() {

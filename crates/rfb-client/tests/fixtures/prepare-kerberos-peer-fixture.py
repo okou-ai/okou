@@ -14,7 +14,7 @@ import pwd
 import subprocess
 import tempfile
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
+REPO = pathlib.Path(__file__).resolve().parents[4]
 MIT = "1.20.1-6ubuntu2"
 KERBEROS = (
     "krb5-user", "krb5-kdc", "krb5-admin-server", "libgssapi-krb5-2",

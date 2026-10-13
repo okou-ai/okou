@@ -18,7 +18,7 @@ jq -e '
     [$lane.steps[]? |
       .run? |
       select(type == "string") |
-      select(startswith(".github/scripts/runner-behavior-"))];
+      select(startswith("crates/runner/tests/behavior/runner-behavior-"))];
   .jobs.detect as $detect |
   .jobs.check as $check |
   .jobs["api-contracts-rust-bindings"] as $bindings |
@@ -88,22 +88,22 @@ jq -e '
   ([$lane_a, $lane_b, $lane_c, $lane_d] |
     all(.[]; .needs == ["runner-test-prepare"])) and
   ([$lane_a, $lane_b, $lane_c, $lane_d] | map(behavior_commands(.)) | add | sort) == ([
-    ".github/scripts/runner-behavior-balloon.sh",
-    ".github/scripts/runner-behavior-home-cache-promotion.sh",
-    ".github/scripts/runner-behavior-exec.sh",
-    ".github/scripts/runner-behavior-cancel.sh",
-    ".github/scripts/runner-behavior-systemd-reload.sh",
-    ".github/scripts/runner-behavior-process-containment.sh",
-    ".github/scripts/runner-behavior-drain-resume.sh",
-    ".github/scripts/runner-behavior-keep-alive.sh",
-    ".github/scripts/runner-behavior-upgrade-local.sh"
+    "crates/runner/tests/behavior/runner-behavior-balloon.sh",
+    "crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh",
+    "crates/runner/tests/behavior/runner-behavior-exec.sh",
+    "crates/runner/tests/behavior/runner-behavior-cancel.sh",
+    "crates/runner/tests/behavior/runner-behavior-systemd-reload.sh",
+    "crates/runner/tests/behavior/runner-behavior-process-containment.sh",
+    "crates/runner/tests/behavior/runner-behavior-drain-resume.sh",
+    "crates/runner/tests/behavior/runner-behavior-keep-alive.sh",
+    "crates/runner/tests/behavior/runner-behavior-upgrade-local.sh"
   ] | sort) and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
   any($host_cpu_build.steps[]?;
     .run == "bash .github/scripts/runner/runner-native-test-artifact.sh build"
   ) and
   any($host_cpu.steps[]?;
-    .run == ".github/scripts/runner-behavior-host-cpu-fairness.sh"
+    .run == "crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh"
   ) and
   ($gate.needs | index("host-cpu-fairness-test")) != null and
   ($gate.needs | index("host-cpu-fairness-build")) != null and

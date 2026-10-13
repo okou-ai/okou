@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-worker=${1:-"$repo_root/.github/scripts/runner-behavior-balloon-remote.sh"}
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
+worker=${1:-"$repo_root/crates/runner/tests/behavior/runner-behavior-balloon-remote.sh"}
 fixture_root=$(mktemp -d)
 cleanup() {
   local pid_file pid

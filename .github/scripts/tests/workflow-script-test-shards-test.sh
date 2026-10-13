@@ -102,4 +102,56 @@ if [[ "$status" -ne 23 ]]; then
   fail "test failure status must propagate, got ${status}"
 fi
 
+# Exercise default discovery across real owner-relative paths in an isolated
+# checkout layout, including execution from an unrelated working directory.
+repo="$TEST_ROOT/repository"
+ci="$repo/.github/scripts"
+native="crates/runner/tests/behavior/tests/owned-test.sh"
+mkdir -p "$ci/tests" "$repo/crates/runner/tests/behavior/tests" \
+  "$repo/crates/sandbox-firecracker/tests/native/tests" \
+  "$repo/crates/nbd-cow/tests/infrastructure" \
+  "$repo/crates/kerberos-worker/tests/infrastructure"
+cp "$RUNNER" "$ci/run-workflow-script-test-shard.sh"
+cp "$TESTS_DIR/alpha-test.sh" "$ci/tests/alpha-test.sh"
+cat > "$repo/$native" <<'SCRIPT'
+#!/usr/bin/env bash
+printf 'native\n' >> "$EXECUTION_LOG"
+exit "${NATIVE_STATUS:-0}"
+SCRIPT
+printf '1 alpha-test.sh\n2 %s\n' "$native" > "$ci/workflow-script-test-shards.txt"
+run_owned() {
+  (
+    cd "$TEST_ROOT"
+    unset WORKFLOW_SCRIPT_TESTS_DIR WORKFLOW_SCRIPT_TEST_MANIFEST
+    WORKFLOW_SCRIPT_TEST_SHARD_COUNT=2 EXECUTION_LOG="$EXECUTION_LOG" \
+      bash "$ci/run-workflow-script-test-shard.sh" "$@"
+  )
+}
+: > "$EXECUTION_LOG"
+run_owned --validate-only >/dev/null
+run_owned 1 >/dev/null
+run_owned 2 >/dev/null
+[[ "$(LC_ALL=C sort "$EXECUTION_LOG")" == $'alpha\nnative' ]] \
+  || fail "owner-relative shards must execute every suite exactly once"
+status=0
+NATIVE_STATUS=37 run_owned 2 >/dev/null 2>&1 || status=$?
+[[ "$status" -eq 37 ]] || fail "native failure status must propagate, got $status"
+
+for invalid in "${native%/*}/../owned-test.sh" \
+  "${native%/*}/nested/owned-test.sh" "/$native"; do
+  printf '1 alpha-test.sh\n2 %s\n' "$invalid" > "$ci/workflow-script-test-shards.txt"
+  if run_owned --validate-only >/dev/null 2>&1; then
+    fail "invalid native path accepted: $invalid"
+  fi
+done
+printf '1 alpha-test.sh\n2 %s\n' "$native" > "$ci/workflow-script-test-shards.txt"
+printf '#!/usr/bin/env bash\nexit 0\n' > "${repo}/${native%/*}/unregistered-test.sh"
+if run_owned --validate-only >/dev/null 2>&1; then
+  fail "unregistered native suite was omitted"
+fi
+rm "${repo}/${native%/*}/unregistered-test.sh" "$repo/$native"
+if run_owned --validate-only >/dev/null 2>&1; then
+  fail "missing native suite was accepted"
+fi
+
 echo "workflow-script-test-shards-test: ok"

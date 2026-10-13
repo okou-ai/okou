@@ -367,7 +367,7 @@ runtime-descriptor adoption. Fresh pre-spawn admission remains held until the
 ready event rather than process creation.
 
 The production-path benchmark lives in
-`.github/scripts/runner-behavior-process-containment.sh`. It submits the
+`crates/runner/tests/behavior/runner-behavior-process-containment.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
 measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
 under one service profile. Routine lane C measures one sample per path, using

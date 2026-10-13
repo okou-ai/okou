@@ -332,7 +332,7 @@ def full_private_inventory(runtime, baseline):
 def verify_local_source_qemu(runtime, baseline, multiarch):
     # Explicit trusted-host interoperability, not full-private mount/loader
     # admission. The same repository-owned producer supplies the signed bundle.
-    recipe = REPO / ".github/scripts/prepare-qemu-gssapi-fixture.py"
+    recipe = REPO / "crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py"
     pins = runpy.run_path(str(recipe))
     native = {"x86_64-linux-gnu": "x86_64", "aarch64-linux-gnu": "aarch64"}[multiarch]
     build = baseline["qemuBuild"]
@@ -441,7 +441,7 @@ def verify_runtime(runtime, multiarch, full_qemu, source_pinned_full=False, cont
             raise ValueError("explicit version2 full-private source provider required")
         build = baseline["qemuBuild"]
         binary = runtime / "usr/bin/qemu-system-x86_64"
-        recipe = REPO / ".github/scripts/prepare-qemu-gssapi-fixture.py"
+        recipe = REPO / "crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py"
         package_lock = hashlib.sha256(json.dumps(baseline["packages"], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         inventory_digest = full_private_inventory(runtime, baseline)
         closure_digest = hashlib.sha256(json.dumps({name: baseline[name] for name in

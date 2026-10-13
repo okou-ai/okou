@@ -170,17 +170,17 @@ jobs:
               .github/workflows/crates.yml | \
               .github/scripts/checks/changed-base-ref.sh | \
               scripts/crate-changed.sh | \
-              .github/scripts/native-test-environment.sh | \
+              crates/kerberos-worker/tests/native-test-environment.sh | \
               .github/scripts/tests/runner-firewall-contract-workflow-test.sh | \
               docker/toolchain/Dockerfile)
                 native_kerberos_needed=true
                 native_gssapi_peer_needed=true
                 ;;
-              .github/scripts/check-native-kerberos.sh)
+              crates/kerberos-worker/tests/check-native-kerberos.sh)
                 native_kerberos_needed=true
                 ;;
-              .github/scripts/check-native-gssapi-peer.sh | \
-              .github/scripts/prepare-kerberos-peer-fixture.py)
+              crates/rfb-client/tests/check-native-gssapi-peer.sh | \
+              crates/rfb-client/tests/fixtures/prepare-kerberos-peer-fixture.py)
                 native_gssapi_peer_needed=true
                 ;;
             esac
@@ -837,7 +837,7 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
-        run: bash .github/scripts/check-native-kerberos.sh --privileged-synthetic
+        run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
       - name: Preserve exact-head native receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -869,7 +869,7 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
-        run: bash .github/scripts/check-native-gssapi-peer.sh
+        run: bash crates/rfb-client/tests/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -946,7 +946,7 @@ jobs:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           HOST: ${{ steps.selected-host.outputs.host }}
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
-        run: bash .github/scripts/run-nbd-cow-tests.sh
+        run: bash crates/nbd-cow/tests/run-nbd-cow-tests.sh
 
       - name: Report peak memory
         if: always()
@@ -1143,13 +1143,13 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-balloon.sh
+        run: crates/runner/tests/behavior/runner-behavior-balloon.sh
 
       - name: Test home cache promotion across runner restart
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-home-cache-promotion.sh
+        run: crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh
 
   runner-behavior-lane-b:
     runs-on: ubuntu-latest
@@ -1178,19 +1178,19 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-exec.sh
+        run: crates/runner/tests/behavior/runner-behavior-exec.sh
 
       - name: Test runner local cancel
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-cancel.sh
+        run: crates/runner/tests/behavior/runner-behavior-cancel.sh
 
       - name: Test systemd reload coordination
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-systemd-reload.sh
+        run: crates/runner/tests/behavior/runner-behavior-systemd-reload.sh
 
   runner-behavior-lane-c:
     runs-on: ubuntu-latest
@@ -1219,7 +1219,7 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-process-containment.sh
+        run: crates/runner/tests/behavior/runner-behavior-process-containment.sh
 
   runner-behavior-lane-d:
     runs-on: ubuntu-latest
@@ -1248,19 +1248,19 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-drain-resume.sh
+        run: crates/runner/tests/behavior/runner-behavior-drain-resume.sh
 
       - name: Test sandbox keep-alive across conversation turns
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-keep-alive.sh
+        run: crates/runner/tests/behavior/runner-behavior-keep-alive.sh
 
       - name: Run upgrade test
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-upgrade-local.sh
+        run: crates/runner/tests/behavior/runner-behavior-upgrade-local.sh
 
   # Compilation only needs the selected target; overlap it with image preparation.
   host-cpu-fairness-build:
@@ -1386,7 +1386,7 @@ jobs:
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
       - name: Verify weighted host CPU service with real Firecracker Guests
-        run: .github/scripts/runner-behavior-host-cpu-fairness.sh
+        run: crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh
 
   guest-rpc-firecracker-build:
     runs-on: ubuntu-latest
@@ -1500,7 +1500,7 @@ jobs:
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
       - name: Verify packaged RPC and duplex over fresh and restored Firecracker
-        run: bash .github/scripts/runner-behavior-guest-rpc.sh
+        run: bash crates/sandbox-firecracker/tests/native/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:
     runs-on: ubuntu-latest

@@ -18,8 +18,8 @@ import tempfile
 import unittest
 import unittest.mock as mock
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
-SPEC = importlib.util.spec_from_file_location("qemu_producer", ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py")
+ROOT = pathlib.Path(__file__).resolve().parents[4]
+SPEC = importlib.util.spec_from_file_location("qemu_producer", ROOT / "crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py")
 
 
 class ProducerInputs(unittest.TestCase):
@@ -91,7 +91,7 @@ if list(pathlib.Path(sys.argv[3]).iterdir()):
     raise AssertionError('over-budget payload changed the extraction root')
 '''
             result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
-                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'),
+                                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'),
                                      str(archive), str(destination)], capture_output=True, text=True, timeout=60,
                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -629,7 +629,7 @@ assert pathlib.Path('/proc/self/task/' + str(os.getpid()) + '/children').read_te
 print('held FIFO refused; no descriptor or decoder child remains')
 '''
             child = subprocess.Popen([sys.executable, '-I', '-S', '-B', '-c', script,
-                                      str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(collected[0])],
+                                      str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), str(collected[0])],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                      env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
             try:
@@ -762,7 +762,7 @@ print('actual acquisition interrupted; all original FDs closed and caller mask r
                 with self.subTest(site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
                     result = subprocess.run(
                         [sys.executable, '-I', '-S', '-B', '-c', script,
-                         str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, site, case],
+                         str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), directory, site, case],
                         capture_output=True, text=True, timeout=10,
                         env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
                     self.assertEqual(result.returncode, 0, result.stderr)
@@ -906,7 +906,7 @@ print('actual owner-edge interruption propagated after all original FDs closed')
             with self.subTest(phase=phase, site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
                 result = subprocess.run(
                     [sys.executable, '-I', '-S', '-B', '-c', script,
-                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case],
+                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case],
                     capture_output=True, text=True, timeout=10,
                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -1013,7 +1013,7 @@ print('generator handoff/mask failure propagated after actual original closure')
             with self.subTest(phase=phase, site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
                 result = subprocess.run(
                     [sys.executable, '-I', '-S', '-B', '-c', script,
-                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case,
+                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), directory, phase, site, case,
                      str(ROOT / 'crates/target/qemu-full-fixture-source/qemu-9.2.0.tar.xz')],
                     capture_output=True, text=True, timeout=10,
                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
@@ -1106,7 +1106,7 @@ finally:
                 with self.subTest(site=site, case=case), tempfile.TemporaryDirectory(dir=self.parent) as directory:
                     result = subprocess.run(
                         [sys.executable, '-I', '-S', '-B', '-c', script,
-                         str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), directory, site, case],
+                         str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), directory, site, case],
                         capture_output=True, text=True, timeout=10,
                         env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
                     self.assertEqual(result.returncode, 0, result.stderr)
@@ -1198,7 +1198,7 @@ finally:
     def test_provision_orders_signed_digest_before_any_control_decoder(self):
         # Structural ordering assertion, not a synthetic authenticated Ubuntu
         # response or a runtime/signed-provider acceptance receipt.
-        tree = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        tree = ast.parse((ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py').read_text())
         provision = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'provision')
         calls = sorted((node.lineno, node.func.id) for node in ast.walk(provision)
                        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name))
@@ -1744,7 +1744,7 @@ with path.open('rb') as output:
     assert output.read(1) == b'y'
 '''
             result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
-                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive), str(root)],
+                                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), str(archive), str(root)],
                                     text=True, capture_output=True, timeout=30,
                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -1795,7 +1795,7 @@ with path.open('rb') as output:
     def test_fresh_driver_creates_only_its_ignored_target_parent(self):
         # Execute only real shell preflight in an inert, local miniature repo.
         # No producer, archive fetch, native program or receipt runs here.
-        prefix = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("\nsource_cache=", 1)[0]
+        prefix = (ROOT / "crates/rfb-client/tests/check-full-qemu-producer.sh").read_text().split("\nsource_cache=", 1)[0]
         with tempfile.TemporaryDirectory(dir=self.parent) as directory:
             root = pathlib.Path(directory)
             (root / "crates").mkdir()
@@ -1807,7 +1807,7 @@ with path.open('rb') as output:
 
     def test_driver_does_not_rebind_binary_digest_to_signed_index(self):
         # Structural metadata-binding guard, not native/runtime evidence.
-        body = (ROOT / ".github/scripts/check-full-qemu-producer.sh").read_text().split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+        body = (ROOT / "crates/rfb-client/tests/check-full-qemu-producer.sh").read_text().split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
         for node in ast.walk(ast.parse(body)):
             if isinstance(node, ast.For):
                 self.assertNotIn("digest", [name.id for name in ast.walk(node.target) if isinstance(name, ast.Name)])
@@ -1833,7 +1833,7 @@ with path.open('rb') as output:
         self.assertEqual(self.producer.SEEDS['bzip2'], '1.0.8-5.1')
         # The selected x86_64-softmmu/installed-blob Meson path needs the
         # executable, not just libbz2. This is a source boundary, not a build.
-        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        module = ast.parse((ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py').read_text())
         preflight = next(node for node in module.body if isinstance(node, ast.FunctionDef)
                          and node.name == 'required_build_inputs')
         roles = [node.value for node in ast.walk(preflight) if isinstance(node, ast.Constant)]
@@ -1844,7 +1844,7 @@ with path.open('rb') as output:
         self.assertEqual(self.producer.SEEDS['diffutils'], '1:3.10-1build1')
         # Reviewed configure/generator/compiler paths, not their execution or
         # complete transitive loader attribution. diff lookup is unconditional.
-        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        module = ast.parse((ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py').read_text())
         preflight = next(node for node in module.body if isinstance(node, ast.FunctionDef)
                          and node.name == 'required_build_inputs')
         roles = {node.value for node in ast.walk(preflight) if isinstance(node, ast.Constant)
@@ -1871,7 +1871,7 @@ with path.open('rb') as output:
     def test_every_provision_apt_query_selects_private_startup(self):
         # Structural caller-boundary regression complements the real apt-config
         # startup test; it is not a package/build/signature/runtime receipt.
-        module = ast.parse((ROOT / ".github/scripts/prepare-qemu-gssapi-fixture.py").read_text())
+        module = ast.parse((ROOT / "crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py").read_text())
         # Include the extracted signed-record helper: all three queries still
         # require the same explicit startup root, rather than dropping one check.
         queries = [node for node in ast.walk(module) if isinstance(node, ast.Call)
@@ -2074,7 +2074,7 @@ assert retained.is_file() and retained.stat().st_size == 4
 print('actual partial copy refused; descriptors closed; completion record absent')
 '''
             result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script,
-                                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(base)],
+                                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), str(base)],
                                     capture_output=True, text=True, timeout=10,
                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -2193,7 +2193,7 @@ print('actual acquisition interrupted; original FD closed and caller mask restor
                 archive.write_bytes(b'inert public open-only input')
                 result = subprocess.run(
                     [sys.executable, '-I', '-S', '-B', '-c', script,
-                     str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive), case],
+                     str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), str(archive), case],
                     capture_output=True, text=True, timeout=10,
                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -2224,7 +2224,7 @@ assert not (archive.parent / 'qemu-9.2.0').exists()
 print('source FIFO refused; no descriptor or decoder child remains')
 '''
             child = subprocess.Popen([sys.executable, '-I', '-S', '-B', '-c', script,
-                                      str(ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py'), str(archive)],
+                                      str(ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'), str(archive)],
                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                      env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C.UTF-8'})
             try:
@@ -2364,7 +2364,7 @@ print('source FIFO refused; no descriptor or decoder child remains')
                 self.producer.usrmerge_layout(root, 'amd64')
 
     def test_post_build_inventory_failure_is_inside_public_evidence_guard(self):
-        module = ast.parse((ROOT / '.github/scripts/prepare-qemu-gssapi-fixture.py').read_text())
+        module = ast.parse((ROOT / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py').read_text())
         main = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
         guarded = next(node for node in main.body if isinstance(node, ast.Try))
         calls = {node.func.id for item in guarded.body for node in ast.walk(item)

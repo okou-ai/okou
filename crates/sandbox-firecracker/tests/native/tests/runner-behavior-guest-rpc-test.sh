@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-WORKER="$REPO_ROOT/.github/scripts/runner-behavior-guest-rpc.sh"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)"
+WORKER="$REPO_ROOT/crates/sandbox-firecracker/tests/native/runner-behavior-guest-rpc.sh"
 TEST_ROOT=$(mktemp -d)
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 mkdir -p "$TEST_ROOT/bin"

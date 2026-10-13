@@ -3,7 +3,9 @@
 These commands adapt Runner build, image and lifecycle operations to CI. Run them
 from the repository root. Their callers live in the Runner image, Crates, Turbo,
 cleanup and release workflows, the SSH setup action and `scripts/dev-runner.sh`.
-Native behavior scenarios and their fixtures have their own test ownership.
+Native behavior scenarios and their fixtures belong to the
+[Runner behavior suite](../../../crates/runner/tests/behavior/) and the
+[sandbox native suite](../../../crates/sandbox-firecracker/tests/native/).
 
 | Responsibility                                                   | Commands or module                                                                                                                                                      |
 | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

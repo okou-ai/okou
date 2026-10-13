@@ -11,8 +11,8 @@ elif [[ $# != 0 ]]; then
   echo 'usage: check-native-kerberos.sh [--privileged-synthetic]' >&2
   exit 1
 fi
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.."
-source .github/scripts/native-test-environment.sh
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.."
+source crates/kerberos-worker/tests/native-test-environment.sh
 arch=$(uname -m)
 uid=$native_uid
 gid=$native_gid

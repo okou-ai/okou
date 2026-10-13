@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=$(cd -- "$SCRIPT_DIR/../../.." && pwd)
-WORKER="$REPO_ROOT/.github/scripts/runner-behavior-agent-ready-benchmark-remote.sh"
+REPO_ROOT=$(cd -- "$SCRIPT_DIR/../../../../.." && pwd)
+WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-agent-ready-benchmark-remote.sh"
 
 assert_contains() {
   local file=$1
