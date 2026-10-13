@@ -806,7 +806,7 @@ describe("FILE-01: hosted-site deployments through host APIs", () => {
       "private, no-store",
     );
     expectApiError(invalidUtf8Citation.body);
-    expect(invalidUtf8Citation.body.error.code).toBe("MAPS_GROUNDING_ERROR");
+    expect(invalidUtf8Citation.body.error.code).toBe("MAPS_CITATION_INVALID");
 
     server.use(
       http.post(VERTEX_MAPS_URL, () => {

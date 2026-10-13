@@ -118,6 +118,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
       [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5252525252525252525252525252525252525252" ]; then
+      [ "${MOCK_SESSION_STORAGE_MOUNT_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -173,6 +175,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *official-result-email-legacy-consumer* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *runtime/agent-session.ts* ]]; then
+      printf '%s\n' "${MOCK_SESSION_STORAGE_MOUNT_RUNTIME_COMMIT-5252525252525252525252525252525252525252}"
     elif [[ "$*" == *src/runtime/ssh-connection.ts* ]]; then
       printf '%s\n' "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT-5151515151515151515151515151515151515151}"
     elif [[ "$*" == *chat-event-v8* ]]; then
@@ -323,6 +327,8 @@ grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/m
 grep -Fxq "git merge-base --is-ancestor 4949494949494949494949494949494949494949 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email runtime retirement floor"
 grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- .github/rollback-floors/official-result-email-legacy-consumer" "${tmp_dir}/boundaries.log" || fail "Official result-email legacy consumer floor must resolve the canonical main marker"
 grep -Fxq "git merge-base --is-ancestor 5050505050505050505050505050505050505050 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Official result-email legacy consumer floor"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/runtime/agent-session.ts" "${tmp_dir}/boundaries.log" || fail "Session storage-mount floor must resolve the shipped main runtime mapping"
+grep -Fxq "git merge-base --is-ancestor 5252525252525252525252525252525252525252 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Session storage-mount runtime floor"
 grep -Fxq "git merge-base --is-ancestor 4141414141414141414141414141414141414141 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Usage Allowance retirement floor"
 grep -qx "target_commit=${target_commit}" "$output_file" || fail "missing target commit output"
 grep -qx "api_deployment_url=https://api-0.vercel.app" "$output_file" || fail "missing API deployment output"
@@ -805,6 +811,24 @@ grep -Fq '5151515151515151515151515151515151515151' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/ssh-preparation-floor.output" ] || fail "legacy-dependent SSH API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "SSH preparation floor must fail before artifact or host access"
+fi
+
+for session_mount_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Session storage-mount runtime preparation" \
+    run_resolver "${tmp_dir}/session-storage-mount-history.output" "MOCK_SESSION_STORAGE_MOUNT_RUNTIME_COMMIT=${session_mount_commit}"
+  [ ! -s "${tmp_dir}/session-storage-mount-history.output" ] || fail "invalid Session mount history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Session mount history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Session storage-mount runtime preparation" \
+  run_resolver "${tmp_dir}/session-storage-mount-floor.output" MOCK_SESSION_STORAGE_MOUNT_RUNTIME_FLOOR_VALID=0
+grep -Fq '5252525252525252525252525252525252525252' "${tmp_dir}/failure.err" || fail "Session mount rejection must identify the shipped preparation commit"
+[ ! -s "${tmp_dir}/session-storage-mount-floor.output" ] || fail "Session mount reader must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Session mount floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do

@@ -181,7 +181,7 @@ describe("direct Runner WSS ticket boundary", () => {
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 
-  it("requires a Web session for issuance and official Runner auth for redemption", async () => {
+  it("accepts an owner CLI token for issuance and requires official Runner auth for redemption", async () => {
     const f = await setup();
     const missingSession = await accept(
       client().bootstrap({
@@ -193,21 +193,48 @@ describe("direct Runner WSS ticket boundary", () => {
     );
     expect(missingSession.headers.get("Cache-Control")).toBe("no-store");
     const pat = await f.api.createCliToken(f.actor);
-    await accept(
+    const issued = await accept(
       client().bootstrap({
         params: { runId: f.runId },
         headers: { authorization: `Bearer ${pat.token}` },
         body: undefined,
       }),
-      [403],
+      [200],
     );
-    const issued = await accept(bootstrap(f), [200]);
+    expect(issued.headers.get("Cache-Control")).toBe("no-store");
+    expect(issued.body.wssUrl).toBe(`${origin}/ws/${f.runnerId}`);
     await accept(
       consume(f, issued.body.ticket, {
         authorization: `Bearer ${pat.token}`,
       }),
       [403],
     );
+    const redeemed = await accept(consume(f, issued.body.ticket), [200]);
+    expect(redeemed.body).toMatchObject({
+      runId: f.runId,
+      runnerId: f.runnerId,
+      userId: f.actor.userId,
+      orgId: f.actor.orgId,
+    });
+    await f.api.requestCancelRun(f.actor, f.runId, [200]);
+  });
+
+  it("denies CLI ticket issuance to another user or organization without revealing the Run", async () => {
+    const f = await setup();
+    for (const actor of [f.bdd.user({ orgId: f.actor.orgId }), f.bdd.user()]) {
+      const pat = await f.api.createCliToken(actor);
+      await f.bdd.readMe(actor);
+      const denied = await accept(
+        client().bootstrap({
+          params: { runId: f.runId },
+          headers: { authorization: `Bearer ${pat.token}` },
+          body: undefined,
+        }),
+        [404],
+      );
+      expect(denied.body.error.code).toBe("NOT_FOUND");
+      expect(denied.headers.get("Cache-Control")).toBe("no-store");
+    }
     await f.api.requestCancelRun(f.actor, f.runId, [200]);
   });
 

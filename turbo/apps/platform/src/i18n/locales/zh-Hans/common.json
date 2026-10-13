@@ -937,7 +937,7 @@
       "downloadMac": "下载 macOS 版",
       "lastSeen": "最后在线于{{date}}",
       "linkExpires": "链接将于{{date}}过期。",
-      "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14或更高版本的 Mac，不支持 Intel 版 Mac。",
+      "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上打开{{desktopApplicationName}}，等它上线后刷新本页。",
       "noHostsTitle": "没有在线的电脑",
       "sources": {
@@ -956,9 +956,9 @@
       "durationLabel": "权限有效期",
       "durationOptions": {
         "always": "永久",
-        "oneHour": "1小时",
-        "sevenDays": "7天",
-        "twentyFourHours": "24小时"
+        "oneHour": "1 小时",
+        "sevenDays": "7 天",
+        "twentyFourHours": "24 小时"
       },
       "errors": {
         "agentNotFound": "未找到智能体",
@@ -978,8 +978,8 @@
         "inDays_other": "{{count}}天后过期",
         "inHours_one": "{{count}}小时后过期",
         "inHours_other": "{{count}}小时后过期",
-        "lessThanHour": "不到1小时后过期",
-        "lessThanHourShort": "< 1小时",
+        "lessThanHour": "不到 1 小时后过期",
+        "lessThanHourShort": "< 1 小时",
         "prefix": "剩余 "
       },
       "greeting": "你好，{{userName}}，你正在更新{{targetName}}的权限。",
@@ -1007,7 +1007,7 @@
       "enableAria": "启用自动充值",
       "thresholdAria": "自动充值的积分阈值",
       "thresholdDescription": "当积分余额低于这个数值时触发购买。",
-      "thresholdPlaceholder": "例如2000",
+      "thresholdPlaceholder": "例如 2000",
       "thresholdTitle": "积分低于",
       "title": "自动充值"
     },
@@ -1076,7 +1076,7 @@
       "custom": "自定义",
       "customAmountAria": "自定义美元金额",
       "dueNow": "现在应付",
-      "exchangeRate": "积分永不过期。1美元={{credits}}积分。",
+      "exchangeRate": "积分永不过期。1 美元={{credits}}积分。",
       "payAndAddCredits": "支付并添加积分",
       "quickBuy": "快速购买",
       "quickBuyAmount": "快速购买{{amount}}",
@@ -1101,7 +1101,7 @@
     "invoices": {
       "amount": "金额",
       "date": "日期",
-      "downloadDescription": "最多选择连续3个月，该区间内的收据 PDF 会打包成一个 ZIP 文件。",
+      "downloadDescription": "最多选择连续 3 个月，该区间内的收据 PDF 会打包成一个 ZIP 文件。",
       "downloadInvoice": "下载{{month}}的账单",
       "downloadReceipts": "下载收据",
       "downloadZip": "下载 ZIP",
@@ -1111,7 +1111,7 @@
       "loading": "正在加载账单",
       "monthAria": "{{label}}月份",
       "preparingReceipts": "正在准备收据…",
-      "rangeError": "请选择不超过连续3个月的区间。",
+      "rangeError": "请选择不超过连续 3 个月的区间。",
       "selectMonth": "选择月份",
       "to": "到"
     },
@@ -2440,7 +2440,7 @@
           "nested-donut": "嵌套环形图",
           "network": "网络关系图",
           "parallel-coordinates": "平行坐标图",
-          "percent-stacked-bar": "100%堆叠柱状图",
+          "percent-stacked-bar": "100% 堆叠柱状图",
           "pictorial-bar": "象形柱状图",
           "pie": "饼图",
           "polar-bar": "极坐标柱状图",
@@ -2646,11 +2646,11 @@
           "invoices": {
             "amount": "金额",
             "example": "示例工作室",
-            "file": "发票 — 9月",
+            "file": "发票 — 9 月",
             "filed": "已归档",
             "footer": "可选的表格把记录集中在一起",
             "label": "发票归档",
-            "path": "财务 / 发票 / 9月",
+            "path": "财务 / 发票 / 9 月",
             "second": "示例供应商",
             "status": "状态",
             "vendor": "供应商"
@@ -2972,6 +2972,7 @@
       "genericLabel": "连接器",
       "githubLabel": "GitHub",
       "invalidUrl": "连接器回调 URL 无效。",
+      "linkLabel": "Link",
       "mercuryAttribution": "由 Mercury 提供支持",
       "mercuryDisclosure": "Mercury 是一家金融科技公司，不是受 FDIC 承保的银行。银行服务由 Choice Financial Group 和 Column N.A. 提供，两者均为 FDIC 成员。",
       "mercuryDisclosureLabel": "Mercury 银行服务披露",
@@ -3279,7 +3280,7 @@
       "inDays_other": "{{count}}天后过期",
       "inHours_one": "{{count}}小时后过期",
       "inHours_other": "{{count}}小时后过期",
-      "lessThanHour": "不到1小时后过期"
+      "lessThanHour": "不到 1 小时后过期"
     },
     "permissions": {
       "actions": {
@@ -3289,9 +3290,9 @@
       },
       "allowDuration": {
         "always": "始终允许",
-        "oneHour": "允许1小时",
-        "sevenDays": "允许7天",
-        "twentyFourHours": "允许24小时"
+        "oneHour": "允许 1 小时",
+        "sevenDays": "允许 7 天",
+        "twentyFourHours": "允许 24 小时"
       },
       "allowOptions": "{{permission}}的允许选项",
       "always": "始终",
@@ -3443,7 +3444,7 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "已授权的发送方",
-        "codeExpiry": "10分钟后过期",
+        "codeExpiry": "10 分钟后过期",
         "codeLabel": "验证码",
         "connectAria": "连接手机",
         "connectDescription": "用相机扫描，然后发送已填好的验证码。",
@@ -4438,7 +4439,7 @@
       },
       "proDescription": "并行运行多个任务，无需排队。",
       "recommended": "推荐",
-      "teamDescription": "10个并行运行和更多积分，支撑团队扩展。"
+      "teamDescription": "10 个并行运行和更多积分，支撑团队扩展。"
     }
   },
   "runErrors": {
@@ -4495,7 +4496,7 @@
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
         "windows": {
-          "fiveHour": "5小时",
+          "fiveHour": "5 小时",
           "week": "周"
         }
       },
@@ -4575,7 +4576,7 @@
       },
       "errors": {
         "loadFailed": "导出信息加载失败",
-        "rateLimited": "每24小时只能导出一次。",
+        "rateLimited": "每 24 小时只能导出一次。",
         "startFailed": "导出启动失败"
       },
       "scope": {
@@ -4682,7 +4683,7 @@
         "retry": "重试",
         "status": {
           "connected": "已连接",
-          "fiveHour": "5小时",
+          "fiveHour": "5 小时",
           "left": "剩余{{percent}}",
           "stale": "需处理",
           "week": "本周"
@@ -4741,7 +4742,7 @@
         "inDaysHours": "{{days}}天{{hours}}小时后",
         "inHours": "{{hours}}小时后",
         "inHoursMinutes": "{{hours}}小时{{minutes}}分钟后",
-        "inLessThanMinute": "1分钟内",
+        "inLessThanMinute": "1 分钟内",
         "inMinutes": "{{minutes}}分钟后",
         "resetsAt": "{{date}}重置",
         "resetsRaw": "{{value}}重置",
@@ -5408,8 +5409,8 @@
     },
     "range": {
       "billingPeriod": "账单周期",
-      "last24Hours": "最近24小时",
-      "last7Days": "最近7天",
+      "last24Hours": "最近 24 小时",
+      "last7Days": "最近 7 天",
       "today": "今天",
       "yesterday": "昨天"
     },
@@ -5464,11 +5465,11 @@
       "name": "凭据名称",
       "nameHint": "例如：办公室桌面登录",
       "password": "VNC 密码",
-      "passwordHelp": "经典 VNC 密码为1–8个可打印 ASCII 字符，空格会被保留。",
+      "passwordHelp": "经典 VNC 密码为 1–8 个可打印 ASCII 字符，空格会被保留。",
       "passwordHint": "输入服务器的 VNC 密码",
       "privateKey": "未加密的 PKCS#8 私钥（PEM）",
-      "qemuScramPasswordHelp": "1–1023个可打印 ASCII 字符；保留空格。",
-      "qemuScramUsernameHelp": "1–255个可打印 ASCII 字符，不允许空格、逗号或等号。",
+      "qemuScramPasswordHelp": "1–1023 个可打印 ASCII 字符；保留空格。",
+      "qemuScramUsernameHelp": "1–255 个可打印 ASCII 字符，不允许空格、逗号或等号。",
       "replace": "更换密码",
       "replaceHelp": "保持关闭即继续使用已保存的密码。更换密码会影响所有使用该凭据的主机。",
       "select": "选择凭据",
@@ -5477,10 +5478,10 @@
       "summary_other": "已配置{{count}}条凭据",
       "unused": "没有已保存的主机在使用。",
       "username": "用户名",
-      "usernameHelp": "1–255个 UTF-8 字节，不允许使用 NUL。",
+      "usernameHelp": "1–255 个 UTF-8 字节，不允许使用 NUL。",
       "usernameHint": "输入服务器用户名",
       "usernamePassword": "密码",
-      "usernamePasswordHelp": "1–1023个 UTF-8 字节，不允许使用 NUL，空格会被保留。",
+      "usernamePasswordHelp": "1–1023 个 UTF-8 字节，不允许使用 NUL，空格会被保留。",
       "usernamePasswordHint": "输入该用户名对应的密码",
       "usernamePasswordMethod": "用户名和密码"
     },
@@ -5500,7 +5501,7 @@
       "hostUnavailable": "这台主机已不可用。",
       "invalidHost": "请输入有效的主机名或 IP 地址，不要包含 URL、用户名或端口。",
       "invalidInput": "请检查 VNC 配置后重试。",
-      "invalidTrust": "请输入有效的证书包：最多8个公开 CA 证书，总大小不超过 64 KiB。",
+      "invalidTrust": "请输入有效的证书包：最多 8 个公开 CA 证书，总大小不超过 64 KiB。",
       "revisionExhausted": "该配置已无法继续更新，请新建一个。"
     },
     "host": "主机名或 IP 地址",
@@ -5568,7 +5569,7 @@
       "appleVncPassword": "Mac VNC（经典 VNC 密码）",
       "appleVncPasswordHelp": "Mac 可选 VNC 密码为 1–8 个可打印 ASCII 字节。裸 type 2 不验证服务器身份，也不加密桌面。已验证的 SSH 仅保护本次 Okou 会话，不能隔离 Mac 的监听端口；其他客户端可能因网络设置而访问 5900 端口。请自行决定是否在 Mac 上启用并承担相应风险。",
       "caBundle": "CA 证书（PEM）",
-      "caHelp": "最多8个 CA 证书，总大小 64 KiB。请勿粘贴私钥或服务器证书。",
+      "caHelp": "最多 8 个 CA 证书，总大小 64 KiB。请勿粘贴私钥或服务器证书。",
       "caHint": "粘贴签发该服务器证书的公开 CA 证书",
       "clientCertificateHelp": "客户端出示证书不代表服务器已验证。必须独立配置服务器校验受信任 CA 签发的客户端证书，并限制入口访问；SSH 仅验证跳点。",
       "clientCertificateNone": "客户端证书，无 VNC 密码（X509None）",
@@ -5576,7 +5577,7 @@
       "custom": "自定义证书颁发机构",
       "profileLabel": "安全方案",
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
-      "qemuX509SaslHelp": "仅支持 QEMU 子类型263。TLS 会在 SCRAM 之前验证服务器；不降级到 PLAIN 或子类型264。",
+      "qemuX509SaslHelp": "仅支持 QEMU 子类型 263。TLS 会在 SCRAM 之前验证服务器；不降级到 PLAIN 或子类型 264。",
       "serverName": "TLS 证书身份",
       "serverNameHelp": "可选。留空时将根据 RFB 目标主机验证证书。仅当证书使用其他 DNS 名称时才填写。",
       "serverNameHint": "例如 desktop.internal.example.com",

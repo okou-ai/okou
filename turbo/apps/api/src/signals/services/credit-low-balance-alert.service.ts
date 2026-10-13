@@ -14,7 +14,7 @@ import {
   type ClerkOrganizationMembership,
 } from "../external/clerk";
 import { listAllOrganizationMemberships } from "../external/clerk-organization-lists";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   buildOneClickUnsubscribeUrl,
@@ -222,29 +222,6 @@ const resolveRecipients$ = command(
   },
 );
 
-async function suppressedEmailKeys(
-  db: Db,
-  emails: readonly string[],
-): Promise<Set<string>> {
-  if (emails.length === 0) {
-    return new Set();
-  }
-
-  const lowerEmails = emails.map((email) => {
-    return email.toLowerCase();
-  });
-  const rows = await db
-    .select({ emailAddress: emailSuppressions.emailAddress })
-    .from(emailSuppressions)
-    .where(inArray(sql`lower(${emailSuppressions.emailAddress})`, lowerEmails));
-
-  return new Set(
-    rows.map((row) => {
-      return row.emailAddress.toLowerCase();
-    }),
-  );
-}
-
 export const enqueueCreditLowBalanceAlert$ = command(
   async (
     { get, set },
@@ -271,12 +248,30 @@ export const enqueueCreditLowBalanceAlert$ = command(
     }
 
     const recipients = await set(resolveRecipients$, userIds, signal);
-    const suppressed = await suppressedEmailKeys(
-      db,
-      recipients.map((recipient) => {
-        return recipient.email;
-      }),
-    );
+    const emails = recipients.map((recipient) => {
+      return recipient.email;
+    });
+    const suppressed = await (async (): Promise<Set<string>> => {
+      if (emails.length === 0) {
+        return new Set();
+      }
+
+      const lowerEmails = emails.map((email) => {
+        return email.toLowerCase();
+      });
+      const rows = await db
+        .select({ emailAddress: emailSuppressions.emailAddress })
+        .from(emailSuppressions)
+        .where(
+          inArray(sql`lower(${emailSuppressions.emailAddress})`, lowerEmails),
+        );
+
+      return new Set(
+        rows.map((row) => {
+          return row.emailAddress.toLowerCase();
+        }),
+      );
+    })();
     signal.throwIfAborted();
 
     const deliverableRecipients = recipients.filter((recipient) => {

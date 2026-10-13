@@ -1,5 +1,5 @@
 {
-  "id": "b3874fdd-f1c9-4c59-b09a-8838157b976a",
+  "id": "1dcc8e81-a713-47bc-9ee4-1567549917fc",
   "prevId": "d2abedf2-ab6c-4eda-a6b7-86069e79dadd",
   "version": "7",
   "dialect": "postgresql",
@@ -1061,13 +1061,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "storage_mounts": {
-          "name": "storage_mounts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
@@ -21229,13 +21222,6 @@
         },
         "cloud_browser_enabled_by_default": {
           "name": "cloud_browser_enabled_by_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "chat_resources_enabled_by_default": {
-          "name": "chat_resources_enabled_by_default",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

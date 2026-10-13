@@ -1,3 +1,4 @@
+import { THREAD_CONTEXT_MESSAGE_LIMIT } from "../../lib/integration-conversation-context";
 import { WebClient } from "@slack/web-api";
 
 import type { ChatSlackMessageFile } from "@okouai/db/jsonb-contracts/chat-slack-context";
@@ -368,20 +369,6 @@ async function readSlackConversation<T>(
   return result.value;
 }
 
-export function formatSenderBlock(info: SlackUserInfo): string {
-  const parts = [`id: ${info.id}`];
-  if (info.name) {
-    parts.push(`name: ${info.name}`);
-  }
-  if (info.email) {
-    parts.push(`email: ${info.email}`);
-  }
-  if (info.timezone) {
-    parts.push(`timezone: ${info.timezone}`);
-  }
-  return `- SENDER: {${parts.join(", ")}}`;
-}
-
 async function fetchSlackUserInfo(
   client: WebClient,
   userId: string,
@@ -479,8 +466,6 @@ function buildUserInfoResolver(client: WebClient): SlackUserInfoResolver {
     },
   };
 }
-
-const THREAD_CONTEXT_MESSAGE_LIMIT = 100;
 
 async function openDMChannel(
   web: WebClient,
