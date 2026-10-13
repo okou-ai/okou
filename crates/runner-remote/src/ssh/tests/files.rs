@@ -576,6 +576,38 @@ async fn subsystem_refusal_records_authenticated_connection_not_a_connectivity_w
     assert!(h.observed.commands.lock().unwrap().is_empty());
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn rpc_owner_drop_reports_cancellation_when_authority_is_also_invalidated() {
+    let mut h = Harness::new(Reply::Sftp("normal")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file");
+    let guest = open(&h, "upload", upload_params(&path, 5, false), 900_000).await;
+    wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
+
+    // The public RPC owner synchronously cancels the Run and closes its SSH
+    // authority. On this current-thread executor, both are ready before the
+    // active transfer can resume; no private token or cache mutation is needed.
+    drop(h.take_dispatcher());
+
+    let outcome = response(guest).await.0;
+    assert_eq!(outcome["type"], "failed", "{outcome}");
+    assert_eq!(outcome["failure_reason"], "cancelled", "{outcome}");
+    assert_eq!(outcome["effects"], "not_started");
+    assert_eq!(outcome["bytes"], 0);
+    assert!(outcome["sha256"].is_null());
+    let residue = Path::new(outcome["residue"].as_str().unwrap());
+    assert!(residue.is_dir());
+    assert_eq!(
+        std::fs::metadata(residue).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(!path.exists());
+    wait_for(|| h.observed.reservations.load(Ordering::SeqCst) == 0).await;
+    wait_for(|| h.observed.closed.load(Ordering::SeqCst) == 1).await;
+    assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
+}
+
 #[tokio::test]
 async fn run_cancellation_releases_the_reservation_and_does_not_reconnect_for_cleanup() {
     let mut h = Harness::new(Reply::Sftp("normal")).await;

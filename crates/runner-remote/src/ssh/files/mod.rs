@@ -155,7 +155,12 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
         };
         let result = tokio::select! {
             biased;
-            () = invalidated.cancelled() => Err(FailureReason::ConfigurationChanged.into()),
+            () = invalidated.cancelled() => {
+                // Run teardown also invalidates authority. Preserve lifecycle
+                // cancellation priority without polling any more transfer I/O.
+                scope.check()?;
+                Err(FailureReason::ConfigurationChanged.into())
+            },
             result = operation => result,
         };
         if matches!(
