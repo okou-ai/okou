@@ -15,6 +15,7 @@ from logging_utils import log_proxy_entry
 _MODEL_WEBSOCKET_USAGE_ENABLED = "model_websocket_usage_enabled"
 _MODEL_WEBSOCKET_PREWARM_STATE = "_model_websocket_prewarm_state"
 _MAX_IGNORED_RESPONSE_IDS = 100
+_MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT = 4
 
 
 @dataclass(slots=True)
@@ -25,6 +26,7 @@ class _OpenAIResponsesPrewarmState:
     ignored_response_diagnostics: dict[str, bool] = field(default_factory=dict)
     ambiguous: bool = False
     ambiguity_diagnostic_emitted: bool = False
+    usage_error_diagnostics_remaining: int = _MODEL_WEBSOCKET_PARSE_ERROR_DIAGNOSTIC_LIMIT
 
 
 _WebSocketCorrelationReason = Literal[
@@ -275,14 +277,21 @@ def feed_usage(
             prewarm_state, _OpenAIResponsesPrewarmState
         ):
             _mark_correlation_ambiguous(flow, prewarm_state, "correlation_cap")
-        log_proxy_entry(
-            flow_metadata.proxy_log_path(flow.metadata),
-            "warn",
-            "Model provider WebSocket usage extraction failed",
-            type="usage_event",
-            usage_protocol="openai_responses_websocket",
-            error=inspection_error,
-        )
+        if (
+            isinstance(prewarm_state, _OpenAIResponsesPrewarmState)
+            and prewarm_state.usage_error_diagnostics_remaining > 0
+        ):
+            # Limit lifetime diagnostics before serialization, independently of
+            # the writer backlog and correlation/accounting state transitions.
+            prewarm_state.usage_error_diagnostics_remaining -= 1
+            log_proxy_entry(
+                flow_metadata.proxy_log_path(flow.metadata),
+                "warn",
+                "Model provider WebSocket usage extraction failed",
+                type="usage_event",
+                usage_protocol="openai_responses_websocket",
+                error=inspection_error,
+            )
 
     message_id_value = usage_result.get("message_id") if usage_result else None
     message_id = (
