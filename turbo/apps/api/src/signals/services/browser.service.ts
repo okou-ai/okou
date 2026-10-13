@@ -1286,44 +1286,50 @@ const loadActiveInstance$ = command(
   },
 );
 
-async function loadOwnedThreadBrowserProfile(
-  db: Db,
-  owner: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
-): Promise<BrowserThreadProfileRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserThreadProfiles)
-    .where(
-      and(
-        eq(browserThreadProfiles.chatThreadId, owner.chatThreadId),
-        eq(browserThreadProfiles.orgId, owner.orgId),
-        eq(browserThreadProfiles.userId, owner.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadOwnedThreadBrowserProfile$ = command(
+  async (
+    { get },
+    owner: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
+  ): Promise<BrowserThreadProfileRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserThreadProfiles)
+      .where(
+        and(
+          eq(browserThreadProfiles.chatThreadId, owner.chatThreadId),
+          eq(browserThreadProfiles.orgId, owner.orgId),
+          eq(browserThreadProfiles.userId, owner.userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+);
 
-async function loadBrowserProfileForBrowser(
-  db: Db,
-  browser: BrowserSessionRow,
-): Promise<BrowserThreadProfileRow> {
-  const [row] = await db
-    .select()
-    .from(browserThreadProfiles)
-    .where(
-      and(
-        eq(browserThreadProfiles.chatThreadId, browser.chatThreadId),
-        eq(browserThreadProfiles.orgId, browser.orgId),
-        eq(browserThreadProfiles.userId, browser.userId),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    throw new Error("Managed browser thread profile ownership is invalid");
-  }
-  return row;
-}
+const loadBrowserProfileForBrowser$ = command(
+  async (
+    { get },
+    browser: BrowserSessionRow,
+  ): Promise<BrowserThreadProfileRow> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserThreadProfiles)
+      .where(
+        and(
+          eq(browserThreadProfiles.chatThreadId, browser.chatThreadId),
+          eq(browserThreadProfiles.orgId, browser.orgId),
+          eq(browserThreadProfiles.userId, browser.userId),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new Error("Managed browser thread profile ownership is invalid");
+    }
+    return row;
+  },
+);
 
 async function deleteUnusedProfile(profileId: string): Promise<void> {
   await settle(
@@ -1510,70 +1516,75 @@ const cleanupBrowserProfileLater$ = command(
   },
 );
 
-async function claimBrowserProfile(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly providerProfileId: string;
+const claimBrowserProfile$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly providerProfileId: string;
+    },
+  ): Promise<{
+    readonly profile: BrowserThreadProfileRow | null;
+    readonly created: boolean;
+  }> => {
+    const db = set(writeDb$);
+    const [created] = await db
+      .insert(browserThreadProfiles)
+      .values(args)
+      .onConflictDoNothing({
+        target: browserThreadProfiles.chatThreadId,
+      })
+      .returning();
+    if (created) {
+      return { profile: created, created: true };
+    }
+    const existing = await set(loadOwnedThreadBrowserProfile$, args);
+    return { profile: existing, created: false };
   },
-): Promise<{
-  readonly profile: BrowserThreadProfileRow | null;
-  readonly created: boolean;
-}> {
-  const [created] = await db
-    .insert(browserThreadProfiles)
-    .values(args)
-    .onConflictDoNothing({
-      target: browserThreadProfiles.chatThreadId,
-    })
-    .returning();
-  if (created) {
-    return { profile: created, created: true };
-  }
-  const existing = await loadOwnedThreadBrowserProfile(db, args);
-  return { profile: existing, created: false };
-}
+);
 
-async function getOrCreateBrowserProfile(
-  db: Db,
-  context: BrowserRunContext,
-): Promise<BrowserServiceResult<BrowserThreadProfileRow>> {
-  const existing = await loadOwnedThreadBrowserProfile(db, context);
-  if (existing) {
-    return { kind: "ok", value: existing };
-  }
+const getOrCreateBrowserProfile$ = command(
+  async (
+    { set },
+    context: BrowserRunContext,
+  ): Promise<BrowserServiceResult<BrowserThreadProfileRow>> => {
+    const existing = await set(loadOwnedThreadBrowserProfile$, context);
+    if (existing) {
+      return { kind: "ok", value: existing };
+    }
 
-  const provider = await providerCall(
-    createBrowserUseProfile(
-      context.chatThreadId,
-      AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-    ),
-  );
-  if (provider.kind === "error") {
-    return provider;
-  }
+    const provider = await providerCall(
+      createBrowserUseProfile(
+        context.chatThreadId,
+        AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+      ),
+    );
+    if (provider.kind === "error") {
+      return provider;
+    }
 
-  const claimed = await settle(
-    claimBrowserProfile(db, {
-      orgId: context.orgId,
-      userId: context.userId,
-      chatThreadId: context.chatThreadId,
-      providerProfileId: provider.value,
-    }),
-  );
-  if (!claimed.ok || !claimed.value.created) {
-    await deleteUnusedProfile(provider.value);
-  }
-  if (!claimed.ok) {
-    throw claimed.error;
-  }
-  // Cleanup can retire the winning claim before the losing request reads it.
-  return claimed.value.profile
-    ? { kind: "ok", value: claimed.value.profile }
-    : browserReclaiming();
-}
+    const claimed = await settle(
+      set(claimBrowserProfile$, {
+        orgId: context.orgId,
+        userId: context.userId,
+        chatThreadId: context.chatThreadId,
+        providerProfileId: provider.value,
+      }),
+    );
+    if (!claimed.ok || !claimed.value.created) {
+      await deleteUnusedProfile(provider.value);
+    }
+    if (!claimed.ok) {
+      throw claimed.error;
+    }
+    // Cleanup can retire the winning claim before the losing request reads it.
+    return claimed.value.profile
+      ? { kind: "ok", value: claimed.value.profile }
+      : browserReclaiming();
+  },
+);
 
 class BrowserPublicationLostError extends Error {}
 
@@ -1811,7 +1822,7 @@ const startProviderInstance$ = command(
     if (capacityError) {
       return capacityError;
     }
-    const profile = await loadBrowserProfileForBrowser(db, args.browser);
+    const profile = await set(loadBrowserProfileForBrowser$, args.browser);
     signal.throwIfAborted();
     const screenHeight = await set(
       loadBrowserScreenHeightForThread$,
@@ -1949,7 +1960,7 @@ const createBrowserForContext$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
     const db = set(writeDb$);
-    const profile = await getOrCreateBrowserProfile(db, args.context);
+    const profile = await set(getOrCreateBrowserProfile$, args.context);
     signal.throwIfAborted();
     if (profile.kind === "error") {
       return profile;
