@@ -678,8 +678,11 @@ def classification_needs_request_timing(classification: RequestClassification) -
     )
 
 
-def should_stream_capture_request(classification: RequestClassification) -> bool:
-    if not isinstance(classification, ApiAllow | BrowserAllow | FirewallPolicyAllow | Allow):
+def should_stream_request(classification: RequestClassification) -> bool:
+    """Ordinary allow streaming does not depend on optional diagnostic capture."""
+    if isinstance(classification, Allow):
+        return True
+    if not isinstance(classification, ApiAllow | BrowserAllow | FirewallPolicyAllow):
         return False
     return bool(classification.sandbox_info.get("captureNetworkBodies", False))
 
