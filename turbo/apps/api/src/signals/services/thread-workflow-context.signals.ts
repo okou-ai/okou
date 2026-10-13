@@ -1,15 +1,11 @@
 import { computed, type Computed } from "ccstate";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import {
-  agentStorageCacheSnapshot,
   agentStorageReadPlan,
   captureAgentStorageContext,
 } from "./agent-storage-context.service";
 import { OFFICIAL_WORKFLOW_AUTOMATION_ONLY_MESSAGE } from "./official-workflow-constants";
-import {
-  createOfficialWorkflowCatalog,
-  createOfficialWorkflowFacts,
-} from "./official-workflow-context.signals";
+import { createOfficialWorkflowFacts } from "./official-workflow-context.signals";
 import { createOfficialWorkflowObservation } from "./official-workflow-observation.service";
 import { OfficialWorkflowRunAdmissionError } from "./official-workflow-run.service";
 import type { createThreadAutomationContext } from "./thread-automation-context.service";
@@ -88,7 +84,10 @@ export function createThreadWorkflowContext(
         ]
       : ordinary;
   });
-  const officialCatalog$ = createOfficialWorkflowCatalog();
+  // The global catalog is shared by every context of this bootstrap.
+  const officialCatalog$ = computed((get) => {
+    return get(bootstrap.officialCatalog$);
+  });
   const officialWorkflows$ = createOfficialWorkflowFacts(
     workflows$,
     officialCatalog$,
@@ -122,16 +121,12 @@ export function createThreadWorkflowContext(
     );
     return captureAgentStorageContext(plan, ordinary.index);
   });
-  const storageCache$ = computed(async (get) => {
-    return agentStorageCacheSnapshot(await get(storage$));
-  });
   return {
     workflows$,
     officialWorkflows$,
     officialWorkflowObservation$,
     workflowSkills$,
     storage$,
-    storageCache$,
   };
 }
 

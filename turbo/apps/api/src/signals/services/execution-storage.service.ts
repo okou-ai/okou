@@ -436,22 +436,6 @@ const persistPresignedUrlCache$ = command(
   },
 );
 
-export function executionStorageCachePairs(
-  mounts: readonly ExecutionStorageRequest[],
-  versions: readonly VersionRow[],
-): {
-  readonly pairs: readonly {
-    readonly scope: StorageManifestPresignedUrlCacheScope;
-    readonly cacheKey: string;
-  }[];
-} {
-  return storageManifestPresignedUrlCacheLookupPairs(
-    signingRequests(mounts, versions, env("R2_USER_STORAGES_BUCKET_NAME"))
-      .input,
-    false,
-  );
-}
-
 /** The canonical Thread already resolved exact rows; never reread those identities. */
 export function createResolvedExecutionStorageObjects(
   mounts: readonly ExecutionStorageRequest[],

@@ -62,7 +62,7 @@ export interface ChatThreadExecutionSnapshot {
   > | null;
   readonly previousRun: Pick<
     typeof agentRuns.$inferSelect,
-    "id" | "vars" | "storageMounts" | "selectedModel"
+    "id" | "selectedModel"
   > | null;
 }
 
@@ -121,8 +121,6 @@ export function createChatThreadSessionRead(
         historyBlob: { hash: blobs.hash, encoding: blobs.encoding },
         previousRun: {
           id: conversationRun.id,
-          vars: conversationRun.vars,
-          storageMounts: conversationRun.storageMounts,
           selectedModel: conversationRun.selectedModel,
         },
       })
