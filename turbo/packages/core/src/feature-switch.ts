@@ -157,7 +157,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Copper CRM connector",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.DatadogConnector]: {
     maintainer: "yuma@okou.ai",
