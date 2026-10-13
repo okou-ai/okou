@@ -356,7 +356,6 @@
     "src/signals/services/artifact-catalog.service.ts",
     "src/signals/services/artifact-delivery.service.ts",
     "src/signals/services/artifact-preview-url.service.ts",
-    "src/signals/services/artifact-preview.service.ts",
     "src/signals/services/artifact-realtime.service.ts",
     "src/signals/services/artifact-reference.service.ts",
     "src/signals/services/artifact-storage.service.ts",

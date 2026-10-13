@@ -102,8 +102,6 @@ const SCHEMA = {
   R2_HOSTED_SITES_BUCKET_NAME: z.string().min(1).optional(),
   R2_HOSTED_SITES_ACCESS_KEY_ID: z.string().min(1).optional(),
   R2_HOSTED_SITES_SECRET_ACCESS_KEY: z.string().min(1).optional(),
-  CLOUDFLARE_BROWSER_RENDERING_API_TOKEN: z.string().min(1).optional(),
-  ARTIFACT_PREVIEW_WAF_SECRET: z.string().min(32).optional(),
   OKOU_PUBLIC_HOST_DOMAIN: z.string().min(1),
   OKOU_HOST_SCHEME: z.enum(["http", "https"]),
   // Legacy-layout sites.vm0.io URLs retain their own domain and scheme.
