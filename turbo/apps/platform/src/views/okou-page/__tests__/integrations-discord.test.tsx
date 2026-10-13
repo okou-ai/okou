@@ -937,6 +937,68 @@ test("Discord status converges after a connection change from another surface", 
   ).toBeNull();
 });
 
+test.each([false, true])(
+  "Returning to Works preserves Discord status while refreshing (connected: %s)",
+  async (isConnected) => {
+    const refreshStarted = context.mocks.deferred<void>();
+    const refreshReady = context.mocks.deferred<void>();
+    let refreshing = false;
+    context.mocks.api(
+      integrationsDiscordContract.getStatus,
+      async ({ respond, withSignal }) => {
+        if (refreshing) {
+          refreshStarted.resolve();
+          await withSignal(refreshReady.promise);
+          return respond(200, status({ guildName: "Updated team" }));
+        }
+        return respond(
+          200,
+          status({
+            isConnected,
+            discordUserId: isConnected ? "234567890123456789" : null,
+          }),
+        );
+      },
+    );
+    await setupDiscordPage();
+    const description = isConnected
+      ? "Mention Okou in a server or send the bot a direct message."
+      : "Connect your Discord account through official browser consent.";
+    await expect(screen.findByText(description)).resolves.toBeInTheDocument();
+
+    click(
+      getAction(
+        "link",
+        "Chat",
+        screen.getByRole("navigation", { name: "Sidebar" }),
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+    });
+    refreshing = true;
+    click(getAction("link", "Where Okou works"));
+    await refreshStarted.promise;
+    const card = await screen.findByRole("region", { name: "Discord" });
+    expect(within(card).getByText(description)).toBeInTheDocument();
+    const connection = isConnected
+      ? within(card).getByText("Connected (Design team)")
+      : getAction("button", "Connect", card);
+    expect(connection).toBeInTheDocument();
+    expect(connection).not.toBeDisabled();
+    expect(
+      within(card).queryByText(
+        "Ask an organization admin to install Okou to your Discord server.",
+      ),
+    ).not.toBeInTheDocument();
+
+    refreshReady.resolve();
+    await expect(
+      within(card).findByText("Connected (Updated team)"),
+    ).resolves.toBeInTheDocument();
+  },
+);
+
 test("Works keeps its startup screen until Discord and Slack status are ready", async () => {
   const statusReady = context.mocks.deferred<void>();
   mockSlack(context, {
@@ -960,6 +1022,18 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   await expect(
     screen.findByText("Connected (Okou HQ)"),
   ).resolves.toBeInTheDocument();
+  const discordCard = getIntegrationCard("Discord");
+  expect(
+    within(discordCard).getByText(
+      "Mention Okou in a server or send the bot a direct message.",
+    ),
+  ).toBeInTheDocument();
+  expect(queryAllByRoleFast("button", discordCard)).toHaveLength(0);
+  expect(
+    within(discordCard).queryByText(
+      "Ask an organization admin to install Okou to your Discord server.",
+    ),
+  ).not.toBeInTheDocument();
   const skeleton = bootstrapSkeleton();
   expect(skeleton).not.toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).toHaveAttribute("inert");
@@ -978,7 +1052,7 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
   ).not.toBeInTheDocument();
 });
 
-test("A status error shows the setup description until a connection update recovers the card", async () => {
+test("A status error hides stale controls and recovers when returning to Works", async () => {
   let denied = false;
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     if (denied) {
@@ -996,22 +1070,38 @@ test("A status error shows the setup description until a connection update recov
   denied = true;
   context.mocks.ably.trigger("discord:changed");
   await expect(
-    within(card).findByText(
-      "Ask an organization admin to install Okou to your Discord server.",
-    ),
+    screen.findByText("Discord access denied"),
   ).resolves.toBeInTheDocument();
-  expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+  await waitFor(() => {
+    expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+  });
+  expect(
+    within(card).getByText(
+      "Mention Okou in a server or send the bot a direct message.",
+    ),
+  ).toBeInTheDocument();
   expect(
     within(card).queryByText(/^Connected(?: \(.+\))?$/u),
   ).not.toBeInTheDocument();
 
+  click(
+    getAction(
+      "link",
+      "Chat",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
+  await waitFor(() => {
+    expect(screen.queryByText("Discord")).not.toBeInTheDocument();
+  });
   denied = false;
-  context.mocks.ably.trigger("discord:changed");
+  click(getAction("link", "Where Okou works"));
+  const recoveredCard = await screen.findByRole("region", { name: "Discord" });
   await expect(
-    within(card).findByText("Connected (Design team)"),
+    within(recoveredCard).findByText("Connected (Design team)"),
   ).resolves.toBeInTheDocument();
   expect(
-    within(card).getByText(/^Connected(?: \(.+\))?$/u),
+    within(recoveredCard).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
 });
 
@@ -1094,8 +1184,7 @@ test.each([
   {
     name: "failed refresh and recovery",
     refreshError: true,
-    refreshMessage:
-      "Ask an organization admin to install Okou to your Discord server.",
+    refreshMessage: "Discord refresh denied",
   },
 ])(
   "A pending DM choice remains disabled through a $name",
