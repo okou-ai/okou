@@ -23,6 +23,7 @@ import {
   desc,
   eq,
   getTableColumns,
+  gte,
   inArray,
   isNull,
   lte,
@@ -50,6 +51,7 @@ import {
   type StripeSubscriptionUpdateItemParam,
 } from "../external/stripe-client";
 import {
+  nullableDriverValueDecoder,
   pgTextDecoder,
   zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
@@ -904,69 +906,184 @@ async function prepareMigrationSelections(
   );
 }
 
-const persistMigrationPreview$ = command(
+interface PersistMigrationPreviewArgs {
+  readonly targetTier: SubscriptionCheckoutTier;
+  readonly stripePlanPriceId: string;
+  readonly currentRecurringAmountCents: number;
+  readonly nextRecurringAmountCents: number;
+  readonly recurringDifferenceCents: number;
+  readonly currency: string;
+  readonly effectiveAt: Date;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+}
+
+// INSERT SELECT requires the complete schema projection, including the native
+// UUID and preview status defaults and the nullable lifecycle fields.
+function migrationPreviewInsertSource(
+  context: LegacyMigrationContext,
+  args: PersistMigrationPreviewArgs,
+) {
+  const columns = getTableColumns(usagePackSubscriptionMigrations);
+  return {
+    id: sql`gen_random_uuid()`
+      .mapWith(usagePackSubscriptionMigrations.id)
+      .as("id"),
+    orgId: sql`${sql.param(context.org.orgId, columns.orgId)}`
+      .mapWith(usagePackSubscriptionMigrations.orgId)
+      .as("org_id"),
+    sourceTier: sql`${sql.param(context.org.tier, columns.sourceTier)}`
+      .mapWith(usagePackSubscriptionMigrations.sourceTier)
+      .as("source_tier"),
+    targetTier: sql`${sql.param(args.targetTier, columns.targetTier)}`
+      .mapWith(usagePackSubscriptionMigrations.targetTier)
+      .as("target_tier"),
+    stripeCustomerId:
+      sql`${sql.param(context.org.stripeCustomerId, columns.stripeCustomerId)}`
+        .mapWith(usagePackSubscriptionMigrations.stripeCustomerId)
+        .as("stripe_customer_id"),
+    stripeSubscriptionId:
+      sql`${sql.param(context.org.stripeSubscriptionId, columns.stripeSubscriptionId)}`
+        .mapWith(usagePackSubscriptionMigrations.stripeSubscriptionId)
+        .as("stripe_subscription_id"),
+    legacyStripePriceId:
+      sql`${sql.param(context.legacyItem.price.id, columns.legacyStripePriceId)}`
+        .mapWith(usagePackSubscriptionMigrations.legacyStripePriceId)
+        .as("legacy_stripe_price_id"),
+    legacyStripeItemId:
+      sql`${sql.param(context.legacyItem.id, columns.legacyStripeItemId)}`
+        .mapWith(usagePackSubscriptionMigrations.legacyStripeItemId)
+        .as("legacy_stripe_item_id"),
+    stripePlanPriceId:
+      sql`${sql.param(args.stripePlanPriceId, columns.stripePlanPriceId)}`
+        .mapWith(usagePackSubscriptionMigrations.stripePlanPriceId)
+        .as("stripe_plan_price_id"),
+    status: sql`'previewed'`
+      .mapWith(usagePackSubscriptionMigrations.status)
+      .as("status"),
+    currentRecurringAmountCents:
+      sql`${sql.param(args.currentRecurringAmountCents, columns.currentRecurringAmountCents)}`
+        .mapWith(usagePackSubscriptionMigrations.currentRecurringAmountCents)
+        .as("current_recurring_amount_cents"),
+    nextRecurringAmountCents:
+      sql`${sql.param(args.nextRecurringAmountCents, columns.nextRecurringAmountCents)}`
+        .mapWith(usagePackSubscriptionMigrations.nextRecurringAmountCents)
+        .as("next_recurring_amount_cents"),
+    recurringDifferenceCents:
+      sql`${sql.param(args.recurringDifferenceCents, columns.recurringDifferenceCents)}`
+        .mapWith(usagePackSubscriptionMigrations.recurringDifferenceCents)
+        .as("recurring_difference_cents"),
+    currency: sql`${sql.param(args.currency, columns.currency)}`
+      .mapWith(usagePackSubscriptionMigrations.currency)
+      .as("currency"),
+    effectiveAt: sql`${sql.param(args.effectiveAt, columns.effectiveAt)}`
+      .mapWith(usagePackSubscriptionMigrations.effectiveAt)
+      .as("effective_at"),
+    previewExpiresAt:
+      sql`${sql.param(args.expiresAt, columns.previewExpiresAt)}`
+        .mapWith(usagePackSubscriptionMigrations.previewExpiresAt)
+        .as("preview_expires_at"),
+    stripeScheduleId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackSubscriptionMigrations.stripeScheduleId,
+        ),
+      )
+      .as("stripe_schedule_id"),
+    stripeInvoiceId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackSubscriptionMigrations.stripeInvoiceId,
+        ),
+      )
+      .as("stripe_invoice_id"),
+    stripePaymentIntentId: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackSubscriptionMigrations.stripePaymentIntentId,
+        ),
+      )
+      .as("stripe_payment_intent_id"),
+    hostedInvoiceUrl: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackSubscriptionMigrations.hostedInvoiceUrl,
+        ),
+      )
+      .as("hosted_invoice_url"),
+    failureReason: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(
+          usagePackSubscriptionMigrations.failureReason,
+        ),
+      )
+      .as("failure_reason"),
+    completedAt: sql`null`
+      .mapWith(
+        nullableDriverValueDecoder(usagePackSubscriptionMigrations.completedAt),
+      )
+      .as("completed_at"),
+    createdAt: sql`${sql.param(args.createdAt, columns.createdAt)}`
+      .mapWith(usagePackSubscriptionMigrations.createdAt)
+      .as("created_at"),
+    updatedAt: sql`${sql.param(args.createdAt, columns.updatedAt)}`
+      .mapWith(usagePackSubscriptionMigrations.updatedAt)
+      .as("updated_at"),
+  };
+}
+
+// Keep the original read/read/write phase uninterrupted; its wrapper owns the
+// sole post-phase cancellation check.
+const persistUnpaidMigrationQuote$ = command(
   async (
     { set },
     context: LegacyMigrationContext,
     selections: readonly PreparedMigrationSelection[],
-    args: {
-      readonly targetTier: SubscriptionCheckoutTier;
-      readonly stripePlanPriceId: string;
-      readonly currentRecurringAmountCents: number;
-      readonly nextRecurringAmountCents: number;
-      readonly recurringDifferenceCents: number;
-      readonly currency: string;
-      readonly effectiveAt: Date;
-      readonly createdAt: Date;
-      readonly expiresAt: Date;
-    },
-    signal: AbortSignal,
+    args: PersistMigrationPreviewArgs,
   ): Promise<MigrationRow | null> => {
     const db = set(writeDb$);
-
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0295; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      const [source] = await tx
-        .select({ orgId: orgMetadata.orgId })
-        .from(orgMetadata)
-        .where(
-          and(
-            eq(orgMetadata.orgId, context.org.orgId),
-            eq(orgMetadata.tier, context.org.tier),
-            eq(orgMetadata.stripeCustomerId, context.org.stripeCustomerId),
-            eq(
-              orgMetadata.stripeSubscriptionId,
-              context.org.stripeSubscriptionId,
-            ),
-            eq(orgMetadata.subscriptionStatus, "active"),
-            eq(orgMetadata.cancelAtPeriodEnd, false),
-            isNull(orgMetadata.pendingSubscriptionScheduleId),
+    const [source] = await db
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(
+        and(
+          eq(orgMetadata.orgId, context.org.orgId),
+          eq(orgMetadata.tier, context.org.tier),
+          eq(orgMetadata.stripeCustomerId, context.org.stripeCustomerId),
+          eq(
+            orgMetadata.stripeSubscriptionId,
+            context.org.stripeSubscriptionId,
           ),
-        )
-        .limit(1);
-      // This is an unpaid quote, not accepted migration intent. Existing
-      // uniqueness rejects competing previews; confirmation rechecks the source.
-      if (!source) {
-        return null;
-      }
-      const [inProgress] = await tx
-        .select({ id: usagePackSubscriptionMigrations.id })
-        .from(usagePackSubscriptionMigrations)
-        .where(
-          and(
-            eq(usagePackSubscriptionMigrations.orgId, context.org.orgId),
-            inArray(usagePackSubscriptionMigrations.status, [
-              "applying",
-              "revising",
-              "scheduled",
-            ]),
-          ),
-        )
-        .limit(1);
-      if (inProgress) {
-        return null;
-      }
-      await tx
+          eq(orgMetadata.subscriptionStatus, "active"),
+          eq(orgMetadata.cancelAtPeriodEnd, false),
+          isNull(orgMetadata.pendingSubscriptionScheduleId),
+        ),
+      )
+      .limit(1);
+    // This is an unpaid quote, not accepted migration intent. Existing
+    // uniqueness rejects competing previews; confirmation rechecks the source.
+    if (!source) {
+      return null;
+    }
+    const [inProgress] = await db
+      .select({ id: usagePackSubscriptionMigrations.id })
+      .from(usagePackSubscriptionMigrations)
+      .where(
+        and(
+          eq(usagePackSubscriptionMigrations.orgId, context.org.orgId),
+          inArray(usagePackSubscriptionMigrations.status, [
+            "applying",
+            "revising",
+            "scheduled",
+          ]),
+        ),
+      )
+      .limit(1);
+    if (inProgress) {
+      return null;
+    }
+    const superseded = db.$with("superseded_migration_previews").as(
+      db
         .update(usagePackSubscriptionMigrations)
         .set({
           status: "failed",
@@ -979,40 +1096,72 @@ const persistMigrationPreview$ = command(
             eq(usagePackSubscriptionMigrations.orgId, context.org.orgId),
             eq(usagePackSubscriptionMigrations.status, "previewed"),
           ),
-        );
-      const [migration] = await tx
+        )
+        .returning({ id: usagePackSubscriptionMigrations.id }),
+    );
+    const supersession = db
+      .select({ count: count().as("count") })
+      .from(superseded)
+      .as("supersession");
+    const created = db.$with("created_migration_preview").as(
+      db
         .insert(usagePackSubscriptionMigrations)
-        .values({
-          orgId: context.org.orgId,
-          sourceTier: context.org.tier,
-          targetTier: args.targetTier,
-          stripeCustomerId: context.org.stripeCustomerId,
-          stripeSubscriptionId: context.org.stripeSubscriptionId,
-          legacyStripePriceId: context.legacyItem.price.id,
-          legacyStripeItemId: context.legacyItem.id,
-          stripePlanPriceId: args.stripePlanPriceId,
-          currentRecurringAmountCents: args.currentRecurringAmountCents,
-          nextRecurringAmountCents: args.nextRecurringAmountCents,
-          recurringDifferenceCents: args.recurringDifferenceCents,
-          currency: args.currency,
-          effectiveAt: args.effectiveAt,
-          previewExpiresAt: args.expiresAt,
-          createdAt: args.createdAt,
-          updatedAt: args.createdAt,
-        })
-        .returning();
-      if (!migration) {
-        throw new Error("Failed to create usage pack migration preview");
-      }
-      if (selections.length > 0) {
-        await tx.insert(usagePackSubscriptionMigrationSelections).values(
-          selections.map((selection) => {
-            return { migrationId: migration.id, ...selection };
-          }),
-        );
-      }
-      return migration;
-    });
+        .select(
+          db
+            .select(migrationPreviewInsertSource(context, args))
+            // Consume every superseded row before checking either open key.
+            // The scalar aggregate also admits a parent when no old row exists.
+            .from(supersession)
+            .where(gte(supersession.count, 0)),
+        )
+        .returning(),
+    );
+    let migration: MigrationRow | undefined;
+    if (selections.length > 0) {
+      const source = migrationRevisionSelectionSource(selections);
+      const inserted = db.$with("inserted_migration_preview_selections").as(
+        db
+          .insert(usagePackSubscriptionMigrationSelections)
+          .select(
+            db
+              .select({
+                id: source.id,
+                migrationId: created.id,
+                ...source.fields,
+              })
+              .from(created)
+              .crossJoin(source.desired),
+          )
+          .returning({ id: usagePackSubscriptionMigrationSelections.id }),
+      );
+      [migration] = await db
+        .with(superseded, created, inserted)
+        .select()
+        .from(created);
+    } else {
+      [migration] = await db.with(superseded, created).select().from(created);
+    }
+    if (!migration) {
+      throw new Error("Failed to create usage pack migration preview");
+    }
+    return migration;
+  },
+);
+
+const persistMigrationPreview$ = command(
+  async (
+    { set },
+    context: LegacyMigrationContext,
+    selections: readonly PreparedMigrationSelection[],
+    args: PersistMigrationPreviewArgs,
+    signal: AbortSignal,
+  ): Promise<MigrationRow | null> => {
+    const result = await set(
+      persistUnpaidMigrationQuote$,
+      context,
+      selections,
+      args,
+    );
     signal.throwIfAborted();
     return result;
   },
