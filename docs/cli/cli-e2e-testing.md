@@ -58,7 +58,7 @@ The local fixture integration suite (`cd e2e && pnpm test`) exercises this
 lifecycle through the real Playwright runner, Chromium and a loopback HTTP server.
 It requires the Chromium headless shell (`pnpm exec playwright install --only-shell
 chromium` from `e2e`), but not a deployed preview or Clerk credentials.
-The focused runner sign-in fixture file also accepts
+The focused runner sign-in and Clerk bootstrap fixture files also accept
 `E2E_CHROMIUM_EXECUTABLE_PATH` for an installed Chromium executable. Such a local
 run verifies that browser version; the PR pipeline still verifies the locked
 Playwright headless shell.
