@@ -809,7 +809,7 @@ function createIngressContext(args: {
         ? "thread"
         : "channel"
       : "dm",
-    threadId: message.guild_id ? destinationChannelId : null,
+    threadId: message.guild_id ? ingress.destinationChannelId : null,
     conversationContext,
     messageText: messageContent.displayContent,
     messageFiles: message.attachments,
@@ -907,9 +907,9 @@ const persistClaimedIngress$ = command(
     if (!ingress) {
       return null;
     }
-    if (!ingress.destinationChannelId) {
-      throw new Error("Canonical Discord ingress destination is missing");
-    }
+    // The native thread is only materialized by its first outgoing content.
+    const destinationChannelId =
+      ingress.destinationChannelId ?? ingress.sessionKey;
     const message = claimedIngressMessage(ingress);
     const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
@@ -950,7 +950,7 @@ const persistClaimedIngress$ = command(
     const context = createIngressContext({
       binding,
       ingress,
-      destinationChannelId: ingress.destinationChannelId,
+      destinationChannelId,
       message,
       channelType: source.channel.type,
       conversationContext,
@@ -975,7 +975,7 @@ const persistClaimedIngress$ = command(
     if (persisted) {
       scheduleDiscordAdmissionTyping({
         botToken: source.botToken,
-        channelId: ingress.destinationChannelId,
+        channelId: ingress.destinationChannelId ?? message.channel_id,
       });
     }
     return persisted
@@ -984,7 +984,8 @@ const persistClaimedIngress$ = command(
           userId: binding.userId,
           chatThreadId: ingress.chatThreadId,
           connectionId: ingress.connectionId,
-          destinationChannelId: ingress.destinationChannelId,
+          destinationChannelId:
+            ingress.destinationChannelId ?? message.channel_id,
           createdAt: ingress.createdAt,
         }
       : null;

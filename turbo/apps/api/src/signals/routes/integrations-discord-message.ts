@@ -13,10 +13,7 @@ import {
   discordMessageUrl,
   splitDiscordMessage,
 } from "../../lib/discord-message";
-import {
-  requireDiscordBinding$,
-  requireDiscordConversationAccess$,
-} from "../services/discord-access.service";
+import { requireDiscordBinding$ } from "../services/discord-access.service";
 import {
   discordMessageSendFooterText,
   integrationMessageSendLabels$,
@@ -26,6 +23,7 @@ import {
   discordApiFailure,
   type DiscordFailureResponse,
 } from "../services/discord-api-response";
+import { requireDiscordOutputAccess$ } from "../services/discord-output-destination.service";
 import type { RouteEntry } from "../route-entry";
 
 function partialFailure(
@@ -55,8 +53,8 @@ const sendChunk$ = command(
     let retryFailure: DiscordFailureResponse | undefined;
     for (let attempt = 1; ; attempt += 1) {
       let access = await set(
-        requireDiscordConversationAccess$,
-        { ...args, mode: "write" },
+        requireDiscordOutputAccess$,
+        { ...args, createThread: true },
         signal,
       );
       if (access.kind === "denied") {
@@ -80,8 +78,8 @@ const sendChunk$ = command(
         }
         // Reference reads may outlive a permission or binding change.
         access = await set(
-          requireDiscordConversationAccess$,
-          { ...args, mode: "write" },
+          requireDiscordOutputAccess$,
+          { ...args, createThread: true },
           signal,
         );
         if (access.kind === "denied") {
