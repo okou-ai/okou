@@ -548,95 +548,104 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
-async function saveBrowserTabSnapshot(
-  db: Db,
-  target: ActiveBrowserInstance,
-  signal: AbortSignal,
-): Promise<void> {
-  const snapshotSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
-  ]);
-  const saved = await settle(
-    (async () => {
-      const provider = await getBrowserUseSession(
-        target.providerSessionId,
-        snapshotSignal,
-      );
-      snapshotSignal.throwIfAborted();
-      if (provider.status !== "active" || !provider.cdpUrl) {
-        return;
-      }
-      const urls = await listBrowserUseTabUrls(provider.cdpUrl, snapshotSignal);
-      snapshotSignal.throwIfAborted();
-      const encryptedTabUrls = await encryptPersistentSecretValue(
-        JSON.stringify(urls),
-        { userId: target.userId },
-      );
-      snapshotSignal.throwIfAborted();
-      await db
-        .insert(browserSessionTabSnapshots)
-        .values({
-          chatThreadId: target.chatThreadId,
-          encryptedTabUrls,
-        })
-        .onConflictDoUpdate({
-          target: browserSessionTabSnapshots.chatThreadId,
-          set: {
+const saveBrowserTabSnapshot$ = command(
+  async (
+    { set },
+    target: ActiveBrowserInstance,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshotSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
+    ]);
+    const saved = await settle(
+      (async () => {
+        const provider = await getBrowserUseSession(
+          target.providerSessionId,
+          snapshotSignal,
+        );
+        snapshotSignal.throwIfAborted();
+        if (provider.status !== "active" || !provider.cdpUrl) {
+          return;
+        }
+        const urls = await listBrowserUseTabUrls(
+          provider.cdpUrl,
+          snapshotSignal,
+        );
+        snapshotSignal.throwIfAborted();
+        const encryptedTabUrls = await encryptPersistentSecretValue(
+          JSON.stringify(urls),
+          { userId: target.userId },
+        );
+        snapshotSignal.throwIfAborted();
+        await db
+          .insert(browserSessionTabSnapshots)
+          .values({
+            chatThreadId: target.chatThreadId,
             encryptedTabUrls,
-            updatedAt: nowDate(),
-          },
-        });
-      snapshotSignal.throwIfAborted();
-    })(),
-  );
-  signal.throwIfAborted();
-  if (!saved.ok) {
-    L.warn("Managed browser tab snapshot failed", {
-      chatThreadId: target.chatThreadId,
-    });
-  }
-}
+          })
+          .onConflictDoUpdate({
+            target: browserSessionTabSnapshots.chatThreadId,
+            set: {
+              encryptedTabUrls,
+              updatedAt: nowDate(),
+            },
+          });
+        snapshotSignal.throwIfAborted();
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!saved.ok) {
+      L.warn("Managed browser tab snapshot failed", {
+        chatThreadId: target.chatThreadId,
+      });
+    }
+  },
+);
 
-async function restoreBrowserTabSnapshot(
-  db: Db,
-  browser: BrowserSessionRow,
-  cdpUrl: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const restored = await settle(
-    (async () => {
-      const [snapshot] = await db
-        .select({
-          encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
-        })
-        .from(browserSessionTabSnapshots)
-        .where(
-          eq(browserSessionTabSnapshots.chatThreadId, browser.chatThreadId),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!snapshot) {
-        return;
-      }
-      const urls = browserTabSnapshotSchema.parse(
-        JSON.parse(
-          await decryptPersistentSecretValue(snapshot.encryptedTabUrls, {
-            userId: browser.userId,
-          }),
-        ) as unknown,
-      );
-      signal.throwIfAborted();
-      await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
-    })(),
-  );
-  signal.throwIfAborted();
-  if (!restored.ok) {
-    L.warn("Managed browser tab restoration failed", {
-      chatThreadId: browser.chatThreadId,
-    });
-  }
-}
+const restoreBrowserTabSnapshot$ = command(
+  async (
+    { get },
+    browser: BrowserSessionRow,
+    cdpUrl: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = get(db$);
+    const restored = await settle(
+      (async () => {
+        const [snapshot] = await db
+          .select({
+            encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
+          })
+          .from(browserSessionTabSnapshots)
+          .where(
+            eq(browserSessionTabSnapshots.chatThreadId, browser.chatThreadId),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!snapshot) {
+          return;
+        }
+        const urls = browserTabSnapshotSchema.parse(
+          JSON.parse(
+            await decryptPersistentSecretValue(snapshot.encryptedTabUrls, {
+              userId: browser.userId,
+            }),
+          ) as unknown,
+        );
+        signal.throwIfAborted();
+        await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!restored.ok) {
+      L.warn("Managed browser tab restoration failed", {
+        chatThreadId: browser.chatThreadId,
+      });
+    }
+  },
+);
 
 function stopProviderSessionLater(providerSessionId: string): void {
   waitUntil(
@@ -737,10 +746,9 @@ const stopActiveBrowserInstance$ = command(
       | undefined,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const options = suppliedOptions ?? { stopProvider: true };
     if (options.saveTabSnapshot ?? options.stopProvider) {
-      await saveBrowserTabSnapshot(db, target, signal);
+      await set(saveBrowserTabSnapshot$, target, signal);
     }
     const stopped = await set(
       commitBrowserStop$,
@@ -760,37 +768,40 @@ const stopActiveBrowserInstance$ = command(
   },
 );
 
-async function suspendBrowserWithoutActiveInstance(
-  db: Db,
-  browser: BrowserSessionRow,
-  reason: BrowserSuspensionReason,
-  signal: AbortSignal,
-): Promise<BrowserSessionRow | null> {
-  const [suspended] = await db
-    .update(browserSessions)
-    .set({
-      status: "suspended",
-      suspendedAt: nowDate(),
-      suspensionReason: reason,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, browser.chatThreadId),
-        eq(browserSessions.status, "active"),
-      ),
-    )
-    .returning(BROWSER_SESSION_SELECTION);
-  signal.throwIfAborted();
-  if (!suspended) {
-    return null;
-  }
-  await publishBrowserSessionChangedSafely(browser.userId, {
-    threadId: browser.chatThreadId,
-  });
-  signal.throwIfAborted();
-  return suspended;
-}
+const suspendBrowserWithoutActiveInstance$ = command(
+  async (
+    { set },
+    browser: BrowserSessionRow,
+    reason: BrowserSuspensionReason,
+    signal: AbortSignal,
+  ): Promise<BrowserSessionRow | null> => {
+    const db = set(writeDb$);
+    const [suspended] = await db
+      .update(browserSessions)
+      .set({
+        status: "suspended",
+        suspendedAt: nowDate(),
+        suspensionReason: reason,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, browser.chatThreadId),
+          eq(browserSessions.status, "active"),
+        ),
+      )
+      .returning(BROWSER_SESSION_SELECTION);
+    signal.throwIfAborted();
+    if (!suspended) {
+      return null;
+    }
+    await publishBrowserSessionChangedSafely(browser.userId, {
+      threadId: browser.chatThreadId,
+    });
+    signal.throwIfAborted();
+    return suspended;
+  },
+);
 
 async function browserConcurrencyLimit(db: Db, orgId: string): Promise<number> {
   const [capabilities, paidSlots] = await Promise.all([
@@ -1352,32 +1363,35 @@ interface BrowserProfileCleanupTarget {
   readonly providerProfileId: string;
 }
 
-async function latestBrowserProviderSessionId(
-  db: Db,
-  target: BrowserProfileCleanupTarget,
-): Promise<string | null> {
-  const [instance] = await db
-    .select({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessionInstances)
-    .innerJoin(
-      browserThreadProfiles,
-      eq(
-        browserThreadProfiles.chatThreadId,
-        browserSessionInstances.chatThreadId,
-      ),
-    )
-    .where(
-      and(
-        eq(browserSessionInstances.chatThreadId, target.chatThreadId),
-        eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
-      ),
-    )
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  return instance?.providerSessionId ?? null;
-}
+const latestBrowserProviderSessionId$ = command(
+  async (
+    { get },
+    target: BrowserProfileCleanupTarget,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [instance] = await db
+      .select({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessionInstances)
+      .innerJoin(
+        browserThreadProfiles,
+        eq(
+          browserThreadProfiles.chatThreadId,
+          browserSessionInstances.chatThreadId,
+        ),
+      )
+      .where(
+        and(
+          eq(browserSessionInstances.chatThreadId, target.chatThreadId),
+          eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+        ),
+      )
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    return instance?.providerSessionId ?? null;
+  },
+);
 
 const retireBrowserProfileOwnership$ = command(
   async (
@@ -1475,10 +1489,9 @@ const cleanupBrowserProfile$ = command(
     providerSessionIds: readonly string[] | undefined,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const retryProviderSessionId =
       providerSessionIds === undefined
-        ? await latestBrowserProviderSessionId(db, target)
+        ? await set(latestBrowserProviderSessionId$, target)
         : null;
     signal.throwIfAborted();
     const cleanupProviderSessionIds =
@@ -1819,7 +1832,6 @@ const startProviderInstance$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserStartResult> => {
-    const db = set(writeDb$);
     const capacityError = await set(
       ensureBrowserCapacity$,
       args.context.orgId,
@@ -1859,8 +1871,8 @@ const startProviderInstance$ = command(
       };
     }
 
-    await restoreBrowserTabSnapshot(
-      db,
+    await set(
+      restoreBrowserTabSnapshot$,
       claimed.browser,
       started.cdpUrl,
       signal,
@@ -2062,8 +2074,8 @@ const inspectActiveConnection$ = command(
     const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
-      const suspended = await suspendBrowserWithoutActiveInstance(
-        db,
+      const suspended = await set(
+        suspendBrowserWithoutActiveInstance$,
         browser,
         "provider",
         signal,
