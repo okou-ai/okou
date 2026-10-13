@@ -113,6 +113,27 @@ test("A Discord DM link can connect without a server hint", async () => {
   expect(getAction("button", "Connect")).toBeEnabled();
 });
 
+test("A failed Discord status request exposes the error page and its back link", async () => {
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Discord access denied" },
+    });
+  });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  expect(
+    screen.getByRole("heading", { name: "Connection failed" }),
+  ).toBeInTheDocument();
+  expect(getAction("link", "Back to settings")).toHaveAttribute(
+    "href",
+    "/works",
+  );
+  expect(queryAction("button", "Connect")).not.toBeInTheDocument();
+});
+
 test("A link for another server does not connect the wrong workspace", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, status({ guildId: "987654321098765432" }));

@@ -5,6 +5,7 @@ import { DiscordConnectPage } from "../../views/okou-page/discord-connect-page.t
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
+import { bestEffort } from "../utils.ts";
 import { watchDiscordConnection$ } from "./discord.ts";
 
 export const setupDiscordConnectPage$ = command(
@@ -16,8 +17,11 @@ export const setupDiscordConnectPage$ = command(
         return $.works.discord.connectTitle;
       }),
     );
-    await set(watchDiscordConnection$, signal);
-    signal.throwIfAborted();
-    await set(hideAppSkeleton$, signal);
+    // The view owns status loading and errors, so a failed read must not leave
+    // its error state behind the bootstrap skeleton.
+    await Promise.all([
+      set(hideAppSkeleton$, signal),
+      bestEffort(set(watchDiscordConnection$, signal), signal),
+    ]);
   },
 );
