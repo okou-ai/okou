@@ -719,6 +719,11 @@ describe("admitted application peer", () => {
   });
 
   it("contains malformed structured handler errors without closing unrelated business", async () => {
+    const { proxy, revoke } = Proxy.revocable(
+      new SandboxChannelError("unavailable"),
+      {},
+    );
+    revoke();
     for (const failure of [
       new SandboxChannelError("category_version_mismatch", {
         category: "/private",
@@ -730,6 +735,7 @@ describe("admitted application peer", () => {
           throw new Error("private error metadata failure");
         },
       }),
+      proxy,
     ]) {
       const h = harness({
         handlers: [

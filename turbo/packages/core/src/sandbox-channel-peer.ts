@@ -722,16 +722,16 @@ export class SandboxChannelPeer {
     error: unknown,
     fallback: SandboxChannelErrorCode,
   ): SandboxChannelWireError {
-    if (error instanceof SandboxChannelError) {
-      try {
+    try {
+      if (error instanceof SandboxChannelError) {
         const parsed = sandboxChannelErrorSchema.safeParse({
           code: error.code,
           ...error.details,
         });
         if (parsed.success) return parsed.data;
-      } catch {
-        // Consumer error metadata is rejected at the business boundary.
       }
+    } catch {
+      // Consumer error inspection is rejected at the business boundary.
     }
     return { code: fallback };
   }
