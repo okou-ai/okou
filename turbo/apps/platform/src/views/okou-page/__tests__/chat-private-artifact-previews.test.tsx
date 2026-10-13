@@ -3,7 +3,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -14,7 +13,6 @@ import {
   ATTACHMENT_THREAD_ID,
   artifactFile,
   findNamedButton,
-  findNamedMenuItem,
   findNamedLink,
   mockAttachmentChat,
   privateAttachmentUrl,
@@ -60,6 +58,7 @@ function mockPrivateImage(
     const url = responseUrl;
     responseUrl = NEXT_URL;
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2026-09-11T00:00:00.000Z",
       filename: "photo.png",
@@ -163,36 +162,6 @@ test("repeated thread images and their lightbox share one resolved original", as
   ).resolves.toHaveAttribute("src", FIRST_URL);
 });
 
-test("an older API without downloadUrl remains downloadable without replacing the open image", async () => {
-  mockPrivateImage();
-  const downloads = context.mocks.browser.blobDownload();
-  context.mocks.browser.requestCacheMode();
-  context.mocks.http.get(`${R2_ORIGIN}/private/photo.png`, ({ request }) => {
-    expect(request.cache).toBe("reload");
-    return new URL(request.url).searchParams.get("X-Amz-Signature") === "next"
-      ? HttpResponse.text("private image bytes")
-      : new HttpResponse(null, { status: 403 });
-  });
-  const image = await openChat();
-  click(image);
-  await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-      "src",
-      FIRST_URL,
-    );
-  });
-  click(await findNamedButton("Download options"));
-  click(await findNamedMenuItem("Download"));
-  await waitFor(() => {
-    expect(downloads.downloads[0]?.filename).toBe("photo.png");
-  });
-  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
-    "src",
-    FIRST_URL,
-  );
-  expect(image).toHaveAttribute("src", THUMBNAIL_URL);
-});
-
 test.each([null, "https://a.okou.io/0123456789.png"])(
   "uploaded images reuse their thread presign with publicUrl=%s",
   async (publicUrl) => {
@@ -232,6 +201,7 @@ test.each([null, "https://a.okou.io/0123456789.png"])(
       const resolved = responseUrl;
       responseUrl = NEXT_URL;
       return respond(200, {
+        downloadUrl: new URL("?download=1", resolved).href,
         url: resolved,
         expiresAt: "2026-09-13T00:00:00.000Z",
         publicUrl,
@@ -347,6 +317,7 @@ test.each(["assistant", "user"] as const)(
       resolvedIds.add(id);
       return {
         url,
+        downloadUrl: new URL("?download=1", url).href,
         filename: file.filename,
         expiresAt: "2026-09-13T00:00:00.000Z",
         contentType: "image/png",

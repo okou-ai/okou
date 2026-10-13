@@ -130,6 +130,7 @@ test("A private attachment reuses one URL across reopen and split view", async (
     const url = resolveCount === 0 ? firstUrl : nextUrl;
     resolveCount += 1;
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00.000Z",
       publicUrl: null,
@@ -673,6 +674,7 @@ test("A private HTML link preview reuses its URL across reopening and split view
       const resolvedPreview = currentPreview;
       currentPreview = nextPreview;
       return respond(200, {
+        downloadUrl: new URL("?download=1", resolvedPreview).href,
         url: resolvedPreview,
         filename: "index.html",
         contentType: "text/html",
@@ -742,6 +744,10 @@ test("A private site card resizes its authorized screenshot and opens the site o
       const isScreenshot =
         params.reference === screenshot.slice("/artifacts/".length);
       return respond(200, {
+        downloadUrl: new URL(
+          "?download=1",
+          isScreenshot ? screenshotUrl : currentPreview,
+        ).href,
         url: isScreenshot ? screenshotUrl : currentPreview,
         filename: isScreenshot ? "preview.webp" : "index.html",
         contentType: isScreenshot ? "image/webp" : "text/html",
@@ -844,6 +850,10 @@ test.each([
           videoResolveCount += 1;
         }
         return respond(200, {
+          downloadUrl: new URL(
+            "?download=1",
+            isPoster ? posterUrl : resolvedVideoUrl,
+          ).href,
           url: isPoster ? posterUrl : resolvedVideoUrl,
           filename: isPoster ? "poster-v2.jpg" : "generated.mp4",
           contentType: isPoster ? "image/jpeg" : "video/mp4",
@@ -858,6 +868,7 @@ test.each([
         videoResolveCount === 0 ? videoUrl : renewedVideoUrl;
       videoResolveCount += 1;
       return respond(200, {
+        downloadUrl: new URL("?download=1", resolvedVideoUrl).href,
         url: resolvedVideoUrl,
         expiresAt: "2099-01-01T00:00:00.000Z",
         publicUrl: null,
@@ -938,6 +949,7 @@ function mockHostedPublication(
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", PUBLICATION_HOST).href,
       url: PUBLICATION_HOST,
       filename: "index.html",
       contentType: "text/html",
@@ -1033,9 +1045,6 @@ test("a self-contained hosted page downloads as the page itself", async () => {
     hostedFile("/index.html", PUBLICATION_PAGE, "text/html; charset=utf-8"),
   ]);
   const downloads = context.mocks.browser.blobDownload();
-  context.mocks.http.get(PUBLICATION_HOST, () => {
-    return HttpResponse.text(PUBLICATION_PAGE);
-  });
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Launch site"));
@@ -1047,6 +1056,9 @@ test("a self-contained hosted page downloads as the page itself", async () => {
     expect(downloads.downloads).toHaveLength(1);
   });
   const [download] = downloads.downloads;
-  expect(download?.filename).toBe("launch-site.html");
-  await expect(download?.blob?.text()).resolves.toBe(PUBLICATION_PAGE);
+  expect(download).toMatchObject({
+    filename: "launch-site.html",
+    url: new URL("?download=1", PUBLICATION_HOST).href,
+    blob: null,
+  });
 });

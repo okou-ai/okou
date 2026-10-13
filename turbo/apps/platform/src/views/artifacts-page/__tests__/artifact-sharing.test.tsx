@@ -90,6 +90,10 @@ async function openArtifact({ enabled = true }: { enabled?: boolean } = {}) {
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL(
+        "?download=1",
+        `https://pv-${"a".repeat(48)}.okou.app/`,
+      ).href,
       url: `https://pv-${"a".repeat(48)}.okou.app/`,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "index.html",
@@ -298,6 +302,7 @@ test("an authorized link preserves its fragment and navigates straight to isolat
   const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", temporary).href,
       url: temporary,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "index.html",
