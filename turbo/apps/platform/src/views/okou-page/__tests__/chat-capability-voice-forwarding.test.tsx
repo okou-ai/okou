@@ -124,6 +124,14 @@ test.each([false, true])(
       composerAnchored ? "Website" : "Presentation",
     );
     const presentation = queryButton("Presentation", menu);
+    const user = userEvent.setup();
+    if (composerAnchored) {
+      expect(presentation).not.toHaveAttribute("data-active", "true");
+      expect(
+        within(menu).queryAllByRole("region", { name: "Presentation" }),
+      ).toHaveLength(0);
+      await user.keyboard("{ArrowUp}");
+    }
     expect(presentation).toHaveAttribute("data-active", "true");
     expect(
       within(menu).queryAllByRole("region", { name: "Presentation" }),
@@ -132,7 +140,6 @@ test.each([false, true])(
       document.querySelectorAll('[data-slot="slash-template-flyout"]'),
     ).toHaveLength(composerAnchored ? 0 : 1);
     expect(editor).toHaveFocus();
-    const user = userEvent.setup();
     await user.keyboard(composerAnchored ? "{ArrowUp}" : "{ArrowDown}");
     expect(queryButton("Illustration", menu)).toHaveAttribute(
       "data-active",
