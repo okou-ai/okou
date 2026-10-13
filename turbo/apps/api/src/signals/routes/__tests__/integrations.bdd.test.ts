@@ -2232,6 +2232,15 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(claim.prompt).toBe(`@Slack User (${botUserId})`);
     expect(claim.appendSystemPrompt).toContain("https://example.com/article");
     expect(claim.appendSystemPrompt).toContain("[ID] F_ARTICLE_SCREENSHOT");
+    expect(claim.appendSystemPrompt).toContain(
+      "# Slack Thread Context\n\n" +
+        "The messages below are from a Slack conversation. When responding:\n" +
+        "- Messages closer to RELATIVE_INDEX 0 are more recent — prioritize them.\n\n" +
+        "---\n\n- RELATIVE_INDEX: -1\n" +
+        `- SENDER: {id: ${slackUserId}, name: Slack User, email: slack@example.com, timezone: UTC}\n\n` +
+        "This article is still broken: https://example.com/article\n" +
+        "[Slack file] article.png (image/png)\n   [ID] F_ARTICLE_SCREENSHOT\n\n---",
+    );
     await completeSlackTriggeredRun({
       runId,
       sandboxToken: claim.sandboxToken,
