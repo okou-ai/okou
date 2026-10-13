@@ -312,17 +312,30 @@ REMOTE_SCRIPT
   echo "=== Done preparing ${host} ==="
 }
 
+report_build_command_failure() {
+  local host=$1 phase=$2 status=$3 started=$4
+  echo "runner ${phase} SSH failed: host=${host} status=${status} elapsed_seconds=$((SECONDS - started))" >&2
+  if [ "$status" -eq 124 ]; then
+    echo "runner ${phase} SSH timed out: host=${host} operation_timeout_seconds=${OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS:-600}" >&2
+  fi
+}
+
 warm_rootfs_cache() {
   local host=$1
   local remote="${METAL_USER}@${host}"
   echo "=== Warming shared template cache on ${host} ==="
-  if ! ssh "$remote" sudo \
+  local started=$SECONDS status
+  if ssh "$remote" sudo \
     R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
     R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
     R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
     R2_USER_STORAGES_BUCKET_NAME="${R2_USER_STORAGES_BUCKET_NAME:-}" \
     "${BIN_DIR}/runner" build --profile "$PROFILE" --warm-rootfs-cache; then
-    return 1
+    :
+  else
+    status=$?
+    report_build_command_failure "$host" template-warm "$status" "$started"
+    return "$status"
   fi
   echo "=== Done warming shared template cache on ${host} ==="
 }
@@ -331,13 +344,18 @@ build_snapshot_on_host() {
   local host=$1
   local remote="${METAL_USER}@${host}"
   echo "=== Building rootfs/snapshot on ${host} ==="
-  if ! ssh "$remote" sudo \
+  local started=$SECONDS status
+  if ssh "$remote" sudo \
     R2_ACCOUNT_ID="${R2_ACCOUNT_ID:-}" \
     R2_ACCESS_KEY_ID="${R2_ACCESS_KEY_ID:-}" \
     R2_SECRET_ACCESS_KEY="${R2_SECRET_ACCESS_KEY:-}" \
     R2_USER_STORAGES_BUCKET_NAME="${R2_USER_STORAGES_BUCKET_NAME:-}" \
     "${BIN_DIR}/runner" build --profile "$PROFILE"; then
-    return 1
+    :
+  else
+    status=$?
+    report_build_command_failure "$host" image-build "$status" "$started"
+    return "$status"
   fi
   echo "=== Done building rootfs/snapshot on ${host} ==="
 }
@@ -375,18 +393,23 @@ fi
 
 PIDS=()
 for host in "${HOSTS[@]}"; do
-  build_snapshot_on_host "$host" > "${LOG_DIR}/${host}.build.log" 2>&1 &
+  # Keep raw machine-readable hashes in the log while streaming host-prefixed
+  # progress immediately. pipefail retains the original SSH failure status.
+  build_snapshot_on_host "$host" 2>&1 |
+    tee "${LOG_DIR}/${host}.build.log" |
+    sed -u "s/^/[${host}] /" &
   PIDS+=($!)
 done
 
 FAILED=0
 for i in "${!PIDS[@]}"; do
-  if ! wait "${PIDS[$i]}"; then
+  if wait "${PIDS[$i]}"; then
+    :
+  else
+    build_status=$?
     FAILED=1
-    echo "::error::Runner image build failed on ${HOSTS[$i]}"
+    echo "::error::Runner image build failed on ${HOSTS[$i]} (status ${build_status})"
   fi
-  echo "=== ${HOSTS[$i]} build ==="
-  cat "${LOG_DIR}/${HOSTS[$i]}.build.log"
 done
 [ "$FAILED" -eq 0 ] || exit 1
 

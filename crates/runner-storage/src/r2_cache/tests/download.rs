@@ -1,8 +1,9 @@
 use std::{
+    collections::VecDeque,
     pin::Pin,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     task::{Context, Poll, Waker},
     time::Duration,
@@ -11,7 +12,7 @@ use std::{
 use super::super::{
     R2DownloadError, R2Error,
     archive::{MAX_TEMPLATE_METADATA_BYTES, TEMPLATE_FILE},
-    download::{file_staging_dir, finish_file_staging_error},
+    download::{TEMPLATE_TRANSFER_TIMEOUT, file_staging_dir, finish_file_staging_error},
     io_other,
 };
 use super::fixtures::{
@@ -37,6 +38,9 @@ struct ControlledBodyState {
     blocked: Notify,
     dropped: Notify,
     waker: Mutex<Option<Waker>>,
+    chunks: Mutex<VecDeque<Bytes>>,
+    frames_read: AtomicUsize,
+    progress: Notify,
 }
 
 impl ControlledBodyState {
@@ -75,6 +79,27 @@ impl ControlledBodyController {
     fn release(&self) {
         self.state.release();
     }
+
+    fn send_chunk(&self, bytes: Bytes) {
+        self.state.chunks.lock().unwrap().push_back(bytes);
+        if let Some(waker) = self.state.waker.lock().unwrap().take() {
+            waker.wake();
+        }
+    }
+
+    async fn wait_for_frames(&self, expected: usize) {
+        tokio::time::timeout(BODY_CONTROL_TIMEOUT, async {
+            loop {
+                let progress = self.state.progress.notified();
+                if self.state.frames_read.load(Ordering::Acquire) >= expected {
+                    return;
+                }
+                progress.await;
+            }
+        })
+        .await
+        .expect("timed out waiting for response body progress");
+    }
 }
 
 impl Drop for ControlledBodyController {
@@ -97,6 +122,14 @@ impl Body for ControlledBody {
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame<Self::Data>, Self::Error>>> {
         if let Some(bytes) = self.bytes.take() {
+            self.state.frames_read.fetch_add(1, Ordering::Release);
+            self.state.progress.notify_one();
+            return Poll::Ready(Some(Ok(Frame::data(bytes))));
+        }
+
+        if let Some(bytes) = self.state.chunks.lock().unwrap().pop_front() {
+            self.state.frames_read.fetch_add(1, Ordering::Release);
+            self.state.progress.notify_one();
             return Poll::Ready(Some(Ok(Frame::data(bytes))));
         }
 
@@ -109,6 +142,9 @@ impl Body for ControlledBody {
 
         let mut waker = self.state.waker.lock().unwrap();
         *waker = Some(cx.waker().clone());
+        if !self.state.chunks.lock().unwrap().is_empty() {
+            cx.waker().wake_by_ref();
+        }
         if self.state.released.load(Ordering::Acquire) {
             waker.take();
             Poll::Ready(None)
@@ -347,6 +383,68 @@ async fn cancelled_download_recovers_staging_on_next_cache_miss() {
         b"existing-rootfs"
     );
     assert!(!staging.exists());
+}
+
+#[tokio::test]
+async fn progressing_body_expires_at_total_deadline_and_preserves_destination() {
+    use aws_sdk_s3::Client;
+    use aws_sdk_s3::operation::get_object::GetObjectOutput;
+
+    let controller = ControlledBodyController::new();
+    let body_state = Arc::clone(&controller.state);
+    let archive = regular_template_archive(b"hello");
+    let split = archive.len() / 2;
+    let prefix = Bytes::copy_from_slice(&archive[..split]);
+    let suffix = Bytes::copy_from_slice(&archive[split..]);
+    let get = mock!(Client::get_object).then_output(move || {
+        GetObjectOutput::builder()
+            .body(ByteStream::from_body_1_x(ControlledBody {
+                bytes: Some(prefix.clone()),
+                state: Arc::clone(&body_state),
+            }))
+            .build()
+    });
+    let cache = mock_cache("test-bucket", &[&get]);
+    let dir = tempfile::tempdir().unwrap();
+    let destination = dir.path().join("template.ext4");
+    tokio::fs::write(&destination, b"published-rootfs")
+        .await
+        .unwrap();
+    let staging = file_staging_dir(&destination);
+    let destination_for_download = destination.clone();
+    let download = tokio::spawn(async move {
+        cache
+            .try_download_template_to_file("hash", &destination_for_download, SMALL_TEMPLATE_BYTES)
+            .await
+    });
+
+    controller.wait_until_blocked().await;
+    tokio::time::pause();
+    tokio::time::advance(TEMPLATE_TRANSFER_TIMEOUT / 2).await;
+    tokio::time::resume();
+    controller.send_chunk(suffix);
+    controller.wait_for_frames(2).await;
+    controller.wait_until_blocked().await;
+    tokio::time::pause();
+    tokio::time::advance(TEMPLATE_TRANSFER_TIMEOUT / 2).await;
+    tokio::time::resume();
+
+    let error = tokio::time::timeout(BODY_CONTROL_TIMEOUT, download)
+        .await
+        .expect("deadline must finish extraction before returning")
+        .unwrap()
+        .unwrap_err();
+    assert!(error.is_deadline_exceeded(), "{error}");
+    controller.wait_until_dropped().await;
+    assert_eq!(
+        tokio::fs::read(&destination).await.unwrap(),
+        b"published-rootfs"
+    );
+    assert!(
+        !staging.exists(),
+        "expired extraction must clean its staging"
+    );
+    assert_eq!(get.num_calls(), 1);
 }
 
 #[tokio::test]

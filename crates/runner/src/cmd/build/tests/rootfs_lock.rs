@@ -26,9 +26,7 @@ async fn existing_rootfs_best_effort_allows_missing_r2_cache() {
             .await
             .unwrap(),
     );
-    ensure_rootfs_under_lock(input, TemplateLockRelease::none(), guard)
-        .await
-        .unwrap();
+    ensure_rootfs_under_lock(input, guard).await.unwrap();
     assert!(
         rootfs.rootfs().exists(),
         "best-effort build must not remove a valid local rootfs when R2 is missing"
@@ -36,12 +34,7 @@ async fn existing_rootfs_best_effort_allows_missing_r2_cache() {
 }
 
 #[tokio::test]
-async fn existing_rootfs_releases_template_lock_callback() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
+async fn existing_rootfs_completes_while_template_writer_is_active() {
     let dir = tempfile::tempdir().unwrap();
     let home = runner_host::paths::HomePaths::with_root(dir.path().to_path_buf());
     let rootfs = RootfsPaths::new(&home, "release-local-hash");
@@ -51,42 +44,29 @@ async fn existing_rootfs_releases_template_lock_callback() {
         .unwrap();
     let guests = test_guest_binaries();
     let input = rootfs_input(&home, &rootfs, &guests, TemplateCache::Disabled);
-    let released = Arc::new(AtomicUsize::new(0));
-    let released_for_callback = Arc::clone(&released);
+    let _template_writer = lock::acquire(home.template_lock("test-template-hash"))
+        .await
+        .unwrap();
 
-    ensure_rootfs_under_lock(
-        input,
-        TemplateLockRelease::from_release(move || {
-            released_for_callback.fetch_add(1, Ordering::SeqCst);
-        }),
-        Arc::new(
-            lock::acquire(home.rootfs_lock("release-local-hash"))
-                .await
-                .unwrap(),
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        ensure_rootfs_under_lock(
+            input,
+            std::sync::Arc::new(
+                lock::acquire(home.rootfs_lock("release-local-hash"))
+                    .await
+                    .unwrap(),
+            ),
         ),
     )
     .await
+    .expect("an existing rootfs must not wait for a template writer")
     .unwrap();
 
-    assert_eq!(released.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn template_lock_release_runs_on_drop() {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    let released = Arc::new(AtomicUsize::new(0));
-    let released_for_callback = Arc::clone(&released);
-    {
-        let _release = TemplateLockRelease::from_release(move || {
-            released_for_callback.fetch_add(1, Ordering::SeqCst);
-        });
-    }
-
-    assert_eq!(released.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        tokio::fs::read(rootfs.rootfs()).await.unwrap(),
+        b"local-rootfs"
+    );
 }
 
 #[tokio::test]

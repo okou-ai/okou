@@ -63,8 +63,8 @@ impl R2ImageCache {
             .endpoint_url(endpoint)
             .credentials_provider(SharedCredentialsProvider::new(creds))
             // Bound connection and first-response waits. Upload parts use a
-            // separate response budget; downloaded bodies retain SDK stalled-stream
-            // protection without a short whole-transfer deadline.
+            // separate response budget. SDK body-stall protection complements
+            // the cache downloader's overall request/body transfer deadline.
             .timeout_config(
                 TimeoutConfig::builder()
                     .connect_timeout(Duration::from_secs(10))
