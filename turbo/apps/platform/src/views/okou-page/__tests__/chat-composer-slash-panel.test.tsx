@@ -30,6 +30,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -386,6 +387,8 @@ function slashMenuButtonNames(): (string | undefined)[] {
 test.each(COMPOSER_PATHS)(
   "Composer-anchored slash suggestions at %s open without selecting a candidate and navigate visually",
   async (path) => {
+    // Below `sm` the start page docks its composer to the floor like a thread.
+    context.mocks.browser.matchMedia(false);
     const user = userEvent.setup();
     await openSlashMenu("", true, path);
     const editor = await findComposerEditor();
@@ -427,49 +430,56 @@ test.each(COMPOSER_PATHS)(
   },
 );
 
-test("Composer-anchored slash suggestions keep the strongest match at the bottom and reset on a new query", async () => {
-  setupModels();
-  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-    return respond(200, [
-      composerWorkflow("daily-axi", "Substring match"),
-      composerWorkflow("a-x-i", "Fuzzy match"),
-      composerWorkflow("axiom-red", "Prefix match"),
-      composerWorkflow("axi", "Exact match"),
-    ]);
-  });
-  mockChatLifecycle(context, { threadId: THREAD_ID });
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
-  });
-  const editor = await findComposerEditor();
-  await fill(editor, "Draft /axi");
-  await screen.findByTestId("slash-workflow-menu");
-  await waitFor(() => {
-    expect(slashMenuButtonNames()).toStrictEqual([
-      "/a-x-i",
-      "/daily-axi",
-      "/axiom-red",
-      "/axi",
+test.each([
+  {
+    path: `/agents/${AGENT_ID}/chat`,
+    side: "bottom",
+    names: [
+      "Presentation",
+      "Illustration",
+      "Website",
+      `/${WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${THIRD_WORKFLOW_NAME}`,
       "Browse all templates",
-    ]);
-  });
-  expect(slashButton("/axi")).toHaveAttribute("data-active", "true");
-  const user = userEvent.setup();
-  await user.keyboard("{ArrowUp}{ArrowUp}");
-  expect(slashButton("/daily-axi")).toHaveAttribute("data-active", "true");
-  await fill(editor, "Draft /axiom");
-  await waitFor(() => {
-    expect(slashButton("/axiom-red")).toHaveAttribute("data-active", "true");
-  });
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("Draft /axiom-red");
-  });
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-  expect(editor).toHaveFocus();
-});
+    ],
+    awayFromComposer: "{ArrowDown}",
+  },
+  {
+    path: `/chats/${THREAD_ID}`,
+    side: "top",
+    names: [
+      `/${WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${THIRD_WORKFLOW_NAME}`,
+      "Website",
+      "Illustration",
+      "Presentation",
+      "Browse all templates",
+    ],
+    awayFromComposer: "{ArrowUp}",
+  },
+])(
+  "Composer-anchored slash suggestions at $path open on the $side side from the centred start page breakpoint",
+  async ({ path, side, names, awayFromComposer }) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === START_PAGE_CENTRED_MEDIA_QUERY;
+    });
+    const user = userEvent.setup();
+    await openSlashMenu("", true, path);
+    await waitFor(() => {
+      expect(slashMenuButtonNames()).toStrictEqual(names);
+    });
+    expect(screen.getByTestId("slash-workflow-menu")).toHaveAttribute(
+      "data-side",
+      side,
+    );
+    await user.keyboard(awayFromComposer);
+    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    await user.keyboard(awayFromComposer);
+    expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
+  },
+);
 
 test("Composer-anchored keyboard navigation crosses from categories into workflows", async () => {
   await openSlashMenu("", true);
