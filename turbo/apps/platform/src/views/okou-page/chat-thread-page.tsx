@@ -1,4 +1,4 @@
-import { ChatResourcesControl } from "./chat-resources.tsx";
+import { ChatResourcesButton } from "./chat-resources.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -586,9 +586,14 @@ function ChatThreadHeaderIconButton({
 
 function ArtifactsButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const sidebarTarget = useGet(thread.sidebar.target$);
   const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const openThreadArtifacts = useOpenThreadArtifacts(thread);
+  if (resourcesEnabled) {
+    return <ChatResourcesButton thread={thread} />;
+  }
   return (
     <ChatThreadHeaderIconButton
       icon={<Package size={18} />}
@@ -816,7 +821,6 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           <AutomationMenuButton thread={thread} />
           <BrowserMenuButton thread={thread} />
           <ArtifactsButton thread={thread} />
-          <ChatResourcesControl thread={thread} />
         </div>
       </SettledChatThreadActions>
     </header>

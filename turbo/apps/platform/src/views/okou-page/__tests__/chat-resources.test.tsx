@@ -83,10 +83,11 @@ async function setupResources(
     readonly gutter?: number;
     readonly enabled?: boolean;
     readonly preferred?: boolean;
+    readonly desktop?: boolean;
   } = {},
 ) {
   const resize = installResourceGeometry(options.gutter ?? 480);
-  context.mocks.browser.matchMedia(true);
+  context.mocks.browser.matchMedia(options.desktop ?? true);
   if (options.preferred !== undefined) {
     context.mocks.data.userPreferences({
       chatResourcesEnabledByDefault: options.preferred,
@@ -141,8 +142,8 @@ async function setupResources(
   return resize;
 }
 
-function resourceSwitch() {
-  return screen.getByRole("switch", { name: "Show resources" });
+function resourceButton() {
+  return buttonNamed("Open artifacts");
 }
 function resourcePanel() {
   return screen.queryByRole("dialog", { name: "Resources" });
@@ -159,7 +160,7 @@ function composer() {
 
 function resourceState() {
   return {
-    open: resourceSwitch().getAttribute("aria-checked") === "true",
+    open: resourceButton().getAttribute("aria-pressed") === "true",
     visible: resourcePanel() !== null,
   };
 }
@@ -184,7 +185,15 @@ test("Open in the actual right gutter and preserve links while removing duplicat
   expect(links[0]).toHaveAttribute("target", "_blank");
   expect(within(panel).queryByText("Old title")).not.toBeInTheDocument();
   expect(within(panel).queryByText("Report")).not.toBeInTheDocument();
-  expect(buttonNamed("Open artifacts")).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button").filter((button) => {
+      return button.getAttribute("aria-label") === "Open artifacts";
+    }),
+  ).toHaveLength(1);
+  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
+  expect(
+    screen.queryByTestId("thread-sidebar-artifacts"),
+  ).not.toBeInTheDocument();
 });
 
 test("Recompute at 408px from the gutter even when the browser width stays fixed", async () => {
@@ -207,12 +216,12 @@ test("Temporarily dismiss a manually opened narrow panel on composer click witho
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await waitFor(() => {
-    expect(resourceSwitch()).toBeEnabled();
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   await userEvent.click(composer());
   await waitFor(() => {
@@ -260,12 +269,12 @@ test("Keep the saved off preference when the available gutter becomes wide again
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
   await waitFor(() => {
-    expect(resourceSwitch()).toBeEnabled();
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   resize(200);
   resize(500);
@@ -300,7 +309,7 @@ test("Roll back the visible state and explain a failed preference save", async (
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await screen.findByText("Could not save your resource preference");
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -312,7 +321,7 @@ test("Dismiss a narrow panel when keyboard focus moves to the composer", async (
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
@@ -376,12 +385,12 @@ test("Share the saved preference with another chat and discard temporary state o
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
   await waitFor(() => {
-    expect(resourceSwitch()).toBeEnabled();
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   const next = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${second.id}`;
@@ -398,12 +407,12 @@ test("Share the saved preference with another chat and discard temporary state o
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  await userEvent.click(resourceSwitch());
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await waitFor(() => {
-    expect(resourceSwitch()).toBeEnabled();
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   const previous = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === `/chats/${first.id}`;
@@ -419,6 +428,53 @@ test("Share the saved preference with another chat and discard temporary state o
   });
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+});
+
+test("Use the artifact icon on mobile without a separate switch or duplicate menu entry", async () => {
+  await setupResources({ gutter: 16, desktop: false });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  expect(screen.queryByText("Show resources")).not.toBeInTheDocument();
+  await userEvent.click(resourceButton());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  await userEvent.click(composer());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  await userEvent.click(buttonNamed("More actions"));
+  const menu = await screen.findByRole("menu");
+  expect(within(menu).queryByText("Artifacts")).not.toBeInTheDocument();
+});
+
+test("Toggle the artifact panel with the keyboard", async () => {
+  const resize = await setupResources({ gutter: 200 });
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  act(() => {
+    resourceButton().focus();
+  });
+  await userEvent.keyboard(" ");
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+  });
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  });
+  await userEvent.keyboard(" ");
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
+  });
+  resize(500);
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
 });
 

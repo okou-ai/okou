@@ -5,13 +5,14 @@ import {
   useSet,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Loader2 } from "lucide-react";
+import { Loader2, Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
+  cn,
   Popover,
   PopoverContent,
-  Switch,
+  PopoverTrigger,
   surfaceVariants,
 } from "@okouai/ui";
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
@@ -24,22 +25,27 @@ import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
-export function ChatResourcesControl({
+export function ChatResourcesButton({
   thread,
+  largeTarget = false,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget?: boolean;
 }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  return enabled ? <ChatResourcesControlInner thread={thread} /> : null;
+  return enabled ? (
+    <ChatResourcesButtonInner thread={thread} largeTarget={largeTarget} />
+  ) : null;
 }
 
-function ChatResourcesControlInner({
+function ChatResourcesButtonInner({
   thread,
+  largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
-  const labelId = `chat-resources-label-${thread.threadId}`;
   const popupRef = useSet(thread.resources.popupOnRef$);
   const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
@@ -53,15 +59,17 @@ function ChatResourcesControlInner({
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
-  const label = t(($) => {
-    return $.chat.resources.show;
-  });
 
   return (
     <Popover
       open={open && boundary !== null}
       modal={false}
       onOpenChange={(nextOpen, details) => {
+        if (details.reason === "trigger-press") {
+          // Only the artifact button changes the preference across chats.
+          detach(changePreference(nextOpen, rootSignal), Reason.DomCallback);
+          return;
+        }
         const outside =
           details.reason === "outside-press" || details.reason === "focus-out";
         if (
@@ -77,28 +85,36 @@ function ChatResourcesControlInner({
         setOpen(nextOpen);
       }}
     >
-      <label
+      <PopoverTrigger
         ref={anchorRef}
+        disabled={saving}
         onBlur={(event) => {
-          // The switch and popup form one keyboard interaction zone.
+          // The artifact button and popup form one keyboard interaction zone.
           blurControl(event.relatedTarget);
         }}
-        className="ml-2 inline-flex min-h-8 shrink-0 cursor-pointer items-center gap-2 text-xs text-muted-foreground"
+        render={
+          <Button
+            focusableWhenDisabled
+            type="button"
+            variant="quiet"
+            size="icon-sm"
+            iconSize="md"
+            className={cn(
+              "shrink-0 duration-150",
+              largeTarget && "size-11",
+              open &&
+                "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
+            )}
+            aria-label={t(($) => {
+              return $.chat.thread.openArtifacts;
+            })}
+            aria-pressed={open}
+            aria-busy={saving}
+          />
+        }
       >
-        <span id={labelId} className="hidden sm:inline">
-          {label}
-        </span>
-        <Switch
-          size="sm"
-          aria-labelledby={labelId}
-          checked={open}
-          disabled={saving}
-          onCheckedChange={(checked) => {
-            // User preferences outlive navigation to another chat.
-            detach(changePreference(checked, rootSignal), Reason.DomCallback);
-          }}
-        />
-      </label>
+        <Package size={18} />
+      </PopoverTrigger>
       <PopoverContent
         ref={popupRef}
         anchor={popupAnchor ?? undefined}
