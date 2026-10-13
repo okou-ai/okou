@@ -2599,52 +2599,80 @@ async function validatePermanentUsagePackPendingSnapshotState(
 ): Promise<void> {
   console.log("=== Validate permanent usage-pack pending snapshot state ===\n");
   const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-
   const orgId = "permanent-usage-pack-pending-snapshot-org";
   try {
+    await client.connect();
+    // This suite owns a disposable database. Commit the uniqueness fixture and
+    // delete it before starting the separate rollback-owned range/null probes.
     await client.query(
       `INSERT INTO usage_pack_pending_snapshot_guards
       (org_id, pending_snapshot_count) VALUES ($1, 2)`,
       [orgId],
     );
-    // Counts above one represent grandfathered purchases. Admission and release
-    // are owned by the API service; the database retains uniqueness and range.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0398; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23505",
-      query: `INSERT INTO usage_pack_pending_snapshot_guards
+    try {
+      await expectDatabaseError(client, {
+        code: "23505",
+        query: `INSERT INTO usage_pack_pending_snapshot_guards
         (org_id, pending_snapshot_count) VALUES ($1, 0)`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0399; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_usage_pack_pending_snapshot_guard_count",
-      query: `UPDATE usage_pack_pending_snapshot_guards
-        SET pending_snapshot_count = -1 WHERE org_id = $1`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0400; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23502",
-      query: `UPDATE usage_pack_pending_snapshot_guards
-        SET pending_snapshot_count = NULL WHERE org_id = $1`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    console.log(
-      "   ✅ pending guards retain unique organization and nonnegative count constraints\n",
+        values: [orgId],
+      });
+      const preserved = await client.query(
+        `SELECT org_id, pending_snapshot_count
+        FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+        [orgId],
+      );
+      assert.deepEqual(preserved.rows, [
+        { org_id: orgId, pending_snapshot_count: 2 },
+      ]);
+    } finally {
+      await client.query(
+        `DELETE FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+        [orgId],
+      );
+    }
+    const cleaned = await client.query(
+      `SELECT org_id, pending_snapshot_count
+      FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+      [orgId],
     );
+    assert.deepEqual(cleaned.rows, []);
+
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
+    await client.query("BEGIN");
+    try {
+      await client.query(
+        `INSERT INTO usage_pack_pending_snapshot_guards
+      (org_id, pending_snapshot_count) VALUES ($1, 2)`,
+        [orgId],
+      );
+      // Counts above one represent grandfathered purchases. Admission and release
+      // are owned by the API service; the database retains uniqueness and range.
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0399; new non-billing transactions are prohibited.
+      await client.query("SAVEPOINT guard_constraint");
+      await expectDatabaseError(client, {
+        code: "23514",
+        messageIncludes: "chk_usage_pack_pending_snapshot_guard_count",
+        query: `UPDATE usage_pack_pending_snapshot_guards
+        SET pending_snapshot_count = -1 WHERE org_id = $1`,
+        values: [orgId],
+      });
+      await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0400; new non-billing transactions are prohibited.
+      await client.query("SAVEPOINT guard_constraint");
+      await expectDatabaseError(client, {
+        code: "23502",
+        query: `UPDATE usage_pack_pending_snapshot_guards
+        SET pending_snapshot_count = NULL WHERE org_id = $1`,
+        values: [orgId],
+      });
+      await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
+      console.log(
+        "   ✅ pending guards retain unique organization and nonnegative count constraints\n",
+      );
+    } finally {
+      await client.query("ROLLBACK");
+    }
   } finally {
-    await client.query("ROLLBACK");
     await client.end();
   }
 }
