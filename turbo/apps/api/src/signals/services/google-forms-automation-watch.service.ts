@@ -1,4 +1,8 @@
 import {
+  observedWorkflowAutomationCondition,
+  type WorkflowAutomationSnapshot,
+} from "./workflow-automation-snapshot";
+import {
   googleFormsResponseSubmittedEventConfigSchema,
   type GoogleFormsResponseSubmittedEventConfig,
   type GoogleFormsResponseSubmittedEventCreateConfig,
@@ -591,6 +595,7 @@ function missingGoogleFormsConsumer(
 }
 
 interface GoogleFormsActivation {
+  readonly automationSnapshot: WorkflowAutomationSnapshot;
   readonly automationId: string;
   readonly workflowId: string;
   readonly eventConfig: GoogleFormsResponseSubmittedEventConfig;
@@ -893,6 +898,10 @@ const publishGoogleFormsActivation$ = command(
               "google-forms-response-submitted",
             ),
             isNull(workflowAutomations.officialBlueprintKey),
+            observedWorkflowAutomationCondition({
+              id: activation.automationId,
+              ...activation.automationSnapshot,
+            }),
           ),
         )
         .returning({
