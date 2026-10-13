@@ -16,10 +16,7 @@ import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import {
-  audioInputLifetimeQuota,
-  recordAudioInputUsage$,
-} from "../services/voice-io.service";
+import { audioInputLifetimeQuota } from "../services/voice-io.service";
 import {
   badRequest,
   getAudioDuration,
@@ -27,7 +24,7 @@ import {
   recordSttUsage$,
   sttDailyPolicy$,
 } from "../services/voice-io-post.service";
-import { transcribeCompatibleVoiceSegment$ } from "../services/voice-io-finalize.service";
+import { transcribeVoiceSegment$ } from "../services/voice-io-transcribe.service";
 import { safeJsonParse } from "../utils";
 
 const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
@@ -98,10 +95,7 @@ function parseVoiceDraftForm(formData: FormData) {
     return badRequest("Invalid voice segment options");
   }
   const segment = options.data;
-  const files =
-    segment.final && formData.getAll("file").length === 0
-      ? []
-      : audioFiles(formData);
+  const files = audioFiles(formData);
   if (!files) {
     return badRequest("No audio file provided");
   }
@@ -234,7 +228,7 @@ const voiceIoTranscribeHandler$ = command(
       ...(editorContext === undefined ? {} : { editorContext }),
     };
     const result = await set(
-      transcribeCompatibleVoiceSegment$,
+      transcribeVoiceSegment$,
       { ...input, ...segment },
       signal,
     );
@@ -251,9 +245,6 @@ const voiceIoTranscribeHandler$ = command(
       },
       signal,
     );
-    if (segment.final && quota.limit !== null) {
-      await set(recordAudioInputUsage$, auth.orgId, auth.userId, signal);
-    }
     return result;
   },
 );

@@ -799,120 +799,14 @@ function segmentForm(
 }
 
 describe("POST /api/voice-io/transcribe/segment", () => {
-  it.each([
-    { label: "partial audio", final: false, audio: true },
-    { label: "final audio", final: true, audio: true },
-    { label: "text-only final", final: true, audio: false },
-  ])("serves the live old HTTP caller for $label", async ({ final, audio }) => {
-    const owner = await publicVoiceActor({ limitedFree: true });
+  it("rejects a previous transcript beyond the bounded prefix", async () => {
+    const owner = await publicVoiceActor();
     await owner.run(async () => {
-      const earlier = "Saved earlier speech. ".repeat(70);
-      const complete = `${earlier}${audio ? "Tail." : ""}`.trim();
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          const body = (await request.json()) as VertexVoiceRequest;
-          if (
-            requestAudioParts(body).some((part) => {
-              return part.inlineData !== undefined;
-            })
-          ) {
-            expect(
-              body.generationConfig.responseSchema?.required,
-            ).toStrictEqual(["transcript", "language"]);
-            expect(requestAudioParts(body)[1]?.text).toContain(
-              earlier.slice(-1000),
-            );
-            expect(requestAudioParts(body)[1]?.text).not.toContain(earlier);
-            return vertexVoiceResponse(
-              JSON.stringify({ transcript: "Tail.", language: "en" }),
-            );
-          }
-          expect(
-            JSON.parse(String(requestAudioParts(body)[0]?.text)),
-          ).toMatchObject({
-            segments: audio ? [earlier.trim(), "Tail."] : [earlier.trim()],
-          });
-          return vertexVoiceResponse(complete);
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const body = segmentForm(audio ? [audioFile(1, 3)] : [], earlier, 61);
-      body.set(
-        "options",
-        JSON.stringify({
-          previousTranscript: earlier,
-          final,
-          totalDurationSeconds: 61,
-          overlapDurationSeconds: 0,
-        }),
-      );
-      const response = await accept(client().segment({ headers, body }), [200]);
-      expect(response.body).toStrictEqual({
-        transcript: audio ? "Tail." : "",
-        language: audio ? "en" : "und",
-        ...(final ? { polishedText: complete } : {}),
+      const response = await client().segment({
+        headers: { authorization: "Bearer clerk-session" },
+        body: segmentForm([audioFile(1)], "x".repeat(1001), 61),
       });
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      expect((await accept(quota.get({ headers }), [200])).body.count).toBe(
-        final ? 1 : 0,
-      );
-    });
-  });
-
-  it("bounds two model stages inside one old-client final request", async () => {
-    const owner = await publicVoiceActor({ limitedFree: true });
-    await owner.run(async () => {
-      const deadline = new AbortController();
-      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
-        return milliseconds === 80_000 ? deadline.signal : context.signal;
-      });
-      const entered = createDeferredPromise<void>(context.signal);
-      const aborted = createDeferredPromise<void>(context.signal);
-      server.use(
-        http.post(VERTEX_VOICE_URL, async ({ request }) => {
-          const body = (await request.json()) as VertexVoiceRequest;
-          if (
-            requestAudioParts(body).some((part) => {
-              return part.inlineData !== undefined;
-            })
-          ) {
-            return vertexVoiceResponse(
-              JSON.stringify({ transcript: "Tail.", language: "en" }),
-            );
-          }
-          request.signal.addEventListener(
-            "abort",
-            () => {
-              aborted.resolve();
-            },
-            { once: true },
-          );
-          entered.resolve();
-          await aborted.promise;
-          return vertexVoiceResponse("Late completion.");
-        }),
-      );
-      const headers = { authorization: "Bearer clerk-session" };
-      const body = segmentForm([audioFile(1, 3)], "Earlier speech.", 61);
-      body.set(
-        "options",
-        JSON.stringify({
-          previousTranscript: "Earlier speech.",
-          final: true,
-          totalDurationSeconds: 61,
-        }),
-      );
-      const pending = client().segment({ headers, body });
-      await entered.promise;
-      deadline.abort();
-      const response = await accept(pending, [503]);
-      expect(response.body.error.code).toBe("PROVIDER_UNAVAILABLE");
-      const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-        voiceIoQuotaContract,
-      );
-      expect((await accept(quota.get({ headers }), [200])).body.count).toBe(0);
+      expect(response.status).toBe(400);
     });
   });
 

@@ -1566,14 +1566,10 @@ export {
   type BuiltInGenerationResponse,
 } from "./built-in-generation";
 export {
-  voiceIoPolishContract,
   voiceIoPolishSegmentsContract,
-  voiceIoPolishRequestSchema,
   voiceIoPolishSegmentsRequestSchema,
   voiceIoPolishResponseSchema,
   VOICE_IO_POLISH_MAX_TEXT_CHARS,
-  type VoiceIoPolishContract,
-  type VoiceIoPolishRequest,
   type VoiceIoPolishSegmentsRequest,
   type VoiceIoPolishSegmentsContract,
   type VoiceIoPolishResponse,
