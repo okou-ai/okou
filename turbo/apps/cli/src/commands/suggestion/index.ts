@@ -108,12 +108,24 @@ export function createSuggestionCommand() {
       "--thread-id <uuid>",
       "Existing conversation; omitted means a new Okou conversation",
     )
-    .option("--priority <integer>", "Larger values appear first", "0")
+    .option("--priority <integer>", "Larger values appear first")
     .option("--json", "Output JSON")
     .action(
       withErrorHandler(async (options: CreateOptions) => {
-        if (options.file && options.text !== undefined)
-          throw new Error("Choose --file or --text, not both.");
+        if (
+          options.file &&
+          [
+            options.text,
+            options.id,
+            options.title,
+            options.rationale,
+            options.threadId,
+            options.priority,
+          ].some((value) => {
+            return value !== undefined;
+          })
+        )
+          throw new Error("Use --file or text input fields, not both.");
         if (!options.file && options.text === undefined)
           throw new Error(
             "Provide --file suggestion.json or --text with --id and --title.",

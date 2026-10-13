@@ -4,6 +4,8 @@ import { composerDraftSchema } from "./chat-threads";
 import { apiErrorSchema } from "./errors";
 
 const SUGGESTION_LIMIT = 10;
+// UUID aliases must share one terminal identity in the JSONB collection.
+const suggestionIdSchema = z.uuid().toLowerCase();
 const suggestionStatusSchema = z.enum(["active", "consumed", "removed"]);
 const suggestionDraftSchema = composerDraftSchema
   .refine(
@@ -30,12 +32,12 @@ const suggestionDraftSchema = composerDraftSchema
 const suggestionContentSchema = z.object({
   title: z.string().trim().min(1).max(120),
   rationale: z.string().trim().max(200),
-  threadId: z.uuid().nullable(),
+  threadId: z.uuid().toLowerCase().nullable(),
   priority: z.number().int().min(-2147483648).max(2147483647),
   draft: suggestionDraftSchema,
 });
 export const suggestionSchema = suggestionContentSchema.extend({
-  id: z.uuid(),
+  id: suggestionIdSchema,
   status: suggestionStatusSchema,
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
@@ -45,7 +47,7 @@ export const suggestionReceiptSchema = suggestionSchema
   .extend({ status: z.enum(["consumed", "removed"]) });
 export type SuggestionReceipt = z.infer<typeof suggestionReceiptSchema>;
 export const suggestionCreateSchema = suggestionContentSchema.extend({
-  id: z.uuid(),
+  id: suggestionIdSchema,
   priority: suggestionContentSchema.shape.priority.default(0),
 });
 export const suggestionUpdateSchema = suggestionContentSchema.partial().refine(
@@ -68,7 +70,7 @@ const errors = {
   404: apiErrorSchema,
   409: apiErrorSchema,
 };
-const params = z.object({ id: z.uuid() });
+const params = z.object({ id: suggestionIdSchema });
 export const suggestionsContract = c.router({
   list: {
     method: "GET",

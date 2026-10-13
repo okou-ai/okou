@@ -90,6 +90,49 @@ async function primaryRun(enabled = true, secondary = false) {
 }
 
 describe("Agent suggestions", () => {
+  it("treats uppercase UUID aliases as the same one-time suggestion identity", async () => {
+    const fixture = await primaryRun();
+    const suggestion = input();
+    const created = await accept(
+      client().create({ headers: fixture.headers, body: suggestion }),
+      [200],
+    );
+    const consumed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: suggestion.id },
+        body: {},
+      }),
+      [200],
+    );
+    expect(consumed.body.id).toBe(created.body.id);
+    await accept(
+      client().create({
+        headers: fixture.headers,
+        body: { ...suggestion, id: suggestion.id.toUpperCase() },
+      }),
+      [409],
+    );
+    const pool = await accept(client().list({ headers: humanHeaders }), [200]);
+    expect(pool.body.suggestions).toStrictEqual([]);
+  });
+  it("consumes a canonical suggestion through an uppercase UUID path", async () => {
+    const fixture = await primaryRun();
+    const suggestion = input();
+    await accept(
+      client().create({ headers: fixture.headers, body: suggestion }),
+      [200],
+    );
+    const consumed = await accept(
+      client().consume({
+        headers: humanHeaders,
+        params: { id: suggestion.id.toUpperCase() },
+        body: {},
+      }),
+      [200],
+    );
+    expect(consumed.body.id).toBe(suggestion.id);
+  });
   it("rejects empty or whitespace-only suggestion drafts", async () => {
     const fixture = await primaryRun();
     const empty = input();

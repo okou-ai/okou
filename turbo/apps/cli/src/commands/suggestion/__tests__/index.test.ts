@@ -87,6 +87,31 @@ it("converts convenient text input into the same saved composer format", async (
   );
   expect(log).toHaveBeenCalledWith(JSON.stringify({ ...item, priority: 0 }));
 });
+it("rejects structured input mixed with field flags instead of silently publishing the file's priority", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "suggestion-test-"));
+  try {
+    const path = join(directory, "suggestion.json");
+    await writeFile(path, JSON.stringify(content));
+    server.use(
+      http.post("http://localhost:3000/api/suggestions", () => {
+        return HttpResponse.json(item);
+      }),
+    );
+    await expect(
+      run("create", "--file", path, "--priority", "90", "--json"),
+    ).rejects.toThrow("process.exit called");
+    expect(error).toHaveBeenCalledWith(
+      JSON.stringify({
+        error: {
+          code: "INVALID_INPUT",
+          message: "Use --file or text input fields, not both.",
+        },
+      }),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 it("updates one priority without requiring a file or other suggestions' positions", async () => {
   server.use(
     http.patch(
