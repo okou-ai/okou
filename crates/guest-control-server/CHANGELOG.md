@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.7](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.6...guest-control-server-v0.24.7) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** split runner exec scenario boundaries ([#39749](https://github.com/okou-ai/okou/issues/39749)) ([2b09d27](https://github.com/okou-ai/okou/commit/2b09d2745592acb711a6fd0c87b16ac9ddf454ae))
+
 ## [0.24.6](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.5...guest-control-server-v0.24.6) (2026-10-13)
 
 
