@@ -37,6 +37,28 @@ import {
 import { requestTokenFromLatestConnection$ } from "../worker-context.ts";
 import { initializeSharedDatabaseWorker$ } from "../worker-signals.ts";
 
+const axiomTelemetry = vi.hoisted(() => {
+  return {
+    ingest:
+      vi.fn<
+        (dataset: string, events: readonly Record<string, unknown>[]) => void
+      >(),
+  };
+});
+
+vi.mock("@axiomhq/js", () => {
+  return {
+    Axiom: class {
+      ingest(
+        dataset: string,
+        events: readonly Record<string, unknown>[],
+      ): void {
+        axiomTelemetry.ingest(dataset, events);
+      }
+    },
+  };
+});
+
 const context = testContext();
 const CREATED_AT = "2026-08-14T09:00:00.000Z";
 const WORKER_APP_VERSION = "message-port-worker-version";
@@ -194,6 +216,207 @@ function connectProtocolTransport(
     workerPort,
   };
 }
+
+// Observe the external Axiom payload through real token bridge round trips.
+function tokenRequestTelemetry() {
+  return axiomTelemetry.ingest.mock.calls.flatMap(([dataset, events]) => {
+    expect(dataset).toBe("vm0-client-telemetry-prod");
+    return events.filter((event) => {
+      return event.name === "shared_database.token_request";
+    });
+  });
+}
+
+async function prepareTokenTelemetryRequest(ownerSignal = context.signal) {
+  axiomTelemetry.ingest.mockReset();
+  vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "xaat-test-ingest-token");
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      vi.unstubAllEnvs();
+    },
+    { once: true },
+  );
+  context.mocks.browser.url("https://app.okou.ai/");
+  initializeWorker();
+  const tokenRequested = context.mocks.deferred<void>();
+  const tokenResponse = context.mocks.deferred<string | null>();
+  let holdToken = false;
+  const transport = connectProtocolTransport(ownerSignal, () => {
+    if (!holdToken) {
+      return Promise.resolve("bootstrap-token");
+    }
+    tokenRequested.resolve();
+    return tokenResponse.promise;
+  });
+  await transport.bridge.registerTab(ownerSignal);
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
+    ).toBeTruthy();
+  });
+  holdToken = true;
+  axiomTelemetry.ingest.mockReset();
+  transport.workerPort.postedMessages.length = 0;
+  return { ...transport, tokenRequested, tokenResponse };
+}
+
+function expectTokenRequestTelemetry(
+  events: readonly Record<string, unknown>[],
+  requestId: string,
+  outcome: "success" | "error" | "aborted",
+): void {
+  expect(events).toHaveLength(2);
+  for (const [index, event] of events.entries()) {
+    expect(event).toMatchObject({
+      "attributes.custom": {
+        "okou.client.outcome": index === 0 ? "started" : outcome,
+        "okou.shared_database.token_request.request_id": requestId,
+      },
+      name: "shared_database.token_request",
+      "scope.name": "okou-app/shared-worker",
+      "resource.deployment.environment.name": "production",
+    });
+    expect(event.duration).toStrictEqual(expect.any(Number));
+  }
+  expect(events[0]).not.toHaveProperty("status.code");
+  expect(events[1]?.["status.code"]).toBe(
+    outcome === "aborted" ? undefined : outcome === "success" ? "OK" : "ERROR",
+  );
+}
+
+function tokenRequestId(workerPort: InMemoryMessagePort): string {
+  const requests = workerPort.postedMessages
+    .map((message) => {
+      return sharedDatabaseWorkerMessageSchema.parse(message);
+    })
+    .filter((message) => {
+      return message.type === "get-token";
+    });
+  expect(requests).toHaveLength(1);
+  return requests[0]!.requestId;
+}
+
+test("Report a pending token request before its response and correlate success without leaking credentials", async () => {
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest();
+  const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  expect(tokenRequestTelemetry()).toMatchObject([
+    {
+      "attributes.custom": {
+        "okou.client.outcome": "started",
+        "okou.shared_database.token_request.request_id": requestId,
+      },
+    },
+  ]);
+  const credential = "private-token-must-not-be-reported";
+  clock.mockReturnValue(125);
+  tokenResponse.resolve(credential);
+  await indicators;
+  const events = tokenRequestTelemetry();
+  expectTokenRequestTelemetry(events, requestId, "success");
+  expect(events[0]).toHaveProperty("duration", 0);
+  expect(events[1]).toHaveProperty("duration", 25_000_000);
+  const payload = JSON.stringify(events);
+  expect(payload).not.toContain(credential);
+  expect(payload).not.toContain(identity().userId);
+  expect(payload).not.toContain(identity().orgId);
+});
+
+test("Correlate token bridge failures without reporting raw error text", async () => {
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest();
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  const failure = new Error("private-token-provider-error");
+  const rejected = Promise.allSettled([indicators]);
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  tokenResponse.reject(failure);
+  await expect(rejected).resolves.toMatchObject([
+    { status: "rejected", reason: { message: failure.message } },
+  ]);
+  const events = tokenRequestTelemetry();
+  expectTokenRequestTelemetry(events, requestId, "error");
+  expect(JSON.stringify(events)).not.toContain(failure.message);
+});
+
+test("Report token request cancellation when its serving tab disconnects", async () => {
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest(ownerSignal);
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  const cancelled = Promise.allSettled([indicators]);
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  context.store.set(resetOwner$);
+  await expect(cancelled).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AbortError" } },
+  ]);
+  await vi.waitFor(() => {
+    expectTokenRequestTelemetry(tokenRequestTelemetry(), requestId, "aborted");
+  });
+  tokenResponse.resolve("late-private-token");
+});
+
+test.each([
+  { outcome: "success", sdkErrorName: "Error" },
+  { outcome: "error", sdkErrorName: "Error" },
+  { outcome: "aborted", sdkErrorName: "Error" },
+  { outcome: "success", sdkErrorName: "AbortError" },
+  { outcome: "error", sdkErrorName: "AbortError" },
+  { outcome: "aborted", sdkErrorName: "AbortError" },
+] as const)(
+  "Preserve token request $outcome when the telemetry SDK throws $sdkErrorName",
+  async ({ outcome, sdkErrorName }) => {
+    const resetOwner$ = resetSignal();
+    const ownerSignal = context.store.set(resetOwner$, context.signal);
+    const { bridge, workerPort, tokenRequested, tokenResponse } =
+      await prepareTokenTelemetryRequest(ownerSignal);
+    axiomTelemetry.ingest.mockImplementation((_dataset, events) => {
+      if (
+        events.some((event) => {
+          return event.name === "shared_database.token_request";
+        })
+      ) {
+        throw new DOMException("Telemetry SDK unavailable", sdkErrorName);
+      }
+    });
+    const result = Promise.allSettled([
+      bridge.getComputed("chat-thread-indicators"),
+    ]);
+    await tokenRequested.promise;
+    const requestId = tokenRequestId(workerPort);
+    const failure = new Error("Original token provider failure");
+    if (outcome === "aborted") {
+      context.store.set(resetOwner$);
+    } else if (outcome === "error") {
+      tokenResponse.reject(failure);
+    } else {
+      tokenResponse.resolve("private-token");
+    }
+    const expectedResult =
+      outcome === "success"
+        ? { status: "fulfilled" }
+        : {
+            status: "rejected",
+            reason:
+              outcome === "error"
+                ? { message: failure.message }
+                : { name: "AbortError" },
+          };
+    await expect(result).resolves.toMatchObject([expectedResult]);
+    await vi.waitFor(() => {
+      expectTokenRequestTelemetry(tokenRequestTelemetry(), requestId, outcome);
+    });
+    if (outcome === "aborted") {
+      tokenResponse.resolve("late-private-token");
+    }
+  },
+);
 
 // Multiple tabs share one Worker; exercise their independent MessagePorts.
 test("Keep foreground presence until the last visible tab hides or disconnects", async () => {

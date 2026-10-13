@@ -1,10 +1,18 @@
 import type { Store } from "ccstate";
 
+import {
+  clientTelemetryOutcomeForError,
+  recordClientTelemetry,
+  startClientTelemetryMeasurement,
+  type ClientTelemetryOperation,
+  type ClientTelemetryOutcome,
+} from "../lib/client-telemetry.ts";
 import { captureSentryLogError } from "../lib/sentry-config.ts";
 import { logger } from "../signals/log.ts";
 import {
   createDeferredPromise,
   onDomEventFn,
+  onRejection,
   settle,
 } from "../signals/utils.ts";
 import type {
@@ -229,8 +237,32 @@ export class SharedDatabaseMessagePortServer {
       resolve: finish(deferred.resolve),
     });
     signal.addEventListener("abort", abort, { once: true });
-    this.emit({ type: "get-token", requestId });
-    return deferred.promise;
+    const measurement = startClientTelemetryMeasurement();
+    const operation = {
+      event_name: "shared_database.token_request",
+      request_id: requestId,
+    } satisfies ClientTelemetryOperation;
+    const report = async (outcome: ClientTelemetryOutcome): Promise<void> => {
+      // SDK errors, including AbortError, must not alter the token request.
+      await Promise.allSettled([
+        (async () => {
+          await recordClientTelemetry(measurement, operation, outcome);
+        })(),
+      ]);
+    };
+    return onRejection(
+      async () => {
+        const started = report("started");
+        this.emit({ type: "get-token", requestId });
+        await started;
+        const token = await deferred.promise;
+        await report("success");
+        return token;
+      },
+      (error) => {
+        return report(clientTelemetryOutcomeForError(error));
+      },
+    );
   };
 
   private finishTokenRequest(message: TokenResponseMessage): void {
