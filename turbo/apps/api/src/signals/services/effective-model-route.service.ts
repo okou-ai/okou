@@ -1,6 +1,7 @@
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import { computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import {
   isCatalogModelRunnable,
   type ModelCatalog,
@@ -21,57 +22,56 @@ export interface MemberModelRouteContext {
   readonly subscriptions: readonly PersonalCandidate[];
 }
 
-export async function loadMemberModelRouteContext(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<MemberModelRouteContext> {
-  return {
-    subscriptions: await loadPersonalModelRouteSubscriptions(db, orgId, userId),
-  };
+export interface MemberModelRouteIdentity {
+  readonly orgId: string;
+  readonly userId: string;
 }
 
-/** Request-local metadata only. This also runs under thread lifecycle locks.
+/** Request-local metadata only.
  * Never call account list/capture, decrypt, or probe a provider here. A type is
  * a candidate only while its logical provider has a connected account. */
-async function loadPersonalModelRouteSubscriptions(
-  db: ReadonlyDb,
-  orgId: string,
-  userId: string,
-): Promise<readonly PersonalCandidate[]> {
-  const accounts = await db
-    .select({
-      type: modelProviderAccounts.type,
-      providerId: modelProviderAccounts.modelProviderId,
-      isActive: modelProviderAccounts.isActive,
-      needsReconnect: modelProviderAccounts.needsReconnect,
-    })
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.orgId, orgId),
-        eq(modelProviderAccounts.userId, userId),
-        isNull(modelProviderAccounts.disconnectedAt),
-      ),
-    );
-  return PERSONAL_TYPES.flatMap((type) => {
-    const connected = accounts.filter((account) => {
-      return account.type === type;
-    });
-    const first = connected[0];
-    if (!first) {
-      return [];
-    }
-    return [
-      {
-        type,
-        // This is a logical candidate, never an admitted account ID.
-        providerId: first.providerId,
-        needsReconnect: connected.some((account) => {
-          return account.isActive && account.needsReconnect;
-        }),
-      },
-    ];
+export function memberModelRouteContext(
+  identity$: Computed<MemberModelRouteIdentity>,
+): Computed<Promise<MemberModelRouteContext>> {
+  return computed(async (get): Promise<MemberModelRouteContext> => {
+    const { orgId, userId } = get(identity$);
+    const db = get(db$);
+    const accounts = await db
+      .select({
+        type: modelProviderAccounts.type,
+        providerId: modelProviderAccounts.modelProviderId,
+        isActive: modelProviderAccounts.isActive,
+        needsReconnect: modelProviderAccounts.needsReconnect,
+      })
+      .from(modelProviderAccounts)
+      .where(
+        and(
+          eq(modelProviderAccounts.orgId, orgId),
+          eq(modelProviderAccounts.userId, userId),
+          isNull(modelProviderAccounts.disconnectedAt),
+        ),
+      );
+    return {
+      subscriptions: PERSONAL_TYPES.flatMap((type) => {
+        const connected = accounts.filter((account) => {
+          return account.type === type;
+        });
+        const first = connected[0];
+        if (!first) {
+          return [];
+        }
+        return [
+          {
+            type,
+            // This is a logical candidate, never an admitted account ID.
+            providerId: first.providerId,
+            needsReconnect: connected.some((account) => {
+              return account.isActive && account.needsReconnect;
+            }),
+          },
+        ];
+      }),
+    };
   });
 }
 

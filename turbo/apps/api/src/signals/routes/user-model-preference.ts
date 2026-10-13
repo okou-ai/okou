@@ -23,7 +23,7 @@ import {
   modelCatalog$,
   resolveCatalogRunModel,
 } from "../services/model-catalog.service";
-import { listAvailableRunModels$ } from "../services/run-models.service";
+import { listAvailableRunModels } from "../services/run-models.service";
 
 import {
   isCatalogFastServiceTierSupported,
@@ -35,6 +35,7 @@ import {
 } from "../services/user-data.service";
 
 const updateBody$ = bodyResultOf(userModelPreferenceContract.update);
+const availableRunModels$ = listAvailableRunModels(organizationAuthContext$);
 
 function configuredRunModelProviderType(
   runModel: AvailableRunModel | undefined,
@@ -209,11 +210,7 @@ const updateUserModelPreferenceInner$ = command(
 
     const runModels =
       data.selectedModel !== null
-        ? await set(
-            listAvailableRunModels$,
-            { orgId: auth.orgId, userId: auth.userId },
-            signal,
-          )
+        ? await set(availableRunModels$, signal)
         : undefined;
     const configuredRunModel = runModels?.models.find((runModel) => {
       return runModel.model === data.selectedModel;

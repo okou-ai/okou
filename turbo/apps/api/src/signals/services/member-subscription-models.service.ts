@@ -6,12 +6,14 @@ import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { modelRoutes } from "@okouai/db/schema/model-route";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { runModelCatalog } from "@okouai/db/schema/run-model-catalog";
+import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import {
-  loadMemberModelRouteContext,
+  memberModelRouteContext,
   type MemberModelRouteContext,
+  type MemberModelRouteIdentity,
 } from "./effective-model-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
 export type MemberSubscriptionModel = Readonly<{
@@ -65,82 +67,86 @@ export function memberSubscriptionModelRoutesFromCatalog(
 }
 
 /** Membership-scoped catalog: no connected account, no subscription models. */
-export async function loadMemberSubscriptionModels(
-  db: Pick<Db, "select">,
-  member: MemberModelRouteContext,
-): Promise<readonly MemberSubscriptionModel[]> {
-  const subscriptions = member.subscriptions;
-  if (subscriptions.length === 0) {
-    return [];
-  }
-  // Personal subscription routes live in the global catalog; replaced
-  // models have no routes, and names and ordering come from the model row.
-  const rows = await db
-    .select({
-      id: modelRoutes.id,
-      model: modelRoutes.model,
-      subscriptionType: modelRoutes.subscriptionType,
-      displayName: runModelCatalog.displayName,
-      efforts: modelRoutes.efforts,
-      serviceTiers: modelRoutes.serviceTiers,
-      createdAt: modelRoutes.createdAt,
-      updatedAt: modelRoutes.updatedAt,
-    })
-    .from(modelRoutes)
-    .innerJoin(runModelCatalog, eq(modelRoutes.model, runModelCatalog.model))
-    .where(
-      and(
-        eq(modelRoutes.enabled, true),
-        isNull(runModelCatalog.replacedBy),
-        inArray(
-          modelRoutes.subscriptionType,
-          subscriptions.map((subscription) => {
-            return subscription.type;
-          }),
-        ),
-      ),
-    )
-    .orderBy(asc(runModelCatalog.sortOrder), asc(modelRoutes.model));
-  return rows.flatMap((row) => {
-    const subscription = subscriptions.find((candidate) => {
-      return candidate.type === row.subscriptionType;
-    });
-    // Retired catalog models are a reachable state; they simply stop listing.
-    if (!subscription) {
+export function memberSubscriptionModels(
+  member$: Computed<Promise<MemberModelRouteContext>>,
+): Computed<Promise<readonly MemberSubscriptionModel[]>> {
+  return computed(async (get): Promise<readonly MemberSubscriptionModel[]> => {
+    const member = await get(member$);
+    const subscriptions = member.subscriptions;
+    if (subscriptions.length === 0) {
       return [];
     }
-    const serviceTier = row.serviceTiers.includes("priority")
-      ? "priority"
-      : null;
-    // The route row is the product authority for efforts and tiers; only
-    // protocol facts are checked: the effort vocabulary, and Fast
-    // (`priority`) exists only on the Codex protocol.
-    if (
-      row.efforts.some((effort) => {
-        return !reasoningEffortSchema.safeParse(effort).success;
-      }) ||
-      (serviceTier === "priority" && subscription.type !== "codex-oauth-token")
-    ) {
-      throw new Error(
-        `Invalid subscription model catalog row ${row.subscriptionType}/${row.model}`,
-      );
-    }
-    return [
-      {
-        id: row.id,
-        model: row.model,
-        displayName: row.displayName,
-        efforts: row.efforts.map((effort) => {
-          return reasoningEffortSchema.parse(effort);
-        }),
-        serviceTier,
-        providerType: subscription.type,
-        providerId: subscription.providerId,
-        needsReconnect: subscription.needsReconnect,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      },
-    ];
+    const db = get(db$);
+    // Personal subscription routes live in the global catalog; replaced
+    // models have no routes, and names and ordering come from the model row.
+    const rows = await db
+      .select({
+        id: modelRoutes.id,
+        model: modelRoutes.model,
+        subscriptionType: modelRoutes.subscriptionType,
+        displayName: runModelCatalog.displayName,
+        efforts: modelRoutes.efforts,
+        serviceTiers: modelRoutes.serviceTiers,
+        createdAt: modelRoutes.createdAt,
+        updatedAt: modelRoutes.updatedAt,
+      })
+      .from(modelRoutes)
+      .innerJoin(runModelCatalog, eq(modelRoutes.model, runModelCatalog.model))
+      .where(
+        and(
+          eq(modelRoutes.enabled, true),
+          isNull(runModelCatalog.replacedBy),
+          inArray(
+            modelRoutes.subscriptionType,
+            subscriptions.map((subscription) => {
+              return subscription.type;
+            }),
+          ),
+        ),
+      )
+      .orderBy(asc(runModelCatalog.sortOrder), asc(modelRoutes.model));
+    return rows.flatMap((row) => {
+      const subscription = subscriptions.find((candidate) => {
+        return candidate.type === row.subscriptionType;
+      });
+      // Retired catalog models are a reachable state; they simply stop listing.
+      if (!subscription) {
+        return [];
+      }
+      const serviceTier = row.serviceTiers.includes("priority")
+        ? "priority"
+        : null;
+      // The route row is the product authority for efforts and tiers; only
+      // protocol facts are checked: the effort vocabulary, and Fast
+      // (`priority`) exists only on the Codex protocol.
+      if (
+        row.efforts.some((effort) => {
+          return !reasoningEffortSchema.safeParse(effort).success;
+        }) ||
+        (serviceTier === "priority" &&
+          subscription.type !== "codex-oauth-token")
+      ) {
+        throw new Error(
+          `Invalid subscription model catalog row ${row.subscriptionType}/${row.model}`,
+        );
+      }
+      return [
+        {
+          id: row.id,
+          model: row.model,
+          displayName: row.displayName,
+          efforts: row.efforts.map((effort) => {
+            return reasoningEffortSchema.parse(effort);
+          }),
+          serviceTier,
+          providerType: subscription.type,
+          providerId: subscription.providerId,
+          needsReconnect: subscription.needsReconnect,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        },
+      ];
+    });
   });
 }
 
@@ -148,48 +154,54 @@ export async function loadMemberSubscriptionModels(
  * A disconnected subscription stops backing a member's selection. Return that
  * member to Auto when no remaining subscription still offers the saved model.
  */
-export async function resetDisconnectedMemberModelSelection(
-  db: Db,
-  orgId: string,
-  userId: string,
-): Promise<void> {
-  const [member] = await db
-    .select({ selectedModel: orgMembersMetadata.selectedModel })
-    .from(orgMembersMetadata)
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, orgId),
-        eq(orgMembersMetadata.userId, userId),
-      ),
-    )
-    .limit(1);
-  const selectedModel = member?.selectedModel;
-  if (!selectedModel) {
-    return;
-  }
-  const remaining = await loadMemberSubscriptionModels(
-    db,
-    await loadMemberModelRouteContext(db, orgId, userId),
-  );
-  if (
-    remaining.some((entry) => {
-      return entry.model === selectedModel;
-    })
-  ) {
-    return;
-  }
-  await db
-    .update(orgMembersMetadata)
-    .set({
-      selectedModel: AUTO_SELECTED_MODEL,
-      serviceTier: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(orgMembersMetadata.orgId, orgId),
-        eq(orgMembersMetadata.userId, userId),
-        eq(orgMembersMetadata.selectedModel, selectedModel),
-      ),
-    );
+export function resetDisconnectedMemberModelSelection(
+  identity$: Computed<MemberModelRouteIdentity>,
+) {
+  const member$ = memberModelRouteContext(identity$);
+  const remaining$ = memberSubscriptionModels(member$);
+  const selectedModel$ = computed(async (get) => {
+    const { orgId, userId } = get(identity$);
+    const [member] = await get(db$)
+      .select({ selectedModel: orgMembersMetadata.selectedModel })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1);
+    return member?.selectedModel;
+  });
+
+  // Finish selection repair after disconnection before the caller's abort check.
+  return command(async ({ get, set }): Promise<void> => {
+    const { orgId, userId } = get(identity$);
+    const selectedModel = await get(selectedModel$);
+    if (!selectedModel) {
+      return;
+    }
+    const remaining = await get(remaining$);
+    if (
+      remaining.some((entry) => {
+        return entry.model === selectedModel;
+      })
+    ) {
+      return;
+    }
+    await set(writeDb$)
+      .update(orgMembersMetadata)
+      .set({
+        selectedModel: AUTO_SELECTED_MODEL,
+        serviceTier: null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+          eq(orgMembersMetadata.selectedModel, selectedModel),
+        ),
+      );
+  });
 }
