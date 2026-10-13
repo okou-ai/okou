@@ -5,7 +5,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { notFound } from "../../lib/error";
-import { privateArtifactCreationEnabled$ } from "../services/private-artifact-storage.service";
 import {
   readArtifactShare$,
   resolveArtifactShare$,
@@ -13,16 +12,10 @@ import {
 } from "../services/artifact-shares.service";
 import type { RouteEntry } from "../route-entry";
 
-const availability$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const enabled = await set(
-    privateArtifactCreationEnabled$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  signal.throwIfAborted();
-  return { status: 200 as const, body: { enabled } };
+// Captured CLI packages still check this endpoint before private creation.
+// Remove only after no supported or captured CLI package calls it.
+const availability$ = command(() => {
+  return { status: 200 as const, body: { enabled: true } };
 });
 
 const status$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -50,26 +43,6 @@ const update$ = command(async ({ get, set }, signal: AbortSignal) => {
     return parsed.response;
   }
   const body = parsed.data;
-  if (
-    body.audience !== "private" &&
-    !(await set(
-      privateArtifactCreationEnabled$,
-      auth.orgId,
-      auth.userId,
-      signal,
-    ))
-  ) {
-    return {
-      status: 403 as const,
-      body: {
-        error: {
-          code: "FORBIDDEN",
-          message: "Artifact sharing is not available",
-        },
-      },
-    };
-  }
-  signal.throwIfAborted();
   const result = await set(
     updateArtifactShare$,
     { ...body, userId: auth.userId, orgId: auth.orgId },

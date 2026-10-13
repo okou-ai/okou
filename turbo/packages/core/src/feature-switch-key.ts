@@ -40,7 +40,6 @@ export enum FeatureSwitchKey {
   WorkdayConnector = "workdayConnector",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
-  PrivateArtifacts = "privateArtifacts",
   ArtifactPreviews = "artifactPreviews",
   SlackLinkUnfurls = "slackLinkUnfurls",
   ArtifactSidebarPreview = "artifactSidebarPreview",

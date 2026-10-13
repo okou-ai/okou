@@ -3,7 +3,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -78,7 +77,6 @@ async function openViewer({
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 }
 
@@ -201,12 +199,9 @@ test("an external HTML preview receives no app or artifact referrer", async () =
   ).resolves.toHaveAttribute("referrerpolicy", "no-referrer");
 });
 
-test.each([
-  [403, true],
-  [404, false],
-] as const)(
-  "unavailable links offer recovery without disclosing content: status %s, viewer %s",
-  async (status, privateArtifacts) => {
+test.each([403, 404] as const)(
+  "unavailable links offer recovery without disclosing content: status %s",
+  async (status) => {
     context.mocks.browser.matchMedia(true);
     context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
@@ -224,9 +219,6 @@ test.each([
           fullName: "Alex Rivera",
           email: "alex@example.test",
         },
-      },
-      featureSwitches: {
-        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
       },
     });
 

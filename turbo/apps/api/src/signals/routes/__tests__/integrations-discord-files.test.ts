@@ -146,7 +146,6 @@ async function canonicalUpload(
 ) {
   await updateFeatureSwitchesForUser(context, fixture.actor, {
     [FeatureSwitchKey.DiscordIntegration]: true,
-    [FeatureSwitchKey.PrivateArtifacts]: true,
   });
   const objectStore = storage.acceptChatObjectStorage();
   const bytes = Buffer.from("a,b\n1,2\n");

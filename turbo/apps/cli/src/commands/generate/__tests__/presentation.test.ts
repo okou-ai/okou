@@ -75,7 +75,7 @@ describe("okou generate presentation command", () => {
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html\n",
     );
     expect(stdout).toContain(
-      "With privateArtifacts enabled, new artifacts default to only-me.",
+      "Uploaded and generated files default to only-me. Hosted sites are public.",
     );
   });
 

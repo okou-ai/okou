@@ -60,7 +60,6 @@ async function fixture(
   options: {
     readonly scopes?: string;
     readonly enabled?: boolean;
-    readonly privateArtifacts?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -77,7 +76,6 @@ async function fixture(
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
   await updateFeatureSwitchesForUser(context, actor, {
     artifactPreviews: true,
-    privateArtifacts: options.privateArtifacts ?? false,
     slackLinkUnfurls: options.enabled ?? true,
   });
   const capture = host.captureHostedSitesS3();
@@ -218,7 +216,7 @@ describe("Slack link previews", () => {
   });
 
   it("uses compact public branding for ordinary App pages without loading their content", async () => {
-    const f = await fixture({ privateArtifacts: true });
+    const f = await fixture();
     await updateFeatureSwitchesForUser(context, f.actor, {
       artifactPreviews: false,
     });
@@ -397,7 +395,7 @@ describe("Slack link previews", () => {
   });
 
   it("requires public sharing for artifact references and honors revocation", async () => {
-    const f = await fixture({ privateArtifacts: true });
+    const f = await fixture();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
         data: [

@@ -4585,26 +4585,12 @@ export function registerFeishuIntegrationTests(
         });
       });
 
-      it.each([
-        { type: "image", privateFiles: false },
-        { type: "file", privateFiles: false },
-        { type: "image", privateFiles: true },
-        { type: "file", privateFiles: true },
-      ] as const)(
-        "imports a Feishu $type before dispatch (private=$privateFiles)",
-        async ({ type, privateFiles }) => {
+      it.each(["image", "file"] as const)(
+        "imports a private Feishu %s before dispatch",
+        async (type) => {
           const fixture = await setupFeishuRunFixture();
           await connectFixtureUser(fixture);
           const { actor, runnerGroup, appId, callbackUrl } = fixture;
-          const flagActor = {
-            ...actor,
-            orgId: requireValue(actor.orgId, "Expected organization"),
-          };
-          await own(() => {
-            return updateFeatureSwitchesForUser(context, flagActor, {
-              [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
-            });
-          });
           const uploads = captureIntegrationInputUploads(context);
           const messageId = `om_${randomUUID()}`;
           const fileKey = `file_${randomUUID()}`;
@@ -4670,13 +4656,7 @@ export function registerFeishuIntegrationTests(
           );
           expect(claim.prompt).not.toContain(fileKey);
           await own(() => {
-            return updateFeatureSwitchesForUser(context, flagActor, {
-              [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
-            });
-          });
-          await own(() => {
             return expectIntegrationInputPreview(context, {
-              privateFiles,
               actor,
               fileId,
               bytes,

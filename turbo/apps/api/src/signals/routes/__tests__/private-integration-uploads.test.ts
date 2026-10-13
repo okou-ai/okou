@@ -60,32 +60,15 @@ const integrations = [
   },
 ] as const;
 
-const privateFilesRepresentative = {
-  Feishu: true,
-  Lark: false,
-  GitHub: true,
-  Phone: false,
-  Teams: true,
-  Telegram: false,
-} as const;
-
-test.each(
-  integrations.map((integration) => {
-    return {
-      ...integration,
-      privateFiles: privateFilesRepresentative[integration.name],
-    };
-  }),
-)(
-  "$name uploads stay readable in their allocated bucket (private=$privateFiles)",
-  async ({ contract, routes, privateFiles }) => {
+test.each(integrations)(
+  "$name uploads stay private through completion",
+  async ({ contract, routes }) => {
     const actor = createBddApi(context).user();
     if (!actor.orgId) {
       throw new Error("Expected organization");
     }
     const flagActor = { ...actor, orgId: actor.orgId };
     await updateFeatureSwitchesForUser(context, flagActor, {
-      [FeatureSwitchKey.PrivateArtifacts]: privateFiles,
       [FeatureSwitchKey.LarkIntegration]: true,
     });
     installSharedThreadStorage(context);
@@ -98,22 +81,13 @@ test.each(
       [200],
     );
     const { uploadId, uploadUrl, fileUrl } = initialized.body;
-    expect(uploadUrl).toContain(
-      privateFiles
-        ? "/test-private-artifacts/private-artifacts/"
-        : "/test-user-artifacts/artifacts/",
+    expect(uploadUrl).toContain("/test-private-artifacts/private-artifacts/");
+    expect(fileUrl).toMatch(
+      /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
     );
-    if (privateFiles) {
-      expect(fileUrl).toMatch(
-        /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.txt$/u,
-      );
-    }
     expect(
       (await fetch(uploadUrl, { method: "PUT", body: "upload bytes" })).status,
     ).toBe(200);
-    await updateFeatureSwitchesForUser(context, flagActor, {
-      [FeatureSwitchKey.PrivateArtifacts]: !privateFiles,
-    });
     const api = setupApp({
       context,
       routes: [
@@ -131,12 +105,12 @@ test.each(
       api(webFilesContract).fileUrl({ headers, query: { file_id: uploadId } }),
       [200],
     );
-    expect(preview.body.publicUrl).toBe(privateFiles ? null : fileUrl);
+    expect(preview.body.publicUrl).toBeNull();
     const signed = context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[1];
     expect(signed).toBeInstanceOf(GetObjectCommand);
     expect(signed).toMatchObject({
       input: {
-        Bucket: privateFiles ? "test-private-artifacts" : "test-user-artifacts",
+        Bucket: "test-private-artifacts",
       },
     });
     const downloaded = await accept(
@@ -144,15 +118,13 @@ test.each(
       [200],
     );
     expect(downloaded.body).toBe("upload bytes");
-    if (privateFiles) {
-      createRouteMocks(context).clerk.session(actor.userId, "another-org");
-      await accept(
-        api(webFilesContract).fileUrl({
-          headers,
-          query: { file_id: uploadId },
-        }),
-        [404],
-      );
-    }
+    createRouteMocks(context).clerk.session(actor.userId, "another-org");
+    await accept(
+      api(webFilesContract).fileUrl({
+        headers,
+        query: { file_id: uploadId },
+      }),
+      [404],
+    );
   },
 );

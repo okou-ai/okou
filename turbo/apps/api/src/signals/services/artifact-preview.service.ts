@@ -16,12 +16,9 @@ import { waitUntil } from "../context/wait-until";
 import { writeDb$ } from "../external/db";
 import { putImmutableS3Object } from "../external/s3";
 import { safeJsonParse, tapError } from "../utils";
-import { allocateArtifactObject$ } from "./artifact-storage.service";
 import {
   allocatePrivateArtifact$,
   completePrivateArtifact$,
-  privateArtifactCreationEnabled$,
-  privateArtifactRecord$,
 } from "./private-artifact-storage.service";
 import {
   queueArtifactCatalogFileSql,
@@ -639,43 +636,18 @@ const renderAndStoreArtifactPreview$ = command(
     signal.throwIfAborted();
 
     const privateId = uuidv5(`${args.id}:${filename}`, uuidv5.URL);
-    const existing = await set(privateArtifactRecord$, privateId, signal);
-    signal.throwIfAborted();
-    const privatePreview =
-      existing !== null ||
-      (await set(
-        privateArtifactCreationEnabled$,
-        args.orgId,
-        args.userId,
-        signal,
-      ));
-    signal.throwIfAborted();
-    const artifact = privatePreview
-      ? await set(
-          allocatePrivateArtifact$,
-          {
-            userId: args.userId,
-            orgId: args.orgId,
-            id: privateId,
-            filename,
-            contentType,
-            size: image.byteLength,
-          },
-          signal,
-        )
-      : {
-          ...(await set(
-            allocateArtifactObject$,
-            {
-              userId: args.userId,
-              id: args.id,
-              filename,
-              variant: filename,
-            },
-            signal,
-          )),
-          bucket: env("R2_USER_ARTIFACTS_BUCKET_NAME"),
-        };
+    const artifact = await set(
+      allocatePrivateArtifact$,
+      {
+        userId: args.userId,
+        orgId: args.orgId,
+        id: privateId,
+        filename,
+        contentType,
+        size: image.byteLength,
+      },
+      signal,
+    );
     await get(
       putImmutableS3Object(artifact.bucket, artifact.key, image, contentType, {
         signal,
@@ -684,18 +656,16 @@ const renderAndStoreArtifactPreview$ = command(
     );
     signal.throwIfAborted();
 
-    if (privatePreview) {
-      await set(
-        completePrivateArtifact$,
-        {
-          id: artifact.id,
-          url: null,
-          contentType,
-          size: image.byteLength,
-        },
-        signal,
-      );
-    }
+    await set(
+      completePrivateArtifact$,
+      {
+        id: artifact.id,
+        url: null,
+        contentType,
+        size: image.byteLength,
+      },
+      signal,
+    );
     const db = set(writeDb$);
     // Publish the preview reference and its recoverable catalog handoff together.
     await db.execute(

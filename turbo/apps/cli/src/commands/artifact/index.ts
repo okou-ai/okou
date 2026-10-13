@@ -90,7 +90,7 @@ Notes:
   - Downloads use artifact:read for owned, organization-shared, or public references under their current access policy; raw file IDs use file:read
   - Hosted sites download all pages and assets into --out as a directory, preserving the authorized publication
   - Download parameters match okou web download-file; see okou artifact download -h
-  - Visibility capabilities are issued to new runs with privateArtifacts enabled
+  - Visibility capabilities are issued to new runs
   - Only the owner in the original organization can manage an artifact's visibility
   - Change visibility only when the user requests it; uploads, generation, and hosting retain their existing privacy
   - There is one active audience. Switching to org or only-me revokes the old public link

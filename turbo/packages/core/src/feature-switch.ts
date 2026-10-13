@@ -322,13 +322,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
   },
-  // Every artifact privacy slice in #32492 uses this same rollout switch.
-  [FeatureSwitchKey.PrivateArtifacts]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Use private artifact storage, the Okou viewer, and organization and public sharing.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:

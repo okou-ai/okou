@@ -82,16 +82,6 @@ function headers(actor: ApiTestUser) {
   return { authorization: "Bearer clerk-session" };
 }
 
-async function flag(actor: ApiTestUser, enabled: boolean) {
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers: headers(actor),
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: enabled } },
-    }),
-    [200],
-  );
-}
-
 async function fixture() {
   const actor = bdd.user();
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -288,7 +278,6 @@ async function fixture() {
         : new HttpResponse(null, { status: 404 });
     }),
   );
-  await flag(actor, true);
 
   async function upload(
     owner = actor,
@@ -795,7 +784,6 @@ test.each(["short", "legacy"] as const)(
   async (format) => {
     const f = await fixture();
     const owner = bdd.user({ orgId: f.actor.orgId });
-    await flag(owner, true);
     const file = await f.upload(owner);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
@@ -918,7 +906,7 @@ test("independent thread snapshots use different short references and revoke sep
   expect(retainedArtifact.body.url).toContain(second.body.id);
 });
 
-test("owner deletion revokes a snapshot after switch rollback and preserves the private original", async () => {
+test("owner deletion revokes a snapshot and preserves the private original", async () => {
   const f = await fixture();
   const file = await f.upload();
   const selection = await f.selection(file.url);
@@ -930,7 +918,6 @@ test("owner deletion revokes a snapshot after switch rollback and preserves the 
     }),
     [404],
   );
-  await flag(f.actor, false);
   await accept(
     api()(sharedThreadsContract).delete({
       headers: headers(f.actor),
@@ -954,20 +941,6 @@ test("owner deletion revokes a snapshot after switch rollback and preserves the 
   expect(f.objects.has(file.key)).toBeTruthy();
 });
 
-test("switch-off shares retain the established message-only projection", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  await flag(f.actor, false);
-  const created = await accept(share(f.actor, selection), [201]);
-  const shared = await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [200],
-  );
-  expect(shared.body.messages[0]!.content).toBe(file.url);
-  expect(f.copies).toStrictEqual([]);
-});
-
 test.each(["organization", "user"] as const)(
   "%s deletion revokes resource access before acknowledging the webhook",
   async (kind) => {
@@ -975,7 +948,6 @@ test.each(["organization", "user"] as const)(
     const file = await f.upload();
     const selection = await f.selection(file.url);
     const created = await accept(share(f.actor, selection), [201]);
-    await flag(f.actor, false);
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [],
       has_more: false,

@@ -33,7 +33,14 @@ function featureSwitchResponseBody(params: {
   });
   return {
     switches: params.switches,
-    effectiveSwitches: registeredEffectiveSwitches,
+    effectiveSwitches: {
+      ...registeredEffectiveSwitches,
+      // Older supported App builds default this key to false and still use it
+      // for artifact sharing and the viewer. Remove this wire-only value after
+      // the ungated App is live and the Web client floor excludes those builds
+      // (#39692).
+      privateArtifacts: true,
+    },
   };
 }
 

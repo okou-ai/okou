@@ -21,7 +21,6 @@ import {
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import sharp from "sharp";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
@@ -69,15 +68,6 @@ const api = () => {
     ],
   });
 };
-async function flag(enabled: boolean) {
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: enabled } },
-    }),
-    [200],
-  );
-}
 async function file(
   filename = "report.pdf",
   contentType = "application/pdf",
@@ -123,7 +113,7 @@ function runHeaders(
   return { authorization: `Bearer ${token}` };
 }
 
-async function fixture() {
+function fixture() {
   const owner = `user_${randomUUID()}`;
   const org = `org_${randomUUID()}`;
   const organization = { id: org, name: "Original organization" };
@@ -232,14 +222,13 @@ async function fixture() {
     mocks.clerk.session(userId, orgId);
   }
   session();
-  await flag(true);
   return { owner, org, organization, members, objects, session };
 }
 
 test.each(["private", "organization", "public"] as const)(
   "%s share status reuses the fresh membership name and observes renames",
   async (audience) => {
-    const { org, organization } = await fixture();
+    const { org, organization } = fixture();
     const target = await file();
     context.mocks.clerk.organizations.getOrganization.mockClear();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
@@ -284,7 +273,7 @@ test.each(["private", "organization", "public"] as const)(
 );
 
 test("removing the owner denies status and updates after successful name reads", async () => {
-  const { owner, members } = await fixture();
+  const { owner, members } = fixture();
   const target = await file();
   await accept(
     api()(artifactSharesContract).update({
@@ -316,7 +305,7 @@ test("removing the owner denies status and updates after successful name reads",
 });
 
 test("viewing and copying stable references grant nothing; only the owner can manage sharing", async () => {
-  const { objects, members, session } = await fixture();
+  const { objects, members, session } = fixture();
   const target = await file();
   const initial = await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
@@ -335,7 +324,6 @@ test("viewing and copying stable references grant nothing; only the owner can ma
   const peer = `user_${randomUUID()}`;
   members.add(peer);
   session(peer);
-  await flag(true);
   await accept(
     api()(artifactSharesContract).status({ headers, body: target }),
     [404],
@@ -352,23 +340,18 @@ test("viewing and copying stable references grant nothing; only the owner can ma
     [404],
   );
   session();
-  await flag(false);
-  await accept(
+  const published = await accept(
     api()(artifactSharesContract).update({
       headers,
       body: { target, audience: "public" },
     }),
-    [403],
+    [200],
   );
-  expect(
-    [...objects.keys()].filter((key) => {
-      return key.startsWith("artifact-shares/");
-    }),
-  ).toHaveLength(0);
+  expect(published.body.audience).toBe("public");
 });
 
-test("agent sharing and the Share menu reuse one policy, including revocation after rollout is disabled", async () => {
-  const { owner, org } = await fixture();
+test("agent sharing and the Share menu reuse one policy, including revocation", async () => {
+  const { owner, org } = fixture();
   const target = await file();
   const agentHeaders = runHeaders(owner, org, [
     "artifact:read",
@@ -418,14 +401,6 @@ test("agent sharing and the Share menu reuse one policy, including revocation af
     expect(repeated.body).toStrictEqual(shared.body);
   }
 
-  await flag(false);
-  await accept(
-    api()(artifactSharesContract).update({
-      headers: agentHeaders,
-      body: { target, audience: "organization" },
-    }),
-    [403],
-  );
   const revoked = await accept(
     api()(artifactSharesContract).update({
       headers: agentHeaders,
@@ -446,12 +421,11 @@ test("agent sharing and the Share menu reuse one policy, including revocation af
 });
 
 test("artifact capabilities do not let agents manage another owner's share", async () => {
-  const { org, members, session } = await fixture();
+  const { org, members, session } = fixture();
   const target = await file();
   const peer = `user_${randomUUID()}`;
   members.add(peer);
   session(peer);
-  await flag(true);
   const agentHeaders = runHeaders(peer, org, [
     "artifact:read",
     "artifact:write",
@@ -482,8 +456,8 @@ test("artifact capabilities do not let agents manage another owner's share", asy
   });
 });
 
-test("artifact availability reads the live switch and still requires artifact read access", async () => {
-  const { owner, org } = await fixture();
+test("artifact availability requires artifact read access", async () => {
+  const { owner, org } = fixture();
   const agentHeaders = runHeaders(owner, org, ["artifact:read"]);
   const enabled = await accept(
     api()(artifactSharesContract).availability({ headers: agentHeaders }),
@@ -492,13 +466,6 @@ test("artifact availability reads the live switch and still requires artifact re
   expect(enabled.body).toStrictEqual({ enabled: true });
   expect(enabled.headers.get("cache-control")).toBe("private, no-store");
   expect(enabled.headers.get("referrer-policy")).toBe("no-referrer");
-
-  await flag(false);
-  const disabled = await accept(
-    api()(artifactSharesContract).availability({ headers: agentHeaders }),
-    [200],
-  );
-  expect(disabled.body).toStrictEqual({ enabled: false });
   await accept(
     api()(artifactSharesContract).availability({
       headers: runHeaders(owner, org, ["file:write", "host:write"]),
@@ -508,7 +475,7 @@ test("artifact availability reads the live switch and still requires artifact re
 });
 
 test("upload, hosting and read-only run capabilities cannot change sharing", async () => {
-  const { owner, org } = await fixture();
+  const { owner, org } = fixture();
   const target = await file();
   for (const capabilities of [
     ["file:write", "host:write"],
@@ -559,7 +526,7 @@ test("upload, hosting and read-only run capabilities cannot change sharing", asy
 });
 
 test("hostless owner references authorize before signing and ignore extension hints", async () => {
-  const { members, session, objects } = await fixture();
+  const { members, session, objects } = fixture();
   const target = await file();
   const reference = artifactReferencePath(target.id, "renamed.html")
     .split("/")
@@ -583,7 +550,6 @@ test("hostless owner references authorize before signing and ignore extension hi
       return key.startsWith("artifact-shares/");
     }),
   ).toHaveLength(0);
-  await flag(false);
   await accept(
     api()(artifactReferencesContract).resolve({
       headers,
@@ -617,7 +583,7 @@ test("hostless owner references authorize before signing and ignore extension hi
 });
 
 test("a private file keeps the same short reference through organization sharing and revocation", async () => {
-  const { members, session } = await fixture();
+  const { members, session } = fixture();
   const prepared = await accept(
     api()(uploadsContract).prepare({
       headers,
@@ -698,7 +664,7 @@ test("a private file keeps the same short reference through organization sharing
 });
 
 test("agent reference resolution enforces resource capability, type and ownership", async () => {
-  const { owner, org, members } = await fixture();
+  const { owner, org, members } = fixture();
   const prepared = await accept(
     api()(uploadsContract).prepare({
       headers,
@@ -767,7 +733,7 @@ test("agent reference resolution enforces resource capability, type and ownershi
 
 describe("GET /api/artifact-references/:reference/read", () => {
   it("the owner can read a private file without granting recipient access", async () => {
-    const { owner, org, members } = await fixture();
+    const { owner, org, members } = fixture();
     const target = await file();
     const status = await accept(
       api()(artifactSharesContract).status({ headers, body: target }),
@@ -822,7 +788,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
   it.each(["short", "legacy", "legacy-short"] as const)(
     "%s organization reads require current membership and retain owner-only management",
     async (format) => {
-      const { owner, org, members, objects } = await fixture();
+      const { owner, org, members, objects } = fixture();
       const target = await file();
       const shared = await accept(
         api()(artifactSharesContract).update({
@@ -912,7 +878,6 @@ describe("GET /api/artifact-references/:reference/read", () => {
         [404],
       );
       members.add(recipient);
-      await flag(false);
       await accept(
         api()(artifactSharesContract).update({
           headers,
@@ -938,7 +903,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
   );
 
   it("an outside agent can read public file references until the owner revokes sharing", async () => {
-    const { objects } = await fixture();
+    const { objects } = fixture();
     const target = await file();
     const published = await accept(
       api()(artifactSharesContract).update({
@@ -998,7 +963,7 @@ describe("GET /api/artifact-references/:reference/read", () => {
   });
 
   it("even public references require authentication and artifact read capability", async () => {
-    const { owner, org } = await fixture();
+    const { owner, org } = fixture();
     const target = await file();
     const published = await accept(
       api()(artifactSharesContract).update({
@@ -1038,9 +1003,9 @@ describe("GET /api/artifact-references/:reference/read", () => {
 });
 
 test.each(["short", "legacy", "legacy-short"] as const)(
-  "%s organization references use current membership and revoke without a rollout dependency",
+  "%s organization references use current membership and support revocation",
   async (format) => {
-    const { members, session, objects } = await fixture();
+    const { members, session, objects } = fixture();
     const target = await file();
     const shared = await accept(
       api()(artifactSharesContract).update({
@@ -1089,7 +1054,6 @@ test.each(["short", "legacy", "legacy-short"] as const)(
     );
     members.add(recipient);
     session();
-    await flag(false);
     await accept(
       api()(artifactSharesContract).update({
         headers,
@@ -1118,7 +1082,7 @@ test.each(["short", "legacy", "legacy-short"] as const)(
 test.each([false, true])(
   "older organization policies allocate a short link only on explicit sharing (index retained=%s)",
   async (retainIndex) => {
-    const { objects } = await fixture();
+    const { objects } = fixture();
     const target = await file();
     const shared = await accept(
       api()(artifactSharesContract).update({
@@ -1160,7 +1124,7 @@ test.each([false, true])(
 );
 
 test("reading a pre-registry public grant preserves its working URL without publishing a new alias", async () => {
-  const { objects } = await fixture();
+  const { objects } = fixture();
   const target = await file();
   const published = await accept(
     api()(artifactSharesContract).update({
@@ -1193,7 +1157,7 @@ test("reading a pre-registry public grant preserves its working URL without publ
 });
 
 test("public filename collisions retry without replacing a historical file", async () => {
-  const { objects } = await fixture();
+  const { objects } = fixture();
   const target = await file();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   let collision: string | undefined;
@@ -1239,7 +1203,7 @@ test("public filename collisions retry without replacing a historical file", asy
 });
 
 test("existing 24-character public file links survive updates and revoke normally", async () => {
-  const { objects } = await fixture();
+  const { objects } = fixture();
   const target = await file();
   const published = await accept(
     api()(artifactSharesContract).update({
@@ -1276,7 +1240,7 @@ test("existing 24-character public file links survive updates and revoke normall
 });
 
 test("exhausted public hash collisions preserve registrations and grant no publication", async () => {
-  const { objects } = await fixture();
+  const { objects } = fixture();
   const target = await file();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   let conflictingKey: string | undefined;
@@ -1316,7 +1280,7 @@ test("exhausted public hash collisions preserve registrations and grant no publi
 });
 
 test("organization resolution checks current original-org membership and never grants reshare rights", async () => {
-  const { members, session } = await fixture();
+  const { members, session } = fixture();
   const target = await file();
   const shared = await accept(
     api()(artifactSharesContract).update({
@@ -1383,7 +1347,7 @@ test("organization resolution checks current original-org membership and never g
 });
 
 test("a deleted original organization makes an existing share unavailable", async () => {
-  const { session } = await fixture();
+  const { session } = fixture();
   const target = await file();
   const shared = await accept(
     api()(artifactSharesContract).update({
@@ -1433,7 +1397,7 @@ describe.each([
   "a membership %s remains an error rather than a missing organization",
   (_name, error) => {
     async function unavailableMembershipFixture() {
-      await fixture();
+      fixture();
       const target = await file();
       const shared = await accept(
         api()(artifactSharesContract).update({
@@ -1483,8 +1447,8 @@ describe.each([
   },
 );
 
-test("audience changes revoke old public tokens; rollback preserves grants and permits stopping", async () => {
-  const { objects } = await fixture();
+test("audience changes revoke old public tokens and permit stopping", async () => {
+  const { objects } = fixture();
   const target = await file();
   const publicShare = await accept(
     api()(artifactSharesContract).update({
@@ -1519,7 +1483,6 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
     [200],
   );
   expect(republished.body.url).not.toBe(first.url);
-  await flag(false);
   await accept(
     api()(artifactSharesContract).resolve({
       headers,
@@ -1551,7 +1514,7 @@ test("audience changes revoke old public tokens; rollback preserves grants and p
 });
 
 test("organization short-reference collisions retry without taking another share's address", async () => {
-  const { objects } = await fixture();
+  const { objects } = fixture();
   const original = await file();
   const originalShare = await accept(
     api()(artifactSharesContract).update({
@@ -1607,7 +1570,7 @@ test("organization short-reference collisions retry without taking another share
 });
 
 test("a failed publication write does not report a narrower audience, and unavailable policy fails closed", async () => {
-  await fixture();
+  fixture();
   const target = await file();
   const first = await accept(
     api()(artifactSharesContract).update({
@@ -1649,7 +1612,7 @@ test("a failed publication write does not report a narrower audience, and unavai
 });
 
 test("stopping an unpublished file records revocation and preserves its snapshot for a later explicit share", async () => {
-  const { members, session } = await fixture();
+  const { members, session } = fixture();
   const target = await file();
   const stopped = await accept(
     api()(artifactSharesContract).update({
@@ -1710,7 +1673,7 @@ test("stopping an unpublished file records revocation and preserves its snapshot
 });
 
 test("sharing copies file bytes once into private storage without changing the owner reference", async () => {
-  await fixture();
+  fixture();
   const target = await file();
   await accept(
     api()(artifactSharesContract).update({
@@ -1752,7 +1715,7 @@ test("sharing copies file bytes once into private storage without changing the o
 test.each(["organization", "private"] as const)(
   "a delayed publication cannot restore public access after a newer %s update",
   async (audience) => {
-    await fixture();
+    fixture();
     const target = await file();
     const shared = await accept(
       api()(artifactSharesContract).update({
@@ -1823,7 +1786,7 @@ test.each(["organization", "private"] as const)(
 );
 
 test("a first publication preparing its snapshot cannot grant access after an initial stop", async () => {
-  await fixture();
+  fixture();
   const target = await file();
   const preparationStarted = createDeferredPromise<void>(context.signal);
   const resumePreparation = createDeferredPromise<void>(context.signal);
@@ -1876,7 +1839,7 @@ test("a first publication preparing its snapshot cannot grant access after an in
 });
 
 test("canonical file links disclose public previews only while explicitly public, without authentication", async () => {
-  const { members, session } = await fixture();
+  const { members, session } = fixture();
   const target = await file();
   const reference = artifactReferencePath(target.id, "report.pdf")
     .split("/")
@@ -1978,7 +1941,6 @@ test("canonical file links disclose public previews only while explicitly public
   const recipient = `user_${randomUUID()}`;
   members.add(recipient);
   session(recipient);
-  await flag(true);
   await accept(
     api()(artifactReferencesContract).resolve({
       headers,
@@ -1996,7 +1958,7 @@ test("canonical file links disclose public previews only while explicitly public
 });
 
 test("oG checks anonymous sharing again for old image URLs after a public share becomes organization-only or revoked", async () => {
-  await fixture();
+  fixture();
   await accept(
     api()(featureSwitchesContract).update({
       headers,

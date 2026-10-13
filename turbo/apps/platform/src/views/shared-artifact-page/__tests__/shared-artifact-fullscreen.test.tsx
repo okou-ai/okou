@@ -3,7 +3,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -116,7 +115,6 @@ async function openHtmlViewer(): Promise<void> {
     context,
     path: `${artifactReferencePath(artifactId, filename)}#counter`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   await expect(
     screen.findByTitle(`${filename} preview`),
@@ -222,7 +220,6 @@ async function openMarkdownViewer() {
     context,
     path: artifactReferencePath(artifactId, "plan.md"),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   await screen.findByRole("img", { name: "Diagram" });
 }

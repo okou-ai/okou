@@ -20,7 +20,6 @@ import {
   generatePresignedUploadPartUrl,
   s3MetadataHeaders,
 } from "../external/s3";
-import { privateArtifactCreationEnabled$ } from "../services/private-artifact-storage.service";
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import type { RouteEntry } from "../route-entry";
@@ -44,21 +43,8 @@ const allocatePreparedUpload$ = command(
 
     const privacyRequired =
       requirePrivateArtifact || bodyResult.data.requirePrivateArtifact === true;
-    let privateArtifacts: boolean | undefined;
-    if (privacyRequired) {
-      if (!auth.orgId) {
-        return artifactVisibilityUnavailable();
-      }
-      privateArtifacts = await set(
-        privateArtifactCreationEnabled$,
-        auth.orgId,
-        auth.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!privateArtifacts) {
-        return artifactVisibilityUnavailable();
-      }
+    if (privacyRequired && !auth.orgId) {
+      return artifactVisibilityUnavailable();
     }
 
     const { filename, size } = bodyResult.data;
@@ -85,7 +71,6 @@ const allocatePreparedUpload$ = command(
         contentType,
         size,
         purpose: bodyResult.data.purpose,
-        privateArtifacts,
       },
       signal,
     );
