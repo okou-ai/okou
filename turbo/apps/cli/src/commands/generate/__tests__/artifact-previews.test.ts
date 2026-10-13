@@ -60,6 +60,8 @@ describe("artifact preview rollout in generation instructions", () => {
         const output = logs.mock.calls.flat().join("\n");
         expect(output.includes("okou host screenshot")).toBe(enabled);
         expect(output.includes(" --preview ")).toBe(enabled);
+        expect(output.includes("previewImageUrl")).toBe(enabled);
+        expect(output.includes("file-only deliverable")).toBe(enabled);
         expect(output).toContain("okou host ");
       }
     },

@@ -21,8 +21,8 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
-  PRESENTATION_PREVIEW_INSTRUCTION,
 } from "@okouai/core/presentation-generation-instructions";
+import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
@@ -283,7 +283,7 @@ function buildCustomGenerationTemplatePrompt(
       ...templateFraming(customTemplateArtifactNoun(mounted.kind)),
       `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
       "",
-      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names. It was written for this template and is the authority on how to apply it.`,
+      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names for content, visual style, and content QA.`,
       "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
     ].join("\n"),
   };
@@ -353,8 +353,8 @@ function buildUserPresentationTemplatePrompt(
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
       PRESENTATION_IMAGE_BATCH_INSTRUCTION,
       PRESENTATION_STATIC_HTML_INSTRUCTION,
-      ...(artifactPreviewsEnabled ? [PRESENTATION_PREVIEW_INSTRUCTION] : []),
-      `- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html${artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png" : ""}`,
+      ...(artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
+      `- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html${artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`,
       "- Return only the generated HTML deck as the final deliverable.",
     ].join("\n"),
   };
@@ -436,8 +436,9 @@ function buildWebsiteTemplatePackagePrompt(
       "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
       ...(artifactPreviewsEnabled
         ? [
-            "- Stage once: `node tools/stage.mjs publish` writes a clean ./publish directory. Capture it with `okou host screenshot ./publish --out ./generated/previews/cover.png`, inspect the PNG and repair/re-capture incomplete content, then publish once with `okou host ./publish --site <slug> --preview ./generated/previews/cover.png`.",
-            "- Keep the PNG and receipt outside ./publish. Use the user's local PNG/JPEG cover with --preview if provided. Never omit --preview to hide a capture failure.",
+            "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
+            ...artifactPreviewInstructions({ outputDir: "./publish" }),
+            "- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.",
           ]
         : [
             "- Stage and host once: `node tools/stage.mjs publish` writes a clean ./publish directory, then `okou host ./publish --site <slug>`.",
