@@ -1027,11 +1027,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0423",
-      "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
-      "owner": "expectCheckViolation"
-    },
-    {
       "id": "TX-0424",
       "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
       "owner": "<module>"
