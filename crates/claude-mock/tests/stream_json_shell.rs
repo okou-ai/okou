@@ -315,6 +315,12 @@ fn stream_json_shell_large_stdout_is_bounded() -> Result<(), Box<dyn std::error:
     assert!(tool_output.contains(STDOUT_TRUNCATION_MARKER));
     assert!(!tool_output.contains(STDERR_TRUNCATION_MARKER));
     assert!(tool_output.len() <= MOCK_CAPTURE_LIMIT_BYTES + 128);
+    let expected_output = format!(
+        "{}\n{STDOUT_TRUNCATION_MARKER}\n",
+        "A\n".repeat(MOCK_CAPTURE_LIMIT_BYTES / 2)
+    );
+    assert_eq!(tool_output.len(), expected_output.len());
+    assert!(tool_output == expected_output, "unexpected retained stdout");
     Ok(())
 }
 
@@ -337,6 +343,12 @@ fn stream_json_shell_large_stderr_failure_is_bounded() -> Result<(), Box<dyn std
     assert!(tool_output.contains(STDERR_TRUNCATION_MARKER));
     assert!(!tool_output.contains(STDOUT_TRUNCATION_MARKER));
     assert!(tool_output.len() <= MOCK_CAPTURE_LIMIT_BYTES + 128);
+    let expected_output = format!(
+        "out{}\n{STDERR_TRUNCATION_MARKER}\n",
+        "E\n".repeat(MOCK_CAPTURE_LIMIT_BYTES / 2)
+    );
+    assert_eq!(tool_output.len(), expected_output.len());
+    assert!(tool_output == expected_output, "unexpected retained stderr");
     Ok(())
 }
 
@@ -363,6 +375,116 @@ fn stream_json_shell_large_stdout_and_stderr_do_not_deadlock()
     assert!(tool_output.contains(STDOUT_TRUNCATION_MARKER));
     assert!(tool_output.contains(STDERR_TRUNCATION_MARKER));
     assert!(tool_output.len() <= (MOCK_CAPTURE_LIMIT_BYTES * 2) + 256);
+    let expected_output = format!(
+        "{}\n{STDOUT_TRUNCATION_MARKER}\n{}\n{STDERR_TRUNCATION_MARKER}\n",
+        "O\n".repeat(MOCK_CAPTURE_LIMIT_BYTES / 2),
+        "E\n".repeat(MOCK_CAPTURE_LIMIT_BYTES / 2)
+    );
+    assert_eq!(tool_output.len(), expected_output.len());
+    assert!(
+        tool_output == expected_output,
+        "unexpected retained streams"
+    );
+    Ok(())
+}
+
+#[test]
+fn stream_json_shell_stdout_preserves_capture_boundary() -> Result<(), Box<dyn std::error::Error>> {
+    for (output_bytes, retained_bytes, truncated) in [
+        (
+            MOCK_CAPTURE_LIMIT_BYTES - 1,
+            MOCK_CAPTURE_LIMIT_BYTES - 1,
+            false,
+        ),
+        (MOCK_CAPTURE_LIMIT_BYTES, MOCK_CAPTURE_LIMIT_BYTES, false),
+        (MOCK_CAPTURE_LIMIT_BYTES + 1, MOCK_CAPTURE_LIMIT_BYTES, true),
+    ] {
+        let home = tempfile::tempdir()?;
+        let prompt = format!("yes 0123456789abcdef | head -c {output_bytes}");
+
+        let output = mock_stream_json_shell_output(home.path(), &prompt)?;
+
+        assert!(
+            output.status.success(),
+            "expected success, stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty());
+
+        let events = parse_jsonl(&output.stdout)?;
+        let tool_output = tool_result_content(&events)?;
+        let result_output = result_content(&events)?;
+        let expected_prefix: String = "0123456789abcdef\n"
+            .chars()
+            .cycle()
+            .take(retained_bytes)
+            .collect();
+        let expected_output = if truncated {
+            format!("{expected_prefix}\n{STDOUT_TRUNCATION_MARKER}\n")
+        } else {
+            expected_prefix
+        };
+
+        assert_eq!(tool_output, result_output);
+        assert_eq!(
+            tool_output.len(),
+            expected_output.len(),
+            "{output_bytes} bytes"
+        );
+        assert!(
+            tool_output == expected_output,
+            "unexpected retained stdout for {output_bytes} bytes"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn stream_json_shell_stderr_failure_preserves_capture_boundary()
+-> Result<(), Box<dyn std::error::Error>> {
+    for (output_bytes, retained_bytes, truncated) in [
+        (
+            MOCK_CAPTURE_LIMIT_BYTES - 1,
+            MOCK_CAPTURE_LIMIT_BYTES - 1,
+            false,
+        ),
+        (MOCK_CAPTURE_LIMIT_BYTES, MOCK_CAPTURE_LIMIT_BYTES, false),
+        (MOCK_CAPTURE_LIMIT_BYTES + 1, MOCK_CAPTURE_LIMIT_BYTES, true),
+    ] {
+        let home = tempfile::tempdir()?;
+        let prompt =
+            format!("printf out; yes fedcba9876543210 | head -c {output_bytes} >&2; exit 7");
+
+        let output = mock_stream_json_shell_output(home.path(), &prompt)?;
+
+        assert_eq!(output.status.code(), Some(7));
+        assert!(output.stderr.is_empty());
+
+        let events = parse_jsonl(&output.stdout)?;
+        let tool_output = tool_result_content(&events)?;
+        let result_output = result_content(&events)?;
+        let expected_prefix: String = "fedcba9876543210\n"
+            .chars()
+            .cycle()
+            .take(retained_bytes)
+            .collect();
+        let expected_output = if truncated {
+            format!("out{expected_prefix}\n{STDERR_TRUNCATION_MARKER}\n")
+        } else {
+            format!("out{expected_prefix}")
+        };
+
+        assert_eq!(tool_output, result_output);
+        assert_eq!(
+            tool_output.len(),
+            expected_output.len(),
+            "{output_bytes} bytes"
+        );
+        assert!(
+            tool_output == expected_output,
+            "unexpected retained stderr for {output_bytes} bytes"
+        );
+    }
     Ok(())
 }
 
