@@ -47,7 +47,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -914,7 +914,7 @@ const captureAndStoreBrowserScreenshot$ = command(
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
-        const instance = await loadActiveInstance(db, browser.chatThreadId);
+        const instance = await set(loadActiveInstance$, browser.chatThreadId);
         signal.throwIfAborted();
         if (!instance) {
           return;
@@ -1255,23 +1255,23 @@ async function loadOwnedThreadBrowser(
   return row ?? null;
 }
 
-async function loadActiveInstance(
-  db: Db,
-  chatThreadId: string,
-): Promise<BrowserInstanceRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.chatThreadId, chatThreadId),
-        eq(browserSessionInstances.status, "active"),
-      ),
-    )
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  return row ?? null;
-}
+const loadActiveInstance$ = command(
+  async ({ get }, chatThreadId: string): Promise<BrowserInstanceRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.chatThreadId, chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    return row ?? null;
+  },
+);
 
 async function loadOwnedThreadBrowserProfile(
   db: Db,
@@ -2029,7 +2029,7 @@ const inspectActiveConnection$ = command(
   > => {
     const { browser } = args;
     const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
       const suspended = await suspendBrowserWithoutActiveInstance(
@@ -2482,7 +2482,7 @@ const leaseInstanceForBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     const leased = instance
       ? await touchInstanceLease(db, instance.providerSessionId, signal)
@@ -2575,7 +2575,7 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_NOT_LIVE",
       );
     }
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
       return conflict(
@@ -2687,7 +2687,7 @@ export const getBrowser$ = command(
     let idleExpiresAt: Date | null = null;
     let screen: BrowserScreen | null = null;
     if (row.status === "active") {
-      const instance = await loadActiveInstance(db, row.chatThreadId);
+      const instance = await set(loadActiveInstance$, row.chatThreadId);
       signal.throwIfAborted();
       if (instance) {
         idleExpiresAt = instance.idleExpiresAt;
