@@ -133,7 +133,14 @@ enum Fault {
     RandomLength,
     Extra,
     Password,
+    PostAuthMac,
+    PostAuthTruncated,
+    PostAuthUnreadDrop,
 }
+
+const SMALL_RECORDS: usize = 128;
+const SMALL_PAYLOAD: usize = 1024;
+
 async fn peer(
     mut io: DuplexStream,
     private: RsaPrivateKey,
@@ -254,6 +261,27 @@ async fn peer(
     }
     if full {
         assert_eq!(p.recv().await?, b"hello");
+        if matches!(
+            fault,
+            Fault::PostAuthMac | Fault::PostAuthTruncated | Fault::PostAuthUnreadDrop
+        ) {
+            p.send(&vec![0x5a; usize::from(u16::MAX)], false).await?;
+            for index in 0..SMALL_RECORDS {
+                p.send(&[], false).await?;
+                p.send(&vec![index as u8; SMALL_PAYLOAD], false).await?;
+            }
+            if matches!(fault, Fault::PostAuthMac) {
+                p.send(b"late secret", true).await?;
+                return p.closed().await;
+            }
+            if matches!(fault, Fault::PostAuthTruncated) {
+                // A complete length followed by an incomplete ciphertext/tag.
+                p.io.write_all(&[0, 6, 0x11, 0x22]).await?;
+                return Ok(true);
+            }
+            p.send(b"unread authenticated plaintext", false).await?;
+            return p.closed().await;
+        }
         p.send(b"reply", false).await?;
     } else {
         let mut b = [0; 5];
@@ -303,6 +331,75 @@ async fn all_four_exact_modes_and_both_credential_subtypes_keep_the_selected_pos
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn large_then_small_authenticated_records_preserve_plaintext_and_late_failure_cleanup()
+-> TestResult {
+    let private = key()?;
+    let pin = RsaServerKeyPin::new(Sha256::digest(wire(&private.to_public_key())).into());
+    for mode in [RsaAesSecurity::Ra2, RsaAesSecurity::Ra2_256] {
+        for fault in [
+            Fault::PostAuthMac,
+            Fault::PostAuthTruncated,
+            Fault::PostAuthUnreadDrop,
+        ] {
+            let (a, b) = tokio::io::duplex(512);
+            let server = tokio::spawn(peer(b, private.clone(), mode, false, fault));
+            let mut authenticated = authenticate_rsa_aes(
+                a,
+                mode,
+                credential(false)?,
+                pin,
+                Instant::now() + Duration::from_secs(30),
+            )
+            .await?
+            .into_stream();
+            authenticated.write_all(b"hello").await?;
+            authenticated.flush().await?;
+
+            // Caller reads split both large and small records at unrelated boundaries.
+            let mut expected = vec![0x5a; usize::from(u16::MAX)];
+            for index in 0..SMALL_RECORDS {
+                expected.extend(std::iter::repeat_n(index as u8, SMALL_PAYLOAD));
+            }
+            let mut got = vec![0; expected.len()];
+            for chunk in got.chunks_mut(257) {
+                authenticated.read_exact(chunk).await?;
+            }
+            assert_eq!(got, expected, "{mode:?}/{fault:?}");
+
+            if matches!(fault, Fault::PostAuthUnreadDrop) {
+                let mut first = [0];
+                authenticated.read_exact(&mut first).await?;
+                assert_eq!(first, [b'u']);
+            } else {
+                let mut out = [0xa5; 6];
+                let expected_kind = if matches!(fault, Fault::PostAuthMac) {
+                    std::io::ErrorKind::InvalidData
+                } else {
+                    std::io::ErrorKind::UnexpectedEof
+                };
+                assert_eq!(
+                    authenticated.read_exact(&mut out).await.unwrap_err().kind(),
+                    expected_kind
+                );
+                assert_eq!(out, [0xa5; 6]);
+                assert_eq!(
+                    authenticated.read_exact(&mut out).await.unwrap_err().kind(),
+                    std::io::ErrorKind::InvalidData
+                );
+                assert_eq!(out, [0xa5; 6]);
+                assert_eq!(
+                    authenticated.write_all(b"new").await.unwrap_err().kind(),
+                    std::io::ErrorKind::InvalidData
+                );
+            }
+            drop(authenticated);
+            assert!(server.await??, "{mode:?}/{fault:?}: peer must complete");
+        }
+    }
+    Ok(())
+}
 #[tokio::test]
 async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return_a_session()
 -> TestResult {
@@ -341,7 +438,10 @@ async fn wrong_proof_mac_subtype_raw_transition_and_security_result_never_return
             Fault::Proof | Fault::CiphertextLength | Fault::RandomLength | Fault::Extra => {
                 matches!(result, Err(Error::InvalidRsaAesExchange))
             }
-            Fault::None => false,
+            Fault::None
+            | Fault::PostAuthMac
+            | Fault::PostAuthTruncated
+            | Fault::PostAuthUnreadDrop => false,
         };
         assert!(
             rejected,
