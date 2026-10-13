@@ -5,6 +5,7 @@ import {
 } from "../../connector-connection-progress.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
+  CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
   customConnectorByIdContract,
   customConnectorOAuth2Contract,
   customConnectorValuesContract,
@@ -491,6 +492,45 @@ interface CustomConnectorAuthorizationTargetArgs {
   ) => Promise<void>;
 }
 
+const startCustomConnectorAuthorization$ = command(
+  async (
+    { get },
+    args: {
+      readonly id: string;
+      readonly account: PlatformConnectorAccountMutationIntent;
+    },
+    signal: AbortSignal,
+  ) => {
+    const client = get(apiClient$)(customConnectorOAuth2Contract, {
+      apiBase: "api",
+    });
+    return await accept(
+      client.start({
+        params: { id: args.id },
+        body: { account: args.account },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+      {
+        expectedErrors: {
+          400: Object.values(
+            CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES,
+          ).filter((code) => {
+            return (
+              code !==
+              CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE
+            );
+          }),
+          502: [
+            CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES.PROVIDER_UNAVAILABLE,
+          ],
+        },
+      },
+    );
+  },
+);
+
 const authorizeCompletedCustomConnectorTarget$ = command(
   async (
     { set },
@@ -565,16 +605,10 @@ const connectCustomConnectorAuthorizationForTargetCommand$ = command(
                 signal,
               )
             : undefined;
-        const client = createClient(customConnectorOAuth2Contract, {
-          apiBase: "api",
-        });
-        const result = await accept(
-          client.start({
-            params: { id: args.id },
-            body: { account: args.account },
-            fetchOptions: { signal },
-          }),
-          [200],
+        const result = await set(
+          startCustomConnectorAuthorization$,
+          args,
+          signal,
         );
         signal.throwIfAborted();
         if (result.body.result === "connected") {
