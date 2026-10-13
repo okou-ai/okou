@@ -12,6 +12,8 @@ and reliance on private dependency logic: each adaptation must address a concret
 capability unavailable through the public interface. Keep its affected events,
 replaced methods/classes, private state access and ordering assumptions as narrow
 as possible. A smaller replacement count alone does not establish lower risk.
+Prefer an existing state-specific boundary when it covers the required capability.
+Choose patch boundaries by their behavioral scope and upstream assumptions.
 
 Keep adaptations in `mitmproxy_compat.py` and `websocket_framing.py`, delegate
 protocol state machines to upstream, and use public extension hooks when local
@@ -42,10 +44,7 @@ until consumed, but rejected expansion overshoot is released before yielding.
 This does not introduce a byte-exact Brotli allocation guarantee. This is not a
 lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
-The exact mitmproxy 12.2.3 compatibility bridge wraps `HttpStream._handle_event`
-once to expose request-header framing and insert response inspection checkpoints.
-The original request and response state methods retain protocol ownership.
-The response bridge provides two ownership boundaries:
+The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
 complete native hook task outside the connection event lock before the connection
 reads again. Joining includes `HookCompleted` and any buffered events resumed by

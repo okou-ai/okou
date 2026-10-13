@@ -3,6 +3,7 @@
 Prefer public addon hooks and dependency APIs. Keep monkey patches and private
 state access to the minimum required by a demonstrated missing capability,
 delegate protocol logic to upstream, and retire bridges when public APIs suffice.
+Prefer state-specific boundaries over shared event dispatch.
 See the compatibility policy in docs/runner/mitm-addon-contracts.md.
 """
 
@@ -14,12 +15,7 @@ import wsproto
 from mitmproxy import http, version
 from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers.http import HttpStream
-from mitmproxy.proxy.layers.http._events import (
-    RequestHeaders,
-    ResponseData,
-    ResponseEndOfMessage,
-    ResponseTrailers,
-)
+from mitmproxy.proxy.layers.http._events import RequestHeaders
 from mitmproxy.proxy.layers.http._hooks import HttpRequestHeadersHook
 from mitmproxy.proxy.server import ConnectionHandler
 
@@ -32,7 +28,7 @@ import websocket_framing
 # another version.
 _SUPPORTED_MITMPROXY_VERSION = "12.2.3"
 _SUPPORTED_WSPROTO_VERSION = "1.3.2"
-_HTTP_STREAM_BRIDGE = "_http_stream_compat_bridge"
+_BRIDGE_MARKER_ATTRIBUTE = "_request_end_stream_bridge"
 _REQUEST_END_STREAM_METADATA = "_request_end_stream"
 _RESPONSE_INSPECTION_BRIDGE = "_response_inspection_bridge"
 _INSPECTION_CHECKPOINTS: ContextVar[list["ResponseInspectionHook"] | None] = ContextVar(
@@ -65,35 +61,25 @@ def install_runtime_compatibility() -> None:
             f"{_SUPPORTED_WSPROTO_VERSION}; found {wsproto.__version__}"
         )
 
-    _install_http_stream_bridge()
+    _install_request_end_stream_bridge()
     _install_response_inspection_bridge()
     websocket_framing.install_websocket_framing()
 
 
-def _install_http_stream_bridge() -> None:
-    """Bridge framing and inspection through one pinned HTTP event boundary."""
-    current_handler = HttpStream._handle_event
-    if hasattr(current_handler, _HTTP_STREAM_BRIDGE):
+def _install_request_end_stream_bridge() -> None:
+    """Expose RequestHeaders.end_stream to the matching public hook once.
+
+    Patch only the request-header state; upstream retains framing and protocol
+    decisions without an extra shared-dispatch filter.
+    """
+    current_handler = HttpStream.state_wait_for_request_headers
+    if hasattr(current_handler, _BRIDGE_MARKER_ATTRIBUTE):
         return
 
-    def _handle_event(
+    def state_wait_for_request_headers(
         self: HttpStream,
-        event: events.Event,
+        event: RequestHeaders,
     ) -> layer.CommandGenerator[None]:
-        request_end_stream = (
-            event.end_stream
-            if isinstance(event, RequestHeaders)
-            and self.client_state == self.state_wait_for_request_headers
-            else None
-        )
-        inspect_response = (
-            isinstance(event, (ResponseData, ResponseTrailers, ResponseEndOfMessage))
-            and self.server_state == self.state_stream_response_body
-        )
-        if request_end_stream is None and not inspect_response:
-            yield from current_handler(self, event)
-            return
-
         command_generator = current_handler(self, event)
         try:
             command = next(command_generator)
@@ -101,17 +87,8 @@ def _install_http_stream_bridge() -> None:
             return
 
         while True:
-            if request_end_stream is not None and isinstance(command, HttpRequestHeadersHook):
-                command.flow.metadata[_REQUEST_END_STREAM_METADATA] = request_end_stream
-                request_end_stream = None
-
-            if inspect_response and response_streaming.has_pending_response_inspection(self.flow):
-                checkpoint = ResponseInspectionHook(self.flow)
-                checkpoints = _INSPECTION_CHECKPOINTS.get()
-                if checkpoints is not None:
-                    checkpoint.completed = asyncio.get_running_loop().create_future()
-                    checkpoints.append(checkpoint)
-                yield checkpoint
+            if isinstance(command, HttpRequestHeadersHook):
+                command.flow.metadata[_REQUEST_END_STREAM_METADATA] = event.end_stream
 
             try:
                 completion: object = yield command
@@ -129,8 +106,8 @@ def _install_http_stream_bridge() -> None:
                 except StopIteration:
                     return
 
-    setattr(_handle_event, _HTTP_STREAM_BRIDGE, True)
-    HttpStream._handle_event = _handle_event
+    setattr(state_wait_for_request_headers, _BRIDGE_MARKER_ATTRIBUTE, True)
+    HttpStream.state_wait_for_request_headers = state_wait_for_request_headers
 
 
 def _install_response_inspection_bridge() -> None:
@@ -140,11 +117,27 @@ def _install_response_inspection_bridge() -> None:
     A hook alone does not backpressure those reads. Join the complete hook task
     (including HookCompleted and any buffered body events it resumes), not just
     the parser future, before allowing the read loop to continue.
+    Insert checkpoints only in the streamed-response state, keeping shared
+    HTTP event dispatch with upstream.
     """
-    current_event = ConnectionHandler.server_event
-    if hasattr(current_event, _RESPONSE_INSPECTION_BRIDGE):
+    current_stream = HttpStream.state_stream_response_body
+    if hasattr(current_stream, _RESPONSE_INSPECTION_BRIDGE):
         return
+    current_event = ConnectionHandler.server_event
     current_hook = ConnectionHandler.hook_task
+
+    def state_stream_response_body(
+        self: HttpStream, event: events.Event
+    ) -> layer.CommandGenerator[None]:
+        for command in current_stream(self, event):
+            if response_streaming.has_pending_response_inspection(self.flow):
+                checkpoint = ResponseInspectionHook(self.flow)
+                checkpoints = _INSPECTION_CHECKPOINTS.get()
+                if checkpoints is not None:
+                    checkpoint.completed = asyncio.get_running_loop().create_future()
+                    checkpoints.append(checkpoint)
+                yield checkpoint
+            yield command
 
     async def server_event(self: ConnectionHandler, event: events.Event) -> None:
         checkpoints: list[ResponseInspectionHook] = []
@@ -180,7 +173,8 @@ def _install_response_inspection_bridge() -> None:
             if hook.completed is not None and not hook.completed.done():
                 hook.completed.set_result(None)
 
-    setattr(server_event, _RESPONSE_INSPECTION_BRIDGE, True)
+    setattr(state_stream_response_body, _RESPONSE_INSPECTION_BRIDGE, True)
+    HttpStream.state_stream_response_body = state_stream_response_body
     ConnectionHandler.server_event = server_event
     ConnectionHandler.hook_task = hook_task
 
