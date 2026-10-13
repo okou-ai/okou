@@ -144,24 +144,29 @@ are enforced by the integration ingress tests.
   private binding, missing-host, pin, generation and credential restrictions on
   both replayed and freshly generated schemas.
 
-- `scripts/test-official-result-email-retirement-preparation.ts` protects
-  migration `1382_retire_official_result_email_runtime`. Release 1 rows and
+- `scripts/test-official-result-email-retirement-preparation.ts` replays
+  migration `1382_retire_official_result_email_runtime` and the actual
+  contraction `1384_drop_official_result_email_storage`. Release 1 rows and
   frozen outgoing ORM statements (Official `false`/`true` writes, ordinary
   NULLs, implicit `SELECT`/`RETURNING`, metadata updates, claims and sourced
-  outbox inserts) survive the migration byte-for-byte and stay legal. Runtime
-  mappings never name the retired column, claim table or outbox source pair;
-  their Official rows store NULL, so 1382 must be applied before release 2
-  serves. Ordinary rows still reject non-null values, and the other Official
-  bindings, source-pair index and check remain enforced. Only the bounded
-  legacy consumer mapping (#39524) writes the claim table and source pair; its
-  enqueue statement shares the permanent claim with outgoing claims in both
-  orders, survives outbox deletion and respects the opt-out. Run
+  outbox inserts) survive 1382 byte-for-byte and stay legal. Runtime mappings
+  never name the retired column, claim table or outbox source pair; their
+  Official rows store NULL, so 1382 must be applied before release 2 serves.
+  The contraction drops the claim table, the Automation flag and the outbox
+  source pair with its index and check, and rebuilds the Official binding
+  check. Every retained column of those rows, the runtime statements shared by
+  1.729.1 and release 3, and the provider idempotency key survive it. A
+  dependent object rejects the contraction without dropping storage or
+  advancing the journal. Only release 2's bounded legacy consumer (#39524)
+  still writes the dropped storage, so the contraction ships after the
+  normal-channel callback drain gate. The production rollback resolver enforces
+  floors on the first-parent `main` commits that add 1382 and 1384. Run
   `pnpm test:official-result-email-retirement-preparation` with an owned
-  PostgreSQL `DATABASE_URL`. The production rollback resolver enforces floors
-  on the first-parent `main` commits that add 1382 and the
-  `official-result-email-legacy-consumer` marker. Retain the validator and its
-  outgoing fixture through release 3 of #39378's contraction and its
-  drain/rollback acceptance.
+  PostgreSQL `DATABASE_URL`. Retain the validator and its outgoing fixture
+  through the contraction's production release and drain/rollback acceptance.
+  `test-official-automation-binding-schema.ts` protects the surviving ordinary
+  and Official binding invariants on both replayed and freshly generated
+  schemas.
 
 - `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
   preparation and the actual compatibility-storage contraction. Unexpected

@@ -106,15 +106,12 @@ describe("workflow schema physical identity", () => {
       ),
     }).toEqual({
       workflows: ["official_definition_name", "official_installation_state"],
-      workflowAutomations: [
-        ...officialAutomationColumns,
-        "official_result_email_enabled",
-      ],
+      workflowAutomations: officialAutomationColumns,
       runtimeWorkflowAutomations: officialAutomationColumns,
     });
   });
 
-  it("maps every retained Automation column except the retired result-email flag", () => {
+  it("maps every physical Automation column at runtime", () => {
     const columnNames = (table: Parameters<typeof getTableConfig>[0]) => {
       return getTableConfig(table)
         .columns.map(({ name }) => {
@@ -122,22 +119,13 @@ describe("workflow schema physical identity", () => {
         })
         .sort();
     };
-    const physical = columnNames(workflowAutomations);
-    const runtime = columnNames(runtimeWorkflowAutomations);
 
     expect(getTableConfig(runtimeWorkflowAutomations).name).toBe(
       "workflow_automations",
     );
-    expect(
-      physical.filter((name) => {
-        return !runtime.includes(name);
-      }),
-    ).toStrictEqual(["official_result_email_enabled"]);
-    expect(
-      runtime.filter((name) => {
-        return !physical.includes(name);
-      }),
-    ).toStrictEqual([]);
+    expect(columnNames(runtimeWorkflowAutomations)).toStrictEqual(
+      columnNames(workflowAutomations),
+    );
   });
 
   it("keeps every explicit index and check name in the touched schemas", () => {

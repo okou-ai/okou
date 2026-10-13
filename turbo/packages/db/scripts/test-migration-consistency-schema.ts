@@ -38,7 +38,7 @@ import { Client } from "pg";
 import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
-import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
+import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
@@ -2704,7 +2704,7 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
-    await validateOfficialAutomationResultEmailSchema(dbUrl1);
+    await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
     await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
@@ -2742,7 +2742,7 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateOfficialAutomationResultEmailSchema(dbUrl2);
+    await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
     // Step 4: Restore original migrations

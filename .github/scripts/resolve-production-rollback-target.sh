@@ -69,7 +69,6 @@ readonly CHAT_EVENT_SCHEMA_HEADER_RETIRED_PATH=.github/rollback-floors/chat-even
 readonly CHAT_EVENT_V8_PATH=.github/rollback-floors/chat-event-v8
 readonly CHECKPOINT_WRITER_PREPARATION_PATH=turbo/apps/api/src/signals/services/pi-memory-phase2-input-revision.ts
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
-readonly OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_PATH=.github/rollback-floors/official-result-email-legacy-consumer
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
@@ -90,6 +89,7 @@ readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrat
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
+readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1384_drop_official_result_email_storage.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -476,17 +476,20 @@ if ! git merge-base --is-ancestor "$official_result_email_runtime_retirement_com
   fail "Rollback target predates the Official result-email runtime retirement: ${official_result_email_runtime_retirement_commit}."
 fi
 
-# Release 2 of #39378 removed the completion-email consumer while release-1 APIs
-# could still register its callback during their drain. The bounded legacy
-# consumer (#39524) restores draining, so an API that has the retirement but not
-# the consumer would fail those captured callbacks and block the email outbox.
-official_result_email_legacy_consumer_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- "$OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_PATH" | sed -n '1p')
-if [[ ! "$official_result_email_legacy_consumer_commit" =~ ^[0-9a-f]{40}$ ]]; then
-  fail "Cannot resolve the merged Official result-email legacy consumer on main."
+# Release 3 of #39378 drops official_automation_result_email_claims,
+# workflow_automations.official_result_email_enabled and the email_outbox source
+# pair. Release-1 APIs name that storage in their completion-email producer and
+# ORM, and release-2 APIs (including 1.729.1) in their bounded legacy consumer
+# (#39524), so no earlier API can serve after the contraction. This floor
+# descends from, and so supersedes, that consumer's floor. Resolve the canonical
+# first-parent main commit, never a branch-only SHA.
+official_result_email_storage_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH" | sed -n '1p')
+if [[ ! "$official_result_email_storage_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Official result-email storage contraction on main."
 fi
-if ! git merge-base --is-ancestor "$official_result_email_legacy_consumer_commit" "$TARGET_COMMIT"; then
-  fail "Rollback target predates the Official result-email legacy consumer: ${official_result_email_legacy_consumer_commit}."
+if ! git merge-base --is-ancestor "$official_result_email_storage_contraction_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Official result-email storage contraction: ${official_result_email_storage_contraction_commit}."
 fi
 
 # Physical needs_rebind contraction requires the independently released runtime

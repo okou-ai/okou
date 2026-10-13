@@ -6,11 +6,7 @@ import type {
   EmailOutboxTemplate,
 } from "@okouai/db/jsonb-contracts/email-outbox";
 
-/**
- * Shared physical and runtime `email_outbox` column builders. The retired
- * completion-email source pair is declared only by the physical schema and the
- * bounded legacy consumer mapping.
- */
+/** Shared physical and runtime `email_outbox` column builders. */
 export function emailOutboxColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),

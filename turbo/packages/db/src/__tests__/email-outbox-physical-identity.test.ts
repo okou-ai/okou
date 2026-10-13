@@ -5,14 +5,12 @@ import { emailOutbox as runtimeEmailOutbox } from "../runtime/email-outbox";
 import { emailOutbox } from "../schema/email-outbox";
 
 describe("email outbox physical identity", () => {
-  it("keeps the migration-only source pair and exact constraints", () => {
+  it("keeps the provider replay identity and exact constraints", () => {
     const config = getTableConfig(emailOutbox);
 
     expect(config.name).toBe("email_outbox");
     expect(config.columns).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "source_run_id" }),
-        expect.objectContaining({ name: "source_workflow_automation_id" }),
         // Additive delivery-identity columns stay nullable for rows enqueued by
         // a producer and for rows written before they existed.
         expect.objectContaining({
@@ -33,16 +31,11 @@ describe("email outbox physical identity", () => {
       "email_outbox_created_at_idx",
       "email_outbox_drain_idx",
       "email_outbox_provider_idempotency_key_unique",
-      "email_outbox_source_run_automation_unique",
     ]);
-    expect(
-      config.checks.map((check) => {
-        return check.name;
-      }),
-    ).toStrictEqual(["email_outbox_source_identity_check"]);
+    expect(config.checks).toStrictEqual([]);
   });
 
-  it("omits only the retired source pair from the runtime mapping", () => {
+  it("maps every physical outbox column at runtime", () => {
     const columnNames = (table: Parameters<typeof getTableConfig>[0]) => {
       return getTableConfig(table)
         .columns.map(({ name }) => {
@@ -50,19 +43,10 @@ describe("email outbox physical identity", () => {
         })
         .sort();
     };
-    const physical = columnNames(emailOutbox);
-    const runtime = columnNames(runtimeEmailOutbox);
 
     expect(getTableConfig(runtimeEmailOutbox).name).toBe("email_outbox");
-    expect(
-      physical.filter((name) => {
-        return !runtime.includes(name);
-      }),
-    ).toStrictEqual(["source_run_id", "source_workflow_automation_id"]);
-    expect(
-      runtime.filter((name) => {
-        return !physical.includes(name);
-      }),
-    ).toStrictEqual([]);
+    expect(columnNames(runtimeEmailOutbox)).toStrictEqual(
+      columnNames(emailOutbox),
+    );
   });
 });
