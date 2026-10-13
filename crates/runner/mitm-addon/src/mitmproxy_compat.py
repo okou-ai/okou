@@ -1,4 +1,11 @@
-"""Version-locked bridges for mitmproxy state that public hooks omit."""
+"""Version-locked bridges for mitmproxy state that public hooks omit.
+
+Prefer public addon hooks and dependency APIs. Keep monkey patches and private
+state access to the minimum required by a demonstrated missing capability,
+delegate protocol logic to upstream, and retire bridges when public APIs suffice.
+Prefer state-specific boundaries over shared event dispatch.
+See the compatibility policy in docs/runner/mitm-addon-contracts.md.
+"""
 
 import asyncio
 from contextvars import ContextVar
@@ -60,7 +67,11 @@ def install_runtime_compatibility() -> None:
 
 
 def _install_request_end_stream_bridge() -> None:
-    """Expose RequestHeaders.end_stream to the matching public hook once."""
+    """Expose RequestHeaders.end_stream to the matching public hook once.
+
+    Patch only the request-header state; upstream retains framing and protocol
+    decisions without an extra shared-dispatch filter.
+    """
     current_handler = HttpStream.state_wait_for_request_headers
     if hasattr(current_handler, _BRIDGE_MARKER_ATTRIBUTE):
         return
@@ -106,6 +117,8 @@ def _install_response_inspection_bridge() -> None:
     A hook alone does not backpressure those reads. Join the complete hook task
     (including HookCompleted and any buffered body events it resumes), not just
     the parser future, before allowing the read loop to continue.
+    Insert checkpoints only in the streamed-response state, keeping shared
+    HTTP event dispatch with upstream.
     """
     current_stream = HttpStream.state_stream_response_body
     if hasattr(current_stream, _RESPONSE_INSPECTION_BRIDGE):
