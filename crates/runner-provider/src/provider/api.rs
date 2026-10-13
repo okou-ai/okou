@@ -2910,6 +2910,7 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
+            sandbox_startup_path: None,
         }
     }
 
@@ -5770,6 +5771,7 @@ mod tests {
                     sandbox_id: None,
                     sandbox_reuse_result: None,
                     home_reuse_result: None,
+                    sandbox_startup_path: None,
                 },
             )
             .await
@@ -5807,6 +5809,7 @@ mod tests {
         api.complete(
             "sandbox-token",
             &CompleteRequest {
+                sandbox_startup_path: None,
                 run_id,
                 exit_code: 0,
                 failure_reason: None,

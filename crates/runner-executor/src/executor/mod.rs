@@ -170,7 +170,9 @@ use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::{HomePaths, LogPaths};
 use runner_provider::http::HttpClient;
-use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::{
+    ExecutionContext, HomeReuseResult, SandboxReuseResult, SandboxStartupPath,
+};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
     let run_id = run_id.to_string();
@@ -388,6 +390,8 @@ pub struct ExecuteOutcome {
     pub home_image: Option<HomeImageLease>,
     /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
+    /// Actual startup resource, absent before preparation settles.
+    pub sandbox_startup_path: Option<SandboxStartupPath>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -405,6 +409,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -424,6 +429,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image,
             home_reuse_result: None,
+            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -681,6 +687,7 @@ pub async fn execute_job_with_prepared_notifier(
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         },
@@ -711,6 +718,7 @@ pub async fn execute_job_with_prepared_notifier(
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                sandbox_startup_path: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
@@ -919,6 +927,10 @@ pub async fn execute_job_reuse_with_hooks(
                     home_reuse_result: match kind {
                         IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
                         IdleSandboxKind::Blank => blank_home_reuse_result(&context, config),
+                    },
+                    sandbox_startup_path: match kind {
+                        IdleSandboxKind::Exact => SandboxStartupPath::Sandbox,
+                        IdleSandboxKind::Blank => SandboxStartupPath::Blank,
                     },
                     prev_storage: (kind == IdleSandboxKind::Exact).then_some(&prev_storage),
                 },

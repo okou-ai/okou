@@ -3163,6 +3163,23 @@ pub mod webhooks {
                 SandboxPrepareFallback,
             }
 
+            /// Actual resource used after startup preparation settles.
+            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+            pub enum RequestSandboxStartupPath {
+                /// An exact retained sandbox and home.
+                #[serde(rename = "sandbox")]
+                Sandbox,
+                /// A new sandbox with a cached home image.
+                #[serde(rename = "home")]
+                Home,
+                /// A prepared tenant-free sandbox with a fresh home.
+                #[serde(rename = "blank")]
+                Blank,
+                /// A new sandbox with a fresh home.
+                #[serde(rename = "cold")]
+                Cold,
+            }
+
             /// Reason a final Run output intentionally omits resumable CLI agent session history.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestCompletionCliAgentSessionHistoryDisposition {
@@ -3257,6 +3274,9 @@ pub mod webhooks {
                 /// Optional outcome of the home reuse decision.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub home_reuse_result: Option<RequestHomeReuseResult>,
+                /// Optional settled startup resource path.
+                #[serde(default, skip_serializing_if = "Option::is_none")]
+                pub sandbox_startup_path: Option<RequestSandboxStartupPath>,
                 /// Native history and published file outputs saved with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub completion: Option<RequestCompletion>,

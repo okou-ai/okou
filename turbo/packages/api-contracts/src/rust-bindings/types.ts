@@ -734,6 +734,16 @@ export const rustTypeBindings = [
         },
       },
       {
+        rustTypeName: "RequestSandboxStartupPath",
+        rustDoc: ["Actual resource used after startup preparation settles."],
+        variants: {
+          sandbox: ["An exact retained sandbox and home."],
+          home: ["A new sandbox with a cached home image."],
+          blank: ["A prepared tenant-free sandbox with a fresh home."],
+          cold: ["A new sandbox with a fresh home."],
+        },
+      },
+      {
         rustTypeName: "RequestHomeReuseResult",
         rustDoc: ["Final outcome of home reuse preparation."],
         variants: {
@@ -834,6 +844,7 @@ export const rustTypeBindings = [
             "Optional outcome of the sandbox reuse decision.",
           ],
           homeReuseResult: ["Optional outcome of the home reuse decision."],
+          sandboxStartupPath: ["Optional settled startup resource path."],
           completion: [
             "Native history and published file outputs saved with completion.",
           ],

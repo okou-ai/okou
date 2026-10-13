@@ -31,6 +31,7 @@ import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import type {
   SandboxReuseResult,
   HomeReuseResult,
+  SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -669,7 +670,7 @@ function ActivityContextTab({ detail }: { detail: LogDetail }) {
   );
 }
 
-type RunnerStartupPath = "sandbox" | "home" | "cold" | "unknown";
+type RunnerStartupPath = SandboxStartupPath | "unknown";
 
 interface ReuseOutcomeInfo {
   readonly label: string;
@@ -686,23 +687,21 @@ function isCurrentSandboxMiss(result: SandboxReuseResult | null): boolean {
   );
 }
 
-function isHomeMiss(result: HomeReuseResult | null): boolean {
-  return result !== null && result !== "reused" && result !== "sandboxReused";
-}
-
 function runnerStartupPath(
+  startupPath: SandboxStartupPath | null,
   sandbox: SandboxReuseResult | null,
   home: HomeReuseResult | null,
 ): RunnerStartupPath {
+  if (startupPath !== null) {
+    return startupPath;
+  }
   if (sandbox === "reused" && home === "sandboxReused") {
     return "sandbox";
   }
   if (isCurrentSandboxMiss(sandbox) && home === "reused") {
     return "home";
   }
-  if (isCurrentSandboxMiss(sandbox) && isHomeMiss(home)) {
-    return "cold";
-  }
+  // Historical miss pairs cannot distinguish a prepared blank from a cold VM.
   return "unknown";
 }
 
@@ -967,6 +966,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
   );
   const homeInfo = homeOutcomeInfo(homeReuse, homeDescriptions, labels);
   const startupLabels = {
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlank;
+    }),
     sandbox: t(($) => {
       return $.activity.detail.runner.startupSandbox;
     }),
@@ -981,6 +983,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     }),
   } satisfies Record<RunnerStartupPath, string>;
   const startupDescriptions = {
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlankDescription;
+    }),
     sandbox: t(($) => {
       return $.activity.detail.runner.startupSandboxDescription;
     }),
@@ -994,7 +999,11 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
       return $.activity.detail.runner.startupUnknownDescription;
     }),
   } satisfies Record<RunnerStartupPath, string>;
-  const startupPath = runnerStartupPath(sandboxReuse, homeReuse);
+  const startupPath = runnerStartupPath(
+    runner?.sandboxStartupPath ?? null,
+    sandboxReuse,
+    homeReuse,
+  );
   const startupInfo = {
     label: startupLabels[startupPath],
     description: startupDescriptions[startupPath],

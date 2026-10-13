@@ -2192,6 +2192,13 @@
       "when": 1791915107301,
       "tag": "1390_pi_memory_serial_callback_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 1391,
+      "version": "7",
+      "when": 1791940580081,
+      "tag": "1391_sandbox_startup_path",
+      "breakpoints": true
     }
   ]
 }

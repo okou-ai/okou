@@ -971,6 +971,7 @@ async fn complete_execution(
             &config.sandbox_id,
             &config.sandbox_reuse_result,
             &config.home_reuse_result,
+            config.sandbox_startup_path,
             state.last_event_sequence,
         )
         .await;

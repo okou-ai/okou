@@ -159,22 +159,11 @@ fn blank_pool_selection_reason_vocabulary_is_stable() {
 
 #[test]
 fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
-    for (reuse_result, home_reuse_result, expected_path) in [
-        (
-            SandboxReuseResult::Reused,
-            HomeReuseResult::SandboxReused,
-            RunnerStartupPath::Sandbox,
-        ),
-        (
-            SandboxReuseResult::NoReuseKey,
-            HomeReuseResult::Reused,
-            RunnerStartupPath::Home,
-        ),
-        (
-            SandboxReuseResult::PoolMiss,
-            HomeReuseResult::CacheMiss,
-            RunnerStartupPath::Cold,
-        ),
+    for (reuse_result, expected_path) in [
+        (SandboxReuseResult::Reused, RunnerStartupPath::Sandbox),
+        (SandboxReuseResult::NoReuseKey, RunnerStartupPath::Home),
+        (SandboxReuseResult::PoolMiss, RunnerStartupPath::Cold),
+        (SandboxReuseResult::PoolMiss, RunnerStartupPath::Blank),
     ] {
         let mut context = minimal_context();
         context.api_start_time =
@@ -192,7 +181,7 @@ fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
             &context,
             &mut telemetry,
             reuse_result,
-            home_reuse_result,
+            expected_path,
             shell_started_at,
             agent_ready_at,
         );
@@ -1757,7 +1746,7 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 }
 
 #[tokio::test]
-async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution() {
+async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let params = default_params();
@@ -1842,6 +1831,12 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     );
     assert_has_action(&telemetry, "sandbox_reuse_miss");
     assert_has_action(&telemetry, "sandbox_blank_pool_hit");
+    assert_eq!(outcome.sandbox_startup_path, Some(RunnerStartupPath::Blank));
+    let startup = telemetry.pending_ops_with_runner_startup_snapshot();
+    assert!(startup.iter().any(|operation| {
+        operation.action_type == "runner_agent_start_to_ready"
+            && operation.runner_startup_path == Some(RunnerStartupPath::Blank)
+    }));
     let blank_selection = telemetry.pending_ops_with_outcome_snapshot();
     assert!(blank_selection.iter().any(|operation| {
         operation.0 == "runner_claim_blank_pool_selection"

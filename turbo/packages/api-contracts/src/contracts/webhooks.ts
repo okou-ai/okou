@@ -19,6 +19,7 @@ import {
   sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
   homeReuseResultSchema,
+  sandboxStartupPathSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -34,8 +35,10 @@ import {
 export {
   sandboxReuseResultSchema,
   homeReuseResultSchema,
+  sandboxStartupPathSchema,
   type SandboxReuseResult,
   type HomeReuseResult,
+  type SandboxStartupPath,
 } from "./runners";
 
 const c = initContract();
@@ -397,6 +400,7 @@ const webhookCompleteBodySchema = z
     sandboxId: z.string().max(255).optional(),
     sandboxReuseResult: sandboxReuseResultSchema.optional(),
     homeReuseResult: homeReuseResultSchema.optional(),
+    sandboxStartupPath: sandboxStartupPathSchema.optional(),
     completion: runCompletionMetadataSchema.optional(),
   })
   .superRefine((body, context) => {
@@ -416,6 +420,21 @@ const webhookCompleteBodySchema = z
         code: "custom",
         path: ["homeReuseResult"],
         message: "home reuse result does not match sandbox reuse result",
+      });
+    }
+    const startupPath = body.sandboxStartupPath;
+    if (
+      startupPath !== undefined &&
+      ((startupPath === "sandbox" && !coherentSandboxReuse) ||
+        (startupPath === "home" &&
+          (!coherentSandboxMiss || homeResult !== "reused")) ||
+        ((startupPath === "blank" || startupPath === "cold") &&
+          (!coherentSandboxMiss || homeResult === "reused")))
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["sandboxStartupPath"],
+        message: "startup path does not match sandbox and home reuse results",
       });
     }
   });
@@ -864,10 +883,8 @@ const sandboxOperationDownloadSourceSchema = z
   .optional();
 
 export const runnerStartupPathSchema = z.enum([
-  "sandbox",
+  ...sandboxStartupPathSchema.options,
   "workspace",
-  "home",
-  "cold",
 ]);
 
 export type RunnerStartupPath = z.infer<typeof runnerStartupPathSchema>;

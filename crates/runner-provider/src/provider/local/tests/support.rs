@@ -51,6 +51,7 @@ pub(super) fn complete_request(
         sandbox_id: None,
         sandbox_reuse_result: None,
         home_reuse_result: None,
+        sandbox_startup_path: None,
     }
 }
 

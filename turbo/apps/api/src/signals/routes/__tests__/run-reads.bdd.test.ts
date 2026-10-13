@@ -2410,11 +2410,31 @@ describe("RUN-04: agent run telemetry families", () => {
         name: "legacy no session ID",
         sandboxResult: "noSessionId",
         homeResult: undefined,
+        startupPath: undefined,
       },
       {
         name: "no reuse key",
         sandboxResult: "noReuseKey",
         homeResult: "reused",
+        startupPath: "home",
+      },
+      {
+        name: "exact sandbox",
+        sandboxResult: "reused",
+        homeResult: "sandboxReused",
+        startupPath: "sandbox",
+      },
+      {
+        name: "blank sandbox",
+        sandboxResult: "poolMiss",
+        homeResult: "cacheMiss",
+        startupPath: "blank",
+      },
+      {
+        name: "cold sandbox",
+        sandboxResult: "poolMiss",
+        homeResult: "cacheMiss",
+        startupPath: "cold",
       },
     ] as const;
 
@@ -2439,6 +2459,7 @@ describe("RUN-04: agent run telemetry families", () => {
           },
           sandboxReuseResult: scenario.sandboxResult,
           homeReuseResult: scenario.homeResult,
+          sandboxStartupPath: scenario.startupPath,
         },
         headers,
         [200],
@@ -2452,6 +2473,9 @@ describe("RUN-04: agent run telemetry families", () => {
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
         homeReuseResult: scenario.homeResult ?? null,
+        ...(scenario.startupPath
+          ? { sandboxStartupPath: scenario.startupPath }
+          : {}),
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),

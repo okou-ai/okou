@@ -55,6 +55,10 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
         Some(HomeReuseResult::NotConfigured)
     );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(
+        completion.sandbox_startup_path,
+        Some(runner_types::types::SandboxStartupPath::Blank)
+    );
     assert_eq!(calls.home_drive_mount_calls(), 1);
 
     shutdown(&env, run_handle).await;
@@ -322,6 +326,10 @@ async fn blank_backed_run_becomes_exact_reuse_and_wins_over_refilled_blank() {
 
     assert_eq!(second.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(second.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(
+        second.sandbox_startup_path,
+        Some(runner_types::types::SandboxStartupPath::Sandbox)
+    );
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
     shutdown(&env, run_handle).await;
@@ -365,6 +373,10 @@ async fn blank_unpark_failure_falls_back_without_changing_cold_attribution() {
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(
+        completion.sandbox_startup_path,
+        Some(runner_types::types::SandboxStartupPath::Cold)
+    );
     assert_eq!(calls.unpark_call_count(), 1);
     assert_eq!(calls.destroy_call_count(), 1);
 
@@ -670,6 +682,10 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
+    assert_eq!(
+        completion.sandbox_startup_path,
+        Some(runner_types::types::SandboxStartupPath::Home)
+    );
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(idle_pool.lock().await.blank_len(), 1);
 
@@ -730,6 +746,10 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
     assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
+    assert_eq!(
+        completion.sandbox_startup_path,
+        Some(runner_types::types::SandboxStartupPath::Home)
+    );
     assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
 
     shutdown(&env, run_handle).await;

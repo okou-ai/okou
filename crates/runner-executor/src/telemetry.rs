@@ -110,13 +110,7 @@ impl OomEvidenceUploadFailure {
 }
 
 /// Effective resource path once the guest process has spawned.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum RunnerStartupPath {
-    Sandbox,
-    Home,
-    Cold,
-}
+pub(crate) use runner_types::types::SandboxStartupPath as RunnerStartupPath;
 
 /// Inclusive number of Runner jobs in post-claim work before guest process spawn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -264,6 +258,7 @@ pub struct JobTelemetry {
     run_id: RunId,
     sandbox_token: String,
     runner_hostname: Option<String>,
+    sandbox_startup_path: Option<RunnerStartupPath>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
     pending_ops: Vec<SandboxOp>,
     oldest_pending: Option<Instant>,
@@ -348,6 +343,7 @@ impl JobTelemetry {
             run_id,
             sandbox_token,
             runner_hostname,
+            sandbox_startup_path: None,
             runner_pre_spawn_attribution: None,
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -362,6 +358,11 @@ impl JobTelemetry {
         self.runner_pre_spawn_attribution = Some(attribution);
     }
 
+    /// Decorate subsequent observations only after preparation has settled.
+    pub(crate) fn set_sandbox_startup_path(&mut self, path: RunnerStartupPath) {
+        self.sandbox_startup_path = Some(path);
+    }
+
     /// Create an empty collector for one concurrently owned job phase.
     ///
     /// The fork carries the same job identity and attribution but owns its own
@@ -373,6 +374,7 @@ impl JobTelemetry {
             run_id: self.run_id,
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
+            sandbox_startup_path: self.sandbox_startup_path,
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -587,6 +589,7 @@ impl JobTelemetry {
             run_id: self.run_id,
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
+            sandbox_startup_path: self.sandbox_startup_path,
         }
     }
 
@@ -724,6 +727,9 @@ impl JobTelemetry {
     }
 
     fn push_operation(&mut self, mut operation: SandboxOp) {
+        if operation.runner_startup_path.is_none() {
+            operation.runner_startup_path = self.sandbox_startup_path;
+        }
         if let Some(attribution) = self
             .runner_pre_spawn_attribution
             .as_ref()
@@ -906,6 +912,7 @@ pub(crate) struct SandboxOpReporter {
     run_id: RunId,
     sandbox_token: String,
     runner_hostname: Option<String>,
+    sandbox_startup_path: Option<RunnerStartupPath>,
 }
 
 impl SandboxOpReporter {
@@ -913,14 +920,16 @@ impl SandboxOpReporter {
         let ops = records
             .into_iter()
             .map(|record| {
-                sandbox_op(
+                let mut operation = sandbox_op(
                     record.action_type,
                     record.duration,
                     record.success,
                     record.error,
                     None,
                     None,
-                )
+                );
+                operation.runner_startup_path = self.sandbox_startup_path;
+                operation
             })
             .collect();
         send_telemetry(
@@ -2531,12 +2540,13 @@ mod tests {
         .await;
         let api_url = server.url();
 
-        let telemetry = JobTelemetry::new(
+        let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&api_url),
             RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             Some("prod-1.aws.vm3.ai".to_string()),
         );
+        telemetry.set_sandbox_startup_path(RunnerStartupPath::Blank);
         telemetry
             .reporter()
             .report(vec![SandboxOpRecord::new(
@@ -2552,5 +2562,11 @@ mod tests {
         assert!(!request.contains(r#""runnerName""#));
         assert!(request.contains(r#""runnerHostname":"prod-1.aws.vm3.ai""#));
         assert!(request.contains(&format!(r#""runnerVersion":"{RUNNER_VERSION}""#)));
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(
+            payload["sandboxOperations"][0]["runner_startup_path"],
+            "blank"
+        );
     }
 }

@@ -151,6 +151,8 @@
         "sandboxPrepareFallback": "A cached home directory was found but could not be used after sandbox preparation.",
         "sandboxReusedDescription": "The home directory remained available in the reused sandbox.",
         "startup": "Startup",
+        "startupBlank": "Prewarmed sandbox",
+        "startupBlankDescription": "A prepared blank sandbox was used with a fresh home directory.",
         "startupCold": "Cold start",
         "startupColdDescription": "A fresh sandbox and workspace were prepared.",
         "startupHome": "Home reuse",

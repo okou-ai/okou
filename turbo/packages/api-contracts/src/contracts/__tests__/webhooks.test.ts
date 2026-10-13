@@ -879,6 +879,32 @@ describe("agent completion reuse outcomes", () => {
     }
   });
 
+  it("preserves the settled four-way startup path in completion", () => {
+    for (const [sandboxStartupPath, sandboxReuseResult, homeReuseResult] of [
+      ["sandbox", "reused", "sandboxReused"],
+      ["home", "poolMiss", "reused"],
+      ["blank", "poolMiss", "cacheMiss"],
+      ["cold", "poolMiss", "cacheMiss"],
+      ["cold", "poolMiss", "sandboxPrepareFallback"],
+    ] as const) {
+      const result = webhookCompleteContract.complete.body.parse({
+        ...baseBody,
+        sandboxStartupPath,
+        sandboxReuseResult,
+        homeReuseResult,
+      });
+      expect(result.sandboxStartupPath).toBe(sandboxStartupPath);
+    }
+    expect(
+      webhookCompleteContract.complete.body.safeParse({
+        ...baseBody,
+        sandboxStartupPath: "blank",
+        sandboxReuseResult: "reused",
+        homeReuseResult: "sandboxReused",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects missing, legacy, or contradictory sandbox context", () => {
     const incoherentBodies = [
       { homeReuseResult: "cacheMiss" },
@@ -1151,6 +1177,8 @@ describe("webhook telemetry contract", () => {
       ["sandbox", "reused"],
       ["workspace", "noReuseKey"],
       ["home", "poolMiss"],
+      ["blank", "poolMiss"],
+      ["blank", "noReuseKey"],
       ["cold", "poolMiss"],
       ["cold", "profileMismatch"],
       ["cold", "deviceLimitMismatch"],

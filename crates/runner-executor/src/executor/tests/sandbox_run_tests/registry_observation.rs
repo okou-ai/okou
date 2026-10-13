@@ -78,6 +78,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
                     &context,
                     &config,
                     RunStart {
+                        sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                         restore_guest_state: true,
                         reuse_result: SandboxReuseResult::Reused,
                         home_reuse_result: HomeReuseResult::SandboxReused,

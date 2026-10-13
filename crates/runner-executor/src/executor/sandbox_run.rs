@@ -825,6 +825,11 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             restore_guest_state: params.restore_guest_state,
             reuse_result,
             home_reuse_result,
+            sandbox_startup_path: if home_reuse_result == HomeReuseResult::Reused {
+                runner_types::types::SandboxStartupPath::Home
+            } else {
+                runner_types::types::SandboxStartupPath::Cold
+            },
             prev_storage: home_image
                 .as_ref()
                 .and_then(HomeImageLease::previous_storage),
@@ -1566,6 +1571,8 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
             .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
+    let sandbox_startup_path = start.sandbox_startup_path;
+    telemetry.set_sandbox_startup_path(sandbox_startup_path);
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
@@ -1672,6 +1679,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         network_log_session: Some(network_log_session),
         home_image: None,
         home_reuse_result: Some(home_reuse_result),
+        sandbox_startup_path: Some(sandbox_startup_path),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }

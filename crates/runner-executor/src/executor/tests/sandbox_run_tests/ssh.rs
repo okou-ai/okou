@@ -294,6 +294,7 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                     &ctx,
                     &config,
                     RunStart {
+                        sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                         restore_guest_state: reused,
                         reuse_result: if reused {
                             SandboxReuseResult::Reused

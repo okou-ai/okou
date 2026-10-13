@@ -285,6 +285,7 @@ async fn recover_claimed_activation_failure(
                 sandbox_id: None,
                 sandbox_reuse_result: Some(reuse_result),
                 home_reuse_result: None,
+                sandbox_startup_path: None,
             },
             completion_auth,
         )

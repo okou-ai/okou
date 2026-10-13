@@ -164,6 +164,7 @@ async fn codex_catalog_prefetch_waits_for_guest_state_restore() {
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: true,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -265,6 +266,7 @@ async fn codex_catalog_prefetch_post_write_timeout_stops_direct_run_before_agent
         &context,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -309,6 +311,7 @@ async fn codex_catalog_prefetch_partial_write_stops_direct_run_before_guest_work
         &context,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -590,6 +593,7 @@ async fn assert_codex_catalog_prefetch_skipped(
             &context,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: false,
                 reuse_result,
                 home_reuse_result: if reuse_result == SandboxReuseResult::Reused {
@@ -735,6 +739,7 @@ async fn codex_catalog_prefetch_records_one_event_through_executor_wiring() {
             &context,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -884,6 +889,7 @@ async fn codex_catalog_prefetch_guest_timeout_preserves_successful_agent_run() {
                 &context,
                 &config,
                 RunStart {
+                    sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
                     home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

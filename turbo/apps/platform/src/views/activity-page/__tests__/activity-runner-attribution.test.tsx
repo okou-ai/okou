@@ -199,6 +199,7 @@ test("Runner diagnostics explain how the activity environment started", async ()
       runId: "a0000000-0000-4000-a000-000000000306",
       sandboxReuseResult: "reused",
       homeReuseResult: "sandboxReused",
+      sandboxStartupPath: "sandbox",
       label: "Sandbox reuse",
       description: "The sandbox and its workspace were reused.",
     },
@@ -206,6 +207,7 @@ test("Runner diagnostics explain how the activity environment started", async ()
       runId: "a0000000-0000-4000-a000-000000000307",
       sandboxReuseResult: "poolMiss",
       homeReuseResult: "reused",
+      sandboxStartupPath: "home",
       label: "Home reuse",
       description: "A fresh sandbox restored a cached home directory.",
     },
@@ -213,13 +215,32 @@ test("Runner diagnostics explain how the activity environment started", async ()
       runId: "a0000000-0000-4000-a000-000000000308",
       sandboxReuseResult: "poolMiss",
       homeReuseResult: "cacheMiss",
+      sandboxStartupPath: "cold",
       label: "Cold start",
       description: "A fresh sandbox and workspace were prepared.",
+    },
+    {
+      runId: "a0000000-0000-4000-a000-000000000309",
+      sandboxReuseResult: "poolMiss",
+      homeReuseResult: "cacheMiss",
+      sandboxStartupPath: "blank",
+      label: "Prewarmed sandbox",
+      description:
+        "A prepared blank sandbox was used with a fresh home directory.",
+    },
+    {
+      runId: "a0000000-0000-4000-a000-000000000310",
+      sandboxReuseResult: "poolMiss",
+      homeReuseResult: "cacheMiss",
+      sandboxStartupPath: undefined,
+      label: "Unknown",
+      description: "Startup reuse details are unavailable.",
     },
   ] as const satisfies readonly {
     runId: string;
     sandboxReuseResult: RunRunnerResponse["sandboxReuseResult"];
     homeReuseResult: RunRunnerResponse["homeReuseResult"];
+    sandboxStartupPath: RunRunnerResponse["sandboxStartupPath"];
     label: string;
     description: string;
   }[];
@@ -233,6 +254,7 @@ test("Runner diagnostics explain how the activity environment started", async ()
             runner: {
               sandboxReuseResult: entry.sandboxReuseResult,
               homeReuseResult: entry.homeReuseResult,
+              sandboxStartupPath: entry.sandboxStartupPath,
             },
           } satisfies ActivityFixture,
         ];

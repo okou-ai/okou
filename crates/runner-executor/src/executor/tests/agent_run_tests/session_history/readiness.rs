@@ -152,6 +152,7 @@ async fn storage_handoff_counts_only_successful_complete_materialization_as_read
                 &context,
                 &config,
                 RunStart {
+                    sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
                     home_reuse_result: HomeReuseResult::NotConfigured,

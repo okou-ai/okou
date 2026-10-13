@@ -283,6 +283,7 @@ type TerminalRunValues = Readonly<
       | "sandboxId"
       | "sandboxReuseResult"
       | "homeReuseResult"
+      | "sandboxStartupPath"
     >
   >
 >;

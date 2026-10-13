@@ -63,6 +63,7 @@ async fn execute_blank(
         &context,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Blank,
             restore_guest_state: true,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -115,6 +116,10 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         destroy.release_one();
         let (outcome, telemetry) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
         assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
+        assert_eq!(
+            outcome.sandbox_startup_path,
+            Some(runner_types::types::SandboxStartupPath::Cold)
+        );
         let creates = overrides.create_configs();
         assert_eq!(creates.len(), 2);
         assert_eq!(creates[0].id, creates[1].id);

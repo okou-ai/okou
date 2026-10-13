@@ -153,6 +153,8 @@
         "sandboxPrepareFallback": "Un répertoire personnel en cache a été trouvé, mais n'a pas pu être utilisé après la préparation du bac à sable.",
         "sandboxReusedDescription": "Le répertoire personnel est resté disponible dans le bac à sable réutilisé.",
         "startup": "Démarrage",
+        "startupBlank": "Bac à sable préchauffé",
+        "startupBlankDescription": "Un bac à sable vide préparé a été utilisé avec un nouveau répertoire personnel.",
         "startupCold": "Démarrage à froid",
         "startupColdDescription": "Un nouveau bac à sable et un nouvel espace de travail ont été préparés.",
         "startupHome": "Réutilisation du répertoire personnel",
