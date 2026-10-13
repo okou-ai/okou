@@ -1,5 +1,7 @@
 //! Integration coverage for steered declarations of accepted active input.
 
+mod common;
+
 use std::time::Duration;
 
 use guest_agent::active_input::{ActiveInputControlOutcome, ActiveInputRuntime};
@@ -184,22 +186,11 @@ async fn conflicting_and_failed_declarations_are_not_retried()
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+#[tokio::test]
 async fn finalization_waits_for_a_declaration_during_api_cold_start()
 -> Result<(), Box<dyn std::error::Error>> {
-    let server = MockServer::start_async().await;
-    let steered = server
-        .mock_async(|when, then| {
-            when.method(POST)
-                .path(steered_path())
-                .header("authorization", "Bearer test-token");
-            then.status(200)
-                .delay(Duration::from_secs(6))
-                .json_body(json!({ "outcome": "steered" }));
-        })
-        .await;
-    let runtime =
-        ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url())?);
+    let mut server = common::ControlledHttpServer::start().await?;
+    let runtime = ActiveInputRuntime::new_enabled(RUN_ID, "initial", steer_http(&server.base_url)?);
     let controller = runtime.controller();
     let mut writer = runtime.into_writer();
     assert_eq!(
@@ -214,7 +205,43 @@ async fn finalization_waits_for_a_declaration_during_api_cold_start()
     writer.mark_backend_accepted_without_replay(&frame)?;
 
     controller.close_terminal();
-    controller.finalize_steered_declarations().await?;
-    steered.assert_calls_async(1).await;
+    let finalization = controller.finalize_steered_declarations();
+    tokio::pin!(finalization);
+    let request = tokio::select! {
+        biased;
+        result = &mut finalization => {
+            return Err(format!("finalization returned before request receipt: {result:?}").into());
+        }
+        request = server.next_request(Duration::from_secs(5)) => request?,
+    };
+    assert_eq!(request.request.path, steered_path());
+    assert_eq!(
+        request.request.authorization.as_deref(),
+        Some("Bearer test-token")
+    );
+    assert_eq!(
+        request.request.content_type.as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(request.request.body, "{}");
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.completed_response_count(), 0);
+    assert!(futures_util::poll!(&mut finalization).is_pending());
+
+    // Complete real socket setup before advancing the armed production deadlines.
+    // Keep this interval independent of the timeout constants so a shorter budget fails.
+    tokio::time::pause();
+    tokio::time::advance(Duration::from_secs(6)).await;
+    tokio::task::yield_now().await;
+    tokio::time::resume();
+    assert!(
+        futures_util::poll!(&mut finalization).is_pending(),
+        "finalization returned before the gated cold-start response"
+    );
+
+    request.respond(200)?;
+    tokio::time::timeout(Duration::from_secs(5), finalization).await??;
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.completed_response_count(), 1);
     Ok(())
 }
