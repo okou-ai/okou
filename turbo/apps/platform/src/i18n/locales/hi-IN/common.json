@@ -657,6 +657,7 @@
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
       "slideThumbnail": "{{title}} स्लाइड {{slideNumber}} पूर्वावलोकन",
       "template": "खाका",

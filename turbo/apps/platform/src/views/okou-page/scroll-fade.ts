@@ -65,6 +65,25 @@ export const SCROLL_FADE_Y_START_WHEN_OVERFLOWING = [
   "group-data-[overflow-y-start]:[mask-image:linear-gradient(to_bottom,transparent_0,#000_20px)]",
 ].join(" ");
 
+/**
+ * `SCROLL_FADE_X` for a Base UI `ScrollArea`: each horizontal edge fades only
+ * while the scroller has content past it, read off the `ScrollArea.Root`'s
+ * `data-overflow-x-start` / `data-overflow-x-end` — the root carries `group`,
+ * as `SCROLL_FADE_Y_WHEN_OVERFLOWING` does. The presentation template detail
+ * filmstrip takes it, so a thumbnail at the dialog's edge reads as "more this
+ * way" rather than as a tile cut flat.
+ *
+ * The 24px matches `SCROLL_FADE_X`; change them together.
+ */
+export const SCROLL_FADE_X_WHEN_OVERFLOWING = [
+  "group-data-[overflow-x-start]:[-webkit-mask-image:linear-gradient(to_right,transparent_0,#000_24px)]",
+  "group-data-[overflow-x-start]:[mask-image:linear-gradient(to_right,transparent_0,#000_24px)]",
+  "group-data-[overflow-x-end]:[-webkit-mask-image:linear-gradient(to_right,#000_calc(100%_-_24px),transparent_100%)]",
+  "group-data-[overflow-x-end]:[mask-image:linear-gradient(to_right,#000_calc(100%_-_24px),transparent_100%)]",
+  "group-data-[overflow-x-start]:group-data-[overflow-x-end]:[-webkit-mask-image:linear-gradient(to_right,transparent_0,#000_24px,#000_calc(100%_-_24px),transparent_100%)]",
+  "group-data-[overflow-x-start]:group-data-[overflow-x-end]:[mask-image:linear-gradient(to_right,transparent_0,#000_24px,#000_calc(100%_-_24px),transparent_100%)]",
+].join(" ");
+
 /** Hides the native scrollbar; the fade is what states there is more to see. */
 export const SCROLLBAR_HIDDEN =
   "[scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
