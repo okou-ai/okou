@@ -7,6 +7,7 @@ import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type {
   ArtifactRefInput,
+  ThreadResourceSection,
   ThreadSidebarOpenTarget,
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
@@ -98,8 +99,13 @@ const openAttachmentOnThread$ = command(
 );
 
 export const openThreadArtifacts$ = command(
-  ({ get, set }, thread: ChatPanelSignals) => {
-    set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
+  ({ get, set }, thread: ChatPanelSignals, section?: ThreadResourceSection) => {
+    set(
+      openOnThread$,
+      thread,
+      { type: "artifacts", section },
+      get(pageSignal$),
+    );
   },
 );
 
