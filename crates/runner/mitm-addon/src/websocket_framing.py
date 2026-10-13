@@ -34,6 +34,9 @@ MAX_MESSAGE_DATA_FRAMES = 8_192
 MAX_EXTENSION_NEGOTIATION_WORK_UNITS = 8_192
 
 _EMPTY_DEFLATE_BLOCK = b"\x00\x00\xff\xff"
+# The pinned parser uses str.strip(), whose ASCII whitespace also includes
+# these four separators beyond the whitespace recognized by bytes.strip().
+_EXTENSION_NAME_WHITESPACE = b" \t\n\r\v\f\x1c\x1d\x1e\x1f"
 _CONNECTION_MARKER_ATTRIBUTE = "_bounded_websocket_framing"
 _LAYER_MARKER_ATTRIBUTE = "_bounded_websocket_negotiation"
 _MESSAGE_LIMIT_VIOLATION_ATTRIBUTE = "_websocket_message_limit_violation"
@@ -517,7 +520,10 @@ def _valid_extension_negotiation(headers: http.Headers) -> bool:
         # Match the pinned parser's comma/name rules without combining or
         # decoding raw fields. Parameter negotiation remains with wsproto.
         for extension in value.split(b","):
-            if extension.split(b";", 1)[0].strip() != b"permessage-deflate":
+            if (
+                extension.split(b";", 1)[0].strip(_EXTENSION_NAME_WHITESPACE)
+                != b"permessage-deflate"
+            ):
                 continue
             if deflate_seen:
                 return False

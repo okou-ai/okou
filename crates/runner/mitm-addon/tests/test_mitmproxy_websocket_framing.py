@@ -544,6 +544,15 @@ async def _assert_compressed_fragmented_frame_limit(
             (
                 (
                     b"Sec-WebSocket-Extensions",
+                    b"permessage-deflate, \x1c\x1d\x1epermessage-deflate\x1f",
+                ),
+            ),
+            id="pinned-parser-ascii-whitespace",
+        ),
+        pytest.param(
+            (
+                (
+                    b"Sec-WebSocket-Extensions",
                     b"permessage-deflate; client_max_window_bits=invalid, permessage-deflate",
                 ),
             ),
@@ -655,6 +664,11 @@ async def test_invalid_extension_negotiation_closes_before_compressor_allocation
             id="inclusive-work-limit",
         ),
         pytest.param(((b"Sec-WebSocket-Extensions", b"unknown"),), None, id="unknown-extension"),
+        pytest.param(
+            ((b"Sec-WebSocket-Extensions", b"\x1c\x1d\x1epermessage-deflate\x1f"),),
+            _PERMESSAGE_DEFLATE,
+            id="single-with-pinned-parser-ascii-whitespace",
+        ),
         pytest.param(
             (
                 (b"Sec-WebSocket-Extensions", b"permessage-deflate-other, PerMessage-Deflate"),
