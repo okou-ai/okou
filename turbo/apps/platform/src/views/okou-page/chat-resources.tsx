@@ -107,6 +107,7 @@ function ChatResourcesButtonInner({
     >
       <PopoverTrigger
         ref={anchorRef}
+        aria-haspopup={undefined}
         disabled={saving}
         onBlur={(event) => {
           // The artifact button and popup form one keyboard interaction zone.
@@ -137,6 +138,8 @@ function ChatResourcesButtonInner({
       </PopoverTrigger>
       <PopoverContent
         ref={popupRef}
+        // Persistent resources share the chat's keyboard context.
+        role="region"
         anchor={popupAnchor ?? undefined}
         collisionBoundary={boundary ?? undefined}
         collisionPadding={16}
