@@ -22,6 +22,7 @@ import {
 } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
+import { eraseSshOwnerData$ } from "./ssh-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
@@ -97,6 +98,11 @@ export const cleanupOrgMemberResources$ = command(
     signal.throwIfAborted();
     await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
     signal.throwIfAborted();
+    await set(
+      eraseSshOwnerData$,
+      { kind: "owner", orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     await set(eraseMailNotifications$, args, signal);
     signal.throwIfAborted();
     await set(deleteDiscordOrgMemberData$, args, signal);
