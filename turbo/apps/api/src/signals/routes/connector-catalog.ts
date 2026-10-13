@@ -20,7 +20,6 @@ import {
   discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  connectorBriefsFromRows,
   listConnectorCatalogConnectItems,
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
@@ -179,55 +178,6 @@ export const listConnectorCatalogConnectItems$ = command(
         connections: connectorState.value,
         filter,
       }),
-      signal,
-    );
-    if (!catalog.ok) {
-      return connectorCatalogUnavailable();
-    }
-
-    return { status: 200 as const, body: catalog.value };
-  },
-);
-
-/**
- * Label and icon for a named set of connectors, read from the per-connector
- * projection without the caller's connection status.
- */
-export const listConnectorCatalogBriefs$ = command(
-  async (
-    { get },
-    connectorSlugs: readonly ConnectorSlug[],
-    signal: AbortSignal,
-  ) => {
-    const featureStates = getAllFeatureStates(
-      await get(connectorCatalogFeatureContext$),
-    );
-    signal.throwIfAborted();
-
-    const catalog = await settleConnectorCatalogRead(
-      connectorSlugs.length === 0
-        ? Promise.resolve([])
-        : (async () => {
-            const rows = await get(db$)
-              .select({
-                current: {
-                  schemaVersion: connectorCatalog.schemaVersion,
-                  hash: connectorCatalog.hash,
-                },
-                entry: connectorCatalogDisplayColumns,
-              })
-              .from(connectorCatalog)
-              .leftJoin(
-                connectorCatalogEntries,
-                connectorCatalogSlugJoin(connectorSlugs),
-              )
-              .where(connectorCatalogCurrentWhere());
-            return connectorBriefsFromRows({
-              rows,
-              featureStates,
-              connectorSlugs,
-            });
-          })(),
       signal,
     );
     if (!catalog.ok) {

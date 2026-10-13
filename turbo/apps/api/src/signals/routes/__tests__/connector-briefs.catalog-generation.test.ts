@@ -2,7 +2,6 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import { onboardingWorkflowConnectorsContract } from "@okouai/api-contracts/contracts/onboarding";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   CONNECTOR_CATALOG_ACTIVE_KEY,
@@ -14,7 +13,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
 import { connectorOverviewRoutes } from "../connector-overview";
-import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import { createBddApi } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
@@ -23,7 +21,6 @@ import { createRouteMocks } from "./helpers/route-test";
 const TEST_APP_ROUTES = Object.freeze([
   ...cronConnectorCatalogRoutes,
   ...connectorOverviewRoutes,
-  ...onboardingWorkflowConnectorsRoutes,
 ]);
 const context = testContext();
 const bdd = createBddApi(context);
@@ -111,7 +108,6 @@ describe("connected and curated connector briefs", () => {
     });
     const publisher = app(cronConnectorCatalogContract);
     const overview = app(connectorOverviewContract);
-    const workflow = app(onboardingWorkflowConnectorsContract);
     const cronHeaders = { authorization: "Bearer test-cron-secret" };
     const headers = { authorization: "Bearer clerk-session" };
 
@@ -136,7 +132,6 @@ describe("connected and curated connector briefs", () => {
     );
     mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
     const initial = await accept(overview.overview({ headers }), [200]);
-    const initialWorkflow = await accept(workflow.list({ headers }), [200]);
     expect(initial.body.builtinConnectors).toContainEqual(
       expect.objectContaining({
         slug: "openai",
@@ -157,28 +152,16 @@ describe("connected and curated connector briefs", () => {
         }),
       ]),
     );
-    expect(initialWorkflow.body.connectors).toContainEqual({
-      slug: "github",
-      ...changedMetadata("initial"),
-    });
 
     serve(catalog(`${generation}.replacement`, "replacement"));
     expect(
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const replaced = await accept(overview.overview({ headers }), [200]);
-    const replacedWorkflow = await accept(workflow.list({ headers }), [200]);
     expect(replaced.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.map((brief) => {
         return brief.slug === "openai"
-          ? { ...brief, ...changedMetadata("replacement") }
-          : brief;
-      }),
-    });
-    expect(replacedWorkflow.body).toStrictEqual({
-      connectors: initialWorkflow.body.connectors.map((brief) => {
-        return brief.slug === "github"
           ? { ...brief, ...changedMetadata("replacement") }
           : brief;
       }),
@@ -189,7 +172,6 @@ describe("connected and curated connector briefs", () => {
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const removed = await accept(overview.overview({ headers }), [200]);
-    const removedWorkflow = await accept(workflow.list({ headers }), [200]);
     expect(removed.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.filter((brief) => {
@@ -202,29 +184,16 @@ describe("connected and curated connector briefs", () => {
         );
       }),
     });
-    expect(removedWorkflow.body).toStrictEqual({
-      connectors: initialWorkflow.body.connectors.filter((brief) => {
-        return brief.slug !== "github";
-      }),
-    });
 
     serve(catalog(`${generation}.restored`, "restored"));
     expect(
       (await accept(publisher.sync({ headers: cronHeaders }), [200])).body,
     ).toStrictEqual(first.body);
     const restored = await accept(overview.overview({ headers }), [200]);
-    const restoredWorkflow = await accept(workflow.list({ headers }), [200]);
     expect(restored.body).toStrictEqual({
       ...initial.body,
       builtinConnectors: initial.body.builtinConnectors.map((brief) => {
         return brief.slug === "openai"
-          ? { ...brief, ...changedMetadata("restored") }
-          : brief;
-      }),
-    });
-    expect(restoredWorkflow.body).toStrictEqual({
-      connectors: initialWorkflow.body.connectors.map((brief) => {
-        return brief.slug === "github"
           ? { ...brief, ...changedMetadata("restored") }
           : brief;
       }),
