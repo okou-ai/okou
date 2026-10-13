@@ -6,6 +6,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
+import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const instructionsAndMemoryGuidance = Object.freeze([
   "- Instructions and memory have different scopes. Agent instructions are team-shared behavior rules for everyone using the same agent. They define responsibilities, common workflows, and default behavior; changes can affect other team members and future runs. Use them for genuinely shared, stable team rules, not as a notebook for personal preferences or one-off task details.",
@@ -23,6 +24,7 @@ const instructionsAndMemoryGuidance = Object.freeze([
  */
 function buildIntegrationToolsPrompt(
   deliveryFormatGuidanceEnabled: boolean,
+  artifactPreviewsEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
@@ -45,11 +47,15 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
-  return localFileContextLines;
+  return [
+    ...localFileContextLines,
+    ...(artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
+  ];
 }
 
 /** Feature and browser configuration that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
+  readonly artifactPreviewsEnabled: boolean;
   readonly walletEnabled: boolean;
   readonly privateArtifactsEnabled: boolean;
   readonly bankingEnabled: boolean;
@@ -68,6 +74,10 @@ export function buildAgentToolsPromptInputs(args: {
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
+    artifactPreviewsEnabled: isFeatureEnabled(
+      FeatureSwitchKey.ArtifactPreviews,
+      context,
+    ),
     privateArtifactsEnabled: isFeatureEnabled(
       FeatureSwitchKey.PrivateArtifacts,
       context,
@@ -96,18 +106,7 @@ export function buildAgentToolsPromptInputs(args: {
   };
 }
 
-export function buildAgentToolsPrompt(args: {
-  readonly walletEnabled: boolean;
-  readonly privateArtifactsEnabled: boolean;
-  readonly cloudBrowserEnabled: boolean;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-}): string {
+export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
   return [
     "# Agent Tools",
     "You have access to the Okou CLI. Run commands with: `okou <command>`.",
@@ -187,7 +186,10 @@ export function buildAgentToolsPrompt(args: {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(args.deliveryFormatGuidanceEnabled),
+    ...buildIntegrationToolsPrompt(
+      args.deliveryFormatGuidanceEnabled,
+      args.artifactPreviewsEnabled,
+    ),
     '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
@@ -207,7 +209,7 @@ export function buildAgentToolsPrompt(args: {
     "- Buy credits: use `okou credit <credits>` only when diagnostics say the current plan can buy credits. It creates a Stripe checkout link for org admins and supports `--auto-recharge`, `--auto-recharge-threshold`, and `--auto-recharge-amount`; non-admins should run `okou doctor credit`.",
     `- Upgrade plan: use \`${PLAN_UPGRADE_CLI_HINT}\` when the current plan blocks a requested capability or cannot buy credits. Return the generated plan link to the user so chat can render the upgrade card.`,
     "- If a connector appears unconnected, unauthenticated, missing auth/token environment names, blocked by firewall, or denied by permission policy, diagnose it with `okou connector check --help` before trying ad hoc fixes.",
-    "- An attached generation template takes precedence. Follow its exact commands and resources directly; do not run `okou generate -h` or list providers unless the template explicitly names type-specific help as a fallback.",
+    "- An attached generation template owns content, visual style, and content QA; platform publishing instructions own artifact covers and delivery. Follow the template's authoring commands and resources directly; do not run `okou generate -h` or list providers unless the template explicitly names type-specific help as a fallback.",
     "- Without an attached generation template, when the user asks to generate anything (supported generation content: built-in image, presentation, website, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, code, or document), run `okou generate -h`. Run `okou generate <type>` with no generation input to list every provider available for that type.",
     "- Before executing a generation command, run `okou generate <type> -h` and follow its type-specific input flags. Image accepts `--provider built-in` or `--provider <connector>`; music, text, code, and document require `--provider <connector>` and the returned connector skill guidance; the other types run on Okou without `--provider`.",
     "- If you choose an Okou generation command, wait for it to finish and use its returned artifact.",
