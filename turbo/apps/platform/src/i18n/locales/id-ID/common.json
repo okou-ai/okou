@@ -5561,9 +5561,15 @@
     },
     "save": "Simpan",
     "saveRecovery": {
+      "incompatible": "Metode autentikasi telah berubah. Tutup dialog ini dan buka kembali kredensial untuk mengedit metode saat ini.",
+      "keepChanges": "Pertahankan perubahan saya dengan versi ini",
+      "keepHelp": "Tinjau detail ini, lalu pertahankan draf dan simpan berdasarkan versi ini. Pilihan autentikasi dan kepercayaan Anda akan dipertahankan.",
+      "latest": "Detail yang tersimpan saat ini",
       "resourceIdConflict": "Sumber daya ini tidak dapat dibuat. Tutup dialog ini dan coba lagi.",
       "review": "Konfigurasi telah disegarkan. Tutup dialog ini dan tinjau detail terbaru sebelum mencoba lagi.",
-      "uncertain": "Hasil penyimpanan tidak diketahui. Draf asli Anda dikunci. Coba ulang permintaan yang sama atau tutup dan segarkan untuk memeriksa konfigurasi tersimpan."
+      "unavailable": "Sumber daya ini tidak lagi tersedia. Tutup dialog ini dan muat ulang konfigurasi sebelum mencoba lagi.",
+      "uncertain": "Hasil penyimpanan tidak diketahui. Draf asli Anda dikunci. Coba ulang permintaan yang sama atau tutup dan segarkan untuk memeriksa konfigurasi tersimpan.",
+      "version": "Versi {{version}}"
     },
     "saving": "Menyimpan…",
     "security": {

@@ -5666,9 +5666,15 @@
     },
     "save": "Enregistrer",
     "saveRecovery": {
+      "incompatible": "La méthode d’authentification a changé. Fermez cette boîte de dialogue et rouvrez les identifiants pour modifier la méthode actuelle.",
+      "keepChanges": "Conserver mes modifications avec cette version",
+      "keepHelp": "Vérifiez ces informations, puis conservez votre brouillon et enregistrez-le à partir de cette version. Vos choix d’authentification et de confiance seront conservés.",
+      "latest": "Informations actuellement enregistrées",
       "resourceIdConflict": "Impossible de créer cette ressource. Fermez cette boîte de dialogue et réessayez.",
       "review": "La configuration a été actualisée. Fermez cette boîte de dialogue et vérifiez les informations actuelles avant de réessayer.",
-      "uncertain": "Le résultat de l’enregistrement est inconnu. Votre brouillon d’origine est verrouillé. Réessayez la même requête ou fermez puis actualisez pour vérifier la configuration enregistrée."
+      "unavailable": "Cette ressource n’est plus disponible. Fermez cette boîte de dialogue et actualisez la configuration avant de réessayer.",
+      "uncertain": "Le résultat de l’enregistrement est inconnu. Votre brouillon d’origine est verrouillé. Réessayez la même requête ou fermez puis actualisez pour vérifier la configuration enregistrée.",
+      "version": "Version {{version}}"
     },
     "saving": "Enregistrement…",
     "security": {

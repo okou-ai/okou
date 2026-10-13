@@ -5588,9 +5588,15 @@
     },
     "save": "Speichern",
     "saveRecovery": {
+      "incompatible": "Die Authentifizierungsmethode wurde geändert. Schließe diesen Dialog und öffne die Zugangsdaten erneut, um die aktuelle Methode zu bearbeiten.",
+      "keepChanges": "Meine Änderungen mit dieser Version behalten",
+      "keepHelp": "Prüfe diese Angaben, behalte dann deinen Entwurf und speichere ihn auf Basis dieser Version. Deine Authentifizierungs- und Vertrauenseinstellungen bleiben erhalten.",
+      "latest": "Aktuell gespeicherte Angaben",
       "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden. Schließe diesen Dialog und versuche es erneut.",
       "review": "Die Konfiguration wurde aktualisiert. Schließe diesen Dialog und prüfe die aktuellen Angaben, bevor du es erneut versuchst.",
-      "uncertain": "Das Ergebnis des Speicherns ist unbekannt. Dein ursprünglicher Entwurf ist gesperrt. Wiederhole dieselbe Anfrage oder schließe den Dialog und aktualisiere die Ansicht, um die gespeicherte Konfiguration zu prüfen."
+      "unavailable": "Diese Ressource ist nicht mehr verfügbar. Schließe diesen Dialog und aktualisiere die Konfiguration, bevor du es erneut versuchst.",
+      "uncertain": "Das Ergebnis des Speicherns ist unbekannt. Dein ursprünglicher Entwurf ist gesperrt. Wiederhole dieselbe Anfrage oder schließe den Dialog und aktualisiere die Ansicht, um die gespeicherte Konfiguration zu prüfen.",
+      "version": "Version {{version}}"
     },
     "saving": "Wird gespeichert…",
     "security": {

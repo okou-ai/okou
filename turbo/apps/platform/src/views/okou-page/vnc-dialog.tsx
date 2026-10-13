@@ -20,6 +20,7 @@ import {
   vncDialog$,
   vncEditor$,
   vncCredentialMatchesProfile,
+  isVncEditVersionConflict,
   vncSaveMessage$,
   vncSaveUncertain$,
   type VncDialogState,
@@ -28,6 +29,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { localizedVncError } from "../../lib/vnc-error.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
+import { isVncKerberosMethod } from "@okouai/api-contracts/contracts/vnc-kerberos";
+import { VncConflictReview } from "./vnc-conflict-review.tsx";
 import {
   VncCredentialFields,
   VncCredentialImpact,
@@ -103,11 +106,18 @@ function useDialogCopy(kind: VncDialogState["kind"] | undefined) {
   }
 }
 
-function VncSaveNotice({ saving }: { readonly saving: boolean }) {
+function VncSaveNotice({
+  saving,
+  dialog,
+}: {
+  readonly saving: boolean;
+  readonly dialog: VncDialogState;
+}) {
   const { t } = useTranslation();
   const uncertain = useGet(vncSaveUncertain$);
   const message = useGet(vncSaveMessage$);
   const conflict = useGet(vncConflict$);
+  const reviewable = isVncEditVersionConflict(dialog, message);
   if (saving || (!uncertain && !message)) {
     return null;
   }
@@ -123,7 +133,7 @@ function VncSaveNotice({ saving }: { readonly saving: boolean }) {
               return $.vnc.errors.failed;
             }))}
       </p>
-      {conflict && (
+      {conflict && !reviewable && (
         <p>
           {t(($) => {
             return $.vnc.saveRecovery.review;
@@ -154,17 +164,28 @@ function useSaveBlocked(dialog: VncDialogState) {
               vncCredentialMatchesProfile(credential, editor.profile)
             );
           })));
-    const transportBlocked =
-      editor.transport === "ssh" &&
-      (sshConnections.state !== "hasData" ||
+    const sshUnavailable = (id: string) => {
+      return (
+        sshConnections.state !== "hasData" ||
         sshConnections.data === null ||
         !sshConnections.data.some((connection) => {
-          return connection.id === editor.sshConnectionId;
-        }));
+          return connection.id === id;
+        })
+      );
+    };
+    const transportBlocked =
+      editor.transport === "ssh" && sshUnavailable(editor.sshConnectionId);
+    const kdcBlocked =
+      isVncKerberosMethod(editor.profile) &&
+      editor.profile !== "qemu_kerberos_ticket" &&
+      editor.kdcSshConnectionId !== "" &&
+      sshUnavailable(editor.kdcSshConnectionId);
     const destinationBlocked =
       editor.transport === "direct" &&
       isPrivateVncLiteral(editor.destinationHost);
-    return credentialBlocked || transportBlocked || destinationBlocked;
+    return (
+      credentialBlocked || transportBlocked || kdcBlocked || destinationBlocked
+    );
   }
   return (
     dialog.kind === "delete-credential" &&
@@ -304,7 +325,8 @@ function VncForm({
         {dialog.credential && (
           <VncCredentialImpact credential={dialog.credential} />
         )}
-        <VncSaveNotice saving={saving} />
+        <VncSaveNotice saving={saving} dialog={dialog} />
+        <VncConflictReview dialog={dialog} />
       </DialogBody>
       <VncFormActions
         saving={saving}

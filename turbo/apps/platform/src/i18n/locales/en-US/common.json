@@ -5580,9 +5580,15 @@
     },
     "save": "Save",
     "saveRecovery": {
+      "incompatible": "The authentication method changed. Close this dialog and reopen the credential to edit the current method.",
+      "keepChanges": "Keep my changes with this version",
+      "keepHelp": "Review these details, then keep your draft and save it against this version. Your authentication and trust choices will be kept.",
+      "latest": "Current saved details",
       "resourceIdConflict": "This resource could not be created. Close this dialog and try again.",
       "review": "The configuration has been refreshed. Close this dialog and review the current details before trying again.",
-      "uncertain": "The save result is unknown. Your original draft is locked. Retry the same request or close and refresh to check the saved configuration."
+      "unavailable": "This resource is no longer available. Close this dialog and refresh the configuration before trying again.",
+      "uncertain": "The save result is unknown. Your original draft is locked. Retry the same request or close and refresh to check the saved configuration.",
+      "version": "Version {{version}}"
     },
     "saving": "Saving…",
     "security": {
