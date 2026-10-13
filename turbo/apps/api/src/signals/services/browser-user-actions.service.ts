@@ -353,25 +353,24 @@ const loadOwnedBrowserUserActionRequest$ = command(
   },
 );
 
-async function loadExactRequest(
-  db: Db,
-  row: RequestRow,
-): Promise<RequestRow | null> {
-  const [current] = await db
-    .select()
-    .from(browserUserActionRequests)
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
-        eq(browserUserActionRequests.orgId, row.orgId),
-        eq(browserUserActionRequests.userId, row.userId),
-        eq(browserUserActionRequests.chatThreadId, row.chatThreadId),
-        eq(browserUserActionRequests.agentId, row.agentId),
-      ),
-    )
-    .limit(1);
-  return current ?? null;
-}
+const loadExactBrowserUserActionRequest$ = command(
+  async ({ get }, row: RequestRow): Promise<RequestRow | null> => {
+    const [current] = await get(db$)
+      .select()
+      .from(browserUserActionRequests)
+      .where(
+        and(
+          eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
+          eq(browserUserActionRequests.orgId, row.orgId),
+          eq(browserUserActionRequests.userId, row.userId),
+          eq(browserUserActionRequests.chatThreadId, row.chatThreadId),
+          eq(browserUserActionRequests.agentId, row.agentId),
+        ),
+      )
+      .limit(1);
+    return current ?? null;
+  },
+);
 
 async function loadLiveBrowser(
   db: Db,
@@ -1156,7 +1155,7 @@ export const readBrowserUserAction$ = command(
               ),
             )
             .returning()
-        )[0] ?? (await loadExactRequest(db, row));
+        )[0] ?? (await set(loadExactBrowserUserActionRequest$, row));
     }
     signal.throwIfAborted();
     if (!row) {
@@ -1497,7 +1496,7 @@ export const preflightBrowserUserAction$ = command(
     const inspection = inspected.value;
     // Apply or cancellation may have consumed the request while the check was
     // running.
-    const current = await loadExactRequest(db, located);
+    const current = await set(loadExactBrowserUserActionRequest$, located);
     signal.throwIfAborted();
     if (!current) {
       return notFound();
