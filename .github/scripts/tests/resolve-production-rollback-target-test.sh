@@ -79,7 +79,7 @@ case "${1:-}" in
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
-      [ "${MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID:-1}" = "1" ]
+      [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
@@ -182,7 +182,7 @@ case "${1:-}" in
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
-      printf '%s\n' "${MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT-4242424242424242424242424242424242424242}"
+      printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
@@ -847,16 +847,16 @@ fi
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged checkpoint writer preparation" \
-    run_resolver "${tmp_dir}/checkpoint-writer-history.output" "MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT=${preparation_commit}"
-  [ ! -s "${tmp_dir}/checkpoint-writer-history.output" ] || fail "invalid checkpoint preparation history must not publish outputs"
+  assert_failure "Cannot resolve the merged Pi memory input-revision writer" \
+    run_resolver "${tmp_dir}/memory-input-revision-writer-history.output" "MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/memory-input-revision-writer-history.output" ] || fail "invalid memory input-revision writer history must not publish outputs"
 done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates checkpoint writer preparation" \
-  run_resolver "${tmp_dir}/checkpoint-writer-floor.output" MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/checkpoint-writer-floor.output" ] || fail "unprepared checkpoint writer must not publish outputs"
+assert_failure "Rollback target predates Pi memory input-revision writer preparation" \
+  run_resolver "${tmp_dir}/memory-input-revision-writer-floor.output" MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/memory-input-revision-writer-floor.output" ] || fail "unprepared memory input-revision writer must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "checkpoint writer floor must fail before artifact or host access"
+  fail "memory input-revision writer floor must fail before artifact or host access"
 fi
 
 for mutation_commit in "" invalid; do

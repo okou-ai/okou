@@ -8,7 +8,7 @@ use session_history_selector::{
 };
 use tempfile::NamedTempFile;
 
-const SESSION_ID: &str = "pi-checkpoint-test";
+const SESSION_ID: &str = "pi-history-test";
 
 fn line(value: Value) -> String {
     format!("{value}\n")

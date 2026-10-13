@@ -921,7 +921,7 @@ export const rustTypeBindings = [
         rustTypeName: "RequestMaintenanceAttestation",
         rustDoc: ["Private proof of a validated Pi memory maintenance tree."],
         fields: {
-          schemaVersion: ["Maintenance checkpoint attestation version."],
+          schemaVersion: ["Memory publication attestation version."],
           leaseToken: ["Opaque token fencing the maintenance claim."],
           claimedRevision: ["Exact claimed Phase 2 input revision."],
           claimedBaseVersionId: ["Exact memory version mounted for the claim."],
@@ -1028,7 +1028,7 @@ export const rustTypeBindings = [
         rustTypeName: "RequestMaintenanceAttestation",
         rustDoc: ["Private proof of a validated Pi memory maintenance tree."],
         fields: {
-          schemaVersion: ["Maintenance checkpoint attestation version."],
+          schemaVersion: ["Memory publication attestation version."],
           leaseToken: ["Opaque token fencing the maintenance claim."],
           claimedRevision: ["Exact claimed Phase 2 input revision."],
           claimedBaseVersionId: ["Exact memory version mounted for the claim."],

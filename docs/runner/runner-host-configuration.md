@@ -320,7 +320,7 @@ and parked [idle destruction](../../crates/runner-lifecycle/src/idle_pool/entry.
 share the terminal helper. They do not return a terminally prepared sandbox to
 idle or handoff. A missing or unsafe current/retained anchor rejects publication;
 it does not broaden deletion authority to a captured custom runtime parent.
-General remote checkpoint/restore, CPU/download work, cancellation/drain and
+General remote history upload/restore, CPU/download work, cancellation/drain and
 supported exact-resource verification remain intact. See
 [home history telemetry](home-history-restore-telemetry.md) for source/fallback
 and measurement semantics.
