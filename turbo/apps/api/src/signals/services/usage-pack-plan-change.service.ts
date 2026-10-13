@@ -22,6 +22,7 @@ import {
   desc,
   eq,
   exists,
+  getTableColumns,
   inArray,
   isNull,
   isNotNull,
@@ -1111,35 +1112,6 @@ function subscriptionChangeIdentity(root: UsagePackSubscriptionChangeRow) {
   );
 }
 
-function retirePlanPreviewSql(orgId: string, at: Date) {
-  // Retire a real expired/superseded Plan intent and its child previews together.
-  // The publication command executes this after locking their subscription root.
-  const timestamp = at.toISOString();
-  return sql`
-    WITH retired AS (
-      UPDATE ${usagePackSubscriptionChanges}
-      SET status = 'failed',
-          failure_reason = CASE WHEN preview_expires_at <= ${timestamp}
-            THEN 'preview_expired' ELSE 'preview_superseded' END,
-          completed_at = ${timestamp}, updated_at = ${timestamp}
-      WHERE org_id = ${orgId} AND status = 'previewed'
-      RETURNING id, failure_reason
-    )
-    UPDATE ${usagePackAllocationChanges} AS allocation_change
-    SET status = 'failed',
-        failure_reason = COALESCE(
-          (SELECT retired.failure_reason FROM retired
-           WHERE retired.id = allocation_change.subscription_change_id),
-          'preview_expired'),
-        completed_at = ${timestamp}, updated_at = ${timestamp}
-    WHERE EXISTS (SELECT 1 FROM retired
-                  WHERE retired.id = allocation_change.subscription_change_id)
-       OR (allocation_change.org_id = ${orgId}
-           AND allocation_change.status = 'previewed'
-           AND allocation_change.preview_expires_at <= ${timestamp})
-  `;
-}
-
 function subscriptionPreviewSourceStatus(
   prepared: PreparedSubscriptionChange,
   current: {
@@ -1313,6 +1285,137 @@ function subscriptionChangePreviewValues(
   };
 }
 
+function subscriptionChangePreviewChildSource(
+  args: PersistSubscriptionChangePreviewArgs,
+) {
+  const columns = getTableColumns(usagePackAllocationChanges);
+  const values = args.prepared.allocationChanges.map((change) => {
+    // The INSERT supplies the actual new parent; only non-parent values enter
+    // this source relation.
+    const value = allocationChangePreviewValue(
+      change,
+      args.prepared.context.subscription.id,
+      args,
+    );
+    return sql`(
+      ${sql.param(value.usagePackSubscriptionId, columns.usagePackSubscriptionId)}::uuid,
+      ${sql.param(value.orgId, columns.orgId)}::text,
+      ${sql.param(value.userId, columns.userId)}::text,
+      ${sql.param(value.sourceAllocationId, columns.sourceAllocationId)}::uuid,
+      ${sql.param(value.kind, columns.kind)}::varchar,
+      ${sql.param(value.sourceUsagePackUsd, columns.sourceUsagePackUsd)}::integer,
+      ${sql.param(value.sourceStripePriceId, columns.sourceStripePriceId)}::text,
+      ${sql.param(value.targetUsagePackUsd, columns.targetUsagePackUsd)}::integer,
+      ${sql.param(value.targetStripePriceId, columns.targetStripePriceId)}::text,
+      ${sql.param(value.prorationTimestamp, columns.prorationTimestamp)}::bigint,
+      ${sql.param(value.immediateAmountCents, columns.immediateAmountCents)}::integer,
+      ${sql.param(value.nextRecurringAmountCents, columns.nextRecurringAmountCents)}::integer,
+      ${sql.param(value.currency, columns.currency)}::varchar,
+      ${sql.param(value.stripeScheduleId, columns.stripeScheduleId)}::text,
+      ${sql.param(value.effectiveAt, columns.effectiveAt)}::timestamp,
+      ${sql.param(value.previewExpiresAt, columns.previewExpiresAt)}::timestamp,
+      ${sql.param(value.createdAt, columns.createdAt)}::timestamp,
+      ${sql.param(value.updatedAt, columns.updatedAt)}::timestamp
+    )`;
+  });
+  return sql`(VALUES ${sql.join(values, sql`, `)}) AS desired(
+    usage_pack_subscription_id, org_id, user_id, source_allocation_id, kind,
+    source_usage_pack_usd, source_stripe_price_id, target_usage_pack_usd,
+    target_stripe_price_id, proration_timestamp, immediate_amount_cents,
+    next_recurring_amount_cents, currency, stripe_schedule_id, effective_at,
+    preview_expires_at, created_at, updated_at
+  )`;
+}
+
+// Quote publication has no intermediate cancellation checkpoint. Its owner
+// checks cancellation after this entire atomic write tail.
+const publishSubscriptionChangePreview$ = command(
+  async (
+    { set },
+    args: PersistSubscriptionChangePreviewArgs,
+  ): Promise<UsagePackSubscriptionChangeRow> => {
+    const db = set(writeDb$);
+    const orgId = args.prepared.context.subscription.orgId;
+    const timestamp = args.createdAt.toISOString();
+    const retired = db.$with("retired", {
+      id: usagePackSubscriptionChanges.id,
+      failureReason: usagePackSubscriptionChanges.failureReason,
+    }).as(sql`
+        UPDATE ${usagePackSubscriptionChanges}
+        SET status = 'failed',
+            failure_reason = CASE WHEN preview_expires_at <= ${timestamp}
+              THEN 'preview_expired' ELSE 'preview_superseded' END,
+            completed_at = ${timestamp}, updated_at = ${timestamp}
+        WHERE org_id = ${orgId} AND status = 'previewed'
+        RETURNING id, failure_reason
+      `);
+    const retiredChildren = db.$with("retired_allocation_previews", {
+      id: usagePackAllocationChanges.id,
+    }).as(sql`
+        UPDATE ${usagePackAllocationChanges} AS allocation_change
+        SET status = 'failed',
+            failure_reason = COALESCE(
+              (SELECT retired.failure_reason FROM retired
+               WHERE retired.id = allocation_change.subscription_change_id),
+              'preview_expired'),
+            completed_at = ${timestamp}, updated_at = ${timestamp}
+        WHERE EXISTS (SELECT 1 FROM retired
+                      WHERE retired.id = allocation_change.subscription_change_id)
+           OR (allocation_change.org_id = ${orgId}
+               AND allocation_change.status = 'previewed'
+               AND allocation_change.preview_expires_at <= ${timestamp})
+        RETURNING allocation_change.id
+      `);
+    const rootValues = subscriptionChangePreviewValues(args);
+    const published = db.$with("published_plan_preview").as(
+      db
+        .insert(usagePackSubscriptionChanges)
+        .values({
+          ...rootValues,
+          // Both complete aggregates are required even for root1/child0.
+          // Counts do not gate publication: each scalar is always nonnegative.
+          orgId: sql`(
+            SELECT ${sql.param(rootValues.orgId, usagePackSubscriptionChanges.orgId)}
+            WHERE (${db.select({ count: count() }).from(retired)}) >= 0
+              AND (${db.select({ count: count() }).from(retiredChildren)}) >= 0
+          )`,
+        })
+        .returning(),
+    );
+    let root: UsagePackSubscriptionChangeRow | undefined;
+    if (args.prepared.allocationChanges.length > 0) {
+      const children = db.$with("published_allocation_previews", {
+        id: usagePackAllocationChanges.id,
+      }).as(sql`
+          INSERT INTO ${usagePackAllocationChanges} (
+            subscription_change_id, usage_pack_subscription_id, org_id, user_id,
+            source_allocation_id, kind, source_usage_pack_usd, source_stripe_price_id,
+            target_usage_pack_usd, target_stripe_price_id, proration_timestamp,
+            immediate_amount_cents, next_recurring_amount_cents, currency,
+            stripe_schedule_id, effective_at, preview_expires_at, created_at, updated_at
+          )
+          SELECT ${published.id}, desired.*
+          FROM ${published}
+          CROSS JOIN ${subscriptionChangePreviewChildSource(args)}
+          RETURNING id
+        `);
+      [root] = await db
+        .with(retired, retiredChildren, published, children)
+        .select()
+        .from(published);
+    } else {
+      [root] = await db
+        .with(retired, retiredChildren, published)
+        .select()
+        .from(published);
+    }
+    if (!root) {
+      throw new Error("Failed to persist usage pack subscription preview");
+    }
+    return root;
+  },
+);
+
 const persistSubscriptionChangePreview$ = command(
   async (
     { set },
@@ -1321,98 +1424,78 @@ const persistSubscriptionChangePreview$ = command(
   ): Promise<UsagePackSubscriptionChangeRow | "plan_ending" | null> => {
     const db = set(writeDb$);
     const { context } = args.prepared;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0286; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
-      // This only publishes an unpaid quote. A competing unique quote can
-      // reject this transaction; payment confirmation revalidates its source.
-      const [subscription] = await tx
+    // This only publishes an unpaid quote. A competing unique quote can
+    // reject publication; payment confirmation revalidates its source.
+    const [subscription] = await db
+      .select()
+      .from(usagePackSubscriptions)
+      .where(
+        and(
+          eq(usagePackSubscriptions.orgId, context.subscription.orgId),
+          eq(usagePackSubscriptions.id, context.subscription.id),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!subscription) {
+      return null;
+    }
+    const allocations = await db
+      .select()
+      .from(usagePackAllocations)
+      .where(eq(usagePackAllocations.usagePackSubscriptionId, subscription.id))
+      .orderBy(asc(usagePackAllocations.id));
+    signal.throwIfAborted();
+    const [org] = await db
+      .select()
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, subscription.orgId))
+      .limit(1);
+    signal.throwIfAborted();
+    const [openAllocation, openSubscription] = await Promise.all([
+      db
         .select()
-        .from(usagePackSubscriptions)
+        .from(usagePackAllocationChanges)
         .where(
           and(
-            eq(usagePackSubscriptions.orgId, context.subscription.orgId),
-            eq(usagePackSubscriptions.id, context.subscription.id),
-          ),
-        )
-        .limit(1);
-      if (!subscription) {
-        return null;
-      }
-      const allocations = await tx
-        .select()
-        .from(usagePackAllocations)
-        .where(
-          eq(usagePackAllocations.usagePackSubscriptionId, subscription.id),
-        )
-        .orderBy(asc(usagePackAllocations.id));
-      const [org] = await tx
-        .select()
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, subscription.orgId))
-        .limit(1);
-      signal.throwIfAborted();
-      const [openAllocation, openSubscription] = await Promise.all([
-        tx
-          .select()
-          .from(usagePackAllocationChanges)
-          .where(
-            and(
-              eq(
-                usagePackAllocationChanges.usagePackSubscriptionId,
-                subscription.id,
-              ),
-              inArray(usagePackAllocationChanges.status, [
-                ...OPEN_ALLOCATION_CHANGE_STATUSES,
-              ]),
+            eq(
+              usagePackAllocationChanges.usagePackSubscriptionId,
+              subscription.id,
             ),
+            inArray(usagePackAllocationChanges.status, [
+              ...OPEN_ALLOCATION_CHANGE_STATUSES,
+            ]),
           ),
-        tx
-          .select()
-          .from(usagePackSubscriptionChanges)
-          .where(
-            and(
-              eq(usagePackSubscriptionChanges.orgId, subscription.orgId),
-              inArray(usagePackSubscriptionChanges.status, [
-                ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
-              ]),
-            ),
-          ),
-      ]);
-      signal.throwIfAborted();
-      const snapshot = subscriptionPreviewSnapshotMatches(args.prepared, {
-        subscription,
-        org,
-        ...previewRowsAfterRetirement(
-          openAllocation,
-          openSubscription,
-          args.createdAt,
         ),
-        allocations,
-      });
-      if (snapshot !== true) {
-        return snapshot === "plan_ending" ? snapshot : null;
-      }
-      await tx.execute(
-        retirePlanPreviewSql(context.subscription.orgId, args.createdAt),
-      );
-      const [root] = await tx
-        .insert(usagePackSubscriptionChanges)
-        .values(subscriptionChangePreviewValues(args))
-        .returning();
-      if (!root) {
-        throw new Error("Failed to persist usage pack subscription preview");
-      }
-      if (args.prepared.allocationChanges.length > 0) {
-        await tx.insert(usagePackAllocationChanges).values(
-          args.prepared.allocationChanges.map((change) => {
-            return allocationChangePreviewValue(change, root.id, args);
-          }),
-        );
-      }
-      return root;
-    });
+      db
+        .select()
+        .from(usagePackSubscriptionChanges)
+        .where(
+          and(
+            eq(usagePackSubscriptionChanges.orgId, subscription.orgId),
+            inArray(usagePackSubscriptionChanges.status, [
+              ...OPEN_SUBSCRIPTION_CHANGE_STATUSES,
+            ]),
+          ),
+        ),
+    ]);
     signal.throwIfAborted();
-    return result;
+    const snapshot = subscriptionPreviewSnapshotMatches(args.prepared, {
+      subscription,
+      org,
+      ...previewRowsAfterRetirement(
+        openAllocation,
+        openSubscription,
+        args.createdAt,
+      ),
+      allocations,
+    });
+    if (snapshot !== true) {
+      return snapshot === "plan_ending" ? snapshot : null;
+    }
+    const root = await set(publishSubscriptionChangePreview$, args);
+    signal.throwIfAborted();
+    return root;
   },
 );
 
