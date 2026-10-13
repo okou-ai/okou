@@ -1,3 +1,5 @@
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -43,6 +45,105 @@ describe("POST /api/integrations/slack/upload-file/init", () => {
     return { orgId, userId };
   }
 
+  it("selects each request's installation across users and organizations", async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    const first = scenario.user({ orgRole: "org:admin" });
+    const member = scenario.user({ orgId: first.orgId, orgRole: "org:member" });
+    const second = scenario.user({ orgRole: "org:admin" });
+    const missing = scenario.user({ orgRole: "org:admin" });
+    await scenario.run(async () => {
+      for (const actor of [first, member, second, missing]) {
+        await scenario.prepareActor(actor);
+      }
+      const a = await slackOrgs.installOrg({
+        actor: first,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+      });
+      const b = await slackOrgs.installOrg({
+        actor: second,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      await flushWaitUntilForTest();
+      const requests = [
+        { actor: first, installation: a },
+        { actor: member, installation: a },
+        { actor: second, installation: b },
+        { actor: missing, installation: undefined },
+        { actor: first, installation: a },
+      ];
+      const client = setupApp({
+        context,
+        routes: integrationsSlackUploadInitRoutes,
+      })(integrationsSlackUploadInitContract);
+      for (const [index, request] of requests.entries()) {
+        const claim = await scenario.claim(request.actor);
+        await flushWaitUntilForTest();
+        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: request.actor.orgRole,
+                organization: { id: request.actor.orgId },
+                publicUserData: { userId: request.actor.userId },
+              },
+            ],
+          },
+        );
+        const filename = `request-${String(index)}.csv`;
+        const length = index + 1;
+        const uploadUrl = `https://files.slack.com/upload/v1/graph-${String(index)}`;
+        const fileId = `F_GRAPH_${String(index)}`;
+        context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+          ok: true,
+          upload_url: uploadUrl,
+          file_id: fileId,
+        });
+        const clients = context.mocks.slack.createClient.mock.calls.length;
+        const uploads =
+          context.mocks.slack.files.getUploadURLExternal.mock.calls.length;
+        const response = client.init({
+          headers: { authorization: `Bearer ${claim.token}` },
+          body: { filename, length },
+        });
+        if (!request.installation) {
+          expect((await accept(response, [404])).body.error.code).toBe(
+            "NOT_FOUND",
+          );
+          expect(
+            context.mocks.slack.createClient.mock.calls.slice(clients),
+          ).toStrictEqual([]);
+          expect(
+            context.mocks.slack.files.getUploadURLExternal.mock.calls.slice(
+              uploads,
+            ),
+          ).toStrictEqual([]);
+          continue;
+        }
+        expect((await accept(response, [200])).body).toStrictEqual({
+          uploadUrl,
+          fileId,
+        });
+        expect(
+          context.mocks.slack.createClient.mock.calls
+            .slice(clients)
+            .map(([token]) => {
+              return token;
+            }),
+        ).toStrictEqual([request.installation.botToken]);
+        expect(
+          context.mocks.slack.files.getUploadURLExternal.mock.calls.slice(
+            uploads,
+          ),
+        ).toStrictEqual([[{ filename, length }]]);
+      }
+    });
+  });
   it("returns 401 when no auth token is provided", async () => {
     const client = setupApp({
       context,

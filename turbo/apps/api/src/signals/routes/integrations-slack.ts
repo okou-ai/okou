@@ -469,8 +469,23 @@ function slackFileFetchErrorResponse(error: unknown): Response | null {
   return null;
 }
 
+const slackDownloadInstallationInput$ = computed(
+  (
+    get,
+  ): {
+    readonly orgId: string;
+    readonly userId: string;
+  } => {
+    const auth = get(organizationAuthContext$);
+    return { orgId: auth.orgId, userId: auth.userId };
+  },
+);
+const slackDownloadInstallation$ = slackOrgInstallation(
+  slackDownloadInstallationInput$,
+);
+
 const getSlackDownloadFileInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
+  get(organizationAuthContext$);
   const query = get(queryOf(integrationsSlackDownloadFileContract.download));
   const fileId = query.file_id;
 
@@ -482,9 +497,7 @@ const getSlackDownloadFileInner$ = computed(async (get) => {
     );
   }
 
-  const installation = await get(
-    slackOrgInstallation({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  const installation = await get(slackDownloadInstallation$);
   if (!installation) {
     return jsonErrorResponse(
       404,

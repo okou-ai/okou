@@ -1,3 +1,5 @@
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -136,6 +138,102 @@ describe("POST /api/integrations/slack/message", () => {
     });
   }
 
+  it("selects each request's installation across users and organizations", async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    const first = scenario.user({ orgRole: "org:admin" });
+    const member = scenario.user({ orgId: first.orgId, orgRole: "org:member" });
+    const second = scenario.user({ orgRole: "org:admin" });
+    const missing = scenario.user({ orgRole: "org:admin" });
+    await scenario.run(async () => {
+      for (const actor of [first, member, second, missing]) {
+        await scenario.prepareActor(actor);
+      }
+      const a = await slackOrgs.installOrg({
+        actor: first,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+      });
+      const b = await slackOrgs.installOrg({
+        actor: second,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      await flushWaitUntilForTest();
+      const requests = [
+        { actor: first, installation: a },
+        { actor: member, installation: a },
+        { actor: second, installation: b },
+        { actor: missing, installation: undefined },
+        { actor: first, installation: a },
+      ];
+      const client = setupApp({
+        context,
+        routes: integrationsSlackMessageRoutes,
+      })(integrationsSlackMessageContract);
+      for (const [index, request] of requests.entries()) {
+        const claim = await scenario.claim(request.actor);
+        await flushWaitUntilForTest();
+        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: request.actor.orgRole,
+                organization: { id: request.actor.orgId },
+                publicUserData: { userId: request.actor.userId },
+              },
+            ],
+          },
+        );
+        const channel = `C_GRAPH_${String(index)}`;
+        const text = `request ${String(index)}`;
+        const threadTs = `${String(index + 1)}.123`;
+        context.mocks.slack.chat.postMessage.mockResolvedValue({
+          ok: true,
+          ts: threadTs,
+          channel,
+        });
+        const clients = context.mocks.slack.createClient.mock.calls.length;
+        const posts = context.mocks.slack.chat.postMessage.mock.calls.length;
+        const response = client.sendMessage({
+          headers: { authorization: `Bearer ${claim.token}` },
+          body: { channel, text, threadTs },
+        });
+        if (!request.installation) {
+          expect((await accept(response, [404])).body.error.code).toBe(
+            "NOT_FOUND",
+          );
+          expect(
+            context.mocks.slack.createClient.mock.calls.slice(clients),
+          ).toStrictEqual([]);
+          expect(
+            context.mocks.slack.chat.postMessage.mock.calls.slice(posts),
+          ).toStrictEqual([]);
+          continue;
+        }
+        expect((await accept(response, [200])).body).toStrictEqual({
+          ok: true,
+          ts: threadTs,
+          channel,
+        });
+        expect(
+          context.mocks.slack.createClient.mock.calls
+            .slice(clients)
+            .map(([token]) => {
+              return token;
+            }),
+        ).toStrictEqual([request.installation.botToken]);
+        expect(
+          context.mocks.slack.chat.postMessage.mock.calls.slice(posts),
+        ).toStrictEqual([
+          [expect.objectContaining({ channel, text, thread_ts: threadTs })],
+        ]);
+      }
+    });
+  });
   it("returns 401 when the token has no active organization membership", async () => {
     const orgId = `org_${randomUUID().slice(0, 8)}`;
     const userId = `user_${randomUUID().slice(0, 8)}`;
