@@ -657,6 +657,8 @@
       "importedSlides_many": "{{count}} slides",
       "importedSlides_other": "{{count}} slides",
       "importFile": "Importar modelo",
+      "importImage": "Importe sua própria imagem",
+      "importImageHint": "Salvar como estilo",
       "multiAccent": "Várias cores de destaque",
       "nextSlide": "Visualizar próximo slide",
       "noMatches": "Nenhum resultado",

@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
+      "importImage": "Eigenes Bild importieren",
+      "importImageHint": "Als Stil speichern",
       "multiAccent": "Multi-Akzent",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",

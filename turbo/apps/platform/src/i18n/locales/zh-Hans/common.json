@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} 页",
       "importedSlides_other": "{{count}} 页",
       "importFile": "导入你自己的文件",
+      "importImage": "导入自己的图片",
+      "importImageHint": "保存为可复用风格",
       "multiAccent": "多口音",
       "nextSlide": "预览下一页",
       "noMatches": "没有匹配结果",

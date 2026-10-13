@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} 枚",
       "importedSlides_other": "{{count}} 枚",
       "importFile": "テンプレートをインポート",
+      "importImage": "自分の画像を取り込む",
+      "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
       "nextSlide": "次のスライドをプレビューする",
       "noMatches": "一致しません",

@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor template",
+      "importImage": "Impor gambar Anda sendiri",
+      "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
       "nextSlide": "Pratinjau slide berikutnya",
       "noMatches": "Tidak ada hasil",
