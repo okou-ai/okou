@@ -2098,11 +2098,9 @@
     },
     "resources": {
       "copyLink": "Copier le lien",
-      "empty": "Ce chat ne contient pas encore de résultats ni de liens",
+      "empty": "Ce chat ne contient pas encore d’artéfacts ni de liens",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
-      "loading": "Chargement des ressources",
-      "outputs": "Résultats",
       "retry": "Réessayer",
       "saveFailed": "Impossible d’enregistrer votre préférence de ressources",
       "title": "Ressources du chat",

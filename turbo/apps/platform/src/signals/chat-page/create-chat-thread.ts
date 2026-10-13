@@ -3906,6 +3906,7 @@ export function createChatPanelSignals(
     resources: createChatResourceSignals(
       messagePipeline.allChatGroups$,
       artifact.artifacts$,
+      messagePipeline.initialEventsReady$,
     ),
     ...threadOwned,
     sidebar: messages.sidebar,

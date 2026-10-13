@@ -2057,11 +2057,9 @@
     },
     "resources": {
       "copyLink": "Link kopieren",
-      "empty": "Dieser Chat enthält noch keine Ergebnisse oder Links",
+      "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
-      "loading": "Ressourcen werden geladen",
-      "outputs": "Ergebnisse",
       "retry": "Erneut versuchen",
       "saveFailed": "Ihre Ressourceneinstellung konnte nicht gespeichert werden",
       "title": "Chat-Ressourcen",

@@ -134,6 +134,13 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const resourcesEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const title = resourcesEnabled
+    ? t(($) => {
+        return $.chat.resources.title;
+      })
+    : t(($) => {
+        return $.artifacts.sidebar.panelTitle;
+      });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -179,15 +186,11 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       className={
         fullscreen ? "h-viewport max-h-viewport min-h-viewport" : undefined
       }
-      aria-label={t(($) => {
-        return $.artifacts.sidebar.panelTitle;
-      })}
+      aria-label={title}
       data-testid="thread-sidebar-artifacts"
     >
       <ThreadSidebarHeader
-        title={t(($) => {
-          return $.artifacts.sidebar.panelTitle;
-        })}
+        title={title}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onClose={close}

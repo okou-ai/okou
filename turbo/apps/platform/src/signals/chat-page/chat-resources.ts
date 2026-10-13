@@ -1,6 +1,9 @@
 import { command, computed, state, type Computed } from "ccstate";
 import { marked } from "marked";
-import type { ChatThreadArtifactRun } from "@okouai/api-contracts/contracts/chat-threads";
+import type {
+  ChatThreadArtifactFile,
+  ChatThreadArtifactRun,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
@@ -75,6 +78,11 @@ export interface ChatResourceLink {
   readonly title: string;
 }
 
+export interface ChatResourceContent {
+  readonly artifacts: readonly ChatThreadArtifactFile[];
+  readonly links: readonly ChatResourceLink[];
+}
+
 async function messageLinks(content: string): Promise<ChatResourceLink[]> {
   const links: ChatResourceLink[] = [];
   await Promise.all(
@@ -118,6 +126,7 @@ export const copyChatResourceLink$ = command(
 function createChatResourceContentSignals(
   groups$: Computed<readonly ChatEventGroup[]>,
   artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
+  initialEventsReady$: Computed<boolean>,
 ) {
   const outputs$ = computed(async (get) => {
     const files = (await get(artifacts$)).flatMap((run) => {
@@ -173,7 +182,20 @@ function createChatResourceContentSignals(
     return links;
   });
 
-  return { outputs$, links$ };
+  const content$ = computed(
+    async (get): Promise<ChatResourceContent | null> => {
+      if (!get(initialEventsReady$)) {
+        return null;
+      }
+      const [artifacts, links] = await Promise.all([
+        get(outputs$),
+        get(links$),
+      ]);
+      return { artifacts, links };
+    },
+  );
+
+  return { content$, links$ };
 }
 
 function createResourceElementRef() {
@@ -325,9 +347,14 @@ function createChatResourcePanelSignals() {
 export function createChatResourceSignals(
   groups$: Computed<readonly ChatEventGroup[]>,
   artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
+  initialEventsReady$: Computed<boolean>,
 ) {
   return {
-    ...createChatResourceContentSignals(groups$, artifacts$),
+    ...createChatResourceContentSignals(
+      groups$,
+      artifacts$,
+      initialEventsReady$,
+    ),
     ...createChatResourcePanelSignals(),
   };
 }

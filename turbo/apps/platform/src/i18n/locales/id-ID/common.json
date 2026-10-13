@@ -2049,11 +2049,9 @@
     },
     "resources": {
       "copyLink": "Salin tautan",
-      "empty": "Chat ini belum memiliki hasil atau tautan",
+      "empty": "Chat ini belum memiliki artefak atau tautan",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
-      "loading": "Memuat sumber daya",
-      "outputs": "Hasil",
       "retry": "Coba lagi",
       "saveFailed": "Tidak dapat menyimpan preferensi sumber daya",
       "title": "Sumber daya chat",

@@ -2049,11 +2049,9 @@
     },
     "resources": {
       "copyLink": "複製連結",
-      "empty": "此聊天中還沒有輸出內容或連結",
+      "empty": "此聊天中還沒有成果或連結",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
-      "loading": "正在載入資源",
-      "outputs": "輸出內容",
       "retry": "重試",
       "saveFailed": "無法儲存資源顯示偏好",
       "title": "聊天資源",

@@ -3,9 +3,10 @@ import {
   useLastLoadable,
   useLastResolved,
   useSet,
+  type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -17,6 +18,10 @@ import {
 } from "@okouai/ui";
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
+import type { ChatResourceContent } from "../../signals/chat-page/chat-resources.ts";
+import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
+import { searchParams$ } from "../../signals/route.ts";
+import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
 import { openArtifactSidebar$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -33,8 +38,18 @@ export function ChatResourcesButton({
   readonly largeTarget?: boolean;
 }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  return enabled ? (
-    <ChatResourcesButtonInner thread={thread} largeTarget={largeTarget} />
+  const mainThreadId = useGet(currentChatThreadId$);
+  const secondaryThreadId = useGet(searchParams$).get(SIDEBAR_PARAM);
+  // The old pane can remain mounted while the next thread's metadata loads.
+  const current =
+    mainThreadId !== null &&
+    (thread.threadId === mainThreadId || thread.threadId === secondaryThreadId);
+  return enabled && current ? (
+    <ChatResourcesButtonInner
+      key={thread.threadId}
+      thread={thread}
+      largeTarget={largeTarget}
+    />
   ) : null;
 }
 
@@ -49,7 +64,12 @@ function ChatResourcesButtonInner({
   const popupRef = useSet(thread.resources.popupOnRef$);
   const blurControl = useSet(thread.resources.blurControl$);
   const resources = thread.resources;
-  const open = useLastResolved(resources.open$) ?? false;
+  const requestedOpen = useLastResolved(resources.open$) ?? false;
+  const content = useLastLoadable(resources.content$);
+  const ready =
+    content.state === "hasError" ||
+    (content.state === "hasData" && content.data !== null);
+  const open = requestedOpen && ready;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
   const anchor = useGet(resources.anchor$);
@@ -138,7 +158,7 @@ function ChatResourcesButtonInner({
             "flex max-h-[min(480px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
         })}
       >
-        <ChatResourcesBody thread={thread} />
+        <ChatResourcesBody thread={thread} content={content} />
       </PopoverContent>
     </Popover>
   );
@@ -181,19 +201,22 @@ function ResourceOutputRow({
   );
 }
 
-function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
+function ChatResourcesBody({
+  thread,
+  content,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly content: Loadable<ChatResourceContent | null>;
+}) {
   const { t } = useTranslation();
-  const outputs = useLastLoadable(thread.resources.outputs$);
-  const links = useLastLoadable(thread.resources.links$);
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const setOpen = useSet(thread.resources.setOpen$);
-  const failed = outputs.state === "hasError" || links.state === "hasError";
-  const loading = outputs.state === "loading" || links.state === "loading";
+  const data = content.state === "hasData" ? content.data : null;
   return (
     <>
       <div className="min-h-0 overflow-y-auto p-3">
-        {failed ? (
+        {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
             <p>
               {t(($) => {
@@ -206,31 +229,21 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               })}
             </Button>
           </div>
-        ) : loading ? (
-          <div
-            role="status"
-            aria-label={t(($) => {
-              return $.chat.resources.loading;
-            })}
-            className="flex justify-center p-4"
-          >
-            <Loader2 className="animate-spin" size={18} />
-          </div>
-        ) : (
+        ) : data ? (
           <div className="space-y-4">
-            {outputs.data.length > 0 && (
+            {data.artifacts.length > 0 && (
               <section
                 aria-label={t(($) => {
-                  return $.chat.resources.outputs;
+                  return $.artifacts.sidebar.panelTitle;
                 })}
               >
                 <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
                   {t(($) => {
-                    return $.chat.resources.outputs;
+                    return $.artifacts.sidebar.panelTitle;
                   })}
                 </h3>
                 <ul className="m-0 list-none p-0">
-                  {outputs.data.map((file) => {
+                  {data.artifacts.map((file) => {
                     return (
                       <ResourceOutputRow
                         key={file.id}
@@ -243,7 +256,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               </section>
             )}
             <ChatResourceLinks thread={thread} />
-            {outputs.data.length === 0 && links.data.length === 0 && (
+            {data.artifacts.length === 0 && data.links.length === 0 && (
               <p className="px-2 py-4 text-sm text-muted-foreground">
                 {t(($) => {
                   return $.chat.resources.empty;
@@ -251,7 +264,7 @@ function ChatResourcesBody({ thread }: { readonly thread: ChatPanelSignals }) {
               </p>
             )}
           </div>
-        )}
+        ) : null}
       </div>
       <div className="shrink-0 border-t border-border/60 p-2">
         <Button

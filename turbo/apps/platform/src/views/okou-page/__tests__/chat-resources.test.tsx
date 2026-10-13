@@ -10,11 +10,19 @@ import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import {
+  chatThreadArtifactsContract,
+  chatThreadEventsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
+import { createDeferredPromise } from "../../../signals/utils.ts";
+import {
   click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactRun,
   buttonNamed,
@@ -173,6 +181,9 @@ test("Open in the actual right gutter and preserve links while removing duplicat
   const panel = resourcePanel()!;
   await within(panel).findByText("report.pdf");
   await within(panel).findByText("Current guide");
+  expect(
+    within(panel).getByRole("heading", { name: "Artifacts" }),
+  ).toBeInTheDocument();
   const links = queryAllByRoleFast("link", panel);
   expect(
     links.map((link) => {
@@ -355,7 +366,151 @@ test("Copy the original link and open the complete artifact panel", async () => 
   click(buttonNamed("View all", panel));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
   await within(all).findByText("Current guide");
+  expect(all).toHaveAccessibleName("Resources");
+  expect(buttonNamed("Close resources", all)).toBeInTheDocument();
 });
+
+test.each(["messages", "artifacts"] as const)(
+  "Hide the previous chat's resources until the next chat's %s finish loading",
+  async (pendingSource) => {
+    installResourceGeometry(480);
+    context.mocks.browser.matchMedia(true);
+    const first = continuityThread(92, 1, "First resources");
+    const second = continuityThread(92, 2, "Second resources");
+    const resourcesRequested = createDeferredPromise<void>(context.signal);
+    const resourcesResponse = createDeferredPromise<void>(context.signal);
+    const rows = [first, second].map((thread, index) => {
+      return continuityEventRow(92, index + 1, thread.id, "input.prompt", {
+        payload: {
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "text",
+                text: `[${thread.title} guide](https://example.test/${index})`,
+              },
+            ],
+          },
+        },
+      });
+    });
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 92,
+      threads: [first, second],
+    });
+    context.mocks.api(
+      chatThreadEventsContract.rows,
+      async ({ params, query, respond }) => {
+        if (params.threadId === second.id && pendingSource === "messages") {
+          if (!resourcesRequested.settled()) {
+            resourcesRequested.resolve();
+          }
+          await resourcesResponse.promise;
+        }
+        return respond(
+          200,
+          chatEventRowsResponse(
+            rows.filter((row) => {
+              return row.chatThreadId === params.threadId;
+            }),
+            query,
+          ),
+        );
+      },
+    );
+    context.mocks.api(
+      chatThreadEventsContract.catchUp,
+      async ({ body, respond }) => {
+        if (
+          pendingSource === "messages" &&
+          body.some(([threadId]) => {
+            return threadId === second.id;
+          })
+        ) {
+          if (!resourcesRequested.settled()) {
+            resourcesRequested.resolve();
+          }
+          await resourcesResponse.promise;
+        }
+        return respond(200, {
+          events: Object.fromEntries(
+            body.map(([threadId, sinceSeqId]) => {
+              return [
+                threadId,
+                rows.filter((row) => {
+                  return (
+                    row.chatThreadId === threadId && row.seqId > sinceSeqId
+                  );
+                }),
+              ];
+            }),
+          ),
+          notFoundThreads: [],
+        });
+      },
+    );
+    context.mocks.api(
+      chatThreadArtifactsContract.list,
+      async ({ params, respond }) => {
+        if (params.threadId === second.id && pendingSource === "artifacts") {
+          if (!resourcesRequested.settled()) {
+            resourcesRequested.resolve();
+          }
+          await resourcesResponse.promise;
+        }
+        const filename =
+          params.threadId === first.id ? "first.pdf" : "second.pdf";
+        return respond(200, {
+          runs: [
+            artifactRun({
+              fileId: params.threadId,
+              filename,
+              contentType: "application/pdf",
+              url: `https://files.example.test/${filename}`,
+            }),
+          ],
+        });
+      },
+    );
+    await setupPage({
+      context,
+      ...workspace.pageOptions,
+      path: `/chats/${first.id}`,
+      featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+    });
+    const previousPanel = await screen.findByRole("dialog", {
+      name: "Resources",
+    });
+    await within(previousPanel).findByText("First resources guide");
+    expect(within(previousPanel).getByText("first.pdf")).toBeInTheDocument();
+    const next = queryAllByRoleFast("link").find((link) => {
+      return link.getAttribute("href") === `/chats/${second.id}`;
+    });
+    if (!next) {
+      throw new Error("Second chat is missing");
+    }
+    click(next);
+    await resourcesRequested.promise;
+    await waitFor(() => {
+      expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+        "Second resources",
+      );
+    });
+    expect(resourcePanel()).not.toBeInTheDocument();
+    resourcesResponse.resolve();
+    await waitFor(() => {
+      expect(
+        within(resourcePanel()!).getByText("Second resources guide"),
+      ).toBeInTheDocument();
+    });
+    const nextPanel = resourcePanel()!;
+    expect(within(nextPanel).getByText("second.pdf")).toBeInTheDocument();
+    expect(
+      within(nextPanel).queryByText("First resources guide"),
+    ).not.toBeInTheDocument();
+    expect(within(nextPanel).queryByText("first.pdf")).not.toBeInTheDocument();
+  },
+);
 
 test("Share the saved preference with another chat and discard temporary state on navigation", async () => {
   installResourceGeometry(480);

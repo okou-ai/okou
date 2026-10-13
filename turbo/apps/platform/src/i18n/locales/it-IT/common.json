@@ -2098,11 +2098,9 @@
     },
     "resources": {
       "copyLink": "Copia link",
-      "empty": "Questa chat non contiene ancora risultati o link",
+      "empty": "Questa chat non contiene ancora artefatti o link",
       "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
-      "loading": "Caricamento delle risorse",
-      "outputs": "Risultati",
       "retry": "Riprova",
       "saveFailed": "Impossibile salvare la preferenza delle risorse",
       "title": "Risorse della chat",

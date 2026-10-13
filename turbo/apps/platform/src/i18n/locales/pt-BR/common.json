@@ -2098,11 +2098,9 @@
     },
     "resources": {
       "copyLink": "Copiar link",
-      "empty": "Esta conversa ainda não tem resultados ou links",
+      "empty": "Esta conversa ainda não tem artefatos ou links",
       "links": "Links",
       "loadFailed": "Não foi possível carregar os recursos",
-      "loading": "Carregando recursos",
-      "outputs": "Resultados",
       "retry": "Tentar novamente",
       "saveFailed": "Não foi possível salvar sua preferência de recursos",
       "title": "Recursos da conversa",
