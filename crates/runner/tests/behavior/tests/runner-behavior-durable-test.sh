@@ -12,7 +12,7 @@ HOME_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-home
 CANCEL_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-cancel.sh"
 CANCEL_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-cancel-remote.sh"
 EXEC_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-exec.sh"
-EXEC_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-exec-remote.sh"
+EXEC_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/exec"
 KEEP_ALIVE_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-keep-alive.sh"
 KEEP_ALIVE_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-keep-alive-remote.sh"
 PROCESS_CONTAINMENT_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment.sh"
@@ -60,9 +60,14 @@ assert_count() {
   fi
 }
 
+TEST_WORKFLOW_RUN_ID=$$
+STAGED_BUNDLE_ROOTS=()
 tmp=$(mktemp -d)
 cleanup() {
   rm -rf "$tmp"
+  for staged_root in "${STAGED_BUNDLE_ROOTS[@]}"; do
+    rm -rf -- "$staged_root"
+  done
 }
 trap cleanup EXIT
 
@@ -108,9 +113,32 @@ if [ "$#" -eq 8 ] && [ "$2" = "bash" ] && [ "$3" = "-s" ]; then
   exit 0
 fi
 
-if [ "$#" -eq 2 ] && [[ "$2" == *"worker.XXXXXX"* ]]; then
-  cmp - "$EXPECTED_REMOTE_WORKER"
-  mkdir -p "$FAKE_REMOTE_DIR"
+if [ "$#" -eq 2 ] && { [[ "$2" == *"worker.XXXXXX"* ]] || [[ "$2" == *"bundle.XXXXXX"* ]]; }; then
+  if [ -d "$EXPECTED_REMOTE_WORKER" ]; then
+    if [ "${FAKE_STAGE_MODE:-}" = "corrupt" ]; then
+      cat > "$FAKE_SSH_STATE_DIR/corrupted-archive"
+      printf 'corrupt transport bytes\n' >> "$FAKE_SSH_STATE_DIR/corrupted-archive"
+      exec bash -c "$2" < "$FAKE_SSH_STATE_DIR/corrupted-archive"
+    fi
+    # Run the actual staging request against this fixture's execution key.
+    bash -c "$2"
+    mapfile -t published < <(find "$FAKE_STAGE_REMOTE_DIR" -mindepth 1 -maxdepth 1 -type d -name 'bundle-*')
+    [ "${#published[@]}" -eq 1 ]
+    diff -r "$EXPECTED_REMOTE_WORKER" "${published[0]}"
+    [ -x "${published[0]}/worker.sh" ]
+    stage_attempt=$(increment stage-attempt-count)
+    if [ "$stage_attempt" -eq 1 ]; then
+      exit 255
+    fi
+    test ! -e "${published[0]}/files"
+    mkdir -p "$FAKE_REMOTE_DIR"
+    cp -a "${published[0]}" "$FAKE_REMOTE_DIR/bundle"
+    rm -rf -- "$FAKE_STAGE_REMOTE_DIR"
+  else
+    cmp - "$EXPECTED_REMOTE_WORKER"
+    increment stage-attempt-count >/dev/null
+    mkdir -p "$FAKE_REMOTE_DIR"
+  fi
   cat > "$FAKE_REMOTE_WORKER" <<'FAKE_REMOTE_WORKER_SCRIPT'
 #!/usr/bin/env bash
 printf '%s\n' "${3:-}" > "$FAKE_WORKER_ARGUMENT_FILE"
@@ -122,6 +150,12 @@ exit 37
 FAKE_REMOTE_WORKER_SCRIPT
   chmod +x "$FAKE_REMOTE_WORKER"
   increment stage-count >/dev/null
+  exit 0
+fi
+
+if [ "$#" -eq 2 ] && [[ "$2" == "rm -rf -- "* ]]; then
+  bash -c "$2"
+  increment aborted-stage-cleanup-count >/dev/null
   exit 0
 fi
 
@@ -291,6 +325,9 @@ run_driver_case() {
   local fake_remote_cwd="$case_dir/cwd"
   local durable_output="durable ${case_name} output"
   local status=0
+  if [ -d "$remote_worker" ]; then
+    STAGED_BUNDLE_ROOTS+=("/tmp/vm0-runner-behavior/${case_name}-${TEST_WORKFLOW_RUN_ID}-1")
+  fi
 
   mkdir -p "$runner_temp" "$fake_remote_home" "$fake_remote_cwd"
 
@@ -298,6 +335,7 @@ run_driver_case() {
     FAKE_SLEEP_INVOCATIONS="$case_dir/sleep-invocations" \
     FAKE_SSH_STATE_DIR="$case_dir" \
     EXPECTED_REMOTE_WORKER="$remote_worker" \
+    FAKE_STAGE_REMOTE_DIR="/tmp/vm0-runner-behavior/${case_name}-${TEST_WORKFLOW_RUN_ID}-1" \
     FAKE_REMOTE_DIR="$fake_remote_dir" \
     FAKE_REMOTE_WORKER="$fake_remote_worker" \
     FAKE_REMOTE_LOG="$fake_remote_log" \
@@ -321,7 +359,7 @@ run_driver_case() {
     DEFAULT_ROOTFS_HASH="rootfs" \
     DEFAULT_SNAPSHOT_HASH="snapshot" \
     OFFICIAL_RUNNER_SECRET="test-secret" \
-    GITHUB_RUN_ID="30429172938" \
+    GITHUB_RUN_ID="$TEST_WORKFLOW_RUN_ID" \
     GITHUB_RUN_ATTEMPT="1" \
     bash "$driver" > "$case_dir/stdout" 2> "$case_dir/stderr" || status=$?
 
@@ -334,6 +372,13 @@ run_driver_case() {
 
   assert_value "$case_dir/config-count" "$expected_config_count"
   assert_value "$case_dir/stage-count" "1"
+  if [ -d "$remote_worker" ]; then
+    assert_value "$case_dir/stage-attempt-count" "2"
+    assert_contains "$case_dir/stderr" "Transient SSH failure while staging ${case_name} worker"
+    test ! -e "/tmp/vm0-runner-behavior/${case_name}-${TEST_WORKFLOW_RUN_ID}-1"
+  else
+    assert_value "$case_dir/stage-attempt-count" "1"
+  fi
   assert_value "$case_dir/launch-attempt-count" "2"
   assert_value "$case_dir/execution-count" "1"
   assert_value "$case_dir/state-attempt-count" "3"
@@ -352,7 +397,7 @@ run_driver_case() {
   assert_contains "$case_dir/systemd-run-args" "--working-directory=$fake_remote_cwd"
   assert_contains "$case_dir/systemd-run-args" "--setenv=HOME=$fake_remote_home"
   assert_contains "$case_dir/systemd-run-args" \
-    "--setenv=RUNNER_BEHAVIOR_DURABLE_UNIT=vm0-ci-${case_name}-30429172938-1.service"
+    "--setenv=RUNNER_BEHAVIOR_DURABLE_UNIT=vm0-ci-${case_name}-${TEST_WORKFLOW_RUN_ID}-1.service"
   assert_count "$case_dir/stdout" "1" "$durable_output"
   assert_contains "$case_dir/stderr" "Lost SSH launch response"
   assert_contains "$case_dir/stderr" "Transient SSH failure while observing ${case_name} result"
@@ -376,7 +421,8 @@ run_driver_case() {
     assert_contains "$case_dir/cleanup-script" "sudo rm -rf \"\$GROUP_DIR\" \"\$RUNNER_DIR\""
   fi
 
-  if grep -Fq 'OFFICIAL_RUNNER_SECRET' "$remote_worker"; then
+  if { [ -f "$remote_worker" ] && grep -Fq 'OFFICIAL_RUNNER_SECRET' "$remote_worker"; } \
+    || { [ -d "$remote_worker" ] && grep -RFq 'OFFICIAL_RUNNER_SECRET' "$remote_worker"; }; then
     echo "expected ${remote_worker} not to consume the official runner secret" >&2
     exit 1
   fi
@@ -490,5 +536,39 @@ if [ -e "$replay_marker" ]; then
   echo "expected launch retry not to replay a completed worker" >&2
   exit 1
 fi
+
+# A corrupted transport must fail before any launch, retire unpublished files,
+# and remove its local result/archive just like an ordinary staging failure.
+corrupt_case="$tmp/corrupt-bundle"
+corrupt_remote="/tmp/vm0-runner-behavior/exec-${TEST_WORKFLOW_RUN_ID}-2"
+STAGED_BUNDLE_ROOTS+=("$corrupt_remote")
+mkdir -p "$corrupt_case/runner-temp"
+corrupt_status=0
+PATH="$fake_bin:$PATH" \
+  FAKE_STAGE_MODE="corrupt" \
+  FAKE_SSH_STATE_DIR="$corrupt_case" \
+  EXPECTED_REMOTE_WORKER="$EXEC_REMOTE_WORKER" \
+  RUNNER_TEMP="$corrupt_case/runner-temp" \
+  METAL_USER="metal" HOST="runner.example.test" BIN_DIR="/opt/vm0" \
+  JOB_REF="behavior-a" DEFAULT_ROOTFS_HASH="rootfs" DEFAULT_SNAPSHOT_HASH="snapshot" \
+  OFFICIAL_RUNNER_SECRET="test-secret" \
+  GITHUB_RUN_ID="$TEST_WORKFLOW_RUN_ID" GITHUB_RUN_ATTEMPT="2" \
+  bash "$EXEC_DRIVER" > "$corrupt_case/stdout" 2> "$corrupt_case/stderr" || corrupt_status=$?
+[ "$corrupt_status" -eq 1 ]
+test ! -e "$corrupt_case/launch-attempt-count"
+test ! -e "$corrupt_remote"
+assert_value "$corrupt_case/aborted-stage-cleanup-count" "1"
+test -z "$(find "$corrupt_case/runner-temp" -mindepth 1 -print -quit)"
+
+# Symlinked assets must be rejected at the real command boundary before SSH.
+invalid_bundle="$tmp/invalid-bundle"
+mkdir -p "$invalid_bundle"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$invalid_bundle/worker.sh"
+chmod +x "$invalid_bundle/worker.sh"
+ln -s /etc/passwd "$invalid_bundle/asset"
+invalid_status=0
+bash "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-durable.sh" \
+  invalid "$invalid_bundle" > "$tmp/invalid-stdout" 2> "$tmp/invalid-stderr" || invalid_status=$?
+[ "$invalid_status" -eq 2 ]
 
 echo "runner-behavior-durable-test: ok"

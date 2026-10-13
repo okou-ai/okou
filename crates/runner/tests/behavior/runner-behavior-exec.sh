@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REMOTE_WORKER="${SCRIPT_DIR}/runner-behavior-exec-remote.sh"
+REMOTE_WORKER="${SCRIPT_DIR}/exec"
 DURABLE_RUNNER="${SCRIPT_DIR}/runner-behavior-durable.sh"
 REMOTE="${METAL_USER}@${HOST}"
 
