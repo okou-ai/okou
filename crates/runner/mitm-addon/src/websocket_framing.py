@@ -306,7 +306,7 @@ class _BoundedPerMessageDeflate(Extension):
             raise RuntimeError("compressed WebSocket data arrived without a decompressor")
         limit = self._budget.remaining_bytes
         remaining = limit
-        chunks: list[bytes] = []
+        output: bytes | bytearray = b""
         while True:
             try:
                 decoded = decoder.decompress(data, remaining + 1)
@@ -319,7 +319,12 @@ class _BoundedPerMessageDeflate(Extension):
                 self._discard_inbound_state()
                 return CloseReason.MESSAGE_TOO_BIG
             if decoded:
-                chunks.append(decoded)
+                if output:
+                    if isinstance(output, bytes):
+                        output = bytearray(output)
+                    output.extend(decoded)
+                else:
+                    output = decoded
                 remaining -= len(decoded)
                 window_size = 1 << self._window_bits
                 self._history = (self._history + decoded[-window_size:])[-window_size:]
@@ -334,7 +339,7 @@ class _BoundedPerMessageDeflate(Extension):
             self._decoder = decoder
             if not data:
                 break
-        return b"".join(chunks)
+        return bytes(output)
 
     def frame_inbound_header(
         self,
