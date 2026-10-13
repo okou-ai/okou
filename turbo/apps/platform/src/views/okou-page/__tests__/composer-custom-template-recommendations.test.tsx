@@ -1,0 +1,217 @@
+import {
+  userTemplatesContract,
+  type UserTemplateCatalogEntry,
+  type UserTemplateKind,
+} from "@okouai/api-contracts/contracts/user-templates";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test } from "vitest";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
+import {
+  AGENT_ID,
+  context,
+  createUploadedTemplate,
+  mockPresentationTemplateLibrary,
+  mockTemplateChat,
+} from "./chat-composer-template-gallery-test-helpers.ts";
+
+function template(kind: UserTemplateKind): UserTemplateCatalogEntry {
+  const id = {
+    presentation: "11111111-1111-4111-8111-111111111111",
+    illustration: "22222222-2222-4222-8222-222222222222",
+    document: "33333333-3333-4333-8333-333333333333",
+  }[kind];
+  return {
+    id,
+    kind,
+    title: `My ${kind} template`,
+    sourceFilename: `source-${kind}.pdf`,
+    coverUrl: `https://example.test/${kind}-cover.png`,
+    coverHasMorePages: kind === "presentation",
+    pageCount: kind === "presentation" ? 12 : null,
+    visibility: "private",
+    ownerUserId: "user_self",
+    ownerDisplayName: "Dana Self",
+    canManage: true,
+    createdAt: "2026-01-02T00:00:00Z",
+    updatedAt: "2026-01-02T00:00:00Z",
+    previewAssets: [
+      {
+        previewAssetId: `utp:${id}:example`,
+        url: `https://example.test/${kind}-example.png`,
+        expiresAt: "2026-12-31T00:00:00.000Z",
+      },
+    ],
+  };
+}
+
+function button(name: string, container: ParentNode = document.body) {
+  const result = queryAllByRoleFast("button", container).find((candidate) => {
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
+  });
+  if (!result) {
+    throw new Error(`Expected button ${name}`);
+  }
+  return result;
+}
+
+const SHELVES = [
+  {
+    task: "Presentation",
+    kind: "presentation",
+    label: "Presentation templates",
+    builtInTitle: PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title,
+  },
+  {
+    task: "Image",
+    kind: "illustration",
+    label: "Image styles",
+    builtInTitle: ILLUSTRATION_TEMPLATE_ITEMS[0]!.title,
+  },
+] as const;
+
+async function openShelf(task: string, label: string, enabled = true) {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.CustomTemplates]: enabled },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Keep my launch brief");
+  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+  const shelf = await screen.findByRole("group", { name: label });
+  return { editor, shelf };
+}
+
+test.each(SHELVES)(
+  "$task shows accessible custom templates of its kind and sends the selected reference",
+  async ({ task, kind, label, builtInTitle }) => {
+    const capture = mockTemplateChat();
+    const own = template(kind);
+    const shared = {
+      ...own,
+      id: "44444444-4444-4444-8444-444444444444",
+      title: "Shared brand template",
+      visibility: "organization" as const,
+      ownerUserId: "user_colleague",
+      canManage: false,
+    };
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, [
+        template("presentation"),
+        template("illustration"),
+        template("document"),
+        shared,
+      ]);
+    });
+    mockPresentationTemplateLibrary([
+      createUploadedTemplate({
+        id: own.id,
+        title: "Legacy deck",
+        canManage: true,
+      }),
+    ]);
+
+    const { editor, shelf } = await openShelf(task, label);
+    await within(shelf).findByText(own.title);
+    expect(within(shelf).getByText(shared.title)).toBeInTheDocument();
+    expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
+    expect(
+      within(shelf).queryByText("My document template"),
+    ).not.toBeInTheDocument();
+    expect(within(shelf).queryByText("Legacy deck")).not.toBeInTheDocument();
+    const otherKind = kind === "presentation" ? "illustration" : "presentation";
+    expect(
+      within(shelf).queryByText(template(otherKind).title),
+    ).not.toBeInTheDocument();
+    expect(
+      within(shelf)
+        .getByText(own.title)
+        .closest("button")
+        ?.querySelector("img"),
+    ).toHaveAttribute(
+      "src",
+      kind === "presentation" ? own.coverUrl : own.previewAssets[0]!.url,
+    );
+
+    click(
+      button(
+        kind === "presentation" ? own.title : `Use template ${own.title}`,
+        shelf,
+      ),
+    );
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(own.title);
+    });
+    expect(editor).toHaveTextContent("Keep my launch brief");
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.selectedTemplates).toStrictEqual([
+        { type: "custom", selection: { userTemplateId: own.id } },
+      ]);
+    });
+  },
+);
+
+test.each(SHELVES)(
+  "$task keeps its existing catalog when Custom is disabled",
+  async ({ task, kind, label, builtInTitle }) => {
+    mockTemplateChat();
+    context.mocks.api(userTemplatesContract.list, () => {
+      throw new Error("A disabled custom catalog must not be requested");
+    });
+    const legacy = createUploadedTemplate({
+      id: "55555555-5555-4555-8555-555555555555",
+      title: "Existing uploaded deck",
+      canManage: true,
+    });
+    mockPresentationTemplateLibrary([legacy]);
+
+    const { shelf } = await openShelf(task, label, false);
+    expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
+    if (kind === "presentation") {
+      await within(shelf).findByText(legacy.title);
+    }
+    expect(
+      within(shelf).queryByText(template(kind).title),
+    ).not.toBeInTheDocument();
+  },
+);
+
+test.each(SHELVES)(
+  "$task refreshes published and removed custom templates while the shelf stays open",
+  async ({ task, kind, label }) => {
+    mockTemplateChat();
+    let catalog = [template(kind)];
+    context.mocks.api(userTemplatesContract.list, ({ respond }) => {
+      return respond(200, catalog);
+    });
+    const { shelf } = await openShelf(task, label);
+    await within(shelf).findByText(template(kind).title);
+
+    catalog = [
+      {
+        ...template(kind),
+        title: "Newly published template",
+        id: "66666666-6666-4666-8666-666666666666",
+      },
+    ];
+    context.mocks.ably.trigger("presentationTemplatesChanged");
+
+    await within(shelf).findByText("Newly published template");
+    expect(
+      within(shelf).queryByText(template(kind).title),
+    ).not.toBeInTheDocument();
+  },
+);
