@@ -1017,6 +1017,12 @@ export const sessionHistoryDownloadAttributionFields = Object.freeze(
   sessionHistoryDownloadAttributionSchema.keyof().options,
 );
 
+const storageBatchEvidenceIntegerSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
@@ -1107,6 +1113,31 @@ const sandboxOperationSchema = z.object({
   storage_batch_host_timing: z
     .enum(["complete", "partial", "unavailable"])
     .optional(),
+  storage_batch_guest_timing: z
+    .enum(["complete", "partial", "unavailable"])
+    .optional(),
+  storage_batch_resources: z
+    .enum(["complete", "partial", "unavailable"])
+    .optional(),
+  storage_batch_guest_request_ownership_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_guest_worker_wait_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_guest_response_prepare_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_containment_wall_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_resource_collection_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_cpu_usage_us: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_cpu_throttled_us: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_peak_bytes: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom_kill:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom_group_kill:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_pids_events_max: storageBatchEvidenceIntegerSchema.optional(),
   storage_batch_payload_size_bucket: z
     .enum([
       "none",

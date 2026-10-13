@@ -2124,6 +2124,7 @@ dependencies = [
  "libc",
  "process-control-ipc",
  "process-launch",
+ "serde",
  "serde_json",
  "shell-quote",
  "tempfile",
