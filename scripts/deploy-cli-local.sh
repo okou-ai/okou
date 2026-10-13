@@ -41,7 +41,7 @@ commit_sha="$(git -C "$PROJECT_ROOT" rev-parse HEAD)"
 )
 (
   cd "$PROJECT_ROOT"
-  bash .github/scripts/build-okou-cli-artifact.sh "$commit_sha" "$artifact_dir"
+  bash .github/scripts/artifacts/build-okou-cli-artifact.sh "$commit_sha" "$artifact_dir"
 )
 
 object_key="okou-cli/local/${identity}/package.tgz"

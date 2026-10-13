@@ -162,8 +162,12 @@ impl GuardedFinalizingHandoffOwner {
         result
     }
 
-    /// Producer transfer has no provider call/await. Its original backing proof
-    /// stays inside the actual parked/running candidate carried by the broker.
+    /// Synchronously capture or revalidate the original backing through provider
+    /// callbacks before moving the candidate; this operation does not await.
+    ///
+    /// Call this before acquiring the broker lock. The returned parked/running
+    /// candidate carries the captured backing proof, so the subsequent broker
+    /// ownership transfer needs no new provider callbacks.
     pub fn take_undelivered_candidate(
         &mut self,
     ) -> Result<IdleParkCandidate, MemoryOperationError> {

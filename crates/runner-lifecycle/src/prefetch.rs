@@ -6,6 +6,10 @@ use std::sync::Arc;
 
 use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
+
+mod guarded;
+pub use guarded::{GuardedPrefetchConfig, GuardedPrefetchSnapshot};
 use tracing::{info, warn};
 
 const MEMORY_PREFETCH_CHUNK_BYTES: usize = 1024 * 1024;
@@ -27,6 +31,7 @@ pub struct MemoryPrefetchCandidate {
 pub struct MemoryPrefetchTasks {
     cancel: CancellationToken,
     handles: Vec<JoinHandle<()>>,
+    physical_io: TaskTracker,
 }
 
 impl MemoryPrefetchTasks {
@@ -54,69 +59,33 @@ impl MemoryPrefetchTasks {
         F: Fn(&Path, &CancellationToken) + Send + Sync + 'static,
     {
         let cancel = CancellationToken::new();
-        let mut unique_candidates = BTreeMap::new();
-        for candidate in candidates {
-            unique_candidates
-                .entry(candidate.path)
-                .and_modify(|memory_mb: &mut u32| {
-                    *memory_mb = (*memory_mb).max(candidate.memory_mb);
-                })
-                .or_insert(candidate.memory_mb);
-        }
-
-        let unique_count = unique_candidates.len();
-        let mut candidates: Vec<_> = unique_candidates
-            .into_iter()
-            .map(|(path, memory_mb)| MemoryPrefetchCandidate { path, memory_mb })
-            .collect();
-        candidates.sort_by(|left, right| {
-            left.memory_mb
-                .cmp(&right.memory_mb)
-                .then_with(|| left.path.cmp(&right.path))
-        });
-
-        let mut selected = Vec::new();
-        let mut selected_memory_mb = 0_u64;
-        for candidate in candidates {
-            let candidate_memory_mb = u64::from(candidate.memory_mb);
-            if candidate_memory_mb <= budget_mb.saturating_sub(selected_memory_mb) {
-                selected_memory_mb += candidate_memory_mb;
-                selected.push(candidate);
-            } else {
-                info!(
-                    path = %candidate.path.display(),
-                    memory_mb = candidate.memory_mb,
-                    budget_mb,
-                    "memory prefetch deferred by startup budget"
-                );
-            }
-        }
-
-        let selected_count = selected.len();
-        let deferred_count = unique_count - selected_count;
-        info!(
-            unique = unique_count,
-            selected = selected_count,
-            deferred = deferred_count,
-            selected_memory_mb,
-            budget_mb,
-            concurrency = concurrency.get(),
-            "memory prefetch schedule initialized"
-        );
+        let physical_io = TaskTracker::new();
+        let selected = select_candidates(candidates, budget_mb, concurrency);
 
         let handles = if selected.is_empty() {
             Vec::new()
         } else {
             let task_cancel = cancel.clone();
-            vec![tokio::spawn(run_prefetches(
-                selected,
-                task_cancel,
-                concurrency,
-                Arc::new(prefetch),
-            ))]
+            let producer = physical_io.token();
+            let tracked = physical_io.clone();
+            vec![tokio::spawn(async move {
+                let _producer = producer;
+                run_prefetches(
+                    selected,
+                    task_cancel,
+                    concurrency,
+                    Arc::new(prefetch),
+                    tracked,
+                )
+                .await;
+            })]
         };
 
-        Self { cancel, handles }
+        Self {
+            cancel,
+            handles,
+            physical_io,
+        }
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -124,6 +93,7 @@ impl MemoryPrefetchTasks {
         Self {
             cancel: CancellationToken::new(),
             handles: Vec::new(),
+            physical_io: TaskTracker::new(),
         }
     }
 
@@ -137,6 +107,8 @@ impl MemoryPrefetchTasks {
                 warn!(error = %error, "memory prefetch task failed");
             }
         }
+        let _ = self.physical_io.close();
+        self.physical_io.wait().await;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -149,8 +121,67 @@ impl MemoryPrefetchTasks {
         Self {
             cancel,
             handles: vec![handle],
+            physical_io: TaskTracker::new(),
         }
     }
+}
+
+fn select_candidates(
+    candidates: impl IntoIterator<Item = MemoryPrefetchCandidate>,
+    budget_mb: u64,
+    concurrency: NonZeroUsize,
+) -> Vec<MemoryPrefetchCandidate> {
+    let mut unique_candidates = BTreeMap::new();
+    for candidate in candidates {
+        unique_candidates
+            .entry(candidate.path)
+            .and_modify(|memory_mb: &mut u32| {
+                *memory_mb = (*memory_mb).max(candidate.memory_mb);
+            })
+            .or_insert(candidate.memory_mb);
+    }
+
+    let unique_count = unique_candidates.len();
+    let mut candidates: Vec<_> = unique_candidates
+        .into_iter()
+        .map(|(path, memory_mb)| MemoryPrefetchCandidate { path, memory_mb })
+        .collect();
+    candidates.sort_by(|left, right| {
+        left.memory_mb
+            .cmp(&right.memory_mb)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+
+    let mut selected = Vec::new();
+    let mut selected_memory_mb = 0_u64;
+    for candidate in candidates {
+        let candidate_memory_mb = u64::from(candidate.memory_mb);
+        if candidate_memory_mb <= budget_mb.saturating_sub(selected_memory_mb) {
+            selected_memory_mb += candidate_memory_mb;
+            selected.push(candidate);
+        } else {
+            info!(
+                path = %candidate.path.display(),
+                memory_mb = candidate.memory_mb,
+                budget_mb,
+                "memory prefetch deferred by startup budget"
+            );
+        }
+    }
+
+    let selected_count = selected.len();
+    let deferred_count = unique_count - selected_count;
+    info!(
+        unique = unique_count,
+        selected = selected_count,
+        deferred = deferred_count,
+        selected_memory_mb,
+        budget_mb,
+        concurrency = concurrency.get(),
+        "memory prefetch schedule initialized"
+    );
+
+    selected
 }
 
 async fn run_prefetches<F>(
@@ -158,6 +189,7 @@ async fn run_prefetches<F>(
     cancel: CancellationToken,
     concurrency: NonZeroUsize,
     prefetch: Arc<F>,
+    physical_io: TaskTracker,
 ) where
     F: Fn(&Path, &CancellationToken) + Send + Sync + 'static,
 {
@@ -171,7 +203,9 @@ async fn run_prefetches<F>(
             };
             let task_cancel = cancel.clone();
             let task_prefetch = Arc::clone(&prefetch);
+            let physical = physical_io.token();
             active.spawn_blocking(move || {
+                let _physical = physical;
                 task_prefetch(&candidate.path, &task_cancel);
             });
         }

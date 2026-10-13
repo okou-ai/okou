@@ -71,7 +71,11 @@ test.each(["assistant", "user"] as const)(
     const resolveOriginal = () => {
       const url = responseUrl;
       responseUrl = ORIGINAL_URL.replace("=original", "=reissued");
-      return { url, expiresAt: "2026-09-13T00:00:00.000Z" };
+      return {
+        url,
+        downloadUrl: new URL("?download=1", url).href,
+        expiresAt: "2026-09-13T00:00:00.000Z",
+      };
     };
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
       return respond(200, {

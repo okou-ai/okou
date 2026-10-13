@@ -7378,6 +7378,111 @@ async function createClaimedChatRun(
 }
 
 describe("okou browser route", () => {
+  it.each(["another user", "another organization"] as const)(
+    "keeps Browser reads, leases and resizing within the owner for %s",
+    async (foreignScope) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        await setupNativeFileScenario(owned);
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { threadId: owned.current.threadId };
+        const initial = await accept(client().get({ headers, params }), [200]);
+        expect(initial.body.browser).toMatchObject({
+          threadId: owned.current.threadId,
+          status: "active",
+          screen: { width: 1440, height: 900, resizable: true },
+        });
+        const leased = await accept(
+          client().leaseByThread({ headers, params, body: {} }),
+          [200],
+        );
+        const idleExpiresAt = leased.body.browser.idleExpiresAt;
+        if (!idleExpiresAt) {
+          throw new Error("Expected the owner's live Browser lease");
+        }
+        const foreign = createBddApi(context).user(
+          foreignScope === "another user"
+            ? { orgId: owned.actor.orgId }
+            : { userId: owned.actor.userId },
+        );
+        owned.routeMocks.clerk.session(
+          foreign.userId,
+          foreign.orgId,
+          foreign.orgRole,
+        );
+        const denied = await settleIncludingAbort(() => {
+          return withMockNowForTest(STARTED_AT_MS + MINUTE_MS, async () => {
+            const responses = [
+              await client().get({ headers, params }),
+              await client().leaseByThread({ headers, params, body: {} }),
+              await client().resizeByThread({
+                headers,
+                params,
+                body: { aspectRatio: 2 },
+              }),
+            ];
+            for (const response of responses) {
+              expect(response).toMatchObject({
+                status: 404,
+                body: { error: { code: "BROWSER_NOT_FOUND" } },
+              });
+            }
+          });
+        });
+        owned.routeMocks.clerk.session(
+          owned.actor.userId,
+          owned.actor.orgId,
+          owned.actor.orgRole,
+        );
+        if (!denied.ok) {
+          throw denied.error;
+        }
+        const unchanged = await accept(
+          client().get({ headers, params }),
+          [200],
+        );
+        expect(unchanged.body.browser).toMatchObject({
+          threadId: owned.current.threadId,
+          status: "active",
+          idleExpiresAt,
+          screen: initial.body.browser.screen,
+        });
+        await withMockNowForTest(STARTED_AT_MS + 2 * MINUTE_MS, async () => {
+          const renewed = await accept(
+            client().leaseByThread({ headers, params, body: {} }),
+            [200],
+          );
+          expect(renewed.body.browser.idleExpiresAt).toBe(
+            isoAt(12 * MINUTE_MS),
+          );
+          const resized = await accept(
+            client().resizeByThread({
+              headers,
+              params,
+              body: { aspectRatio: 2 },
+            }),
+            [200],
+          );
+          expect(resized.body.browser.screen).toStrictEqual({
+            width: 1440,
+            height: 720,
+            resizable: true,
+          });
+          const persisted = await accept(
+            client().get({ headers, params }),
+            [200],
+          );
+          expect(persisted.body.browser).toMatchObject({
+            threadId: owned.current.threadId,
+            status: "active",
+            idleExpiresAt: renewed.body.browser.idleExpiresAt,
+            screen: resized.body.browser.screen,
+          });
+        });
+      });
+    },
+  );
+
   it.each([true, false])(
     "applies the saved cloud browser preference (%s) to a new chat and its run permissions",
     async (enabled) => {

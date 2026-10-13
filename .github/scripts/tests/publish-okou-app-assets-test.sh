@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/publish-okou-app-assets.sh"
+script="${repo_root}/.github/scripts/release/publish-okou-app-assets.sh"
 test_root="$(mktemp -d)"
 trap 'rm -rf "$test_root"' EXIT
 assets_directory="${test_root}/assets"

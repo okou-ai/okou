@@ -218,11 +218,8 @@ export const downloadAttachment$ = command(
     attachment: AttachmentDownload,
     signal: AbortSignal,
   ): Promise<void> => {
-    const { resourceUrl, downloadUrl, hosted } = await set(
-      attachmentDownloadSource$,
-      attachment.url,
-      signal,
-    );
+    const source = await set(attachmentDownloadSource$, attachment.url, signal);
+    const { resourceUrl, hosted } = source;
     const siteUrl =
       hostedPublicationUrl(attachment.url) ?? hostedPublicationUrl(resourceUrl);
     if (
@@ -236,12 +233,10 @@ export const downloadAttachment$ = command(
       return;
     }
     await downloadAttachmentUrl(
-      // New App -> old API: retain a cache-reloading read until APIs without
-      // downloadUrl are neither serving nor retained as rollback targets (#39235).
-      downloadUrl ?? resourceUrl,
+      source.kind === "managed" ? source.downloadUrl : resourceUrl,
       signal,
       attachment.filename,
-      downloadUrl ||
+      source.kind === "managed" ||
         classifyChatAttachment({
           filename: attachment.filename,
           url: resourceUrl,

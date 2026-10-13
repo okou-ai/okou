@@ -22,6 +22,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
@@ -256,6 +257,10 @@ import {
   audioInputQuota$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import {
+  SubscriptionLinkingComposerMenu,
+  useSubscriptionLinkingAvailable,
+} from "./subscription-linking.tsx";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
@@ -4921,6 +4926,9 @@ export function ComposerPresentationRecommendations({
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
   const imported = useImportedPresentationTemplatePickerItems(signals);
+  const custom = useCustomTemplateRecommendations(signals, "presentation");
+  const customTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
@@ -4972,29 +4980,58 @@ export function ComposerPresentationRecommendations({
               setMode(null);
             }}
           />,
-          ...imported.map(({ imageBuffers, template }) => {
+          ...custom.map((template) => {
             return (
               <ComposerPresentationSuggestion
                 key={template.id}
                 title={template.title}
                 onSelect={() => {
-                  picker.onChange(
-                    toImportedPresentationGenerationTemplate(template),
-                  );
+                  picker.onChange({
+                    type: "custom",
+                    selection: { userTemplateId: template.id },
+                  });
                 }}
               >
-                <ImportedPptImage
-                  imageSignals={imageBuffers.card}
-                  label=""
-                  loading="eager"
-                  fetchPriority="high"
-                  size={TEMPLATE_CARD_PREVIEW_SIZE}
-                  placeholder={<ImageIcon size={24} aria-hidden />}
-                  className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-                />
+                {template.coverUrl ? (
+                  <img
+                    src={template.coverUrl}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <ImageIcon size={24} aria-hidden />
+                  </span>
+                )}
               </ComposerPresentationSuggestion>
             );
           }),
+          ...(customTemplatesEnabled ? [] : imported).map(
+            ({ imageBuffers, template }) => {
+              return (
+                <ComposerPresentationSuggestion
+                  key={template.id}
+                  title={template.title}
+                  onSelect={() => {
+                    picker.onChange(
+                      toImportedPresentationGenerationTemplate(template),
+                    );
+                  }}
+                >
+                  <ImportedPptImage
+                    imageSignals={imageBuffers.card}
+                    label=""
+                    loading="eager"
+                    fetchPriority="high"
+                    size={TEMPLATE_CARD_PREVIEW_SIZE}
+                    placeholder={<ImageIcon size={24} aria-hidden />}
+                    className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+                  />
+                </ComposerPresentationSuggestion>
+              );
+            },
+          ),
           ...builtIn.map((item) => {
             return (
               <ComposerPresentationSuggestion
@@ -7800,7 +7837,7 @@ function useComposerTemplatePicker(
         return;
       }
       // Built-in templates resolve without a catalog. Uploaded and custom ones
-      // read theirs only now, so rendering the composer never requests them.
+      // read theirs only now; this picker hook does not subscribe on render.
       const builtIn = selectedComposerTemplateAttachment(value);
       if (
         builtIn ||
@@ -8290,7 +8327,25 @@ function ComposerModelPickerControls({
         open={open}
         onOpenChange={setOpen}
       />
-      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
+      <ComposerModelSlotDivider />
+    </>
+  );
+}
+
+function ComposerModelSlotDivider() {
+  return <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />;
+}
+
+/** The model slot of a member who can only run Auto; see the menu's note. */
+function ComposerSubscriptionLinkingSlot() {
+  const available = useSubscriptionLinkingAvailable();
+  if (!available) {
+    return null;
+  }
+  return (
+    <>
+      <SubscriptionLinkingComposerMenu />
+      <ComposerModelSlotDivider />
     </>
   );
 }
@@ -8313,6 +8368,9 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     models.models.every((runModel) => {
       return runModel.model === null;
     });
+  if (models !== undefined && autoOnly) {
+    return <ComposerSubscriptionLinkingSlot />;
+  }
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }

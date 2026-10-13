@@ -89,9 +89,9 @@ jobs:
           set -euo pipefail
           release_dir="$RUNNER_TEMP/presentation-template-release"
           mkdir -p "$release_dir"
-          cp .github/scripts/publish-presentation-template-archives.mjs "$release_dir/"
-          cp .github/scripts/presentation-template-release.json "$release_dir/"
-          cp -R .github/scripts/presentation-template-release "$release_dir/"
+          cp .github/scripts/release/publish-presentation-template-archives.mjs "$release_dir/"
+          cp .github/scripts/release/presentation-template-release.json "$release_dir/"
+          cp -R .github/scripts/release/presentation-template-release "$release_dir/"
           cd "$release_dir"
           npm init --yes >/dev/null
           npm install --ignore-scripts --no-fund tar@7.5.22
@@ -166,9 +166,9 @@ jobs:
           set -euo pipefail
           release_dir="$RUNNER_TEMP/presentation-template-release"
           mkdir -p "$release_dir"
-          cp .github/scripts/publish-presentation-template-archives.mjs "$release_dir/"
-          cp .github/scripts/presentation-template-release.json "$release_dir/"
-          cp -R .github/scripts/presentation-template-release "$release_dir/"
+          cp .github/scripts/release/publish-presentation-template-archives.mjs "$release_dir/"
+          cp .github/scripts/release/presentation-template-release.json "$release_dir/"
+          cp -R .github/scripts/release/presentation-template-release "$release_dir/"
           cd "$release_dir"
           npm init --yes >/dev/null
           npm install --ignore-scripts --no-fund \

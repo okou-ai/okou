@@ -174,6 +174,10 @@ test("An optimistic QuickTime preview does not list artifacts before thread crea
   });
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL(
+        "?download=1",
+        "https://private-files.example/recording.mov",
+      ).href,
       url: "https://private-files.example/recording.mov",
       expiresAt: "2099-01-01T00:00:00.000Z",
       publicUrl: null,

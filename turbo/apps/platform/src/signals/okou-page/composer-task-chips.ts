@@ -10,6 +10,7 @@ import type {
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
 import { onRef } from "../utils.ts";
 import { observeRail, type RailTravel } from "./rail-travel.ts";
+import { customTemplateCatalog$ } from "./custom-template-library.ts";
 
 export type ComposerTask =
   ComposerCreateMode | "workflow" | "website" | "visualization";
@@ -44,6 +45,14 @@ export function createComposerTaskChipsSignals(
   /** The task selected through the chip row, slash panel or template picker. */
   const task$ = computed((get): ComposerTask | null => {
     return get(create.mode$) ?? get(internalGeneralTask$);
+  });
+  // Only a shelf that can display custom templates subscribes to the catalog.
+  const customTemplates$ = computed(async (get) => {
+    const task = get(task$);
+    if (task !== "presentation" && task !== "image") {
+      return [];
+    }
+    return await get(customTemplateCatalog$);
   });
   const workflowVisible$ = computed((get) => {
     return get(task$) === "workflow";
@@ -115,6 +124,7 @@ export function createComposerTaskChipsSignals(
   );
   return {
     task$,
+    customTemplates$,
     selectTask$,
     openTask$,
     railTravel$,

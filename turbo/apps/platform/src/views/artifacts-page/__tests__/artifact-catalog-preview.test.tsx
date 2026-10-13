@@ -35,6 +35,7 @@ test("HTML artifact cards resolve their stored private cover image", async () =>
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", resolved).href,
       url: resolved,
       expiresAt: "2099-01-01T00:00:00.000Z",
       filename: "preview.png",
@@ -91,6 +92,7 @@ test("An avatar card and its viewer share one private video URL", async () => {
     const url = resolveCount === 0 ? firstUrl : nextUrl;
     resolveCount += 1;
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00.000Z",
       filename: "avatar-video.mp4",

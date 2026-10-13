@@ -192,6 +192,15 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
+Publication gives observed capacity contention a bounded asynchronous retry
+before staging, while retaining its entry lock. A capacity owner must never wait
+for an entry lock. This retry has a separate budget from startup's short entry
+wait and immediate-fallback policy. Proven guest exit releases healthy
+reclamation CPU permits before publication, but the entry and applicable logical
+lease remain owned until their cleanup contract completes. Waiting can therefore
+affect same-key checkout, resource-limited blank refill and joined shutdown; its
+contention deadline does not bound filesystem I/O or startup's pressure GC.
+
 Successful routine completion emits `entry_count` (the unlocked candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
 excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
@@ -202,6 +211,25 @@ production cold-start savings or wall-clock performance guarantees. The ignored
 local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production
 `statvfs` latency or pressure collection.
+
+## Optional snapshot IO
+
+Supplied-policy optional consumers share the pressure controller's current
+observation state and global cadence through a restricted capability bound to
+its original physical-memory authority. Notifications carry no cached
+permission. Revalidate an opportunity after outside-lock admission waits;
+Critical/Unknown/stale/wave/stop transitions revoke the original offer even
+after a later recovery. No pressure-state lock survives IO or provider work.
+
+The concrete prefetch owner moves the physical operation and tracking token
+into accepted blocking reads. Dropped receivers/coordinators cannot make its
+drain finish while that producer remains active. Shutdown cancels future
+optional work and joins actual IO before dependent cache/factory teardown.
+Positive phase settlement still requires a fresh fenced observation; producer
+loss retains uncertainty. Cancellation, completed reads and declared file bounds
+are not resident-cache, released-byte or production memory-saving proof.
+
+- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
 
 ## Other retained work
 

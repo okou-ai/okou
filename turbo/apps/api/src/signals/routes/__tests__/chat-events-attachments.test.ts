@@ -951,6 +951,22 @@ describe("CHAT-02: generation templates and attachments", () => {
       expect(presentationPrompt).not.toContain("- Artifact type: presentation");
       await cancelChatRun(actor, presentation.runId);
 
+      const revision = await sendChatRun(actor, {
+        agentId,
+        threadId: presentation.threadId,
+        prompt: "Revise the deck and publish the updated HTML",
+      });
+      const revisionPrompt =
+        (await api.readRun(actor, revision.runId)).appendSystemPrompt ?? "";
+      expect(revisionPrompt).not.toContain("# Inline Templates");
+      expect(revisionPrompt.includes("okou host screenshot")).toBe(
+        artifactPreviewsEnabled,
+      );
+      expect(revisionPrompt.includes("previewImageUrl")).toBe(
+        artifactPreviewsEnabled,
+      );
+      await cancelChatRun(actor, revision.runId);
+
       const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
       if (!websiteTemplate) {
         throw new Error("Expected a registered website template");

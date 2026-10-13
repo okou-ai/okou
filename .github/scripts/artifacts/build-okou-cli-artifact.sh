@@ -59,4 +59,4 @@ jq -n \
   '{version: 1, commitSha: $commit_sha, manifestSha256: $manifest_sha256}' \
   > "$output_dir/ready.json"
 
-bash .github/scripts/verify-okou-cli-artifact.sh "$output_dir" "$commit_sha"
+bash .github/scripts/artifacts/verify-okou-cli-artifact.sh "$output_dir" "$commit_sha"

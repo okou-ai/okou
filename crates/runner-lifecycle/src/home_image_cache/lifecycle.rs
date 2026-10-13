@@ -43,6 +43,9 @@ use super::{
 use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
+// Stopped publishers retain their entry and applicable resource lease while
+// waiting. Give contention a short window without changing checkout's lock budget.
+const HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub struct HomeImageLease {
     cache: HomeImageCache,
@@ -1153,6 +1156,33 @@ impl HomeImageCache {
         }
     }
 
+    async fn acquire_promotion_capacity_lock(
+        &self,
+    ) -> runner_host::error::HostResult<runner_host::lock::TryLock> {
+        let path = self.capacity_lock_path();
+        #[cfg(test)]
+        if let Some((entered, release)) = &self.promotion_capacity_lock_test_gate {
+            return runner_host::lock::acquire_with_contention_timeout_for_test(
+                path,
+                HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
+                async {
+                    entered.notify_one();
+                    release
+                        .acquire()
+                        .await
+                        .expect("publication capacity gate closed")
+                        .forget();
+                },
+            )
+            .await;
+        }
+        runner_host::lock::acquire_with_contention_timeout(
+            path,
+            HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
+        )
+        .await
+    }
+
     async fn promote_locked(
         &self,
         input: HomeImagePromotionInput<'_>,
@@ -1186,20 +1216,20 @@ impl HomeImageCache {
         {
             return Ok(HomeImagePromotionOutcome::PreservedExisting);
         }
-        let _capacity =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await {
-                Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
-                Ok(runner_host::lock::TryLock::Busy) => {
-                    info!(run_id = %input.run_id, cache_key = input.cache_key,
+        let _capacity = match self.acquire_promotion_capacity_lock().await {
+            Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+            Ok(runner_host::lock::TryLock::Busy) => {
+                info!(run_id = %input.run_id, cache_key = input.cache_key,
+                        contention_timeout_ms = duration_ms(HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT),
                         "home image cache promotion skipped: capacity lock busy");
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-                Err(error) => {
-                    warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
+                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+            }
+            Err(error) => {
+                warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
                         "home image cache promotion skipped: capacity lock unavailable");
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-            };
+                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+            }
+        };
         let stats = self.fs_stats().await?;
         let budget = CacheBudget::from_fs_stats(stats);
         // Metadata staging and new directory blocks also need reserve. Never use

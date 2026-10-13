@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-smoke_script="${repo_root}/.github/scripts/smoke-okou-cli-artifact.sh"
+smoke_script="${repo_root}/.github/scripts/artifacts/smoke-okou-cli-artifact.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 

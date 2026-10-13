@@ -167,6 +167,7 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await urlReady.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", secondUrl).href,
       url: secondUrl,
       filename: "second.png",
       contentType: "image/png",
@@ -271,6 +272,7 @@ test("Share permission radios own their arrows without changing the lightbox ima
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", publicArtifactUrl("first.png")).href,
       url: publicArtifactUrl("first.png"),
       filename: "first.png",
       contentType: "image/png",

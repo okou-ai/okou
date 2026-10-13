@@ -20,7 +20,6 @@ import {
 } from "../../signals/okou-page/pinned-agents.ts";
 
 import { detach, Reason } from "../../signals/utils.ts";
-import { SubscriptionLinkingHint } from "./subscription-linking.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
@@ -519,7 +518,6 @@ function AgentComposerPage() {
             className="order-3 pb-safe-or-2 sm:order-none sm:pb-0"
           >
             <ChatComposer signals={composerSignals} />
-            <SubscriptionLinkingHint />
           </div>
 
           {/* The lower of the two flexible boxes. Below `sm` it is not a box at

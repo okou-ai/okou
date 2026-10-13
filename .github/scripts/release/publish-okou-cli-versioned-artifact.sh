@@ -64,7 +64,7 @@ for attempt in $(seq 1 "$wait_attempts"); do
 done
 curl -fsSL "${commit_base_url}/manifest.json" --output "${output_dir}/manifest.json"
 curl -fsSL "${commit_base_url}/package.tgz" --output "${output_dir}/package.tgz"
-bash "${SCRIPT_DIR}/verify-okou-cli-artifact.sh" "$output_dir" "$ARTIFACT_SHA"
+bash "${SCRIPT_DIR}/../artifacts/verify-okou-cli-artifact.sh" "$output_dir" "$ARTIFACT_SHA"
 
 # The bundle must carry the versions this release tagged. A mismatch means the
 # release manifest and the packed sources disagree, so the versioned path would
