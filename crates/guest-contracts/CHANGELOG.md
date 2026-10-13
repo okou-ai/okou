@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.2...guest-contracts-v0.22.3) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage dispatch and response preparation ([#39756](https://github.com/okou-ai/okou/issues/39756)) ([416309e](https://github.com/okou-ai/okou/commit/416309e883204e493c82c389bd90014067627b7c))
+
 ## [0.22.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.1...guest-contracts-v0.22.2) (2026-10-13)
 
 
