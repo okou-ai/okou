@@ -79,8 +79,32 @@ transport acceptance returns backpressure without retaining an offline retry.
 A queued frame older than 15 seconds closes its epoch when the writer regains
 control. It cannot interrupt a blocked JavaScript callback; asynchronous native
 IO has its own writer deadline. Acceptance describes a finite local write,
-not peer receipt. An undeliverable terminal/error response or event-handler
-saturation closes the epoch instead of growing a queue.
+not peer receipt. An undeliverable terminal/error response closes the epoch
+instead of growing a queue.
+
+## Failure isolation
+
+Common framing/schema/identity violations, invalid hello results, duplicate
+active inbound request IDs and fatal transport/writer failures close the owned
+connection. A response with valid common framing and a captured `requestId`
+whose operation result is invalid rejects only that call with `invalid_request`,
+including a throwing result decoder. Other pending calls and matching
+categories remain usable. Invalid hello still fails application readiness.
+
+Known-event direction/data rejection, handler exceptions and exhausted incoming
+capacity reject/drop that event locally. Saturation reports `busy`; handler
+failure reports `unavailable` after releasing its work slot. No ACK, retry queue
+or generic replay is added. `diagnostics.notice` permits loss; a future category
+that requires reliable updates must specify its own subscription invalidation,
+resynchronization or flow-control policy.
+
+Supply optional `onEventError` to observe local rejection through bounded
+`{ category, event, code }` metadata. It receives no payload, raw exception,
+path or stack and must return synchronously (`undefined`), without starting
+unowned asynchronous work. A throwing observer is retired for this peer's
+lifetime; unrelated calls remain usable. Handler ownership remains with its
+epoch, and retired-epoch failures cannot notify a replacement consumer.
+Unsupported/unobserved events remain local drops without error-message loops.
 
 Closing/Run replacement aborts pending waits, timers and handler ownership.
 Reconnect clears correlations and category state, sends a new hello and exposes

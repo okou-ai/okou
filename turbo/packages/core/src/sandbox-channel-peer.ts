@@ -11,6 +11,7 @@ import {
   sandboxChannelRemoteError,
   type SandboxChannelCategoryContract,
   type SandboxChannelEvent,
+  type SandboxChannelErrorCode,
   type SandboxChannelMessage,
   type SandboxChannelOperation,
   type SandboxChannelPayloadSchema,
@@ -44,6 +45,13 @@ export interface SandboxChannelEventHandler {
     data: unknown,
     context: SandboxChannelHandlerContext,
   ) => Promise<void>;
+}
+
+/** Local rejection only; events carry no acknowledgment or delivery promise. */
+export interface SandboxChannelEventError {
+  readonly category: string;
+  readonly event: string;
+  readonly code: SandboxChannelErrorCode;
 }
 
 /** Typed params adapter; the peer validates the captured operation's result. */
@@ -82,6 +90,8 @@ export interface SandboxChannelPeerOptions {
   readonly categories: readonly SandboxChannelCategoryContract[];
   readonly handlers?: readonly SandboxChannelHandler[];
   readonly events?: readonly SandboxChannelEventHandler[];
+  /** Synchronous and payload-free; a throwing observer is retired. */
+  readonly onEventError?: (error: SandboxChannelEventError) => undefined;
   readonly onStateChange?: (
     state: SandboxChannelState,
     error?: SandboxChannelError,
@@ -141,11 +151,13 @@ export class SandboxChannelPeer {
   private stateValue: SandboxChannelState = "idle";
   private started = false;
   private rootSignal: AbortSignal | null = null;
+  private eventErrorObserver: SandboxChannelPeerOptions["onEventError"];
 
   constructor(
     createTransport: (options: RunWssTransportOptions) => RunWssTransport,
     private readonly options: SandboxChannelPeerOptions,
   ) {
+    this.eventErrorObserver = options.onEventError;
     this.installContracts(options.categories);
     this.installHandlers(options);
     this.transport = createTransport({
@@ -539,10 +551,15 @@ export class SandboxChannelPeer {
             pending.reject(sandboxChannelRemoteError(response.error));
             return;
           }
-          const result = schema.safeParse(response.result);
+          let result: ReturnType<typeof schema.safeParse>;
+          try {
+            result = schema.safeParse(response.result);
+          } catch {
+            pending.reject(new SandboxChannelError("invalid_request"));
+            return;
+          }
           if (!result.success) {
             pending.reject(new SandboxChannelError("invalid_request"));
-            this.fail(new SandboxChannelError("invalid_request"));
             return;
           }
           cleanup();
@@ -716,24 +733,57 @@ export class SandboxChannelPeer {
       key(message.category, message.event),
     );
     if (!contract) return;
-    if (contract.origin === "external")
-      throw new SandboxChannelError("forbidden");
-    if (!contract.data.safeParse(message.data).success)
-      throw new SandboxChannelError("invalid_params");
+    if (contract.origin === "external") {
+      this.reportEventError(epoch, message, "forbidden");
+      return;
+    }
+    try {
+      if (!contract.data.safeParse(message.data).success) {
+        this.reportEventError(epoch, message, "invalid_params");
+        return;
+      }
+    } catch {
+      this.reportEventError(epoch, message, "invalid_params");
+      return;
+    }
     const handler = this.events.get(key(message.category, message.event));
     if (!handler) return;
-    if (epoch.incoming.size + epoch.eventWork >= limits.maxIncoming)
-      throw new SandboxChannelError("busy");
+    if (epoch.incoming.size + epoch.eventWork >= limits.maxIncoming) {
+      this.reportEventError(epoch, message, "busy");
+      return;
+    }
     epoch.eventWork += 1;
-    handler
-      .handle(message.data, { signal: epoch.owner.signal, peer: this })
-      .catch(() => {
-        if (this.current(epoch))
-          this.fail(new SandboxChannelError("unavailable"));
-      })
-      .finally(() => {
+    const work = async () => {
+      try {
+        await handler.handle(message.data, {
+          signal: epoch.owner.signal,
+          peer: this,
+        });
+      } finally {
         epoch.eventWork -= 1;
+      }
+    };
+    work().catch(() => {
+      this.reportEventError(epoch, message, "unavailable");
+    });
+  }
+
+  private reportEventError(
+    epoch: Epoch,
+    message: EventMessage,
+    code: SandboxChannelErrorCode,
+  ): void {
+    if (!this.current(epoch)) return;
+    try {
+      this.eventErrorObserver?.({
+        category: message.category,
+        event: message.event,
+        code,
       });
+    } catch {
+      // Observer faults must not convert a local event rejection into teardown.
+      this.eventErrorObserver = undefined;
+    }
   }
 
   private write(

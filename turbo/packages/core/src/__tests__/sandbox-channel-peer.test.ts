@@ -26,6 +26,7 @@ import {
   SandboxChannelPeer,
   sandboxChannelHandler,
   sandboxChannelEventHandler,
+  type SandboxChannelEventError,
   type SandboxChannelPeerOptions,
 } from "../sandbox-channel-peer";
 
@@ -194,6 +195,21 @@ function incoming(
     categoryVersion: 1,
     operation: "echo",
     params: { payload },
+  };
+}
+
+function notice(
+  value: number,
+  message: string,
+): Extract<SandboxChannelMessage, { type: "event" }> {
+  return {
+    schemaVersion: 1,
+    type: "event",
+    id: uuid(value),
+    category: "diagnostics",
+    categoryVersion: 1,
+    event: "notice",
+    data: { message },
   };
 }
 
@@ -420,19 +436,44 @@ describe("admitted application peer", () => {
     socket.receive(hello);
     await rejected;
     expect(h.peer.state).toBe("failed");
-    const other = harness(),
-      open = await other.ready();
-    const result = other.peer.call(
+  });
+
+  it("isolates invalid correlated business results while another category completes", async () => {
+    const h = harness(),
+      socket = await h.ready();
+    const result = h.peer.call(
       sandboxDiagnosticsEcho,
       { payload: "" },
-      other.controller.signal,
+      h.controller.signal,
     );
     const resultRejected = expect(result).rejects.toMatchObject({
       code: "invalid_request",
     });
-    open.reply(await nextRequest(open), { payload: "invalid" });
+    const listing = { listingId: "listing", entries: [], nextCursor: null };
+    const other = h.peer
+      .call(sandboxFsList, { path: [] }, h.controller.signal)
+      .then(
+        (value) => {
+          return { result: value };
+        },
+        (error: unknown) => {
+          return { error };
+        },
+      );
+    const invalid = await nextRequest(socket),
+      valid = await nextRequest(socket);
+    socket.reply(invalid, { payload: "invalid" });
     await resultRejected;
-    expect(other.peer.state).toBe("failed");
+    expect(h.peer.state).toBe("ready");
+    socket.reply(valid, listing);
+    expect(await other).toEqual({ result: listing });
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
   });
 
   it("events have fresh identity and no response or ACK, including ignored categories", async () => {
@@ -473,7 +514,192 @@ describe("admitted application peer", () => {
     expect(sent).not.toHaveProperty("requestId");
   });
 
-  it("returns safe handler errors and contains consumer/event exceptions", async () => {
+  it("keeps invalid hello results fatal before establishing business readiness", async () => {
+    const h = harness(),
+      { socket, hello, connected } = await h.start();
+    const rejected = expect(connected).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    socket.reply(hello, { categories: { fs: 0 } });
+    await rejected;
+    await socket.closed;
+    expect(h.peer.state).toBe("failed");
+  });
+
+  it("isolates throwing operation-result decoders and preserves subsequent calls", async () => {
+    const faulty = {
+      ...sandboxDiagnosticsEcho,
+      operation: "decode.fault",
+      origin: "external",
+      result: {
+        safeParse() {
+          throw new Error("private decoder failure");
+        },
+      },
+    } as const;
+    const h = harness({
+      categories: [
+        sandboxFsCategory,
+        {
+          ...sandboxDiagnosticsCategory,
+          operations: [...sandboxDiagnosticsCategory.operations, faulty],
+        },
+      ],
+    });
+    const socket = await h.ready();
+    const call = h.peer.call(faulty, { payload: "" }, h.controller.signal),
+      rejected = expect(call).rejects.toMatchObject({
+        code: "invalid_request",
+      });
+    socket.reply(await nextRequest(socket), { payload: "" });
+    await rejected;
+    expect(h.peer.state).toBe("ready");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+  });
+
+  it("drops known event payload, direction and decoder failures with redacted local errors", async () => {
+    const errors = new Queue<SandboxChannelEventError>();
+    const restricted = {
+      ...sandboxDiagnosticsNotice,
+      event: "restricted",
+      origin: "external",
+    } as const;
+    const faulty = {
+      ...sandboxDiagnosticsNotice,
+      event: "decode.fault",
+      data: {
+        safeParse() {
+          throw new Error("secret path /private");
+        },
+      },
+    } as const;
+    const h = harness({
+      categories: [
+        sandboxFsCategory,
+        {
+          ...sandboxDiagnosticsCategory,
+          events: [...sandboxDiagnosticsCategory.events, restricted, faulty],
+        },
+      ],
+      onEventError(error) {
+        errors.put(error);
+      },
+    });
+    const socket = await h.ready();
+    for (const [event, code] of [
+      ["notice", "invalid_params"],
+      ["restricted", "forbidden"],
+      ["decode.fault", "invalid_params"],
+    ] as const) {
+      socket.receive({
+        ...notice(410, ""),
+        event,
+        data: { message: "", secretPath: "/private" },
+      });
+      expect(h.peer.state).toBe("ready");
+      expect(await errors.next()).toEqual({
+        category: "diagnostics",
+        event,
+        code,
+      });
+    }
+    const next = h.peer.call(sandboxFsList, { path: [] }, h.controller.signal);
+    const listing = { listingId: "listing", entries: [], nextCursor: null };
+    socket.reply(await nextRequest(socket), listing);
+    expect(await next).toEqual(listing);
+    expect(
+      socket.application.some((message) => {
+        return message.type === "response";
+      }),
+    ).toBe(false);
+  });
+
+  it("retires a throwing event-error observer while unrelated business remains usable", async () => {
+    const reported: SandboxChannelEventError[] = [];
+    const h = harness({
+      onEventError(error) {
+        reported.push(error);
+        throw new Error("observer failure");
+      },
+    });
+    const socket = await h.ready();
+    socket.receive(notice(420, ""));
+    socket.receive(notice(421, ""));
+    expect(h.peer.state).toBe("ready");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+    expect(reported).toEqual([
+      { category: "diagnostics", event: "notice", code: "invalid_params" },
+    ]);
+  });
+
+  it("suppresses retired-epoch event failures after a replacement becomes ready", async () => {
+    const release = new Queue<string>(),
+      started = new Queue<string>(),
+      finished = new Queue<string>(),
+      errors = new Queue<SandboxChannelEventError>();
+    const reported: SandboxChannelEventError[] = [];
+    const h = harness({
+      onEventError(error) {
+        reported.push(error);
+        errors.put(error);
+      },
+      events: [
+        sandboxChannelEventHandler(sandboxDiagnosticsNotice, async (value) => {
+          if (value.message === "old") {
+            started.put(value.message);
+            try {
+              await release.next();
+              throw new Error("retired event failure");
+            } finally {
+              finished.put(value.message);
+            }
+          }
+          throw new Error("current event failure");
+        }),
+      ],
+    });
+    const socket = await h.ready();
+    socket.receive(notice(430, "old"));
+    expect(await started.next()).toBe("old");
+    socket.close();
+    const ready = h.peer.whenReady(h.controller.signal),
+      replacement = await h.sockets.next(),
+      hello = await replacement.frames.next();
+    if (hello.type !== "hello") throw new Error("fresh hello");
+    replacement.reply(hello, { categories: { fs: 1, diagnostics: 1 } });
+    await ready;
+    release.put("finish old handler");
+    expect(await finished.next()).toBe("old");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    replacement.reply(await nextRequest(replacement), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+    expect(reported).toEqual([]);
+    replacement.receive(notice(431, "current"));
+    expect(await errors.next()).toEqual({
+      category: "diagnostics",
+      event: "notice",
+      code: "unavailable",
+    });
+    expect(h.peer.state).toBe("ready");
+  });
+
+  it("returns safe handler errors without exposing private details", async () => {
     const h = harness({
       handlers: [
         sandboxChannelHandler(sandboxDiagnosticsEcho, () => {
@@ -489,25 +715,59 @@ describe("admitted application peer", () => {
       error: { code: "unavailable" },
     });
     expect(JSON.stringify(reply)).not.toContain("private");
-    const other = harness({
-      events: [
-        sandboxChannelEventHandler(sandboxDiagnosticsNotice, () => {
-          throw new Error("event failure");
+    expect(h.peer.state).toBe("ready");
+  });
+
+  it("isolates synchronous and asynchronous event handler failures with safe local errors", async () => {
+    for (const synchronous of [true, false]) {
+      const errors = new Queue<SandboxChannelEventError>(),
+        notices = new Queue<string>();
+      const h = harness({
+        onEventError(error) {
+          errors.put(error);
+        },
+        events: [
+          {
+            event: sandboxDiagnosticsNotice,
+            handle(data) {
+              if (typeof data !== "object" || data === null)
+                throw new Error("expected object");
+              if ("message" in data && data.message === "good") {
+                notices.put(data.message);
+                return Promise.resolve();
+              }
+              const error = new Error("secret event path /private");
+              if (synchronous) throw error;
+              return Promise.reject(error);
+            },
+          },
+        ],
+      });
+      const socket = await h.ready();
+      for (let i = 0; i <= SANDBOX_CHANNEL_LIMITS.maxIncoming; i++) {
+        socket.receive(notice(401 + i, "bad"));
+        expect(h.peer.state).toBe("ready");
+        expect(await errors.next()).toEqual({
+          category: "diagnostics",
+          event: "notice",
+          code: "unavailable",
+        });
+      }
+      socket.receive(notice(440, "good"));
+      expect(await notices.next()).toBe("good");
+      const next = h.peer.call(
+        sandboxDiagnosticsEcho,
+        { payload: "YQ==" },
+        h.controller.signal,
+      );
+      socket.reply(await nextRequest(socket), { payload: "YQ==" });
+      expect(await next).toEqual({ payload: "YQ==" });
+      expect(
+        socket.application.some((message) => {
+          return message.type === "response";
         }),
-      ],
-    });
-    const remote = await other.ready();
-    remote.receive({
-      schemaVersion: 1,
-      type: "event",
-      id: uuid(401),
-      category: "diagnostics",
-      categoryVersion: 1,
-      event: "notice",
-      data: { message: "bad" },
-    });
-    await remote.closed;
-    expect(other.peer.state).toBe("failed");
+      ).toBe(false);
+    }
   });
 
   it("validates the captured operation result for directly registered handlers", async () => {
@@ -622,17 +882,23 @@ describe("admitted application peer", () => {
     ).toEqual(["hello", "request"]);
   });
 
-  it("closes when active event delivery saturates without producing acknowledgments", async () => {
+  it("rejects event overload locally without acknowledgments and recovers capacity", async () => {
+    const errors = new Queue<SandboxChannelEventError>(),
+      completed = new Queue<string>();
     const h = harness({
+      onEventError(error) {
+        errors.put(error);
+      },
       events: [
         sandboxChannelEventHandler(
           sandboxDiagnosticsNotice,
-          async (_value, context) => {
+          async (value, context) => {
             await context.peer.call(
               sandboxDiagnosticsEcho,
               { payload: "" },
               context.signal,
             );
+            completed.put(value.message);
           },
         ),
       ],
@@ -649,7 +915,7 @@ describe("admitted application peer", () => {
         data: { message: "held" },
       });
     }
-    await Promise.all(
+    const reverse = await Promise.all(
       Array.from({ length: SANDBOX_CHANNEL_LIMITS.maxIncoming }, () => {
         return nextRequest(socket);
       }),
@@ -663,8 +929,24 @@ describe("admitted application peer", () => {
       event: "notice",
       data: { message: "over budget" },
     });
-    await socket.closed;
-    expect(h.peer.state).toBe("failed");
+    expect(h.peer.state).toBe("ready");
+    expect(await errors.next()).toEqual({
+      category: "diagnostics",
+      event: "notice",
+      code: "busy",
+    });
+    for (const request of reverse) socket.reply(request, { payload: "" });
+    for (const _request of reverse) expect(await completed.next()).toBe("held");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+    socket.receive(notice(701, "after recovery"));
+    socket.reply(await nextRequest(socket), { payload: "" });
+    expect(await completed.next()).toBe("after recovery");
     expect(
       socket.application.some((message) => {
         return message.type === "response";
