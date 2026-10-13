@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.231.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.0...runner-rs-v0.231.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39831](https://github.com/okou-ai/okou/issues/39831)) ([5640704](https://github.com/okou-ai/okou/commit/56407049fb5e47ab339bf478e0d7e78a7887b73f))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.5...runner-rs-v0.231.0) (2026-10-13)
 
 

@@ -12,6 +12,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1019.3](https://github.com/okou-ai/okou/compare/app-v0.1019.2...app-v0.1019.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39831](https://github.com/okou-ai/okou/issues/39831)) ([5640704](https://github.com/okou-ai/okou/commit/56407049fb5e47ab339bf478e0d7e78a7887b73f))
+
 ## [0.1019.2](https://github.com/okou-ai/okou/compare/app-v0.1019.1...app-v0.1019.2) (2026-10-13)
 
 

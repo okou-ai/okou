@@ -9,6 +9,26 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.4](https://github.com/okou-ai/okou/compare/api-v1.732.3...api-v1.732.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **api:** erase ssh login resources when organization members leave ([#39813](https://github.com/okou-ai/okou/issues/39813)) ([cff6436](https://github.com/okou-ai/okou/commit/cff6436ffdfaa91cba63cffb5a984525dbbcd0f9))
+* refresh runner platform api and cli release markers ([#39831](https://github.com/okou-ai/okou/issues/39831)) ([5640704](https://github.com/okou-ai/okou/commit/56407049fb5e47ab339bf478e0d7e78a7887b73f))
+
+
+### Refactoring
+
+* **api:** own personal subscription model reads and selection repair ([#39834](https://github.com/okou-ai/okou/issues/39834)) ([4ab70bf](https://github.com/okou-ai/okou/commit/4ab70bf7e817e68af21875c80ac44f8bcbfe9088))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.335.4
+
 ## [1.732.3](https://github.com/okou-ai/okou/compare/api-v1.732.2...api-v1.732.3) (2026-10-13)
 
 

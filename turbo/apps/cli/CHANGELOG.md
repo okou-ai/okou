@@ -1,5 +1,12 @@
 # Changelog
 
+## [9.388.3](https://github.com/okou-ai/okou/compare/cli-v9.388.2...cli-v9.388.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39831](https://github.com/okou-ai/okou/issues/39831)) ([5640704](https://github.com/okou-ai/okou/commit/56407049fb5e47ab339bf478e0d7e78a7887b73f))
+
 ## [9.388.2](https://github.com/okou-ai/okou/compare/cli-v9.388.1...cli-v9.388.2) (2026-10-13)
 
 
