@@ -1,12 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  check,
-  foreignKey,
-  index,
-  pgTable,
-  unique,
-} from "drizzle-orm/pg-core";
+import { check, foreignKey, index, pgTable, unique } from "drizzle-orm/pg-core";
 import { sshConnectionColumns } from "../columns/ssh-connection";
 import { sshCredentials } from "./ssh-credential";
 import { cloudflareAccessConfigs } from "./cloudflare-access-config";
@@ -14,13 +7,7 @@ import { tailscaleConfigs } from "./tailscale-config";
 
 export const sshConnections = pgTable(
   "ssh_connections",
-  {
-    ...sshConnectionColumns(),
-    // Migration-only compatibility storage for outgoing canonical APIs. The
-    // runtime mapping omits it; remove after preparation is live, old SQL has
-    // drained and compatible rollback is enforced under #39380.
-    legacyNeedsRebind: boolean("needs_rebind").default(false).notNull(),
-  },
+  sshConnectionColumns(),
   (table) => {
     return [
       unique("uq_ssh_connections_owner_id").on(

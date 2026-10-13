@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import postgres from "postgres";
@@ -9,15 +9,13 @@ import { z } from "zod";
 
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 import { schema } from "../src/index";
-import {
-  sshConnections,
-  sshConnectionNeedsRebind,
-} from "../src/runtime/ssh-connection";
+import { sshConnections } from "../src/runtime/ssh-connection";
 import { sshCredentials } from "../src/schema/ssh-credential";
 import { cloudflareAccessConfigs } from "../src/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "../src/schema/tailscale-config";
 import { outgoingSshConnections } from "./fixtures/ssh-needs-rebind-outgoing";
 import { applyPendingMigrations } from "./migration-runner";
+import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 
 // Keep through the separately released physical contraction under #39380.
 const journal = z
@@ -31,6 +29,10 @@ const preparation = journal.entries.find((entry) => {
   return entry.tag.endsWith("_prepare_ssh_needs_rebind_retirement");
 });
 assert.ok(preparation);
+const contraction = journal.entries.find((entry) => {
+  return entry.tag.endsWith("_drop_ssh_needs_rebind");
+});
+assert.ok(contraction && contraction.when > preparation.when);
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const adminUrl = new URL(databaseUrl);
@@ -168,106 +170,153 @@ try {
     .orderBy(sshConnections.id);
   for (const phase of ["retained", "contracted"] as const) {
     if (phase === "contracted") {
-      // Only this invocation's disposable DB is contracted; no shipped DROP.
-      await client.query(
-        'ALTER TABLE "ssh_connections" DROP COLUMN "needs_rebind"',
-      );
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when,
+      });
+      const journalBefore = (
+        await client.query<{ id: number; hash: string; created_at: string }>(
+          "SELECT * FROM drizzle.__drizzle_migrations ORDER BY id",
+        )
+      ).rows;
+      // Local indexes/checks auto-drop under RESTRICT; text routines have no
+      // column dependency. The actual migration must refuse every consumer.
+      for (const dependency of [
+        {
+          create:
+            "CREATE INDEX ssh_rebind_unexpected_index ON ssh_connections (needs_rebind)",
+          drop: "DROP INDEX ssh_rebind_unexpected_index",
+        },
+        {
+          create:
+            "ALTER TABLE ssh_connections ADD CONSTRAINT ssh_rebind_unexpected_check CHECK (NOT needs_rebind OR transport <> 'direct')",
+          drop: "ALTER TABLE ssh_connections DROP CONSTRAINT ssh_rebind_unexpected_check",
+        },
+        {
+          create:
+            "CREATE VIEW ssh_rebind_unexpected_view AS SELECT needs_rebind FROM ssh_connections",
+          drop: "DROP VIEW ssh_rebind_unexpected_view",
+        },
+        {
+          create:
+            "CREATE FUNCTION ssh_rebind_unexpected_routine() RETURNS boolean LANGUAGE sql AS $$ SELECT needs_rebind FROM ssh_connections LIMIT 1 $$",
+          drop: "DROP FUNCTION ssh_rebind_unexpected_routine()",
+        },
+        {
+          create:
+            "CREATE FUNCTION ssh_rebind_parsed_routine() RETURNS boolean LANGUAGE sql RETURN (SELECT needs_rebind FROM ssh_connections LIMIT 1)",
+          drop: "DROP FUNCTION ssh_rebind_parsed_routine()",
+        },
+        {
+          create:
+            "CREATE VIEW ssh_rebind_whole_row_view AS SELECT ssh_connections AS host FROM ssh_connections",
+          drop: "DROP VIEW ssh_rebind_whole_row_view",
+        },
+        {
+          create:
+            "CREATE FUNCTION ssh_rebind_row_type(host ssh_connections) RETURNS text LANGUAGE sql AS $$ SELECT host.host $$",
+          drop: "DROP FUNCTION ssh_rebind_row_type(ssh_connections)",
+        },
+        {
+          create:
+            "CREATE TABLE ssh_rebind_row_storage AS SELECT ssh_connections AS host FROM ssh_connections",
+          drop: "DROP TABLE ssh_rebind_row_storage",
+        },
+        {
+          create:
+            "CREATE TABLE ssh_rebind_row_array_storage AS SELECT ARRAY[ssh_connections] AS hosts FROM ssh_connections",
+          drop: "DROP TABLE ssh_rebind_row_array_storage",
+        },
+        {
+          create:
+            "CREATE FUNCTION ssh_rebind_row_array_type(hosts ssh_connections[]) RETURNS text LANGUAGE sql AS $$ SELECT (hosts[1]).host $$",
+          drop: "DROP FUNCTION ssh_rebind_row_array_type(ssh_connections[])",
+        },
+        {
+          create: "CREATE DOMAIN ssh_rebind_row_domain AS ssh_connections",
+          drop: "DROP DOMAIN ssh_rebind_row_domain",
+        },
+        {
+          create:
+            "ALTER TABLE ssh_connections ALTER COLUMN needs_rebind SET DEFAULT true",
+          drop: "ALTER TABLE ssh_connections ALTER COLUMN needs_rebind SET DEFAULT false",
+        },
+      ]) {
+        await client.query(dependency.create);
+        try {
+          await assert.rejects(
+            applyPendingMigrations(migrationSql, {
+              beforeMillis: contraction.when + 1,
+            }),
+            (error: unknown) => {
+              return (
+                error instanceof Error &&
+                "code" in error &&
+                error.code === "2BP01" &&
+                error.message.includes(
+                  "Unexpected SSH needs_rebind dependencies",
+                )
+              );
+            },
+          );
+          assert.deepEqual(
+            (
+              await client.query<{
+                id: number;
+                hash: string;
+                created_at: string;
+              }>("SELECT * FROM drizzle.__drizzle_migrations ORDER BY id")
+            ).rows,
+            journalBefore,
+            "Rejected contraction must not advance the migration journal",
+          );
+          assert.deepEqual(
+            await db
+              .select()
+              .from(outgoingSshConnections)
+              .orderBy(outgoingSshConnections.id),
+            [...historical].sort((a, b) => {
+              return a.id.localeCompare(b.id);
+            }),
+            "Rejected contraction must retain storage and historical host state",
+          );
+        } finally {
+          await client.query(dependency.drop);
+        }
+      }
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when + 1,
+      });
       assert.deepEqual(
-        await db.select().from(sshConnections).orderBy(sshConnections.id),
-        snapshot,
+        (
+          await client.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='ssh_connections' AND column_name='needs_rebind'",
+          )
+        ).rows,
+        [],
+        "The actual contraction must remove physical compatibility storage",
       );
+      // A successful migration replay is a no-op, not a second destructive DROP.
+      await applyPendingMigrations(migrationSql, {
+        beforeMillis: contraction.when + 1,
+      });
     }
+    assert.deepEqual(
+      await db.select().from(sshConnections).orderBy(sshConnections.id),
+      snapshot,
+    );
     assert.deepEqual(
       await db.query.sshConnections.findMany({ orderBy: sshConnections.id }),
       snapshot,
     );
+    await validatePermanentSshStorage(ownedUrl.toString());
     assert.deepEqual(
-      await db
-        .select({ needsRebind: sshConnectionNeedsRebind })
-        .from(sshCredentials)
-        .leftJoin(sshConnections, sql`false`),
-      [{ needsRebind: null }],
+      await db.select().from(sshConnections).orderBy(sshConnections.id),
+      snapshot,
+      "Canonical CRUD must leave the pre-existing identities, pins and generations intact",
     );
-    for (const transport of [
-      "direct",
-      "cloudflare_access",
-      "tailscale",
-    ] as const) {
-      const hosts: (typeof sshConnections.$inferSelect)[] = await db
-        .insert(sshConnections)
-        .values({
-          ...owner,
-          displayName: `${phase} ${transport}`,
-          host: transport === "tailscale" ? "100.64.0.2" : "ssh.example.com",
-          port: transport === "cloudflare_access" ? 443 : 22,
-          credentialId: credential.id,
-          transport,
-          cloudflareAccessId:
-            transport === "cloudflare_access" ? access.id : null,
-          tailscaleId: transport === "tailscale" ? tailscale.id : null,
-          generation: 11,
-          learnedHostKeyAlgorithm: "ssh-ed25519",
-          learnedHostKeyFingerprint: "SHA256:pin",
-        })
-        .returning();
-      const [host] = hosts;
-      assert.ok(host);
-      const readState = async () => {
-        const [row] = await db
-          .select({
-            transport: sshConnections.transport,
-            needsRebind: sshConnectionNeedsRebind,
-          })
-          .from(sshConnections)
-          .where(eq(sshConnections.id, host.id));
-        return row;
-      };
-      assert.deepEqual(await readState(), { transport, needsRebind: false });
-      assert.deepEqual(
-        await db.query.sshConnections.findFirst({
-          where: eq(sshConnections.id, host.id),
-        }),
-        host,
-      );
-      const [retained] = await db
-        .update(sshConnections)
-        .set({ cloudflareAccessId: null, tailscaleId: null })
-        .where(eq(sshConnections.id, host.id))
-        .returning();
-      assert.deepEqual(retained, {
-        ...host,
-        cloudflareAccessId: null,
-        tailscaleId: null,
-      });
-      assert.deepEqual(await readState(), {
-        transport,
-        needsRebind: transport !== "direct",
-      });
-      const [rebound] = await db
-        .update(sshConnections)
-        .set({
-          cloudflareAccessId: host.cloudflareAccessId,
-          tailscaleId: host.tailscaleId,
-        })
-        .where(eq(sshConnections.id, host.id))
-        .returning();
-      assert.deepEqual(rebound, host);
-      assert.deepEqual(await readState(), { transport, needsRebind: false });
-      await assert.rejects(
-        client.query("DELETE FROM ssh_credentials WHERE id=$1", [
-          credential.id,
-        ]),
-        { code: /^(23503|23001)$/ },
-      );
-      const [removed] = await db
-        .delete(sshConnections)
-        .where(eq(sshConnections.id, host.id))
-        .returning();
-      assert.deepEqual(removed, host);
-    }
   }
   console.log(
-    "SSH preparation preserves outgoing SQL and canonical runtime behavior with retained/contracted storage",
+    "SSH preparation and actual contraction preserve canonical hosts and reject unexpected catalog consumers",
   );
 } finally {
   try {

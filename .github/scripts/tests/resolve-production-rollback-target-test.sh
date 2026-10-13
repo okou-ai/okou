@@ -116,6 +116,8 @@ case "${1:-}" in
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5050505050505050505050505050505050505050" ]; then
       [ "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "5151515151515151515151515151515151515151" ]; then
+      [ "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID:-1}" = "1" ]
     else
       [ "${MOCK_ANCESTRY_VALID:-1}" = "1" ]
     fi
@@ -171,6 +173,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_RUNTIME_COMMIT-4949494949494949494949494949494949494949}"
     elif [[ "$*" == *official-result-email-legacy-consumer* ]]; then
       printf '%s\n' "${MOCK_OFFICIAL_RESULT_EMAIL_LEGACY_CONSUMER_COMMIT-5050505050505050505050505050505050505050}"
+    elif [[ "$*" == *src/runtime/ssh-connection.ts* ]]; then
+      printf '%s\n' "${MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT-5151515151515151515151515151515151515151}"
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
@@ -783,6 +787,24 @@ grep -Fq '5050505050505050505050505050505050505050' "${tmp_dir}/failure.err" || 
 [ ! -s "${tmp_dir}/official-result-email-consumer-floor.output" ] || fail "API without the Official result-email legacy consumer must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Official result-email consumer floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged needs_rebind-independent SSH preparation" \
+    run_resolver "${tmp_dir}/ssh-preparation-history.output" "MOCK_SSH_NEEDS_REBIND_INDEPENDENT_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/ssh-preparation-history.output" ] || fail "invalid SSH preparation history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid SSH preparation history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the needs_rebind-independent SSH preparation" \
+  run_resolver "${tmp_dir}/ssh-preparation-floor.output" MOCK_SSH_NEEDS_REBIND_INDEPENDENT_FLOOR_VALID=0
+grep -Fq '5151515151515151515151515151515151515151' "${tmp_dir}/failure.err" || fail "SSH preparation rejection must identify the canonical main commit"
+[ ! -s "${tmp_dir}/ssh-preparation-floor.output" ] || fail "legacy-dependent SSH API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "SSH preparation floor must fail before artifact or host access"
 fi
 
 for v8_commit in "" invalid; do
