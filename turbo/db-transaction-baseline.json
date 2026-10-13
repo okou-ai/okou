@@ -1102,11 +1102,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0436",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "rejects"
-    },
-    {
       "id": "TX-0437",
       "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "<module>"
