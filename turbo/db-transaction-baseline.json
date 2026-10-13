@@ -1057,11 +1057,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0425",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "rejects"
-    },
-    {
       "id": "TX-0426",
       "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
       "owner": "<module>"
