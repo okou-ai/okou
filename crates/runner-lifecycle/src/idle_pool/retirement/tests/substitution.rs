@@ -49,7 +49,8 @@ async fn rejected_substitution_restores_original_claim_and_full_owner_then_trans
         fresh.operations.snapshot().unwrap().cleanup_growth_bytes,
         9 * MIB
     );
-    let completion = started.task.join();
+    let (task, retained) = started.cleanup.into_parts();
+    let completion = task.join();
     tokio::pin!(completion);
     assert!(futures_util::poll!(completion.as_mut()).is_pending());
     drop(replacement);
@@ -62,7 +63,14 @@ async fn rejected_substitution_restores_original_claim_and_full_owner_then_trans
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
+    assert!(matches!(
+        result,
+        crate::idle_pool::ActivationCleanupOutcome::Completed { .. }
+    ));
+    assert!(retained.take_completed_lease().is_err());
+    assert!(retained.needs_retention());
+    retained.release_completed_substitution().unwrap();
+    assert!(!retained.needs_retention());
     fixture.saved().await;
     assert_eq!(
         fresh

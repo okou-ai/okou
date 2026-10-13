@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use super::*;
 use crate::idle_pool::{
-    IdlePool, IdlePoolConfig, IdlePoolRetirement, IdleSandboxIdentity, ParkResult,
-    RestoreReservedIdleResult,
+    AcceptedActivationCleanup, ActivationCleanupOutcome, IdlePool, IdlePoolConfig,
+    IdlePoolRetirement, IdleSandboxIdentity, ParkResult, RestoreReservedIdleResult,
 };
 
 fn park(fixture: &mut JobFixture, pool: &mut IdlePool) -> IdleSandboxIdentity {
@@ -21,6 +21,18 @@ fn pending(pool: &IdlePool, identity: &IdleSandboxIdentity, env: &Env) -> IdlePo
         envelope(),
     )
     .unwrap()
+}
+
+async fn complete(
+    accepted: AcceptedActivationCleanup,
+    promoted: bool,
+) -> crate::resource_budget::BudgetLease {
+    let (task, retained) = accepted.into_parts();
+    assert!(matches!(
+        tokio::time::timeout(WAIT, task.join()).await.unwrap().unwrap(),
+        ActivationCleanupOutcome::Completed { home_cache_promoted } if home_cache_promoted == promoted
+    ));
+    retained.take_completed_lease().unwrap()
 }
 
 struct FaultBacking {
@@ -233,9 +245,9 @@ async fn duplicate_ready_claim_cannot_retire_an_already_accepted_insertion_twice
             .into_error(),
         MemoryOperationError::ResourceChanged
     );
-    let result = task.join().await.unwrap();
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    drop(result.budget_lease);
+    let result = complete(task, true).await;
+
+    drop(result);
     fixture.saved().await;
     assert_eq!(fixture.budget.allocated(), (0, 0, 0));
     assert_eq!(env.operations.snapshot().unwrap().registered_operations, 0);
@@ -274,13 +286,12 @@ async fn replacement_under_the_same_reuse_key_preserves_the_new_owner_and_both_h
     let mut fresh = pending(&pool, &identity, &env);
     fresh.try_grant().await.unwrap();
     new_exit.confirm_exit();
-    let result = fresh
-        .start(&mut pool, "fixture_replacement_owner")
-        .unwrap()
-        .join()
-        .await
-        .unwrap();
-    drop(result.budget_lease);
+    let result = complete(
+        fresh.start(&mut pool, "fixture_replacement_owner").unwrap(),
+        true,
+    )
+    .await;
+    drop(result);
     new.saved().await;
     assert_eq!(env.operations.snapshot().unwrap().registered_operations, 0);
 }
@@ -325,15 +336,13 @@ async fn blank_entry_rejection_restores_its_original_claim_and_final_acceptance_
     let mut retry = IdlePoolRetirement::new(original, &fresh_env.operations, envelope()).unwrap();
     retry.try_grant().await.unwrap();
     exit.confirm_exit();
-    let result = retry
-        .start(&mut pool, "fixture_blank_owner")
-        .unwrap()
-        .join()
-        .await
-        .unwrap();
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    assert!(!result.home_cache_promoted);
-    drop(result.budget_lease);
+    let result = complete(
+        retry.start(&mut pool, "fixture_blank_owner").unwrap(),
+        false,
+    )
+    .await;
+
+    drop(result);
     assert_eq!(budget.allocated(), (0, 0, 0));
     assert!(pool.status_snapshot().blank_sandboxes.is_empty());
 }
@@ -426,13 +435,14 @@ fn no_runtime_start_restores_the_original_public_claim_before_returning() {
         let mut retry = IdlePoolRetirement::new(original, &env.operations, envelope()).unwrap();
         retry.try_grant().await.unwrap();
         exit.confirm_exit();
-        let result = retry
-            .start(&mut pool, "fixture_pool_runtime_retry")
-            .unwrap()
-            .join()
-            .await
-            .unwrap();
-        drop(result.budget_lease);
+        let result = complete(
+            retry
+                .start(&mut pool, "fixture_pool_runtime_retry")
+                .unwrap(),
+            true,
+        )
+        .await;
+        drop(result);
         fixture.saved().await;
         assert_eq!(fixture.budget.allocated(), (0, 0, 0));
     });
@@ -549,14 +559,15 @@ async fn reserve_restore_same_sandbox_and_parked_age_invalidates_waiting_retirem
     exit.confirm_exit();
     let mut fresh = pending(&pool, &identity, &env);
     fresh.try_grant().await.unwrap();
-    let result = fresh
-        .start(&mut pool, "fixture_fresh_pool_retirement")
-        .unwrap()
-        .join()
-        .await
-        .unwrap();
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    drop(result.budget_lease);
+    let result = complete(
+        fresh
+            .start(&mut pool, "fixture_fresh_pool_retirement")
+            .unwrap(),
+        true,
+    )
+    .await;
+
+    drop(result);
     fixture.saved().await;
 }
 
@@ -593,13 +604,14 @@ async fn wrong_pool_and_late_authority_close_never_lose_the_original_entry() {
             assert_eq!(pool.status_snapshot().revision, revision);
             drop(after);
             exit.confirm_exit();
-            let result = original
-                .start(&mut pool, "fixture_original_claim_restored")
-                .unwrap()
-                .join()
-                .await
-                .unwrap();
-            drop(result.budget_lease);
+            let result = complete(
+                original
+                    .start(&mut pool, "fixture_original_claim_restored")
+                    .unwrap(),
+                true,
+            )
+            .await;
+            drop(result);
             fixture.saved().await;
         } else {
             let mut other = IdlePool::new(IdlePoolConfig { max_idle: 1 });
@@ -646,19 +658,20 @@ async fn independent_insertions_can_start_while_another_real_cleanup_tail_is_hel
         .start(&mut pool, "fixture_held_pool_tail")
         .unwrap();
     held.wait_entered(1, WAIT).await.unwrap();
-    let result_b = pending_b
-        .start(&mut pool, "fixture_independent_pool_tail")
-        .unwrap()
-        .join()
-        .await
-        .unwrap();
-    assert_eq!(result_b.outcome, DestroyOutcome::Completed);
-    drop(result_b.budget_lease);
+    let result_b = complete(
+        pending_b
+            .start(&mut pool, "fixture_independent_pool_tail")
+            .unwrap(),
+        true,
+    )
+    .await;
+
+    drop(result_b);
     b.saved().await;
     assert_eq!(a.budget.allocated(), (2, 8, 1));
     held.release_one();
-    let result_a = task_a.join().await.unwrap();
-    drop(result_a.budget_lease);
+    let result_a = complete(task_a, true).await;
+    drop(result_a);
     a.saved().await;
     assert_eq!(
         env.operations

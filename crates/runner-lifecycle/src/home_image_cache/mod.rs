@@ -16,7 +16,9 @@ use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::OwnedSemaphorePermit;
+#[cfg(any(test, feature = "test-support"))]
+use tokio::sync::Semaphore;
 
 mod entry;
 mod fs;
@@ -27,6 +29,9 @@ mod io_context;
 mod lifecycle;
 mod metadata;
 mod path_safety;
+mod reclamation;
+use reclamation::IdleHomeReclamation;
+pub use reclamation::IdleHomeReclamationPermit;
 pub mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -63,7 +68,7 @@ const TEST_FS_AVAILABLE_BYTES: u64 = 1_000 * GIB;
 #[derive(Clone)]
 pub struct HomeImageCache {
     inner: Arc<HomeImageCacheInner>,
-    idle_home_reclamation_permits: Arc<Semaphore>,
+    idle_home_reclamation: Arc<IdleHomeReclamation>,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
@@ -176,7 +181,7 @@ impl HomeImageCache {
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
                 }),
-                idle_home_reclamation_permits: Arc::new(Semaphore::new(
+                idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
                 )),
             }
@@ -204,7 +209,9 @@ impl HomeImageCache {
                 #[cfg(test)]
                 publication_fault: AtomicUsize::new(0),
             }),
-            idle_home_reclamation_permits: Arc::new(Semaphore::new(MAX_HOME_PROMOTION_CONCURRENCY)),
+            idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
+                MAX_HOME_PROMOTION_CONCURRENCY,
+            )),
             prepare_lock_test_gate: None,
             routine_gc_test_gate: None,
             #[cfg(test)]
@@ -212,7 +219,7 @@ impl HomeImageCache {
         }
     }
     fn with_promotion_capacity(mut self, capacity: usize) -> Self {
-        self.idle_home_reclamation_permits = Arc::new(Semaphore::new(capacity.max(1)));
+        self.idle_home_reclamation = Arc::new(IdleHomeReclamation::new(capacity.max(1)));
         self
     }
     pub fn with_promotion_host_cpus(self, host_cpus: usize) -> Self {
@@ -223,7 +230,7 @@ impl HomeImageCache {
         self.with_promotion_capacity(capacity)
     }
     async fn acquire_idle_home_reclamation_permit(&self) -> LifecycleResult<OwnedSemaphorePermit> {
-        Arc::clone(&self.idle_home_reclamation_permits)
+        Arc::clone(&self.idle_home_reclamation.permits)
             .acquire_owned()
             .await
             .map_err(|e| {

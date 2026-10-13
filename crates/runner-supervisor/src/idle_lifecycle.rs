@@ -67,7 +67,7 @@ pub struct IdlePoolRetirementRequest {
 /// Inventory snapshot committed with acceptance. Status publication may happen
 /// afterward without owning or cancelling the physical cleanup.
 pub struct IdlePoolRetirementStarted {
-    pub task: GuardedIdleCleanupTask,
+    pub task: GuardedActivationCleanupTask,
     pub snapshot: IdlePoolSnapshot,
 }
 
@@ -126,7 +126,7 @@ impl IdleDestroyTracker {
             }
         };
         let snapshot = pool.status_snapshot();
-        let task = self.adopt_pool_retirement(task, token, request.context);
+        let task = self.adopt_activation_cleanup(task, token, request.context);
         Ok(IdlePoolRetirementStarted { task, snapshot })
     }
 

@@ -91,7 +91,7 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
     };
     let notify = Arc::new(Notify::new());
     let tracker = IdleDestroyTracker::new(notify.clone());
-    let mut task = if from_pool {
+    let observation: std::pin::Pin<Box<dyn Future<Output = ()> + Send>> = if from_pool {
         let candidate = pool
             .retirement_candidate(&runner_lifecycle::idle_pool::IdleSandboxIdentity::Exact(
                 fixture.reuse_key.clone(),
@@ -118,18 +118,24 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
                 .idle_sandboxes
                 .is_empty()
         );
-        started.task
+        let mut task = started.task;
+        Box::pin(async move {
+            let _ = task.join().await;
+        })
     } else {
         let mut retirement =
             GuardedIdleRetirement::new(pool.drain().pop().unwrap(), &operations, envelope).unwrap();
         retirement.try_grant().await.unwrap();
-        tracker
+        let mut task = tracker
             .spawn_guarded_retirement(retirement, "cancelled_guarded_tracker")
-            .unwrap()
+            .unwrap();
+        Box::pin(async move {
+            let _ = task.join().await;
+        })
     };
     let (waiting, observed) = oneshot::channel();
     let caller = tokio::spawn(async move {
-        let join = task.join();
+        let join = observation;
         tokio::pin!(join);
         assert!(futures_util::poll!(join.as_mut()).is_pending());
         waiting.send(()).unwrap();
@@ -168,6 +174,13 @@ async fn exercise_cancelled_receiver(from_pool: bool) {
         .unwrap();
     tokio::time::timeout(WAIT, notification).await.unwrap();
     assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+    if from_pool {
+        assert_eq!(budget.allocated(), (2, 2048, 1));
+        let retained = tracker.take_retained_activation_owners().unwrap();
+        assert_eq!(retained.len(), 1);
+        assert!(retained[0].cleanup_completed());
+        drop(retained);
+    }
     assert_eq!(budget.allocated(), (0, 0, 0));
     let mut checkout = fixture
         .cache

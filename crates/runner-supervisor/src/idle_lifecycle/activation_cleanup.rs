@@ -1,6 +1,10 @@
-//! Required caller-owned cleanup acceptance and completion-independent recovery.
+//! Required cleanup acceptance and completion-independent resource recovery.
 
-use runner_lifecycle::idle_pool::{ActivationCleanupOutcome, IdleActivationOwner};
+use runner_lifecycle::host_memory_operations::MemoryOperationTask;
+use runner_lifecycle::idle_pool::{
+    AcceptedActivationCleanup, ActivationCleanupOutcome, IdleActivationOwner,
+};
+use tokio_util::task::task_tracker::TaskTrackerToken;
 
 use super::*;
 
@@ -42,17 +46,34 @@ impl IdleDestroyTracker {
             .await?;
         let token = self.acceptance_token()?;
         let accepted = IdleActivationOwner::start_cleanup(owner, context)?;
+        Ok(self.adopt_activation_cleanup(accepted, token, context))
+    }
+
+    pub(crate) fn retain_activation_cleanup(
+        &self,
+        accepted: AcceptedActivationCleanup,
+    ) -> (
+        MemoryOperationTask<ActivationCleanupOutcome>,
+        RetainedActivationCleanup,
+    ) {
         let (task, retained) = accepted.into_parts();
+        let mut registry = self
+            .activation_owners
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        registry.retain(RetainedActivationCleanup::needs_retention);
+        registry.push(retained.clone());
+        (task, retained)
+    }
+
+    pub(crate) fn adopt_activation_cleanup(
+        &self,
+        accepted: AcceptedActivationCleanup,
+        token: TaskTrackerToken,
+        context: &'static str,
+    ) -> GuardedActivationCleanupTask {
+        let (task, retained) = self.retain_activation_cleanup(accepted);
         let owners = self.activation_owners.clone();
-        {
-            // Preserve real retained capsules even if a synchronous registry
-            // unwind poisons the lock. No provider work runs while it is held.
-            let mut registry = owners
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            registry.retain(RetainedActivationCleanup::needs_retention);
-            registry.push(retained.clone());
-        }
         let notify = self.reuse_state_notify.clone();
         let completion = self.track(
             async move {
@@ -74,10 +95,10 @@ impl IdleDestroyTracker {
             },
             context,
         );
-        Ok(GuardedActivationCleanupTask {
+        GuardedActivationCleanupTask {
             completion,
             retained,
-        })
+        }
     }
 
     /// Recover every retained capsule or unclaimed completed lease after joined shutdown.

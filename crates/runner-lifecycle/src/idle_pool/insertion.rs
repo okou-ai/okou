@@ -5,14 +5,12 @@ use std::{fmt, panic::AssertUnwindSafe, sync::Arc, time::Instant};
 use sandbox::SandboxId;
 use uuid::Uuid;
 
-use crate::host_memory_operations::{
-    HostMemoryOperations, MemoryOperationError, MemoryOperationTask,
-};
+use crate::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 
 use super::inventory_retirement::CapturedBacking;
 use super::{
-    IdleEntry, IdlePool, IdlePoolRetirement, IdleRetirementCandidate, IdleRetirementEnvelope,
-    ParkedIdleCandidate, ReservedIdleSandbox, RetainedIdleDestroyResult,
+    AcceptedActivationCleanup, IdleEntry, IdlePool, IdlePoolRetirement, IdleRetirementCandidate,
+    IdleRetirementEnvelope, ParkedIdleCandidate, ReservedIdleSandbox,
 };
 
 /// Keep this capsule outside the admission future. Cancelling a borrowed grant
@@ -254,7 +252,7 @@ impl fmt::Debug for IdlePoolInsertionStartFailure {
 
 pub enum IdlePoolInsertionStarted {
     Inserted,
-    Replaced(MemoryOperationTask<RetainedIdleDestroyResult>),
+    Replaced(AcceptedActivationCleanup),
 }
 
 impl IdlePoolInsertion {
