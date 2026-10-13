@@ -454,10 +454,14 @@ function AgentComposerPage() {
             From `sm` up the column fills the scrollport too, and the block
             from the greeting down to the type row sits in the middle of the
             page: the two flexible boxes either side of it split the free
-            space evenly. */}
+            space evenly.
+
+            The column is narrower than the thread's 900px transcript. A first
+            message is a line or two, and a field as wide as a transcript reads
+            as a form to fill in. */}
         <div
           data-testid="agent-chat-scroll-content"
-          className="mx-auto w-full max-w-[900px] flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
+          className="mx-auto w-full max-w-3xl flex flex-1 flex-col items-stretch gap-6 pt-8 pb-0 sm:gap-0 sm:pt-0"
         >
           <div aria-hidden className="hidden sm:block sm:min-h-8 sm:flex-1" />
 
