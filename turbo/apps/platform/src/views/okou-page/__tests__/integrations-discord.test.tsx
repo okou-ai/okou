@@ -13,9 +13,11 @@ import {
   startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 import {
   getAction,
   getIntegrationCard,
+  mockSlack,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
 
@@ -935,8 +937,13 @@ test("Discord status converges after a connection change from another surface", 
   ).toBeNull();
 });
 
-test("Discord keeps its setup description until status is available", async () => {
+test("Works keeps its startup screen until Discord and Slack status are ready", async () => {
   const statusReady = context.mocks.deferred<void>();
+  mockSlack(context, {
+    isConnected: true,
+    isInstalled: true,
+    workspaceName: "Okou HQ",
+  });
   context.mocks.api(
     integrationsDiscordContract.getStatus,
     async ({ respond, withSignal }) => {
@@ -944,22 +951,31 @@ test("Discord keeps its setup description until status is available", async () =
       return respond(200, status());
     },
   );
-  await setupDiscordPage();
-  const card = getIntegrationCard("Discord");
-  expect(
-    within(card).getByText(
-      "Ask an organization admin to install Okou to your Discord server.",
-    ),
-  ).toBeInTheDocument();
-  expect(queryAllByRoleFast("button", card)).toHaveLength(0);
+  const page = await startPage({
+    context,
+    path: "/works",
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  // page.content waits for the startup screen to hide, which is gated here.
+  await expect(
+    screen.findByText("Connected (Okou HQ)"),
+  ).resolves.toBeInTheDocument();
+  const skeleton = bootstrapSkeleton();
+  expect(skeleton).not.toHaveAttribute("aria-hidden", "true");
+  expect(document.getElementById("root")).toHaveAttribute("inert");
 
   statusReady.resolve();
+  await page.ready;
   await expect(
-    within(card).findByText("Connected (Design team)"),
+    screen.findByText("Connected (Design team)"),
   ).resolves.toBeInTheDocument();
+  expect(skeleton).toHaveAttribute("aria-hidden", "true");
+  expect(document.getElementById("root")).not.toHaveAttribute("inert");
   expect(
-    within(card).getByText(/^Connected(?: \(.+\))?$/u),
-  ).toBeInTheDocument();
+    within(getIntegrationCard("Discord")).queryByText(
+      "Ask an organization admin to install Okou to your Discord server.",
+    ),
+  ).not.toBeInTheDocument();
 });
 
 test("A status error shows the setup description until a connection update recovers the card", async () => {
@@ -1145,6 +1161,7 @@ test.each([
     denyRefresh = refreshError;
     context.mocks.ably.trigger("discord:changed");
     await refreshStarted.promise;
+    expect(screen.getByText("Connected (Design team)")).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", {
         name: "Default server for direct messages",

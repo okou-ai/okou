@@ -55,11 +55,11 @@ export const setupWorksPage$ = command(async ({ set }, signal: AbortSignal) => {
   );
   set(initWorksRedirect$);
   set(initSlackOrg$);
-  set(watchDiscordConnection$, signal);
 
   await Promise.all([
     set(watchSlackConnection$, signal),
     set(watchTeamsConnection$, signal),
+    set(watchDiscordConnection$, signal),
     set(watchGithubIntegration$, signal),
     set(watchAgentPhoneConnection$, signal),
   ]);
