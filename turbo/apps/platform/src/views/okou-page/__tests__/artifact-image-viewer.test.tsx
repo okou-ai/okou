@@ -106,6 +106,7 @@ test("The image viewer previews an image and navigates to the next one", async (
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await secondUrlReady.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", secondImageUrl).href,
       url: secondImageUrl,
       filename: "second.png",
       contentType: "image/png",

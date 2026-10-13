@@ -33,7 +33,7 @@ export const webFilesContract = c.router({
         url: z.string(),
         expiresAt: z.string().datetime(),
         /** Attachment response for native downloads, separate from preview caching. */
-        downloadUrl: z.url().optional(),
+        downloadUrl: z.url(),
         /**
          * Stable public artifacts URL for the same object, suitable for a link
          * handed to someone else. Null for private artifacts.

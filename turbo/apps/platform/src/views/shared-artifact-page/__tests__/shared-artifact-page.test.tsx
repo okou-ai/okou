@@ -63,6 +63,7 @@ async function openViewer({
 } = {}) {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00Z",
       filename,
@@ -143,14 +144,9 @@ test("Share copies the current app address without changing sharing or copying a
   expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
 });
 
-test("downloads resolve references and save the original filename and bytes", async () => {
+test("downloads resolve attachment URLs and preserve the original filename", async () => {
   const path = `/share/artifacts/${artifactId}?source=shared#detail`;
   const browser = context.mocks.browser.blobDownload();
-  context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
-    return HttpResponse.text("original image bytes", {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
   await openViewer({
     path,
   });
@@ -164,10 +160,11 @@ test("downloads resolve references and save the original filename and bytes", as
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
-  expect(browser.downloads[0]?.filename).toBe("launch.png");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-    "original image bytes",
-  );
+  expect(browser.downloads[0]).toMatchObject({
+    filename: "launch.png",
+    url: "https://artifacts.example.com/launch.png?download=1",
+    blob: null,
+  });
 });
 
 test("HTML stays on its isolated origin and retains the requested slide", async () => {
