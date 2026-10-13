@@ -139,6 +139,7 @@ impl Registration {
         if !super::diagnostics::in_domain() {
             return Err(super::Failure::DomainFailed);
         }
+        super::diagnostics::Stage::HomeAnnouncement.record();
         let mut request = ts_control::MapRequestBuilder::new(&self.keys)
             .as_request()
             .preferred_derp(home)

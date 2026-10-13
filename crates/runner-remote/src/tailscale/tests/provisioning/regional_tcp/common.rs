@@ -56,6 +56,10 @@ async fn native_common_cleanup_rejection_reaches_guest_rpc_without_retry_or_logi
 
 #[tokio::test]
 async fn native_common_rejected_home_announcement_never_sends_login_or_command() {
+    use tracing_subscriber::prelude::*;
+    let captured = tracing_test_support::CapturedEvents::default();
+    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
+    let _parent = tracing::dispatcher::set_default(&dispatch);
     let mut h = Harness::new(Reply::default()).await;
     let api = Api::secure(None).await;
     let home = Server::secure().await;
@@ -89,6 +93,16 @@ async fn native_common_rejected_home_announcement_never_sends_login_or_command()
     assert!(matches!(bounded(home.task).await, Err(error) if error.is_cancelled()));
     api.finish().await;
     control.finish().await;
+    let events = captured.entries();
+    let stages = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("native Tailscale startup")
+        })
+        .map(|event| event.fields["stage"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(stages.last(), Some(&"home_announcement"));
+    assert!(!stages.contains(&"relay") && !stages.contains(&"ready"));
 }
 
 #[tokio::test]
