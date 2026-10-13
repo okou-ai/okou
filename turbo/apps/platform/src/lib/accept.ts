@@ -69,6 +69,9 @@ function presentRequestError(error: unknown): void {
 
 interface AcceptOptions {
   readonly showErrorToast?: boolean;
+  readonly expectedErrors?: Readonly<
+    Partial<Record<number, readonly string[]>>
+  >;
 }
 
 /**
@@ -85,6 +88,9 @@ interface AcceptOptions {
  *
  * Best-effort background work may disable the error toast while preserving the
  * same typed response handling and thrown error.
+ *
+ * Callers may declare expected status/code pairs. They still show the same
+ * toast and throw an ApiError, but detached work does not log them as errors.
  */
 async function accept<
   T extends { status: number; body: unknown },
@@ -112,7 +118,9 @@ async function accept<
     result.status !== 401 &&
     result.status !== CLIENT_FORCE_UPGRADE_STATUS;
   const { message, code } = extractError(result.body, result.status, show);
-  throw new ApiError(message, code, result.status);
+  const expected =
+    options.expectedErrors?.[result.status]?.includes(code) ?? false;
+  throw new ApiError(message, code, result.status, expected);
 }
 
 export { accept };

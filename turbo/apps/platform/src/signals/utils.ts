@@ -1,6 +1,7 @@
 import { command, state, type Command } from "ccstate";
 import { delay } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
+import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
 
 const L = logger("Promise");
@@ -41,7 +42,10 @@ export function detach<T>(
     silencePromise = Promise.resolve(promise).then(
       () => {},
       (error: unknown) => {
-        if (!isAbortError(error)) {
+        if (
+          !isAbortError(error) &&
+          !(error instanceof ApiError && error.expected)
+        ) {
           L.error(`Detached promise rejected [${reason}]`, error);
         }
       },
