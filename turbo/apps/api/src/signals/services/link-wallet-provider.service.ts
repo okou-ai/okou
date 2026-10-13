@@ -33,7 +33,86 @@ const providerErrorCodeSchema = z.enum([
 const providerErrorSchema = z.object({
   error: z.union([z.string(), z.object({ code: z.string().optional() })]),
 });
+const providerMessageSchema = z.object({
+  error: z
+    .union([
+      z.string(),
+      z.object({
+        message: z.string().optional(),
+      }),
+    ])
+    .optional(),
+  message: z.string().optional(),
+  error_description: z.string().optional(),
+});
 const providerRequestIdSchema = z.string().regex(/^req_[A-Za-z0-9]{1,80}$/);
+
+// Link can return only error.message. Emit fixed labels, never the provider's
+// free-form text: even authentication failures can echo the rejected credential.
+const providerAuthMessageReasons = [
+  [
+    "invalid_access_token",
+    /^(?:invalid (?:access|bearer|oauth) token|(?:access|bearer|oauth) token (?:is )?invalid)(?:[.:]|$)/,
+  ],
+  [
+    "access_token_expired",
+    /^(?:expired access token|access token (?:has |is )?expired)(?:[.:]|$)/,
+  ],
+  [
+    "invalid_refresh_token",
+    /^(?:invalid refresh token|refresh token (?:is )?invalid)(?:[.:]|$)/,
+  ],
+  [
+    "missing_authorization",
+    /^(?:missing authorization header|no authorization header|authorization header is missing|missing access token)(?:[.:]|$)/,
+  ],
+  ["invalid_client_secret", /^invalid client secret(?:[.:]|$)/],
+  ["invalid_client", /^(?:invalid client|unknown client)(?:[.:]|$)/],
+  [
+    "invalid_api_key",
+    /^(?:invalid api key(?: provided)?|no valid api key provided)(?:[.:]|$)/,
+  ],
+  [
+    "insufficient_scope",
+    /^(?:insufficient scope|missing required scope|insufficient permissions)(?:[.:]|$)/,
+  ],
+  [
+    "unauthorized",
+    /^(?:unauthorized|not authenticated|authentication required)(?:[.:]|$)/,
+  ],
+  ["access_denied", /^(?:access denied|permission denied|forbidden)(?:[.:]|$)/],
+] as const;
+
+function providerMessageDiagnostic(body: unknown) {
+  const parsed = providerMessageSchema.safeParse(body);
+  const error = parsed.success ? parsed.data.error : undefined;
+  const fields = [
+    ["error.message", typeof error === "object" ? error.message : undefined],
+    ["message", parsed.success ? parsed.data.message : undefined],
+    [
+      "error_description",
+      parsed.success ? parsed.data.error_description : undefined,
+    ],
+    ["error", typeof error === "string" ? error : undefined],
+  ] as const;
+  const field = fields.find(([, value]) => {
+    return value !== undefined;
+  });
+  if (!field) {
+    return {
+      providerMessageSource: "unavailable",
+      providerMessageReason: "unavailable",
+    };
+  }
+  const normalized = field[1]?.trim().toLowerCase().replaceAll("_", " ");
+  const reason = providerAuthMessageReasons.find(([, pattern]) => {
+    return normalized !== undefined && pattern.test(normalized);
+  })?.[0];
+  return {
+    providerMessageSource: field[0],
+    providerMessageReason: reason ?? "unrecognized",
+  };
+}
 
 function providerErrorCode(body: unknown, response: Response): string {
   const parsed = providerErrorSchema.safeParse(body);
@@ -77,6 +156,7 @@ async function providerFailure(response: Response, operation: LinkOperation) {
     operation,
     providerStatus: response.status,
     providerErrorCode: providerErrorCode(body, response),
+    ...providerMessageDiagnostic(body),
     providerRequestId: requestId.success ? requestId.data : null,
     responseType: contentType.success ? contentType.data : "unrecognized",
     responseBodyRead: read.ok ? read.value.kind : "unreadable",
@@ -226,7 +306,7 @@ async function responseJson(
         : authRejected
           ? "WALLET_PROVIDER_AUTH_REJECTED"
           : "WALLET_PROVIDER_ERROR",
-      `${message} (operation: ${operation}; HTTP ${response.status}; provider: ${diagnostic.providerErrorCode}; reference: ${diagnostic.diagnosticId})`,
+      `${message} (operation: ${operation}; HTTP ${response.status}; provider: ${diagnostic.providerErrorCode}; message source: ${diagnostic.providerMessageSource}; reason: ${diagnostic.providerMessageReason}; reference: ${diagnostic.diagnosticId})`,
     );
   }
   const result = await settle(response.json() as Promise<unknown>);

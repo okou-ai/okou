@@ -959,6 +959,95 @@ test("keeps a rejected spend intent recoverable without prescribing repeated wal
   });
 });
 
+test.each([
+  {
+    body: {
+      error: { message: "Invalid access token: liwlaccess_private_fixture" },
+    },
+    source: "error.message",
+    reason: "invalid_access_token",
+  },
+  {
+    body: { error: { message: "Access token has expired." } },
+    source: "error.message",
+    reason: "access_token_expired",
+  },
+  {
+    body: { message: "Missing authorization header" },
+    source: "message",
+    reason: "missing_authorization",
+  },
+  {
+    body: { error_description: "refresh_token is invalid" },
+    source: "error_description",
+    reason: "invalid_refresh_token",
+  },
+  {
+    body: {
+      error: { message: "Invalid client secret: private-client-fixture" },
+    },
+    source: "error.message",
+    reason: "invalid_client_secret",
+  },
+  {
+    body: {
+      error: { message: "Unrecognized error for private-user@example.test" },
+    },
+    source: "error.message",
+    reason: "unrecognized",
+  },
+])(
+  "reports safe message diagnostics for $reason without changing consent or retrying",
+  async ({ body, source, reason }) => {
+    const fixture = await carrier();
+    server.use(tokenHandler());
+    await connect(fixture);
+    let creates = 0;
+    server.use(
+      http.post("https://api.link.com/spend_requests", () => {
+        creates += 1;
+        return HttpResponse.json(body, { status: 401 });
+      }),
+    );
+    const rejected = await accept(
+      client().createSpend({ headers: fixture.headers, body: purchase() }),
+      [409],
+    );
+    expect(rejected.body.error.code).toBe("WALLET_PROVIDER_AUTH_REJECTED");
+    expect(rejected.body.error.message).toContain(`message source: ${source}`);
+    expect(rejected.body.error.message).toContain(`reason: ${reason}`);
+    expect(rejected.body.error.message).not.toMatch(
+      /liwlaccess_private_fixture|private-client-fixture|private-user@example.test/,
+    );
+    expect(creates).toBe(1);
+    const status = await accept(
+      client().status({ headers: fixture.headers }),
+      [200],
+    );
+    expect(status.body.connected).toBeTruthy();
+  },
+);
+
+test("preserves a structured token error when its optional message is malformed", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  server.use(
+    http.post("https://api.link.com/spend_requests", () => {
+      return HttpResponse.json(
+        { error: { code: "invalid_token", message: null } },
+        { status: 401 },
+      );
+    }),
+  );
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: purchase() }),
+    [409],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_RECONNECT_REQUIRED");
+  expect(rejected.body.error.message).toContain("provider: invalid_token");
+});
+
 test("identifies OAuth client rejection separately from a wallet needing consent", async () => {
   const fixture = await carrier();
   const started = await accept(
