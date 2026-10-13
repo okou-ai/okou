@@ -48,45 +48,91 @@ const negativeClient = new Client({ connectionString: databaseUrl });
 const negativeSchema = `file_provenance_rejection_${randomUUID().replaceAll("-", "")}`;
 let negativeSchemaCreated = false;
 const negativeErrors: unknown[] = [];
+const negativeErrorOccurrences: {
+  stage: string;
+  observation: string;
+  error: unknown;
+}[] = [];
+let negativeStage = "connect";
+// Auth helpers can emit without settling connect. Observe this reject-only
+// signal before connecting; cleanup must never race an already rejected signal.
+const negativeClientErrorSignal = new Promise<never>((_resolve, reject) => {
+  negativeClient.on("error", (error: Error) => {
+    negativeErrors.push(error);
+    negativeErrorOccurrences.push({
+      stage: negativeStage,
+      observation: "client error event",
+      error,
+    });
+    reject(error);
+  });
+});
+void negativeClientErrorSignal.catch(() => {});
 try {
-  await negativeClient.connect();
-  assert.deepEqual(
-    (
-      await negativeClient.query(
-        "SELECT nspname FROM pg_namespace WHERE nspname = $1",
-        [negativeSchema],
-      )
-    ).rows,
-    [],
+  const negativeConnect = negativeClient.connect();
+  // Keep observing a losing rejection without waiting for event-only auth to
+  // settle the original connect promise.
+  void negativeConnect.catch((error: unknown) => {
+    negativeErrors.push(error);
+    negativeErrorOccurrences.push({
+      stage: "connect",
+      observation: "connect rejection",
+      error,
+    });
+  });
+  await Promise.race([negativeConnect, negativeClientErrorSignal]);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  negativeStage = "namespace preflight";
+  const namespace = await negativeClient.query(
+    "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+    [negativeSchema],
   );
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  assert.deepEqual(namespace.rows, []);
+  negativeStage = "create schema";
   await negativeClient.query(`CREATE SCHEMA "${negativeSchema}"`);
   negativeSchemaCreated = true;
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  negativeStage = "search path";
   await negativeClient.query(`SET search_path TO "${negativeSchema}"`);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  negativeStage = "historical fixture";
   await negativeClient.query(historicalFixture);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
   const runId = randomUUID();
   const threadId = randomUUID();
   const fileId = randomUUID();
+  negativeStage = "insert thread";
   await negativeClient.query("INSERT INTO chat_threads VALUES ($1)", [
     threadId,
   ]);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  negativeStage = "insert run";
   await negativeClient.query(
     "INSERT INTO agent_runs VALUES ($1, $2, 'file-org', 'web')",
     [runId, threadId],
   );
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  negativeStage = "insert file";
   await negativeClient.query(
     "INSERT INTO run_uploaded_files VALUES ($1, $2, NULL, NULL, 'file-owner', 'web', 'stable-write-key', 'retained-url')",
     [fileId, runId],
   );
+  if (negativeErrors.length > 0) throw negativeErrors[0];
   for (const kind of ["image", "video", "delivery", "pending-catalog"]) {
+    negativeStage = `insert child ${kind}`;
     await negativeClient.query(
       "INSERT INTO owned_file_children VALUES ($1, $2, $3)",
       [randomUUID(), fileId, kind],
     );
+    if (negativeErrors.length > 0) throw negativeErrors[0];
   }
+  negativeStage = "insert artifact";
   await negativeClient.query("INSERT INTO artifacts VALUES ($1, $2)", [
     randomUUID(),
     fileId,
   ]);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
 
   const fixtureTables = [
     ["chat_threads", 1],
@@ -97,9 +143,11 @@ try {
   ] as const;
   const beforeRows = [];
   for (const [table, expectedCount] of fixtureTables) {
+    negativeStage = `before rows ${table}`;
     const result = await negativeClient.query(
       `SELECT * FROM "${table}" ORDER BY id`,
     );
+    if (negativeErrors.length > 0) throw negativeErrors[0];
     assert.equal(result.rowCount, expectedCount);
     beforeRows.push(result.rows);
   }
@@ -110,9 +158,11 @@ try {
     WHERE connamespace = (SELECT oid FROM pg_namespace WHERE nspname = $1)
     ORDER BY conrelid::regclass::text, conname
   `;
+  negativeStage = "before constraints";
   const beforeConstraints = await negativeClient.query(constraintQuery, [
     negativeSchema,
   ]);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
   assert.equal(
     beforeConstraints.rows.filter((row) => {
       return (
@@ -126,29 +176,67 @@ try {
   );
   // One parameterless simple-query request retains the shipped LOCK/guard/drop
   // implicit request transaction; splitting its statements changes the contract.
-  await assert.rejects(negativeClient.query(migration), {
-    code: "P0001",
-    message:
-      "Reconcile run-backed file thread/org associations before detaching Run provenance",
-  });
-  for (const [index, [table]] of fixtureTables.entries()) {
-    assert.deepEqual(
-      (await negativeClient.query(`SELECT * FROM "${table}" ORDER BY id`)).rows,
-      beforeRows[index],
+  negativeStage = "migration rejection assertion";
+  let migrationError: unknown;
+  try {
+    await assert.rejects(
+      negativeClient.query(migration).catch((error: unknown) => {
+        migrationError = error;
+        throw error;
+      }),
+      {
+        code: "P0001",
+        message:
+          "Reconcile run-backed file thread/org associations before detaching Run provenance",
+      },
     );
+  } catch (error) {
+    // Preserve the real failed assertion and its wrong native rejection. An
+    // unexpected successful query has no fabricated native cause or SQLSTATE.
+    if (error instanceof Error && migrationError !== undefined) {
+      Object.defineProperty(error, "cause", { value: migrationError });
+    }
+    throw error;
   }
-  assert.deepEqual(
-    (await negativeClient.query(constraintQuery, [negativeSchema])).rows,
-    beforeConstraints.rows,
-  );
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  for (const [index, [table]] of fixtureTables.entries()) {
+    negativeStage = `after rows ${table}`;
+    const result = await negativeClient.query(
+      `SELECT * FROM "${table}" ORDER BY id`,
+    );
+    if (negativeErrors.length > 0) throw negativeErrors[0];
+    assert.deepEqual(result.rows, beforeRows[index]);
+  }
+  negativeStage = "after constraints";
+  const afterConstraints = await negativeClient.query(constraintQuery, [
+    negativeSchema,
+  ]);
+  if (negativeErrors.length > 0) throw negativeErrors[0];
+  assert.deepEqual(afterConstraints.rows, beforeConstraints.rows);
 } catch (error) {
   negativeErrors.push(error);
+  negativeErrorOccurrences.push({
+    stage: negativeStage,
+    observation: "body rejection",
+    error,
+  });
 } finally {
-  try {
-    // Namespace ownership does not depend on root/child rows or setup completion.
-    // A lost CREATE acknowledgement remains uncertain until test DB disposal.
-    if (negativeSchemaCreated) {
+  // Namespace ownership does not depend on root/child rows or setup completion.
+  // A lost CREATE acknowledgement remains uncertain until test DB disposal.
+  if (negativeSchemaCreated) {
+    negativeStage = "drop schema";
+    try {
       await negativeClient.query(`DROP SCHEMA "${negativeSchema}" CASCADE`);
+    } catch (error) {
+      negativeErrors.push(error);
+      negativeErrorOccurrences.push({
+        stage: negativeStage,
+        observation: "cleanup rejection",
+        error,
+      });
+    }
+    negativeStage = "namespace absence";
+    try {
       assert.deepEqual(
         (
           await negativeClient.query(
@@ -158,21 +246,35 @@ try {
         ).rows,
         [],
       );
-    }
-  } catch (error) {
-    negativeErrors.push(error);
-  } finally {
-    try {
-      await negativeClient.end();
     } catch (error) {
       negativeErrors.push(error);
+      negativeErrorOccurrences.push({
+        stage: negativeStage,
+        observation: "cleanup rejection",
+        error,
+      });
     }
+  }
+  negativeStage = "end";
+  try {
+    await negativeClient.end();
+  } catch (error) {
+    negativeErrors.push(error);
+    negativeErrorOccurrences.push({
+      stage: negativeStage,
+      observation: "end rejection",
+      error,
+    });
   }
 }
 if (negativeErrors.length > 0) {
-  throw new AggregateError(
-    negativeErrors,
-    "File provenance rejection probe failed",
+  throw Object.assign(
+    new AggregateError(
+      [...new Set(negativeErrors)],
+      "File provenance rejection probe failed",
+      { cause: negativeErrors[0] },
+    ),
+    { occurrences: negativeErrorOccurrences },
   );
 }
 
