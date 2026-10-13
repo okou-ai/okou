@@ -28,8 +28,12 @@ mod dns_readiness;
 mod history_transfer;
 mod rejection;
 mod session_history;
+mod session_history_download;
 mod storage_batch;
 
+pub(crate) use session_history_download::{
+    SessionHistoryDownloadFields, SessionHistoryDownloadRecord, SessionHistoryObservationStage,
+};
 pub(crate) use storage_batch::StorageBatchDimensions;
 
 pub(crate) use history_transfer::{
@@ -292,6 +296,8 @@ struct SandboxOp {
     runner_resource_budget_lease_count_bucket: Option<RunnerResourceBudgetLeaseCountBucket>,
     #[serde(flatten)]
     session_history: Option<SessionHistoryTelemetryFields>,
+    #[serde(flatten)]
+    session_history_download: Option<SessionHistoryDownloadFields>,
     #[serde(flatten)]
     history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
     #[serde(flatten)]
@@ -579,6 +585,24 @@ impl JobTelemetry {
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
         }
+    }
+
+    pub(crate) fn record_session_history_download_attribution(
+        &mut self,
+        record: SessionHistoryDownloadRecord,
+        metadata: Option<SessionHistoryTelemetryMetadata>,
+    ) {
+        let mut op = sandbox_op_at(
+            record.action_type,
+            record.duration,
+            record.success,
+            None,
+            Some(record.outcome),
+            metadata,
+            record.completed_at,
+        );
+        op.session_history_download = Some(record.fields);
+        self.push_operation(op);
     }
 
     /// Record the existing local restore interval with validated payload
@@ -1020,6 +1044,7 @@ fn sandbox_op_at(
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
         session_history: metadata.map(SessionHistoryTelemetryFields::from),
+        session_history_download: None,
         history_transfer: None,
         dns_readiness: None,
         storage_batch: None,
@@ -1176,6 +1201,7 @@ mod tests {
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
             session_history: None,
+            session_history_download: None,
             history_transfer: None,
             dns_readiness: None,
             storage_batch: None,
@@ -1621,6 +1647,7 @@ mod tests {
                 runner_resource_budget_memory_utilization_bucket: None,
                 runner_resource_budget_lease_count_bucket: None,
                 session_history: Some(metadata.into()),
+                session_history_download: None,
                 history_transfer: None,
                 dns_readiness: None,
                 storage_batch: None,
@@ -2101,6 +2128,86 @@ mod tests {
         assert!(!event_debug.contains(SANDBOX_ID));
         assert!(!event_debug.contains("oom-evidence-token-secret"));
         assert!(!event_debug.contains(&evidence.operation_id));
+    }
+
+    #[tokio::test]
+    async fn history_download_attribution_payload_matches_shared_contract_fixture() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::from(uuid::Uuid::nil()),
+            "history-attribution-token".to_owned(),
+            None,
+        );
+        let origin = DateTime::parse_from_rfc3339("2026-01-15T10:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        telemetry.record_session_history_download_attribution(
+            SessionHistoryDownloadRecord {
+                action_type: "session_history_download_attempt",
+                duration: Duration::from_millis(10),
+                success: true,
+                outcome: "succeeded",
+                completed_at: origin + chrono::Duration::milliseconds(10),
+                fields: SessionHistoryDownloadFields {
+                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
+                    session_history_download_attempt: Some(1),
+                    session_history_request_start_offset_ms: Some(0),
+                    session_history_request_end_offset_ms: Some(4),
+                    session_history_body_start_offset_ms: Some(5),
+                    session_history_body_end_offset_ms: Some(10),
+                    session_history_chunk_wait_ms: Some(4),
+                    session_history_chunk_wait_max_ms: Some(3),
+                    session_history_chunk_count: Some(2),
+                    session_history_body_copy_ms: Some(1),
+                    session_history_body_allocation_ms: Some(0),
+                    ..Default::default()
+                },
+            },
+            None,
+        );
+        telemetry.record_session_history_download_attribution(
+            SessionHistoryDownloadRecord {
+                action_type: "session_history_download_attribution",
+                duration: Duration::from_millis(13),
+                success: true,
+                outcome: "succeeded",
+                completed_at: origin + chrono::Duration::milliseconds(13),
+                fields: SessionHistoryDownloadFields {
+                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
+                    session_history_attempt_count: Some(1),
+                    session_history_observation_stage: Some(
+                        SessionHistoryObservationStage::Restore,
+                    ),
+                    session_history_failed_attempt_count: Some(0),
+                    session_history_interrupted_attempt_count: Some(0),
+                    session_history_retry_count: Some(0),
+                    session_history_retry_backoff_ms: Some(0),
+                    session_history_cpu_admission_start_offset_ms: Some(10),
+                    session_history_cpu_admission_end_offset_ms: Some(11),
+                    session_history_cpu_queue_start_offset_ms: Some(11),
+                    session_history_cpu_queue_end_offset_ms: Some(12),
+                    session_history_restore_wait_start_offset_ms: Some(2),
+                    session_history_restore_wait_end_offset_ms: Some(13),
+                    ..Default::default()
+                },
+            },
+            None,
+        );
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let actual: serde_json::Value = serde_json::from_str(body).unwrap();
+        let mut expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-history-download-attribution.json"
+        )).unwrap();
+        expected["runnerVersion"] = serde_json::json!(RUNNER_VERSION);
+        assert_eq!(actual, expected);
     }
 
     #[tokio::test]
