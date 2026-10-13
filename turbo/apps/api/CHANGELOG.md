@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.1](https://github.com/okou-ai/okou/compare/api-v1.732.0...api-v1.732.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **api:** clarify mcp chat thread list tool ([#39770](https://github.com/okou-ai/okou/issues/39770)) ([b54382d](https://github.com/okou-ai/okou/commit/b54382da62ba606c1f1354adefa0c1762c26a430))
+* **api:** request link wallet userinfo scope ([#39766](https://github.com/okou-ai/okou/issues/39766)) ([5f40223](https://github.com/okou-ai/okou/commit/5f4022305e42ebddee1b7c106632097fc1bb2dae))
+
+
+### Refactoring
+
+* **api:** atomically publish workflow automation disable ([#39750](https://github.com/okou-ai/okou/issues/39750)) ([32a7748](https://github.com/okou-ai/okou/commit/32a77485f1802ee8e543e8e40a0d908329355190))
+* **api:** own browser run and viewer authorization reads ([#39736](https://github.com/okou-ai/okou/issues/39736)) ([5e92217](https://github.com/okou-ai/okou/commit/5e9221799515e9f6e528d78664de3f06ea584fdf))
+* **api:** own teams finalization and welcome executors ([#39747](https://github.com/okou-ai/okou/issues/39747)) ([6dfd6a7](https://github.com/okou-ai/okou/commit/6dfd6a7c2a498406ad4a0692c9b10de382cd55b0))
+* **api:** prepare run-owned native facts for session retirement ([#39772](https://github.com/okou-ai/okou/issues/39772)) ([8c11a97](https://github.com/okou-ai/okou/commit/8c11a971bc9e69877bad3d26ee1ebb9e3a4b91dc))
+* **api:** retire cloudflare artifact screenshots ([#39753](https://github.com/okou-ai/okou/issues/39753)) ([b4e8c69](https://github.com/okou-ai/okou/commit/b4e8c69a08f536a2695e635273ff7ebc2afd1566))
+* **api:** retire private artifact app compatibility ([#39752](https://github.com/okou-ai/okou/issues/39752)) ([08942bc](https://github.com/okou-ai/okou/commit/08942bc157a67649b1e70cbef90d9059e7e1ca44))
+* remove slack link unfurls feature switch ([#39745](https://github.com/okou-ai/okou/issues/39745)) ([18435fb](https://github.com/okou-ai/okou/commit/18435fb32d76f20197f1f9174529bcf0c3215287))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.751.0
+    * @okouai/db bumped to 1.335.1
+    * @okouai/pi-agent-runtime bumped to 1.49.24
+
 ## [1.732.0](https://github.com/okou-ai/okou/compare/api-v1.731.0...api-v1.732.0) (2026-10-13)
 
 

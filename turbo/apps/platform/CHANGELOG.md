@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1019.1](https://github.com/okou-ai/okou/compare/app-v0.1019.0...app-v0.1019.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** reuse the fastest shared worker token provider ([#39765](https://github.com/okou-ai/okou/issues/39765)) ([944979a](https://github.com/okou-ai/okou/commit/944979a1412592028ce9e91a5a5ac334660904a2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.751.0
+    * @okouai/ui bumped to 1.15.2
+
 ## [0.1019.0](https://github.com/okou-ai/okou/compare/app-v0.1018.0...app-v0.1019.0) (2026-10-13)
 
 
