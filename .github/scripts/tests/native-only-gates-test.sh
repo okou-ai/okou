@@ -19,6 +19,7 @@ turbo, security, benchmark = workflow('turbo'), workflow('security'), workflow('
 script_tests = security['workflow-script-tests']
 assert script_tests['strategy']['fail-fast'] is False
 assert 'workflow-script-tests' in security['ci-gate-security']['needs']
+assert 'codeql' in security['ci-gate-security']['needs']
 for action in ['github/codeql-action/init@', 'github/codeql-action/analyze@']:
     assert any(step.get('uses', '').startswith(action) for step in security['codeql']['steps']), \
         'the required CodeQL job must initialize and execute its scanner'
