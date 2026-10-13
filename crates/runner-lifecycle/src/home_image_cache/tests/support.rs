@@ -29,6 +29,19 @@ impl Fixture {
     pub fn key(&self, reuse: &str) -> String {
         self.cache.scoped_cache_key(PROFILE, reuse, SIZE)
     }
+    pub fn cache_under_pressure(&self) -> HomeImageCache {
+        HomeImageCache::with_cache_dirs_and_fs_stats(
+            self.paths.clone(),
+            self.cache.inner.cache_dir.clone(),
+            self.cache.inner.lock_dir.clone(),
+            &self.cache.inner.cache_scope,
+            FsStats {
+                total_bytes: 100 * GIB,
+                available_bytes: 1,
+                ..FsStats::default()
+            },
+        )
+    }
     pub async fn lease(&self, reuse: &str) -> HomeImageLease {
         self.lease_at_rootfs(reuse, ROOTFS).await
     }

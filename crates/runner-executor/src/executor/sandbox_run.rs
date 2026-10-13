@@ -1132,6 +1132,7 @@ async fn create_started_sandbox(
                 Some(sandbox::HomeDriveConfig {
                     size_mb: params.home_disk_mb,
                     seed_image: None,
+                    space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 })
             },
             HomeImageLease::home_drive_config,

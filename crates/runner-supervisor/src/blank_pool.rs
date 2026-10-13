@@ -696,6 +696,7 @@ async fn prepare_blank_sandbox(
         home_drive: Some(sandbox::HomeDriveConfig {
             size_mb: profile.home_disk_mb,
             seed_image: None,
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
         }),
     };
     let mut sandbox = match create_or_cancel(&factory, config, &cancel, &mut pre_spawn_lease).await
@@ -1262,7 +1263,10 @@ mod tests {
     async fn replenisher_creates_parks_and_publishes_one_blank_sandbox() {
         let mut profiles = BTreeMap::new();
         profiles.insert("vm0/default".to_owned(), profile(2, 4096));
-        let factory: SharedFactory = Arc::new(Box::new(sandbox_mock::MockSandboxFactory::new()));
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let factory: SharedFactory = Arc::new(Box::new(
+            sandbox_mock::MockSandboxFactory::with_overrides(overrides.clone()),
+        ));
         let mut factories = BTreeMap::new();
         factories.insert("vm0/default".to_owned(), (factory, true));
         let budget = Arc::new(ResourceBudget::new(16, 32_768, 1.0, 0));
@@ -1309,6 +1313,14 @@ mod tests {
 
         let mut pool = idle_pool.lock().await;
         assert_eq!(pool.blank_len(), 1);
+        assert_eq!(
+            overrides.create_configs()[0]
+                .home_drive
+                .as_ref()
+                .unwrap()
+                .space_reserve,
+            runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
+        );
         assert!(pool.status_snapshot().idle_sandboxes.is_empty());
         assert_eq!(pool.status_snapshot().blank_sandboxes.len(), 1);
         assert!(pool.held_sandbox_states().is_empty());
