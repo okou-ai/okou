@@ -317,7 +317,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           (cd turbo && pnpm install --frozen-lockfile --filter @okouai/cli...)
           (cd turbo && pnpm --filter @okouai/cli build)
-          bash .github/scripts/build-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
+          bash .github/scripts/artifacts/build-okou-cli-artifact.sh "$SOURCE_SHA" runner-cli-intermediate
 
       - name: Upload private CLI build input
         if: steps.needed.outputs.current-runner-image-needed == 'true'

@@ -58,4 +58,4 @@ jobs:
       - name: Pass ci-gate checks for release PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash .github/scripts/pass-release-pr-ci-gates.sh
+        run: bash .github/scripts/release/pass-release-pr-ci-gates.sh

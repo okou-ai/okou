@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/pass-release-pr-ci-gates.sh"
+PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/release/pass-release-pr-ci-gates.sh"
 CHECK_COVERAGE="${SOURCE_REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
 CHECK_CYCLES="${SOURCE_REPO_ROOT}/.github/scripts/check-rust-workspace-cycles.py"
 CHECK_ACTION_PINS="${SOURCE_REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
