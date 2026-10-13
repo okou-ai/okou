@@ -233,12 +233,12 @@ async fn finalization_waits_for_a_declaration_during_api_cold_start()
     tokio::time::pause();
     tokio::time::advance(Duration::from_secs(6)).await;
     tokio::task::yield_now().await;
+    tokio::time::resume();
     assert!(
         futures_util::poll!(&mut finalization).is_pending(),
         "finalization returned before the gated cold-start response"
     );
 
-    tokio::time::resume();
     request.respond(200)?;
     tokio::time::timeout(Duration::from_secs(5), finalization).await??;
     assert_eq!(server.request_count(), 1);
