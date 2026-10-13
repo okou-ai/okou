@@ -2809,6 +2809,14 @@
       "transcribing": "Transcribing",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
+    "walletAction": {
+      "approveButton": "Review",
+      "approveTitle": "Review purchase",
+      "connectButton": "Authorize",
+      "connectTitle": "Authorize Link wallet",
+      "continueButton": "Continue",
+      "continueTitle": "Continue in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"

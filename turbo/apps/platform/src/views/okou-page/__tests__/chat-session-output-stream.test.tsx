@@ -270,6 +270,33 @@ test("A trailing bare URL becomes a card when its final event arrives", async ()
   expect(screen.getAllByText("Computer Use authorization")).toHaveLength(1);
 });
 
+test("Wallet cards preserve the complete signed URL across streamed chunks", async () => {
+  const events = activeRun();
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await subscribed();
+
+  const partial =
+    "https://app.link.com/activity/approve/lsrq_fixture?token=partial";
+  const suffix = "%2Fsigned&key=exact+key#review";
+  const url = `${partial}${suffix}`;
+  push(0, partial);
+  await expect(screen.findByText(partial)).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Review purchase")).toBeNull();
+
+  push(1, suffix);
+  await expect(screen.findByText(url)).resolves.toBeInTheDocument();
+  expect(screen.queryByLabelText("Review purchase")).toBeNull();
+
+  events.push(
+    assistantEvent({ id: EVENT_ID, runId: RUN_ID, seqId: 2, text: url }),
+  );
+  publishRunUpdate();
+  const link = await screen.findByLabelText("Review purchase");
+  expect(link).toHaveAttribute("href", url);
+  expect(link).toHaveAttribute("target", "_blank");
+  expect(screen.getAllByLabelText("Review purchase")).toHaveLength(1);
+});
+
 test("An explicit artifact preview appears when its Markdown link closes", async () => {
   const events = activeRun();
   await setupPage({ context, path: RUN_PATH });

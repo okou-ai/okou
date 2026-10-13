@@ -2798,6 +2798,14 @@
       "transcribing": "Mentranskripsi",
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
+    "walletAction": {
+      "approveButton": "Tinjau",
+      "approveTitle": "Tinjau pembelian",
+      "connectButton": "Izinkan",
+      "connectTitle": "Izinkan dompet Link",
+      "continueButton": "Lanjutkan",
+      "continueTitle": "Lanjutkan di Link"
+    },
     "workflows": {
       "named": "Alur kerja {{title}}",
       "open": "Buka alur kerja {{title}}"

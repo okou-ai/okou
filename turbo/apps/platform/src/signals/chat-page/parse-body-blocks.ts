@@ -23,6 +23,10 @@ import {
   type BankingActionDescriptor,
 } from "./banking-action-block.ts";
 import {
+  parseWalletActionUrl,
+  type WalletActionDescriptor,
+} from "./wallet-action-block.ts";
+import {
   parseComputerUseAuthorizationUrl,
   type ComputerUseAuthorizationDescriptor,
 } from "./computer-use-authorization-block.ts";
@@ -92,6 +96,11 @@ export type ParsedBodyBlock =
       type: "banking-action";
       resourceKey: string;
       descriptor: BankingActionDescriptor;
+    }
+  | {
+      type: "wallet-action";
+      resourceKey: string;
+      descriptor: WalletActionDescriptor;
     }
   | {
       type: "unavailable-action";
@@ -704,6 +713,19 @@ function createBrowserUserActionBlock(
   return null;
 }
 
+function createWalletActionBlock(url: string): CardDescriptorBlock | null {
+  const parsedUrl = tryParseUrl(url);
+  const walletAction = parsedUrl ? parseWalletActionUrl(parsedUrl, url) : null;
+  if (walletAction) {
+    return {
+      type: "wallet-action",
+      resourceKey: walletAction.originalUrl,
+      descriptor: walletAction,
+    };
+  }
+  return null;
+}
+
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
@@ -839,7 +861,7 @@ function createActionBlockFromUrl(
     };
   }
 
-  return null;
+  return createWalletActionBlock(url);
 }
 
 interface ActionLinkMatch {
@@ -1403,6 +1425,9 @@ export function cardSlotUrl(block: CardDescriptorBlock): string {
       return block.descriptor.originalUrl;
     }
     case "banking-action": {
+      return block.descriptor.originalUrl;
+    }
+    case "wallet-action": {
       return block.descriptor.originalUrl;
     }
     case "unavailable-action": {

@@ -2857,6 +2857,14 @@
       "transcribing": "Transcrevendo",
       "transcriptionFailed": "Falha na transcrição de voz. Tente novamente."
     },
+    "walletAction": {
+      "approveButton": "Revisar",
+      "approveTitle": "Revisar compra",
+      "connectButton": "Autorizar",
+      "connectTitle": "Autorizar carteira Link",
+      "continueButton": "Continuar",
+      "continueTitle": "Continuar no Link"
+    },
     "workflows": {
       "named": "Fluxo de trabalho {{title}}",
       "open": "Abrir fluxo de trabalho {{title}}"
