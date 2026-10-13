@@ -633,16 +633,6 @@ Examples:
   Hosted deck:         okou presentation convert --input https://example.com/deck
   Machine-readable:    okou presentation convert --input deck.html --json
   Deck behind a login: okou browser use && okou presentation convert \\
-                         --session okou-browser --input https://example.com/deck
-
-Notes:
-  - Activates selected inactive slides using the visible page's layout
-  - Wrapped inline text is exported as measured native line fragments
-  - Fixed geometry preserves font size; the viewer does not resize measured boxes
-  - Table row heights and solid cell backgrounds come from browser measurements
-  - HTML text and CSS effects never fall back to screenshots or generated images
-  - Source images, SVG/canvas assets, and image URL backgrounds remain images
-  - --json lists elements whose synthetic image exports were omitted
-  - --verify checks original source text; it does not grade appearance`,
+                         --session okou-browser --input https://example.com/deck`,
   )
   .action(withErrorHandler(convert));

@@ -11623,20 +11623,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
           expect(prompt).toContain("Presentation delivery:");
-          expect(prompt).toContain("first author the deck as HTML");
+          expect(prompt).toContain("first author and check the deck as HTML");
           expect(prompt).toContain(
-            "The agent must choose a suitable delivery format from the current request, relevant remembered preferences, and intended use",
+            "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
           );
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",
           );
           expect(prompt).not.toContain("deliver both the hosted HTML deck");
-          expect(prompt).not.toContain(
-            "For artifacts other than presentations",
-          );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain("name the artifact, not a format");
             expect(prompt).toContain(
               "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );

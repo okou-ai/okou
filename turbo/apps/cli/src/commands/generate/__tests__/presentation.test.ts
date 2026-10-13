@@ -107,17 +107,14 @@ describe("okou generate presentation command", () => {
       "- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --artifact-kind presentation-html --visibility org",
     ]);
     expect(stdout).toContain(
-      "The agent must choose a suitable delivery format from the current request, relevant remembered preferences, and intended use",
+      "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
-    expect(stdout).toContain(
-      "Calling `okou generate presentation` or selecting a template does not imply PPTX delivery",
-    );
-    expect(stdout).toContain("Skip conversion when HTML is selected");
+    expect(stdout).toContain("Explicit requests take priority");
     expect(stdout).toContain(
       "Deliver one format unless the user requests multiple formats",
     );
     expect(stdout).toContain(
-      "Keep HTML as an intermediate source; publish it only if the user also requests HTML",
+      "For PPTX, follow the platform's conversion instructions. For HTML, follow the preview and hosting steps below",
     );
     expect(stdout).not.toContain("Return only the HTML deck");
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");

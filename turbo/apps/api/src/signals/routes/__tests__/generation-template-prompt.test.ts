@@ -119,7 +119,7 @@ describe("buildGenerationTemplatePrompt", () => {
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
     );
     expect(result.prompt).toContain(
-      "The agent must choose a suitable delivery format from the current request, relevant remembered preferences, and intended use",
+      "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
     expect(result.prompt).not.toContain("Return only the HTML deck");
     const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
@@ -182,7 +182,7 @@ describe("buildGenerationTemplatePrompt", () => {
       "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
     );
     expect(result.prompt).toContain(
-      "The agent must choose a suitable delivery format from the current request, relevant remembered preferences, and intended use",
+      "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
     expect(result.prompt).not.toContain("Return only the generated HTML deck");
     // A private package has no registry resource to pull.
