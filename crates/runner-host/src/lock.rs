@@ -303,6 +303,17 @@ pub async fn acquire_with_contention_timeout(
         .await
 }
 
+/// Observe actual contention before arming the production retry timeout.
+/// Only owner tests enable this hook; the acquisition and retry loop are unchanged.
+#[cfg(feature = "test-support")]
+pub async fn acquire_with_contention_timeout_for_test(
+    path: PathBuf,
+    contention_timeout: Duration,
+    after_busy: impl std::future::Future<Output = ()>,
+) -> HostResult<TryLock> {
+    acquire_with_contention_timeout_after_busy(path, contention_timeout, after_busy).await
+}
+
 async fn acquire_with_contention_timeout_after_busy(
     path: PathBuf,
     contention_timeout: Duration,
@@ -507,6 +518,132 @@ mod tests {
             probe_completed_while_locked,
             "cancelled lock waiter kept the blocking-pool thread occupied"
         );
+    }
+
+    #[tokio::test]
+    async fn contention_timeout_acquires_after_observed_busy_is_released() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.lock");
+        let holder = acquire(path.clone()).await.unwrap();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+            path.clone(),
+            Duration::from_secs(2),
+            async {
+                entered_tx.send(()).unwrap();
+                release_rx.await.unwrap();
+            },
+        ));
+        tokio::select! {
+            _ = acquisition.as_mut() => panic!("completed before observing Busy"),
+            result = tokio::time::timeout(Duration::from_secs(2), entered_rx) => {
+                result.unwrap().unwrap();
+            }
+        }
+        drop(holder);
+        release_tx.send(()).unwrap();
+        let TryLock::Acquired(guard) = acquisition.await.unwrap() else {
+            panic!("released flock must be acquired within the contention budget");
+        };
+        assert!(matches!(
+            try_acquire_or_busy(path.clone()).await.unwrap(),
+            TryLock::Busy
+        ));
+        drop(guard);
+        assert!(matches!(
+            try_acquire_or_busy(path).await.unwrap(),
+            TryLock::Acquired(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn contention_timeout_expires_after_the_retry_timer_is_armed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.lock");
+        let holder = acquire(path.clone()).await.unwrap();
+        let timeout = Duration::from_millis(100);
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+            path.clone(),
+            timeout,
+            async {
+                entered_tx.send(()).unwrap();
+                release_rx.await.unwrap();
+            },
+        ));
+        tokio::select! {
+            _ = acquisition.as_mut() => panic!("completed before observing Busy"),
+            result = tokio::time::timeout(Duration::from_secs(2), entered_rx) => {
+                result.unwrap().unwrap();
+            }
+        }
+        // Real flock setup has completed; pause only the observed-contention phase.
+        tokio::time::pause();
+        release_tx.send(()).unwrap();
+        poll_fn(|context| {
+            assert!(acquisition.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        tokio::time::advance(timeout).await;
+        assert!(matches!(acquisition.await.unwrap(), TryLock::Busy));
+        tokio::time::resume();
+        assert!(matches!(
+            try_acquire_or_busy(path.clone()).await.unwrap(),
+            TryLock::Busy
+        ));
+        drop(holder);
+        assert!(matches!(
+            acquire_with_contention_timeout(path, Duration::from_secs(2))
+                .await
+                .unwrap(),
+            TryLock::Acquired(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn cancelled_contention_timeout_leaves_no_lock_owner() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.lock");
+        let holder = acquire(path.clone()).await.unwrap();
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut acquisition = Box::pin(acquire_with_contention_timeout_after_busy(
+            path.clone(),
+            Duration::from_secs(2),
+            async {
+                entered_tx.send(()).unwrap();
+                release_rx.await.unwrap();
+            },
+        ));
+        tokio::select! {
+            _ = acquisition.as_mut() => panic!("completed before observing Busy"),
+            result = tokio::time::timeout(Duration::from_secs(2), entered_rx) => {
+                result.unwrap().unwrap();
+            }
+        }
+        tokio::time::pause();
+        release_tx.send(()).unwrap();
+        poll_fn(|context| {
+            assert!(acquisition.as_mut().poll(context).is_pending());
+            std::task::Poll::Ready(())
+        })
+        .await;
+        drop(acquisition);
+        tokio::time::resume();
+        assert!(matches!(
+            try_acquire_or_busy(path.clone()).await.unwrap(),
+            TryLock::Busy
+        ));
+        drop(holder);
+        assert!(matches!(
+            acquire_with_contention_timeout(path, Duration::ZERO)
+                .await
+                .unwrap(),
+            TryLock::Acquired(_)
+        ));
     }
 
     #[tokio::test]

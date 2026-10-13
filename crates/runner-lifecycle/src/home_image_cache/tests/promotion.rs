@@ -3,8 +3,12 @@ use super::support::*;
 use crate::storage_fingerprints::StorageFingerprints;
 use sha2::{Digest, Sha256};
 use std::error::Error;
+use std::future::{Future as _, poll_fn};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{MetadataExt, symlink};
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::{Notify, Semaphore};
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
 
@@ -238,12 +242,192 @@ async fn older_or_equal_terminal_time_and_busy_capacity_preserve_existing_bytes(
     assert!(events.iter().all(|event| {
         event.fields.get("message").map(String::as_str) != Some("home image cache promoted")
     }));
+    assert!(f.paths.active_home_image(&context.sandbox_id()).exists());
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    assert!(!paths.tmp_image(context.run_id()).exists());
+    assert!(
+        !paths
+            .image(&context.publication_generation())
+            .unwrap()
+            .exists()
+    );
     drop(context);
     drop(capacity);
     assert_eq!(
         f.metadata("thread").await.image_generation,
         old.image_generation
     );
+}
+
+#[tokio::test]
+async fn transient_capacity_contention_publishes_an_intact_reusable_home() {
+    let mut f = Fixture::new().await;
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
+    f.cache = f
+        .cache
+        .clone()
+        .with_promotion_capacity_lock_test_gate(Arc::clone(&entered), Arc::clone(&release));
+    let context = f
+        .context(
+            "thread",
+            b"reusable-home",
+            "2026-10-09T09:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    let active = f.paths.active_home_image(&context.sandbox_id());
+    let original = tokio::fs::read(&active).await.unwrap();
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let mut promotion = Box::pin(context.promote());
+    tokio::select! {
+        result = promotion.as_mut() => panic!("publication returned before observed Busy: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(2), entered.notified()) => {
+            result.expect("publisher must observe the held capacity flock");
+        }
+    }
+    assert_eq!(tokio::fs::read(&active).await.unwrap(), original);
+    assert!(!f.cache.entry_paths(&f.key("thread")).metadata().exists());
+    drop(capacity);
+    release.add_permits(1);
+    assert_eq!(
+        promotion.await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    assert!(!active.exists());
+    drop(context);
+    let mut lease = f.lease("thread").await;
+    assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
+    let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
+        lease.home_drive_config().unwrap().seed_image
+    else {
+        panic!("published home must be consumable through the move-seed contract");
+    };
+    assert_eq!(tokio::fs::read(seed).await.unwrap(), original);
+}
+
+#[tokio::test]
+async fn capacity_wait_keeps_entry_owned_and_unrelated_checkout_available() {
+    let mut f = Fixture::new().await;
+    let other = f
+        .commit("other", b"other-home", "2026-10-09T09:00:00Z")
+        .await;
+    let other_bytes = tokio::fs::read(f.image("other", &other)).await.unwrap();
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
+    f.cache = f
+        .cache
+        .clone()
+        .with_promotion_capacity_lock_test_gate(Arc::clone(&entered), Arc::clone(&release));
+    let context = f
+        .context(
+            "thread",
+            b"waiting-home",
+            "2026-10-09T09:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let mut promotion = Box::pin(context.promote());
+    tokio::select! {
+        result = promotion.as_mut() => panic!("publication returned before observed Busy: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(2), entered.notified()) => {
+            result.expect("publisher must observe the held capacity flock");
+        }
+    }
+    let same = f.lease("thread").await;
+    assert_eq!(same.result(), HomeCacheCheckoutResult::LockBusy);
+    let mut unrelated = f.lease("other").await;
+    assert_eq!(unrelated.result(), HomeCacheCheckoutResult::Hit);
+    let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
+        unrelated.home_drive_config().unwrap().seed_image
+    else {
+        panic!("unrelated committed home must remain consumable");
+    };
+    assert_eq!(tokio::fs::read(seed).await.unwrap(), other_bytes);
+    drop(capacity);
+    release.add_permits(1);
+    assert_eq!(
+        promotion.await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+}
+
+#[tokio::test]
+async fn cancelled_capacity_wait_preserves_original_context_for_retry() {
+    let mut f = Fixture::new().await;
+    let entered = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
+    f.cache = f
+        .cache
+        .clone()
+        .with_promotion_capacity_lock_test_gate(Arc::clone(&entered), Arc::clone(&release));
+    let context = f
+        .context(
+            "thread",
+            b"owned-home",
+            "2026-10-09T09:00:00Z",
+            HomeCacheTerminalStatus::Success,
+            StorageFingerprints::default(),
+        )
+        .await;
+    let active = f.paths.active_home_image(&context.sandbox_id());
+    let original = tokio::fs::read(&active).await.unwrap();
+    let capacity = runner_host::lock::acquire(f.cache.capacity_lock_path())
+        .await
+        .unwrap();
+    let mut promotion = Box::pin(context.promote());
+    tokio::select! {
+        result = promotion.as_mut() => panic!("publication returned before observed Busy: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(2), entered.notified()) => {
+            result.expect("publisher must observe the held capacity flock");
+        }
+    }
+    tokio::time::pause();
+    release.add_permits(1);
+    poll_fn(|task| {
+        assert!(promotion.as_mut().poll(task).is_pending());
+        std::task::Poll::Ready(())
+    })
+    .await;
+    drop(promotion);
+    tokio::time::resume();
+    assert_eq!(tokio::fs::read(&active).await.unwrap(), original);
+    let paths = f.cache.entry_paths(&f.key("thread"));
+    assert!(!paths.metadata().exists());
+    assert!(!paths.tmp_image(context.run_id()).exists());
+    assert!(
+        !paths
+            .image(&context.publication_generation())
+            .unwrap()
+            .exists()
+    );
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(f.cache.entry_lock_path(&f.key("thread")))
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Busy
+    ));
+    drop(capacity);
+    assert_eq!(
+        context.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    drop(context);
+    let mut lease = f.lease("thread").await;
+    assert_eq!(lease.result(), HomeCacheCheckoutResult::Hit);
+    let Some(sandbox::HomeDriveSeedImage::Move(seed)) =
+        lease.home_drive_config().unwrap().seed_image
+    else {
+        panic!("retried home must be consumable through the move-seed contract");
+    };
+    assert_eq!(tokio::fs::read(seed).await.unwrap(), original);
 }
 
 #[tokio::test]
