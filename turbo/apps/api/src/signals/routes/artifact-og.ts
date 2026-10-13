@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
+import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { setResHeader$ } from "../context/hono";
 import { queryOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
@@ -25,7 +26,9 @@ function imageResponse(bytes: Buffer | null, variant?: "slack"): Response {
       headers: {
         Location:
           variant === "slack"
-            ? r2ImageTransformUrl(ARTIFACT_OG_BRAND.imageUrl, { height: 200 })
+            ? r2ImageTransformUrl(ARTIFACT_OG_BRAND.imageUrl, {
+                height: SLACK_PREVIEW_IMAGE_HEIGHT,
+              })
             : ARTIFACT_OG_BRAND.imageUrl,
       },
     });

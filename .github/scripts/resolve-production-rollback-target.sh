@@ -73,6 +73,7 @@ readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-
 readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/computer-use-command-notifications
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
+readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
 readonly VIDEO_MODEL_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1283_drop_retired_video_model_columns.sql
@@ -89,7 +90,7 @@ readonly CONNECTOR_CATALOG_PAYLOAD_INDEPENDENT_PATH=turbo/packages/db/src/migrat
 readonly USAGE_ALLOWANCE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1356_drop_organization_usage_allowance.sql
 readonly SSH_CANONICAL_TRANSPORT_PATH=turbo/packages/db/src/migrations/1365_tailscale_private_ssh.sql
 readonly OFFICIAL_RESULT_EMAIL_RUNTIME_RETIREMENT_PATH=turbo/packages/db/src/migrations/1382_retire_official_result_email_runtime.sql
-readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1384_drop_official_result_email_storage.sql
+readonly OFFICIAL_RESULT_EMAIL_STORAGE_CONTRACTION_PATH=turbo/packages/db/src/migrations/1385_drop_official_result_email_storage.sql
 readonly SSH_NEEDS_REBIND_INDEPENDENT_PATH=turbo/packages/db/src/runtime/ssh-connection.ts
 
 fail() {
@@ -156,6 +157,18 @@ if [[ ! "$native_brief_member_runtime_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$native_brief_member_runtime_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Native Morning Brief member runtime preparation: ${native_brief_member_runtime_commit}."
+fi
+
+# #39325 omits Session storage_mounts from all runtime and root-schema SQL.
+# Resolve that shipped preparation, not the later DROP, so compatible release-1
+# APIs remain eligible after the physical contraction under #39310.
+session_storage_mount_runtime_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SESSION_STORAGE_MOUNT_RUNTIME_PATH" | sed -n '1p')
+if [[ ! "$session_storage_mount_runtime_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Session storage-mount runtime preparation on main."
+fi
+if ! git merge-base --is-ancestor "$session_storage_mount_runtime_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Session storage-mount runtime preparation: ${session_storage_mount_runtime_commit}."
 fi
 
 # The draft contraction requires every draft row to carry its owner and a

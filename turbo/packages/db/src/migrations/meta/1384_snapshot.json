@@ -1,5 +1,5 @@
 {
-  "id": "b0acc075-222c-43a9-97c2-72075147435e",
+  "id": "1dcc8e81-a713-47bc-9ee4-1567549917fc",
   "prevId": "d2abedf2-ab6c-4eda-a6b7-86069e79dadd",
   "version": "7",
   "dialect": "postgresql",
@@ -1061,13 +1061,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "storage_mounts": {
-          "name": "storage_mounts",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "'[]'::jsonb"
         }
       },
       "indexes": {
@@ -13020,6 +13013,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "source_run_id": {
+          "name": "source_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_workflow_automation_id": {
+          "name": "source_workflow_automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -13065,6 +13070,27 @@
           "method": "btree",
           "with": {}
         },
+        "email_outbox_source_run_automation_unique": {
+          "name": "email_outbox_source_run_automation_unique",
+          "columns": [
+            {
+              "expression": "source_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_workflow_automation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "email_outbox_provider_idempotency_key_unique": {
           "name": "email_outbox_provider_idempotency_key_unique",
           "columns": [
@@ -13085,7 +13111,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "email_outbox_source_identity_check": {
+          "name": "email_outbox_source_identity_check",
+          "value": "(\n          \"email_outbox\".\"source_run_id\" IS NULL\n          AND \"email_outbox\".\"source_workflow_automation_id\" IS NULL\n        ) OR (\n          \"email_outbox\".\"source_run_id\" IS NOT NULL\n          AND \"email_outbox\".\"source_workflow_automation_id\" IS NOT NULL\n        )"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.email_suppressions": {
@@ -19891,6 +19922,69 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.official_automation_result_email_claims": {
+      "name": "official_automation_result_email_claims",
+      "schema": "",
+      "columns": {
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workflow_automation_id": {
+          "name": "workflow_automation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_outbox_id": {
+          "name": "email_outbox_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "official_automation_result_email_claims_outbox_unique": {
+          "name": "official_automation_result_email_claims_outbox_unique",
+          "columns": [
+            {
+              "expression": "email_outbox_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "official_automation_result_email_claims_pkey": {
+          "name": "official_automation_result_email_claims_pkey",
+          "columns": [
+            "run_id",
+            "workflow_automation_id"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -34523,6 +34617,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "official_result_email_enabled": {
+          "name": "official_result_email_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -34678,7 +34778,7 @@
         },
         "workflow_automations_official_binding_check": {
           "name": "workflow_automations_official_binding_check",
-          "value": "(\n          \"workflow_automations\".\"official_blueprint_key\" IS NULL\n          AND \"workflow_automations\".\"official_applied_fingerprint\" IS NULL\n          AND \"workflow_automations\".\"official_reconciliation_status\" IS NULL\n          AND \"workflow_automations\".\"official_parameter_bindings\" IS NULL\n          AND \"workflow_automations\".\"official_intended_enabled\" IS NULL\n        ) OR (\n          \"workflow_automations\".\"official_blueprint_key\" IS NOT NULL\n          AND \"workflow_automations\".\"official_applied_fingerprint\" ~ '^[0-9a-f]{64}$'\n          AND \"workflow_automations\".\"official_reconciliation_status\" IN ('current', 'reconciling', 'needs_reconfiguration', 'failed')\n          AND jsonb_typeof(\"workflow_automations\".\"official_parameter_bindings\") = 'array'\n          AND \"workflow_automations\".\"official_intended_enabled\" IS NOT NULL\n        )"
+          "value": "(\n          \"workflow_automations\".\"official_blueprint_key\" IS NULL\n          AND \"workflow_automations\".\"official_applied_fingerprint\" IS NULL\n          AND \"workflow_automations\".\"official_reconciliation_status\" IS NULL\n          AND \"workflow_automations\".\"official_parameter_bindings\" IS NULL\n          AND \"workflow_automations\".\"official_intended_enabled\" IS NULL\n          AND \"workflow_automations\".\"official_result_email_enabled\" IS NULL\n        ) OR (\n          \"workflow_automations\".\"official_blueprint_key\" IS NOT NULL\n          AND \"workflow_automations\".\"official_applied_fingerprint\" ~ '^[0-9a-f]{64}$'\n          AND \"workflow_automations\".\"official_reconciliation_status\" IN ('current', 'reconciling', 'needs_reconfiguration', 'failed')\n          AND jsonb_typeof(\"workflow_automations\".\"official_parameter_bindings\") = 'array'\n          AND \"workflow_automations\".\"official_intended_enabled\" IS NOT NULL\n        )"
         }
       },
       "isRLSEnabled": false

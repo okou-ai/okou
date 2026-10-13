@@ -129,7 +129,7 @@ export const startWalletOAuth$ = command(
     const config = linkWalletConfig();
     const state = randomBytes(32).toString("base64url");
     const verifier = randomBytes(48).toString("base64url");
-    const expiresAt = new Date(now() + 10 * 60_000);
+    const expiresAt = new Date(now() + 30 * 60_000);
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
     signal.throwIfAborted();
     const db = set(writeDb$);

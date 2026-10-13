@@ -1,5 +1,5 @@
 import { computed, type Computed } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
@@ -57,6 +57,8 @@ function createDiscordStoredContext(
         discordUserId: chatDiscordContext.senderUserId,
         botUserId: chatDiscordContext.botUserId,
         channelId: chatDiscordContext.destinationChannelId,
+        routeChannelId: discordChatThreadRoutes.channelId,
+        destinationChannelId: discordChatThreadRoutes.destinationChannelId,
         sourceChannelId: chatDiscordContext.channelId,
         messageId: chatDiscordContext.messageId,
         sessionKey: discordChatThreadRoutes.sessionKey,
@@ -117,7 +119,13 @@ function createDiscordThreadTarget(
           eq(discordChatThreadRoutes.chatThreadId, pickedEvent.chatThreadId),
           eq(discordChatThreadRoutes.connectionId, target.connectionId),
           eq(discordChatThreadRoutes.id, target.routeId),
-          eq(discordChatThreadRoutes.destinationChannelId, target.channelId),
+          or(
+            eq(discordChatThreadRoutes.destinationChannelId, target.channelId),
+            and(
+              isNull(discordChatThreadRoutes.destinationChannelId),
+              eq(discordChatThreadRoutes.sessionKey, target.channelId),
+            ),
+          ),
           eq(discordChatThreadRoutes.sessionKey, target.sessionKey),
           eq(discordChatThreadRoutes.userId, pickedEvent.userId),
         ),
@@ -196,14 +204,15 @@ export function createDiscordThreadContext(
     if (!conversation) {
       return null;
     }
-    const [input, target] = await Promise.all([
+    const [input, target, context] = await Promise.all([
       get(sourceAccessInput$),
       get(target$),
+      get(context$),
     ]);
-    return input && target
+    return input && target && context
       ? {
           ...input,
-          channelId: target.channelId,
+          channelId: context.destinationChannelId ?? context.routeChannelId,
           mode: "write" as const,
         }
       : null;

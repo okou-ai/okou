@@ -2147,8 +2147,15 @@
     {
       "idx": 1384,
       "version": "7",
-      "when": 1791862934149,
-      "tag": "1384_drop_official_result_email_storage",
+      "when": 1791861222945,
+      "tag": "1384_retire_session_storage_mounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 1385,
+      "version": "7",
+      "when": 1791870159008,
+      "tag": "1385_drop_official_result_email_storage",
       "breakpoints": true
     }
   ]

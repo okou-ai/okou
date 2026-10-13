@@ -728,16 +728,13 @@ describe("canonical Discord ingress", () => {
       "accepted",
     );
     await flushWaitUntilForTest();
-    expect(provider.channels.has(message.id)).toBe(testCase.allowed);
+    expect(provider.channels.has(message.id)).toBeFalsy();
     const inputs = [];
     for (const thread of await discordChatThreads(context, actor)) {
       inputs.push(...currentInputs(await events(actor, thread.id)));
     }
     expect(inputs).toHaveLength(testCase.allowed ? 1 : 0);
     if (testCase.allowed) {
-      expect(provider.channels.get(message.id)?.parent_id).toBe(
-        provider.guildChannelId,
-      );
       const [input] = inputs;
       if (!input?.runId) {
         throw new Error("Expected one run for the permitted Discord input");
@@ -768,6 +765,7 @@ describe("canonical Discord ingress", () => {
       { userId: first.userId, orgId: first.orgId, orgRole: "org:admin" },
       { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
     ]);
+    provider.createThread(firstMessage.id);
     const secondMessage = discordMessageForTest(second, {
       channelId: firstMessage.id,
       content: `<@${second.botUserId}> second user's private task`,
@@ -971,6 +969,7 @@ describe("canonical Discord ingress", () => {
       }),
       [200],
     );
+    provider.createThread(first.id);
     const followup = discordMessageForTest(actor, {
       channelId: first.id,
       content: `<@${actor.botUserId}> continue the guild task`,
@@ -1657,7 +1656,7 @@ describe("canonical Discord ingress", () => {
     expect(claim.appendSystemPrompt).toContain("untrusted");
   });
 
-  it("tells the Discord thread when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
+  it("replies to the original message while queued without creating an empty thread", async () => {
     // One active run fills the org, independent of the plan's own limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const actor = await connected();
@@ -1680,7 +1679,7 @@ describe("canonical Discord ingress", () => {
     }
     const activeRun = await launchedRun(actor, activeThread.id);
 
-    // A second top-level mention opens its own thread, held only by the limit.
+    // A second mention waits for capacity without opening an empty native thread.
     const waiting = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
       content: `<@${actor.botUserId}> wait for an org run slot`,
@@ -1693,11 +1692,13 @@ describe("canonical Discord ingress", () => {
 
     expect(provider.sentMessages).toStrictEqual([
       expect.objectContaining({
-        channel_id: waiting.id,
+        channel_id: provider.guildChannelId,
+        message_reference: { message_id: waiting.id },
         content:
           "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
       }),
     ]);
+    expect(provider.channels.has(waiting.id)).toBeFalsy();
     const waitingThread = (await discordChatThreads(context, actor)).find(
       (thread) => {
         return thread.id !== activeThread.id;
@@ -1721,7 +1722,7 @@ describe("canonical Discord ingress", () => {
     // The cancelled run may reply in its own thread; the notice is not resent.
     expect(
       provider.sentMessages.filter((message) => {
-        return message.channel_id === waiting.id;
+        return message.content.includes("concurrent run limit");
       }),
     ).toHaveLength(1);
     await runsApi.requestCancelRun(actor.actor, waitingRun.runId, [200]);

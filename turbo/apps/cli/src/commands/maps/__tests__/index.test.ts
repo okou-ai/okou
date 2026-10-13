@@ -141,18 +141,31 @@ describe("okou maps command", () => {
     },
   );
 
-  it.each([
-    { mode: "human", options: [] },
-    { mode: "--json", options: ["--json"] },
-  ])(
-    "shows the oversized response cause and recovery guidance in $mode mode",
-    async ({ options }) => {
-      const message =
-        "Google Maps grounding response exceeded Okou's response size limit. Narrow the search area, request fewer places, or split the query before trying again.";
+  it.each(
+    [
+      {
+        code: "MAPS_RESPONSE_TOO_LARGE",
+        message:
+          "Google Maps grounding response exceeded Okou's response size limit. Narrow the search area, request fewer places, or split the query before trying again.",
+      },
+      {
+        code: "MAPS_CITATION_INVALID",
+        message:
+          "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",
+      },
+    ].flatMap((error) => {
+      return [
+        { ...error, mode: "human", options: [] },
+        { ...error, mode: "--json", options: ["--json"] },
+      ];
+    }),
+  )(
+    "shows the $code cause and recovery guidance in $mode mode",
+    async ({ code, message, options }) => {
       server.use(
         http.post("http://localhost:3000/api/maps/search", () => {
           return HttpResponse.json(
-            { error: { code: "MAPS_RESPONSE_TOO_LARGE", message } },
+            { error: { code, message } },
             { status: 502 },
           );
         }),

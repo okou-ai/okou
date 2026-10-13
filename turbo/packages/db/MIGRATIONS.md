@@ -146,7 +146,7 @@ are enforced by the integration ingress tests.
 
 - `scripts/test-official-result-email-retirement-preparation.ts` replays
   migration `1382_retire_official_result_email_runtime` and the actual
-  contraction `1384_drop_official_result_email_storage`. Release 1 rows and
+  contraction `1385_drop_official_result_email_storage`. Release 1 rows and
   frozen outgoing ORM statements (Official `false`/`true` writes, ordinary
   NULLs, implicit `SELECT`/`RETURNING`, metadata updates, claims and sourced
   outbox inserts) survive 1382 byte-for-byte and stay legal. Runtime mappings
@@ -160,7 +160,7 @@ are enforced by the integration ingress tests.
   advancing the journal. Only release 2's bounded legacy consumer (#39524)
   still writes the dropped storage, so the contraction ships after the
   normal-channel callback drain gate. The production rollback resolver enforces
-  floors on the first-parent `main` commits that add 1382 and 1384. Run
+  floors on the first-parent `main` commits that add 1382 and 1385. Run
   `pnpm test:official-result-email-retirement-preparation` with an owned
   PostgreSQL `DATABASE_URL`. Retain the validator and its outgoing fixture
   through the contraction's production release and drain/rollback acceptance.

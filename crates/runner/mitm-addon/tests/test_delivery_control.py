@@ -174,6 +174,66 @@ async def test_drain_overload_deadline_and_disconnect_leave_http_delivery_owned(
         assert api.request_count == 1
 
 
+async def test_coalesced_wake_delivers_second_batch_before_shutdown(
+    tmp_path, control, fresh_usage_executor
+):
+    install_recording_usage_timer()
+    # Keep the delivery worker in the real synchronous fallback while HTTP is blocked.
+    fresh_usage_executor.shutdown(wait=True)
+    release = threading.Event()
+    api = UsageWebhookServer()
+    api.queue_response(204, release_event=release)
+    first_event = event(source_key="source-1", quantity=3)
+    second_event = event(source_key="source-2", quantity=7)
+    with api.run():
+        try:
+            usage.buffer_source_usage_events(
+                api.url(),
+                "synthetic-token",
+                "run-1",
+                [first_event],
+                str(tmp_path / "proxy.jsonl"),
+            )
+            assert data(tmp_path, "delivery.flush")["state"] == "admitted"
+            assert api.wait_for_request_count(1)
+            usage.buffer_source_usage_events(
+                api.url(),
+                "synthetic-token",
+                "run-1",
+                [second_event],
+                str(tmp_path / "proxy.jsonl"),
+            )
+            assert data(tmp_path, "delivery.flush")["state"] == "coalesced"
+            state = data(tmp_path)
+            assert state["workerActive"]
+            assert state["wakePending"]
+            assert state["buffered"] == 2
+            assert state["reports"] == 1
+            assert api.request_count == 1
+
+            release.set()
+            # Status only observes: drain, another flush, timers or done() could rescue a lost wake.
+            state = wait_state(tmp_path, lambda state: not state["workerActive"])
+            assert api.request_count == 2
+            assert api.json_bodies() == [
+                {"runId": "run-1", "events": [first_event]},
+                {"runId": "run-1", "events": [second_event]},
+            ]
+            assert state["flows"] == state["buffered"] == state["reports"] == 0
+            assert state["outcomes"] == {
+                "success": 2,
+                "retryable_failure": 0,
+                "permanent_failure": 0,
+            }
+            assert state["wakePending"] is False
+            assert state["closed"] is False
+            assert state["drainActive"] is False
+            assert state["flushFailures"] == 0
+        finally:
+            release.set()
+            wait_state(tmp_path, lambda state: not state["workerActive"])
+
+
 @pytest.mark.shard_cost(4)
 async def test_blocked_flush_owner_coalesces_wakes_and_hands_off_to_shutdown(
     tmp_path, control, fresh_usage_executor

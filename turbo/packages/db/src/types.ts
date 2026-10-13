@@ -24,10 +24,10 @@ export interface ContextArtifact {
 }
 
 /**
- * Canonical Storage mount persisted by run/session/checkpoint writers.
+ * Canonical Storage mount for Run execution and storage preparation.
  *
- * `version` is omitted when a session should resolve the current HEAD on its
- * next turn. Run and checkpoint snapshots persist the exact resolved version.
+ * Preparation inputs may omit `version` to resolve current HEAD. Accepted Run
+ * snapshots retain the exact resolved version.
  */
 export interface PersistedStorageMount {
   orgId: string;
