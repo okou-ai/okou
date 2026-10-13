@@ -2,7 +2,7 @@
 
 use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
-use api_contracts::SecretText;
+use api_contracts::{SecretText, generated::constants::runners::AGENT_EXECUTION_TIMEOUT_SECONDS};
 use serde::{Deserialize, Serialize};
 use ts_http_util::{HeaderValue, Method};
 use zeroize::Zeroizing;
@@ -19,7 +19,6 @@ const TOKEN_PATH: &str = "/api/v2/oauth/token";
 // The first-party OAuth contract defines '-' as the access token's own tailnet.
 // No user-controlled tailnet selector or discovery scope is needed.
 const KEYS_PATH: &str = "/api/v2/tailnet/-/keys";
-const AUTH_KEY_EXPIRY_SECONDS: u32 = 2 * 60 * 60;
 
 struct Token {
     secret: SecretText<4096>,
@@ -93,7 +92,7 @@ impl<D: Dial> Provider<D> {
         #[derive(Serialize)]
         struct Create<'a> {
             #[serde(rename = "expirySeconds")]
-            expiry_seconds: u32,
+            expiry_seconds: u64,
             capabilities: Capabilities<'a>,
         }
         #[derive(Serialize)]
@@ -112,7 +111,7 @@ impl<D: Dial> Provider<D> {
             tags: &'a [String],
         }
         let request = Create {
-            expiry_seconds: AUTH_KEY_EXPIRY_SECONDS,
+            expiry_seconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
             capabilities: Capabilities {
                 devices: Devices {
                     create: Permission {
@@ -170,7 +169,8 @@ impl<D: Dial> Provider<D> {
         let now = chrono::Utc::now();
         if expires <= now
             || created > now + chrono::Duration::seconds(60)
-            || (expires - created).num_seconds() != i64::from(AUTH_KEY_EXPIRY_SECONDS)
+            || u64::try_from((expires - created).num_seconds())
+                != Ok(AGENT_EXECUTION_TIMEOUT_SECONDS)
         {
             return Err(Failure::DomainFailed);
         }
