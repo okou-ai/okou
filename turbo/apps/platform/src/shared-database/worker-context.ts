@@ -1,11 +1,16 @@
 import { command, computed, state } from "ccstate";
+import { delay } from "signal-timers";
 
-import { now } from "../lib/time.ts";
 import { logger } from "../signals/log.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import {
   createDeferredPromise,
+  isAbortError,
+  onRejection,
+  raceWithCancellation,
   resetSignal,
+  settle,
+  waitForOperation,
   withCleanup,
 } from "../signals/utils.ts";
 import type {
@@ -70,15 +75,14 @@ interface RegisteredConnection {
   readonly getToken: SharedDatabaseTokenProvider;
   readonly port: SharedDatabasePortLike;
   readonly visibility: DocumentVisibilityState;
-  readonly heartbeatOrder: number | null;
-  readonly lastHeartbeatAt: number | null;
   readonly signal: AbortSignal;
 }
 
 const connectionsState$ = state<
   ReadonlyMap<ConnectionId, RegisteredConnection>
 >(new Map());
-const lastHeartbeatOrderState$ = state(0);
+const lastTokenConnectionIdState$ = state<ConnectionId | null>(null);
+const PREFERRED_TOKEN_TIMEOUT_MS = 2000;
 const visibleTabChangeState$ = state<ReturnType<
   typeof createDeferredPromise<void>
 > | null>(null);
@@ -186,6 +190,9 @@ export const closeConnection$ = command(
       deleteMapKey(get(connectionLifetimesState$), connectionId),
     );
     set(connectionsState$, deleteMapKey(get(connectionsState$), connectionId));
+    if (get(lastTokenConnectionIdState$) === connectionId) {
+      set(lastTokenConnectionIdState$, null);
+    }
     set(notifyVisibleTabChange$);
     set(lifetime.graph.resetConnection$);
   },
@@ -258,8 +265,6 @@ export const registerConnection$ = command(
         port,
         getToken,
         visibility: "hidden",
-        heartbeatOrder: null,
-        lastHeartbeatAt: null,
         signal,
       }),
     );
@@ -276,52 +281,96 @@ export const registerConnection$ = command(
   },
 );
 
-export const recordConnectionHeartbeat$ = command(
-  ({ get, set }, connectionId: ConnectionId): void => {
-    const connection = get(connectionsState$).get(connectionId);
-    if (!connection) {
-      throw new Error("Shared database connection is not registered");
-    }
-    const heartbeatOrder = get(lastHeartbeatOrderState$) + 1;
-    set(lastHeartbeatOrderState$, heartbeatOrder);
-    set(
-      connectionsState$,
-      new Map(get(connectionsState$)).set(connectionId, {
-        ...connection,
-        heartbeatOrder,
-        lastHeartbeatAt: now(),
-      }),
-    );
-  },
-);
+function requestConnectionToken(
+  getToken: SharedDatabaseTokenProvider,
+  connectionSignal: AbortSignal,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const providerSignal = AbortSignal.any([signal, connectionSignal]);
+  return onRejection(
+    () => {
+      providerSignal.throwIfAborted();
+      return waitForOperation(getToken(providerSignal), providerSignal);
+    },
+    (error) => {
+      signal.throwIfAborted();
+      // A different tab's cancellation is a provider failure, not cancellation
+      // of the still-live caller waiting for the Worker response.
+      if (isAbortError(error)) {
+        throw new Error("Shared database token provider aborted", {
+          cause: error,
+        });
+      }
+    },
+  );
+}
 
-export const requestTokenFromLatestConnection$ = command(
-  ({ get }, signal?: AbortSignal): Promise<string | null> => {
-    signal?.throwIfAborted();
-    let connection: RegisteredConnection | undefined;
-    let lastHeartbeatAt = Number.NEGATIVE_INFINITY;
-    let lastHeartbeatOrder = Number.NEGATIVE_INFINITY;
-    for (const candidate of get(connectionsState$).values()) {
-      if (
-        candidate.lastHeartbeatAt === null ||
-        candidate.heartbeatOrder === null
-      ) {
-        continue;
+export const requestTokenFromTabs$ = command(
+  async ({ get, set }, callerSignal?: AbortSignal): Promise<string | null> => {
+    const signal = callerSignal
+      ? AbortSignal.any([get(rootSignal$), callerSignal])
+      : get(rootSignal$);
+    signal.throwIfAborted();
+    const lastConnectionId = get(lastTokenConnectionIdState$);
+    const preferred = lastConnectionId
+      ? get(connectionsState$).get(lastConnectionId)
+      : undefined;
+    if (preferred) {
+      const result = await settle(
+        raceWithCancellation<string | null>(
+          [
+            (attemptSignal) => {
+              return requestConnectionToken(
+                preferred.getToken,
+                preferred.signal,
+                attemptSignal,
+              );
+            },
+            async (attemptSignal) => {
+              await delay(PREFERRED_TOKEN_TIMEOUT_MS, {
+                signal: attemptSignal,
+              });
+              return null;
+            },
+          ],
+          signal,
+        ),
+        signal,
+      );
+      signal.throwIfAborted();
+      if (result.ok && result.value) {
+        return result.value;
       }
-      if (
-        candidate.lastHeartbeatAt > lastHeartbeatAt ||
-        (candidate.lastHeartbeatAt === lastHeartbeatAt &&
-          candidate.heartbeatOrder > lastHeartbeatOrder)
-      ) {
-        connection = candidate;
-        lastHeartbeatAt = candidate.lastHeartbeatAt;
-        lastHeartbeatOrder = candidate.heartbeatOrder;
+      if (!result.ok && !preferred.signal.aborted) {
+        throw result.error;
       }
     }
-    if (!connection) {
-      throw new Error("Shared database token requires a tab heartbeat");
+
+    const connections = get(connectionsState$);
+    if (connections.size === 0) {
+      throw new Error("Shared database token requires a registered tab");
     }
-    return connection.getToken(signal);
+    // Broadcast intentionally accepts the first response, including null.
+    // Each request owns its race, so a late loser cannot change the preference.
+    const attempts = [];
+    for (const [connectionId, connection] of connections) {
+      attempts.push(async (attemptSignal: AbortSignal) => {
+        return {
+          connectionId,
+          token: await requestConnectionToken(
+            connection.getToken,
+            connection.signal,
+            attemptSignal,
+          ),
+        };
+      });
+    }
+    const response = await raceWithCancellation(attempts, signal);
+    signal.throwIfAborted();
+    if (get(connectionsState$).has(response.connectionId)) {
+      set(lastTokenConnectionIdState$, response.connectionId);
+    }
+    return response.token;
   },
 );
 
