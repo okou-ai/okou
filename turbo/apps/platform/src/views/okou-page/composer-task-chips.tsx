@@ -447,6 +447,67 @@ function ComposerTaskPanel({
   );
 }
 
+function ComposerTaskTabs({
+  signals,
+  selected,
+  tasks,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: ComposerTask;
+  readonly tasks: readonly ComposerTask[];
+}) {
+  const { t } = useTranslation();
+  const browseTask = useSet(signals.taskChips.browseTask$);
+  const labels = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  return (
+    <Tabs
+      value={selected}
+      onValueChange={(value) => {
+        const task = tasks.find((candidate) => {
+          return candidate === value;
+        });
+        if (task) {
+          browseTask(task);
+        }
+      }}
+      className="flex min-w-0 flex-col gap-5"
+      aria-label={t(($) => {
+        return $.chat.taskChips.label;
+      })}
+    >
+      <TabsList className="mx-auto h-auto flex-wrap gap-2 bg-transparent p-0">
+        {tasks.map((task) => {
+          const Icon = TASK_ICONS[task];
+          return (
+            <TabsTrigger
+              key={task}
+              value={task}
+              render={
+                <Button type="button" variant="outline" className={TASK_CHIP} />
+              }
+            >
+              <Icon size={16} className="text-muted-foreground" aria-hidden />
+              {labels[task]}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+      {tasks.map((task) => {
+        return (
+          <TabsContent key={task} value={task}>
+            <ComposerTaskPanel signals={signals} selected={task} />
+          </TabsContent>
+        );
+      })}
+    </Tabs>
+  );
+}
+
 export function ComposerTaskChips({
   signals,
 }: {
@@ -462,7 +523,6 @@ export function ComposerTaskChips({
       ? null
       : (current ?? (suggestionsEnabled ? "suggestions" : null));
   const selectTask = useSet(signals.taskChips.selectTask$);
-  const browseTask = useSet(signals.taskChips.browseTask$);
   const labels = t(
     ($) => {
       return $.chat.taskChips.tasks;
@@ -491,50 +551,7 @@ export function ComposerTaskChips({
   });
   if (suggestionsEnabled && selected !== null) {
     return (
-      <Tabs
-        value={selected}
-        onValueChange={(value) => {
-          const task = tasks.find((candidate) => {
-            return candidate === value;
-          });
-          if (task) {
-            browseTask(task);
-          }
-        }}
-        className="flex min-w-0 flex-col gap-5"
-        aria-label={t(($) => {
-          return $.chat.taskChips.label;
-        })}
-      >
-        <TabsList className="mx-auto h-auto flex-wrap gap-2 bg-transparent p-0">
-          {tasks.map((task) => {
-            const Icon = TASK_ICONS[task];
-            return (
-              <TabsTrigger
-                key={task}
-                value={task}
-                render={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={TASK_CHIP}
-                  />
-                }
-              >
-                <Icon size={16} className="text-muted-foreground" aria-hidden />
-                {labels[task]}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-        {tasks.map((task) => {
-          return (
-            <TabsContent key={task} value={task}>
-              <ComposerTaskPanel signals={signals} selected={task} />
-            </TabsContent>
-          );
-        })}
-      </Tabs>
+      <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
     );
   }
   return (
