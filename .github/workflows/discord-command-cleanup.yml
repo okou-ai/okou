@@ -1,0 +1,55 @@
+name: Clean Up Discord Commands
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment whose Discord application commands are inspected"
+        type: choice
+        options: [test, production]
+        default: test
+        required: true
+      apply:
+        description: "Remove retired commands after inspecting every registered scope"
+        type: boolean
+        default: false
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: discord-command-cleanup-${{ inputs.environment }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  cleanup:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Inspect, reconcile, and verify Discord commands
+        env:
+          DISCORD_APPLICATION_ID: ${{ vars.DISCORD_APPLICATION_ID }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          APPLY: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "$APPLY" == "true" ]]; then
+            args+=(--apply)
+          fi
+          node ops/discord/cleanup-commands.mjs "${args[@]}"
