@@ -240,6 +240,123 @@ describe("lazy Discord reply threads", () => {
     },
   );
 
+  it("delivers the next DM reply once to the moved physical channel", async () => {
+    const started = await startDiscordRun({ channelType: "dm" });
+    const firstClaim = await claimRun(started.actor, started.runId);
+    const firstText = "The answer in the original DM.";
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: firstClaim.sandboxToken,
+      text: firstText,
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    expect(started.provider.sentMessages[0]).toMatchObject({
+      channel_id: started.channelId,
+      content: `${firstText}\n\n_Claude Fable 5.1_`,
+    });
+
+    const channelId = uniqueDiscordSnowflake();
+    started.provider.channels.set(channelId, {
+      id: channelId,
+      type: 1,
+      recipients: [{ id: started.actor.discordUserId, username: "member" }],
+    });
+    started.provider.channels.delete(started.channelId);
+    const next = discordMessageForTest(started.actor, {
+      channelId,
+      guild: false,
+      content: "Continue the conversation in the moved DM.",
+    });
+    started.provider.messages.set(next.id, next);
+    const receipt = await postDiscordMessage(context, next);
+    expect(receipt.body.outcome).toBe("accepted");
+    await flushWaitUntilForTest();
+    await expect(
+      discordChatThreads(context, started.actor),
+    ).resolves.toMatchObject([
+      { id: started.threadId, selectedModel: "claude-fable-5-1" },
+    ]);
+    const events = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    const revokedIds = revokedChatEventIds(events);
+    const inputs = events
+      .filter((event) => {
+        return event.eventType === "input.prompt";
+      })
+      .filter((event) => {
+        return !revokedIds.has(event.id);
+      });
+    expect(inputs).toHaveLength(2);
+    const input = inputs.find((event) => {
+      return event.userMessage.parts.some((part) => {
+        return part.type === "text" && part.text === next.content;
+      });
+    });
+    if (!input?.runId) {
+      throw new Error("Expected the moved DM input to launch a run");
+    }
+    expect(input.runId).not.toBe(started.runId);
+    expect(
+      input.userMessage.parts.filter((part) => {
+        return part.type === "source";
+      }),
+    ).toStrictEqual([
+      {
+        type: "source",
+        kind: "discord",
+        href: `https://discord.com/channels/@me/${channelId}/${next.id}`,
+      },
+    ]);
+    const claim = await claimRun(started.actor, input.runId);
+    expect(claim.prompt).toBe(next.content);
+    const text = "The answer in the moved DM.";
+    const completion = await completeRun({
+      runId: input.runId,
+      sandboxToken: claim.sandboxToken,
+      text,
+    });
+    if (!completion) {
+      throw new Error("Expected successful completion in the moved DM");
+    }
+    const replies = started.provider.sentMessages.filter((message) => {
+      return message.content.includes(text);
+    });
+    expect(
+      replies.map((message) => {
+        return { channelId: message.channel_id, content: message.content };
+      }),
+    ).toStrictEqual([{ channelId, content: `${text}\n\n_Claude Fable 5.1_` }]);
+    const completedEvents = await readProjectedChatEvents(context, {
+      threadId: started.threadId,
+      headers: { authorization: "Bearer clerk-session" },
+    });
+    expect(completedEvents).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.completed",
+        runId: input.runId,
+      }),
+    );
+    await webhooks.requestAgentComplete(
+      completion,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(
+      started.provider.sentMessages.map((message) => {
+        return { channelId: message.channel_id, content: message.content };
+      }),
+    ).toStrictEqual([
+      {
+        channelId: started.channelId,
+        content: `${firstText}\n\n_Claude Fable 5.1_`,
+      },
+      { channelId, content: `${text}\n\n_Claude Fable 5.1_` },
+    ]);
+  });
+
   it("reuses a thread created by the user while the answer is being prepared", async () => {
     const started = await startDiscordRun({ channelType: "channel" });
     const claim = await claimRun(started.actor, started.runId);
