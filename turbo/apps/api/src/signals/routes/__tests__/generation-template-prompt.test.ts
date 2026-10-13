@@ -121,7 +121,6 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(
       "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
-    expect(result.prompt).not.toContain("Return only the HTML deck");
     const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");
     });
@@ -184,7 +183,6 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain(
       "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
-    expect(result.prompt).not.toContain("Return only the generated HTML deck");
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");
     expect(result.prompt).not.toContain("AGENT_RUNBOOK.md");

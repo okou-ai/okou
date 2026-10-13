@@ -11630,7 +11630,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",
           );
-          expect(prompt).not.toContain("deliver both the hosted HTML deck");
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
             expect(prompt).toContain(

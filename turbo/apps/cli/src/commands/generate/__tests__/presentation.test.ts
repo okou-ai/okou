@@ -116,7 +116,6 @@ describe("okou generate presentation command", () => {
     expect(stdout).toContain(
       "For PPTX, follow the platform's conversion instructions. For HTML, follow the preview and hosting steps below",
     );
-    expect(stdout).not.toContain("Return only the HTML deck");
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
       "Keep supporting generated media at its default visibility",

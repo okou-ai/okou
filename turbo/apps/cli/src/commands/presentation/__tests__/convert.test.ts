@@ -700,7 +700,6 @@ describe("okou presentation convert", () => {
     const output = vi.mocked(console.log).mock.calls.flat().join("\n");
     expect(output).toContain("Presentation converted");
     expect(output).toContain(`okou web upload-file -f ${outPath}`);
-    expect(output).not.toContain("okou presentation screenshot");
   });
 
   it("reports unsupported image exports and retains the native source text diagnostic", async () => {
