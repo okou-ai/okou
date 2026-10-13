@@ -3,12 +3,14 @@ import { ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { cronProjectChatEventSearchContract } from "@okouai/api-contracts/contracts/cron";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { mcpChatSearchContract } from "@okouai/api-contracts/contracts/mcp-chat-search";
+import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import { mcpGetChatMessagesOutputSchema } from "@okouai/api-contracts/contracts/mcp-chat-snapshots";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { withMockNowForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { cronProjectChatEventSearchRoutes } from "../cron-project-chat-event-search";
 import { createBddApi } from "./helpers/api-bdd";
@@ -453,6 +455,168 @@ describe("GET /api/cron/project-chat-event-search", () => {
       await expect(search(keyword)).resolves.toStrictEqual([]);
     }
   });
+
+  it("publishes messages searchable with inclusive MCP ISO time filters and unchanged Web milliseconds", async () => {
+    // Authenticated operator publication is the system boundary in this case;
+    // message construction and all search observations use normal public APIs.
+    const app = await setupApp({
+      context,
+      routes: cronProjectChatEventSearchRoutes,
+      isolatePg: true,
+    });
+    const bdd = createBddApi(context);
+    const chat = createChatFilesBddApi(context);
+    const mcp = createMcpWebApi(context);
+    createRunsApi(context).configureRunnerGroup();
+    bdd.acceptAgentStorageWrites();
+    context.mocks.s3.send.mockImplementation((request: unknown) => {
+      return Promise.resolve(
+        request instanceof ListObjectsV2Command
+          ? { Contents: [], IsTruncated: false }
+          : { ContentLength: 1024 },
+      );
+    });
+    const owner = bdd.user({ orgId: `org_${randomUUID()}` });
+    const agent = await bdd.createAgent(owner, {
+      displayName: "MCP time filtering",
+      visibility: "private",
+    });
+    const keyword = `mcptime${randomUUID().replaceAll("-", "")}`;
+    const threadId = await withMockNowForTest(
+      new Date("2026-10-12T08:00:00Z"),
+      async () => {
+        const opened = await chat.requestSendEvent(
+          owner,
+          { agentId: agent.agentId, model: null, prompt: "Time-filter setup" },
+          [201],
+        );
+        if (opened.status !== 201) {
+          throw new Error("Expected public conversation creation");
+        }
+        await flushWaitUntilForTest();
+        return opened.body.threadId;
+      },
+    );
+    const markers = [
+      { label: "before", createdAt: "2026-10-12T08:02:49.990Z" },
+      { label: "equal", createdAt: "2026-10-12T08:02:50.000Z" },
+      { label: "after", createdAt: "2026-10-12T08:02:50.010Z" },
+    ];
+    for (const marker of markers) {
+      await withMockNowForTest(new Date(marker.createdAt), async () => {
+        await chat.requestSendEvent(
+          owner,
+          {
+            agentId: agent.agentId,
+            threadId,
+            prompt: `${keyword} ${marker.label}`,
+          },
+          [201],
+        );
+        await flushWaitUntilForTest();
+      });
+    }
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    await accept(
+      app(cronProjectChatEventSearchContract).project({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+    const token = mcp.authorize(owner);
+    async function search(since?: string) {
+      const response = await mcp.call(token(), "search_chat_messages", {
+        keyword,
+        agentId: agent.agentId,
+        ...(since === undefined ? {} : { since }),
+      });
+      expect(response.isError).not.toBeTruthy();
+      return mcpChatSearchContract.search.responses[200].parse(
+        response.structuredContent,
+      ).results;
+    }
+    const unfiltered = await search();
+    expect(
+      unfiltered.map((hit) => {
+        return hit.matchedMessage.content;
+      }),
+    ).toStrictEqual([
+      `${keyword} after`,
+      `${keyword} equal`,
+      `${keyword} before`,
+    ]);
+    const equal = unfiltered.find((hit) => {
+      return hit.matchedMessage.content === `${keyword} equal`;
+    });
+    const after = unfiltered.find((hit) => {
+      return hit.matchedMessage.content === `${keyword} after`;
+    });
+    if (!equal || !after) {
+      throw new Error("Expected indexed public message timestamps");
+    }
+    // Native ingress can sequence related events beyond the request clock.
+    // Reuse the public timestamp, just as a caller can, without pinning that policy.
+    const since = equal.matchedMessage.createdAt;
+    const filtered = await search(since);
+    expect(
+      filtered.map((hit) => {
+        return hit.matchedMessage.content;
+      }),
+    ).toStrictEqual([`${keyword} after`, `${keyword} equal`]);
+    expect(filtered).toContainEqual(equal);
+    const offsetSince = new Date(Date.parse(since) + 8 * 3_600_000)
+      .toISOString()
+      .replace("Z", "+08:00");
+    await expect(search(offsetSince)).resolves.toStrictEqual(filtered);
+    expect(
+      (await search(new Date(Date.parse(since) + 1).toISOString())).map(
+        (hit) => {
+          return hit.matchedMessage.content;
+        },
+      ),
+    ).toStrictEqual([`${keyword} after`]);
+    await expect(
+      search(
+        new Date(Date.parse(after.matchedMessage.createdAt) + 1).toISOString(),
+      ),
+    ).resolves.toStrictEqual([]);
+    await expect(search("2099-01-01T00:00:00Z")).resolves.toStrictEqual([]);
+    const native = await chat.searchChat(owner, keyword, {
+      agentId: agent.agentId,
+      since: Date.parse(since),
+    });
+    expect(
+      native.results.map((hit) => {
+        return hit.matchedMessage.content;
+      }),
+    ).toStrictEqual([`${keyword} after`, `${keyword} equal`]);
+    expect(
+      native.results.map((hit) => {
+        return hit.matchedMessage.createdAt;
+      }),
+    ).toStrictEqual(
+      filtered.map((hit) => {
+        return hit.matchedMessage.createdAt;
+      }),
+    );
+    for (const since of [
+      1_791_792_170,
+      1_791_792_170_000,
+      "1791792170000",
+      "2026-10-12T08:02:50",
+      "2026-02-30T08:02:50Z",
+      "2026-10-12T08:02:50.0001Z",
+    ]) {
+      const rejected = await mcp.call(token(), "search_chat_messages", {
+        keyword,
+        since,
+      });
+      expect(rejected.isError).toBeTruthy();
+      expect(apiErrorSchema.parse(rejected.structuredContent).error.code).toBe(
+        "BAD_REQUEST",
+      );
+    }
+  }, 60_000);
 
   it("cleans orphaned search projections after public Agent deletion", async () => {
     const app = await setupApp({

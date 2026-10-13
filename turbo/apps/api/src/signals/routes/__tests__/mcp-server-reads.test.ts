@@ -180,6 +180,48 @@ describe("thin MCP Web adapters", () => {
           },
         },
       });
+      expect(search.inputSchema.properties?.since).toMatchObject({
+        type: "string",
+        format: "date-time",
+        description: expect.stringContaining("Inclusive lower bound"),
+      });
+      expect(search.description).toContain("2026-10-12T08:02:50Z");
+      expect(search.description).toContain("index updates asynchronously");
+      const validateSearchInput = validator.getValidator(
+        search.inputSchema as JsonSchemaType,
+      );
+      for (const since of [
+        "2026-10-12T08:02:50Z",
+        "2026-10-12T16:02:50.123+08:00",
+      ]) {
+        expect(
+          validateSearchInput({ keyword: "search", since }).valid,
+        ).toBeTruthy();
+      }
+      for (const since of [
+        1_791_792_170,
+        1_791_792_170_000,
+        "1791792170000",
+        "2026-10-12T08:02:50",
+        "2026-10-12T08:02:50.0001Z",
+      ]) {
+        expect(
+          validateSearchInput({ keyword: "search", since }).valid,
+        ).toBeFalsy();
+      }
+      const searched = await sdk.callTool({
+        name: "search_chat_messages",
+        arguments: {
+          keyword: `sdk-time-${randomUUID()}`,
+          since: "2026-10-12T08:02:50Z",
+        },
+      });
+      expect(searched.isError).not.toBeTruthy();
+      expect(
+        mcpChatSearchContract.search.responses[200].parse(
+          searched.structuredContent,
+        ),
+      ).toStrictEqual({ results: [] });
       const searchThreadId = randomUUID();
       const searchHit = {
         threadId: searchThreadId,
@@ -766,7 +808,11 @@ describe("thin MCP Web adapters", () => {
 
   it("preserves Web search filters, empty results and activity-summary behavior", async () => {
     const f = await fixture();
-    const query = { keyword: "plain keyword", agentId: f.agentId, since: 1 };
+    const query = {
+      keyword: "plain keyword",
+      agentId: f.agentId,
+      since: "1970-01-01T00:00:00.001Z",
+    };
     const web = await mcp.web(
       f.token(),
       `/api/chat/search?keyword=plain%20keyword&agentId=${f.agentId}&since=1`,
