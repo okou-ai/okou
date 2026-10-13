@@ -47,7 +47,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -1200,25 +1200,27 @@ async function loadOwnedBrowserSidebarThread(
   return thread ?? null;
 }
 
-async function loadOwnedBrowser(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select({ browser: BROWSER_SESSION_SELECTION })
-    .from(browserSessions)
-    .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, access.chatThreadId),
-        eq(browserSessions.orgId, access.orgId),
-        eq(browserSessions.userId, access.userId),
-        eq(chatThreads.userId, access.userId),
-      ),
-    )
-    .limit(1);
-  return row?.browser ?? null;
-}
+const loadOwnedBrowser$ = command(
+  async (
+    { get },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserSessionRow | null> => {
+    const [row] = await get(db$)
+      .select({ browser: BROWSER_SESSION_SELECTION })
+      .from(browserSessions)
+      .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, access.chatThreadId),
+          eq(browserSessions.orgId, access.orgId),
+          eq(browserSessions.userId, access.userId),
+          eq(chatThreads.userId, access.userId),
+        ),
+      )
+      .limit(1);
+    return row?.browser ?? null;
+  },
+);
 
 async function loadCurrentBrowser(
   db: Db,
@@ -2538,7 +2540,7 @@ export const leaseBrowserByThread$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2559,7 +2561,7 @@ export const resizeBrowserByThread$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2668,7 +2670,7 @@ export const getBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const row = await loadOwnedBrowser(db, access);
+    const row = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
