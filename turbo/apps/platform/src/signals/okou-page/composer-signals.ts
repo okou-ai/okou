@@ -103,6 +103,8 @@ type ComposerSuggestionSignals = Pick<
   | "setSelectedSuggestionIndex$"
   | "previewSuggestionIndex$"
   | "previewSuggestion$"
+  | "slashWorkflowsExpanded$"
+  | "expandSlashWorkflows$"
   | "closeSuggestionMenu$"
   | "setSuggestionMenuRef$"
   | "clearSlashRange$"
@@ -360,6 +362,8 @@ function composerSuggestionSignals(
     setSelectedSuggestionIndex$: composer.setSelectedSuggestionIndex$,
     previewSuggestionIndex$: composer.previewSuggestionIndex$,
     previewSuggestion$: composer.previewSuggestion$,
+    slashWorkflowsExpanded$: composer.slashWorkflowsExpanded$,
+    expandSlashWorkflows$: composer.expandSlashWorkflows$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,
