@@ -132,6 +132,13 @@ are enforced by the integration ingress tests.
 
 ### Active transition validators
 
+- `scripts/test-run-native-facts-preparation.ts` replays the additive Run fact
+  migration against populated Session/Conversation history. It preserves legacy
+  row contents, existing blob retains, outgoing SQL and Session constraints and
+  cascades. Retain this validator through #37970's runtime cutover and physical
+  contraction; preparation alone does not establish the producer floor or final
+  historical backfill required by the cutover.
+
 - `scripts/test-ssh-needs-rebind-contraction.ts` exercises the actual guarded
   contraction migration with minimal historical SQL inputs. Unexpected index,
   check, view, routine, composite/array type or default consumers reject deletion

@@ -1197,6 +1197,7 @@ function maintenanceRunValues(args: {
     userId: record.userId,
     orgId: record.orgId,
     status: args.status,
+    agentId: null,
     creditAdmitted: args.creditAdmitted,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,

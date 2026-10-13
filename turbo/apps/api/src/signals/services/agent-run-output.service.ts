@@ -995,6 +995,16 @@ async function persistAgentRunOutput(
     throw new Error("Failed to upsert conversation record");
   }
 
+  await tx
+    .update(agentRuns)
+    .set({
+      framework: body.cliAgentType,
+      frameworkSessionId: body.cliAgentSessionId,
+      legacyConversationHistoryHash: historyHash ?? null,
+    })
+    .where(eq(agentRuns.id, body.runId));
+  signal.throwIfAborted();
+
   if (previousHistoryHash !== null && historyChanged) {
     await tx
       .update(blobs)
