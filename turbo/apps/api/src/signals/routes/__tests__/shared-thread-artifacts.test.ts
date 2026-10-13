@@ -15,9 +15,7 @@ import { z } from "zod";
 import sharp from "sharp";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
@@ -35,7 +33,6 @@ import { artifactShareRoutes } from "../artifact-shares";
 import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -66,7 +63,6 @@ function api(rethrowErrors = false) {
     rethrowErrors,
     routes: [
       ...sharedThreadRoutes,
-      ...featureSwitchesRoutes,
       ...artifactShareRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
@@ -736,32 +732,7 @@ test.each(["missing", "unavailable"] as const)(
       [expected],
     );
     expect(published.body).not.toHaveProperty("preview");
-    await accept(
-      api()(featureSwitchesContract).update({
-        headers: headers(f.actor),
-        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: false } },
-      }),
-      [200],
-    );
     const og = api()(artifactOgContract);
-    const disabledQuery = { kind: "reference" as const, id: reference };
-    expect(
-      (await accept(og.metadata({ query: disabledQuery }), [200])).body,
-    ).toStrictEqual({ available: false });
-    const disabledImage = await accept(
-      og.image({ query: { ...disabledQuery, version: "published" } }),
-      [302],
-    );
-    expect(disabledImage.headers.get("location")).toBe(
-      ARTIFACT_OG_BRAND.imageUrl,
-    );
-    await accept(
-      api()(featureSwitchesContract).update({
-        headers: headers(f.actor),
-        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
-      }),
-      [200],
-    );
     const ogStatus = failure === "missing" ? 200 : 500;
     const metadata = await accept(
       og.metadata({ query: { kind: "reference", id: reference } }),
@@ -1326,13 +1297,6 @@ test("shares distinct files and reuses a reference for repeated links", async ()
 
 test("oG uses the published thread snapshot and revokes its old image URL with the parent share", async () => {
   const f = await fixture();
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers: headers(f.actor),
-      body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
-    }),
-    [200],
-  );
   const bytes = await sharp({
     create: { width: 64, height: 40, channels: 3, background: "#226688" },
   })

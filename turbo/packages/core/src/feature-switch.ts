@@ -65,11 +65,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
-  [FeatureSwitchKey.ArtifactPreviews]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Capture and publish sandbox covers for HTML artifacts.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SlackLinkUnfurls]: {
     maintainer: "bingjie@okou.ai",
     description: "Show public artifact covers in Slack link previews.",

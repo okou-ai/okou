@@ -3581,7 +3581,6 @@ export function buildPresentationRunbookInstructionLines(args: {
   readonly runbookPackage: PresentationRunbookPackage;
   readonly colorSystemToken: string;
   readonly hostCommand?: string;
-  readonly artifactPreviewsEnabled?: boolean;
 }): readonly string[] {
   const { runbookPackage: pkg, colorSystemToken } = args;
   const packageDir = `./generated/resources/${pkg.slug}`;
@@ -3597,7 +3596,6 @@ export function buildPresentationRunbookInstructionLines(args: {
     PRESENTATION_STATIC_HTML_INSTRUCTION,
     ...presentationDeliveryInstructions({
       hostCommand: args.hostCommand,
-      artifactPreviewsEnabled: args.artifactPreviewsEnabled,
     }),
   ];
 }

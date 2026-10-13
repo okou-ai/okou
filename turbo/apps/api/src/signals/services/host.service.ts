@@ -1,6 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -213,7 +210,6 @@ type PrepareDeploymentResult =
           readonly uploadUrl: string;
           readonly sha256: string;
         };
-        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "forbidden" }
@@ -236,7 +232,6 @@ type CompleteDeploymentResult =
         readonly activeDeploymentVersion?: number;
         readonly status: "ready";
         readonly previewImageUrl?: string;
-        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "not_found"; readonly message: string }
@@ -599,27 +594,15 @@ export const prepareHostedSiteDeployment$ = command(
     if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
-    let previewRequest = args.body.preview;
+    const previewRequest = args.body.preview;
     if (previewRequest) {
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        args.orgId,
-        args.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
-        previewRequest = undefined;
-      } else {
-        // Fail before creating a deployment if private preview storage is absent.
-        privateArtifactsBucket();
-      }
+      // Fail before creating a deployment if private preview storage is absent.
+      privateArtifactsBucket();
     }
-    const siteAndDeployment = await set(
-      createHostedSiteDeployment$,
-      { ...args, body: { ...args.body, preview: previewRequest } },
-      { now: nowDate(), deploymentId: crypto.randomUUID() },
-    );
+    const siteAndDeployment = await set(createHostedSiteDeployment$, args, {
+      now: nowDate(),
+      deploymentId: crypto.randomUUID(),
+    });
     // Allocation commits one SQL unit before request cancellation is observed.
     signal.throwIfAborted();
     if (siteAndDeployment.kind === "content_conflict") {
@@ -675,9 +658,6 @@ export const prepareHostedSiteDeployment$ = command(
         ...deploymentVersionResponseFields(siteAndDeployment.deployment),
         uploads,
         ...(preview ? { preview } : {}),
-        ...(args.body.preview && !previewRequest
-          ? { previewSkipped: true }
-          : {}),
       },
     };
   },
@@ -1017,8 +997,7 @@ const publishHostedSiteDeploymentPointers$ = command(
 function completedHostedSiteResponse(
   deployment: HostedDeploymentRow,
   promotion: HostedSitePromotion,
-  preview:
-    { readonly status: "ok" | "skipped"; readonly url?: string } | undefined,
+  preview: { readonly status: "ok"; readonly url: string } | undefined,
 ): CompleteDeploymentResult {
   const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
@@ -1041,7 +1020,6 @@ function completedHostedSiteResponse(
           }),
       status: "ready",
       ...(preview?.url ? { previewImageUrl: preview.url } : {}),
-      ...(preview?.status === "skipped" ? { previewSkipped: true } : {}),
     },
   };
 }

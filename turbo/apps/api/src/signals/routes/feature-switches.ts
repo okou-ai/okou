@@ -40,6 +40,10 @@ function featureSwitchResponseBody(params: {
       // the ungated App is live and the Web client floor excludes those builds
       // (#39692).
       privateArtifacts: true,
+      // Captured CLI packages treat a missing key as disabled and skip covers.
+      // Remove this wire-only value after those queued/active runs drain and
+      // supported package-selection/rollback paths exclude them (#39754).
+      artifactPreviews: true,
     },
   };
 }

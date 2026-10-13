@@ -48,25 +48,6 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables artifact previews for everyone and honors explicit overrides", () => {
-    for (const [context, enabled] of [
-      [{}, true],
-      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
-      [{ orgId: "external-org" }, true],
-    ] as const) {
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
-      ).toBe(enabled);
-      for (const override of [true, false]) {
-        expect(
-          isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
-            ...context,
-            overrides: { [FeatureSwitchKey.ArtifactPreviews]: override },
-          }),
-        ).toBe(override);
-      }
-    }
-  });
   it("enables presentation conversion for Bingjie across workspaces", () => {
     for (const orgId of [
       undefined,

@@ -1,6 +1,5 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { randomUUID } from "node:crypto";
 import {
   STEERED_INPUT_ALREADY_CONSUMED_ERROR_CODE,
@@ -56,7 +55,7 @@ async function sendQueuedPrompt(
 }
 
 describe("CHAT-02: steering input prompts into a running run", () => {
-  it("uses the current artifact preview switch for a template steered into an existing run", async () => {
+  it("includes cover guidance for a template steered into an existing run", async () => {
     const {
       actor: owner,
       agentId,
@@ -97,18 +96,13 @@ describe("CHAT-02: steering input prompts into a running run", () => {
       },
       [201],
     );
-    for (const enabled of [false, true, false]) {
-      await updateFeatureSwitchesForUser(context, actor, {
-        artifactPreviews: enabled,
-      });
-      const next = await api.nextSteerableInput(
-        claimed.claim.sandboxToken,
-        active.runId,
-      );
-      expect(next.input?.prompt).toContain("Make a website");
-      expect(next.input?.prompt.includes("okou host screenshot")).toBe(enabled);
-      expect(next.input?.prompt.includes(" --preview ")).toBe(enabled);
-    }
+    const next = await api.nextSteerableInput(
+      claimed.claim.sandboxToken,
+      active.runId,
+    );
+    expect(next.input?.prompt).toContain("Make a website");
+    expect(next.input?.prompt).toContain("okou host screenshot");
+    expect(next.input?.prompt).toContain(" --preview ");
     await cancelChatRun(actor, active.runId);
   });
 

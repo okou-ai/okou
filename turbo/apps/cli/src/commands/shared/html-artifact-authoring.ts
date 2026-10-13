@@ -29,7 +29,6 @@ const HTML_RESOURCE_INDEX_URLS: Record<HtmlArtifactKind, string> = {
 
 interface HtmlArtifactAuthoringOptions {
   readonly kind: HtmlArtifactKind;
-  readonly artifactPreviewsEnabled: boolean;
   readonly prompt: string;
   readonly slugSource?: string;
   readonly siteSlug?: string;
@@ -86,7 +85,7 @@ export function createHtmlArtifactAuthoringInstructions(
       : ` --visibility ${options.visibility}`;
   const hostCommand = `okou host ${outputDir} --site ${site}${
     options.kind === "website" ? " --spa" : ""
-  }${visibilityFlag}${options.artifactPreviewsEnabled ? ` --preview ${previewPath} --json` : ""}`;
+  }${visibilityFlag} --preview ${previewPath} --json`;
   const title = titleForKind(options.kind);
   const resourceIndexUrl = HTML_RESOURCE_INDEX_URLS[options.kind];
   const selectionSchema: HtmlArtifactSelectionOutputSchema = {
@@ -185,13 +184,11 @@ export function createHtmlArtifactAuthoringInstructions(
     "- Check that text does not overflow or overlap at desktop and mobile viewport sizes.",
     "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
     "- Run the final hosting command only after the artifact looks correct.",
-    ...(options.artifactPreviewsEnabled
-      ? artifactPreviewInstructions({
-          outputDir,
-          previewPath,
-          spaFallback: options.kind === "website",
-        })
-      : []),
+    ...artifactPreviewInstructions({
+      outputDir,
+      previewPath,
+      spaFallback: options.kind === "website",
+    }),
     "",
     "## Publish",
     "The hosted URL is the preview and user-accessible view for this static HTML artifact.",

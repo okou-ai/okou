@@ -69,14 +69,6 @@ describe("hosted artifact previews", () => {
     }
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
     vi.stubEnv("OKOU_TOKEN", "test-token");
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { artifactPreviews: true },
-        });
-      }),
-    );
   });
 
   afterEach(() => {
@@ -99,57 +91,8 @@ describe("hosted artifact previews", () => {
     ]);
   }
 
-  it("silently skips capture and ignores the cover when previews are disabled", async () => {
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json({
-          switches: {},
-          effectiveSwitches: { artifactPreviews: false },
-        });
-      }),
-    );
-    const original = readFileSync(cover);
-    await screenshotHostedSiteCommand.parseAsync([
-      "node",
-      "okou",
-      join(root, "missing-site"),
-      "--out",
-      cover,
-    ]);
-    expect(logs.mock.calls).toHaveLength(0);
-    expect(readFileSync(cover)).toEqual(original);
-    expect(existsSync(`${cover}.okou-preview.json`)).toBe(false);
-    cover = join(root, "missing-cover.png");
-    server.use(
-      http.post("*/api/host/deployments/prepare", async ({ request }) => {
-        const body = hostedSitePrepareRequestSchema.parse(await request.json());
-        expect(body.preview).toBeUndefined();
-        return HttpResponse.json({
-          ...completed,
-          uploads: body.files.map((file) => {
-            return {
-              path: file.path,
-              uploadUrl: `https://upload.example${file.path}`,
-            };
-          }),
-        });
-      }),
-      http.put("https://upload.example/*", () => {
-        return new HttpResponse(null, { status: 200 });
-      }),
-      http.post(`*/api/host/deployments/${deploymentId}/complete`, () => {
-        return HttpResponse.json({ ...completed, previewImageUrl: undefined });
-      }),
-    );
-    await publish();
-    expect(JSON.parse(logs.mock.calls.flat().join("\n"))).toMatchObject({
-      deploymentId,
-    });
-    expect(errors.mock.calls).toHaveLength(0);
-  });
-
   it.each(["prepare", "complete"])(
-    "publishes without a cover when the switch is disabled before %s",
+    "publishes when an older API acknowledges a skipped cover at %s",
     async (phase) => {
       let uploadedPreview = false;
       server.use(

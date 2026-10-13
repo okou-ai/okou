@@ -1,4 +1,3 @@
-import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
@@ -117,12 +116,11 @@ ${formatPresentationTemplateListing(templates)}`;
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
-        const previewsEnabled = await artifactPreviewsEnabled();
         const visibilityFlag =
           options.visibility === undefined
             ? ""
             : ` --visibility ${options.visibility}`;
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}${previewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`;
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
         const deliveryInstructions = [
           options.visibility === undefined
             ? "- Uploaded and generated files default to only-me. Hosted sites are public."
@@ -148,7 +146,6 @@ ${formatPresentationTemplateListing(templates)}`;
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
                 hostCommand,
-                artifactPreviewsEnabled: previewsEnabled,
               }),
               ...deliveryInstructions,
               "",
@@ -201,7 +198,6 @@ ${formatPresentationTemplateListing(templates)}`;
             "## Delivery",
             ...presentationDeliveryInstructions({
               hostCommand,
-              artifactPreviewsEnabled: previewsEnabled,
             }),
             ...deliveryInstructions,
           ].join("\n"),

@@ -7,7 +7,6 @@ import { dirname, extname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { Command } from "commander";
 
-import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
   assertPreviewOutsideSite,
@@ -206,13 +205,12 @@ export const screenshotHostedSiteCommand = new Command("screenshot")
   .option("--json", "Output the local image path and dimensions as JSON")
   .addHelpText(
     "after",
-    "\nUses a clean local agent-browser session and a read-only bundle server. Writes a 1280x800 PNG (16:10, matching Artifacts cards) plus a bundle receipt, uploads nothing. Inspect the PNG, then publish with --preview <png>. Re-capture after editing. Silently skips capture when artifactPreviews is disabled in Lab. When enabled, requires agent-browser and its browser/fonts in the sandbox.",
+    "\nUses a clean local agent-browser session and a read-only bundle server. Writes a 1280x800 PNG (16:10, matching Artifacts cards) plus a bundle receipt, uploads nothing. Inspect the PNG, then publish with --preview <png>. Re-capture after editing. Requires agent-browser and its browser/fonts in the sandbox.",
   )
   .action(
     withErrorHandler(
       async (dir: string, _options: ScreenshotOptions, command: Command) => {
         const options = command.optsWithGlobals<ScreenshotOptions>();
-        if (!(await artifactPreviewsEnabled())) return;
         const result = await capture(dir, options);
         console.log(
           options.json
