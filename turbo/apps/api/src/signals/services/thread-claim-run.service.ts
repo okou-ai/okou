@@ -81,6 +81,7 @@ import { logger } from "../../lib/log";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { storageIndexKey } from "./storage-index.service";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -3293,54 +3294,60 @@ export function createThreadClaimRunObjects(
       return selection.kind === "projection" ? selection.input : undefined;
     },
   );
+  // The memory HEAD and the Pi gate are known before the Run plan, so the
+  // projection for that identity is read alongside storage preparation.
+  const earlyProjectionInput$ = computed(
+    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
+      if (!(await get(resourceAllowed$))) {
+        return undefined;
+      }
+      const [selection, features, storage] = await Promise.all([
+        get(threadContext.subscriptionSelection$),
+        get(bootstrap.featureSwitches$),
+        get(threadContext.storage$),
+      ]);
+      if (
+        "status" in selection ||
+        !selection.piExecution ||
+        !isFeatureEnabled(FeatureSwitchKey.PiMemory, features)
+      ) {
+        return undefined;
+      }
+      const memory = storage.index.get(
+        storageIndexKey(
+          bootstrap.orgId,
+          bootstrap.userId,
+          MEMORY_ARTIFACT_NAME,
+        ),
+      );
+      return memory?.headVersion
+        ? {
+            args: {
+              orgId: bootstrap.orgId,
+              userId: bootstrap.userId,
+              memoryStorageId: memory.storageId,
+              storageVersionId: memory.headVersion.id,
+            },
+          }
+        : undefined;
+    },
+  );
+  const earlyMemorySummaryProjection$ = computed(async (get) => {
+    const input = await get(earlyProjectionInput$);
+    return input ? readMemorySummaryProjection(get(db$), input) : null;
+  });
   const memorySummaryProjectionRead$ = computed(
     async (get): Promise<MemorySummaryProjectionReadResult | null> => {
-      const input = await get(projectionInput$);
+      const [input, earlyInput] = await Promise.all([
+        get(projectionInput$),
+        get(earlyProjectionInput$),
+      ]);
       if (!input) {
         return null;
       }
-      const { args } = input;
-      const db = get(db$);
-      const [row] = await db
-        .select({
-          storageId: storages.id,
-          storageOrgId: storages.orgId,
-          storageUserId: storages.userId,
-          storageName: storages.name,
-          projectionStatus: memorySummaryProjections.status,
-          content: memorySummaryProjections.content,
-          sourceHash: memorySummaryProjections.sourceHash,
-          sourceSize: memorySummaryProjections.sourceSize,
-          tokenCount: memorySummaryProjections.tokenCount,
-        })
-        .from(storages)
-        .innerJoin(
-          storageVersions,
-          and(
-            eq(storageVersions.storageId, storages.id),
-            eq(storageVersions.id, args.storageVersionId),
-          ),
-        )
-        .leftJoin(
-          memorySummaryProjections,
-          and(
-            eq(memorySummaryProjections.memoryStorageId, storages.id),
-            eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-            eq(memorySummaryProjections.orgId, args.orgId),
-            eq(memorySummaryProjections.userId, args.userId),
-          ),
-        )
-        .where(
-          and(
-            eq(storages.id, args.memoryStorageId),
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, args.userId),
-            eq(storages.name, MEMORY_ARTIFACT_NAME),
-            ne(storages.userId, VOLUME_ORG_USER_ID),
-          ),
-        )
-        .limit(1);
-      return memorySummaryProjectionReadResult(input, row);
+      return earlyInput && sameMemoryProjectionIdentity(earlyInput, input)
+        ? get(earlyMemorySummaryProjection$)
+        : readMemorySummaryProjection(get(db$), input);
     },
   );
   const piMemoryRecallProjection$ = memorySummaryProjectionRead$;
@@ -3639,6 +3646,9 @@ export function createThreadClaimRunObjects(
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
         get(piLaunchResources$),
+        // Start the Pi memory projection read with storage preparation; its
+        // failure surfaces through Pi launch resources when it is used.
+        settle(get(earlyMemorySummaryProjection$)),
       ]);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
@@ -4386,6 +4396,66 @@ function canonicalPiMemoryMount<
 }
 
 type AgentRunRecord = AgentRunRequestAgent;
+
+/** The memory summary projection for one exact memory storage version. */
+async function readMemorySummaryProjection(
+  db: ReadonlyDb,
+  input: MemorySummaryProjectionReadInput,
+): Promise<MemorySummaryProjectionReadResult> {
+  const { args } = input;
+  const [row] = await db
+    .select({
+      storageId: storages.id,
+      storageOrgId: storages.orgId,
+      storageUserId: storages.userId,
+      storageName: storages.name,
+      projectionStatus: memorySummaryProjections.status,
+      content: memorySummaryProjections.content,
+      sourceHash: memorySummaryProjections.sourceHash,
+      sourceSize: memorySummaryProjections.sourceSize,
+      tokenCount: memorySummaryProjections.tokenCount,
+    })
+    .from(storages)
+    .innerJoin(
+      storageVersions,
+      and(
+        eq(storageVersions.storageId, storages.id),
+        eq(storageVersions.id, args.storageVersionId),
+      ),
+    )
+    .leftJoin(
+      memorySummaryProjections,
+      and(
+        eq(memorySummaryProjections.memoryStorageId, storages.id),
+        eq(memorySummaryProjections.storageVersionId, storageVersions.id),
+        eq(memorySummaryProjections.orgId, args.orgId),
+        eq(memorySummaryProjections.userId, args.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(storages.id, args.memoryStorageId),
+        eq(storages.orgId, args.orgId),
+        eq(storages.userId, args.userId),
+        eq(storages.name, MEMORY_ARTIFACT_NAME),
+        ne(storages.userId, VOLUME_ORG_USER_ID),
+      ),
+    )
+    .limit(1);
+  return memorySummaryProjectionReadResult(input, row);
+}
+
+function sameMemoryProjectionIdentity(
+  left: MemorySummaryProjectionReadInput,
+  right: MemorySummaryProjectionReadInput,
+): boolean {
+  return (
+    left.args.orgId === right.args.orgId &&
+    left.args.userId === right.args.userId &&
+    left.args.memoryStorageId === right.args.memoryStorageId &&
+    left.args.storageVersionId === right.args.storageVersionId
+  );
+}
 
 // --- Thread-private implementation: launch persistence ---
 
