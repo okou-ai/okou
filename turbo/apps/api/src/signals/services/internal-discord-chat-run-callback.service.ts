@@ -9,7 +9,7 @@ import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection"
 import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { settle } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
@@ -49,7 +49,8 @@ interface Destination {
 }
 
 const currentDestinationAccess$ = command(
-  async ({ set }, db: Db, destination: Destination, signal: AbortSignal) => {
+  async ({ get, set }, destination: Destination, signal: AbortSignal) => {
+    const db = get(db$);
     const [connection] = await db
       .select({
         guildId: discordOrgConnections.guildId,
@@ -167,7 +168,6 @@ export const sendDiscordChatReply$ = command(
       (async (): Promise<void> => {
         const access = await set(
           currentDestinationAccess$,
-          db,
           {
             connectionId: request.target.connectionId,
             orgId: request.orgId,
@@ -311,7 +311,6 @@ export const sendDiscordIngressNotice$ = command(
         }
         const access = await set(
           currentDestinationAccess$,
-          db,
           {
             connectionId: notice.connectionId,
             orgId: owner.orgId,
