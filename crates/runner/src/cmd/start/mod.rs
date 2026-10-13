@@ -309,23 +309,35 @@ async fn run_start_with_home(
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
     // Share the startup body across home loaders while retaining lazy evaluation.
-    run_with_host_memory_observer(run_start_observed(
-        args,
-        runtime_provider,
-        Box::new(load_home),
-        signals,
-    ))
-    .await
+    run_start_with_observer(args, runtime_provider, Box::new(load_home), signals).await
 }
 
-async fn run_with_host_memory_observer(
-    work: impl std::future::Future<Output = RunnerResult<()>>,
+async fn run_start_with_observer(
+    args: StartArgs,
+    runtime_provider: &dyn RuntimeProvider,
+    load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
+    signals: EarlySignals,
 ) -> RunnerResult<()> {
     // This passive owner surrounds every fallible startup/reactor return. It starts
     // before optional warming and never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
-    let result = work.await;
-    if let Err(error) = observer.shutdown().await {
+    // Construct startup inside this boundary to retain a single startup await slot.
+    let result = run_start_observed(args, runtime_provider, load_home, signals).await;
+    finish_host_memory_observation(observer, result).await
+}
+
+async fn finish_host_memory_observation(
+    observer: runner_supervisor::host_memory::HostMemoryObserver,
+    result: RunnerResult<()>,
+) -> RunnerResult<()> {
+    finish_observed_start(result, observer.shutdown().await)
+}
+
+fn finish_observed_start(
+    result: RunnerResult<()>,
+    joined: Result<(), tokio::task::JoinError>,
+) -> RunnerResult<()> {
+    if let Err(error) = joined {
         if result.is_ok() {
             return Err(RunnerError::Internal(format!(
                 "join host memory observer: {error}"
