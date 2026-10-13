@@ -2511,6 +2511,113 @@ describe("Browser user-action route", () => {
     },
   );
 
+  it.each(["succeeded", "cancelled"] as const)(
+    "rejects a late native file preflight after the request is %s",
+    async (terminalState) => {
+      const owned = await setupOwnedNativeFileBrowserScenario();
+      await owned.run(async () => {
+        const { create } = await setupNativeFileScenario(owned);
+        const created = await create();
+        const headers = { authorization: "Bearer clerk-session" };
+        const params = { requestToken: created.body.action.requestToken };
+        const observed = await accept(
+          userActionClient().preflight({ headers, params, body: {} }),
+          [200],
+        );
+        expect(observed.body.state).toBe("pending");
+        const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+        if (!fingerprint) {
+          throw new Error("Expected the owner's observed file fingerprint");
+        }
+        const entered = createDeferredPromise<void>(context.signal);
+        const release = createDeferredPromise<void>(context.signal);
+        let holdNextRead = true;
+        server.use(
+          http.get(
+            `${BROWSER_USE_API_URL}/browsers/:id`,
+            async ({ params }) => {
+              if (holdNextRead) {
+                holdNextRead = false;
+                if (!entered.settled()) {
+                  entered.resolve(undefined);
+                }
+                await release.promise;
+              }
+              return HttpResponse.json(providerBrowser(String(params.id)));
+            },
+          ),
+        );
+        const checking = settleIncludingAbort(
+          owned.run(() => {
+            return userActionClient().preflight({ headers, params, body: {} });
+          }),
+        );
+        const consumption = await settleIncludingAbort(async () => {
+          await entered.promise;
+          const consumed = await accept(
+            terminalState === "succeeded"
+              ? userActionClient().apply({
+                  headers,
+                  params,
+                  body: {
+                    values: [
+                      {
+                        key: "document",
+                        observedFingerprint: fingerprint,
+                        operation: "clear",
+                        files: [],
+                      },
+                    ],
+                  },
+                })
+              : userActionClient().cancel({ headers, params, body: {} }),
+            [200],
+          );
+          expect(consumed.body.state).toBe(terminalState);
+        });
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+        const checked = await checking;
+        if (!consumption.ok && !checked.ok) {
+          throw new AggregateError(
+            [consumption.error, checked.error],
+            "Native request consumption and preflight failed",
+          );
+        }
+        if (!consumption.ok) {
+          throw consumption.error;
+        }
+        if (!checked.ok) {
+          throw checked.error;
+        }
+        expect(checked.value).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+        const terminal = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(terminal.body.state).toBe(terminalState);
+        const replay = await userActionClient().preflight({
+          headers,
+          params,
+          body: {},
+        });
+        expect(replay).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+        const unchanged = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(unchanged.body.state).toBe(terminalState);
+      });
+    },
+  );
+
   it("lets apply finish while the preflight provider read is still pending", async () => {
     const { token } = await createNativePasswordActionForPreflightTest();
     const readStarted = createDeferredPromise<void>(context.signal);
