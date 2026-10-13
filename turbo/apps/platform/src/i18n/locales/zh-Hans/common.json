@@ -5283,9 +5283,6 @@
     "unavailable": "该账号无法使用 SSH 访问。",
     "username": "SSH 用户名"
   },
-  "subscriptionLinking": {
-    "menuConnect": "连接 AI 订阅"
-  },
   "tailscale": {
     "add": "添加 Tailscale",
     "addressHelp": "使用已注册的 Tailnet 节点 IP、完整主机名或短名称。仍需 SSH 登录凭据和主机密钥验证。",

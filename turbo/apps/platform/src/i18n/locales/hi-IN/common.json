@@ -5307,9 +5307,6 @@
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
   },
-  "subscriptionLinking": {
-    "menuConnect": "AI सदस्यता जोड़ें"
-  },
   "tailscale": {
     "add": "Tailscale जोड़ें",
     "addressHelp": "पंजीकृत tailnet पीयर का IP, पूरा होस्टनाम या छोटा नाम इस्तेमाल करें। SSH लॉगिन और होस्ट कुंजी सत्यापन अभी भी आवश्यक हैं।",

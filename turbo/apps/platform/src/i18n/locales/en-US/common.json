@@ -5299,9 +5299,6 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
-  "subscriptionLinking": {
-    "menuConnect": "Connect AI subscription"
-  },
   "tailscale": {
     "add": "Add Tailscale",
     "addressHelp": "Use a registered tailnet peer IP, full hostname or short name. SSH login and host-key verification are still required.",

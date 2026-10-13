@@ -5307,9 +5307,6 @@
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
-  "subscriptionLinking": {
-    "menuConnect": "KI-Abo verbinden"
-  },
   "tailscale": {
     "add": "Tailscale hinzufügen",
     "addressHelp": "Verwende die IP, den vollständigen Hostnamen oder Kurznamen eines registrierten Tailnet-Peers. SSH-Anmeldung und Hostschlüsselprüfung bleiben erforderlich.",

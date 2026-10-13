@@ -190,7 +190,7 @@ test("Codex opens its authorization from the composer and the slot becomes the m
   expect(findAction("Use more models")).toBeUndefined();
   expect(editor).toHaveTextContent("Keep this draft");
   const accountMenu = await openAccountMenu();
-  expect(accountMenu).not.toHaveTextContent("AI subscription");
+  expect(accountMenu).not.toHaveTextContent("Use more models");
 });
 
 test("Claude opens its authorization from the account menu and cancelling keeps both entries", async () => {
@@ -209,10 +209,10 @@ test("Claude opens its authorization from the account menu and cancelling keeps 
   const menu = await openAccountMenu();
   await waitFor(() => {
     return expect(
-      action("Connect AI subscription", "menuitem", menu),
+      action("Use more models", "menuitem", menu),
     ).toBeInTheDocument();
   });
-  click(action("Connect AI subscription", "menuitem", menu));
+  click(action("Use more models", "menuitem", menu));
   await waitFor(() => {
     expect(action("Claude", "menuitem")).toBeInTheDocument();
   });
@@ -243,7 +243,7 @@ test.each([false, true])(
     await waitFor(() => {
       expect(menu).toHaveTextContent("Settings");
     });
-    expect(menu).not.toHaveTextContent("AI subscription");
+    expect(menu).not.toHaveTextContent("Use more models");
     expect(findAction("Use more models")).toBeUndefined();
   },
 );
@@ -252,7 +252,7 @@ test("The feature switch removes every entry and preserves task chips", async ()
   await setupLinking({ enabled: false });
   await screen.findByRole("region", { name: "Tasks to get started" });
   const menu = await openAccountMenu();
-  expect(menu).not.toHaveTextContent("AI subscription");
+  expect(menu).not.toHaveTextContent("Use more models");
   expect(findAction("Use more models")).toBeUndefined();
 });
 
@@ -268,7 +268,7 @@ test("An unresolved subscription lookup offers no entry yet", async () => {
   await setupLinking();
   await findComposerEditor();
   const menu = await openAccountMenu();
-  expect(menu).not.toHaveTextContent("AI subscription");
+  expect(menu).not.toHaveTextContent("Use more models");
   expect(findAction("Use more models")).toBeUndefined();
   pending.resolve();
   await waitFor(() => {
@@ -280,9 +280,9 @@ test("The mobile Me page opens Models to connect a subscription", async () => {
   await setupLinking({ mobile: true, path: "/me" });
   await screen.findByRole("heading", { name: "Me" });
   await waitFor(() => {
-    expect(action("Connect AI subscription")).toBeInTheDocument();
+    expect(action("Use more models")).toBeInTheDocument();
   });
-  click(action("Connect AI subscription"));
+  click(action("Use more models"));
   await waitFor(() => {
     expect(window.location.search).toContain("settings=model");
   });
@@ -298,11 +298,11 @@ test("The mobile Me entry leaves once a subscription is linked", async () => {
   await waitFor(() => {
     expect(action("Settings")).toBeInTheDocument();
   });
-  expect(screen.queryByText("Connect AI subscription")).not.toBeInTheDocument();
+  expect(screen.queryByText("Use more models")).not.toBeInTheDocument();
 });
 
 test("The shared switch also removes the mobile Me entry", async () => {
   await setupLinking({ enabled: false, mobile: true, path: "/me" });
   await screen.findByRole("heading", { name: "Me" });
-  expect(screen.queryByText("Connect AI subscription")).not.toBeInTheDocument();
+  expect(screen.queryByText("Use more models")).not.toBeInTheDocument();
 });

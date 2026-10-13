@@ -5283,9 +5283,6 @@
     "unavailable": "このアカウントでは SSH アクセスを利用できません。",
     "username": "SSH ユーザー名"
   },
-  "subscriptionLinking": {
-    "menuConnect": "AI サブスクリプションを接続"
-  },
   "tailscale": {
     "add": "Tailscale を追加",
     "addressHelp": "登録された Tailnet ピアの IP、完全なホスト名、または短い名前を使用してください。SSH ログインとホスト鍵の検証は別途必要です。",

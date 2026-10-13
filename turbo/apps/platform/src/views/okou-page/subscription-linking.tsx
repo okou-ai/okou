@@ -150,9 +150,10 @@ export function SubscriptionLinkingComposerMenu() {
 }
 
 /**
- * Sits with the credits, the other way runs are paid for. Linked members
- * already see their usage there and manage accounts in Settings, so the row
- * leaves once a subscription is connected.
+ * Sits with the credits, the other way runs are paid for, under the same name
+ * as the composer slot and Settings > Models. Linked members already see their
+ * usage there and manage accounts in Settings, so the row leaves once a
+ * subscription is connected.
  */
 export function SubscriptionLinkingMenuItem() {
   const { t } = useTranslation();
@@ -167,7 +168,7 @@ export function SubscriptionLinkingMenuItem() {
         <Cpu size={18} aria-hidden="true" />
         <span className="flex-1">
           {t(($) => {
-            return $.subscriptionLinking.menuConnect;
+            return $.settings.models.personal.autoTitle;
           })}
         </span>
         <ChevronRight size={14} aria-hidden="true" />
@@ -200,7 +201,7 @@ export function useSubscriptionLinkingEntry() {
   return {
     available,
     label: t(($) => {
-      return $.subscriptionLinking.menuConnect;
+      return $.settings.models.personal.autoTitle;
     }),
     onClick: () => {
       detach(open(pageSignal), Reason.DomCallback);

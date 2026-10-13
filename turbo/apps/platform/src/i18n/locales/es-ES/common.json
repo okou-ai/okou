@@ -5379,9 +5379,6 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
-  "subscriptionLinking": {
-    "menuConnect": "Conectar suscripción de IA"
-  },
   "tailscale": {
     "add": "Añadir Tailscale",
     "addressHelp": "Usa la IP, el nombre completo o el nombre corto de un nodo registrado de tu tailnet. Se siguen requiriendo el inicio de sesión SSH y la verificación de la clave del host.",

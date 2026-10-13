@@ -5283,9 +5283,6 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
-  "subscriptionLinking": {
-    "menuConnect": "Hubungkan langganan AI"
-  },
   "tailscale": {
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
