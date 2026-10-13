@@ -64,12 +64,13 @@ impl BlankPoolReplenisher {
         if !std::sync::Weak::ptr_eq(&self.budget, &Arc::downgrade(request.budget)) {
             return Err(MemoryOperationError::OwnershipInvariant);
         }
-        // A completed target must not consume the shared cadence and starve
-        // real optional reads. Contended inventory still progresses off-turn.
-        if request
-            .pool
-            .try_lock()
-            .is_ok_and(|pool| pool.blank_len() >= plan.target)
+        // Known inventory/logical refusal must not consume the shared cadence
+        // and starve real optional reads. Contention still progresses off-turn;
+        // this observation never substitutes for the later admission fences.
+        if let Ok(pool) = request.pool.try_lock()
+            && (pool.blank_len() >= plan.target
+                || (!ordinary_capacity_available(&pool, request.budget, &plan)
+                    && super::guarded::aged_candidate(&pool, &plan)?.is_none()))
         {
             return Ok(false);
         }
@@ -397,19 +398,7 @@ async fn run(mut context: Context) -> Result<(), String> {
             &mut context.pre_spawn,
         )
         .await?;
-        let ordinary_available = (context.plan.max_idle == 0 || pool.len() < context.plan.max_idle)
-            && matches!(
-                context
-                    .budget
-                    .observe_reservation_with_headroom(
-                        context.plan.profile.vcpu,
-                        context.plan.profile.memory_mb,
-                        context.plan.headroom_vcpu,
-                        context.plan.headroom_memory_mb
-                    )
-                    .0,
-                ReservationWithHeadroomStatus::Available
-            );
+        let ordinary_available = ordinary_capacity_available(&pool, &context.budget, &context.plan);
         if ordinary_available
             || pool.blank_len() >= context.plan.target
             || context.result.cancel.is_cancelled()
@@ -557,4 +546,23 @@ async fn lock_optional_pool<'a>(
         () = cancel.cancelled() => { drop(cpu.take()); Err("optional pool wait cancelled".into()) }
         locked = pool.lock() => Ok(locked),
     }
+}
+
+fn ordinary_capacity_available(
+    pool: &IdlePool,
+    budget: &ResourceBudget,
+    plan: &BlankPoolPlan,
+) -> bool {
+    (plan.max_idle == 0 || pool.len() < plan.max_idle)
+        && matches!(
+            budget
+                .observe_reservation_with_headroom(
+                    plan.profile.vcpu,
+                    plan.profile.memory_mb,
+                    plan.headroom_vcpu,
+                    plan.headroom_memory_mb,
+                )
+                .0,
+            ReservationWithHeadroomStatus::Available
+        )
 }

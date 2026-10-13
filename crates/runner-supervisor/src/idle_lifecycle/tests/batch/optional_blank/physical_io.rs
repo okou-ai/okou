@@ -11,6 +11,50 @@ use sandbox::{Sandbox, SandboxConfig, SandboxCreateCustody};
 use super::*;
 
 #[tokio::test]
+async fn unavailable_logical_capacity_leaves_the_current_opportunity_for_snapshot_reads() {
+    let mut owner = Owner::new().await;
+    let occupied = ResourceBudget::try_reserve_lease(
+        &owner.fixture.budget,
+        owner.fixture.budget.effective_vcpu(),
+        owner.fixture.budget.effective_memory_mb(),
+    )
+    .unwrap();
+    assert!(!owner.start());
+    assert!(owner.overrides.create_configs().is_empty());
+    let path = owner.fixture.dir.path().join("logical-capacity-snapshot");
+    tokio::fs::write(&path, b"snapshot without a logical guest slot")
+        .await
+        .unwrap();
+    let (mut prefetch, mut latest) = MemoryPrefetchTasks::spawn_guarded(
+        [MemoryPrefetchCandidate { path, memory_mb: 1 }],
+        1,
+        GuardedPrefetchConfig {
+            pressure: owner.control.clone(),
+            overhead_bytes: MIB,
+        },
+    )
+    .unwrap();
+    // No further pressure sample is supplied. A refill with neither ordinary
+    // capacity nor an aged victim must not consume this shared opportunity.
+    tokio::time::timeout(WAIT, async {
+        while !latest.borrow_and_update().finished {
+            latest.changed().await.unwrap();
+        }
+    })
+    .await
+    .unwrap();
+    prefetch.drain().await;
+    let read = latest.borrow().clone();
+    assert_eq!((read.completed, read.uncertain), (1, 0));
+    assert_eq!(
+        read.read_bytes,
+        b"snapshot without a logical guest slot".len() as u64
+    );
+    drop(occupied);
+    owner.dispose().await;
+}
+
+#[tokio::test]
 async fn busy_foreground_cpu_leaves_the_current_optional_sample_for_real_snapshot_reads() {
     let mut owner = Owner::new().await;
     let foreground = owner
