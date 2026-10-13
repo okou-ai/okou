@@ -17,12 +17,6 @@ importers:
       dotenv:
         specifier: ^18.0.6
         version: 18.0.6
-      esbuild:
-        specifier: ^0.28.2
-        version: 0.28.2
-      signal-timers:
-        specifier: ^1.0.5
-        version: 1.0.5
     devDependencies:
       '@types/ws':
         specifier: ^8.18.1
@@ -351,10 +345,6 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
-  signal-timers@1.0.5:
-    resolution: {integrity: sha512-O90dl9YMPJiwzBjPI42lS2X47uvmg85eCOeg1WMi8pmLtX/IjKVWIcroLZj5NOJ7J0gRhEl7mu2j7z36caEfHg==}
-    engines: {node: '>=10'}
-
   tsx@4.23.15:
     resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
     engines: {node: '>=18.0.0'}
@@ -571,8 +561,6 @@ snapshots:
   playwright@1.64.0:
     dependencies:
       playwright-core: 1.64.0
-
-  signal-timers@1.0.5: {}
 
   tsx@4.23.15:
     dependencies:

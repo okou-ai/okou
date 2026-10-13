@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
-    "test": "tsx --test playwright/lib/*.test.ts"
+    "test": "tsx --test playwright/lib/*.test.ts scripts/runner-wss.test.ts"
   },
   "keywords": [],
   "author": "",
@@ -17,9 +17,7 @@
   "dependencies": {
     "@playwright/test": "^1.64.0",
     "@types/node": "^26.6.4",
-    "dotenv": "^18.0.6",
-    "esbuild": "^0.28.2",
-    "signal-timers": "^1.0.5"
+    "dotenv": "^18.0.6"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
