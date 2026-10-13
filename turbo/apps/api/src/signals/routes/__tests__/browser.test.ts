@@ -1921,6 +1921,114 @@ describe("Browser user-action route", () => {
     });
   });
 
+  it("recovers stalled input after the deadline and retains uncertainty after a late provider failure", async () => {
+    const owned = await setupOwnedNativeFileBrowserScenario();
+    await owned.run(async () => {
+      const { create } = await setupNativeFileScenario(owned);
+      const created = await create();
+      const headers = { authorization: "Bearer clerk-session" };
+      const params = { requestToken: created.body.action.requestToken };
+      const observed = await accept(
+        userActionClient().preflight({ headers, params, body: {} }),
+        [200],
+      );
+      expect(observed.body.state).toBe("pending");
+      const fingerprint = observed.body.fields[0]?.control.fileSetFingerprint;
+      if (!fingerprint) {
+        throw new Error("Expected the observed file fingerprint");
+      }
+      const input = {
+        values: [
+          {
+            key: "document",
+            observedFingerprint: fingerprint,
+            operation: "clear" as const,
+            files: [],
+          },
+        ],
+      };
+      const entered = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      server.use(
+        http.get(`${BROWSER_USE_API_URL}/browsers/:id`, async () => {
+          if (!entered.settled()) {
+            entered.resolve(undefined);
+          }
+          await release.promise;
+          return HttpResponse.json(
+            { detail: "temporary provider failure" },
+            { status: 503 },
+          );
+        }),
+      );
+      const applying = settleIncludingAbort(
+        owned.run(() => {
+          return userActionClient().apply({ headers, params, body: input });
+        }),
+      );
+      const observations = await settleIncludingAbort(async () => {
+        await entered.promise;
+        for (const elapsed of [MINUTE_MS - 1, MINUTE_MS]) {
+          mockNow(STARTED_AT_MS + elapsed);
+          const processing = await accept(
+            userActionClient().get({ headers, params }),
+            [200],
+          );
+          expect(processing.body).toMatchObject({
+            state: "applying",
+            callbackDelivered: false,
+          });
+        }
+        mockNow(STARTED_AT_MS + MINUTE_MS + 1);
+        const recovered = await accept(
+          userActionClient().get({ headers, params }),
+          [200],
+        );
+        expect(recovered.body).toMatchObject({
+          state: "uncertain",
+          callbackDelivered: false,
+        });
+        const replay = await userActionClient().apply({
+          headers,
+          params,
+          body: input,
+        });
+        expect(replay).toMatchObject({
+          status: 409,
+          body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+        });
+      });
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      const applied = await applying;
+      if (!observations.ok && !applied.ok) {
+        throw new AggregateError(
+          [observations.error, applied.error],
+          "Stuck input observations and application failed",
+        );
+      }
+      if (!observations.ok) {
+        throw observations.error;
+      }
+      if (!applied.ok) {
+        throw applied.error;
+      }
+      expect(applied.value).toMatchObject({
+        status: 502,
+        body: { error: { code: "BROWSER_USE_ERROR" } },
+      });
+      const terminal = await accept(
+        userActionClient().get({ headers, params }),
+        [200],
+      );
+      expect(terminal.body).toMatchObject({
+        state: "uncertain",
+        callbackDelivered: false,
+      });
+    });
+  });
+
   it("bounds native file input and cleans staged files when target observation becomes stale", async () => {
     const { state, create, stageSyntheticFile, temporaryObjects, deletedKeys } =
       await setupNativeFileScenario();

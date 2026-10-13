@@ -1112,38 +1112,6 @@ export const createBrowserUserAction$ = command(
   },
 );
 
-async function normalizeStuckApplying(
-  db: Db,
-  row: RequestRow,
-): Promise<RequestRow | null> {
-  if (
-    row.status !== "applying" ||
-    !row.applyStartedAt ||
-    row.applyStartedAt.getTime() > nowDate().getTime() - APPLY_STUCK_AFTER_MS
-  ) {
-    return row;
-  }
-  const now = nowDate();
-  const [updated] = await db
-    .update(browserUserActionRequests)
-    .set({
-      status: "uncertain",
-      completedAt: now,
-    })
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, row.requestTokenHash),
-        eq(browserUserActionRequests.status, "applying"),
-        lt(
-          browserUserActionRequests.applyStartedAt,
-          new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
-        ),
-      ),
-    )
-    .returning();
-  return updated ?? (await loadExactRequest(db, row));
-}
-
 export const readBrowserUserAction$ = command(
   async (
     { set },
@@ -1160,7 +1128,36 @@ export const readBrowserUserAction$ = command(
     if (!row) {
       return notFound();
     }
-    row = await normalizeStuckApplying(db, row);
+    if (
+      row.status === "applying" &&
+      row.applyStartedAt &&
+      row.applyStartedAt.getTime() <= nowDate().getTime() - APPLY_STUCK_AFTER_MS
+    ) {
+      const now = nowDate();
+      row =
+        (
+          await db
+            .update(browserUserActionRequests)
+            .set({
+              status: "uncertain",
+              completedAt: now,
+            })
+            .where(
+              and(
+                eq(
+                  browserUserActionRequests.requestTokenHash,
+                  row.requestTokenHash,
+                ),
+                eq(browserUserActionRequests.status, "applying"),
+                lt(
+                  browserUserActionRequests.applyStartedAt,
+                  new Date(now.getTime() - APPLY_STUCK_AFTER_MS),
+                ),
+              ),
+            )
+            .returning()
+        )[0] ?? (await loadExactRequest(db, row));
+    }
     signal.throwIfAborted();
     if (!row) {
       return notFound();
