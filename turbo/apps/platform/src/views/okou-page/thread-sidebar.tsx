@@ -199,6 +199,13 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
+        {resourcesEnabled && (
+          <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.sidebar.panelTitle;
+            })}
+          </h3>
+        )}
         {artifacts === null ? (
           catalogLoadable.state === "hasError" ? (
             <ArtifactCatalogError
