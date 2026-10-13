@@ -1062,11 +1062,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0428",
-      "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
-      "owner": "expectCheckViolation"
-    },
-    {
       "id": "TX-0429",
       "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
       "owner": "<module>"
