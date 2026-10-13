@@ -30,6 +30,7 @@ import {
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
+import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
@@ -595,6 +596,7 @@ function missingGoogleFormsConsumer(
 }
 
 interface GoogleFormsActivation {
+  readonly officialAutomation?: AutomationRow;
   readonly automationSnapshot: WorkflowAutomationSnapshot;
   readonly automationId: string;
   readonly workflowId: string;
@@ -883,6 +885,9 @@ const publishGoogleFormsActivation$ = command(
           enabled: true,
           nextRunAt: activation.nextRunAt,
           consecutiveFailures: 0,
+          ...(activation.officialAutomation === undefined
+            ? {}
+            : { officialIntendedEnabled: true }),
           ...(activation.inheritedAutonomyBudget === undefined
             ? {}
             : { autonomyBudget: activation.inheritedAutonomyBudget }),
@@ -897,7 +902,16 @@ const publishGoogleFormsActivation$ = command(
               workflowAutomations.eventType,
               "google-forms-response-submitted",
             ),
-            isNull(workflowAutomations.officialBlueprintKey),
+            activation.officialAutomation === undefined
+              ? isNull(workflowAutomations.officialBlueprintKey)
+              : and(
+                  officialAutomationLifecycleCondition(
+                    activation.officialAutomation,
+                  ),
+                  isNotNull(workflowAutomations.officialBlueprintKey),
+                  eq(workflowAutomations.officialIntendedEnabled, false),
+                  eq(workflowAutomations.enabled, false),
+                ),
             observedWorkflowAutomationCondition({
               id: activation.automationId,
               ...activation.automationSnapshot,
