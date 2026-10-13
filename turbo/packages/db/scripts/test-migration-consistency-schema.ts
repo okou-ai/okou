@@ -2636,7 +2636,9 @@ async function validatePermanentUsagePackPendingSnapshotState(
       throw failures[0];
     }
     // This suite owns a disposable database. Commit the uniqueness/range fixture
-    // and delete it before starting the retained rollback-owned seed.
+    // and delete it before starting the separate NULL fixture.
+    // Counts above one represent grandfathered purchases. Admission and release
+    // are owned by the API service; the database retains uniqueness and range.
     await client.query(
       `INSERT INTO usage_pack_pending_snapshot_guards
       (org_id, pending_snapshot_count) VALUES ($1, 2)`,
@@ -2709,39 +2711,8 @@ async function validatePermanentUsagePackPendingSnapshotState(
       throw failures[0];
     }
 
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
-    await client.query("BEGIN");
-    let rolledBack = false;
-    try {
-      if (failures.length > 0) {
-        throw failures[0];
-      }
-      await client.query(
-        `INSERT INTO usage_pack_pending_snapshot_guards
-      (org_id, pending_snapshot_count) VALUES ($1, 2)`,
-        [orgId],
-      );
-      // Counts above one represent grandfathered purchases. Admission and release
-      // are owned by the API service; the database retains uniqueness and range.
-    } catch (error) {
-      failures.push(error);
-    } finally {
-      await client.query("ROLLBACK").then(
-        () => {
-          rolledBack = true;
-        },
-        (error: unknown) => {
-          failures.push(error);
-        },
-      );
-    }
-    if (failures.length > 0) {
-      throw failures[0];
-    }
-    assert.ok(rolledBack);
-
-    // The NULL probe owns a separate committed fixture only after the original
-    // rollback is acknowledged and the exact key is observed absent.
+    // The NULL probe owns a separate committed fixture only after previous
+    // cleanup/native failures are clear and the exact key is observed absent.
     const absent = await client.query(
       `SELECT org_id, pending_snapshot_count
       FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
