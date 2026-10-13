@@ -7,8 +7,7 @@ import { z } from "zod";
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
-// Negative writes commit only inside ACK-owned namespaces. This standalone
+// Fixture writes commit only inside ACK-owned namespaces. This standalone
 // validator requires an exclusive disposable test database, never a shared or
 // production DATABASE_URL. Forced termination/uncertain DDL acknowledgements
 // can leave residue until that database/service is disposed.
@@ -336,7 +335,7 @@ async function checkCatalogMismatch(input: {
   catalog: HistoricalCatalog;
 }) {
   // This operation owns its Client, acknowledged schema and every cleanup step.
-  // Its caller supplies only captured plain data from the uncommitted parent.
+  // Its caller supplies only captured plain data from the owning parent.
   const probe = new Client({ connectionString: input.connectionString });
   const namespace = `access_catalog_${randomUUID().replaceAll("-", "")}`;
   let owned = false;
@@ -813,11 +812,36 @@ async function rejects(
   }
 }
 
+let owned = false;
+let searchPath: string | undefined;
+const errors: unknown[] = [];
+// Observe parent transport errors before connect and through awaited end.
+client.on("error", (error: unknown) => {
+  errors.push(error);
+});
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0374; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
+  const paths = pathRowsSchema.parse(
+    (await client.query("SHOW search_path")).rows,
+  );
+  const path = paths[0];
+  assert.ok(path);
+  searchPath = path.search_path;
+  assert.deepEqual(
+    namespaceRowsSchema.parse(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+          [schema],
+        )
+      ).rows,
+    ),
+    [],
+  );
+  // A collision or uncertain response never authorizes adoption or DROP.
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  owned = true;
+  await client.query(`SET search_path TO "${schema}"`);
   await client.query(
     "CREATE TABLE agents (id uuid PRIMARY KEY, org_id text, owner text)",
   );
@@ -1425,8 +1449,58 @@ try {
       table: "ssh_connections",
     },
   );
-  await client.query("ROLLBACK");
-  console.log("Cloudflare Access historical and contracted schemas passed");
+} catch (error) {
+  errors.push(error);
 } finally {
-  await client.end();
+  if (owned) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual(
+        namespaceRowsSchema.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+              [schema],
+            )
+          ).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (searchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        searchPath,
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual(
+        pathRowsSchema.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: searchPath }],
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    errors.push(error);
+  }
 }
+if (errors.length > 0) {
+  throw new AggregateError(
+    errors,
+    `Cloudflare Access validator or cleanup failed; CREATE acknowledged: ${owned}; namespace: ${schema}`,
+  );
+}
+console.log("Cloudflare Access historical and contracted schemas passed");
