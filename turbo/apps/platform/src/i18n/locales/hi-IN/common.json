@@ -6379,6 +6379,8 @@
       "authorizing": "अनुमति ली जा रही है…",
       "browserConsent": "Discord विंडो में अनुमति दें। यह पेज अपने आप अपडेट हो जाएगा।",
       "chooseDmServer": "सर्वर चुनें",
+      "connectedTitle": "Discord से कनेक्ट है",
+      "connectTitle": "Discord से कनेक्ट करें",
       "description": "सर्वर में Okou को मेंशन करें या बॉट को सीधा संदेश भेजें।",
       "disconnect": "Discord को डिस्कनेक्ट करें",
       "dmServer": "सीधे संदेशों के लिए डिफ़ॉल्ट सर्वर",
@@ -6394,7 +6396,8 @@
       "unconfigured": "इस संगठन के लिए Discord अभी कॉन्फ़िगर नहीं किया गया है।",
       "uninstall": "Discord हटाएँ",
       "uninstallDescription": "इससे इस संगठन के सभी लोगों का Discord कनेक्शन हट जाएगा। अन्य संगठनों के कनेक्शन बने रहेंगे।",
-      "uninstallTitle": "इस संगठन से Discord हटाएँ?"
+      "uninstallTitle": "इस संगठन से Discord हटाएँ?",
+      "workspaceMismatch": "यह लिंक किसी दूसरे Discord सर्वर के लिए है। उसके Okou वर्कस्पेस पर स्विच करें और लिंक फिर से खोलें।"
     },
     "documentTitle": "काम करता है",
     "feishuConnected": "Feishu सफलतापूर्वक कनेक्ट हुआ",

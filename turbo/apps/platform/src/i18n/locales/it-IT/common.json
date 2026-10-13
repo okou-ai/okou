@@ -6463,6 +6463,8 @@
       "authorizing": "Autorizzazione in corso…",
       "browserConsent": "Completa l’autorizzazione nella finestra di Discord. Questa pagina si aggiornerà automaticamente.",
       "chooseDmServer": "Scegli un server",
+      "connectedTitle": "Connesso a Discord",
+      "connectTitle": "Connetti a Discord",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",
       "dmServer": "Server predefinito per i messaggi diretti",
@@ -6478,7 +6480,8 @@
       "unconfigured": "Discord non è ancora configurato per questa organizzazione.",
       "uninstall": "Rimuovi Discord",
       "uninstallDescription": "Questa operazione disconnette da Discord tutte le persone di questa organizzazione. Le altre organizzazioni mantengono le proprie connessioni.",
-      "uninstallTitle": "Rimuovere Discord da questa organizzazione?"
+      "uninstallTitle": "Rimuovere Discord da questa organizzazione?",
+      "workspaceMismatch": "Questo link è per un altro server Discord. Passa al relativo spazio di lavoro Okou e apri di nuovo il link."
     },
     "documentTitle": "Integrazioni",
     "feishuConnected": "Feishu si è connesso correttamente",

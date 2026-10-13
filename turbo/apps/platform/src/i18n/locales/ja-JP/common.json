@@ -6353,6 +6353,8 @@
       "authorizing": "認証中…",
       "browserConsent": "Discord のウィンドウで認証を完了してください。このページは自動的に更新されます。",
       "chooseDmServer": "サーバーを選択",
+      "connectedTitle": "Discord に接続済み",
+      "connectTitle": "Discord に接続",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
       "dmServer": "ダイレクトメッセージの既定のサーバー",
@@ -6368,7 +6370,8 @@
       "unconfigured": "この組織では、Discord がまだ設定されていません。",
       "uninstall": "Discord を削除",
       "uninstallDescription": "この組織の全員が Discord から切断されます。他の組織の接続は維持されます。",
-      "uninstallTitle": "この組織から Discord を削除しますか？"
+      "uninstallTitle": "この組織から Discord を削除しますか？",
+      "workspaceMismatch": "このリンクは別の Discord サーバー用です。対応する Okou ワークスペースに切り替えて、リンクをもう一度開いてください。"
     },
     "documentTitle": "連携先",
     "feishuConnected": "Feishu は正常に接続されました",
