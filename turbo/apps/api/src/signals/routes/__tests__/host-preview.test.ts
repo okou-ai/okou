@@ -295,7 +295,7 @@ describe("sandbox hosted previews", () => {
     );
     await expect(
       sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-    ).resolves.toMatchObject({ width: 381, height: 200 });
+    ).resolves.toMatchObject({ width: 213, height: 112 });
     expect(original.headers.get("cache-control")).toBe("private, no-store");
     expect(original.headers.get("cloudflare-cdn-cache-control")).toBe(
       "no-store",
@@ -316,7 +316,7 @@ describe("sandbox hosted previews", () => {
     );
     const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
     expect(compactStale.headers.get("location")).toBe(
-      `${brandUrl.origin}/cdn-cgi/image/height=200,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`,
+      `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`,
     );
 
     const nextBytes = await image("#1122ee");
