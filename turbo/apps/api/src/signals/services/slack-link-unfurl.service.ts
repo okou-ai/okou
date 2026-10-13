@@ -6,14 +6,12 @@ import type { ArtifactDeliveryRecord } from "@okouai/api-contracts/contracts/art
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { env } from "../../lib/env";
 import { hostedLinkDomain } from "../../lib/link-layout";
-import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { db$ } from "../external/db";
 import {
   unfurlSlackLinks,
@@ -207,32 +205,15 @@ const slackArtifactUnfurl$ = command(
     if (!metadata.available) {
       return null;
     }
-    const title = metadata.title.trim().slice(0, 150) || "Okou artifact";
-    // A pipe in the URL must not become Slack's link-label separator.
-    const href = escapeSlackLinkText(pageUrl.href.replaceAll("|", "%7C"));
-    const imageUrl = new URL(
-      target
-        ? metadata.imageUrl
-        : r2ImageTransformUrl(metadata.imageUrl, {
-            height: SLACK_PREVIEW_IMAGE_HEIGHT,
-          }),
+    const title = escapeSlackLinkText(
+      metadata.title.trim().slice(0, 150) || "Okou artifact",
     );
-    if (target) {
-      imageUrl.searchParams.set("variant", "slack");
-    }
+    // Let Slack scale the original image using its attachment renderer.
     return {
-      blocks: [
-        { type: "divider" },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: `*<${href}|${escapeSlackLinkText(title)}>*`,
-            verbatim: true,
-          },
-        },
-        { type: "image", image_url: imageUrl.href, alt_text: title },
-      ],
+      fallback: title,
+      title,
+      title_link: pageUrl.href,
+      image_url: metadata.imageUrl,
     };
   },
 );

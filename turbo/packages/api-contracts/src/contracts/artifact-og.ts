@@ -43,10 +43,7 @@ export const artifactOgContract = c.router({
     path: "/api/artifact-og/image",
     query: z.intersection(
       artifactOgTargetSchema,
-      z.object({
-        version: z.string().max(200),
-        variant: z.literal("slack").optional(),
-      }),
+      z.object({ version: z.string().max(200) }),
     ),
     responses: {
       200: imageResponse,

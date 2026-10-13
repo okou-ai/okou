@@ -1394,13 +1394,6 @@ test("oG uses the published thread snapshot and revokes its old image URL with t
     width: 64,
     height: 40,
   });
-  const compact = await accept(
-    og.image({ query: { ...query, variant: "slack" } }),
-    [200],
-  );
-  await expect(
-    sharp(Buffer.from(await compact.body.arrayBuffer())).metadata(),
-  ).resolves.toMatchObject({ width: 64, height: 40 });
   expect(
     (
       await accept(

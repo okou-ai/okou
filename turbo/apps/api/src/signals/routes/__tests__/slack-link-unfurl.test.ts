@@ -51,11 +51,6 @@ const previousBotScopes = [
   "files:write",
 ].join(",");
 
-function compactBrandImageUrl() {
-  const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
-  return `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
-}
-
 async function fixture(
   options: {
     readonly scopes?: string;
@@ -159,54 +154,35 @@ function postLinks(
 }
 
 describe("Slack link previews", () => {
-  it("adds a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
+  it("uses native image attachments without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
     await accept(postLinks(f.teamId, [immutable, alias, immutable]), [200]);
     await flushWaitUntilForTest();
 
-    const cover = {
-      type: "image",
-      image_url: expect.stringMatching(
-        new RegExp(
-          `/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=[^&]+&variant=slack$`,
-          "u",
-        ),
+    const imageUrl = expect.stringMatching(
+      new RegExp(
+        `/api/artifact-og/image\\?kind=host&id=${f.prepared.deploymentId}&version=[^&]+$`,
+        "u",
       ),
-      alt_text: 'Report & <!channel>\u00a0"标题"',
-    };
+    );
+    const title = 'Report &amp; &lt;!channel&gt;\u00a0"标题"';
     expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
       channel: "C_PREVIEW",
       ts: messageTs,
       unfurls: {
         [immutable]: {
-          blocks: [
-            { type: "divider" },
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `*<https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&amp;view=cover#cover%7Cv1|Report &amp; &lt;!channel&gt;\u00a0"标题">*`,
-                verbatim: true,
-              },
-            },
-            cover,
-          ],
+          fallback: title,
+          title,
+          title_link: immutable,
+          image_url: imageUrl,
         },
         [alias]: {
-          blocks: [
-            { type: "divider" },
-            {
-              type: "section",
-              text: {
-                type: "mrkdwn",
-                text: `*<${alias}|Report &amp; &lt;!channel&gt;\u00a0"标题">*`,
-                verbatim: true,
-              },
-            },
-            cover,
-          ],
+          fallback: title,
+          title,
+          title_link: alias,
+          image_url: imageUrl,
         },
       },
     });
@@ -217,7 +193,7 @@ describe("Slack link previews", () => {
     );
   });
 
-  it("uses compact public branding for ordinary App pages without loading their content", async () => {
+  it("uses native public brand images for ordinary App pages without loading their content", async () => {
     const f = await fixture({ privateArtifacts: true });
     await updateFeatureSwitchesForUser(context, f.actor, {
       artifactPreviews: false,
@@ -227,49 +203,26 @@ describe("Slack link previews", () => {
     const origin = new URL(env("APP_URL")).origin;
     const chatUrl = `${origin}/chats/${randomUUID()}`;
     const pages = [
-      { url: `${origin}/`, href: `${origin}/` },
-      { url: `${origin}/works`, href: `${origin}/works` },
-      { url: `${origin}/settings`, href: `${origin}/settings` },
-      {
-        url: `${chatUrl}?source=slack&view=cover#cover|v1`,
-        href: `${chatUrl}?source=slack&amp;view=cover#cover%7Cv1`,
-      },
+      `${origin}/`,
+      `${origin}/works`,
+      `${origin}/settings`,
+      `${chatUrl}?source=slack&view=cover#cover|v1`,
     ];
-    await accept(
-      postLinks(
-        f.teamId,
-        pages.map(({ url }) => {
-          return url;
-        }),
-      ),
-      [200],
-    );
+    await accept(postLinks(f.teamId, pages), [200]);
     await flushWaitUntilForTest();
 
     expect(context.mocks.slack.chat.unfurl).toHaveBeenCalledExactlyOnceWith({
       channel: "C_PREVIEW",
       ts: messageTs,
       unfurls: Object.fromEntries(
-        pages.map(({ url, href }) => {
+        pages.map((url) => {
           return [
             url,
             {
-              blocks: [
-                { type: "divider" },
-                {
-                  type: "section",
-                  text: {
-                    type: "mrkdwn",
-                    text: `*<${href}|${ARTIFACT_OG_BRAND.title}>*`,
-                    verbatim: true,
-                  },
-                },
-                {
-                  type: "image",
-                  image_url: compactBrandImageUrl(),
-                  alt_text: ARTIFACT_OG_BRAND.title,
-                },
-              ],
+              fallback: ARTIFACT_OG_BRAND.title,
+              title: ARTIFACT_OG_BRAND.title,
+              title_link: url,
+              image_url: ARTIFACT_OG_BRAND.imageUrl,
             },
           ];
         }),
@@ -349,13 +302,10 @@ describe("Slack link previews", () => {
       unfurls: {
         [url]: expect.any(Object),
         [appUrl]: {
-          blocks: expect.arrayContaining([
-            {
-              type: "image",
-              image_url: compactBrandImageUrl(),
-              alt_text: ARTIFACT_OG_BRAND.title,
-            },
-          ]),
+          fallback: ARTIFACT_OG_BRAND.title,
+          title: ARTIFACT_OG_BRAND.title,
+          title_link: appUrl,
+          image_url: ARTIFACT_OG_BRAND.imageUrl,
         },
       },
     });
@@ -478,15 +428,12 @@ describe("Slack link previews", () => {
           return [
             url,
             {
-              blocks: expect.arrayContaining([
-                expect.objectContaining({
-                  type: "image",
-                  image_url: expect.stringContaining(
-                    "/api/artifact-og/image?kind=reference&id=",
-                  ),
-                  alt_text: "report.png",
-                }),
-              ]),
+              fallback: "report.png",
+              title: "report.png",
+              title_link: url,
+              image_url: expect.stringMatching(
+                /\/api\/artifact-og\/image\?kind=reference&id=[^&]+&version=[^&]+$/u,
+              ),
             },
           ];
         }),
