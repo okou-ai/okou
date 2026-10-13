@@ -302,7 +302,7 @@ fn cache_fully_parses_discarded_and_trailing_records() {
 }
 
 #[test]
-fn cache_budgets_header_records_lists_ticket_and_owned_input() {
+fn cache_budgets_header_records_lists_and_ticket() {
     let mut t = Ticket::service();
     t.bytes = vec![9; MAX_TICKET_BYTES];
     assert!(parse_cache(cache(&[], &[t.clone()])).is_ok());
@@ -325,15 +325,27 @@ fn cache_budgets_header_records_lists_ticket_and_owned_input() {
     assert!(parse_cache(cache(&[0, 1, 0, 1, 0], std::slice::from_ref(&good))).is_err());
     let many_tags = [0, 99, 0, 0].repeat(17);
     assert!(parse_cache(cache(&many_tags, std::slice::from_ref(&good))).is_err());
-    assert!(parse_cache(vec![0; MAX_INPUT_BYTES + 1]).is_err());
-    let mut discarded = good.clone();
+}
+
+#[test]
+fn cache_owned_input_limit_preserves_valid_framing() {
+    let selected = Ticket::service();
+    let canonical = cache(&[], std::slice::from_ref(&selected));
+    let mut discarded = selected.clone();
     discarded.server = principal(&["krbtgt", "EXAMPLE.INVALID"]);
     discarded.key.clear();
-    let base = cache(&[], &[good.clone(), discarded.clone()]).len();
-    discarded.key = vec![0; MAX_INPUT_BYTES - base];
-    let full = cache(&[], &[good, discarded]);
-    assert_eq!(full.len(), MAX_INPUT_BYTES);
-    assert!(parse_cache(full).is_ok());
+    let base = cache(&[], &[selected.clone(), discarded.clone()]).len();
+    for size in [MAX_INPUT_BYTES, MAX_INPUT_BYTES + 1] {
+        // Grow only discarded key data so all selected fields stay within budget.
+        discarded.key = vec![0; size - base];
+        let input = cache(&[], &[selected.clone(), discarded.clone()]);
+        assert_eq!(input.len(), size);
+        if size == MAX_INPUT_BYTES {
+            assert_eq!(parse_cache(input).unwrap().canonical_bytes(), canonical);
+        } else {
+            assert_eq!(parse_cache(input).unwrap_err(), CredentialError::Invalid);
+        }
+    }
 }
 
 #[test]
@@ -450,7 +462,7 @@ fn keytab_signed_holes_end_markers_and_trailing_corruption_are_bounded() {
 }
 
 #[test]
-fn keytab_record_key_and_byte_budgets() {
+fn keytab_record_and_key_budgets() {
     let mut keys = vec![];
     for n in 1..=MAX_KEYS {
         let mut k = Key::aes(18);
@@ -463,13 +475,6 @@ fn keytab_record_key_and_byte_budgets() {
     keys.push(k);
     assert!(parse_keytab(keytab(&keys)).is_err());
     let raw = keytab(&[Key::aes(18)]);
-    let mut full = vec![5, 2];
-    let hole = MAX_INPUT_BYTES - raw.len() - 4;
-    full.extend_from_slice(&(-i32::try_from(hole).unwrap()).to_be_bytes());
-    full.extend(vec![0; hole]);
-    full.extend_from_slice(&raw[2..]);
-    assert_eq!(full.len(), MAX_INPUT_BYTES);
-    assert!(parse_keytab(full).is_ok());
     let mut many = vec![5, 2];
     for _ in 0..MAX_RECORDS {
         many.extend_from_slice(&(-1i32).to_be_bytes());
@@ -477,7 +482,27 @@ fn keytab_record_key_and_byte_budgets() {
     }
     many.extend_from_slice(&raw[2..]);
     assert!(parse_keytab(many).is_err());
-    assert!(parse_keytab(vec![0; MAX_INPUT_BYTES + 1]).is_err());
+}
+
+#[test]
+fn keytab_owned_input_limit_preserves_valid_framing() {
+    let mut key = Key::aes(18);
+    key.timestamp = 0;
+    let canonical = keytab(&[key]);
+    for size in [MAX_INPUT_BYTES, MAX_INPUT_BYTES + 1] {
+        let mut input = vec![5, 2];
+        // Grow a well-framed zero-filled hole while keeping the key record intact.
+        let hole = size - canonical.len() - 4;
+        input.extend_from_slice(&(-i32::try_from(hole).unwrap()).to_be_bytes());
+        input.extend(vec![0; hole]);
+        input.extend_from_slice(&canonical[2..]);
+        assert_eq!(input.len(), size);
+        if size == MAX_INPUT_BYTES {
+            assert_eq!(parse_keytab(input).unwrap().canonical_bytes(), canonical);
+        } else {
+            assert_eq!(parse_keytab(input).unwrap_err(), CredentialError::Invalid);
+        }
+    }
 }
 
 #[test]
