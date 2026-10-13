@@ -8127,6 +8127,163 @@ describe("okou browser route", () => {
     });
   });
 
+  it("keeps current Browser reads and leases isolated across threads", async () => {
+    mockEnv("OKOU_BROWSER_USE_API_KEY", "test-browser-use-key");
+    mockEnv("APP_URL", "https://app.okou.ai");
+    const chat = createChatFilesBddApi(context);
+    const threadIds: string[] = [];
+    const providerIds = [randomUUID(), randomUUID()] as const;
+    acceptBrowserUseCdpSessions(providerIds);
+    let providerIndex = 0;
+    server.use(
+      http.post(`${BROWSER_USE_API_URL}/profiles`, async ({ request }) => {
+        const body = z
+          .strictObject({ name: z.string() })
+          .parse(await request.json());
+        return HttpResponse.json(providerProfile(randomUUID(), body.name), {
+          status: 201,
+        });
+      }),
+      http.delete(`${BROWSER_USE_API_URL}/profiles/:id`, () => {
+        return new HttpResponse(null, { status: 204 });
+      }),
+      http.post(`${BROWSER_USE_API_URL}/browsers`, () => {
+        const id = providerIds[providerIndex];
+        providerIndex += 1;
+        if (!id) {
+          return HttpResponse.json(
+            { error: "unexpected browser create" },
+            { status: 500 },
+          );
+        }
+        return HttpResponse.json(providerBrowser(id), { status: 201 });
+      }),
+      http.get(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(providerBrowser(String(params.id)));
+      }),
+      http.patch(`${BROWSER_USE_API_URL}/browsers/:id`, ({ params }) => {
+        return HttpResponse.json(
+          providerBrowser(String(params.id), { status: "stopped" }),
+        );
+      }),
+    );
+    const owned = await publicChatActor(context, {
+      optionalEnvironmentNames: ["OKOU_BROWSER_USE_API_KEY"],
+      clockTime: STARTED_AT_MS,
+      beforeWorkspaceCleanup: async (actor) => {
+        for (const threadId of threadIds) {
+          await chat.deleteThread(actor, threadId);
+          await flushWaitUntilForTest();
+        }
+      },
+    });
+    await owned.run(async () => {
+      async function createThread(prompt: string) {
+        const sent = await chat.sendAndLaunch(owned.actor, {
+          agentId: owned.agentId,
+          prompt,
+          cloudBrowserEnabled: true,
+        });
+        threadIds.push(sent.threadId);
+        const claimed = await owned.claimChatRun(owned.runnerGroup, sent.runId);
+        return {
+          threadId: sent.threadId,
+          headers: {
+            authorization: `Bearer ${okouTokenFromClaim(claimed.claim)}`,
+          },
+        };
+      }
+      const first = await createThread("Open the first thread's Browser");
+      const other = await createThread("Use a separate Browser in this thread");
+      for (const { headers } of [first, other]) {
+        for (const response of [
+          await client().current({ headers }),
+          await client().lease({ headers, body: {} }),
+        ]) {
+          expect(response).toMatchObject({
+            status: 404,
+            body: { error: { code: "BROWSER_NOT_FOUND" } },
+          });
+        }
+      }
+      const created = await accept(
+        client().create({
+          headers: first.headers,
+          body: { name: "first-current", proxyCountryCode: null },
+        }),
+        [201],
+      );
+      expect(created.body.browser.threadId).toBe(first.threadId);
+      expect(created.body.cdpUrl).toBe(
+        `https://${providerIds[0]}.cdp.browser-use.com/`,
+      );
+      for (const response of [
+        await client().current({ headers: other.headers }),
+        await client().lease({ headers: other.headers, body: {} }),
+      ]) {
+        expect(response).toMatchObject({
+          status: 404,
+          body: { error: { code: "BROWSER_NOT_FOUND" } },
+        });
+      }
+      const attached = await accept(
+        client().use({ headers: other.headers, body: {} }),
+        [200],
+      );
+      expect(attached.body.browser.threadId).toBe(other.threadId);
+      expect(other.threadId).not.toBe(first.threadId);
+      expect(attached.body.cdpUrl).toBe(
+        `https://${providerIds[1]}.cdp.browser-use.com/`,
+      );
+      for (const { headers, threadId } of [first, other]) {
+        const current = await accept(client().current({ headers }), [200]);
+        expect(current.body.browser).toMatchObject({
+          threadId,
+          status: "active",
+          idleExpiresAt: isoAt(10 * MINUTE_MS),
+        });
+      }
+      mockNow(STARTED_AT_MS + MINUTE_MS);
+      const leased = await accept(
+        client().lease({ headers: first.headers, body: {} }),
+        [200],
+      );
+      expect(leased.body.browser).toMatchObject({
+        threadId: first.threadId,
+        idleExpiresAt: isoAt(11 * MINUTE_MS),
+      });
+      const untouched = await accept(
+        client().current({ headers: other.headers }),
+        [200],
+      );
+      expect(untouched.body.browser.idleExpiresAt).toBe(isoAt(10 * MINUTE_MS));
+      mockNow(STARTED_AT_MS + 2 * MINUTE_MS);
+      const reused = await accept(
+        client().use({ headers: other.headers, body: {} }),
+        [200],
+      );
+      expect(reused.body.cdpUrl).toBe(attached.body.cdpUrl);
+      expect(reused.body.browser).toMatchObject({
+        threadId: other.threadId,
+        idleExpiresAt: isoAt(12 * MINUTE_MS),
+      });
+      for (const [thread, minutes] of [
+        [first, 11],
+        [other, 12],
+      ] as const) {
+        const current = await accept(
+          client().current({ headers: thread.headers }),
+          [200],
+        );
+        expect(current.body.browser).toMatchObject({
+          threadId: thread.threadId,
+          status: "active",
+          idleExpiresAt: isoAt(minutes * MINUTE_MS),
+        });
+      }
+    });
+  });
+
   it("attaches concurrent requests to the same thread browser", async () => {
     const { runs, chat, actor, agent } = await setupBrowserScenario();
     const current = await createClaimedChatRun(

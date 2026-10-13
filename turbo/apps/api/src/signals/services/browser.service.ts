@@ -1230,23 +1230,26 @@ const loadOwnedBrowser$ = command(
   },
 );
 
-async function loadCurrentBrowser(
-  db: Db,
-  context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select(BROWSER_SESSION_SELECTION)
-    .from(browserSessions)
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, context.chatThreadId),
-        eq(browserSessions.orgId, context.orgId),
-        eq(browserSessions.userId, context.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadCurrentBrowser$ = command(
+  async (
+    { get },
+    context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
+  ): Promise<BrowserSessionRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select(BROWSER_SESSION_SELECTION)
+      .from(browserSessions)
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, context.chatThreadId),
+          eq(browserSessions.orgId, context.orgId),
+          eq(browserSessions.userId, context.userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+);
 
 async function loadOwnedThreadBrowser(
   db: Db,
@@ -2369,10 +2372,9 @@ const openBrowserForContext$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
     const { context } = args;
 
-    const current = await loadCurrentBrowser(db, context);
+    const current = await set(loadCurrentBrowser$, context);
     signal.throwIfAborted();
     if (!current) {
       return await set(
@@ -2532,7 +2534,7 @@ export const leaseCurrentBrowser$ = command(
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2741,7 +2743,7 @@ export const getCurrentBrowser$ = command(
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
