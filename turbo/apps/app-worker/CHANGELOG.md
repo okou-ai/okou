@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.24](https://github.com/okou-ai/okou/compare/app-worker-v1.9.23...app-worker-v1.9.24) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.751.0
+
 ## [1.9.23](https://github.com/okou-ai/okou/compare/app-worker-v1.9.22...app-worker-v1.9.23) (2026-10-13)
 
 

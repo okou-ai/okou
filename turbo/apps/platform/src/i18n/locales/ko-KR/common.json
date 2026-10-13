@@ -656,6 +656,7 @@
       "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
       "showVariant": "변형 보기 {{variantNumber}}",
       "singleAccent": "단일 악센트",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 슬라이드 미리보기",
       "slideThumbnail": "{{title}} 슬라이드 {{slideNumber}} 미리보기",
       "template": "템플릿",

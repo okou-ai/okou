@@ -70,6 +70,11 @@ fn successful_storage_rpc_records_one_resource_snapshot_per_request() {
     finish_guest_connection(handle, host);
     assert_eq!(summaries.len(), 2);
     for (summary, seq) in summaries.iter().zip([501, 502]) {
+        // The unchanged typed resource reader still accepts the additive JSON.
+        let legacy: guest_contracts::storage_resources::StorageResourceUsage =
+            serde_json::from_value(summary.clone()).unwrap();
+        assert!(legacy.matches_request(RUN_ID, seq));
+        assert_eq!(summary["storage_resource_available"], true);
         for (field, expected) in [
             ("run_id", json!(RUN_ID)),
             ("request_seq", json!(seq)),

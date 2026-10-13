@@ -14,6 +14,7 @@ import {
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { chatThreads } from "../schema/chat-thread";
+import { agents } from "../schema/agent";
 import { workflowAutomations } from "../schema/workflow";
 import type {
   AgentRunLaunchSnapshot,
@@ -29,6 +30,23 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
   return {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(), // Clerk user ID - owner of this run
+    // Mirrored at admission while Session remains the runtime authority.
+    agentId: uuid("agent_id").references(
+      (): AnyPgColumn => {
+        return agents.id;
+      },
+      {
+        onDelete: "set null",
+      },
+    ),
+    // Actual native identity reported by the Framework, not the model provider.
+    framework: varchar("framework", { length: 64 }),
+    frameworkSessionId: varchar("framework_session_id", { length: 255 }),
+    // Temporary mirror of Conversation's existing blob retain for retirement
+    // cleanup. This neither retains a second reference nor authorizes resume.
+    legacyConversationHistoryHash: varchar("legacy_conversation_history_hash", {
+      length: 64,
+    }),
     continuedFromSessionId: uuid("continued_from_session_id"),
     sessionId: uuid("session_id")
       .notNull()

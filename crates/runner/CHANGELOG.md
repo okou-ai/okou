@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.230.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.3...runner-rs-v0.230.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** honor non-expiring tailscale node keys ([#39732](https://github.com/okou-ai/okou/issues/39732)) ([8756c0e](https://github.com/okou-ai/okou/commit/8756c0e6268d26fde426866366d38a64a5762b02))
+
+
+### Refactoring
+
+* **test:** split runner exec scenario boundaries ([#39749](https://github.com/okou-ai/okou/issues/39749)) ([2b09d27](https://github.com/okou-ai/okou/commit/2b09d2745592acb711a6fd0c87b16ac9ddf454ae))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.230.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.2...runner-rs-v0.230.3) (2026-10-13)
 
 

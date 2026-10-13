@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.6](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.5...runner-remote-v0.14.6) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** honor non-expiring tailscale node keys ([#39732](https://github.com/okou-ai/okou/issues/39732)) ([8756c0e](https://github.com/okou-ai/okou/commit/8756c0e6268d26fde426866366d38a64a5762b02))
+
 ## [0.14.5](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.4...runner-remote-v0.14.5) (2026-10-13)
 
 ## [0.14.4](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.3...runner-remote-v0.14.4) (2026-10-13)

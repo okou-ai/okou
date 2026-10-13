@@ -1,4 +1,5 @@
 use guest_contracts::storage_resources::StorageResourceUsage;
+use serde::{Serialize, Serializer};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ChildStdin;
@@ -125,6 +126,8 @@ struct GuestStorageManifestRequest {
     run_id: String,
     runtime_dir: String,
     manifest_json: Vec<u8>,
+    request_ownership_us: Option<u64>,
+    enqueue_ready: Instant,
     operation_guard: OperationGuard,
     admission: SingleActivePermit,
 }
@@ -174,8 +177,9 @@ impl GuestStorageManifestWorker {
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), GuestStorageManifestSubmitError> {
-        self.inner
-            .try_submit_with(move || GuestStorageManifestRequest {
+        let ownership_started = Instant::now();
+        self.inner.try_submit_with(move || {
+            let mut request = GuestStorageManifestRequest {
                 seq: submission.seq,
                 timeout_ms: submission.timeout_ms,
                 run_id: submission.run_id.to_owned(),
@@ -183,7 +187,17 @@ impl GuestStorageManifestWorker {
                 manifest_json: submission.manifest_json.to_vec(),
                 operation_guard,
                 admission,
-            })
+                request_ownership_us: None,
+                enqueue_ready: ownership_started,
+            };
+            // Install both observations before enqueue: the worker can run
+            // before try_send returns. Lazy sender acquisition is included;
+            // receive/decoding and try_send itself are not ownership work.
+            let enqueue_ready = Instant::now();
+            request.request_ownership_us = microseconds(enqueue_ready - ownership_started);
+            request.enqueue_ready = enqueue_ready;
+            request
+        })
     }
 }
 
@@ -227,6 +241,7 @@ fn handle_request(
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
 ) -> io::Result<()> {
+    let worker_wait_us = microseconds(request.enqueue_ready.elapsed());
     let GuestStorageManifestRequest {
         seq,
         timeout_ms,
@@ -235,6 +250,8 @@ fn handle_request(
         manifest_json,
         operation_guard,
         admission,
+        request_ownership_us,
+        enqueue_ready: _,
     } = request;
     let mut resources = None;
     let output = run_manifest(RunManifestInput {
@@ -249,15 +266,21 @@ fn handle_request(
         drain_deadline,
         resources: &mut resources,
     });
+    let response_prepare_started = Instant::now();
     let stdout = captured_output(&output.stdout);
     let stderr = captured_output(&output.stderr);
-    let resource_summary = resources
-        .as_ref()
-        .and_then(|value| serde_json::to_vec(value).ok())
-        .filter(|value| {
-            value.len() <= guest_control_proto::GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES
-        })
-        .unwrap_or_default();
+    let resource_summary = serde_json::to_vec(&TerminalEvidence {
+        resources: resources.as_ref(),
+        storage_resource_available: resources.is_some(),
+        storage_control_timing: ResponseTiming {
+            request_ownership_us,
+            worker_wait_us,
+            response_prepare_us: PreparationElapsed(response_prepare_started),
+        },
+    })
+    .ok()
+    .filter(|value| value.len() <= guest_control_proto::GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES)
+    .unwrap_or_default();
     let mut frame = Vec::new();
     guest_control_proto::encode_guest_storage_manifest_result_frame_into(
         &mut frame,
@@ -279,6 +302,38 @@ fn handle_request(
             drop(admission);
         })
         .map(|_| ())
+}
+
+#[derive(Serialize)]
+struct TerminalEvidence<'a> {
+    // Field order deliberately serializes the existing resource snapshot before
+    // sampling preparation. Legacy resource readers ignore the additive fields.
+    #[serde(flatten)]
+    resources: Option<&'a StorageResourceUsage>,
+    storage_resource_available: bool,
+    storage_control_timing: ResponseTiming,
+}
+
+#[derive(Serialize)]
+struct ResponseTiming {
+    request_ownership_us: Option<u64>,
+    worker_wait_us: Option<u64>,
+    response_prepare_us: PreparationElapsed,
+}
+
+struct PreparationElapsed(Instant);
+
+impl Serialize for PreparationElapsed {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        // The measurement ends here. It cannot include its own encoded value,
+        // JSON closing bytes, final frame encoding, writer wait/write, or Host
+        // receive/wakeup work that has not happened yet.
+        microseconds(self.0.elapsed()).serialize(serializer)
+    }
+}
+
+fn microseconds(duration: Duration) -> Option<u64> {
+    u64::try_from(duration.as_micros()).ok()
 }
 
 struct RunManifestInput<'a> {

@@ -657,6 +657,7 @@
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
       "showVariant": "Variante {{variantNumber}} anzeigen",
       "singleAccent": "Einzelakzent",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} Folienvorschau",
       "slideThumbnail": "{{title}} Folie {{slideNumber}} Vorschau",
       "template": "Vorlage",

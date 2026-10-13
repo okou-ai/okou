@@ -676,6 +676,7 @@
       "selectWorkflow": "Seleccionar plantilla de flujo de trabajo {{title}}",
       "showVariant": "Mostrar variante {{variantNumber}}",
       "singleAccent": "Acento único",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Vista previa de las diapositivas de {{title}}",
       "slideThumbnail": "Vista previa de la diapositiva {{slideNumber}} de {{title}}",
       "template": "Plantilla",

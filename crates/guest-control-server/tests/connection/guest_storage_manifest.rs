@@ -59,6 +59,40 @@ fn read_result(stream: &mut impl std::io::Read, seq: u32) -> TestResult {
     let decoded =
         guest_control_proto::decode_guest_storage_manifest_result(&message.payload).unwrap();
     let resources = decoded.resource_summary.to_vec();
+    let timing = serde_json::from_slice::<
+        guest_contracts::storage_resources::StorageControlTimingMetadata,
+    >(&resources)
+    .unwrap()
+    .storage_control_timing
+    .unwrap();
+    assert!(timing.request_ownership_us.is_some());
+    assert!(timing.worker_wait_us.is_some());
+    assert!(timing.response_prepare_us.is_some());
+    let available = serde_json::from_slice::<
+        guest_contracts::storage_resources::StorageResourceAvailability,
+    >(&resources)
+    .unwrap()
+    .storage_resource_available
+    .unwrap();
+    let legacy = serde_json::from_slice::<guest_contracts::storage_resources::StorageResourceUsage>(
+        &resources,
+    );
+    if available {
+        assert_eq!(legacy.unwrap().request_seq, seq);
+        // Resource serialization precedes the response-preparation sample on
+        // the real terminal wire, not just in an in-memory timing fixture.
+        let json = std::str::from_utf8(&resources).unwrap();
+        assert!(
+            json.find("\"cpu_period_us\":").unwrap()
+                < json.find("\"response_prepare_us\":").unwrap()
+        );
+    } else {
+        assert!(
+            legacy.is_err(),
+            "resource-less timing must not fabricate counters"
+        );
+    }
+    assert!(resources.len() <= guest_control_proto::GUEST_STORAGE_RESOURCE_SUMMARY_LIMIT_BYTES);
     let decoded = decoded.result;
     let (stdout, stdout_truncated) = captured(decoded.stdout);
     let (stderr, stderr_truncated) = captured(decoded.stderr);
