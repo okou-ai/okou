@@ -621,10 +621,11 @@ operation_pid=""
 if [ "$operation_status" -ne 0 ]; then
   # A failed caller may have executed remotely. Diagnostics must neither
   # reconnect nor replay it, and must not change its stdout or exit status.
-  echo "::group::Cloudflare SSH caller diagnostics" >&2
-  echo "Tool: ${TOOL}; host: ${TARGET_HOST}; exit: ${operation_status}; started: ${operation_started_at}; finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
-  cloudflare_ssh_emit_master_diagnostics \
-    "$master_diagnostics_file" || true
-  echo "::endgroup::" >&2
+  {
+    echo "::group::Cloudflare SSH caller diagnostics" >&2
+    echo "Tool: ${TOOL}; host: ${TARGET_HOST}; exit: ${operation_status}; started: ${operation_started_at}; finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
+    cloudflare_ssh_emit_master_diagnostics "$master_diagnostics_file"
+    echo "::endgroup::" >&2
+  } || true
 fi
 exit "$operation_status"

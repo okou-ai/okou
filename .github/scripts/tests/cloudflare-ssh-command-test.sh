@@ -483,6 +483,18 @@ assert_contains "$auto_master_reuse/stderr" \
   "probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
 assert_not_contains "$auto_master_reuse/stderr" "probe-secret"
 
+diagnostic_write_failure="${tmp}/diagnostic-write-failure"
+setup_case "$diagnostic_write_failure"
+diagnostic_write_status=0
+invoke_wrapper "$diagnostic_write_failure" actual-failure sftp \
+  metal@dev-1.aws.vm3.ai \
+  > "$diagnostic_write_failure/stdout" 2>&- || diagnostic_write_status=$?
+if [ "$diagnostic_write_status" -ne 17 ]; then
+  fail "unwritable diagnostics must preserve caller status 17; got ${diagnostic_write_status}"
+fi
+assert_line_count "$diagnostic_write_failure/sftp.log" 1 \
+  "metal@dev-1.aws.vm3.ai"
+
 invalid_timeout="${tmp}/invalid-timeout"
 OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=0 \
   run_wrapper "$invalid_timeout" healthy ssh \
