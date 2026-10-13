@@ -86,6 +86,13 @@ function composer() {
   }
   return node;
 }
+function queryTab(name: string) {
+  return (
+    queryAllByRoleFast("tab").find((element) => {
+      return element.textContent?.trim() === name;
+    }) ?? null
+  );
+}
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
@@ -106,6 +113,9 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
     return respond(200, { ...found, status: "consumed" });
   });
   return {
+    publish: (item: Suggestion) => {
+      items = [...items, item];
+    },
     withdrawAll: () => {
       items = [];
     },
@@ -143,6 +153,58 @@ test("Suggestions is the default tab and browsing categories preserves the draft
   });
   expect(composer()).toHaveTextContent("My draft stays here");
 });
+test("An empty pool hides Suggestions until a realtime publication without changing the chosen category or draft", async () => {
+  const pool = mockPool([]);
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await waitFor(() => {
+    expect(queryTab("Workflow")).toBeInTheDocument();
+  });
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByText("No suggestions right now."),
+  ).not.toBeInTheDocument();
+  await fill(composer(), "Keep my draft");
+  click(button("Image", "tab"));
+  await screen.findByText("Put my product in a new scene");
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+    ).toBeTruthy();
+  });
+  pool.publish(makeSuggestion());
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).toBeInTheDocument();
+  });
+  expect(button("Image", "tab")).toHaveAttribute("aria-selected", "true");
+  expect(composer()).toHaveTextContent("Keep my draft");
+  click(button("Suggestions", "tab"));
+  await screen.findByText(makeSuggestion().title);
+  expect(composer()).toHaveTextContent("Keep my draft");
+});
+test("A suggestion-list failure stays visible rather than appearing to be an empty pool", async () => {
+  context.mocks.api(suggestionsContract.list, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Suggestion service unavailable" },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await screen.findByText("Suggestions could not be loaded.");
+  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
+  expect(
+    screen.queryByText("No suggestions right now."),
+  ).not.toBeInTheDocument();
+});
 test("A new-chat suggestion is consumed and prepends its structured reference without sending", async () => {
   mockPool();
   let saved: unknown;
@@ -163,7 +225,14 @@ test("A new-chat suggestion is consumed and prepends its structured reference wi
     expect(composer()).toHaveTextContent("Referenced decision");
     expect(composer()).toHaveTextContent("My original draft");
   });
-  await screen.findByText("No suggestions right now.");
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+    expect(composer()).toHaveFocus();
+  });
+  expect(
+    screen.queryByText("No suggestions right now."),
+  ).not.toBeInTheDocument();
+  expect(button("Workflow", "tab")).toBeInTheDocument();
   expect(pathname()).toBe(`/agents/${agentId}/chat`);
   await waitFor(() => {
     return expect(saved).toMatchObject({
@@ -257,7 +326,7 @@ test("An existing-thread suggestion preserves the remote draft without sending",
   await expect(screen.findByText("original.txt")).resolves.toBeInTheDocument();
   expect(sends).toStrictEqual([]);
 });
-test("Realtime consumption updates the Suggestions panel without changing the selected category", async () => {
+test("Realtime removal hides Suggestions without changing another selected category", async () => {
   const pool = mockPool();
   await setupPage({
     context,
@@ -265,6 +334,8 @@ test("Realtime consumption updates the Suggestions panel without changing the se
     featureSwitches: features,
   });
   await screen.findByText(makeSuggestion().title);
+  click(button("Image", "tab"));
+  await screen.findByText("Put my product in a new scene");
   await waitFor(() => {
     return expect(
       context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
@@ -272,8 +343,13 @@ test("Realtime consumption updates the Suggestions panel without changing the se
   });
   pool.withdrawAll();
   context.mocks.ably.trigger("agentSuggestionsChanged");
-  await screen.findByText("No suggestions right now.");
-  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  });
+  expect(button("Image", "tab")).toHaveAttribute("aria-selected", "true");
+  expect(
+    screen.queryByText("No suggestions right now."),
+  ).not.toBeInTheDocument();
 });
 test("The action list starts with five suggestions and expands without modifying the composer", async () => {
   mockPool(

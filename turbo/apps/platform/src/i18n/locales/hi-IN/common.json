@@ -1520,7 +1520,6 @@
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
-      "empty": "अभी कोई सुझाव नहीं है।",
       "existingThread": "मौजूदा बातचीत",
       "label": "सुझाव",
       "loadFailed": "सुझाव लोड नहीं हो सके।",

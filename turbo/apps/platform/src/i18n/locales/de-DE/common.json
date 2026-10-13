@@ -1520,7 +1520,6 @@
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
     "agentSuggestions": {
-      "empty": "Derzeit keine Vorschläge.",
       "existingThread": "Bestehende Unterhaltung",
       "label": "Vorschläge",
       "loadFailed": "Vorschläge konnten nicht geladen werden.",

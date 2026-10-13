@@ -1519,7 +1519,6 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "empty": "目前沒有建議。",
       "existingThread": "現有對話",
       "label": "建議",
       "loadFailed": "無法載入建議。",

@@ -1519,7 +1519,6 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "empty": "Belum ada saran saat ini.",
       "existingThread": "Percakapan yang ada",
       "label": "Saran",
       "loadFailed": "Saran tidak dapat dimuat.",

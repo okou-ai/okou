@@ -1544,7 +1544,6 @@
       "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
-      "empty": "No hay sugerencias por ahora.",
       "existingThread": "Conversación existente",
       "label": "Sugerencias",
       "loadFailed": "No se pudieron cargar las sugerencias.",

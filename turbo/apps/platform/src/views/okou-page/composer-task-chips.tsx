@@ -11,7 +11,10 @@ import {
   Lightbulb,
 } from "lucide-react";
 import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@okouai/ui";
-import { agentSuggestionsEnabled$ } from "../../signals/okou-page/agent-suggestions.ts";
+import {
+  agentSuggestionsEnabled$,
+  visibleAgentSuggestions$,
+} from "../../signals/okou-page/agent-suggestions.ts";
 import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -453,7 +456,7 @@ function ComposerTaskTabs({
   tasks,
 }: {
   readonly signals: ComposerSignals;
-  readonly selected: ComposerTask;
+  readonly selected: ComposerTask | null;
   readonly tasks: readonly ComposerTask[];
 }) {
   const { t } = useTranslation();
@@ -517,11 +520,14 @@ export function ComposerTaskChips({
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
+  const items = useLoadable(visibleAgentSuggestions$);
+  const showSuggestions =
+    suggestionsEnabled && (items.state !== "hasData" || items.data.length > 0);
   const current = useGet(signals.taskChips.task$);
   const selected =
-    current === "suggestions" && !suggestionsEnabled
+    current === "suggestions" && !showSuggestions
       ? null
-      : (current ?? (suggestionsEnabled ? "suggestions" : null));
+      : (current ?? (showSuggestions ? "suggestions" : null));
   const selectTask = useSet(signals.taskChips.selectTask$);
   const labels = t(
     ($) => {
@@ -540,7 +546,7 @@ export function ComposerTaskChips({
     ] as const
   ).filter((task) => {
     if (task === "suggestions") {
-      return suggestionsEnabled;
+      return showSuggestions;
     }
     return (
       task === "workflow" ||
@@ -549,7 +555,7 @@ export function ComposerTaskChips({
       signals.create.modes.includes(task)
     );
   });
-  if (suggestionsEnabled && selected !== null) {
+  if (suggestionsEnabled) {
     return (
       <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
     );
