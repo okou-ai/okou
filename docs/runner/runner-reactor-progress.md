@@ -212,6 +212,25 @@ local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production
 `statvfs` latency or pressure collection.
 
+## Optional snapshot IO
+
+Supplied-policy optional consumers share the pressure controller's current
+observation state and global cadence through a restricted capability bound to
+its original physical-memory authority. Notifications carry no cached
+permission. Revalidate an opportunity after outside-lock admission waits;
+Critical/Unknown/stale/wave/stop transitions revoke the original offer even
+after a later recovery. No pressure-state lock survives IO or provider work.
+
+The concrete prefetch owner moves the physical operation and tracking token
+into accepted blocking reads. Dropped receivers/coordinators cannot make its
+drain finish while that producer remains active. Shutdown cancels future
+optional work and joins actual IO before dependent cache/factory teardown.
+Positive phase settlement still requires a fresh fenced observation; producer
+loss retains uncertainty. Cancellation, completed reads and declared file bounds
+are not resident-cache, released-byte or production memory-saving proof.
+
+- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
+
 ## Other retained work
 
 - Discovery remains pinned across reactor turns: restarting it on each tick

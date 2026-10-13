@@ -217,6 +217,7 @@ async fn finish_dns_startup(
     };
 
     memory_prefetch.cancel();
+    memory_prefetch.drain().await;
     if let Some(handle) = dns_handle
         && let Err(error) = handle.stop().await
     {
@@ -238,8 +239,6 @@ async fn finish_dns_startup(
     if let Err(error) = kmsg_handle.stop().await {
         warn!(%error, "failed to clean up network-log helper after startup failure");
     }
-    memory_prefetch.drain().await;
-
     Err(match failure {
         DnsStartupFailure::MissingInterfacePattern(_reservation) => {
             RunnerError::Internal("sandbox runtime did not provide DNS interface pattern".into())
@@ -264,6 +263,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
         Ok(handle) => Ok((handle, resources.kmsg_handle, resources.dns_handle)),
         Err(e) => {
             resources.memory_prefetch.cancel();
+            resources.memory_prefetch.drain().await;
             resources.provider.shutdown().await;
             if let Err(error) = resources.dns_handle.stop().await {
                 warn!(%error, "failed to clean up network-log helper after startup failure");
@@ -275,7 +275,6 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
             if let Err(error) = resources.kmsg_handle.stop().await {
                 warn!(%error, "failed to clean up network-log helper after startup failure");
             }
-            resources.memory_prefetch.drain().await;
             if let Err(status_error) = resources.status.set_mode(RunnerMode::Stopped).await {
                 warn!(
                     error = %status_error,

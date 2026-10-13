@@ -5,6 +5,7 @@ mod heartbeat;
 mod host_memory;
 mod idle_pressure;
 mod job_flow;
+mod optional_prefetch;
 mod parallel_claim;
 mod runner_wss;
 mod shared_resource_progress;
