@@ -167,7 +167,6 @@ const terminalAgentUnavailable$ = command(
     if (terminal) {
       await set(
         sendDiscordIngressNotice$,
-        db,
         {
           ingressId: claim.ingressId,
           connectionId: binding.connectionId,

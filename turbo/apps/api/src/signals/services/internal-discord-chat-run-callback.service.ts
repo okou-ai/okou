@@ -287,11 +287,11 @@ export const sendDiscordChatReply$ = command(
  */
 export const sendDiscordIngressNotice$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     notice: DiscordIngressNotice,
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = get(db$);
     const sent = await settle(
       (async (): Promise<void> => {
         const [owner] = await db
