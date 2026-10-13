@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
+import historyDownloadAttribution from "./fixtures/runner-history-download-attribution.json";
 
 import {
   RESUME_SESSION_HISTORY_MAX_BYTES,
@@ -28,6 +29,66 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("bounded session-history download attribution", () => {
+  it("accepts the shared Runner upload fixture without changing its measurements", () => {
+    expect(
+      webhookTelemetryContract.send.body.parse(historyDownloadAttribution),
+    ).toEqual(historyDownloadAttribution);
+  });
+
+  it("accepts legacy uploads and strips undeclared customer/transport details", () => {
+    const legacy = {
+      ts: "2026-01-15T10:00:00Z",
+      action_type: "session_history_download",
+      duration_ms: 10,
+      success: true,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [
+          {
+            ...legacy,
+            session_history_download_url:
+              "https://private.invalid/history?signature=private",
+            session_history_ref_hash: "private",
+            session_history_attempts: [{ body: "private", key: "private" }],
+          },
+        ],
+      }),
+    ).toEqual({ runId: "run", sandboxOperations: [legacy] });
+  });
+
+  it.each([
+    { session_history_observation_stage: "arbitrary" },
+    { session_history_download_attempt: 0 },
+    { session_history_download_attempt: 4 },
+    { session_history_attempt_count: 4 },
+    { session_history_failed_attempt_count: -1 },
+    { session_history_interrupted_attempt_count: 4 },
+    { session_history_retry_count: 3 },
+    { session_history_request_start_offset_ms: -1 },
+    { session_history_body_end_offset_ms: 0.5 },
+    { session_history_chunk_wait_ms: Number.MAX_SAFE_INTEGER + 1 },
+    { session_history_chunk_wait_max_ms: Infinity },
+    { session_history_chunk_count: 4_294_967_296 },
+    { session_history_body_copy_ms: "private" },
+    { session_history_cpu_admission_end_offset_ms: -1 },
+    { session_history_cpu_queue_end_offset_ms: NaN },
+    { session_history_restore_wait_end_offset_ms: -1 },
+    { session_history_timing_origin_unix_ms: -1 },
+  ])("rejects out-of-contract measurements %j", (invalid) => {
+    expect(
+      webhookTelemetryContract.send.body.safeParse({
+        ...historyDownloadAttribution,
+        sandboxOperations: [
+          { ...historyDownloadAttribution.sandboxOperations[0], ...invalid },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe("captured runtime usage identities", () => {
   it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
