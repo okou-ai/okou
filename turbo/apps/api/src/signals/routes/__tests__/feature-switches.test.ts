@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
+import {
+  CLIENT_TYPE_APP,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import webClientCompatibility from "../../../lib/web-client-compatibility.json";
 import { createRouteMocks } from "./helpers/route-test";
 import { featureSwitchesRoutes } from "../feature-switches";
 
@@ -106,13 +112,17 @@ describe("/api/feature-switches", () => {
     });
   });
 
-  it("filters unknown keys while preserving unrelated overrides and replacing a requested key", async () => {
+  it("returns registered effective switches while merging known overrides for a supported App", async () => {
     createRouteMocks(context).clerk.session(
       `user_${randomUUID()}`,
       `org_${randomUUID()}`,
       "org:member",
     );
-    const headers = { authorization: "Bearer clerk-session" };
+    const headers = {
+      authorization: "Bearer clerk-session",
+      [CLIENT_TYPE_HEADER]: CLIENT_TYPE_APP,
+      [CLIENT_VERSION_HEADER]: webClientCompatibility.minimumSupportedVersion,
+    };
     await accept(
       client().update({
         headers,
@@ -142,8 +152,15 @@ describe("/api/feature-switches", () => {
       [FeatureSwitchKey.Dummy]: false,
     };
     expect(updated.body.switches).toStrictEqual(expected);
+    expect(updated.body.effectiveSwitches).toMatchObject(expected);
+    expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
+      Object.values(FeatureSwitchKey).sort(),
+    );
     const current = await accept(client().get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual(expected);
+    expect(current.body.effectiveSwitches).toStrictEqual(
+      updated.body.effectiveSwitches,
+    );
   });
 
   it("deletes the caller's overrides and organization keys without deleting a peer's personal override", async () => {
