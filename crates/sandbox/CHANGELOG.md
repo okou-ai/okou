@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/sandbox-v0.26.4...sandbox-v0.27.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
 ## [0.26.4](https://github.com/okou-ai/okou/compare/sandbox-v0.26.3...sandbox-v0.26.4) (2026-10-13)
 
 

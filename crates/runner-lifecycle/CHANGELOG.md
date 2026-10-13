@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.3...runner-lifecycle-v0.12.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
 ## [0.11.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.2...runner-lifecycle-v0.11.3) (2026-10-13)
 
 ## [0.11.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.1...runner-lifecycle-v0.11.2) (2026-10-13)
