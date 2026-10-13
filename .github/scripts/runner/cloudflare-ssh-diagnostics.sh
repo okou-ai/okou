@@ -15,20 +15,11 @@ cloudflare_ssh_master_diagnostics_file() {
 }
 
 cloudflare_ssh_emit_master_diagnostics() {
-  local file=$1 probe_file=${2:-}
-  if [ -s "$file" ] || { [ -n "$probe_file" ] && [ -s "$probe_file" ]; }; then
-    echo "----- SSH master stderr and probe stderr (combined last 100 lines, at most 64 KiB, redacted) -----" >&2
-    {
-      if [ -s "$file" ]; then
-        tail -n 100 "$file"
-      fi
-      if [ -n "$probe_file" ] && [ -s "$probe_file" ]; then
-        echo "----- command-channel probe stderr -----"
-        tail -n 20 "$probe_file"
-      fi
-    } \
+  local file=$1
+  if [ -s "$file" ]; then
+    echo "----- SSH master stderr (including probes; last 100 lines, at most 64 KiB, redacted) -----" >&2
+    tail -n 100 "$file" \
       | cloudflare_ssh_sanitize_diagnostics - \
-      | tail -n 100 \
       | tail -c 65536 >&2
   else
     echo "SSH master diagnostics unavailable." >&2

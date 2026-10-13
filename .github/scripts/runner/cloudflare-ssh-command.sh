@@ -437,6 +437,7 @@ emit_probe_failure() {
 probe_transport() {
   local control_path=$1
   local diagnostics_file=$2
+  local master_diagnostics_file diagnostics_offset probe_status=0
   local -a control_args=()
   if [ -n "$control_path" ]; then
     control_args=(-S "$control_path")
@@ -444,13 +445,25 @@ probe_transport() {
 
   (
     umask 077
+    master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
+      "$TARGET_USER" "$TARGET_HOST" "$control_path") || exit
+    : >> "$master_diagnostics_file" || exit
+    chmod 600 "$master_diagnostics_file" || exit
+    diagnostics_offset=$(wc -c < "$master_diagnostics_file") || exit
+    # A probe can create a detached master. Give every invocation the same
+    # append-only stderr destination so later callers can read that master's
+    # messages too. Classify only bytes added during this probe.
     GITHUB_STEP_SUMMARY="" \
       timeout \
         --kill-after="${PROBE_KILL_AFTER_SECONDS}s" \
         "${PROBE_TIMEOUT_SECONDS}s" \
         "$REAL_SSH" "${control_args[@]}" -v -n -T \
         "${TARGET_USER}@${TARGET_HOST}" true \
-        </dev/null > /dev/null 2> "$diagnostics_file"
+        </dev/null > /dev/null 2>> "$master_diagnostics_file" \
+      || probe_status=$?
+    tail -c "+$((diagnostics_offset + 1))" "$master_diagnostics_file" \
+      > "$diagnostics_file" || exit
+    exit "$probe_status"
   )
 }
 
@@ -497,7 +510,6 @@ probe_transport "$current_control_path" "$first_probe_stderr" \
   || probe_status=$?
 
 selected_control_path="$current_control_path"
-caller_probe_stderr="$first_probe_stderr"
 master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
   "$TARGET_USER" "$TARGET_HOST" "$current_control_path")
 if [ "$probe_status" -ne 0 ]; then
@@ -550,7 +562,6 @@ if [ "$probe_status" -ne 0 ]; then
   fi
 
   selected_control_path="$recovery_control_path"
-  caller_probe_stderr="$second_probe_stderr"
   master_diagnostics_file=$(cloudflare_ssh_master_diagnostics_file \
     "$TARGET_USER" "$TARGET_HOST" "$selected_control_path")
   state_file_tmp=$(mktemp "${state_file}.tmp.XXXXXX")
@@ -558,8 +569,7 @@ if [ "$probe_status" -ne 0 ]; then
   mv "$state_file_tmp" "$state_file"
 fi
 
-# With ControlMaster=auto, even a successful probe may have created a detached
-# default master. Keep its verbose stderr addressable until job cleanup.
+rm -rf "$probe_dir"
 release_transport_lock
 trap - EXIT
 
@@ -614,7 +624,7 @@ if [ "$operation_status" -ne 0 ]; then
   echo "::group::Cloudflare SSH caller diagnostics" >&2
   echo "Tool: ${TOOL}; host: ${TARGET_HOST}; exit: ${operation_status}; started: ${operation_started_at}; finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >&2
   cloudflare_ssh_emit_master_diagnostics \
-    "$master_diagnostics_file" "$caller_probe_stderr" || true
+    "$master_diagnostics_file" || true
   echo "::endgroup::" >&2
 fi
 exit "$operation_status"

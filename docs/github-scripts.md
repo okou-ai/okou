@@ -61,7 +61,10 @@ proxy stderr in files restricted to the job user. Initial master logs remain at
 `$RUNNER_TEMP/cloudflare-ssh-master-<target-key>.stderr`; recovered masters use
 `<control-path>.stderr`. Retain these files while the detached masters are alive.
 Command-channel probes also run with `-v`; keep their restricted stderr files
-until job cleanup because `ControlMaster auto` can start a master during a probe.
+at the same append-only master log path because `ControlMaster auto` can start a
+master during a probe. This preserves its diagnostics across later callers that
+reuse that master. Classify probe failures using only that probe's appended bytes,
+then discard the temporary snapshot.
 Verbose output from a multiplexed caller alone cannot explain the master's
 connection failure.
 

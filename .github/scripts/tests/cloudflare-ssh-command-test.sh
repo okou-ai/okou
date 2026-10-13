@@ -77,10 +77,13 @@ assert_process_gone() {
 
 tmp=$(mktemp -d)
 cleanup() {
-  if [ -s "$tmp/auto-master-failure/auto-master.pid" ] \
-    && [ ! -e "$tmp/auto-master-failure/auto-master.completed" ]; then
-    kill -TERM "$(< "$tmp/auto-master-failure/auto-master.pid")" 2>/dev/null || true
-  fi
+  local case_dir
+  for case_dir in "$tmp/auto-master-failure" "$tmp/auto-master-reuse"; do
+    if [ -s "$case_dir/auto-master.pid" ] \
+      && [ ! -e "$case_dir/auto-master.completed" ]; then
+      kill -TERM "$(< "$case_dir/auto-master.pid")" 2>/dev/null || true
+    fi
+  done
   rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -156,11 +159,17 @@ if [ "$is_probe" = "true" ]; then
     healthy|actual-failure|actual-hang)
       exit 0
       ;;
-    auto-master-failure)
+    auto-master-failure|auto-master-reuse)
       # Simulate the detached master retaining the probe's stderr descriptor.
       # Emit its failure only after caller execution has started.
+      if [ -s "$FAKE_MASTER_PID_FILE" ]; then
+        exit 0
+      fi
       (
         printf '%s\n' "$BASHPID" > "$FAKE_MASTER_PID_FILE"
+        if [ "$FAKE_SSH_SCENARIO" = "auto-master-reuse" ]; then
+          printf 'ready\n' > "$FAKE_MASTER_DONE"
+        fi
         IFS= read -r _ < "$FAKE_MASTER_TRIGGER"
         echo "debug1: probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=probe-secret" >&2
         printf 'done\n' > "$FAKE_MASTER_DONE"
@@ -230,7 +239,13 @@ if [ "$FAKE_SSH_SCENARIO" = "actual-failure" ]; then
   echo "lost connection" >&2
   exit 1
 fi
-if [ "$FAKE_SSH_SCENARIO" = "auto-master-failure" ]; then
+if [ "$FAKE_SSH_SCENARIO" = "auto-master-reuse" ] \
+  && [ "$(wc -l < "$FAKE_SCP_INVOCATIONS")" -eq 1 ]; then
+  IFS= read -r _ < "$FAKE_MASTER_DONE"
+  exit 0
+fi
+if [ "$FAKE_SSH_SCENARIO" = "auto-master-failure" ] \
+  || [ "$FAKE_SSH_SCENARIO" = "auto-master-reuse" ]; then
   printf 'caller-started\n' > "$FAKE_MASTER_TRIGGER"
   IFS= read -r _ < "$FAKE_MASTER_DONE"
   echo "lost connection" >&2
@@ -442,11 +457,31 @@ assert_line_count "$auto_master/scp.log" 1 \
 assert_contains "$auto_master/stderr" \
   "probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
 assert_not_contains "$auto_master/stderr" "probe-secret"
-auto_master_stderr=$(find "$auto_master/state" -name attempt-1.stderr -print -quit)
+auto_master_stderr=$(find "$auto_master/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
 [ -n "$auto_master_stderr" ] || fail "probe-created master log must remain addressable"
 if [ "$(stat -c '%a' "$auto_master_stderr")" != 600 ]; then
   fail "probe-created master log must have restricted permissions"
 fi
+
+auto_master_reuse="${tmp}/auto-master-reuse"
+setup_case "$auto_master_reuse"
+mkfifo "$auto_master_reuse/auto-master.trigger" "$auto_master_reuse/auto-master.done"
+run_wrapper "$auto_master_reuse" auto-master-reuse scp \
+  /tmp/source metal@dev-1.aws.vm3.ai:/tmp/first-target
+assert_contains "$auto_master_reuse/status" "0"
+if [ -s "$auto_master_reuse/stderr" ]; then
+  fail "successful callers must not emit retained master diagnostics"
+fi
+run_wrapper "$auto_master_reuse" auto-master-reuse scp \
+  /tmp/source metal@dev-1.aws.vm3.ai:/tmp/second-target
+assert_contains "$auto_master_reuse/status" "1"
+assert_line_count "$auto_master_reuse/scp.log" 1 \
+  "/tmp/source metal@dev-1.aws.vm3.ai:/tmp/first-target"
+assert_line_count "$auto_master_reuse/scp.log" 1 \
+  "/tmp/source metal@dev-1.aws.vm3.ai:/tmp/second-target"
+assert_contains "$auto_master_reuse/stderr" \
+  "probe-created master disconnected TUNNEL_SERVICE_TOKEN_SECRET=[redacted]"
+assert_not_contains "$auto_master_reuse/stderr" "probe-secret"
 
 invalid_timeout="${tmp}/invalid-timeout"
 OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=0 \
@@ -518,6 +553,13 @@ assert_process_gone \
   "cancelled SSH descendant"
 
 recovery="${tmp}/github-runner-recovery-case"
+setup_case "$recovery"
+invoke_wrapper "$recovery" healthy preconnect metal dev-11.gcp.vm3.ai \
+  > "$recovery/preconnect.stdout" 2> "$recovery/preconnect.stderr"
+recovery_initial_log=$(find "$recovery/runner-temp" -name 'cloudflare-ssh-master-*.stderr' -print -quit)
+# A permanent error from an earlier channel must not reclassify this probe's
+# transient failure when both append to the retained master log.
+printf 'Permission denied (publickey).\n' >> "$recovery_initial_log"
 run_wrapper "$recovery" stale-success ssh \
   metal@dev-11.gcp.vm3.ai touch /tmp/recovered-operation
 assert_contains "$recovery/status" "0"
@@ -558,7 +600,7 @@ assert_line_count "$recovery/ssh.log" 2 \
   "-S ${selected_control_path} -v -n -T metal@dev-11.gcp.vm3.ai true"
 assert_line_count "$recovery/scp.log" 1 \
   "-o ControlPath=${selected_control_path} /tmp/nbd-cow-test metal@dev-11.gcp.vm3.ai:/tmp/nbd-cow-test"
-assert_match_count "$recovery/ssh.log" 1 "-M -N -f"
+assert_match_count "$recovery/ssh.log" 2 "-M -N -f"
 
 ansible_ssh="${tmp}/ansible-ssh"
 run_wrapper "$ansible_ssh" stale-success ssh \
@@ -627,7 +669,7 @@ new_control_path=$(< "$state_file")
 if [ "$new_control_path" = "$old_control_path" ]; then
   fail "stale selected transport must be replaced with a unique socket"
 fi
-assert_match_count "$recovery/ssh.log" 2 "-M -N -f"
+assert_match_count "$recovery/ssh.log" 3 "-M -N -f"
 assert_line_count "$recovery/actual-ssh.log" 1 \
   "-o ControlPath=${new_control_path} metal@dev-11.gcp.vm3.ai touch /tmp/second-recovery"
 assert_not_contains "$recovery/ssh.log" \
