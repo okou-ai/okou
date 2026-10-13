@@ -192,6 +192,15 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
+Publication gives observed capacity contention a bounded asynchronous retry
+before staging, while retaining its entry lock. A capacity owner must never wait
+for an entry lock. This retry has a separate budget from startup's short entry
+wait and immediate-fallback policy. Proven guest exit releases healthy
+reclamation CPU permits before publication, but the entry and applicable logical
+lease remain owned until their cleanup contract completes. Waiting can therefore
+affect same-key checkout, resource-limited blank refill and joined shutdown; its
+contention deadline does not bound filesystem I/O or startup's pressure GC.
+
 Successful routine completion emits `entry_count` (the unlocked candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
 excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
