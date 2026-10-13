@@ -512,18 +512,6 @@ async function connectionForTeamsUser(
   return connection;
 }
 
-async function resolveDefaultComposeId(
-  db: Db,
-  orgId: string,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
-
 async function sendTeamsRunStartIndicator(
   args: {
     readonly activity: TeamsMessageActivity;
@@ -604,7 +592,14 @@ async function resolveEffectiveCompose(args: {
   readonly userId: string;
   readonly orgId: string;
 }): Promise<EffectiveComposeResolution> {
-  const defaultAgentId = await resolveDefaultComposeId(args.db, args.orgId);
+  const db = args.db;
+  const orgId = args.orgId;
+  const [metadata] = await db
+    .select({ defaultAgentId: orgMetadata.defaultAgentId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  const defaultAgentId = metadata?.defaultAgentId ?? null;
   if (!defaultAgentId) {
     return { status: "not_configured" };
   }
