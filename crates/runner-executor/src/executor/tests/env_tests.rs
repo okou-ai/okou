@@ -466,7 +466,7 @@ fn build_env_json_required_keys() {
         &guest_runtime_dir(ctx.run_id).unwrap()
     );
     // Guest-agent needs these to post /complete with full metadata when
-    // checkpoint lands before sandbox teardown.
+    // history is saved before sandbox teardown.
     assert_eq!(
         env.get(guest_contracts::env::CANONICAL_SANDBOX_ID_ENV)
             .map(String::as_str),

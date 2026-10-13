@@ -51,7 +51,7 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
-import { mockPiCheckpointUploads } from "./api-bdd-pi-checkpoint-uploads";
+import { mockPiHistoryUploads } from "./api-bdd-pi-history-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
@@ -992,7 +992,7 @@ export function createChatEventsFixture(context: TestContext) {
 
   function mockPiObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
-    mockPiCheckpointUploads(context, objects);
+    mockPiHistoryUploads(context, objects);
     const fallback = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const candidate = command as PiObjectStoreCommand;
@@ -1161,11 +1161,11 @@ export function createChatEventsFixture(context: TestContext) {
       [200],
     );
     if (prepared.status !== 200) {
-      throw new Error("Expected checkpoint upload preparation to succeed");
+      throw new Error("Expected history upload preparation to succeed");
     }
     if (!prepared.body.existing) {
       if (!prepared.body.presignedUrl) {
-        throw new Error("Expected a prepared checkpoint upload URL");
+        throw new Error("Expected a prepared history upload URL");
       }
       const uploaded = await fetch(prepared.body.presignedUrl, {
         method: "PUT",
@@ -1174,7 +1174,7 @@ export function createChatEventsFixture(context: TestContext) {
       });
       if (!uploaded.ok) {
         throw new Error(
-          `Expected checkpoint upload success, got ${uploaded.status}`,
+          `Expected history upload success, got ${uploaded.status}`,
         );
       }
     }
