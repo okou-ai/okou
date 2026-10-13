@@ -399,7 +399,10 @@ function route(args: { readonly threadId?: string } = {}): string {
 
 function button(name: string): HTMLElement {
   const result = queryAllByRoleFast("button").find((candidate) => {
-    return candidate.textContent?.trim() === name;
+    return (
+      candidate.textContent?.trim() === name ||
+      candidate.getAttribute("aria-label") === name
+    );
   });
   if (!result) {
     throw new Error(`Button not found: ${name}`);
@@ -2217,6 +2220,102 @@ test("Changed site constraints require a fresh preflight without losing ordinary
   expect(within(form).getByLabelText(/Remembered answer/u)).toHaveValue("abcd");
 });
 
+test("Users can inspect passwords independently without changing or prematurely submitting their entries", async () => {
+  let state: BrowserUserActionResponse["state"] = "pending";
+  const request = {
+    ...sensitiveAction("pending"),
+    fields: [
+      ...sensitiveAction("pending").fields,
+      {
+        key: "backup-password",
+        label: "Backup password",
+        fieldKind: "password" as const,
+        required: true,
+        control: { tagName: "INPUT" as const, inputType: "password" as const },
+      },
+    ],
+  };
+  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+    return respond(200, { ...request, state });
+  });
+  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+    return respond(200, request);
+  });
+  context.mocks.api(browserUserActionsContract.apply, ({ body, respond }) => {
+    expect(body.values).toStrictEqual([
+      { key: "email", value: "owner@example.test" },
+      { key: "password", value: "updated-secret" },
+      { key: "backup-password", value: "backup-secret" },
+    ]);
+    state = "succeeded";
+    return respond(200, { ...request, state });
+  });
+  context.mocks.api(chatEventsContract.send, ({ respond }) => {
+    return respond(201, { runId: crypto.randomUUID(), threadId: THREAD_ID });
+  });
+  await setupPage({
+    context,
+    path: route(),
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+  });
+  const form = await screen.findByRole("form", {
+    name: "Sign in to download invoices",
+  });
+  const password = within(form).getByLabelText("Password");
+  const backupPassword = within(form).getByLabelText("Backup password");
+  expect(password).toHaveAttribute("type", "password");
+  expect(backupPassword).toHaveAttribute("type", "password");
+  const toggles = queryAllByRoleFast("button", form).filter((candidate) => {
+    return candidate.getAttribute("aria-label") === "Show password";
+  });
+  expect(toggles).toHaveLength(2);
+  const backupToggle = toggles[1];
+  if (!backupToggle) {
+    throw new Error("Missing backup password visibility button");
+  }
+  await fill(within(form).getByLabelText(/Email/u), "owner@example.test");
+  await fill(password, "first-secret");
+  await fill(backupPassword, "backup-secret");
+
+  const user = userEvent.setup({ delay: null });
+  await user.click(backupToggle);
+  expect(document.activeElement).toHaveAttribute(
+    "aria-controls",
+    backupPassword.id,
+  );
+  expect(backupPassword).toHaveAttribute("type", "text");
+  await user.keyboard(" ");
+  expect(backupPassword).toHaveAttribute("type", "password");
+  await user.keyboard("{Enter}");
+  expect(backupPassword).toHaveAttribute("type", "text");
+  expect(backupPassword).toHaveValue("backup-secret");
+  expect(password).toHaveAttribute("type", "password");
+
+  click(button("Show password"));
+  expect(password).toHaveAttribute("type", "text");
+  expect(password).toHaveValue("first-secret");
+  expect(password).toHaveAttribute("autocomplete", "current-password");
+  expect(within(form).getByLabelText("Verification code")).toHaveAttribute(
+    "type",
+    "text",
+  );
+  await fill(password, "updated-secret");
+  click(button("Hide password"));
+  expect(password).toHaveAttribute("type", "password");
+  expect(password).toHaveValue("updated-secret");
+  expect(backupPassword).toHaveAttribute("type", "text");
+  expect(backupPassword).toHaveValue("backup-secret");
+  expect(form).toBeInTheDocument();
+
+  click(button("Add to browser"));
+  await expect(
+    screen.findByText("Agent notified"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByDisplayValue("updated-secret")).toBeNull();
+  expect(screen.queryByDisplayValue("backup-secret")).toBeNull();
+});
+
 test("Tab return keeps password and code drafts in an active standalone form", async () => {
   const pending = sensitiveAction("pending");
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -2235,6 +2334,8 @@ test("Tab return keeps password and code drafts in an active standalone form", a
 
   const password = await screen.findByLabelText("Password");
   await fill(password, "temporary-secret");
+  click(button("Show password"));
+  expect(password).toHaveAttribute("type", "text");
   await fill(screen.getByLabelText("Verification code"), "012345");
   act(() => {
     window.dispatchEvent(new Event("focus"));
@@ -2245,6 +2346,7 @@ test("Tab return keeps password and code drafts in an active standalone form", a
     document.dispatchEvent(new Event("visibilitychange"));
   });
   expect(screen.getByLabelText("Password")).toHaveValue("temporary-secret");
+  expect(screen.getByLabelText("Password")).toHaveAttribute("type", "text");
   expect(screen.getByLabelText("Verification code")).toHaveValue("012345");
 });
 
@@ -2265,6 +2367,11 @@ test("Leaving and returning to a standalone form clears password and code drafts
     name: "Sign in to download invoices",
   });
   await fill(within(form).getByLabelText("Password"), "synthetic-password");
+  click(button("Show password"));
+  expect(within(form).getByLabelText("Password")).toHaveAttribute(
+    "type",
+    "text",
+  );
   await fill(within(form).getByLabelText("Verification code"), "012345");
   const home = queryAllByRoleFast("link").find((link) => {
     return link.getAttribute("href") === "/connectors";
@@ -2284,6 +2391,11 @@ test("Leaving and returning to a standalone form clears password and code drafts
     name: "Sign in to download invoices",
   });
   expect(within(returned).getByLabelText("Password")).toHaveValue("");
+  expect(within(returned).getByLabelText("Password")).toHaveAttribute(
+    "type",
+    "password",
+  );
+  expect(button("Show password")).toBeInTheDocument();
   expect(within(returned).getByLabelText("Verification code")).toHaveValue("");
 });
 

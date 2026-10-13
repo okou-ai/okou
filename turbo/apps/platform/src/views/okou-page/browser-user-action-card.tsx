@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@okouai/ui/components/ui/dialog";
+import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import { Input } from "@okouai/ui/components/ui/input";
 import { Textarea } from "@okouai/ui/components/ui/textarea";
 import { useGet, useLoadable, useSet, type Loadable } from "ccstate-react";
@@ -21,6 +22,8 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertCircle,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Globe,
   Loader2,
   XCircle,
@@ -449,6 +452,8 @@ type PendingBrowserInputField = PendingBrowserInputAction["fields"][number];
 interface BrowserInputEditProps {
   readonly field: PendingBrowserInputField;
   readonly draft: ReadonlyMap<string, string>;
+  readonly visiblePasswordKeys: ReadonlySet<string>;
+  readonly onTogglePasswordVisibility: (key: string) => void;
   readonly busy: boolean;
   readonly onUpdate: (key: string, value: string) => void;
   readonly onRemove: (key: string) => void;
@@ -463,6 +468,8 @@ interface BrowserColorEditProps {
 function BrowserInputControl({
   field,
   draft,
+  visiblePasswordKeys,
+  onTogglePasswordVisibility,
   busy,
   onUpdate,
   inputId,
@@ -471,6 +478,7 @@ function BrowserInputControl({
   readonly inputId: string;
   readonly describedBy: string;
 }) {
+  const { t } = useTranslation();
   const required = field.required || field.control.siteRequired;
   const maxLength = Math.min(
     field.control.maxLength ?? BROWSER_USER_ACTION_MAX_VALUE_LENGTH,
@@ -493,15 +501,20 @@ function BrowserInputControl({
       />
     );
   }
-  return (
+  const isPassword = field.fieldKind === "password";
+  const passwordVisible = isPassword && visiblePasswordKeys.has(field.key);
+  const input = (
     <Input
       id={inputId}
       name={field.key}
-      className={
-        field.fieldKind === "date_time" ? "min-w-0 max-w-full" : undefined
-      }
+      className={cn(
+        field.fieldKind === "date_time" && "min-w-0 max-w-full",
+        isPassword && "pr-10",
+      )}
       type={
-        field.fieldKind === "one_time_code" ? "text" : field.control.inputType
+        passwordVisible || field.fieldKind === "one_time_code"
+          ? "text"
+          : field.control.inputType
       }
       multiple={field.control.multiple}
       inputMode={field.fieldKind === "one_time_code" ? "numeric" : undefined}
@@ -533,6 +546,34 @@ function BrowserInputControl({
         onUpdate(field.key, value);
       }}
     />
+  );
+  if (!isPassword) {
+    return input;
+  }
+  return (
+    <div className="relative">
+      {input}
+      <IconButton
+        type="button"
+        className="absolute top-0.5 right-0.5 size-8 text-muted-foreground"
+        aria-controls={inputId}
+        aria-label={t(($) => {
+          return passwordVisible
+            ? $.chat.browserInput.hidePassword
+            : $.chat.browserInput.showPassword;
+        })}
+        disabled={busy}
+        onClick={() => {
+          onTogglePasswordVisibility(field.key);
+        }}
+      >
+        {passwordVisible ? (
+          <EyeOff size={16} aria-hidden="true" />
+        ) : (
+          <Eye size={16} aria-hidden="true" />
+        )}
+      </IconButton>
+    </div>
   );
 }
 
@@ -1318,6 +1359,8 @@ function BrowserInputFieldControl({
   field,
   index,
   draft,
+  visiblePasswordKeys,
+  onTogglePasswordVisibility,
   choiceDraft,
   checkboxDraft,
   radioDraft,
@@ -1416,6 +1459,8 @@ function BrowserInputFieldControl({
           inputId={inputId}
           describedBy={describedBy}
           draft={draft}
+          visiblePasswordKeys={visiblePasswordKeys}
+          onTogglePasswordVisibility={onTogglePasswordVisibility}
           busy={busy}
           onUpdate={onUpdate}
           onRemove={onRemove}
@@ -1448,6 +1493,7 @@ function BrowserInputField(
 }
 
 function BrowserInputFields({
+  signals,
   action,
   draft,
   choiceDraft,
@@ -1471,8 +1517,12 @@ function BrowserInputFields({
   onRemoveRange,
   onUpdateColor,
   onRemoveColor,
-}: Omit<BrowserInputEditProps, "field"> &
+}: Omit<
+  BrowserInputEditProps,
+  "field" | "visiblePasswordKeys" | "onTogglePasswordVisibility"
+> &
   BrowserColorEditProps & {
+    readonly signals: BrowserUserActionSignals;
     readonly action: PendingBrowserInputAction;
     readonly choiceDraft: ReadonlyMap<string, BrowserSelectChoiceDraft>;
     readonly checkboxDraft: ReadonlyMap<string, BrowserCheckboxDraft>;
@@ -1498,6 +1548,8 @@ function BrowserInputFields({
     ) => void;
     readonly onRemoveChoice: (key: string) => void;
   }) {
+  const visiblePasswordKeys = useGet(signals.visiblePasswordKeys$);
+  const togglePasswordVisibility = useSet(signals.togglePasswordVisibility$);
   return (
     <div className="flex flex-col gap-4">
       {action.fields.map((field, index) => {
@@ -1507,6 +1559,8 @@ function BrowserInputFields({
             field={field}
             index={index}
             draft={draft}
+            visiblePasswordKeys={visiblePasswordKeys}
+            onTogglePasswordVisibility={togglePasswordVisibility}
             choiceDraft={choiceDraft}
             checkboxDraft={checkboxDraft}
             radioDraft={radioDraft}
@@ -1728,6 +1782,7 @@ function PendingForm({ signals, request, showTitle = true }: PendingFormProps) {
     >
       <PendingFormDestination action={activeAction} showTitle={showTitle} />
       <BrowserInputFields
+        signals={signals}
         action={activeAction}
         draft={draft}
         choiceDraft={choiceDraft}

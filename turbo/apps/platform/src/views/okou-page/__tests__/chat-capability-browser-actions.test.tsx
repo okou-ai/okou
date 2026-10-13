@@ -692,7 +692,7 @@ test.each([true, false])(
   },
 );
 
-test("Closing an inline form clears password and code drafts while preserving ordinary text", async () => {
+test("Closing an inline form clears shown passwords and code drafts while preserving ordinary text", async () => {
   const firstCheckStarted = createDeferredPromise<void>(context.signal);
   const releaseFirstCheck = createDeferredPromise<void>(context.signal);
   let firstCheck = true;
@@ -731,6 +731,15 @@ test("Closing an inline form clears password and code drafts while preserving or
     "owner@example.test",
   );
   await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
+  expect(within(dialog).getByLabelText("Password")).toHaveAttribute(
+    "type",
+    "password",
+  );
+  click(buttonsByName("Show password", dialog)[0]);
+  expect(within(dialog).getByLabelText("Password")).toHaveAttribute(
+    "type",
+    "text",
+  );
   await fill(within(dialog).getByLabelText("Verification code"), "123456");
   act(() => {
     window.dispatchEvent(new Event("focus"));
@@ -760,6 +769,11 @@ test("Closing an inline form clears password and code drafts while preserving or
     "owner@example.test",
   );
   expect(within(reopened).getByLabelText("Password")).toHaveValue("");
+  expect(within(reopened).getByLabelText("Password")).toHaveAttribute(
+    "type",
+    "password",
+  );
+  expect(buttonsByName("Show password", reopened)).toHaveLength(1);
   expect(within(reopened).getByLabelText("Verification code")).toHaveValue("");
   expect(window.location.pathname).toBe(RUN_PATH);
 });

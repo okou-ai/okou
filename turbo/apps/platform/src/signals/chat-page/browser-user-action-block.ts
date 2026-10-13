@@ -113,6 +113,8 @@ export interface BrowserFileDraft {
 export interface BrowserUserActionSignals extends BrowserUserActionDescriptor {
   readonly request$: Computed<Promise<BrowserUserActionRequestState>>;
   readonly draft$: Computed<ReadonlyMap<string, string>>;
+  readonly visiblePasswordKeys$: Computed<ReadonlySet<string>>;
+  readonly togglePasswordVisibility$: Command<void, [string]>;
   readonly choiceDraft$: Computed<
     ReadonlyMap<string, BrowserSelectChoiceDraft>
   >;
@@ -745,6 +747,8 @@ function createFileDraftSignals() {
 type BrowserDraftSignals = Pick<
   BrowserUserActionSignals,
   | "draft$"
+  | "visiblePasswordKeys$"
+  | "togglePasswordVisibility$"
   | "choiceDraft$"
   | "checkboxDraft$"
   | "radioDraft$"
@@ -772,6 +776,7 @@ type BrowserDraftSignals = Pick<
 
 function createDraftSignals(): BrowserDraftSignals {
   const internalDraft$ = state<ReadonlyMap<string, string>>(new Map());
+  const internalVisiblePasswordKeys$ = state<ReadonlySet<string>>(new Set());
   const selectSignals = createSelectDraftSignals();
   const checkboxSignals = createCheckboxDraftSignals();
   const radioSignals = createRadioDraftSignals();
@@ -782,9 +787,24 @@ function createDraftSignals(): BrowserDraftSignals {
   const draft$ = computed((get) => {
     return get(internalDraft$);
   });
+  const visiblePasswordKeys$ = computed((get) => {
+    return get(internalVisiblePasswordKeys$);
+  });
+  const togglePasswordVisibility$ = command(({ set }, key: string): void => {
+    set(internalVisiblePasswordKeys$, (current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  });
   const updateDraft$ = createScalarDraftUpdater(internalDraft$);
   const clearDraft$ = command(({ set }): void => {
     set(internalDraft$, new Map());
+    set(internalVisiblePasswordKeys$, new Set());
     set(selectSignals.internalChoiceDraft$, new Map());
     set(checkboxSignals.internalCheckboxDraft$, new Map());
     set(radioSignals.internalRadioDraft$, new Map());
@@ -817,6 +837,7 @@ function createDraftSignals(): BrowserDraftSignals {
       const sensitiveKeys = [...form.elements].flatMap((element) => {
         return element instanceof HTMLInputElement &&
           (element.type === "password" ||
+            element.autocomplete === "current-password" ||
             element.autocomplete === "one-time-code") &&
           element.name !== ""
           ? [element.name]
@@ -832,6 +853,7 @@ function createDraftSignals(): BrowserDraftSignals {
             const next = Math.max(0, count - 1);
             if (next === 0) {
               set(clearDraftKeys$, sensitiveKeys);
+              set(internalVisiblePasswordKeys$, new Set());
               set(fileSignals.internalFileDraft$, new Map());
             }
             return next;
@@ -849,6 +871,8 @@ function createDraftSignals(): BrowserDraftSignals {
   );
   return {
     draft$,
+    visiblePasswordKeys$,
+    togglePasswordVisibility$,
     choiceDraft$: selectSignals.choiceDraft$,
     checkboxDraft$: checkboxSignals.checkboxDraft$,
     radioDraft$: radioSignals.radioDraft$,
