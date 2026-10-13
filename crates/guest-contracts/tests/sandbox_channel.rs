@@ -114,6 +114,35 @@ fn ordered_category_and_role_gates() {
 }
 
 #[test]
+fn malformed_diagnostics_payloads_use_business_error_codes() {
+    for operation in [Operation::Echo, Operation::PeerEcho] {
+        for value in [json!({}), json!({"payload":"", "extra":true})] {
+            assert_eq!(
+                channel::decode_params(operation, value),
+                Err(ChannelError::InvalidParams)
+            );
+        }
+    }
+    for value in [json!({}), json!({"message":"ready", "ack":true})] {
+        assert_eq!(
+            channel::decode_notice(
+                "diagnostics",
+                1,
+                "notice",
+                value,
+                &categories(),
+                &categories()
+            ),
+            Err(ChannelError::InvalidParams)
+        );
+    }
+    assert_eq!(
+        channel::decode_result(Operation::Echo, json!({"payload":"", "extra":true})),
+        Err(ChannelError::InvalidRequest)
+    );
+}
+
+#[test]
 fn integral_versions_utf8_and_depth_are_interoperable() {
     let raw = br#"{"schemaVersion":1.0,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"fs":1e0}}"#;
     assert!(channel::decode_message(raw).is_ok());

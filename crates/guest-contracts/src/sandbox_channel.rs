@@ -420,7 +420,7 @@ fn basename(value: &str) -> Result<Vec<u8>, ChannelError> {
     Ok(bytes)
 }
 fn echo(value: Value) -> Result<diagnostics::Echo, ChannelError> {
-    object(&value, &["payload"], &["payload"])?;
+    object(&value, &["payload"], &["payload"]).map_err(|_| ChannelError::InvalidParams)?;
     let parsed: diagnostics::Echo =
         serde_json::from_value(value).map_err(|_| ChannelError::InvalidParams)?;
     if !count_limit(
@@ -569,7 +569,7 @@ pub fn decode_notice(
     {
         return Err(ChannelError::UnknownOperation);
     }
-    object(&value, &["message"], &["message"])?;
+    object(&value, &["message"], &["message"]).map_err(|_| ChannelError::InvalidParams)?;
     let parsed: diagnostics::Notice =
         serde_json::from_value(value).map_err(|_| ChannelError::InvalidParams)?;
     if parsed.message.is_empty() || parsed.message.encode_utf16().count() > 256 {
