@@ -193,8 +193,16 @@ try {
   } catch (error) {
     // Preserve the real failed assertion and its wrong native rejection. An
     // unexpected successful query has no fabricated native cause or SQLSTATE.
-    if (error instanceof Error && migrationError !== undefined) {
-      Object.defineProperty(error, "cause", { value: migrationError });
+    if (migrationError !== undefined) {
+      negativeErrors.push(migrationError);
+      negativeErrorOccurrences.push({
+        stage: negativeStage,
+        observation: "unexpected migration query rejection",
+        error: migrationError,
+      });
+      if (error instanceof Error) {
+        Object.defineProperty(error, "cause", { value: migrationError });
+      }
     }
     throw error;
   }
