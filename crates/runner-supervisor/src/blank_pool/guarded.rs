@@ -34,7 +34,11 @@ impl BlankPoolReplenisher {
     /// the same accepting authority and a join before dependent teardown. This
     /// method covers the old pool-owned phase; the native fixture composes both.
     pub async fn maybe_start_guarded(&mut self, request: GuardedBlankPoolRequest<'_>) {
-        if !self.attempt_requested || self.task.is_some() || request.mode != RunnerMode::Running {
+        if !self.attempt_requested
+            || self.task.is_some()
+            || self.optional.is_some()
+            || request.mode != RunnerMode::Running
+        {
             return;
         }
         self.attempt_requested = false;
@@ -296,7 +300,7 @@ impl BlankPoolReplenisher {
     }
 }
 
-fn aged_candidate(
+pub(super) fn aged_candidate(
     pool: &IdlePool,
     plan: &BlankPoolPlan,
 ) -> Result<Option<IdleRetirementCandidate>, MemoryOperationError> {

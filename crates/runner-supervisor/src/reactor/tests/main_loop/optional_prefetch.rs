@@ -21,6 +21,8 @@ use super::super::support::{
 
 struct Source(PathBuf);
 
+mod blank;
+
 impl MemoryObservationSource for Source {
     fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
         Box::pin(HostMemoryObservation::read_at(&self.0))

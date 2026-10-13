@@ -306,6 +306,20 @@ pub trait SandboxFactory: Send + Sync {
     /// The returned sandbox belongs to this factory's lifecycle and should be
     /// released through [`destroy`](Self::destroy) on the normal teardown path.
     async fn create(&self, config: SandboxConfig) -> Result<Box<dyn Sandbox>>;
+
+    /// Create while retaining caller custody through real IO and rollback.
+    /// Cancellation drops resource-acquisition waits, while accepted producers
+    /// retain custody until their physical work ends. Providers without that
+    /// contract refuse the operation rather than call unowned creation.
+    async fn create_with_custody(
+        &self,
+        _config: SandboxConfig,
+        _custody: crate::SandboxCreateCustody,
+    ) -> Result<Box<dyn Sandbox>> {
+        Err(crate::SandboxError::BackendUnavailable {
+            message: "factory does not support owned creation".into(),
+        })
+    }
     /// Create a sandbox while reporting create-stage timings to `observer`.
     ///
     /// Seed-image ownership and failure semantics match [`Self::create`].

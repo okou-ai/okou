@@ -141,6 +141,11 @@ impl Drop for HostPressureCoordinator {
 }
 
 impl OptionalPressureControl {
+    /// Same live controller/cadence as well as its accepting physical authority.
+    pub fn same_owner(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+
     pub fn policy(&self) -> HostPressurePolicy {
         self.shared.policy
     }

@@ -10,6 +10,8 @@ use runner_types::ids::RunId;
 use runner_types::types::{HeldSandboxState, ReusableSandboxState};
 
 mod activation_cleanup;
+mod blank_preparation;
+pub use blank_preparation::BlankPreparationResource;
 mod entry;
 mod insertion;
 mod inventory_retirement;
