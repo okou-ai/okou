@@ -450,9 +450,9 @@ describe("Google Forms Pub/Sub webhook", () => {
                 responses: [
                   {
                     responseId: "response-after-departure-and-rejoin",
-                    createTime: new Date(preparedAt + 10000).toISOString(),
+                    createTime: new Date(preparedAt + 10_000).toISOString(),
                     lastSubmittedTime: new Date(
-                      preparedAt + 10000,
+                      preparedAt + 10_000,
                     ).toISOString(),
                     respondentEmail: "after-departure@example.test",
                   },
@@ -535,7 +535,7 @@ describe("Google Forms Pub/Sub webhook", () => {
               });
             }
             const afterDeparture = await workflows.readAutomation(automationId);
-            expect(afterDeparture.enabled).toBe(false);
+            expect(afterDeparture.enabled).toBeFalsy();
             if (cli) {
               // Clerk grants a real rejoin; the existing public PAT authenticates it
               // and repopulates the membership cache through the production route.
@@ -563,7 +563,7 @@ describe("Google Forms Pub/Sub webhook", () => {
                 }),
                 [200],
               );
-              expect(rejoined.body.enabled).toBe(false);
+              expect(rejoined.body.enabled).toBeFalsy();
             }
             mockNow(preparedAt + (schedule === "later timestamp" ? 2000 : 0));
             return HttpResponse.json({ responses: [] });
@@ -584,7 +584,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       if (!watchId) {
         throw new Error("Expected the prepared Google Forms watch");
       }
-      mockNow(preparedAt + 11000);
+      mockNow(preparedAt + 11_000);
       const delivered = await postWebhook(
         formsPushBody("response-after-owner-departure", watchId),
       );
@@ -592,7 +592,7 @@ describe("Google Forms Pub/Sub webhook", () => {
         enableStatus: enabled.status,
         enabled: current.enabled,
         delivered,
-      }).toEqual({
+      }).toStrictEqual({
         enableStatus: 409,
         enabled: false,
         delivered: {
@@ -628,7 +628,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       }),
       [200],
     );
-    expect(enabledBeforeDeparture.body.enabled).toBe(true);
+    expect(enabledBeforeDeparture.body.enabled).toBeTruthy();
     const before = await workflows.readAutomation(automationId);
     if (
       before.kind !== "event" ||
@@ -669,7 +669,7 @@ describe("Google Forms Pub/Sub webhook", () => {
       automationsClient().get({ headers, params: { id: automationId } }),
       [200],
     );
-    expect(rejoined.body.enabled).toBe(false);
+    expect(rejoined.body.enabled).toBeFalsy();
     const baseline = new Date(preparedAt + 1000).toISOString();
     const fresh = new Date(preparedAt + 2000).toISOString();
     server.use(
@@ -729,7 +729,7 @@ describe("Google Forms Pub/Sub webhook", () => {
           return event.eventType === "input.automation";
         })
         .map(chatEventDisplayText),
-    ).toEqual([
+    ).toStrictEqual([
       `A new response from fresh@example.test was submitted to Google Form "${FORM_TITLE}".`,
     ]);
   });

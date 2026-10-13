@@ -203,7 +203,7 @@ describe("Org member cleanup disarms the departing member's automations", () => 
     });
     await expect(
       org.removeMember(auditor, { email: departing.email }),
-    ).resolves.toEqual({
+    ).resolves.toStrictEqual({
       message: `Removed ${departing.email} from org`,
     });
     await expect(
