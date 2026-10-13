@@ -364,6 +364,7 @@ jobs:
             .github/scripts/tests/run-semgrep-test.sh \
             .github/scripts/tests/semgrep-results-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh \
+            crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-exec-inventory-test.sh \
             crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh \
