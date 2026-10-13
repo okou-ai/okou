@@ -54,7 +54,7 @@ function PageContent() {
   if (enabled && (approvalAvailable || approved)) {
     return <DiscordApprovalState />;
   }
-  const callbackStatus = params.get("status") ?? params.get("discord");
+  const callbackStatus = params.get("status");
   if (enabled && (callbackStatus === "error" || callbackStatus === "pending")) {
     return (
       <ConnectErrorState
@@ -258,7 +258,7 @@ function DiscordConnectIntro({
 
 function DiscordSuccessState({ data }: { data: DiscordOrgStatus }) {
   const { t } = useTranslation();
-  const destination = `channels/${data.guildId ?? "@me"}`;
+  const destination = `channels/${discordSnowflakeSchema.parse(data.guildId)}`;
   return (
     <>
       <ConnectStatusMark state="success" idle={<DiscordMark size={40} />} />
