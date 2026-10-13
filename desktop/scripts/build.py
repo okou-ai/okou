@@ -87,11 +87,10 @@ def build(version, development, output):
         ],
         text=True,
     ).strip()
-    run(
-        "ditto",
-        Path(helper_bin) / "computer-use-helper",
-        app / "Contents/MacOS/computer-use-helper",
-    )
+    # Executables in Contents/MacOS adopt the app's Info.plist, so the helper
+    # would register as a second foreground Okou app and bounce in the Dock.
+    helper = app / "Contents/Helpers/computer-use-helper"
+    run("ditto", Path(helper_bin) / "computer-use-helper", helper)
     for framework in Path(helper_bin).glob("*.framework"):
         run("ditto", framework, app / "Contents/Frameworks" / framework.name)
     for resource in Path(helper_bin).glob("*.bundle"):
@@ -100,7 +99,7 @@ def build(version, development, output):
         "install_name_tool",
         "-add_rpath",
         "@executable_path/../Frameworks",
-        app / "Contents/MacOS/computer-use-helper",
+        helper,
     )
     return app
 
@@ -170,8 +169,12 @@ def verify(app, version, development):
     )
     if not development:
         assert config["platformUrl"] == "https://app.okou.ai"
-    for executable in (name, "computer-use-helper"):
-        run("lipo", app / "Contents/MacOS" / executable, "-verify_arch", "arm64")
+    assert [p.name for p in (app / "Contents/MacOS").iterdir()] == [name]
+    for executable in (
+        app / "Contents/MacOS" / name,
+        app / "Contents/Helpers/computer-use-helper",
+    ):
+        run("lipo", executable, "-verify_arch", "arm64")
     run(app / "Contents/MacOS" / info["CFBundleExecutable"], "--smoke-test", timeout=30)
 
 
