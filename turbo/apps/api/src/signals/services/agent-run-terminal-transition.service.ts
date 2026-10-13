@@ -100,6 +100,28 @@ function isActiveStatus(status: string): status is ActiveStatus {
   return (ACTIVE_STATUSES as readonly string[]).includes(status);
 }
 
+const cancelledRunFields = Object.freeze({
+  runId: agentRuns.id,
+  orgId: agentRuns.orgId,
+  userId: agentRuns.userId,
+  runnerGroup: agentRuns.runnerGroup,
+  modelProviderId: agentRuns.modelProviderId,
+  startedAt: agentRuns.startedAt,
+});
+
+function cancellableRunCondition(
+  run: { readonly id: string; readonly status: string },
+  protectThreadlessRuns: boolean,
+) {
+  return and(
+    eq(agentRuns.id, run.id),
+    eq(agentRuns.status, run.status),
+    protectThreadlessRuns
+      ? notExists(publishedPiMemoryPhase2RunProtection())
+      : undefined,
+  );
+}
+
 /**
  * The cancellation mutation owner. Classify under the existing tenant-scoped
  * Run lock, then commit terminal state, attached cleanup and queue deletion
@@ -185,22 +207,9 @@ export const cancelRun$ = command(
           runnerCancellationMode,
         })
         .where(
-          and(
-            eq(agentRuns.id, run.id),
-            eq(agentRuns.status, run.status),
-            ...(args.protectThreadlessRuns
-              ? [notExists(publishedPiMemoryPhase2RunProtection())]
-              : []),
-          ),
+          cancellableRunCondition(run, args.protectThreadlessRuns === true),
         )
-        .returning({
-          runId: agentRuns.id,
-          orgId: agentRuns.orgId,
-          userId: agentRuns.userId,
-          runnerGroup: agentRuns.runnerGroup,
-          modelProviderId: agentRuns.modelProviderId,
-          startedAt: agentRuns.startedAt,
-        });
+        .returning(cancelledRunFields);
       if (transitions.length === 0) {
         if (args.protectThreadlessRuns) {
           return runNotCancellable(

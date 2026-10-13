@@ -805,6 +805,24 @@ const readSandboxLineage$ = command(
   },
 );
 
+function finalizedMaintenanceVersion(
+  mounted: MountedWritebackStorage,
+): string | undefined {
+  if (
+    !["completed", "failed", "cancelled"].includes(mounted.runStatus) ||
+    mounted.runResult === null
+  ) {
+    return undefined;
+  }
+  const result = runResultSchema.parse(mounted.runResult);
+  return result.storageOutputs?.find((output) => {
+    return (
+      output.name === mounted.storage.name &&
+      output.mountPath === PI_MEMORY_ROOT
+    );
+  })?.version;
+}
+
 export const commitSandboxStorageUpload$ = command(
   async (
     { get, set },
@@ -852,24 +870,15 @@ export const commitSandboxStorageUpload$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
-    const finalizedOutput =
-      binding &&
-      ["completed", "failed", "cancelled"].includes(mounted.runStatus) &&
-      mounted.runResult !== null
-        ? runResultSchema
-            .parse(mounted.runResult)
-            .storageOutputs?.find((output) => {
-              return (
-                output.name === mounted.storage.name &&
-                output.mountPath === PI_MEMORY_ROOT
-              );
-            })
-        : undefined;
+    const finalizedVersionId = binding
+      ? finalizedMaintenanceVersion(mounted)
+      : undefined;
     // Finalized Run output fixes this Run's accepted publication independently
     // of a newer Job/HEAD. Generic version or lineage existence is not proof.
-    const publicationVersionId = finalizedOutput
-      ? finalizedOutput.version
-      : maintenancePublicationVersion(result);
+    const publicationVersionId =
+      finalizedVersionId !== undefined
+        ? finalizedVersionId
+        : maintenancePublicationVersion(result);
     if (publicationVersionId) {
       if (
         publicationVersionId !== args.versionId ||

@@ -1127,8 +1127,50 @@ function finalizedMaintenanceOutput(
   };
 }
 
+function privateMaintenanceIdentityMatches(
+  binding: { readonly orgId: string; readonly userId: string },
+  input: AgentRunOutputInput,
+  run: RunOutputContext,
+): boolean {
+  return (
+    binding.orgId === input.auth.orgId &&
+    binding.userId === input.auth.userId &&
+    run.chatThreadId === null &&
+    isPiHistoryRun(run) &&
+    input.body.cliAgentSessionId === input.body.runId &&
+    input.body.cliAgentSessionHistoryHash === undefined &&
+    input.body.cliAgentSessionHistoryDisposition === "unavailable"
+  );
+}
+
+function privateMaintenanceSnapshotOutput(
+  binding: {
+    readonly memoryStorageId: string;
+    readonly claimedBaseVersionId: string;
+  },
+  run: RunOutputContext,
+  body: AgentRunOutputBody,
+  versionId: string,
+): { memoryStorageId: string; versionId: string } | string {
+  const mount = run.storageMounts?.find((entry) => {
+    return entry.storageId === binding.memoryStorageId && entry.writeback;
+  });
+  const snapshot = body.artifactSnapshots?.find((entry) => {
+    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
+  });
+  if (
+    !mount ||
+    !snapshot ||
+    (snapshot.version !== binding.claimedBaseVersionId &&
+      snapshot.version !== versionId)
+  ) {
+    return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
+  }
+  return { memoryStorageId: binding.memoryStorageId, versionId };
+}
+
 // Private maintenance has no public Pi history. The Job proves fresh publication;
-// a completed Run's immutable output proves only that Run's exact replay.
+// a finalized Run's immutable output proves only that Run's exact replay.
 async function privateMaintenanceOutput(
   db: Db | Tx,
   input: AgentRunOutputInput,
@@ -1157,13 +1199,7 @@ async function privateMaintenanceOutput(
   );
   if (
     !parsed.success ||
-    parsed.data.orgId !== input.auth.orgId ||
-    parsed.data.userId !== input.auth.userId ||
-    run.chatThreadId !== null ||
-    !isPiHistoryRun(run) ||
-    input.body.cliAgentSessionId !== input.body.runId ||
-    input.body.cliAgentSessionHistoryHash !== undefined ||
-    input.body.cliAgentSessionHistoryDisposition !== "unavailable"
+    !privateMaintenanceIdentityMatches(parsed.data, input, run)
   ) {
     return "[PI_MAINTENANCE_IDENTITY_INVALID] Private output identity does not match its launch";
   }
@@ -1196,24 +1232,12 @@ async function privateMaintenanceOutput(
   if (publicationVersionId === undefined) {
     return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
   }
-  const mount = run.storageMounts?.find((entry) => {
-    return entry.storageId === binding.memoryStorageId && entry.writeback;
-  });
-  const snapshot = input.body.artifactSnapshots?.find((entry) => {
-    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
-  });
-  if (
-    !mount ||
-    !snapshot ||
-    (snapshot.version !== binding.claimedBaseVersionId &&
-      snapshot.version !== publicationVersionId)
-  ) {
-    return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
-  }
-  return {
-    memoryStorageId: binding.memoryStorageId,
-    versionId: publicationVersionId,
-  };
+  return privateMaintenanceSnapshotOutput(
+    binding,
+    run,
+    input.body,
+    publicationVersionId,
+  );
 }
 
 function piValidationMatchesRun(
@@ -1259,6 +1283,27 @@ function isTerminalPrivatePiRun(run: RunOutputContext): boolean {
   );
 }
 
+function restoreTerminalPrivateOutput(
+  run: RunOutputContext,
+  existing:
+    | (NonNullable<Parameters<typeof parseExistingRunOutput>[0]> & {
+        readonly agentSessionConversationId: string | null;
+      })
+    | undefined,
+): RunOutputContext | string {
+  if (!existing) {
+    return run.status === "completed"
+      ? "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output"
+      : run;
+  }
+  const { agentSessionConversationId, ...output } = existing;
+  return {
+    ...run,
+    agentSessionConversationId,
+    existingOutput: parseExistingRunOutput(output),
+  };
+}
+
 export async function persistAgentRunOutputsInTransaction(
   tx: Tx,
   input: AgentRunOutputInput,
@@ -1289,19 +1334,11 @@ export async function persistAgentRunOutputsInTransaction(
       .where(eq(conversations.runId, input.body.runId))
       .limit(1);
     signal.throwIfAborted();
-    if (!existing && run.status === "completed") {
-      return badRequestMessage(
-        "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output",
-      );
+    const terminalRun = restoreTerminalPrivateOutput(run, existing);
+    if (typeof terminalRun === "string") {
+      return badRequestMessage(terminalRun);
     }
-    if (existing) {
-      const { agentSessionConversationId, ...output } = existing;
-      run = {
-        ...run,
-        agentSessionConversationId,
-        existingOutput: parseExistingRunOutput(output),
-      };
-    }
+    run = terminalRun;
   }
 
   const maintenance = await privateMaintenanceOutput(tx, input, run);
