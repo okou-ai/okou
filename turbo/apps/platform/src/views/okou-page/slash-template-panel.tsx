@@ -46,6 +46,9 @@ interface SlashTemplatePanelProps {
   readonly workflowsLoading: boolean;
   readonly collapseWorkflows: boolean;
   readonly onExpandWorkflows: () => void;
+  /** The menu spans the composer and embeds the preview beside its rows. */
+  readonly anchored: boolean;
+  /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
   /** Categories precede workflows in the editor's shared suggestion index. */
@@ -492,6 +495,7 @@ function SlashPanelCategoryList({
   categories,
   markedIndex,
   selectedIndex,
+  anchored,
   reversed,
   onPreview,
   onSelectCategory,
@@ -500,13 +504,14 @@ function SlashPanelCategoryList({
   SlashTemplatePanelProps,
   | "categories"
   | "selectedIndex"
+  | "anchored"
   | "reversed"
   | "onPreview"
   | "onSelectCategory"
   | "categoryOptionId"
 > & { readonly markedIndex: number }) {
   const { t } = useTranslation();
-  if (reversed && categories.length === 0) {
+  if (anchored && categories.length === 0) {
     return null;
   }
   return (
@@ -565,27 +570,27 @@ function SlashPanelCategoryList({
 }
 
 function SlashPanelBrowseAll({
-  reversed,
+  anchored,
   onBrowseAll,
-}: Pick<SlashTemplatePanelProps, "reversed" | "onBrowseAll">) {
+}: Pick<SlashTemplatePanelProps, "anchored" | "onBrowseAll">) {
   const { t } = useTranslation();
   return (
     <div
       className={
-        reversed ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
+        anchored ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
       }
     >
       <button
         type="button"
         className={cn(
           "flex h-8 max-w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
-          reversed
+          anchored
             ? "gap-2 text-[13px] text-muted-foreground hover:text-foreground"
             : "w-full justify-between text-sm text-foreground",
         )}
         onClick={onBrowseAll}
       >
-        {reversed && (
+        {anchored && (
           <span className="flex size-4 shrink-0 items-center justify-center">
             <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
           </span>
@@ -595,7 +600,7 @@ function SlashPanelBrowseAll({
             return $.chat.composer.slashPanel.browseAll;
           })}
         </span>
-        {!reversed && (
+        {!anchored && (
           <ChevronRight
             size={16}
             className="shrink-0 text-muted-foreground"
@@ -614,6 +619,7 @@ export function SlashTemplatePanel({
   workflowsLoading,
   collapseWorkflows,
   onExpandWorkflows,
+  anchored,
   reversed,
   reverseWorkflows,
   selectedIndex,
@@ -641,6 +647,7 @@ export function SlashTemplatePanel({
       categories={categories}
       markedIndex={markedIndex}
       selectedIndex={selectedIndex}
+      anchored={anchored}
       reversed={reversed}
       onPreview={onPreview}
       onSelectCategory={onSelectCategory}
@@ -665,17 +672,17 @@ export function SlashTemplatePanel({
     />
   );
   const browseAll = (
-    <SlashPanelBrowseAll reversed={reversed} onBrowseAll={onBrowseAll} />
+    <SlashPanelBrowseAll anchored={anchored} onBrowseAll={onBrowseAll} />
   );
   return (
     <div
       className={cn(
         "flex min-h-0 w-full overflow-hidden",
-        reversed ? "flex-row" : "h-full flex-col",
+        anchored ? "flex-row" : "h-full flex-col",
         // Reserve preview space while categories are available so hovering a
         // workflow cannot move the menu under the pointer. Filtered workflow
         // results and mobile menus only claim the height their rows need.
-        reversed &&
+        anchored &&
           isDesktop &&
           categories.length > 0 &&
           "h-[min(380px,var(--available-height))]",
@@ -700,18 +707,18 @@ export function SlashTemplatePanel({
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}
-          {reversed && browseAll}
+          {anchored && browseAll}
         </div>
-        {!reversed && browseAll}
+        {!anchored && browseAll}
       </div>
-      {detailCategory !== null && reversed && isDesktop && (
+      {detailCategory !== null && anchored && isDesktop && (
         <SlashTemplateDetailPane
           embedded
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
         />
       )}
-      {detailCategory !== null && !reversed && (
+      {detailCategory !== null && !anchored && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
           onClose={onClose}

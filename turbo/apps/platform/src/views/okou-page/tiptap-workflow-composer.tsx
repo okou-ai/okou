@@ -8,7 +8,7 @@ import {
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Popover, type KeyboardEventLike } from "@okouai/ui";
+import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { useTranslation } from "react-i18next";
@@ -18,6 +18,7 @@ import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
+import { START_PAGE_CENTRED_MEDIA_QUERY } from "./start-page-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
@@ -520,6 +521,15 @@ interface SuggestionRowActions {
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
 }
 
+function suggestionRowCount(rows: SuggestionRows): number {
+  if (!rows.showWorkflows) {
+    return rows.agents.length + rows.chatThreads.length;
+  }
+  return rows.expandIndex === null
+    ? rows.headCount + rows.workflows.length
+    : rows.expandIndex + 1;
+}
+
 /** The template category row for an index, if it is one. */
 function suggestionHeadRow(
   index: number,
@@ -589,8 +599,10 @@ function suggestionNavigationOrder(
   overviewCategoryCount: number | null,
 ): readonly number[] {
   return Array.from({ length: count }, (_, visualIndex) => {
-    // The overview reads workflows from most recent to least recent, then
-    // the creation categories in their existing anchored order below them.
+    // Above the composer the overview reads workflows from most recent to
+    // least recent, then the creation categories in their existing anchored
+    // order below them. Below the composer it reads categories then workflows
+    // top-down, which is the index order, so callers pass null there.
     if (overviewCategoryCount !== null) {
       return visualIndex < count - overviewCategoryCount
         ? overviewCategoryCount + visualIndex
@@ -602,10 +614,12 @@ function suggestionNavigationOrder(
 
 function useComposerSuggestionMenu({
   composer,
+  composerAnchored,
   reversedSuggestions,
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
+  readonly composerAnchored: boolean;
   readonly reversedSuggestions: boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
@@ -621,7 +635,7 @@ function useComposerSuggestionMenu({
   const close = useSet(composer.suggestion.closeSuggestionMenu$);
   const workflowsExpanded = useGet(composer.suggestion.slashWorkflowsExpanded$);
   const expandWorkflows = useSet(composer.suggestion.expandSlashWorkflows$);
-  const workflowOverview = reversedSuggestions && slashRange?.query === "";
+  const workflowOverview = composerAnchored && slashRange?.query === "";
   const collapseWorkflows = workflowOverview && !workflowsExpanded;
   const templatePanel = useSlashTemplatePanelActions(
     composer,
@@ -635,7 +649,7 @@ function useComposerSuggestionMenu({
   const workflowResult = useComposerWorkflowSuggestions(
     composer,
     slashRange?.query,
-    reversedSuggestions,
+    composerAnchored,
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
@@ -653,16 +667,6 @@ function useComposerSuggestionMenu({
     workflowSuggestions.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
       ? headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
       : null;
-  const suggestionCount = showWorkflows
-    ? expandIndex === null
-      ? headCount + workflowSuggestions.length
-      : expandIndex + 1
-    : agents.length + chatThreads.length;
-  const suggestionOrder = suggestionNavigationOrder(
-    suggestionCount,
-    reversedSuggestions,
-    workflowOverview ? headCount : null,
-  );
 
   const rows: SuggestionRows = {
     showWorkflows,
@@ -673,6 +677,11 @@ function useComposerSuggestionMenu({
     agents,
     chatThreads,
   };
+  const suggestionOrder = suggestionNavigationOrder(
+    suggestionRowCount(rows),
+    reversedSuggestions,
+    reversedSuggestions && workflowOverview ? headCount : null,
+  );
 
   function selectSuggestion(index: number): void {
     selectSuggestionRow(index, rows, {
@@ -782,9 +791,24 @@ export function TiptapWorkflowComposer({
   const features = useLastResolved(featureSwitch$);
   const composerAnchored =
     features?.[FeatureSwitchKey.ComposerAnchoredSuggestions] ?? false;
+  // Composer-anchored menus open on the side with the room. A docked composer
+  // sits on the floor of the screen, so its menus open above it. From `sm` up
+  // the start page centres its composer and the free space is below it, where
+  // a menu forced above was squeezed against the top of the window. Either way
+  // the most relevant row sits next to the composer, so the rendered order
+  // follows the side.
+  const startPageCentred = useMediaQuery(START_PAGE_CENTRED_MEDIA_QUERY);
+  const suggestionsBelow =
+    composerAnchored &&
+    startPageCentred &&
+    !composer.editor.singleLineOnMobile &&
+    !composer.editor.forwardComposer;
+  const reversedSuggestions = composerAnchored && !suggestionsBelow;
+  const suggestionSide = suggestionsBelow ? "bottom" : "top";
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
-    reversedSuggestions: composerAnchored,
+    composerAnchored,
+    reversedSuggestions,
     onKeyDown,
   });
   const suggestionAnchor = composerAnchored
@@ -877,12 +901,14 @@ export function TiptapWorkflowComposer({
         <SlashWorkflowMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
+          side={suggestionSide}
           composerAnchored={composerAnchored}
         >
           <SlashTemplatePanel
             menuRef={setSuggestionMenuRef}
             categories={suggestionMenu.panelCategories}
-            reversed={composerAnchored}
+            anchored={composerAnchored}
+            reversed={reversedSuggestions}
             reverseWorkflows={suggestionMenu.reverseWorkflows}
             workflows={suggestionMenu.workflows}
             workflowsLoading={suggestionMenu.workflowsLoading}
@@ -907,7 +933,9 @@ export function TiptapWorkflowComposer({
         <ComposerMentionSuggestionMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
+          side={suggestionSide}
           composerAnchored={composerAnchored}
+          reversed={reversedSuggestions}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}
           selectedIndex={suggestionMenu.selectedIndex}

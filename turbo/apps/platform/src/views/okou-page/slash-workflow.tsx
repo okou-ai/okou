@@ -77,11 +77,13 @@ export function SlashWorkflowName({
 export function SlashWorkflowMenu({
   menuRef,
   anchor,
+  side,
   composerAnchored,
   children,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
+  readonly side: "top" | "bottom";
   readonly composerAnchored: boolean;
   readonly children: ReactNode;
 }) {
@@ -89,7 +91,7 @@ export function SlashWorkflowMenu({
     <PopoverContent
       ref={menuRef}
       anchor={anchor}
-      side="top"
+      side={side}
       align="start"
       sideOffset={8}
       collisionAvoidance={composerAnchored ? { side: "none" } : undefined}
