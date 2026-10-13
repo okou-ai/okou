@@ -56,10 +56,9 @@ if [ -n "$CONTROL_PATH" ]; then
   fi
 fi
 
-TEMP_ROOT="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-TEMP_DIR=$(mktemp -d "${TEMP_ROOT%/}/cloudflare-ssh-preconnect.XXXXXX")
 connected_targets=()
 connected_control_paths=()
+connected_diagnostics_files=()
 
 bounded_control_command() {
   local control_path="$1"
@@ -85,12 +84,9 @@ cleanup() {
       control_path="${connected_control_paths[$index]}"
       bounded_control_command "$control_path" exit "$target" \
         > /dev/null 2>&1 || true
-      if [ -n "$control_path" ]; then
-        rm -f "${control_path}.stderr"
-      fi
+      rm -f "${connected_diagnostics_files[$index]}"
     done
   fi
-  rm -rf "$TEMP_DIR"
   exit "$status"
 }
 trap cleanup EXIT
@@ -142,19 +138,24 @@ preconnect_host() {
   fi
 
   for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
-    if [ -n "$CONTROL_PATH" ]; then
-      stderr_file="${CONTROL_PATH}.stderr"
-    else
-      stderr_file="${TEMP_DIR}/${host}.${attempt}.stderr"
-    fi
+    stderr_file=$(cloudflare_ssh_master_diagnostics_file \
+      "$SSH_USER" "$host" "$CONTROL_PATH") || return
+    # The detached master keeps this descriptor after setup returns. Retain
+    # its log for the job's lifetime so later caller failures can read it.
+    (umask 077; : > "$stderr_file") || return
+    chmod 600 "$stderr_file" || return
+    printf 'SSH master starting: host=%s attempt=%s time=%s\n' \
+      "$host" "$attempt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$stderr_file" || return
     status=0
 
+    # -v also keeps stderr open after OpenSSH forks into the background;
+    # setting LogLevel alone would discard post-authentication diagnostics.
     GITHUB_STEP_SUMMARY="" \
       timeout \
         --kill-after="${MASTER_START_KILL_AFTER_SECONDS}s" \
         "${MASTER_START_TIMEOUT_SECONDS}s" \
-        "$CLOUDFLARE_SSH_BIN" "${control_args[@]}" -n -M -N -f "$target" \
-        2> "$stderr_file" || status=$?
+        "$CLOUDFLARE_SSH_BIN" "${control_args[@]}" -v -n -M -N -f "$target" \
+        2>> "$stderr_file" || status=$?
 
     if [ "$status" -eq 0 ]; then
       GITHUB_STEP_SUMMARY="" \
@@ -163,6 +164,7 @@ preconnect_host() {
       if [ "$status" -eq 0 ]; then
         connected_targets+=("$target")
         connected_control_paths+=("$CONTROL_PATH")
+        connected_diagnostics_files+=("$stderr_file")
         echo "Established replay-safe SSH transport to ${host}"
         return 0
       fi
@@ -220,8 +222,9 @@ while IFS= read -r host; do
 
   preconnect_status=0
   preconnect_host "$host" || preconnect_status=$?
-  if [ "$preconnect_status" -ne 0 ] && [ -n "$CONTROL_PATH" ]; then
-    rm -f "${CONTROL_PATH}.stderr"
+  if [ "$preconnect_status" -ne 0 ]; then
+    rm -f "$(cloudflare_ssh_master_diagnostics_file \
+      "$SSH_USER" "$host" "$CONTROL_PATH")"
   fi
   if [ "$preconnect_status" -ne 0 ] && [ "$REQUIRE_ALL_HOSTS" = "true" ]; then
     exit "$preconnect_status"

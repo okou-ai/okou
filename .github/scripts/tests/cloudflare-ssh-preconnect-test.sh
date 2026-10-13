@@ -51,6 +51,25 @@ assert_runner_temp_empty() {
   fi
 }
 
+assert_retained_master_logs() {
+  local dir=$1 expected=$2 actual file
+  actual=$(find "$dir" -type f -name 'cloudflare-ssh-master-*.stderr' | wc -l)
+  if [ "$actual" -ne "$expected" ] \
+    || find "$dir" -mindepth 1 ! -name 'cloudflare-ssh-master-*.stderr' \
+      -print -quit | grep -q .; then
+    echo "expected ${expected} retained master log(s) and no temporary files in ${dir}" >&2
+    find "$dir" -mindepth 1 -print >&2
+    exit 1
+  fi
+  for file in "$dir"/cloudflare-ssh-master-*.stderr; do
+    if [ "$(stat -c '%a' "$file")" != 600 ]; then
+      echo "expected restricted master log permissions: ${file}" >&2
+      exit 1
+    fi
+    assert_contains "$file" "debug1: master ready"
+  done
+}
+
 tmp=$(mktemp -d)
 cleanup() {
   rm -rf "$tmp"
@@ -151,6 +170,7 @@ case "$FAKE_SSH_SCENARIO" in
     exit 2
     ;;
 esac
+echo "debug1: master ready" >&2
 EOF
 chmod +x "$fake_ssh"
 
@@ -214,9 +234,9 @@ assert_contains "$tmp/transient/stderr" "::warning title=Retrying Cloudflare SSH
 assert_not_contains "$tmp/transient/stderr" "::error"
 assert_not_contains "$tmp/transient/stderr" "super-secret"
 assert_not_contains "$tmp/transient/stderr" "client-id"
-assert_line_count "$tmp/transient/ssh-invocations" 2 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/transient/ssh-invocations" 2 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/transient/ssh-invocations" 1 "-n -O check metal@dev-1.aws.vm3.ai"
-assert_contains "$tmp/transient/timeout-invocations" "--kill-after=5s 40s ssh -n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_contains "$tmp/transient/timeout-invocations" "--kill-after=5s 40s ssh -v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_contains "$tmp/transient/timeout-invocations" "--kill-after=2s 5s ssh -n -O check metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/transient/sleep-invocations" 1 "1"
 if [ -e "$tmp/transient/outer-summary" ]; then
@@ -224,7 +244,7 @@ if [ -e "$tmp/transient/outer-summary" ]; then
   cat "$tmp/transient/outer-summary" >&2
   exit 1
 fi
-assert_runner_temp_empty "$tmp/transient/runner-temp"
+assert_retained_master_logs "$tmp/transient/runner-temp" 1
 
 run_case reconnect-window reconnect-window-success "dev-1.aws.vm3.ai"
 assert_contains "$tmp/reconnect-window/status" "0"
@@ -233,7 +253,7 @@ assert_contains "$tmp/reconnect-window/stderr" "attempt 3/4"
 assert_not_contains "$tmp/reconnect-window/stderr" "::error"
 assert_not_contains "$tmp/reconnect-window/stderr" "super-secret"
 assert_not_contains "$tmp/reconnect-window/stderr" "client-id"
-assert_line_count "$tmp/reconnect-window/ssh-invocations" 4 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/reconnect-window/ssh-invocations" 4 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/reconnect-window/ssh-invocations" 1 "-n -O check metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/reconnect-window/sleep-invocations" 1 "1"
 assert_line_count "$tmp/reconnect-window/sleep-invocations" 1 "5"
@@ -243,31 +263,31 @@ if [ -e "$tmp/reconnect-window/outer-summary" ]; then
   cat "$tmp/reconnect-window/outer-summary" >&2
   exit 1
 fi
-assert_runner_temp_empty "$tmp/reconnect-window/runner-temp"
+assert_retained_master_logs "$tmp/reconnect-window/runner-temp" 1
 
 run_case timeout timeout-success "dev-1.aws.vm3.ai"
 assert_contains "$tmp/timeout/status" "0"
 assert_contains "$tmp/timeout/stderr" "::warning title=Retrying Cloudflare SSH preconnection::"
 assert_contains "$tmp/timeout/stderr" "Cloudflare SSH transport timed out --secret [redacted]"
 assert_not_contains "$tmp/timeout/stderr" "super-secret"
-assert_line_count "$tmp/timeout/ssh-invocations" 2 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/timeout/ssh-invocations" 2 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/timeout/sleep-invocations" 1 "1"
-assert_runner_temp_empty "$tmp/timeout/runner-temp"
+assert_retained_master_logs "$tmp/timeout/runner-temp" 1
 
 run_case check-failure check-failure-success "dev-1.aws.vm3.ai"
 assert_contains "$tmp/check-failure/status" "0"
 assert_contains "$tmp/check-failure/stderr" "::warning title=Retrying Cloudflare SSH preconnection::"
 assert_not_contains "$tmp/check-failure/stderr" "::error"
-assert_line_count "$tmp/check-failure/ssh-invocations" 2 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/check-failure/ssh-invocations" 2 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/check-failure/ssh-invocations" 2 "-n -O check metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/check-failure/ssh-invocations" 1 "-n -O exit metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/check-failure/sleep-invocations" 1 "1"
-assert_runner_temp_empty "$tmp/check-failure/runner-temp"
+assert_retained_master_logs "$tmp/check-failure/runner-temp" 1
 
 explicit_control_path="$tmp/explicit-check/runner-temp/recovery.sock"
 run_case explicit-check check-failure-success "dev-1.aws.vm3.ai" true "$explicit_control_path"
 assert_contains "$tmp/explicit-check/status" "0"
-assert_line_count "$tmp/explicit-check/ssh-invocations" 2 "-S $explicit_control_path -n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/explicit-check/ssh-invocations" 2 "-S $explicit_control_path -v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/explicit-check/ssh-invocations" 2 "-S $explicit_control_path -n -O check metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/explicit-check/ssh-invocations" 1 "-S $explicit_control_path -n -O exit metal@dev-1.aws.vm3.ai"
 assert_contains "$tmp/explicit-check/timeout-invocations" "--kill-after=2s 5s ssh -S $explicit_control_path -n -O exit metal@dev-1.aws.vm3.ai"
@@ -292,7 +312,7 @@ if [ "$(grep -c '^::error' "$tmp/permanent/stderr")" -ne 1 ]; then
   cat "$tmp/permanent/stderr" >&2
   exit 1
 fi
-assert_line_count "$tmp/permanent/ssh-invocations" 1 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/permanent/ssh-invocations" 1 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 if [ -s "$tmp/permanent/sleep-invocations" ]; then
   echo "expected a permanent failure not to sleep" >&2
   cat "$tmp/permanent/sleep-invocations" >&2
@@ -307,9 +327,9 @@ assert_runner_temp_empty "$tmp/permanent/runner-temp"
 
 run_case partial-failure partial-failure "dev-1.aws.vm3.ai,dev-11.gcp.aws.vm3.ai"
 assert_contains "$tmp/partial-failure/status" "255"
-assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-n -O check metal@dev-1.aws.vm3.ai"
-assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
+assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-v -n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
 assert_line_count "$tmp/partial-failure/ssh-invocations" 1 "-n -O exit metal@dev-1.aws.vm3.ai"
 assert_runner_temp_empty "$tmp/partial-failure/runner-temp"
 
@@ -317,14 +337,14 @@ run_case partial-best-effort partial-failure "dev-1.aws.vm3.ai,dev-11.gcp.aws.vm
 assert_contains "$tmp/partial-best-effort/status" "0"
 assert_contains "$tmp/partial-best-effort/stderr" "::warning title=Cloudflare SSH preconnection failed::"
 assert_not_contains "$tmp/partial-best-effort/stderr" "::error"
-assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-n -O check metal@dev-1.aws.vm3.ai"
-assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
-assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-n -M -N -f metal@dev-2.aws.vm3.ai"
+assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-v -n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
+assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-v -n -M -N -f metal@dev-2.aws.vm3.ai"
 assert_line_count "$tmp/partial-best-effort/ssh-invocations" 1 "-n -O check metal@dev-2.aws.vm3.ai"
 assert_line_count "$tmp/partial-best-effort/ssh-invocations" 0 "-n -O exit metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/partial-best-effort/ssh-invocations" 0 "-n -O exit metal@dev-2.aws.vm3.ai"
-assert_runner_temp_empty "$tmp/partial-best-effort/runner-temp"
+assert_retained_master_logs "$tmp/partial-best-effort/runner-temp" 2
 
 run_case exhaustion exhaustion "dev-1.aws.vm3.ai"
 assert_contains "$tmp/exhaustion/status" "255"
@@ -338,7 +358,7 @@ if [ "$(grep -c '^::error' "$tmp/exhaustion/stderr")" -ne 1 ]; then
   cat "$tmp/exhaustion/stderr" >&2
   exit 1
 fi
-assert_line_count "$tmp/exhaustion/ssh-invocations" 4 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/exhaustion/ssh-invocations" 4 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/exhaustion/sleep-invocations" 1 "1"
 assert_line_count "$tmp/exhaustion/sleep-invocations" 1 "5"
 assert_line_count "$tmp/exhaustion/sleep-invocations" 1 "15"
@@ -346,16 +366,16 @@ assert_runner_temp_empty "$tmp/exhaustion/runner-temp"
 
 run_case multiple success $' dev-1.aws.vm3.ai,dev-11.gcp.aws.vm3.ai\nDEV-1.AWS.VM3.AI '
 assert_contains "$tmp/multiple/status" "0"
-assert_line_count "$tmp/multiple/ssh-invocations" 1 "-n -M -N -f metal@dev-1.aws.vm3.ai"
+assert_line_count "$tmp/multiple/ssh-invocations" 1 "-v -n -M -N -f metal@dev-1.aws.vm3.ai"
 assert_line_count "$tmp/multiple/ssh-invocations" 1 "-n -O check metal@dev-1.aws.vm3.ai"
-assert_line_count "$tmp/multiple/ssh-invocations" 1 "-n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
+assert_line_count "$tmp/multiple/ssh-invocations" 1 "-v -n -M -N -f metal@dev-11.gcp.aws.vm3.ai"
 assert_line_count "$tmp/multiple/ssh-invocations" 1 "-n -O check metal@dev-11.gcp.aws.vm3.ai"
 if grep -Fq "DEV-1.AWS.VM3.AI" "$tmp/multiple/ssh-invocations"; then
   echo "expected duplicate hosts to be pre-connected once" >&2
   cat "$tmp/multiple/ssh-invocations" >&2
   exit 1
 fi
-assert_runner_temp_empty "$tmp/multiple/runner-temp"
+assert_retained_master_logs "$tmp/multiple/runner-temp" 2
 
 assert_contains "$SSH_ACTION" "ControlPath \$HOME/.ssh/vm0-ssh-%C"
 assert_contains "$SSH_ACTION" "ANSIBLE_SSH_CONTROL_PATH=%s"
