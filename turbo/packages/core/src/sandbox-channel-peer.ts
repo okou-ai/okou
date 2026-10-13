@@ -4,6 +4,7 @@ import {
   decodeSandboxChannelFrame,
   encodeSandboxChannelFrame,
   sandboxChannelCategoriesSchema,
+  sandboxChannelErrorSchema,
   sandboxChannelHelloResultSchema,
   sandboxChannelIdSchema,
   sandboxChannelNameSchema,
@@ -686,10 +687,7 @@ export class SandboxChannelPeer {
         throw new SandboxChannelError("busy");
     } catch (error) {
       this.response(epoch, message.id, {
-        error:
-          error instanceof SandboxChannelError
-            ? error.toWire()
-            : { code: "invalid_params" },
+        error: this.requestError(error, "invalid_params"),
       });
       return;
     }
@@ -708,10 +706,7 @@ export class SandboxChannelPeer {
       } catch (error) {
         if (this.current(epoch))
           this.response(epoch, message.id, {
-            error:
-              error instanceof SandboxChannelError
-                ? error.toWire()
-                : { code: "unavailable" },
+            error: this.requestError(error, "unavailable"),
           });
       } finally {
         epoch.incoming.delete(message.id);
@@ -722,6 +717,25 @@ export class SandboxChannelPeer {
         this.fail(new SandboxChannelError("unavailable"));
     });
   }
+
+  private requestError(
+    error: unknown,
+    fallback: SandboxChannelErrorCode,
+  ): SandboxChannelWireError {
+    if (error instanceof SandboxChannelError) {
+      try {
+        const parsed = sandboxChannelErrorSchema.safeParse({
+          code: error.code,
+          ...error.details,
+        });
+        if (parsed.success) return parsed.data;
+      } catch {
+        // Consumer error metadata is rejected at the business boundary.
+      }
+    }
+    return { code: fallback };
+  }
+
   private receiveEvent(epoch: Epoch, message: EventMessage): void {
     try {
       this.gate(epoch, message.category, message.categoryVersion);

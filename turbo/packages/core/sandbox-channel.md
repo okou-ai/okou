@@ -91,6 +91,12 @@ whose operation result is invalid rejects only that call with `invalid_request`,
 including a throwing result decoder. Other pending calls and matching
 categories remain usable. Invalid hello still fails application readiness.
 
+Request errors are validated at the peer boundary too. Malformed structured
+errors from parameter decoders or handlers produce a bounded `invalid_params`
+or `unavailable` response without their unsafe metadata; unrelated business
+remains usable. An error's serialization or property-access failure cannot
+turn this request rejection into connection teardown.
+
 Known-event direction/data rejection, handler exceptions and exhausted incoming
 capacity reject/drop that event locally. Saturation reports `busy`; handler
 failure reports `unavailable` after releasing its work slot. No ACK, retry queue

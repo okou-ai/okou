@@ -718,6 +718,113 @@ describe("admitted application peer", () => {
     expect(h.peer.state).toBe("ready");
   });
 
+  it("contains malformed structured handler errors without closing unrelated business", async () => {
+    for (const failure of [
+      new SandboxChannelError("category_version_mismatch", {
+        category: "/private",
+        expectedVersion: 0,
+        receivedVersion: 1,
+      }),
+      new SandboxChannelError("unavailable", {
+        get category(): string {
+          throw new Error("private error metadata failure");
+        },
+      }),
+    ]) {
+      const h = harness({
+        handlers: [
+          sandboxChannelHandler(sandboxDiagnosticsEcho, () => {
+            throw failure;
+          }),
+        ],
+      });
+      const socket = await h.ready();
+      socket.receive(incoming(460));
+      const reply = await Promise.race([
+        socket.frames.next(),
+        socket.closed.then(() => {
+          throw new Error("invalid handler error closed the shared peer");
+        }),
+      ]);
+      expect(reply).toMatchObject({
+        type: "response",
+        requestId: uuid(460),
+        error: { code: "unavailable" },
+      });
+      if (reply.type !== "response") throw new Error("expected response");
+      expect(reply.error).toEqual({ code: "unavailable" });
+      expect(reply).not.toHaveProperty("result");
+      expect(h.peer.state).toBe("ready");
+      const next = h.peer.call(
+        sandboxFsList,
+        { path: [] },
+        h.controller.signal,
+      );
+      const listing = { listingId: "listing", entries: [], nextCursor: null };
+      socket.reply(await nextRequest(socket), listing);
+      expect(await next).toEqual(listing);
+    }
+  });
+
+  it("contains malformed structured decoder errors before request dispatch", async () => {
+    const faulty = {
+      ...sandboxDiagnosticsEcho,
+      operation: "decode.error",
+      origin: "guest",
+      params: {
+        safeParse() {
+          throw new SandboxChannelError("invalid_params", {
+            category: "/private",
+          });
+        },
+      },
+    } as const;
+    const h = harness({
+      categories: [
+        sandboxFsCategory,
+        {
+          ...sandboxDiagnosticsCategory,
+          operations: [...sandboxDiagnosticsCategory.operations, faulty],
+        },
+      ],
+      handlers: [
+        sandboxChannelHandler(sandboxDiagnosticsEcho, (params) => {
+          return params;
+        }),
+        {
+          operation: faulty,
+          async handle() {
+            return { payload: "" };
+          },
+        },
+      ],
+    });
+    const socket = await h.ready();
+    socket.receive({ ...incoming(461), operation: faulty.operation });
+    const reply = await Promise.race([
+      socket.frames.next(),
+      socket.closed.then(() => {
+        throw new Error("invalid decoder error closed the shared peer");
+      }),
+    ]);
+    expect(reply).toMatchObject({
+      type: "response",
+      requestId: uuid(461),
+      error: { code: "invalid_params" },
+    });
+    if (reply.type !== "response") throw new Error("expected response");
+    expect(reply.error).toEqual({ code: "invalid_params" });
+    expect(reply).not.toHaveProperty("result");
+    expect(h.peer.state).toBe("ready");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+  });
+
   it("isolates synchronous and asynchronous event handler failures with safe local errors", async () => {
     for (const synchronous of [true, false]) {
       const errors = new Queue<SandboxChannelEventError>(),
