@@ -1518,6 +1518,17 @@
       },
       "viewAgentProfile": "View agent profile"
     },
+    "agentSuggestions": {
+      "empty": "No suggestions right now.",
+      "existingThread": "Existing conversation",
+      "label": "Suggestions",
+      "loadFailed": "Suggestions could not be loaded.",
+      "newThread": "New conversation with Okou",
+      "origin": "From your Morning Brief",
+      "showAll_one": "View all {{count}}",
+      "showAll_other": "View all {{count}}",
+      "showLess": "Show fewer"
+    },
     "attachments": {
       "attach": "Attach",
       "fileTooLarge": "{{filename}} exceeds the 1 GB limit",
@@ -2394,6 +2405,7 @@
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
+        "suggestions": "Suggestions",
         "visualization": "Visualization",
         "website": "Website",
         "workflow": "Workflow"

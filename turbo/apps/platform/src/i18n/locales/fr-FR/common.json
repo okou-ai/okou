@@ -1542,6 +1542,18 @@
       },
       "viewAgentProfile": "Voir le profil de l'agent"
     },
+    "agentSuggestions": {
+      "empty": "Aucune suggestion pour le moment.",
+      "existingThread": "Conversation existante",
+      "label": "Suggestions",
+      "loadFailed": "Impossible de charger les suggestions.",
+      "newThread": "Nouvelle conversation avec Okou",
+      "origin": "De votre briefing matinal",
+      "showAll_one": "Voir les {{count}}",
+      "showAll_many": "Voir les {{count}}",
+      "showAll_other": "Voir les {{count}}",
+      "showLess": "Voir moins"
+    },
     "attachments": {
       "attach": "Joindre",
       "fileTooLarge": "{{filename}} dépasse la limite de 1 Go",
@@ -2442,6 +2454,7 @@
       "tasks": {
         "image": "Image",
         "presentation": "Diapositives",
+        "suggestions": "Suggestions",
         "visualization": "Visualisation",
         "website": "Site web",
         "workflow": "Workflow"

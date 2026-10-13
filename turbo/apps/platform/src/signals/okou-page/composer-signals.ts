@@ -819,6 +819,7 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
+      const selectedTask = get(taskChips.task$);
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
@@ -843,7 +844,7 @@ function createSubmitCurrentInput({
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
         taskSelection: {
-          task: get(taskChips.task$) ?? mode,
+          task: selectedTask === "suggestions" ? null : (selectedTask ?? mode),
           presentationSlideCount: get(create.presentationSlideCount$),
           visualization: get(taskChips.visualization.preferences$),
         },

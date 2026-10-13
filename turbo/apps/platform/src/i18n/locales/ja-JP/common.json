@@ -1517,6 +1517,16 @@
       },
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
+    "agentSuggestions": {
+      "empty": "現在、提案はありません。",
+      "existingThread": "既存の会話",
+      "label": "提案",
+      "loadFailed": "提案を読み込めませんでした。",
+      "newThread": "Okou と新しい会話",
+      "origin": "モーニングブリーフから",
+      "showAll_other": "全 {{count}} 件を表示",
+      "showLess": "表示を減らす"
+    },
     "attachments": {
       "attach": "添付する",
       "fileTooLarge": "{{filename}} が 1 GB の制限を超えています",
@@ -2383,6 +2393,7 @@
       "tasks": {
         "image": "画像",
         "presentation": "スライド",
+        "suggestions": "提案",
         "visualization": "可視化",
         "website": "ウェブサイト",
         "workflow": "ワークフロー"

@@ -1047,12 +1047,15 @@ const chatThreadMetadataSchema = z.object({
   cloudBrowserEnabled: z.boolean(),
 });
 
-const chatThreadDraftSchema = z
+export const composerDraftSchema = z
   .object({
     draftUserMessage: userMessageInputDocumentSchema.nullable(),
     draftAttachments: z.array(persistedAttachmentSchema).nullable(),
   })
   .superRefine(requireUserMessageForDraftAttachments);
+
+const chatThreadDraftSchema = composerDraftSchema;
+export type ComposerDraft = z.infer<typeof composerDraftSchema>;
 
 const selectedModelRequestSchema = runModelIdSchema;
 

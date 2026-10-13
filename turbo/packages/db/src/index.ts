@@ -3,6 +3,7 @@ import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
+import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
@@ -167,6 +168,7 @@ export const schema = {
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
+  ...agentSuggestionSchema,
   ...userSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,

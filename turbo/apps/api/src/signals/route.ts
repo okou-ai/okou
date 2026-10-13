@@ -1,5 +1,6 @@
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
+import { suggestionsRoutes } from "./routes/suggestions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -298,6 +299,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...suggestionsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,

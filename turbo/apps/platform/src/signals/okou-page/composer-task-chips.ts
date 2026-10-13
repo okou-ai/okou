@@ -13,8 +13,11 @@ import { observeRail, type RailTravel } from "./rail-travel.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
 
 export type ComposerTask =
-  ComposerCreateMode | "workflow" | "website" | "visualization";
-export type ComposerIdeaTask = Exclude<ComposerTask, "visualization">;
+  ComposerCreateMode | "workflow" | "website" | "visualization" | "suggestions";
+export type ComposerIdeaTask = Exclude<
+  ComposerTask,
+  "visualization" | "suggestions"
+>;
 /** The tasks whose ideas render as a prompt row; workflow has its own surface. */
 export type ComposerPromptRowTask = Exclude<ComposerIdeaTask, "workflow">;
 /**
@@ -30,8 +33,13 @@ export type ComposerTemplateTask = Exclude<
 /** A general task owns the chip row itself; the rest resolve to a create mode. */
 function isComposerGeneralTask(
   task: ComposerTask | null,
-): task is "workflow" | "website" | "visualization" {
-  return task === "workflow" || task === "website" || task === "visualization";
+): task is "workflow" | "website" | "visualization" | "suggestions" {
+  return (
+    task === "workflow" ||
+    task === "website" ||
+    task === "visualization" ||
+    task === "suggestions"
+  );
 }
 
 export function createComposerTaskChipsSignals(
@@ -39,7 +47,7 @@ export function createComposerTaskChipsSignals(
   workflowActions: WorkflowRecommendationActions,
 ) {
   const internalGeneralTask$ = state<
-    "workflow" | "website" | "visualization" | null
+    "workflow" | "website" | "visualization" | "suggestions" | null
   >(null);
   const visualization = createComposerVisualizationSignals();
   /** The task selected through the chip row, slash panel or template picker. */
@@ -61,16 +69,22 @@ export function createComposerTaskChipsSignals(
     workflowVisible$,
     workflowActions,
   );
-  const applyTask$ = command(({ set }, task: ComposerTask | null) => {
-    set(workflows.close$);
-    if (task === null || isComposerGeneralTask(task)) {
-      set(internalGeneralTask$, task);
-      set(create.setMode$, null);
-      return;
-    }
-    set(internalGeneralTask$, null);
-    set(create.selectCommand$, task);
-  });
+  const applyTask$ = command(
+    ({ set }, task: ComposerTask | null, browsing = false) => {
+      set(workflows.close$);
+      if (task === null || isComposerGeneralTask(task)) {
+        set(internalGeneralTask$, task);
+        set(create.setMode$, null, !browsing);
+        return;
+      }
+      set(internalGeneralTask$, null);
+      if (browsing) {
+        set(create.setMode$, task, false);
+      } else {
+        set(create.selectCommand$, task);
+      }
+    },
+  );
   /**
    * The chip row toggles: choosing the task already showing clears it. The
    * footer chip and the composer's Backspace clear the same way.
@@ -88,6 +102,9 @@ export function createComposerTaskChipsSignals(
       return;
     }
     set(applyTask$, task);
+  });
+  const browseTask$ = command(({ set }, task: ComposerTask) => {
+    set(applyTask$, task, true);
   });
   /**
    * How far a rail can still travel, per rail. A rail that has never reported
@@ -127,6 +144,7 @@ export function createComposerTaskChipsSignals(
     customTemplates$,
     selectTask$,
     openTask$,
+    browseTask$,
     railTravel$,
     setRailTravel$,
     bindRail$,

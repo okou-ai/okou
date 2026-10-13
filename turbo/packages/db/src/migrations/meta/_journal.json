@@ -2171,6 +2171,13 @@
       "when": 1791879327323,
       "tag": "1387_chat_resources_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 1388,
+      "version": "7",
+      "when": 1791883501402,
+      "tag": "1388_agent_suggestions",
+      "breakpoints": true
     }
   ]
 }

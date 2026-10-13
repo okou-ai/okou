@@ -27,6 +27,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
+import { agentSuggestionsEnabled$ } from "../../signals/okou-page/agent-suggestions.ts";
 
 function RecommendationConnectors({
   slugs,
@@ -160,6 +161,19 @@ function RecommendationCardSkeleton() {
  * completed server snapshot; an Ably push only offers a reload affordance.
  */
 export function HomeTaskRecommendations({
+  agentId,
+}: {
+  readonly agentId: string | null | undefined;
+}) {
+  const suggestions = useLoadable(agentSuggestionsEnabled$);
+  const suggestionsEnabled =
+    suggestions.state === "hasData" && suggestions.data;
+  return suggestionsEnabled ? null : (
+    <HomeTaskRecommendationsForAgent agentId={agentId} />
+  );
+}
+
+function HomeTaskRecommendationsForAgent({
   agentId,
 }: {
   readonly agentId: string | null | undefined;
