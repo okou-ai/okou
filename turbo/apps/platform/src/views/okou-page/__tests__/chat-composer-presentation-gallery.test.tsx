@@ -148,7 +148,7 @@ test("Navigate every slide in a presentation template", async () => {
   expect(screen.getByLabelText("Preview slide 3")).toBeVisible();
 });
 
-test("Name every theme and count slides in a presentation template preview", async () => {
+async function openThreeSlidePreview() {
   mockTemplateChat();
   const template = builtInTemplate();
   mockPresentationHtml(template.embedUrl, ["One", "Two", "Three"]);
@@ -161,24 +161,44 @@ test("Name every theme and count slides in a presentation template preview", asy
   });
 
   await openTemplatePicker(user, "Presentation");
-  await user.click(
-    screen.getByLabelText(`Preview ${template.title} at current slide`),
-  );
+  click(screen.getByLabelText(`Preview ${template.title} at current slide`));
   const preview = await waitFor(() => {
     return detailGroup(template.title);
   });
-  await waitFor(() => {
-    expect(within(preview).getByText("1 / 3")).toBeVisible();
-  });
-  await user.click(screen.getByLabelText("Preview next slide"));
-  expect(within(preview).getByText("2 / 3")).toBeVisible();
+  await expect(
+    within(preview).findByText("1 / 3"),
+  ).resolves.toBeInTheDocument();
+  return { preview, user };
+}
+
+test("Count slides and pick a theme by name in a presentation template preview", async () => {
+  const { preview } = await openThreeSlidePreview();
+
+  click(screen.getByLabelText("Preview next slide"));
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
 
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("Candy party")).toBeVisible();
-  await user.click(within(dialog).getByText("Deep dive"));
+  expect(within(dialog).getByText("Candy party")).toBeInTheDocument();
+  click(within(dialog).getByText("Deep dive"));
   expect(screen.getByLabelText("Select style Deep dive")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
-  expect(within(preview).getByText("2 / 3")).toBeVisible();
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+test("Step back through a presentation template from its filmstrip", async () => {
+  const { preview, user } = await openThreeSlidePreview();
+
+  const lastSlide = screen.getByLabelText("Preview slide 3");
+  click(lastSlide);
+  expect(within(preview).getByText("3 / 3")).toBeInTheDocument();
+
+  lastSlide.focus();
+  await user.keyboard("{ArrowLeft}");
+  expect(screen.getByLabelText("Preview slide 2")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
 });

@@ -2325,7 +2325,7 @@ function TemplatePreviewPage({
       {/* One height owner: the dialog. From lg the body is a size container
           and the stage takes the 16:9 box that fits beside the theme list and
           above the filmstrip, so no viewport height clips the page. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
         <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6">
           <TemplateDetailStage
             title={item.title}
@@ -2390,10 +2390,11 @@ const TEMPLATE_DETAIL_STAGE_WIDTH =
   "lg:w-[min(calc(100cqw_-_204px),calc((100cqh_-_86px)*16/9))]";
 
 // The stage controls sit on cover art, which looks the same in both themes, so
-// the counter's ground is a literal black like `TEMPLATE_TILE_SCRIM`. Arrows
-// show on hover where the pointer can hover, and stay visible on touch.
+// the counter is literal white on a literal black like `TEMPLATE_TILE_SCRIM`
+// (the `white` token flips in Dark). Arrows appear on hover where the pointer
+// can hover, without an opacity transition, and stay visible on touch.
 const TEMPLATE_DETAIL_STAGE_ARROW =
-  "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur transition-opacity hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
+  "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
 
 function TemplateDetailStage({
   title,
@@ -2407,7 +2408,7 @@ function TemplateDetailStage({
   onKeyDown,
 }: {
   readonly title: string;
-  readonly focusRef: (element: HTMLDivElement | null) => void;
+  readonly focusRef: RefCallback<HTMLDivElement>;
   readonly activeSlideIndex: number;
   readonly slideCount: number;
   readonly lowResolutionImage: string;
@@ -2432,7 +2433,7 @@ function TemplateDetailStage({
       className={cn(
         TEMPLATE_TILE_MEDIA,
         TEMPLATE_DETAIL_STAGE_WIDTH,
-        "group/stage aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
+        "group/stage isolate aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
       )}
     >
       <ProgressiveTemplatePreviewImage
@@ -2483,7 +2484,7 @@ function TemplateDetailStage({
       >
         <ChevronRight size={16} />
       </button>
-      <span className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-white">
+      <span className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-[#ffffff]">
         {t(
           ($) => {
             return $.artifacts.templates.slideCounter;
@@ -2495,16 +2496,35 @@ function TemplateDetailStage({
   );
 }
 
+// The filmstrip's edge fade, `SCROLL_FADE_X_WHEN_OVERFLOWING`; change together.
+const TEMPLATE_DETAIL_FILMSTRIP_FADE = 24;
+
 // Keep this ref stable: the strip follows the selection only when a different
-// thumbnail becomes the active one, not on every theme or HTML re-render.
-function scrollActiveTemplateThumbnailIntoView(
+// thumbnail becomes the active one, not on every theme or HTML re-render. It
+// moves the strip alone, by just enough to clear the edge fade, so a short
+// dialog body is never scrolled to bring the filmstrip into view.
+function scrollActiveTemplateThumbnailIntoStrip(
   thumbnail: HTMLButtonElement | null,
 ): (() => void) | undefined {
   if (!thumbnail) {
     return;
   }
   const frame = window.requestAnimationFrame(() => {
-    thumbnail.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    // The thumbnail always renders inside the filmstrip's viewport.
+    const strip = thumbnail.closest<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    )!;
+    const stripBox = strip.getBoundingClientRect();
+    const tileBox = thumbnail.getBoundingClientRect();
+    const hiddenBefore =
+      stripBox.left + TEMPLATE_DETAIL_FILMSTRIP_FADE - tileBox.left;
+    const hiddenAfter =
+      tileBox.right - (stripBox.right - TEMPLATE_DETAIL_FILMSTRIP_FADE);
+    if (hiddenBefore > 0) {
+      strip.scrollLeft -= hiddenBefore;
+    } else if (hiddenAfter > 0) {
+      strip.scrollLeft += hiddenAfter;
+    }
   });
   return () => {
     window.cancelAnimationFrame(frame);
@@ -2550,7 +2570,9 @@ function TemplateDetailFilmstrip({
             return (
               <button
                 key={slideNumber}
-                ref={active ? scrollActiveTemplateThumbnailIntoView : undefined}
+                ref={
+                  active ? scrollActiveTemplateThumbnailIntoStrip : undefined
+                }
                 type="button"
                 aria-label={t(
                   ($) => {
