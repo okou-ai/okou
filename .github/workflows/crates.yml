@@ -1221,6 +1221,12 @@ jobs:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
         run: crates/runner/tests/behavior/runner-behavior-process-containment.sh
 
+      - name: Measure Guest Agent ready boundary
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: crates/runner/tests/behavior/runner-behavior-agent-ready.sh
+
   runner-behavior-lane-d:
     runs-on: ubuntu-latest
     needs: [runner-test-prepare]

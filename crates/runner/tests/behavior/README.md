@@ -11,6 +11,23 @@ Run a driver from the repository root, for example:
 bash crates/runner/tests/behavior/runner-behavior-exec.sh
 ```
 
+`runner-behavior-process-containment.sh` owns one shared Runner fixture and runs
+three scenario programs: native managed tasks and their CLI/Pi consumers,
+detached-descendant/bootstrap reuse with live CPU and mixed-identity cleanup,
+and independently threaded memory/PID pressure. Keep each pressure/reuse pair
+and the complete leak/reuse/CPU lifecycle together. The lifecycle program owns
+its active pressure submit; the coordinator stops the Runner after success or a
+scenario failure. Support programs are checksum-verified before durable execution.
+
+Run agent-ready measurement separately with
+`bash crates/runner/tests/behavior/runner-behavior-agent-ready.sh`. It owns a
+separate fixture and captured systemd invocation and calls the existing benchmark
+worker. `AGENT_READY_BENCHMARK_SAMPLES` defaults to one (six submissions across
+fresh, home-cache and exact reuse); explicit measurement runs may select 1–100.
+Missing/invalid durations, incorrect reuse and failed home promotion fail the
+command. Timing summaries are observations, not a performance-regression gate.
+The existing Crates lane c runs both entry points with the same pinned inputs.
+
 The Crates behavior lanes provide `METAL_USER`, `HOST`, `BIN_DIR`, `JOB_REF`,
 immutable rootfs/snapshot hashes, the official Runner token environment, and
 numeric `GITHUB_RUN_ID`/`GITHUB_RUN_ATTEMPT`. Preserve those inherited inputs and

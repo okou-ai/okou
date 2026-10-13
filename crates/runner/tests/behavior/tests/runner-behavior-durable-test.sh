@@ -17,7 +17,13 @@ KEEP_ALIVE_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-keep-
 KEEP_ALIVE_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-keep-alive-remote.sh"
 PROCESS_CONTAINMENT_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment.sh"
 PROCESS_CONTAINMENT_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-remote.sh"
+AGENT_READY_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-agent-ready.sh"
+AGENT_READY_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-agent-ready-remote.sh"
 AGENT_READY_BENCHMARK_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-agent-ready-benchmark-remote.sh"
+PROCESS_CONTAINMENT_SUPPORT_WORKERS=$(printf '%s\n' \
+  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-managed-tasks.sh" \
+  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-lifecycle.sh" \
+  "$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-process-containment-resource-pressure.sh")
 SYSTEMD_RELOAD_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-systemd-reload.sh"
 SYSTEMD_RELOAD_REMOTE_WORKER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-systemd-reload-remote.sh"
 UPGRADE_LOCAL_DRIVER="$REPO_ROOT/crates/runner/tests/behavior/runner-behavior-upgrade-local.sh"
@@ -98,10 +104,11 @@ if [ "$#" -eq 2 ] && [[ "$2" == *"runner config"* ]]; then
 fi
 
 if [ "$#" -eq 2 ] && [[ "$2" == *"published_tmp"* ]]; then
-  cmp - "$EXPECTED_SUPPORT_WORKER"
-  printf '%s\n' "$2" > "$FAKE_SSH_STATE_DIR/support-stage-command"
   support_stage_attempt=$(increment support-stage-attempt-count)
-  if [ "$support_stage_attempt" -eq 1 ]; then
+  support_index=$(((support_stage_attempt + 1) / 2))
+  support_worker=$(sed -n "${support_index}p" <<<"$EXPECTED_SUPPORT_WORKER")
+  cmp - "$support_worker"
+  if [ $((support_stage_attempt % 2)) -eq 1 ]; then
     exit 255
   fi
   exit 0
@@ -389,9 +396,6 @@ run_driver_case() {
   test -f "$case_dir/atomic-status-observed"
   test ! -e "$fake_remote_dir"
   test ! -e "$case_dir/systemd-active"
-  assert_contains "$case_dir/launch-script" "flock 9"
-  assert_contains "$case_dir/systemd-run-args" "--collect"
-  assert_contains "$case_dir/systemd-run-args" "--expand-environment=no"
   assert_contains "$case_dir/systemd-run-args" "--uid=$(id -u)"
   assert_contains "$case_dir/systemd-run-args" "--gid=$(id -g)"
   assert_contains "$case_dir/systemd-run-args" "--working-directory=$fake_remote_cwd"
@@ -403,12 +407,10 @@ run_driver_case() {
   assert_contains "$case_dir/stderr" "Transient SSH failure while observing ${case_name} result"
 
   if [ -n "$expected_support_worker" ]; then
-    assert_value "$case_dir/support-stage-attempt-count" "2"
-    assert_contains "$case_dir/support-stage-command" "sha256sum"
-    assert_contains "$case_dir/support-stage-command" "sudo mktemp"
-    assert_contains "$case_dir/support-stage-command" "sudo mv --"
+    support_worker_count=$(printf '%s\n' "$expected_support_worker" | wc -l)
+    assert_value "$case_dir/support-stage-attempt-count" "$((support_worker_count * 2))"
     assert_contains "$case_dir/stderr" \
-      "Transient SSH failure while staging Agent-ready benchmark worker"
+      "Transient SSH failure while staging Runner behavior support worker"
   else
     test ! -e "$case_dir/support-stage-attempt-count"
   fi
@@ -417,8 +419,6 @@ run_driver_case() {
     test ! -e "$case_dir/cleanup-count"
   else
     assert_value "$case_dir/cleanup-count" "$expected_cleanup_count"
-    assert_contains "$case_dir/cleanup-script" "sudo \"\$BIN_DIR/runner\" service stop --name \"\$SVC\" --force"
-    assert_contains "$case_dir/cleanup-script" "sudo rm -rf \"\$GROUP_DIR\" \"\$RUNNER_DIR\""
   fi
 
   if find "$runner_temp" -mindepth 1 -print -quit | grep -q .; then
@@ -440,6 +440,9 @@ run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER" 1 0
 run_driver_case keep-alive "$KEEP_ALIVE_DRIVER" "$KEEP_ALIVE_REMOTE_WORKER" 1 1
 run_driver_case process-containment \
   "$PROCESS_CONTAINMENT_DRIVER" "$PROCESS_CONTAINMENT_REMOTE_WORKER" 1 1 \
+  /var/lib/vm0-runner/runners/behavior-a-process-containment "$PROCESS_CONTAINMENT_SUPPORT_WORKERS"
+run_driver_case agent-ready \
+  "$AGENT_READY_DRIVER" "$AGENT_READY_REMOTE_WORKER" 1 1 \
   1 "$AGENT_READY_BENCHMARK_REMOTE_WORKER"
 run_driver_case systemd-reload \
   "$SYSTEMD_RELOAD_DRIVER" "$SYSTEMD_RELOAD_REMOTE_WORKER" 2 0

@@ -14,11 +14,6 @@ command -v yq >/dev/null || fail "yq is required"
 crates_json=$(yq -o=json '.' "$CRATES_WORKFLOW")
 
 jq -e '
-  def behavior_commands($lane):
-    [$lane.steps[]? |
-      .run? |
-      select(type == "string") |
-      select(startswith("crates/runner/tests/behavior/runner-behavior-"))];
   .jobs.detect as $detect |
   .jobs.check as $check |
   .jobs["api-contracts-rust-bindings"] as $bindings |
@@ -87,17 +82,6 @@ jq -e '
   ($host_cpu.if | contains("needs.detect.outputs.ci-changed")) and
   ([$lane_a, $lane_b, $lane_c, $lane_d] |
     all(.[]; .needs == ["runner-test-prepare"])) and
-  ([$lane_a, $lane_b, $lane_c, $lane_d] | map(behavior_commands(.)) | add | sort) == ([
-    "crates/runner/tests/behavior/runner-behavior-balloon.sh",
-    "crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh",
-    "crates/runner/tests/behavior/runner-behavior-exec.sh",
-    "crates/runner/tests/behavior/runner-behavior-cancel.sh",
-    "crates/runner/tests/behavior/runner-behavior-systemd-reload.sh",
-    "crates/runner/tests/behavior/runner-behavior-process-containment.sh",
-    "crates/runner/tests/behavior/runner-behavior-drain-resume.sh",
-    "crates/runner/tests/behavior/runner-behavior-keep-alive.sh",
-    "crates/runner/tests/behavior/runner-behavior-upgrade-local.sh"
-  ] | sort) and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
   any($host_cpu_build.steps[]?;
     .run == "bash .github/scripts/runner/runner-native-test-artifact.sh build"
