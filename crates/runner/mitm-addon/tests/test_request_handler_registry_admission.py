@@ -12,6 +12,45 @@ from tests.registry_helpers import write_multi_sandbox_registry
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
 
 
+async def test_large_registry_allows_request_after_complete_read(
+    tmp_path,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+):
+    sandbox_info = _single_firewall_sandbox(
+        tmp_path,
+        api_entry={
+            "base": "https://api.github.com",
+            "auth": {"headers": {"Authorization": "Bearer secret"}},
+            "permissions": [{"name": "full-access", "rules": ["ANY /{path+}"]}],
+        },
+        network_policy={
+            "allow": ["full-access"],
+            "deny": [],
+            "ask": [],
+            "unknownPolicy": "allow",
+        },
+    )
+    reg_path = _write_registry(tmp_path, client_ip="10.200.0.5", sandbox_info=sandbox_info)
+    # Keep the valid registry JSON beyond the first 1 MiB read.
+    payload = b" " * (1024 * 1024 + 17) + reg_path.read_bytes()
+    assert len(payload) < registry.MAX_REGISTRY_BYTES
+    reg_path.write_bytes(payload)
+    flow = real_flow(with_response=False, client_ip="10.200.0.5", host="api.github.com")
+
+    with (
+        mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
+        fake_firewall_headers(headers={"Authorization": "Bearer large-registry-token"}),
+    ):
+        await mitm_addon.request(flow)
+
+    assert flow.response is None
+    assert flow.request.headers["Authorization"] == "Bearer large-registry-token"
+    assert flow.metadata[metadata_keys.SANDBOX_RUN_ID] == sandbox_info["runId"]
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+
+
 async def test_registry_unavailable_blocks_before_auth_injection(tmp_path, real_flow, mitm_ctx):
     reg_path = _write_registry(
         tmp_path,
