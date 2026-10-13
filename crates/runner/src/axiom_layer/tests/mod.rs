@@ -524,7 +524,7 @@ async fn helper_failure_keeps_a_bounded_redacted_causal_tail_at_ingest() {
 }
 
 #[tokio::test]
-async fn axiom_ingests_safe_native_startup_stages_without_raw_sdk_diagnostics() {
+async fn axiom_excludes_native_info_and_raw_sdk_diagnostics() {
     let server = MockServer::start_async().await;
     let (ingest, captured) = capture_axiom_ingest(&server).await;
     let (layer, guard) = init_with_base_url(&server.base_url(), "t", "test").unwrap();
@@ -539,18 +539,13 @@ async fn axiom_ingests_safe_native_startup_stages_without_raw_sdk_diagnostics() 
         tracing::warn!(target: "runner_remote::tailscale", stage = "node", reason = "authority_failure", "native Tailscale resource domain failed");
         tracing::info!(target: "runner_remote::tailscale", "ordinary native info");
         tracing::info!(stage = "map", reason = "starting", "unrelated target");
-        tracing::debug!(target: "runner_remote::tailscale", stage = "map", reason = "starting", "debug native stage");
+        tracing::event!(target: "runner_remote::tailscale", tracing::Level::DEBUG, stage = "map", reason = "starting", "debug native stage");
         tracing::warn!(target: "ts_control", body = "PRIVATE-NATIVE-SDK-CANARY", "raw SDK warning");
     }
     guard.shutdown().await;
     ingest.assert_calls_async(1).await;
     let events = captured.events();
-    assert_eq!(events.len(), 2, "events={events:#?}");
-    let startup = event_with_message(&events, "native Tailscale startup");
-    assert_eq!(startup["level"], "info");
-    assert_eq!(startup["context"], "runner_remote::tailscale");
-    assert_eq!(startup["stage"], "map");
-    assert_eq!(startup["reason"], "starting");
+    assert_eq!(events.len(), 1, "events={events:#?}");
     assert_eq!(
         event_with_message(&events, "native Tailscale resource domain failed")["level"],
         "warn"
@@ -563,7 +558,7 @@ async fn axiom_ingests_safe_native_startup_stages_without_raw_sdk_diagnostics() 
 }
 
 #[tokio::test]
-async fn axiom_ingests_only_scoped_storage_latency_info() {
+async fn axiom_excludes_storage_latency_info() {
     let server = MockServer::start_async().await;
     let (ingest, captured) = capture_axiom_ingest(&server).await;
     let (layer, guard) = init_with_base_url(&server.base_url(), "t", "test").unwrap();
@@ -587,17 +582,7 @@ async fn axiom_ingests_only_scoped_storage_latency_info() {
     guard.shutdown().await;
     ingest.assert_calls_async(1).await;
     let events = captured.events();
-    assert_eq!(events.len(), 2, "events={events:#?}");
-    let latency = event_with_message(&events, "exec operation terminal result");
-    assert_eq!(latency["level"], "info");
-    assert_eq!(
-        latency["context"],
-        "guest_control_client::exec_operation::diagnostics"
-    );
-    assert_eq!(latency["label"], "storage-download");
-    assert_eq!(latency["terminal_reason"], "slow");
-    assert_eq!(latency["elapsed_ms"], 5227);
-    assert_eq!(latency["guest_duration_ms"], 5226);
+    assert_eq!(events.len(), 1, "events={events:#?}");
     assert_eq!(
         event_with_message(&events, "storage failure")["level"],
         "warn"
