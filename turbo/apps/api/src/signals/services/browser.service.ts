@@ -1036,185 +1036,201 @@ const scheduleBrowserScreenshotCapture$ = command(
   },
 );
 
-async function latestThreadRunId(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-): Promise<string | null> {
-  const [run] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .orderBy(desc(agentRuns.createdAt))
-    .limit(1);
-  return run?.id ?? null;
-}
+const latestThreadRunId$ = command(
+  async ({ get }, chatThreadId: string): Promise<string | null> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, chatThreadId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .orderBy(desc(agentRuns.createdAt))
+      .limit(1);
+    return run?.id ?? null;
+  },
+);
 
-async function resolveRunContext(
-  db: Db,
-  actor: BrowserActor,
-): Promise<BrowserServiceResult<BrowserRunContext>> {
-  if (!actor.runId) {
-    return chatRunRequired("BROWSER_RUN_REQUIRED");
-  }
-  const [run] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      status: agentRuns.status,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.id, actor.runId),
-        eq(agentRuns.orgId, actor.orgId),
-        eq(agentRuns.userId, actor.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run?.chatThreadId) {
-    return chatRunRequired("BROWSER_CHAT_THREAD_REQUIRED");
-  }
-  if (isTerminalRunStatus(run.status)) {
-    return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
-  }
-  if (!run.cloudBrowserEnabled) {
-    return serviceError(
-      403,
-      "BROWSER_AUTHORIZATION_REQUIRED",
-      "Cloud browser is not enabled for this chat thread",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      runId: actor.runId,
-      chatThreadId: run.chatThreadId,
-      requireLiveRun: true,
-    },
-  };
-}
-
-async function resolveViewerStartContext(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserServiceResult<BrowserRunContext>> {
-  if (access.runId) {
-    const context = await resolveRunContext(db, access);
-    if (context.kind === "error") {
-      return context;
+const resolveRunContext$ = command(
+  async (
+    { get },
+    actor: BrowserActor,
+  ): Promise<BrowserServiceResult<BrowserRunContext>> => {
+    const db = get(db$);
+    if (!actor.runId) {
+      return chatRunRequired("BROWSER_RUN_REQUIRED");
     }
-    return context.value.chatThreadId === access.chatThreadId
-      ? context
-      : notFound();
-  }
-  const [thread] = await db
-    .select({
-      id: chatThreads.id,
-      browserRunId: browserSessions.runId,
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(browserSessions, eq(browserSessions.chatThreadId, chatThreads.id))
-    .where(
-      and(
-        eq(chatThreads.id, access.chatThreadId),
-        eq(chatThreads.userId, access.userId),
-        eq(agents.orgId, access.orgId),
-      ),
-    )
-    .limit(1);
-  if (!thread) {
-    return notFound();
-  }
-  const latestRunId =
-    (await latestThreadRunId(db, access.chatThreadId)) ?? thread.browserRunId;
-  if (!latestRunId) {
-    return conflict(
-      "This browser's chat thread has no run; send a message first",
-      "BROWSER_RUN_REQUIRED",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      orgId: access.orgId,
-      userId: access.userId,
-      runId: latestRunId,
-      chatThreadId: access.chatThreadId,
-      requireLiveRun: false,
-    },
-  };
-}
+    const [run] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        status: agentRuns.status,
+        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, actor.runId),
+          eq(agentRuns.orgId, actor.orgId),
+          eq(agentRuns.userId, actor.userId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    if (!run?.chatThreadId) {
+      return chatRunRequired("BROWSER_CHAT_THREAD_REQUIRED");
+    }
+    if (isTerminalRunStatus(run.status)) {
+      return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
+    }
+    if (!run.cloudBrowserEnabled) {
+      return serviceError(
+        403,
+        "BROWSER_AUTHORIZATION_REQUIRED",
+        "Cloud browser is not enabled for this chat thread",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        runId: actor.runId,
+        chatThreadId: run.chatThreadId,
+        requireLiveRun: true,
+      },
+    };
+  },
+);
 
-async function browserSessionAccessError(
-  db: Db,
-  browser: Pick<BrowserSessionRow, "chatThreadId">,
-  access: BrowserOwnerAccess,
-): Promise<BrowserServiceError | null> {
-  // Session callers are authorized by ownership. Run-scoped callers must also
-  // belong to this thread and retain its agent browser authorization.
-  if (!access.runId) {
+const resolveViewerStartContext$ = command(
+  async (
+    { get, set },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserServiceResult<BrowserRunContext>> => {
+    const db = get(db$);
+    if (access.runId) {
+      const context = await set(resolveRunContext$, access);
+      if (context.kind === "error") {
+        return context;
+      }
+      return context.value.chatThreadId === access.chatThreadId
+        ? context
+        : notFound();
+    }
+    const [thread] = await db
+      .select({
+        id: chatThreads.id,
+        browserRunId: browserSessions.runId,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .leftJoin(
+        browserSessions,
+        eq(browserSessions.chatThreadId, chatThreads.id),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, access.chatThreadId),
+          eq(chatThreads.userId, access.userId),
+          eq(agents.orgId, access.orgId),
+        ),
+      )
+      .limit(1);
+    if (!thread) {
+      return notFound();
+    }
+    const latestRunId =
+      (await set(latestThreadRunId$, access.chatThreadId)) ??
+      thread.browserRunId;
+    if (!latestRunId) {
+      return conflict(
+        "This browser's chat thread has no run; send a message first",
+        "BROWSER_RUN_REQUIRED",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        orgId: access.orgId,
+        userId: access.userId,
+        runId: latestRunId,
+        chatThreadId: access.chatThreadId,
+        requireLiveRun: false,
+      },
+    };
+  },
+);
+
+const browserSessionAccessError$ = command(
+  async (
+    { get },
+    browser: Pick<BrowserSessionRow, "chatThreadId">,
+    access: BrowserOwnerAccess,
+  ): Promise<BrowserServiceError | null> => {
+    const db = get(db$);
+    // Session callers are authorized by ownership. Run-scoped callers must also
+    // belong to this thread and retain its agent browser authorization.
+    if (!access.runId) {
+      return null;
+    }
+    const [run] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, access.runId),
+          eq(agentRuns.orgId, access.orgId),
+          eq(agentRuns.userId, access.userId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    if (!run?.chatThreadId || run.chatThreadId !== browser.chatThreadId) {
+      return notFound();
+    }
+    if (!run.cloudBrowserEnabled) {
+      return serviceError(
+        403,
+        "BROWSER_AUTHORIZATION_REQUIRED",
+        "Cloud browser is not enabled for this chat thread",
+      );
+    }
     return null;
-  }
-  const [run] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.id, access.runId),
-        eq(agentRuns.orgId, access.orgId),
-        eq(agentRuns.userId, access.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run?.chatThreadId || run.chatThreadId !== browser.chatThreadId) {
-    return notFound();
-  }
-  if (!run.cloudBrowserEnabled) {
-    return serviceError(
-      403,
-      "BROWSER_AUTHORIZATION_REQUIRED",
-      "Cloud browser is not enabled for this chat thread",
-    );
-  }
-  return null;
-}
+  },
+);
 
-async function loadOwnedBrowserSidebarThread(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserSidebarThread | null> {
-  const [thread] = await db
-    .select({
-      chatThreadId: chatThreads.id,
-      userId: chatThreads.userId,
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, access.chatThreadId),
-        eq(chatThreads.userId, access.userId),
-        eq(agents.orgId, access.orgId),
-      ),
-    )
-    .limit(1);
-  return thread ?? null;
-}
+const loadOwnedBrowserSidebarThread$ = command(
+  async (
+    { get },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserSidebarThread | null> => {
+    const db = get(db$);
+    const [thread] = await db
+      .select({
+        chatThreadId: chatThreads.id,
+        userId: chatThreads.userId,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.id, access.chatThreadId),
+          eq(chatThreads.userId, access.userId),
+          eq(agents.orgId, access.orgId),
+        ),
+      )
+      .limit(1);
+    return thread ?? null;
+  },
+);
 
 const loadOwnedBrowser$ = command(
   async (
@@ -2026,8 +2042,7 @@ export const createBrowser$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, args.actor);
+    const context = await set(resolveRunContext$, args.actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2434,8 +2449,7 @@ export const useBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2456,8 +2470,7 @@ export const openBrowserForThread$ = command(
     args: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserMutation>> => {
-    const db = set(writeDb$);
-    const context = await resolveViewerStartContext(db, args);
+    const context = await set(resolveViewerStartContext$, args);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2490,13 +2503,12 @@ export const closeBrowserForThread$ = command(
     args: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<Record<string, never>>> => {
-    const db = set(writeDb$);
-    const thread = await loadOwnedBrowserSidebarThread(db, args);
+    const thread = await set(loadOwnedBrowserSidebarThread$, args);
     signal.throwIfAborted();
     if (!thread) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, thread, args);
+    const accessError = await set(browserSessionAccessError$, thread, args);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2546,8 +2558,7 @@ export const leaseCurrentBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2567,13 +2578,12 @@ export const leaseBrowserByThread$ = command(
     access: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
     const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, browser, access);
+    const accessError = await set(browserSessionAccessError$, browser, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2588,13 +2598,12 @@ export const resizeBrowserByThread$ = command(
     access: BrowserSessionAccess & { readonly aspectRatio: number },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
     const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, browser, access);
+    const accessError = await set(browserSessionAccessError$, browser, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2697,13 +2706,12 @@ export const getBrowser$ = command(
     access: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
     const row = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, row, access);
+    const accessError = await set(browserSessionAccessError$, row, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2755,8 +2763,7 @@ export const getCurrentBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;

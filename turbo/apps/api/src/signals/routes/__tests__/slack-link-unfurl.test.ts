@@ -22,7 +22,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -59,7 +58,6 @@ function compactBrandImageUrl() {
 async function fixture(
   options: {
     readonly scopes?: string;
-    readonly enabled?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -74,11 +72,6 @@ async function fixture(
   await flushWaitUntilForTest();
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
-  if (options.enabled !== undefined) {
-    await updateFeatureSwitchesForUser(context, actor, {
-      slackLinkUnfurls: options.enabled,
-    });
-  }
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command, ...rest) => {
@@ -158,7 +151,7 @@ function postLinks(
 }
 
 describe("Slack link previews", () => {
-  it("uses the global default to add a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
+  it("adds a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
@@ -357,11 +350,8 @@ describe("Slack link previews", () => {
     });
   });
 
-  it.each([
-    { name: "old installation scopes", scopes: previousBotScopes },
-    { name: "disabled workspace rollout", enabled: false },
-  ])("leaves normal connections intact with $name", async (options) => {
-    const f = await fixture(options);
+  it("leaves normal connections intact with old installation scopes", async () => {
+    const f = await fixture({ scopes: previousBotScopes });
     await accept(
       postLinks(f.teamId, [
         `https://dpl-${f.prepared.deploymentId}.okou.app/`,
@@ -385,11 +375,9 @@ describe("Slack link previews", () => {
     expect(status.body).toMatchObject({
       isInstalled: true,
       isConnected: true,
-      scopeMismatch: options.name === "old installation scopes",
+      scopeMismatch: true,
     });
-    if (options.name === "old installation scopes") {
-      expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
-    }
+    expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
   });
 
   it("requires public sharing for artifact references and honors revocation", async () => {

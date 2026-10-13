@@ -146,7 +146,7 @@ export const startWalletOAuth$ = command(
       client_id: config.clientId,
       redirect_uri: linkWalletRedirectUri(),
       response_type: "code",
-      scope: "payment_methods.agentic",
+      scope: "payment_methods.agentic userinfo:read",
       state,
       code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",

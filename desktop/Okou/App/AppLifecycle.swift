@@ -165,9 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSTo
   }
   private func smokeTest(configuration: DesktopConfiguration) throws {
     guard Bundle.main.bundleIdentifier != nil, configuration.product == "okou",
-      FileManager.default.isExecutableFile(
-        atPath: Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/computer-use-helper")
-          .path)
+      FileManager.default.isExecutableFile(atPath: DesktopModel.helperURL.path)
     else {
       throw DesktopFailure("invalid_package", "Native app package is incomplete")
     }

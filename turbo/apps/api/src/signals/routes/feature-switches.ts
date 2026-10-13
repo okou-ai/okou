@@ -26,20 +26,14 @@ function featureSwitchResponseBody(params: {
   readonly userId: string;
   readonly switches: Record<string, boolean>;
 }) {
-  const registeredEffectiveSwitches = getAllFeatureStates({
-    orgId: params.orgId,
-    userId: params.userId,
-    overrides: params.switches,
-  });
   return {
     switches: params.switches,
     effectiveSwitches: {
-      ...registeredEffectiveSwitches,
-      // Older supported App builds default this key to false and still use it
-      // for artifact sharing and the viewer. Remove this wire-only value after
-      // the ungated App is live and the Web client floor excludes those builds
-      // (#39692).
-      privateArtifacts: true,
+      ...getAllFeatureStates({
+        orgId: params.orgId,
+        userId: params.userId,
+        overrides: params.switches,
+      }),
       // Captured CLI packages treat a missing key as disabled and skip covers.
       // Remove this wire-only value after those queued/active runs drain and
       // supported package-selection/rollback paths exclude them (#39754).

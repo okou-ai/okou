@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then
-  echo "usage: $0 <scenario-name> <remote-worker> [worker-argument]" >&2
+  echo "usage: $0 <scenario-name> <remote-worker-file-or-directory> [worker-argument]" >&2
   exit 2
 fi
 
@@ -18,7 +18,13 @@ if [[ ! "$TEST_NAME" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]; then
   echo "scenario name must contain lowercase alphanumeric segments joined by hyphens" >&2
   exit 2
 fi
-if [ ! -f "$REMOTE_WORKER" ]; then
+if [ -d "$REMOTE_WORKER" ]; then
+  if [ -L "$REMOTE_WORKER" ] || [ ! -x "$REMOTE_WORKER/worker.sh" ] \
+    || find "$REMOTE_WORKER" ! -type f ! -type d -print -quit | grep -q .; then
+    echo "worker directory must contain executable worker.sh and only regular files/directories" >&2
+    exit 2
+  fi
+elif [ ! -f "$REMOTE_WORKER" ]; then
   echo "remote worker does not exist: $REMOTE_WORKER" >&2
   exit 2
 fi
@@ -49,12 +55,16 @@ RESULT_POLL_SECONDS=2
 RESULT_TIMEOUT_SECONDS=270
 
 LOCAL_LOG=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/${TEST_NAME}-result.XXXXXX")
+LOCAL_WORKER_ARCHIVE=""
 REMOTE_STAGED=0
 REMOTE_MAY_BE_STARTED=0
 REMOTE_DONE=0
 
 cleanup() {
   rm -f "$LOCAL_LOG"
+  if [ -n "$LOCAL_WORKER_ARCHIVE" ]; then
+    rm -f "$LOCAL_WORKER_ARCHIVE"
+  fi
 
   if [ "$REMOTE_STAGED" -eq 1 ]; then
     if [ "$REMOTE_MAY_BE_STARTED" -eq 1 ]; then
@@ -77,15 +87,44 @@ REMOTE_ABORT
 }
 trap cleanup EXIT
 
+if [ -d "$REMOTE_WORKER" ]; then
+  LOCAL_WORKER_ARCHIVE=$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/${TEST_NAME}-worker.XXXXXX")
+  tar --create --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
+    --file "$LOCAL_WORKER_ARCHIVE" --directory "$REMOTE_WORKER" .
+  WORKER_ARCHIVE_SHA=$(sha256sum "$LOCAL_WORKER_ARCHIVE")
+  WORKER_ARCHIVE_SHA=${WORKER_ARCHIVE_SHA%% *}
+  REMOTE_WORKER_PATH="${REMOTE_DIR}/bundle-${WORKER_ARCHIVE_SHA}/worker.sh"
+fi
+
 stage_worker() {
   local attempt
   local status
 
   for attempt in $(seq 1 "$SSH_ATTEMPTS"); do
     status=0
-    # REMOTE_DIR is derived from a validated scenario and numeric workflow IDs.
-    # shellcheck disable=SC2029
-    ssh "$REMOTE" "set -eu
+    if [ -n "$LOCAL_WORKER_ARCHIVE" ]; then
+      # Immutable publication keeps every asset of a running worker together.
+      # The validated archive digest and workflow IDs form the remote paths.
+      # shellcheck disable=SC2029
+      ssh "$REMOTE" "set -eu
+umask 077
+mkdir -p '${REMOTE_DIR}'
+tmp=\$(mktemp -d '${REMOTE_DIR}/bundle.XXXXXX')
+trap 'rm -rf \"\$tmp\"' EXIT
+cat > \"\$tmp/archive\"
+printf '%s  %s\\n' '${WORKER_ARCHIVE_SHA}' \"\$tmp/archive\" | sha256sum -c -
+mkdir \"\$tmp/files\"
+tar --extract --no-same-owner --file \"\$tmp/archive\" --directory \"\$tmp/files\"
+test -x \"\$tmp/files/worker.sh\"
+if [ ! -d '${REMOTE_DIR}/bundle-${WORKER_ARCHIVE_SHA}' ]; then
+  mv -T -- \"\$tmp/files\" '${REMOTE_DIR}/bundle-${WORKER_ARCHIVE_SHA}'
+fi
+rm -rf \"\$tmp\"
+trap - EXIT" < "$LOCAL_WORKER_ARCHIVE" || status=$?
+    else
+      # REMOTE_DIR is derived from a validated scenario and numeric workflow IDs.
+      # shellcheck disable=SC2029
+      ssh "$REMOTE" "set -eu
 umask 077
 mkdir -p '${REMOTE_DIR}'
 tmp=\$(mktemp '${REMOTE_DIR}/worker.XXXXXX')
@@ -94,6 +133,7 @@ cat > \"\$tmp\"
 chmod 700 \"\$tmp\"
 mv \"\$tmp\" '${REMOTE_WORKER_PATH}'
 trap - EXIT" < "$REMOTE_WORKER" || status=$?
+    fi
 
     if [ "$status" -eq 0 ]; then
       return 0

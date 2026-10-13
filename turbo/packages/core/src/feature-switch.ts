@@ -65,11 +65,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
-  [FeatureSwitchKey.SlackLinkUnfurls]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Show public artifact covers in Slack link previews.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:
@@ -365,6 +360,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
