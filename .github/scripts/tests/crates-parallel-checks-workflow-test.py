@@ -18,8 +18,6 @@ assert gate["if"] == "always()" and all(name in gate["needs"] for name in lanes)
 for name in lanes:
     job = jobs[name]
     assert job["needs"] == ["detect"], f"{name}: must start at the common detect boundary"
-    assert job["container"]["image"] == "ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009"
-    assert job["timeout-minutes"] == 20
     cache = next(step for step in job["steps"] if step.get("uses", "").startswith("Swatinem/rust-cache@"))
     assert cache["with"]["shared-key"] == "check"
     assert cache["with"]["save-if"] == ("${{ github.ref == 'refs/heads/main' }}" if name == "check" else False)

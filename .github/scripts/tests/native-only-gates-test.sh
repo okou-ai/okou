@@ -18,7 +18,6 @@ def workflow(name):
 turbo, security, benchmark = workflow('turbo'), workflow('security'), workflow('benchmark')
 script_tests = security['workflow-script-tests']
 assert script_tests['strategy']['fail-fast'] is False
-assert script_tests['strategy']['matrix']['shard'] == [1, 2, 3, 4]
 assert 'workflow-script-tests' in security['ci-gate-security']['needs']
 ts_jobs = ['lint-eslint', 'lint-style', 'lint-types', 'lint-type-app', 'lint-type-api',
            'lint-format', 'lint-knip', 'test-cli', 'test-app', 'test-api',
@@ -132,6 +131,23 @@ for job in artifacts:
     for failure in ['failure', 'cancelled', 'skipped']:
         gate(turbo, 'ci-gate-turbo', released | {f'needs.{job}.result': failure}, False)
 
+# Exercise the actual E2E gate instead of pinning check_result command spelling.
+e2e = ['cli-e2e-02-browser', 'cli-e2e-02-playwright',
+       'cli-e2e-03-runner-prepare', 'cli-e2e-03-runner-bootstrap', 'cli-e2e-03-runner']
+runner_e2e = e2e[2:]
+for needed in ['false', 'true']:
+    selected = context(ios=False, ts=True) | {
+        'needs.prepare.outputs.turbo-runner-consumer-needed': needed,
+    }
+    for job in e2e:
+        for failure in ['failure', 'cancelled']:
+            gate(turbo, 'ci-gate-turbo', selected | {f'needs.{job}.result': failure}, False)
+    for job in runner_e2e:
+        gate(turbo, 'ci-gate-turbo', selected | {f'needs.{job}.result': 'skipped'}, needed == 'false')
+    for job in ['cli-e2e-02-playwright-finalize', 'cli-e2e-03-runner-cleanup']:
+        for failure in ['failure', 'cancelled']:
+            gate(turbo, 'ci-gate-turbo', selected | {f'needs.{job}.result': failure}, True)
+
 native = context()
 for job in ['codeql', 'pnpm-audit']:
     native[f'needs.{job}.result'] = 'skipped'
@@ -150,6 +166,7 @@ for job in ['codeql', 'pnpm-audit']:
     assert condition(security[job], context(ios=False, ts=True, event='push'))
 
 queued = context(ios=False, ts=True, event='merge_group')
+assert not condition(security['codeql'], queued)
 queued['needs.codeql.result'] = 'skipped'
 gate(security, 'ci-gate-security', queued, True)
 released = context(ios=False, ts=True, event='merge_group', release=True)

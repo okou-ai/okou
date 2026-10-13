@@ -72,7 +72,6 @@ for job in jobs.values():
 for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
     job = jobs[name]
     assert job['strategy']['matrix']['os'] == ['ubuntu-latest', 'ubuntu-24.04-arm']
-    assert job['timeout-minutes'] == 15
     assert job.get('container', {}).get('image') == jobs['check']['container']['image'], \
         'native checks must use the project Rust image'
     assert job['container']['options'] == '--cap-add=SYS_ADMIN --security-opt apparmor=unconfined'

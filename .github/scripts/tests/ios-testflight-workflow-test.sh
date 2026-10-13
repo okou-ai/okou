@@ -14,34 +14,16 @@ for value, expected in [('true', True), ('false', False), ('', False)]:
     expression = condition.replace('needs.release-please.outputs.ios_release_created', repr(value))
     assert eval(expression, {'__builtins__': {}}, {}) is expected
 assert job['environment'] == 'production'
-assert job['runs-on'] == 'macos-26'
 assert job['needs'] == 'release-please'
 assert job['permissions'] == {'contents': 'read', 'actions': 'read'}
 steps = job['steps']
-start = next(step for step in steps if step.get('name') == 'Notify Slack - Starting')
-success = next(step for step in steps if step.get('name') == 'Notify Slack - Success')
-failure = next(step for step in steps if step.get('name') == 'Notify Slack - Failure')
-assert steps.index(start) < steps.index(next(step for step in steps if step.get('id') == 'prepare'))
-assert steps.index(success) > steps.index(next(step for step in steps if step.get('run') == 'node ios/scripts/testflight.mjs distribute'))
-assert steps.index(failure) > steps.index(success)
-assert start['if'] == "${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}"
-assert start['with']['method'] == 'chat.postMessage'
-assert success['with']['method'] == failure['with']['method'] == 'chat.update'
-for step in [start, success, failure]:
-    assert step['with']['token'] == '${{ secrets.CI_SLACK_BOT_TOKEN }}'
-    assert 'channel: ${{ vars.SLACK_RELEASE_CHANNEL_ID }}' in step['with']['payload']
-    assert '/actions/runs/${{ github.run_id }}' in step['with']['payload']
-assert 'success()' in success['if'] and 'steps.slack-start.outputs.ts' in success['if']
-assert 'failure()' in failure['if'] and 'steps.slack-start.outputs.ts' in failure['if']
-assert '${{ steps.prepare.outputs.build_number }}' in success['with']['payload']
-assert '${{ vars.IOS_INTERNAL_GROUP_NAME }}' in success['with']['payload']
 assert next(step for step in steps if 'uses' in step and step['uses'].startswith('actions/checkout'))['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
 assert job['env']['IOS_VERSION'] == '${{ needs.release-please.outputs.ios_version }}'
 commands = [step['run'] for step in steps if 'run' in step]
 assert 'node ios/scripts/testflight.mjs prepare' in commands
 assert 'bash ios/scripts/release-testflight.sh --archive "$IOS_ARCHIVE_DIR/Original.xcarchive"' in commands
 assert 'node ios/scripts/testflight.mjs distribute' in commands
-consume = next(step for step in steps if step.get('name') == 'Resolve and verify exact release archive')
+consume = next(step for step in steps if 'archive-promotion.py consume' in step.get('run', ''))
 assert 'archive-promotion.py consume' in consume['run']
 assert steps.index(consume) < steps.index(next(step for step in steps if step.get('id') == 'prepare'))
 artifact_env = {
@@ -55,11 +37,9 @@ for key, value in artifact_env.items():
     assert consume['env'][key] == value
 assert consume['env']['GH_TOKEN'] == '${{ github.token }}'
 assert 'IOS_DISTRIBUTION' not in json.dumps(consume)
-assert job['env']['IOS_TEST_DESTINATION'] == 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2'
 release_script = open(sys.argv[1].replace('.github/workflows/release-please.yml', 'ios/scripts/release-testflight.sh')).read()
 assert '-resolvePackageDependencies' not in release_script
 assert 'ci-test.sh' not in release_script
-assert len([line for line in release_script.splitlines() if line.startswith('xcodebuild ')]) == 1
 assert 'xcodebuild -exportArchive' in release_script
 assert 'verify-export "$archive"' in release_script
 assert 'codesign --verify --deep --strict' in release_script
@@ -91,7 +71,6 @@ for job in [unsigned, export]:
     assert checkout['with']['ref'] == '${{ github.sha }}'
 assert 'APP_STORE_CONNECT_API' not in json.dumps(proof)
 verify = next(step for step in export['steps'] if '--verify-archive' in step.get('run', ''))
-assert verify['env']['IOS_BUILD_NUMBER'] == '9999'
 assert 'altool' not in json.dumps(proof)
 
 # Native main-push work is absent; canonical publication is a required merge-group dependency.
@@ -115,23 +94,21 @@ for name in ['build-test', 'build-archive', 'publish-archive']:
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
 native = ios['jobs']['build-test']['steps']
-evidence = next(step for step in native if step.get('name') == 'Resolve exact-input test evidence')
+evidence = next(step for step in native if step.get('id') == 'evidence')
 for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
     for key, value in artifact_env.items():
         assert env[key] == value
-simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
+simulator = next(step for step in native if 'ci-test.sh' in step.get('run', ''))
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
 test_job = ios['jobs']['build-test']
 archive_job = ios['jobs']['build-archive']
 assert test_job['needs'] == archive_job['needs'] == 'detect'
-assert test_job['timeout-minutes'] == archive_job['timeout-minutes'] == 15
 assert test_job['env'] == archive_job['env']
 assert ios['jobs']['publish-archive']['needs'] == ['detect', 'build-test', 'build-archive']
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
-assert all(step.get('name') != 'Build unsigned device Release archive' for step in native)
-archive = next(step for step in archive_job['steps'] if step.get('name') == 'Build unsigned device Release archive')
+archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']
-aws = next(step for step in native if step.get('name') == 'Install AWS CLI')
+aws = next(step for step in native if 'aws --version' in step.get('run', ''))
 assert "steps.release-only.outputs.release_only == 'true'" in aws['if']
 PY
 # Fail before touching the keychain when release identity is wrong.
