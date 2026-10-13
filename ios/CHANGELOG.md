@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/okou-ai/okou/compare/ios-v0.8.1...ios-v0.8.2) (2026-10-13)
+
+
+### Refactoring
+
+* **ci:** give policy validators explicit ownership and entry points ([#39589](https://github.com/okou-ai/okou/issues/39589)) ([9e8bc47](https://github.com/okou-ai/okou/commit/9e8bc4744e052af1243e388fd1822c7a6071a5c1))
+
 ## [0.8.1](https://github.com/okou-ai/okou/compare/ios-v0.8.0...ios-v0.8.1) (2026-10-10)
 
 

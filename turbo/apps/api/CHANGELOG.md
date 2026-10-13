@@ -9,6 +9,41 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.731.0](https://github.com/okou-ai/okou/compare/api-v1.730.0...api-v1.731.0) (2026-10-13)
+
+
+### Features
+
+* **app:** add responsive chat resources behind the artifact button ([#39607](https://github.com/okou-ai/okou/issues/39607)) ([f2f1158](https://github.com/okou-ai/okou/commit/f2f1158a9328ab4c4e2b0d2569109f553501d724))
+
+
+### Bug Fixes
+
+* **api:** classify link wallet authentication error messages ([#39688](https://github.com/okou-ai/okou/issues/39688)) ([989e901](https://github.com/okou-ai/okou/commit/989e901e2e3dcefcbe4a63f045dbbd0447b96b1c))
+* **api:** recognize official link authentication error formats ([#39705](https://github.com/okou-ai/okou/issues/39705)) ([eb04d96](https://github.com/okou-ai/okou/commit/eb04d96b19de4c9324e8d65172fe9942dbb93546))
+* let agents select presentation delivery format ([#39650](https://github.com/okou-ai/okou/issues/39650)) ([264b178](https://github.com/okou-ai/okou/commit/264b17803dafe5243656a898078250880efe0a16))
+
+
+### Refactoring
+
+* **api:** own browser thread profile lifecycle ([#39691](https://github.com/okou-ai/okou/issues/39691)) ([c2b4eb9](https://github.com/okou-ai/okou/commit/c2b4eb95281beae95e11353f866785f817224c41))
+* **api:** own current browser session reads ([#39668](https://github.com/okou-ai/okou/issues/39668)) ([b83e969](https://github.com/okou-ai/okou/commit/b83e9691463bdd1d4c7366335b8aeaf7c307bccb))
+* **api:** own discord ingress notice reads ([#39689](https://github.com/okou-ai/okou/issues/39689)) ([7f0ec69](https://github.com/okou-ai/okou/commit/7f0ec69f3f99104ad00fbca49483e7dfc578fb9a)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own slack deletion executors locally ([#39704](https://github.com/okou-ai/okou/issues/39704)) ([1a6a282](https://github.com/okou-ai/okou/commit/1a6a2822a8f5ced13bafdbf8f8269c4397020fa4)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** remove legacy official result email consumer and storage ([#39605](https://github.com/okou-ai/okou/issues/39605)) ([cb8e9a4](https://github.com/okou-ai/okou/commit/cb8e9a478cba72e936732bb91ff85bac1b1dc4da)) [#39569](https://github.com/okou-ai/okou/issues/39569)
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+    * @okouai/core bumped to 8.749.0
+    * @okouai/db bumped to 1.334.0
+    * @okouai/pi-agent-runtime bumped to 1.49.22
+
 ## [1.730.0](https://github.com/okou-ai/okou/compare/api-v1.729.2...api-v1.730.0) (2026-10-13)
 
 

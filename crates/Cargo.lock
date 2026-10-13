@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.106.7"
+version = "0.106.8"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2089,7 +2089,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.8"
+version = "0.23.9"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.60"
+version = "0.12.61"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -4087,7 +4087,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.230.1"
+version = "0.230.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4158,7 +4158,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.10.10"
+version = "0.10.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4207,7 +4207,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.7.7"
+version = "0.7.8"
 dependencies = [
  "chrono",
  "futures-util",
@@ -4231,7 +4231,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.11.1"
+version = "0.11.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4261,7 +4261,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.2.32"
+version = "0.2.33"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4292,7 +4292,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.7.12"
+version = "0.7.13"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.14.3"
+version = "0.14.4"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4428,7 +4428,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4469,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.12.1"
+version = "0.12.2"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4509,7 +4509,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "api-contracts",
  "idna",
@@ -4777,7 +4777,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "async-trait",
  "serde",
@@ -4791,7 +4791,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.47.10"
+version = "0.47.11"
 dependencies = [
  "async-trait",
  "clap",
@@ -4828,7 +4828,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "async-trait",
  "crc32fast",

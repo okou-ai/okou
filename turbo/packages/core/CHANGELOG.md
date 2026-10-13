@@ -1,5 +1,29 @@
 # Changelog
 
+## [8.749.0](https://github.com/okou-ai/okou/compare/core-v8.748.4...core-v8.749.0) (2026-10-13)
+
+
+### Features
+
+* **app:** add responsive chat resources behind the artifact button ([#39607](https://github.com/okou-ai/okou/issues/39607)) ([f2f1158](https://github.com/okou-ai/okou/commit/f2f1158a9328ab4c4e2b0d2569109f553501d724))
+
+
+### Bug Fixes
+
+* let agents select presentation delivery format ([#39650](https://github.com/okou-ai/okou/issues/39650)) ([264b178](https://github.com/okou-ai/okou/commit/264b17803dafe5243656a898078250880efe0a16))
+
+
+### Refactoring
+
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+
 ## [8.748.4](https://github.com/okou-ai/okou/compare/core-v8.748.3...core-v8.748.4) (2026-10-13)
 
 

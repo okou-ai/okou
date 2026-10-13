@@ -12,6 +12,40 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1018.0](https://github.com/okou-ai/okou/compare/app-v0.1017.2...app-v0.1018.0) (2026-10-13)
+
+
+### Features
+
+* **app:** add responsive chat resources behind the artifact button ([#39607](https://github.com/okou-ai/okou/issues/39607)) ([f2f1158](https://github.com/okou-ai/okou/commit/f2f1158a9328ab4c4e2b0d2569109f553501d724))
+* **platform:** instrument shared worker token requests ([#39706](https://github.com/okou-ai/okou/issues/39706)) ([01d6483](https://github.com/okou-ai/okou/commit/01d6483a991d201274ec9357ab9a68c72343068a))
+
+
+### Bug Fixes
+
+* **app:** align discord connection pages with slack ([#39693](https://github.com/okou-ai/okou/issues/39693)) ([1a526c8](https://github.com/okou-ai/okou/commit/1a526c842b70d132c65022a0fde185fd6573b7ff))
+* **app:** always show usage pack credit balance ([#39667](https://github.com/okou-ai/okou/issues/39667)) ([96c7d6b](https://github.com/okou-ai/okou/commit/96c7d6b56e041ea1b91996a6230e4e774925892c))
+* **app:** compact and narrow the start page composer and open its menus below it ([#39664](https://github.com/okou-ai/okou/issues/39664)) ([c566cd7](https://github.com/okou-ai/okou/commit/c566cd73702291299942648272cc7eab8f910e6e))
+* **app:** preserve discord status when returning to works ([#39684](https://github.com/okou-ai/okou/issues/39684)) ([555e83e](https://github.com/okou-ai/okou/commit/555e83e67086e39b1517a8db3e2bb7d724bc26c9))
+* **app:** render the composer connector trigger as a square icon button ([#39665](https://github.com/okou-ai/okou/issues/39665)) ([c74c59b](https://github.com/okou-ai/okou/commit/c74c59ba6bfa934b99f2c3a743145972422821af))
+* **app:** run the composer connector list to its divider ([#39669](https://github.com/okou-ai/okou/issues/39669)) ([1cb593a](https://github.com/okou-ai/okou/commit/1cb593a11425c440643879b74f184070b5ab1c5b))
+* **platform:** widen the chat home type row step to 20px ([#39661](https://github.com/okou-ai/okou/issues/39661)) ([5503ddf](https://github.com/okou-ai/okou/commit/5503ddf30a104e22cd1aeac55f3c5c41a00b1e2b))
+* **ui:** keep icon tiles visible inside hovered rows ([#39671](https://github.com/okou-ai/okou/issues/39671)) ([741e1eb](https://github.com/okou-ai/okou/commit/741e1ebe79343496888226eee7c1d0a7a55ed920))
+
+
+### Refactoring
+
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+    * @okouai/core bumped to 8.749.0
+    * @okouai/ui bumped to 1.15.1
+
 ## [0.1017.2](https://github.com/okou-ai/okou/compare/app-v0.1017.1...app-v0.1017.2) (2026-10-13)
 
 

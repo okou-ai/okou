@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.230.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.1...runner-rs-v0.230.2) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** bound websocket usage parse-error diagnostics ([#39711](https://github.com/okou-ai/okou/issues/39711)) ([1156d5d](https://github.com/okou-ai/okou/commit/1156d5ddf0b20ceedaf57ad9b1081fb4b9206300))
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.230.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.0...runner-rs-v0.230.1) (2026-10-13)
 
 ### Release Dependencies

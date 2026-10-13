@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.10...sandbox-firecracker-v0.47.11) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
 ## [0.47.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.9...sandbox-firecracker-v0.47.10) (2026-10-13)
 
 ## [0.47.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.8...sandbox-firecracker-v0.47.9) (2026-10-13)
