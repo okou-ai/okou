@@ -1022,11 +1022,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0426",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0431",
       "file": "turbo/packages/db/scripts/test-usage-allowance-retirement.ts",
       "owner": "<module>"

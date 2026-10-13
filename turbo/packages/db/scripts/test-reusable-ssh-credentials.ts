@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
@@ -68,7 +69,7 @@ async function rejects(
 
 // This validator runs only on a test-owned disposable database. Autocommit
 // fixture timestamps are per query message; forced termination can leave the
-// negative namespace until database disposal. The positive transaction is unchanged.
+// fixture namespaces until database disposal. Seed batches retain their own clocks.
 const failures: unknown[] = [];
 try {
   await client.connect();
@@ -183,13 +184,47 @@ try {
 
   // Never enter the original positive phase after a failed probe or cleanup.
   if (failures.length === 0) {
+    const pathRows = z
+      .array(z.strictObject({ search_path: z.string() }))
+      .length(1);
+    const namespaceRows = z.array(z.strictObject({ nspname: z.string() }));
+    const countRows = z.array(z.strictObject({ count: z.int32() })).length(1);
+    const descriptionRows = z
+      .array(z.strictObject({ description: z.string().nullable() }))
+      .length(1);
+    const oldTableRows = z
+      .array(z.strictObject({ old_table: z.string().nullable() }))
+      .length(1);
+    const restoredPathRows = z
+      .array(z.strictObject({ set_config: z.string() }))
+      .length(1);
+    let positiveSearchPath: string | undefined;
     let positiveSchemaCreated = false;
+    // pg can both reject a query and emit an error on transport termination.
+    // Own every native event through the shared client's awaited end below.
+    client.on("error", (error: Error) => {
+      failures.push(error);
+    });
     try {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0426; new non-billing transactions are prohibited.
-      await client.query("BEGIN");
+      const [path] = pathRows.parse(
+        (await client.query("SHOW search_path")).rows,
+      );
+      assert.ok(path);
+      positiveSearchPath = path.search_path;
+      assert.deepEqual(
+        namespaceRows.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+              [schema],
+            )
+          ).rows,
+        ),
+        [],
+      );
       await client.query(`CREATE SCHEMA "${schema}"`);
       positiveSchemaCreated = true;
-      await client.query(`SET LOCAL search_path TO "${schema}"`);
+      await client.query(`SET search_path TO "${schema}"`);
       await client.query(
         "CREATE TABLE agents (id uuid PRIMARY KEY, org_id text, owner text, description text)",
       );
@@ -210,29 +245,40 @@ try {
         "ssh_connection_observations",
       ]) {
         assert.deepEqual(
-          (await client.query(`SELECT count(*)::int AS count FROM "${table}"`))
-            .rows,
+          countRows.parse(
+            (
+              await client.query(
+                `SELECT count(*)::int AS count FROM "${table}"`,
+              )
+            ).rows,
+          ),
           [{ count: 0 }],
         );
       }
       assert.deepEqual(
-        (await client.query("SELECT description FROM agents")).rows,
+        descriptionRows.parse(
+          (await client.query("SELECT description FROM agents")).rows,
+        ),
         [{ description: "retained" }],
       );
       assert.deepEqual(
-        (
-          await client.query(
-            "SELECT count(*)::int AS count FROM agent_ssh_access",
-          )
-        ).rows,
+        countRows.parse(
+          (
+            await client.query(
+              "SELECT count(*)::int AS count FROM agent_ssh_access",
+            )
+          ).rows,
+        ),
         [{ count: 1 }],
       );
       assert.deepEqual(
-        (
-          await client.query(
-            "SELECT to_regclass('ssh_connection_credentials') AS old_table",
-          )
-        ).rows,
+        oldTableRows.parse(
+          (
+            await client.query(
+              "SELECT to_regclass('ssh_connection_credentials') AS old_table",
+            )
+          ).rows,
+        ),
         [{ old_table: null }],
       );
 
@@ -247,29 +293,64 @@ try {
       );
       await client.query("DELETE FROM ssh_connections");
       assert.deepEqual(
-        (
-          await client.query(
-            "SELECT count(*)::int AS count FROM ssh_credentials",
-          )
-        ).rows,
+        countRows.parse(
+          (
+            await client.query(
+              "SELECT count(*)::int AS count FROM ssh_credentials",
+            )
+          ).rows,
+        ),
         [{ count: 1 }],
       );
       await client.query("DELETE FROM ssh_credentials");
     } catch (error) {
       failures.push(error);
     } finally {
-      try {
-        await client.query("ROLLBACK");
-        if (positiveSchemaCreated) {
+      if (positiveSchemaCreated) {
+        try {
+          await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
           assert.deepEqual(
-            (
-              await client.query(
-                "SELECT nspname FROM pg_namespace WHERE nspname=$1",
-                [schema],
-              )
-            ).rows,
+            namespaceRows.parse(
+              (
+                await client.query(
+                  "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+                  [schema],
+                )
+              ).rows,
+            ),
             [],
           );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (positiveSearchPath !== undefined) {
+        try {
+          assert.deepEqual(
+            restoredPathRows.parse(
+              (
+                await client.query(
+                  "SELECT set_config('search_path', $1, false)",
+                  [positiveSearchPath],
+                )
+              ).rows,
+            ),
+            [{ set_config: positiveSearchPath }],
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      try {
+        const paths = pathRows.parse(
+          (await client.query("SHOW search_path")).rows,
+        );
+        if (positiveSearchPath !== undefined) {
+          assert.deepEqual(paths, [{ search_path: positiveSearchPath }]);
         }
       } catch (error) {
         failures.push(error);
