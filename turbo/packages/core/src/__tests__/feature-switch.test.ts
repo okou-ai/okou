@@ -48,11 +48,11 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables artifact previews for staff and honors explicit overrides", () => {
+  it("enables artifact previews for everyone and honors explicit overrides", () => {
     for (const [context, enabled] of [
-      [{}, false],
+      [{}, true],
       [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
-      [{ orgId: "external-org" }, false],
+      [{ orgId: "external-org" }, true],
     ] as const) {
       expect(
         getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],

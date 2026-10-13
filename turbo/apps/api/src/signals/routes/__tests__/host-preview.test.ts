@@ -378,6 +378,9 @@ describe("sandbox hosted previews", () => {
         throw new Error("Expected an organization");
       }
       const actor = { ...owner, orgId: owner.orgId };
+      await updateFeatureSwitchesForUser(context, actor, {
+        artifactPreviews: false,
+      });
       previewStorage();
       const bytes = await image();
       const body = {

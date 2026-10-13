@@ -200,6 +200,16 @@ async function artifactActor(
     displayName,
     visibility: "private",
   });
+  if (!actor.orgId) {
+    throw new Error("Expected an organization for artifact preview tests");
+  }
+  // These tests exercise the legacy server-rendered preview path. Pin it off
+  // now that artifactPreviews is enabled globally; rollout cases opt in below.
+  await updateFeatureSwitchesForUser(
+    context,
+    { ...actor, orgId: actor.orgId },
+    { [FeatureSwitchKey.ArtifactPreviews]: false },
+  );
   return { actor, agentId: agent.agentId, runnerGroup, objectStore };
 }
 
