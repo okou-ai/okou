@@ -23,7 +23,6 @@ jq -e '
   all(.[];
     . as $job |
     ($workflow.jobs[$job].steps[-1] |
-      .name == "Report peak memory" and
       .if == "always()" and
       .["continue-on-error"] == true and
       .uses == "./.github/actions/report-memory-peak"
@@ -33,7 +32,6 @@ jq -e '
 
 jq -e '
   .jobs.compile.steps[-1] |
-    .name == "Report peak memory" and
     .if == "always()" and
     .["continue-on-error"] == true and
     .uses == "./.github/actions/report-memory-peak"

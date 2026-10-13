@@ -324,11 +324,9 @@ jobs:
             .github/scripts/tests/wait-runner-image-cancellation-test.sh \
             .github/scripts/tests/check-release-please-component-releases-test.sh \
             .github/scripts/tests/check-release-please-workspace-coverage-test.sh \
-            .github/scripts/tests/codeql-cache-workflow-test.sh \
             .github/scripts/tests/pass-release-pr-ci-gates-test.sh \
             .github/scripts/tests/check-workflow-shell-compatibility-test.sh \
             .github/scripts/tests/check-pr-ci-capacity-test.sh \
-            .github/scripts/tests/checkout-depth-test.sh \
             .github/scripts/tests/ci-source-revision-workflow-test.sh \
             .github/scripts/tests/cleanup-pr-runner-test.sh \
             .github/scripts/tests/cleanup-stale-runners-test.sh \

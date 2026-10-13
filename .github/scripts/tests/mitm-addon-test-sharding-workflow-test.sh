@@ -17,19 +17,21 @@ jobs = json.loads(subprocess.check_output(
 addon = jobs['mitm-addon-test']
 gate = jobs['ci-gate-crates']
 assert addon['needs'] == ['detect']
-assert addon['strategy'] == {'fail-fast': False, 'matrix': {'shard': ['1/2', '2/2']}}
+assert addon['strategy']['fail-fast'] is False
+shards = addon['strategy']['matrix']['shard']
+assert shards and set(shards) == {f'{index}/{len(shards)}' for index in range(1, len(shards) + 1)}, \
+    'the configured shards must cover one complete partition without omissions or duplicates'
 assert not addon.get('continue-on-error', False)
 assert 'mitm-addon-test' in gate['needs']
 assert gate['if'].strip() == 'always()'
 
 test = next(step for step in addon['steps'] if step.get('name') == 'Run mitm-addon tests')
 assert not test.get('continue-on-error', False)
-for shard in addon['strategy']['matrix']['shard']:
+for shard in shards:
     command = test['run'].replace('${{ matrix.shard }}', shard)
-    assert shlex.split(command) == [
-        'uv', 'run', '--no-sync', 'python', '-m', 'pytest', 'tests/', '-q',
-        '--durations=30', '--durations-min=0.1', f'--test-shard={shard}',
-    ], command
+    arguments = shlex.split(command)
+    assert 'pytest' in arguments and 'tests/' in arguments, command
+    assert f'--test-shard={shard}' in arguments, command
 
 validate = next(step for step in gate['steps'] if step.get('name') == 'Validate CI results')
 texts = [addon['if'], validate['run'], *validate['env'].values()]

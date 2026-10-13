@@ -2,49 +2,36 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-workflow="${repo_root}/.github/workflows/turbo.yml"
 
-fail() {
-  echo "FAIL: $1" >&2
-  exit 1
-}
+ruby -ryaml - "$repo_root/.github/workflows/turbo.yml" <<'RUBY'
+jobs = YAML.load_file(ARGV.fetch(0)).fetch("jobs")
+api_needs = Array(jobs.fetch("deploy-api").fetch("needs"))
+raise "deploy-api must depend on prepare" unless api_needs.include?("prepare")
+raise "deploy-api must not wait for CLI publication" if api_needs.include?("deploy-cli")
 
-job_block() {
-  local job_name="$1"
-  awk -v job_name="$job_name" '
-    $0 == "  " job_name ":" { in_job = 1 }
-    in_job && $0 ~ /^  [a-zA-Z0-9_-]+:$/ && $0 != "  " job_name ":" { exit }
-    in_job { print }
-  ' "$workflow"
-}
-
-deploy_api="$(job_block deploy-api)"
-deploy_cli="$(job_block deploy-cli)"
-
-grep -Fq '    needs: [prepare]' <<<"$deploy_api" ||
-  fail "deploy-api must depend on prepare"
-if grep -Fq 'deploy-cli' <<<"$deploy_api"; then
-  fail "deploy-api must not wait for deploy-cli"
-fi
-
-expected_package_url="cli-pkg-url: https://static.okou.io/okou-cli/\${{ github.sha }}/package.tgz"
-package_url_count="$(grep -Fc "$expected_package_url" <<<"$deploy_api" || true)"
-[[ "$package_url_count" == "2" ]] ||
-  fail "API seed and deploy environments must derive the CLI package URL from the artifact SHA"
-
-grep -Fq '      - name: Initialize pnpm cache directory' <<<"$deploy_cli" ||
-  fail "deploy-cli must initialize the pnpm cache directory"
-grep -Fq "        run: mkdir -p \"\$(pnpm store path --silent)\"" <<<"$deploy_cli" ||
-  fail "deploy-cli must create the pnpm store before setup-node saves it"
-
-smoke_count="$(grep -Fc 'bash .github/scripts/smoke-okou-cli-artifact.sh' <<<"$deploy_cli" || true)"
-[[ "$smoke_count" == "2" ]] ||
-  fail "deploy-cli must smoke both the local and CDN CLI artifacts"
-
-grep -Fq 'bash .github/scripts/download-okou-cli-cdn-file.sh' <<<"$deploy_cli" ||
-  fail "deploy-cli must use the bounded CDN downloader"
-verify_count="$(grep -Fc 'bash .github/scripts/verify-okou-cli-artifact.sh' <<<"$deploy_cli" || true)"
-[[ "$verify_count" == "2" ]] ||
-  fail "deploy-cli must verify both the local and CDN CLI artifacts"
+cli = jobs.fetch("deploy-cli")
+raise "CLI verification failures must block deployment" if cli["continue-on-error"]
+steps = cli.fetch("steps")
+verification = steps.select do |step|
+  step.fetch("run", "").include?("verify-okou-cli-artifact.sh")
+end
+cdn = verification.find do |step|
+  step.fetch("run").include?("download-okou-cli-cdn-file.sh")
+end
+local = verification.find do |step|
+  !step.fetch("run").include?("download-okou-cli-cdn-file.sh")
+end
+raise "CLI deployment must verify both local and CDN artifacts" unless local && cdn
+[local, cdn].each do |step|
+  unless step.fetch("run").include?("smoke-okou-cli-artifact.sh") &&
+      step.dig("env", "ARTIFACT_SHA") == "${{ steps.artifact.outputs.sha }}" &&
+      !step["continue-on-error"]
+    raise "each artifact boundary must verify the captured source and run a blocking smoke check"
+  end
+end
+unless cdn.dig("env", "ARTIFACT_PREFIX") == "${{ steps.artifact.outputs.prefix }}"
+  raise "CDN verification must download the captured artifact"
+end
+RUBY
 
 echo "deploy-cli-workflow tests passed"

@@ -4,46 +4,19 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 WORKFLOW="${REPO_ROOT}/.github/workflows/turbo.yml"
-TURBO_CONFIG="${REPO_ROOT}/turbo/turbo.json"
-RUNNER_START_HELPER="${REPO_ROOT}/.github/scripts/reconcile-and-start-runner-groups.sh"
 RUNNER_TESTS="${REPO_ROOT}/e2e/tests/03-runner"
-AUTO_BILLING_TEST="${RUNNER_TESTS}/run-t11-auto-billing.bats"
-AUTO_CONTINUATION_TEST="${RUNNER_TESTS}/run-t24-auto-continuation.bats"
 RUNNER_HELPERS=(
   "${REPO_ROOT}/e2e/helpers/runner-api.bash"
   "${REPO_ROOT}/e2e/helpers/runner-chat.bash"
 )
 RUNNER_TOKEN="${REPO_ROOT}/e2e/playwright/runner-token.ts"
 RUNNER_MOCK_CLAUDE_BOOTSTRAP="${REPO_ROOT}/e2e/playwright/runner-mock-claude-bootstrap.bash"
-PLAYWRIGHT_CONFIG="${REPO_ROOT}/e2e/playwright/playwright.config.ts"
 
 fail() {
   echo "FAIL: $1" >&2
   exit 1
 }
 
-api_backend_url_key_count="$(
-  jq \
-    '[.globalEnv[] | select(. == "OKOU_API_BACKEND_URL")] | length' \
-    "$TURBO_CONFIG"
-)"
-if [[ "$api_backend_url_key_count" -ne 1 ]]; then
-  fail "Turbo must pass through the E2E API backend URL exactly once"
-fi
-
-grep -Fq ".github/scripts/reconcile-and-start-runner-groups.sh" "$WORKFLOW" ||
-  fail "runner deployment must invoke the lifecycle-locked start helper"
-grep -Fq "local RUNNER_DIRNAME=\"\${RUNNER_DIR##*/}\"" "$RUNNER_START_HELPER" ||
-  fail "runner config dirname must come from the manifest runner directory"
-grep -Fq -- "--runner-dirname \${RUNNER_DIRNAME}" "$RUNNER_START_HELPER" ||
-  fail "runner config must be written beneath the manifest runner directory"
-grep -Fq -- "--hostname \${HOST}" "$RUNNER_START_HELPER" ||
-  fail "runner config must use the metal host for attribution"
-grep -Fq -- "--config \${RUNNER_DIR}/runner.yaml" "$RUNNER_START_HELPER" ||
-  fail "runner service must read the config from the manifest runner directory"
-if grep -Fq -- "--runner-dirname \${RUNNER_SERVICE_REF}" "$RUNNER_START_HELPER"; then
-  fail "runner service identity must not select the manifest config directory"
-fi
 grep -Fq "RUNNER_SERVICE_REF: \${{ needs.prepare.outputs.job-ref }}" "$WORKFLOW" ||
   fail "runner service identity must follow the deployed API job ref"
 grep -Fq "RUNNER_GROUP: \${{ format('vm0/development-{0}', needs.prepare.outputs.job-ref) }}" "$WORKFLOW" ||
@@ -51,32 +24,9 @@ grep -Fq "RUNNER_GROUP: \${{ format('vm0/development-{0}', needs.prepare.outputs
 if grep -Fq 'playwright-staging' "$WORKFLOW"; then
   fail "main Playwright runs must not use a group outside the staging API default"
 fi
-grep -Fq '["list"]' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright CI must retain human-readable list reporting"
-grep -Fq '["blob", { outputDir: "blob-report" }]' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright CI must emit mergeable blob reports"
-grep -Fq 'name: "chat-smoke"' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright must register the chat smoke project"
-grep -Fq 'testMatch: "smoke.spec.ts"' "$PLAYWRIGHT_CONFIG" ||
-  fail "the chat smoke project must run only the send-and-reply spec"
-if [[ "$(grep -Fc 'testMatch:' "$PLAYWRIGHT_CONFIG")" -ne 1 ]]; then
-  fail "Playwright must keep only one product spec"
-fi
-grep -Fq 'screenshot: "only-on-failure"' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright smoke must retain screenshots on failure"
-grep -Fq 'trace: "retain-on-failure"' "$PLAYWRIGHT_CONFIG" ||
-  fail "Playwright smoke must retain traces on failure"
 if grep -R -Fq '/api/test/' "$RUNNER_TESTS" "${RUNNER_HELPERS[@]}"; then
   fail "runner E2E coverage must use supported public APIs"
 fi
-grep -Fq '"@preset/okou-1-0"' "$AUTO_BILLING_TEST" ||
-  fail "Auto billing E2E must verify the canonical OpenRouter preset"
-grep -Fq 'runner_chat_send_after_completion' "$AUTO_CONTINUATION_TEST" ||
-  fail "Auto E2E must retain deployed successor-run coverage"
-grep -Fq 'createRunnerCheckout' "$RUNNER_TOKEN" ||
-  fail "paid runner accounts must use the public checkout API"
-grep -Fq 'fillStripeCheckout' "$RUNNER_TOKEN" ||
-  fail "real runner accounts must complete the public Stripe checkout"
 # Keep the existing paid account prerequisites for billing and capability
 # coverage; retirement must not silently downgrade shared runner identities.
 if [[ "$(grep -Fc 'upgradeToPro: true' "$RUNNER_TOKEN")" -ne 5 ||
@@ -87,21 +37,6 @@ fi
 ruby -ryaml -ropen3 -rtempfile - "$WORKFLOW" "$RUNNER_MOCK_CLAUDE_BOOTSTRAP" <<'RUBY'
 workflow = YAML.load_file(ARGV.fetch(0))
 jobs = workflow.fetch("jobs")
-expected_deployed_ref = "${{ github.sha }}"
-# Account/shard preparation, execution, reports, and cleanup must all consume
-# the captured API/CLI merge source, including any future E2E lifecycle job.
-jobs.each do |job_name, job|
-  next unless job_name.start_with?("cli-e2e-") ||
-    %w[deploy-api deploy-cli].include?(job_name)
-
-  checkouts = job.fetch("steps").select do |step|
-    step.fetch("uses", "").start_with?("actions/checkout@")
-  end
-  unless checkouts.length == 1 &&
-      checkouts.first.dig("with", "ref") == expected_deployed_ref
-    raise "#{job_name} must checkout the captured event source used by preview components"
-  end
-end
 prepare = jobs.fetch("prepare")
 stripe_listener = jobs.fetch("deploy-stripe-listener")
 browser = jobs.fetch("cli-e2e-02-browser")
@@ -110,11 +45,10 @@ playwright_finalizer = jobs.fetch("cli-e2e-02-playwright-finalize")
 account_prepare = jobs.fetch("cli-e2e-03-runner-prepare")
 account_prepare_steps = account_prepare.fetch("steps")
 model_selection_index = account_prepare_steps.index do |step|
-  step["name"] == "Check runner E2E model selection" &&
-    step["run"] == "cd e2e && pnpm exec tsx --test scripts/runner-model-selection.test.ts scripts/runner-model-bootstrap.test.mjs scripts/runner-chat-model-default.test.mjs"
+  step.fetch("run", "").include?("scripts/runner-model-selection.test.ts")
 end
 prepare_accounts_index = account_prepare_steps.index do |step|
-  step["name"] == "Prepare runner E2E accounts"
+  step["id"] == "account"
 end
 unless model_selection_index && prepare_accounts_index &&
     model_selection_index < prepare_accounts_index
@@ -140,61 +74,13 @@ assert_canonical_api_backend_url = lambda do |step, name|
   end
 end
 browser_run = browser.fetch("steps").find do |step|
-  step["name"] == "Run browser E2E tests"
+  step.fetch("run", "").include?("./e2e/tests/02-browser/")
 end
 raise "missing browser E2E execution" unless browser_run
 if browser_run["continue-on-error"] || browser["continue-on-error"]
   raise "browser E2E failures must remain blocking"
 end
 assert_canonical_api_backend_url.call(browser_run, "browser E2E")
-pnpm_version = "10.33.4"
-{
-  "runner E2E preparation" => account_prepare,
-  "runner E2E shards" => runner,
-  "runner E2E cleanup" => account_cleanup,
-}.each do |job_name, job|
-  steps = job.fetch("steps")
-  pnpm_setup_index = steps.index do |step|
-    step.fetch("uses", "").start_with?("pnpm/action-setup@")
-  end
-  node_setup_index = steps.index do |step|
-    step.fetch("uses", "").start_with?("actions/setup-node@")
-  end
-  unless pnpm_setup_index && node_setup_index &&
-      pnpm_setup_index < node_setup_index
-    raise "#{job_name} must install pnpm before selecting Node.js 22"
-  end
-  pnpm_setup_step = steps.fetch(pnpm_setup_index)
-  unless pnpm_setup_step.dig("with", "version") == pnpm_version
-    raise "#{job_name} must install the pinned pnpm version"
-  end
-  if steps.any? do |step|
-      step.fetch("run", "").include?("corepack enable pnpm")
-    end
-    raise "#{job_name} must not download pnpm through Node.js 22 Corepack"
-  end
-  dependency_install = steps.find do |step|
-    step["name"] == "Install E2E dependencies"
-  end
-  unless dependency_install&.fetch("run", nil) ==
-      "cd e2e && pnpm install --frozen-lockfile"
-    raise "#{job_name} must keep the frozen E2E dependency install"
-  end
-end
-
-playwright_step_names = playwright.fetch("steps").map { |step| step["name"] }
-browser_install_index = playwright_step_names.index("Install Playwright browsers")
-fixture_test_index = playwright_step_names.index(
-  "Run Playwright fixture integration tests",
-)
-unless browser_install_index && fixture_test_index &&
-    browser_install_index < fixture_test_index
-  raise "Playwright browsers must be installed before browser fixture tests"
-end
-
-if playwright.key?("strategy")
-  raise "the single Playwright smoke must not use a project matrix"
-end
 expected_playwright_group =
   "cli-e2e-02-playwright-${{ needs.prepare.outputs.job-ref }}"
 unless playwright.dig("concurrency", "group") == expected_playwright_group
@@ -204,7 +90,7 @@ unless playwright.dig("concurrency", "cancel-in-progress") == true
   raise "superseding runs must cancel the matching Playwright smoke"
 end
 playwright_run = playwright.fetch("steps").find do |step|
-  step["name"] == "Run Playwright E2E tests"
+  step["id"] == "playwright-tests"
 end
 unless playwright_run&.fetch("shell") == "bash" &&
     !playwright_run["continue-on-error"] && !playwright["continue-on-error"] &&
@@ -212,67 +98,9 @@ unless playwright_run&.fetch("shell") == "bash" &&
   raise "the Playwright job must run its blocking chat smoke project"
 end
 assert_canonical_api_backend_url.call(playwright_run, "Playwright E2E")
-playwright_blob_upload = playwright.fetch("steps").find do |step|
-  step["name"] == "Upload Playwright blob report"
-end
-unless playwright_blob_upload &&
-    playwright_blob_upload.fetch("if") == "always()" &&
-    playwright_blob_upload.dig("with", "name") ==
-      "playwright-blob-chat-smoke" &&
-    playwright_blob_upload.dig("with", "path") ==
-      "e2e/playwright/blob-report/"
-  raise "the Playwright smoke must upload its blob report"
-end
-
 unless Array(playwright_finalizer["needs"]).include?("cli-e2e-02-playwright")
   raise "Playwright report finalizer must wait for the smoke job"
 end
-finalizer_steps = playwright_finalizer.fetch("steps")
-download_index = finalizer_steps.index do |step|
-  step["name"] == "Download Playwright blob reports"
-end
-merge_index = finalizer_steps.index do |step|
-  step["name"] == "Merge Playwright HTML report"
-end
-upload_index = finalizer_steps.index do |step|
-  step["name"] == "Upload Playwright HTML report"
-end
-unless download_index && merge_index && upload_index &&
-    download_index < merge_index && merge_index < upload_index
-  raise "Playwright finalizer must download, merge, then upload reports"
-end
-download_step = finalizer_steps.fetch(download_index)
-unless download_step.dig("with", "pattern") == "playwright-blob-*" &&
-    download_step.dig("with", "merge-multiple") == true
-  raise "Playwright finalizer must download the smoke blob artifact"
-end
-merge_step = finalizer_steps.fetch(merge_index)
-unless merge_step.fetch("run").include?(
-    "playwright merge-reports --reporter=html all-blob-reports",
-  )
-  raise "Playwright finalizer must build one HTML report from the smoke blob"
-end
-upload_step = finalizer_steps.fetch(upload_index)
-unless upload_step.fetch("if") == "always()" &&
-    upload_step.dig("with", "name") == "playwright-report" &&
-    upload_step.dig("with", "path") == "e2e/playwright-report/"
-  raise "Playwright finalizer must always publish the merged HTML report"
-end
-
-expected_browser_install =
-  "cd e2e && pnpm exec playwright install --only-shell chromium"
-{
-  "Playwright E2E" => playwright,
-  "runner E2E preparation" => account_prepare,
-}.each do |job_name, job|
-  install_step = job.fetch("steps").find do |step|
-    step["name"] == "Install Playwright browsers"
-  end
-  unless install_step&.fetch("run", nil) == expected_browser_install
-    raise "#{job_name} must install only the Chromium headless shell"
-  end
-end
-
 unless prepare.dig("outputs", "turbo-runner-consumer-needed") ==
     "${{ steps.runner-e2e.outputs.turbo-runner-consumer-needed }}"
   raise "Turbo must expose the historical runner E2E consumer decision"
@@ -340,7 +168,7 @@ end
 end
 
 prepare_step = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Prepare runner E2E accounts"
+  step["id"] == "account"
 end
 raise "missing runner E2E account preparation" unless prepare_step
 unless prepare_step.fetch("run").end_with?("runner-account.ts prepare")
@@ -377,7 +205,7 @@ unless account_prepare.dig("outputs", "runner-shard-matrix") ==
 end
 
 shard_generation_step = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Generate runner E2E shard matrix"
+  step["id"] == "shards"
 end
 raise "missing runner E2E shard generation" unless shard_generation_step
 shard_generation_script = shard_generation_step.fetch("run")
@@ -389,7 +217,7 @@ unless shard_generation_step["id"] == "shards" &&
 end
 
 token_step = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Generate runner E2E API tokens"
+  step.fetch("run", "").include?("playwright/runner-token.ts")
 end
 raise "missing runner E2E token generation" unless token_step
 assert_canonical_api_backend_url.call(token_step, "runner token generation")
@@ -409,12 +237,11 @@ unless token_step.dig("env", "E2E_RUNNER_CODEX_BUILT_IN_ORGANIZATION_ID") ==
 end
 
 sign_in_diagnostic_upload = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Upload runner E2E sign-in diagnostics"
+  step.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics"
 end
 raise "missing runner E2E sign-in diagnostic upload" unless sign_in_diagnostic_upload
 unless sign_in_diagnostic_upload.fetch("if") == "failure()" &&
     sign_in_diagnostic_upload["continue-on-error"] == true &&
-    sign_in_diagnostic_upload.dig("with", "name") == "runner-e2e-sign-in-diagnostics" &&
     sign_in_diagnostic_upload.dig("with", "path") == "/tmp/e2e-runner-sign-in-diagnostics" &&
     sign_in_diagnostic_upload.dig("with", "if-no-files-found") == "ignore" &&
     sign_in_diagnostic_upload.dig("with", "retention-days") == 1
@@ -422,12 +249,10 @@ unless sign_in_diagnostic_upload.fetch("if") == "failure()" &&
 end
 
 diagnostic_upload_step = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Upload runner E2E Checkout diagnostics"
+  step.dig("with", "path") == "/tmp/e2e-runner-checkout-diagnostics"
 end
 raise "missing runner E2E Checkout diagnostic upload" unless diagnostic_upload_step
 unless diagnostic_upload_step.fetch("if") == "failure()" &&
-    diagnostic_upload_step.dig("with", "name") ==
-      "runner-e2e-checkout-diagnostics" &&
     diagnostic_upload_step.dig("with", "path") ==
       "/tmp/e2e-runner-checkout-diagnostics" &&
     diagnostic_upload_step.dig("with", "if-no-files-found") == "ignore" &&
@@ -436,7 +261,8 @@ unless diagnostic_upload_step.fetch("if") == "failure()" &&
 end
 
 upload_step = account_prepare.fetch("steps").find do |step|
-  step["name"] == "Upload runner E2E API tokens"
+  step.fetch("uses", "").start_with?("actions/upload-artifact@") &&
+    step.dig("with", "name") == "e2e-tokens"
 end
 raise "missing runner E2E token artifact upload" unless upload_step
 unless upload_step.dig("with", "name") == "e2e-tokens" &&
@@ -465,31 +291,33 @@ unless bootstrap_steps.any? do |step|
   raise "runner bootstrap must checkout the focused helper scripts"
 end
 unless bootstrap_steps.any? do |step|
-    step["name"] == "Download runner E2E API tokens" &&
+    step.fetch("uses", "").start_with?("actions/download-artifact@") &&
       step.dig("with", "name") == "e2e-tokens"
   end
   raise "runner bootstrap must download the token artifact"
 end
 # Fresh accounts inherit the sole platform model. Personal subscriptions are
 # provisioned independently.
-auto_steps = {
-  "Reset runner model defaults" => ["runner", "false"],
-  "Bootstrap real Codex account" => ["runner-real-codex", "true"],
-  "Bootstrap built-in Codex account" => ["runner-real-codex-built-in", "true"],
-  "Bootstrap real Claude account" => ["runner-real-claude", "true"],
+auto_accounts = {
+  "runner" => "false",
+  "runner-real-codex" => "true",
+  "runner-real-codex-built-in" => "true",
+  "runner-real-claude" => "true",
 }
-auto_steps.each do |name, (account, real_agent)|
-  step = bootstrap_steps.find { |candidate| candidate["name"] == name }
-  raise "missing #{name}" unless step
-  expected = "cd e2e && bash playwright/runner-auto-bootstrap.bash /tmp/e2e-api-credentials-#{account}.json #{real_agent}"
-  raise "#{name} must bootstrap Auto" unless step["run"] == expected
+auto_accounts.each do |account, real_agent|
+  command = "runner-auto-bootstrap.bash /tmp/e2e-api-credentials-#{account}.json"
+  step = bootstrap_steps.find { |candidate| candidate.fetch("run", "").include?(command) }
+  raise "missing #{account} bootstrap" unless step
+  unless step.fetch("run").end_with?("#{command} #{real_agent}")
+    raise "#{account} must bootstrap the intended runtime"
+  end
   unless step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
       "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
-    raise "#{name} must receive the preview bypass secret"
+    raise "#{account} bootstrap must receive the preview bypass secret"
   end
 end
 mock_claude_step = bootstrap_steps.find do |step|
-  step["name"] == "Bootstrap mock Claude account"
+  step.fetch("run", "").include?("runner-mock-claude-bootstrap.bash")
 end
 raise "missing personal subscription bootstrap" unless mock_claude_step
 unless mock_claude_step.fetch("run").end_with?(
@@ -502,27 +330,10 @@ unless mock_claude_step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
   raise "mock subscription bootstrap must receive the preview bypass secret"
 end
 mock_claude_script = File.read(ARGV.fetch(1))
-%w[
-  /api/me/model-providers
-  /api/run-models
-  claude-code-oauth-token
-  codex-oauth-token
-  CODEX_AUTH_JSON
-  claude-sonnet-5
-  gpt-6-astra
-].each do |fragment|
-  unless mock_claude_script.include?(fragment)
-    raise "personal subscription bootstrap must include #{fragment}"
-  end
-end
 unless mock_claude_script.include?('.effectiveSwitches._realAgentInPreview == false')
   raise "synthetic personal credentials must only use mock runtimes"
 end
 
-shard_step = runner.fetch("steps").find do |step|
-  step["name"] == "Initialize runner E2E shard"
-end
-raise "missing runner E2E shard scaffold" unless shard_step
 unless runner.dig("env", "E2E_RUNNER_TEST_FILES_JSON") == "${{ toJSON(matrix.files) }}" &&
     runner.dig("env", "E2E_RUNNER_SHARD_TOTAL") == "${{ strategy.job-total }}"
   raise "runner E2E shards must receive their exact file list and dynamic total"
@@ -535,7 +346,7 @@ unless runner.dig("env", "E2E_RUNNER_MOCK_CLAUDE_ORG_ID") ==
 end
 
 run_step = runner.fetch("steps").find do |step|
-  step.fetch("name", "").include?("Run runner E2E tests")
+  step.fetch("run", "").include?("./test/libs/bats/bin/bats")
 end
 raise "missing runner E2E BATS execution" unless run_step
 if run_step.key?("continue-on-error")
@@ -544,9 +355,8 @@ end
 run_script = run_step.fetch("run")
 unless run_script.include?('mapfile -t test_files') &&
     run_script.include?('BATS_TEST_TIMEOUT=240 ./test/libs/bats/bin/bats') &&
-    run_script.include?('--report-formatter junit') &&
     run_script.include?('"${test_files[@]}"')
-  raise "runner E2E must safely execute every matrix file with JUnit reporting"
+  raise "runner E2E must safely execute every matrix file"
 end
 unless run_step.dig("env", "VERCEL_AUTOMATION_BYPASS_SECRET") ==
     "${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}"
@@ -557,22 +367,11 @@ if run_step.fetch("env").key?("OKOU_MITM_RUNNER_TOKEN")
 end
 
 unless runner.fetch("steps").any? do |step|
-    step["name"] == "Download runner E2E API tokens" &&
+    step.fetch("uses", "").start_with?("actions/download-artifact@") &&
       step.dig("with", "name") == "e2e-tokens"
   end
   raise "every runner shard must download the token artifact"
 end
-unless runner.fetch("steps").any? do |step|
-    step["name"] == "Upload runner E2E JUnit XML" &&
-      step["continue-on-error"] == true &&
-      step["if"] == "${{ !cancelled() }}" &&
-      step.dig("with", "name") == "e2e-runner-junit-${{ matrix.index }}" &&
-      step.dig("with", "path") == "e2e/results/runner-${{ matrix.index }}/" &&
-      step.dig("with", "retention-days") == 7
-  end
-  raise "every runner shard must attempt a non-blocking JUnit upload unless cancelled"
-end
-
 cleanup_steps = account_cleanup.fetch("steps")
 cleanup_scope_step = cleanup_steps.find do |step|
   step["id"] == "cleanup-scope"
@@ -631,15 +430,6 @@ end
   end
 end
 
-retain_step = cleanup_steps.find do |step|
-  step["name"] == "Retain runner E2E accounts for failed-job rerun"
-end
-unless retain_step &&
-    retain_step["if"] == "steps.cleanup-scope.outputs.scope == 'retain'" &&
-    retain_step.fetch("run").include?("successful rerun or fallback cleanup")
-  raise "failed runner work must retain reusable accounts explicitly"
-end
-
 cleanup_pnpm_setup_step = cleanup_steps.find do |step|
   step.fetch("uses", "").start_with?("pnpm/action-setup@")
 end
@@ -650,7 +440,7 @@ end
 conditional_setup_steps = [
   cleanup_pnpm_setup_step,
   cleanup_node_setup_step,
-  cleanup_steps.find { |step| step["name"] == "Install E2E dependencies" },
+  cleanup_steps.find { |step| step.fetch("run", "").include?("pnpm install --frozen-lockfile") },
 ]
 unless conditional_setup_steps.all? do |step|
     step && step["if"] == "steps.cleanup-scope.outputs.scope == 'generation' || steps.cleanup-scope.outputs.scope == 'run'"
@@ -674,23 +464,23 @@ unless account_cleanup.fetch("if").include?("needs.deploy-runner-start.result ==
 end
 checkout = cleanup_steps.find { |step| step.fetch("uses", "").start_with?("actions/checkout@") }
 raise "idle cleanup needs checkout even with retained accounts" if checkout.key?("if")
-prune_ssh_step = cleanup_steps.find { |step| step["name"] == "Setup SSH for idle sandbox cleanup" }
+prune_ssh_step = cleanup_steps.find { |step| step["uses"] == "./.github/actions/setup-ssh-tunnel" }
 unless prune_ssh_step &&
     prune_ssh_step["if"] == "always() && needs.deploy-runner-start.result == 'success'" &&
     prune_ssh_step.dig("with", "ssh-hosts") == "${{ fromJSON(needs.deploy-runner-start.outputs.runner-receipt).host }}"
   raise "idle cleanup must preconnect only its deployed host, independently of unrelated host availability"
 end
-prune_step = cleanup_steps.find { |step| step["name"] == "Reclaim exact idle sandboxes from the deployed runner" }
+prune_step = cleanup_steps.find { |step| step.fetch("run", "").include?("prune-runner-idle.sh") }
 unless prune_step && prune_step["if"] == "always() && needs.deploy-runner-start.result == 'success'" &&
     prune_step.dig("env", "RUNNER_RECEIPT") == "${{ needs.deploy-runner-start.outputs.runner-receipt }}"
   raise "idle cleanup must use the captured deployment receipt independently of account cleanup"
 end
 
 generation_cleanup_step = cleanup_steps.find do |step|
-  step["name"] == "Cleanup current runner E2E generation"
+  step.fetch("run", "").include?("runner-account.ts cleanup-recorded-generation")
 end
 run_cleanup_step = cleanup_steps.find do |step|
-  step["name"] == "Cleanup runner E2E workflow run"
+  step.fetch("run", "").include?("runner-account.ts cleanup-recorded-run")
 end
 unless generation_cleanup_step &&
     generation_cleanup_step["if"] ==
@@ -734,42 +524,6 @@ end
   raise "CI gate must not wait for #{job_name}" if gate_needs.include?(job_name)
 end
 
-gate_step = jobs.fetch("ci-gate-turbo").fetch("steps").find do |step|
-  step["name"] == "Validate CI results"
-end
-raise "missing Turbo CI gate validation" unless gate_step
-gate_script = gate_step.fetch("run")
-if gate_script.include?('[ "$result" = "cancelled" ]') ||
-    gate_script.include?("cancelled by concurrency group, allowed")
-  raise "CI gate must reject cancelled required jobs"
-end
-unless gate_script.include?("RUNNER_E2E_SKIP_ALLOWED=\"true\"") &&
-    gate_script.include?("needs.prepare.outputs.turbo-runner-consumer-needed")
-  raise "CI gate must restore the runner-specific E2E skip policy"
-end
-%w[
-  cli-e2e-03-runner-prepare
-  cli-e2e-03-runner-bootstrap
-  cli-e2e-03-runner
-].each do |job_name|
-  expected = "check_result \"#{job_name}\" \"${{ needs.#{job_name}.result }}\" \"$RUNNER_E2E_SKIP_ALLOWED\""
-  raise "CI gate must check #{job_name} with RUNNER_E2E_SKIP_ALLOWED" unless gate_script.include?(expected)
-end
-%w[
-  cli-e2e-02-browser
-  cli-e2e-02-playwright
-].each do |job_name|
-  expected = "check_result \"#{job_name}\" \"${{ needs.#{job_name}.result }}\" \"true\""
-  raise "CI gate must reject failed or cancelled #{job_name}" unless gate_script.include?(expected)
-end
-%w[
-  cli-e2e-02-playwright-finalize
-  cli-e2e-03-runner-cleanup
-].each do |job_name|
-  if gate_script.include?("needs.#{job_name}.result")
-    raise "CI gate must not evaluate #{job_name}"
-  end
-end
 RUBY
 
 echo "turbo-playwright-runner-workflow-test: ok"

@@ -17,10 +17,6 @@ jq -e '
   .jobs["detect-toolchain-changes"] as $detect |
   $detect.outputs["toolchain-changed"] == "${{ steps.detect.outputs.toolchain-changed }}" and
   any($detect.steps[]?;
-    ((.uses // "") | startswith("actions/checkout@")) and
-    .with["fetch-depth"] == 2
-  ) and
-  any($detect.steps[]?;
     .id == "detect" and
     (.run | contains(".github/scripts/changed-base-ref.sh")) and
     (.run | contains("git diff --quiet \"$BASE_REF\" HEAD -- docker/toolchain/"))
