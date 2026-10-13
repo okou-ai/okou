@@ -28,7 +28,7 @@ CONFIG_ROLE_ARN = f"arn:aws:iam::{ACCOUNT}:role/{CONFIG_ROLE}"
 OPERATOR = f"arn:aws:iam::{ACCOUNT}:role/vm0-kms-migration-github-32264"
 MANAGED_POLICY = "arn:aws:iam::aws:policy/service-role/AWS_ConfigRole"
 TAGS = [{"Key": "ManagedBy", "Value": "vm0-audit-32264"}]
-DIRECTORY = Path(__file__).resolve().parents[1] / "aws-audit-32264"
+DIRECTORY = Path(__file__).resolve().parents[2] / ".github" / "aws-audit-32264"
 SDK_CONFIG = Config(retries={"mode": "standard", "max_attempts": 3}, read_timeout=30)
 MAX_OBJECT_BYTES = 20 * 1024 * 1024
 # GitHub keeps this numeric identity stable across owner and repository renames.

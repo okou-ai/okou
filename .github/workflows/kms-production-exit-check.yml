@@ -34,7 +34,7 @@ jobs:
           MIGRATION_VERIFIED_AT: ${{ inputs.migration_verified_at }}
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
-        run: python3 .github/scripts/kms-production-exit-check.py backups
+        run: python3 ops/kms-migration-32264/kms-production-exit-check.py backups
       - name: Retain sanitized recovery inventory
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -66,7 +66,7 @@ jobs:
         env:
           AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           AWS_METAL_RUNNER_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-        run: python3 .github/scripts/kms-production-exit-check.py runners
+        run: python3 ops/kms-migration-32264/kms-production-exit-check.py runners
       - name: Retain sanitized runner inventory
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

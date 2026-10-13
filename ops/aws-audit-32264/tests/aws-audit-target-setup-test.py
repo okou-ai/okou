@@ -69,7 +69,7 @@ class AuditSetupTests(unittest.TestCase):
         return self.clients[service]
 
     def test_iam_trust_requires_immutable_production_subject(self):
-        github_directory = SCRIPT.parent.parent
+        github_directory = SCRIPT.parents[2] / ".github"
         for relative_path in [
             "aws-audit-32264/operator-trust.json",
             "kms-migration-32264/role-trust.json",

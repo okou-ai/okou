@@ -41,7 +41,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           DOPPLER_SERVICE_IDENTITY_ID: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
           EXPECTED_DEPLOYMENT_ID: ${{ inputs.expected_deployment_id }}
-        run: python3 .github/scripts/kms-production-backup.py
+        run: python3 ops/kms-migration-32264/kms-production-backup.py
       - name: Retain sanitized backup verification
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
