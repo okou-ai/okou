@@ -68,6 +68,8 @@ async fn cached_template_materializes_while_template_writer_is_active() {
 
 #[tokio::test]
 async fn missing_template_rechecks_repaired_object_after_writer_finishes() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
     use aws_sdk_s3::{
         Client,
         operation::get_object::{GetObjectError, GetObjectOutput},
@@ -76,9 +78,11 @@ async fn missing_template_rechecks_repaired_object_after_writer_finishes() {
 
     let dir = tempfile::tempdir().unwrap();
     let home = Arc::new(HomePaths::with_root(dir.path().to_path_buf()));
-    let _writer = lock::acquire(home.template_lock("test-template-hash"))
+    let previous_writer = lock::acquire(home.template_lock("test-template-hash"))
         .await
         .unwrap();
+    let previous_writer_finished = Arc::new(AtomicBool::new(false));
+    let previous_writer_finished_for_rule = Arc::clone(&previous_writer_finished);
     let observed_miss = Arc::new(Notify::new());
     let observed_for_rule = Arc::clone(&observed_miss);
     let archive = Bytes::from(template_archive_bytes(b"repaired-template").await);
@@ -90,6 +94,10 @@ async fn missing_template_rechecks_repaired_object_after_writer_finishes() {
             GetObjectError::NoSuchKey(NoSuchKey::builder().build())
         })
         .output(move || {
+            assert!(
+                previous_writer_finished_for_rule.load(Ordering::Acquire),
+                "repair recheck must wait for the previous writer to finish"
+            );
             assert!(
                 matches!(
                     lock::try_acquire_or_busy_blocking(&lock_path).unwrap(),
@@ -113,7 +121,10 @@ async fn missing_template_rechecks_repaired_object_after_writer_finishes() {
     tokio::time::timeout(std::time::Duration::from_secs(5), observed_miss.notified())
         .await
         .unwrap();
-    drop(_writer);
+    drop(previous_writer);
+    // This current-thread test publishes the release state before yielding to
+    // the reader. A busy lock at the recheck then identifies its own guard.
+    previous_writer_finished.store(true, Ordering::Release);
     tokio::time::timeout(std::time::Duration::from_secs(5), transfer)
         .await
         .unwrap()
