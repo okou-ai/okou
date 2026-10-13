@@ -9,8 +9,8 @@ use std::time::Duration;
 use runner_host::host_memory::{HostMemoryObservation, HostMemoryUnknown};
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::host_memory_pressure::{
-    HostMemoryPressure, HostPressureDecision, HostPressurePolicy, HostPressurePolicyError,
-    HostPressureWave,
+    HostPressureCoordinator, HostPressureDecision, HostPressurePolicy, HostPressureWave,
+    OptionalPressureControl,
 };
 use runner_lifecycle::idle_pool::IdleRetirementEnvelope;
 use runner_lifecycle::status::StatusTracker;
@@ -55,6 +55,7 @@ pub struct IdlePressureOwner {
     latest: watch::Receiver<IdlePressureSnapshot>,
     controller: JoinHandle<IdlePressureSnapshot>,
     sampler: JoinHandle<()>,
+    optional: OptionalPressureControl,
 }
 
 impl IdlePressureOwner {
@@ -72,10 +73,8 @@ impl IdlePressureOwner {
         if config.envelope.live_growth_bytes == 0 || config.envelope.tail_growth_bytes == 0 {
             return Err(MemoryOperationError::UnsupportedGrowth);
         }
-        let mut pressure = HostMemoryPressure::new(config.policy).map_err(|error| match error {
-            HostPressurePolicyError::Bounds(error) => MemoryOperationError::Bounds(error),
-            HostPressurePolicyError::ZeroInterval => MemoryOperationError::InvalidLimits,
-        })?;
+        let pressure = HostPressureCoordinator::new(config.policy, config.operations.clone())?;
+        let optional = pressure.optional_control();
         let (state, latest) = watch::channel(IdlePressureSnapshot {
             decision: pressure.decision(),
             last_wave: None,
@@ -85,7 +84,7 @@ impl IdlePressureOwner {
         let (samples, observations) = watch::channel(HostMemoryObservation::unknown(
             HostMemoryUnknown::NotObserved,
         ));
-        let cancel = CancellationToken::new();
+        let cancel = pressure.cancellation_token();
         let refresh = Arc::new(Notify::new());
         let sampler = runtime.spawn(sample(
             config.operations.clone(),
@@ -108,7 +107,13 @@ impl IdlePressureOwner {
             latest,
             controller,
             sampler,
+            optional,
         })
+    }
+
+    /// Same current pressure/cadence and original P2 authority for optional work.
+    pub fn optional_preparation(&self) -> OptionalPressureControl {
+        self.optional.clone()
     }
 
     pub fn subscribe(&self) -> watch::Receiver<IdlePressureSnapshot> {
@@ -171,7 +176,7 @@ async fn join_wave(
 
 fn finish_wave(
     result: Result<IdlePressureWaveReport, oneshot::error::RecvError>,
-    pressure: &mut HostMemoryPressure,
+    pressure: &mut HostPressureCoordinator,
     token: &mut Option<HostPressureWave>,
     snapshot: &mut IdlePressureSnapshot,
     refresh: &Notify,
@@ -198,7 +203,7 @@ fn finish_wave(
 
 async fn control(
     config: IdlePressureConfig,
-    mut pressure: HostMemoryPressure,
+    mut pressure: HostPressureCoordinator,
     mut observations: watch::Receiver<HostMemoryObservation>,
     latest: watch::Sender<IdlePressureSnapshot>,
     refresh: Arc<Notify>,
