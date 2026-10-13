@@ -7,7 +7,7 @@ export const PRESENTATION_STATIC_HTML_INSTRUCTION =
   "- Keep all slides and visible content in index.html; render the first slide without JavaScript, which may only enhance controls, themes, or animation.";
 
 export const PRESENTATION_DELIVERY_INSTRUCTION =
-  "- Presentation delivery: first author the deck as HTML and complete its content and layout checks. Then choose the delivery format: honor the current prompt's explicit format, otherwise use the user's remembered presentation-format preference, otherwise deliver HTML. `PPT`, `slides`, and `deck` alone name the artifact, not a format. Deliver one format unless the user requests multiple formats.";
+  "- Presentation delivery: first author the deck as HTML and complete its content and layout checks. The agent must choose a suitable delivery format from the current request, relevant remembered preferences, and intended use. Honor an explicit current request over remembered preferences. When neither specifies a format, infer it from the task: PPTX for editing in PowerPoint or handing off editable slides; hosted HTML for browser viewing, link sharing, or interaction. `PPT`, `slides`, and `deck` alone name the artifact, not a format. Calling `okou generate presentation` or selecting a template does not imply PPTX delivery. Deliver one format unless the user requests multiple formats.";
 
 export function presentationDeliveryInstructions(
   options: {
@@ -20,7 +20,7 @@ export function presentationDeliveryInstructions(
     `okou host <output-dir> --site <slug> --artifact-kind presentation-html${options.artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`;
   return [
     PRESENTATION_DELIVERY_INSTRUCTION,
-    "- For PPTX delivery, follow the platform's conversion instructions. Keep HTML as an intermediate source; publish it only if the user also requests HTML.",
+    "- Only when the agent selects PPTX, follow the platform's conversion instructions. Keep HTML as an intermediate source; publish it only if the user also requests HTML. Skip conversion when HTML is selected.",
     "- The following preview and hosting steps apply only to HTML delivery.",
     ...(options.artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
     `- For HTML delivery, host the finished deck: ${hostCommand}`,

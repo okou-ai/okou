@@ -102,8 +102,8 @@ Output:
 
 Notes:
   - Authenticates via OKOU_TOKEN
-  - The agent authors HTML first, then selects delivery from the prompt or remembered preference
-  - HTML delivery uses okou host; PPTX delivery follows the platform's conversion instructions
+  - The agent authors HTML first, then chooses delivery from the request, remembered preferences, and intended use
+  - Use okou host for HTML; follow the platform's conversion instructions only when the agent selects PPTX
   - Deliver one format unless the user requests multiple formats
 
 Templates (presentation):
