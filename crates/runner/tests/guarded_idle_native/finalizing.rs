@@ -40,7 +40,12 @@ impl sandbox::SandboxFinalExecParkObserver for Observer {
     }
 }
 
-pub async fn exercise(context: Context, inputs: &fixture::Inputs, running: bool) -> TestResult<()> {
+pub async fn exercise(
+    context: Context,
+    inputs: &fixture::Inputs,
+    running: bool,
+    receipts: Option<&Arc<evidence::Case>>,
+) -> TestResult<()> {
     let Context {
         factory,
         cache,
@@ -94,8 +99,16 @@ pub async fn exercise(context: Context, inputs: &fixture::Inputs, running: bool)
         handoff: running.then(|| guard.reuse_publisher().handoff_signal()),
     })
     .park_for_idle_with_observer(&mut Observer)
-    .await
-    .map_err(|_| io::Error::other("native finalizing park/preparation failed"))?;
+    .await;
+    let parked = match parked {
+        Ok(parked) => parked,
+        Err(error) => {
+            if let Some(receipts) = receipts {
+                receipts.retain(error);
+            }
+            return Err(io::Error::other("native finalizing park/preparation failed").into());
+        }
+    };
     let candidate = match (running, parked) {
         (false, IdleParkOutcome::Reusable(candidate)) => IdleParkCandidate::Ordinary(candidate),
         (true, IdleParkOutcome::Handoff(candidate)) => {
@@ -113,6 +126,10 @@ pub async fn exercise(context: Context, inputs: &fixture::Inputs, running: bool)
         }
     };
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+    if let Some(receipts) = receipts {
+        receipts.retain(tracker.clone());
+        receipts.retain(operations.clone());
+    }
     let mut producer = GuardedFinalizingOffer::new(candidate, run_id, tracker.clone());
     let mut actual_context =
         runner_executor::test_fixtures::execution_context::execution_context_for_test(successor);
@@ -120,21 +137,33 @@ pub async fn exercise(context: Context, inputs: &fixture::Inputs, running: bool)
     let claimed = ClaimedJob::local_with_active_input_source(successor, actual_context, None)
         .map_err(|_| io::Error::other("native finalizing claim mismatch"))?;
     let mut admission = GuardedFinalizingAdmission::new(claimed, request, run_id, tracker.clone());
-    if producer.offer(&guard.reuse_publisher())? != GuardedFinalizingOfferOutcome::Delivered {
-        return Err(io::Error::other("native finalizing delivery was refused").into());
-    }
-    admission.cancel_delivery();
-    let mut task = admission.cleanup(&operations, inputs.envelope()).await?;
-    if !matches!(
-        task.join().await??,
-        ActivationCleanupOutcome::Completed {
-            home_cache_promoted: true
+    let cleanup: TestResult<()> = async {
+        if producer.offer(&guard.reuse_publisher())? != GuardedFinalizingOfferOutcome::Delivered {
+            return Err(io::Error::other("native finalizing delivery was refused").into());
         }
-    ) {
-        return Err(io::Error::other("native finalizing required export incomplete").into());
+        admission.cancel_delivery();
+        let mut task = admission.cleanup(&operations, inputs.envelope()).await?;
+        if !matches!(
+            task.join().await??,
+            ActivationCleanupOutcome::Completed {
+                home_cache_promoted: true
+            }
+        ) {
+            return Err(io::Error::other("native finalizing required export incomplete").into());
+        }
+        tracker.close_and_wait().await;
+        drop(task.take_completed_lease()?);
+        Ok(())
     }
-    tracker.close_and_wait().await;
-    drop(task.take_completed_lease()?);
+    .await;
+    if let Err(error) = cleanup {
+        if let Some(receipts) = receipts {
+            receipts.retain(admission);
+            receipts.retain(producer);
+            receipts.retain(guard);
+        }
+        return Err(error);
+    }
     drop(
         admission
             .take_claim_for_completion()

@@ -2,10 +2,12 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod evidence;
 mod finalizing;
 mod fixture;
 mod optional;
 mod pressure;
+mod tail;
 mod transitions;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
@@ -38,6 +40,22 @@ use tokio::sync::Notify;
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
+
+#[test]
+fn native_report_consumer_validates_external_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/report_test.py"
+        ))
+        .output()
+        .expect("native report contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
 
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
@@ -75,12 +93,91 @@ async fn guarded_terminal_saving_restores_home_without_private_runtime_bytes() -
     result
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, compiled source identity and P1 measurement"]
+async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult<()> {
+    native_logging()?;
+    if !nix::unistd::getuid().is_root() {
+        return Err(io::Error::other("native terminal corpus requires root").into());
+    }
+    let artifacts = evidence::Artifacts::load_and_verify()?;
+    let inputs = fixture::Inputs::load()?;
+    if inputs.envelope().tail_growth_bytes < (evidence::TAIL_BYTES + 1024 * 1024) as u64 {
+        return Err(
+            io::Error::other("supplied tail bound cannot cover the complete fixture IO").into(),
+        );
+    }
+    let base = PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?);
+    if !base.is_dir() || std::fs::symlink_metadata(&base)?.file_type().is_symlink() {
+        return Err(
+            io::Error::other("native terminal base must be an owned existing directory").into(),
+        );
+    }
+    let mut runtime = FirecrackerRuntime::new(RuntimeConfig {
+        proxy_port: None,
+        dns_port: None,
+        host_cpu_placement: None,
+    })
+    .await?;
+    let scopes = [
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::CallerOwned,
+        NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
+    ];
+    let result =
+        exercise_selected_factories(&runtime, &base, &inputs, &scopes, Some(&artifacts)).await;
+    if result.is_ok() {
+        runtime.shutdown().await;
+    }
+    result
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "prepares a new matching snapshot from explicitly supplied disposable native artifacts"]
+async fn prepare_native_terminal_snapshot() -> TestResult<()> {
+    native_logging()?;
+    if !nix::unistd::getuid().is_root() {
+        return Err(io::Error::other("snapshot preparation requires root").into());
+    }
+    let output_dir = PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?);
+    if output_dir.exists() {
+        return Err(
+            io::Error::other("snapshot preparation requires a new output directory").into(),
+        );
+    }
+    sandbox_firecracker::create_snapshot(sandbox::SnapshotCreateConfig {
+        id: format!("native39824-{}", uuid::Uuid::new_v4()),
+        binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+        kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+        rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+        output_dir,
+        vcpu_count: 2,
+        memory_mb: 4096,
+        home_disk_mb: 16384,
+    })
+    .await?;
+    Ok(())
+}
+
+fn native_logging() -> TestResult<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .with_writer(io::stderr)
+        .try_init()
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(())
+}
+
 async fn exercise_factories(
     runtime: &FirecrackerRuntime,
     base: &std::path::Path,
     inputs: &fixture::Inputs,
 ) -> TestResult<()> {
-    for scope in [
+    let scopes = [
         NativeScope::Batch(IdleRetirementBatchScope::Exact),
         NativeScope::Batch(IdleRetirementBatchScope::All),
         NativeScope::Logical,
@@ -94,11 +191,30 @@ async fn exercise_factories(
         NativeScope::FinalizingParked,
         NativeScope::FinalizingRunning,
         NativeScope::Pressure,
-    ] {
+    ];
+    exercise_selected_factories(runtime, base, inputs, &scopes, None).await
+}
+
+async fn exercise_selected_factories(
+    runtime: &FirecrackerRuntime,
+    base: &std::path::Path,
+    inputs: &fixture::Inputs,
+    scopes: &[NativeScope],
+    artifacts: Option<&evidence::Artifacts>,
+) -> TestResult<()> {
+    for &scope in scopes {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
-            let owned = tempfile::tempdir_in(base)?;
-            let paths = RunnerPaths::new(owned.path().to_owned());
+            let owned = tempfile::tempdir_in(base)?.keep();
+            let paths = RunnerPaths::new(owned.clone());
+            let proof = artifacts
+                .map(|artifacts| {
+                    evidence::Case::new(
+                        format!("{scope:?}-{}", if restored { "snapshot" } else { "fresh" }),
+                        artifacts.clone(),
+                    )
+                })
+                .transpose()?;
             let snapshot = if restored {
                 Some(SnapshotRef {
                     output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
@@ -113,16 +229,42 @@ async fn exercise_factories(
                     binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                     kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
                     rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                    base_dir: owned.path().to_owned(),
+                    base_dir: owned.clone(),
                     snapshot,
                 })
                 .await?;
+            let factory: Box<dyn SandboxFactory> = if let Some(proof) = &proof {
+                Box::new(tail::MeasuredFactory {
+                    inner: factory,
+                    case: proof.clone(),
+                    directory: owned.clone(),
+                    physical: tokio_util::task::TaskTracker::new(),
+                })
+            } else {
+                factory
+            };
             let factory = Arc::new(factory);
-            let result = exercise_retirement(factory.clone(), paths, inputs, scope).await;
+            let result =
+                exercise_retirement(factory.clone(), paths, inputs, scope, proof.as_ref()).await;
+            // A failed measured case is not permission to tear down dependencies
+            // or delete its files. Accepted cleanup retains its own factory owner.
+            if proof.is_some() {
+                result
+                    .as_ref()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+            }
+            if let Some(proof) = &proof {
+                proof.release_completed_owners();
+            }
             let mut factory = Arc::try_unwrap(factory)
                 .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
             factory.shutdown().await;
             result?;
+            if let Some(proof) = proof {
+                proof.finish().await?;
+            }
+            // Only verified data/exit/physical tail and dependency teardown permit removal.
+            std::fs::remove_dir_all(&owned)?;
             println!("GUARDED_IDLE_TERMINAL_PASS restored={restored} scope={scope:?}");
         }
     }
@@ -134,6 +276,7 @@ async fn exercise_retirement(
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
     scope: NativeScope,
+    proof: Option<&Arc<evidence::Case>>,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -168,10 +311,19 @@ async fn exercise_retirement(
         _ => (2, 4096),
     };
     let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
+    if let Some(proof) = proof {
+        let backing = sandbox
+            .backing_process()
+            .ok_or_else(|| io::Error::other("native receipt has no backing"))?;
+        proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
+    }
     if matches!(
         scope,
         NativeScope::FinalizingParked | NativeScope::FinalizingRunning
     ) {
+        if let Some(proof) = proof {
+            proof.event("terminal_started", serde_json::json!({}))?;
+        }
         return finalizing::exercise(
             finalizing::Context {
                 factory,
@@ -187,6 +339,7 @@ async fn exercise_retirement(
             },
             inputs,
             matches!(scope, NativeScope::FinalizingRunning),
+            proof,
         )
         .await;
     }
@@ -257,6 +410,12 @@ async fn exercise_retirement(
     };
     assert!(matches!(parked, ParkResult::Parked));
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
+    if let Some(proof) = proof {
+        proof.retain(pool.clone());
+        proof.retain(tracker.clone());
+        proof.retain(operations.clone());
+        proof.event("terminal_started", serde_json::json!({}))?;
+    }
     let retirement: TestResult<_> = async {
         match scope {
             NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
@@ -308,6 +467,9 @@ async fn exercise_retirement(
                     ))
                     .to_string();
                     if result.as_ref().err() != Some(&expected_error) {
+                        if let Some(proof) = proof {
+                            proof.retain(speculative);
+                        }
                         return Err(io::Error::other(format!(
                             "native speculative guest restore expected {expected_error:?}, got {result:?}"
                         ))
@@ -318,14 +480,23 @@ async fn exercise_retirement(
                     IdleActivationOwner::new(reservation)
                         .map_err(|_| io::Error::other("native caller received running handoff"))?
                 });
-                let mut task = tracker
+                let accepted = tracker
                     .retire_activation_owner(
                         &mut owner,
                         &operations,
                         inputs.envelope(),
                         "native_caller_cleanup",
                     )
-                    .await?;
+                    .await;
+                let mut task = match accepted {
+                    Ok(task) => task,
+                    Err(error) => {
+                        if let Some(proof) = proof {
+                            proof.retain(owner.take());
+                        }
+                        return Err(error.into());
+                    }
+                };
                 assert!(owner.is_none());
                 let outcome = task.join().await??;
                 if !matches!(
@@ -489,6 +660,11 @@ async fn exercise_retirement(
     let logical_lease = match retirement {
         Ok(lease) => lease,
         Err(error) => {
+            if proof.is_some() {
+                // Real retained pool/tracker/operation owners above keep refusal
+                // or uncertainty intact; raw destruction cannot prove saving.
+                return Err(error);
+            }
             let jobs = pool.lock().await.drain();
             for job in jobs {
                 job.run_with_context("native_fixture_refused_batch_cleanup")
