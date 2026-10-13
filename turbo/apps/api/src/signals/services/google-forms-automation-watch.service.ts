@@ -14,7 +14,17 @@ import {
 import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, exists, isNotNull, isNull, not, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  not,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -1060,20 +1070,31 @@ const stopGoogleFormsWatchState$ = command(
     // A concurrent recovery may have adopted another provider resource; this
     // reply cannot delete or mark that newer resource by the shared local id.
     const referenced = googleFormsWatchProgressIsReferenced(args.state);
-    const deletedState = db
-      .$with("deleted_google_forms_watch")
-      .as(
-        db
-          .delete(googleFormsWatchStates)
-          .where(
-            and(googleFormsWatchResourceCondition(args.state), not(referenced)),
-          ),
-      );
+    const deletedState = db.$with("deleted_google_forms_watch").as(
+      db
+        .delete(googleFormsWatchStates)
+        .where(
+          and(googleFormsWatchResourceCondition(args.state), not(referenced)),
+        )
+        .returning({ id: googleFormsWatchStates.id }),
+    );
+    // Consume the actual deleted identity: only its surviving exact resource
+    // can be marked for recreation. Both branches retain the statement snapshot.
     await db
       .with(deletedState)
       .update(googleFormsWatchStates)
       .set({ needsRewatch: true, updatedAt: nowDate() })
-      .where(and(googleFormsWatchResourceCondition(args.state), referenced));
+      .where(
+        and(
+          googleFormsWatchResourceCondition(args.state),
+          notExists(
+            db
+              .select({ id: deletedState.id })
+              .from(deletedState)
+              .where(eq(deletedState.id, googleFormsWatchStates.id)),
+          ),
+        ),
+      );
     signal.throwIfAborted();
     return { kind: "stopped" };
   },
