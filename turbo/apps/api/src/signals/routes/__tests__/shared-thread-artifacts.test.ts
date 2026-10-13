@@ -747,6 +747,13 @@ test.each(["missing", "unavailable"] as const)(
       [expected],
     );
     expect(published.body).not.toHaveProperty("preview");
+    await accept(
+      api()(featureSwitchesContract).update({
+        headers: headers(f.actor),
+        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: false } },
+      }),
+      [200],
+    );
     const og = api()(artifactOgContract);
     const disabledQuery = { kind: "reference" as const, id: reference };
     expect(
