@@ -571,7 +571,7 @@ function WorkflowRowIcon({
     return <AutomationListIcon automation={lead.automation} size="sm" />;
   }
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-muted-foreground">
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground">
       <Route size={16} />
     </span>
   );

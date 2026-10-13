@@ -354,6 +354,42 @@ describe("interaction state ladder", () => {
   });
 });
 
+// The ladder lands on ramp stops, so an opaque `bg-muted` tile inside a hovered
+// card row reads as the row itself. The nested fill is a layer instead.
+describe("nested fill", () => {
+  function measure(selector: string) {
+    const theme = readRuleBody(globalCss, selector);
+    const properties = readCustomProperties(theme);
+    const layer = color(properties, "--state-layer");
+    const card = color(properties, "--card");
+    const fillAlpha =
+      Number.parseFloat(
+        resolveCustomProperty(properties, "--nested-fill-alpha"),
+      ) / 100;
+    const row = composite(card, layer, readAlpha(theme, "hover") / 100);
+    return {
+      atRest: contrastRatio(composite(card, layer, fillAlpha), card),
+      onHoveredRow: contrastRatio(composite(row, layer, fillAlpha), row),
+      muted: contrastRatio(color(properties, "--muted"), card),
+    };
+  }
+
+  it.each(THEMES)("weighs what $name's muted fill does", ({ selector }) => {
+    const { atRest, muted } = measure(selector);
+
+    expect(atRest).toBeCloseTo(muted, 2);
+  });
+
+  it.each(THEMES)(
+    "keeps $name's resting step on a hovered row",
+    ({ selector }) => {
+      const { atRest, onHoveredRow } = measure(selector);
+
+      expect(onHoveredRow).toBeGreaterThanOrEqual(atRest);
+    },
+  );
+});
+
 describe("brand neutrals", () => {
   const brandNeutrals = [
     ["--brand-charcoal", "#252121"],
