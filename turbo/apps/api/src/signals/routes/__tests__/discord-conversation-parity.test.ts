@@ -224,7 +224,7 @@ function send(fixture: Awaited<ReturnType<typeof nativeFixture>>) {
 }
 
 describe("Discord context parity through public OAuth bindings", () => {
-  it("combines parent context, the thread starter, an older quoted message and attachment-only history within one bounded snapshot", async () => {
+  it("uses Slack history limits and readable sections while retaining the starter, quoted message and attachments", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     mockDiscordApplication(1 << 18);
@@ -250,7 +250,7 @@ describe("Discord context parity through public OAuth bindings", () => {
         content: "Original thread starter",
       }),
     );
-    for (let index = 1; index <= 10; index++) {
+    for (let index = 1; index <= 12; index++) {
       const entry = discordMessageForTest(actor, {
         id: (BigInt(threadId) - BigInt(index)).toString(),
         channelId: provider.guildChannelId,
@@ -267,16 +267,16 @@ describe("Discord context parity through public OAuth bindings", () => {
         content: "Explicitly quoted older decision",
       }),
     );
-    for (let index = 1; index <= 25; index++) {
+    for (let index = 1; index <= 125; index++) {
       const entry = discordMessageForTest(actor, {
         id: (BigInt(threadId) + 100n + BigInt(index)).toString(),
         channelId: threadId,
-        content: `Recent thread message ${index}`,
+        content: `Recent thread message ${index}\n${"Detailed context ".repeat(140)}\nEnd thread message ${index}`,
       });
       provider.messages.set(entry.id, entry);
     }
     const attachmentOnly = discordMessageForTest(actor, {
-      id: (BigInt(threadId) + 200n).toString(),
+      id: (BigInt(threadId) + 500n).toString(),
       channelId: threadId,
       content: "",
       attachments: [
@@ -314,30 +314,156 @@ describe("Discord context parity through public OAuth bindings", () => {
     if (!claim.appendSystemPrompt) {
       throw new Error("Expected conversation context in the Runner prompt");
     }
-    const snapshot = claim.appendSystemPrompt.split("\n").find((line) => {
-      return line.startsWith('[{"messageId"');
+    const [channelContext, threadContext] = claim.appendSystemPrompt
+      .split("# Recent Channel Messages")[1]!
+      .split("# Discord Thread Context");
+    expect(channelContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(10);
+    expect(threadContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(100);
+    expect(channelContext).toContain("- RELATIVE_INDEX: -10");
+    expect(channelContext).toContain("Parent discussion 10");
+    expect(channelContext).not.toContain("Parent discussion 11");
+    expect(channelContext).not.toContain("Recent thread message");
+    expect(threadContext).not.toContain("Parent discussion");
+    expect(threadContext).toContain(
+      "- RELATIVE_INDEX: -100\n" +
+        `- SENDER: {id: ${actor.discordUserId}, name: member}`,
+    );
+    expect(threadContext).toContain(
+      "[Referenced by current message]\nExplicitly quoted older decision",
+    );
+    expect(threadContext).toContain(
+      `Recent thread message 125\n${"Detailed context ".repeat(140)}\nEnd thread message 125`,
+    );
+    expect(threadContext).not.toContain("Recent thread message 28\n");
+    expect(threadContext).toContain("Recent thread message 29\n");
+    expect(threadContext?.indexOf("Recent thread message 29\n")).toBeLessThan(
+      threadContext!.indexOf("Recent thread message 125\n"),
+    );
+    expect(threadContext).toContain(
+      "[Discord file] decision.pdf (application/pdf)",
+    );
+    expect(threadContext).toContain(
+      `[ID] ${attachmentOnly.attachments[0]!.id}`,
+    );
+    expect(threadContext).toContain(`[Channel ID] ${threadId}`);
+    expect(threadContext).toContain(`[Message ID] ${attachmentOnly.id}`);
+    expect(claim.appendSystemPrompt).not.toContain(
+      "Prior Discord Messages (Untrusted)",
+    );
+    expect(claim.appendSystemPrompt).not.toContain('[{"messageId"');
+    expect(claim.appendSystemPrompt).not.toContain(message.content);
+  });
+
+  it("includes exactly ten recent channel messages with sender identities, resolved mentions and real newlines", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    mockDiscordApplication(1 << 18);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> summarize the channel`,
     });
-    if (!snapshot) {
-      throw new Error(
-        "Expected a bounded conversation snapshot in the Runner prompt",
-      );
-    }
-    expect(snapshot.length).toBeLessThanOrEqual(16_000);
-    const entries = z
-      .array(
-        z.object({
-          messageId: z.string(),
-          channelId: z.string(),
-          referencedByCurrentMessage: z.boolean().optional(),
+    const mentionedId = uniqueDiscordSnowflake();
+    for (let index = 1; index <= 12; index++) {
+      const entry = {
+        ...discordMessageForTest(actor, {
+          id: (BigInt(message.id) - BigInt(index)).toString(),
+          channelId: provider.guildChannelId,
+          content: `Channel message ${index}\nHello <@${mentionedId}>`,
         }),
-      )
-      .parse(JSON.parse(snapshot));
-    expect(entries.length).toBeLessThanOrEqual(20);
-    expect(entries).toContainEqual({
-      messageId: quotedId,
-      channelId: threadId,
-      referencedByCurrentMessage: true,
+        mentions: [
+          { id: mentionedId, username: "teammate", global_name: "Teammate" },
+        ],
+      };
+      provider.messages.set(entry.id, entry);
+    }
+    provider.messages.set(message.id, message);
+    const future = discordMessageForTest(actor, {
+      id: (BigInt(message.id) + 1n).toString(),
+      channelId: provider.guildChannelId,
+      content: "Future channel message",
     });
+    provider.messages.set(future.id, future);
+    const { claim } = await claimMessage(actor, message);
+    const history = claim.appendSystemPrompt?.split(
+      "# Recent Channel Messages",
+    )[1];
+    expect(history?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(10);
+    expect(history).toContain(
+      `- RELATIVE_INDEX: -10\n- SENDER: {id: ${actor.discordUserId}, name: member}\n\nChannel message 10\nHello @Teammate (${mentionedId})`,
+    );
+    expect(history).toContain(
+      `- RELATIVE_INDEX: -1\n- SENDER: {id: ${actor.discordUserId}, name: member}\n\nChannel message 1\nHello @Teammate (${mentionedId})`,
+    );
+    expect(history).not.toContain("Channel message 11");
+    expect(history).not.toContain("Future channel message");
+    expect(history).not.toContain("summarize the channel");
+    expect(history).not.toContain(String.raw`\n`);
+    expect(claim.appendSystemPrompt).not.toContain("# Discord Thread Context");
+  });
+
+  it("includes a referenced thread starter once in thread context, separate from parent history", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    mockDiscordApplication(1 << 18);
+    const threadId = uniqueDiscordSnowflake();
+    provider.channels.set(threadId, {
+      id: threadId,
+      type: 11,
+      guild_id: actor.guildId,
+      parent_id: provider.guildChannelId,
+      thread_metadata: {
+        archived: false,
+        locked: false,
+        auto_archive_duration: 1440,
+        archive_timestamp: new Date(now()).toISOString(),
+      },
+    });
+    const starter = discordMessageForTest(actor, {
+      id: threadId,
+      channelId: provider.guildChannelId,
+      content: "Quoted thread starter",
+    });
+    provider.messages.set(starter.id, starter);
+    const parent = discordMessageForTest(actor, {
+      id: (BigInt(threadId) - 1n).toString(),
+      channelId: provider.guildChannelId,
+      content: "Discussion before the thread",
+    });
+    provider.messages.set(parent.id, parent);
+    const reply = discordMessageForTest(actor, {
+      id: (BigInt(threadId) + 1n).toString(),
+      channelId: threadId,
+      content: "Earlier thread reply",
+    });
+    provider.messages.set(reply.id, reply);
+    const message = {
+      ...discordMessageForTest(actor, {
+        id: (BigInt(threadId) + 2n).toString(),
+        channelId: threadId,
+        content: `<@${actor.botUserId}> explain the starter`,
+      }),
+      type: 19,
+      message_reference: {
+        message_id: starter.id,
+        channel_id: provider.guildChannelId,
+        guild_id: actor.guildId,
+      },
+    };
+    const { claim } = await claimMessage(actor, message);
+    const [channelContext, threadContext] = claim
+      .appendSystemPrompt!.split("# Recent Channel Messages")[1]!
+      .split("# Discord Thread Context");
+    expect(channelContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(1);
+    expect(channelContext).toContain(parent.content);
+    expect(channelContext).not.toContain(starter.content);
+    expect(threadContext?.match(/- RELATIVE_INDEX: /gu)).toHaveLength(2);
+    expect(threadContext).toContain(
+      "[Referenced by current message]\nQuoted thread starter",
+    );
+    expect(threadContext).toContain(reply.content);
+    expect(
+      claim.appendSystemPrompt?.match(/Quoted thread starter/gu),
+    ).toHaveLength(1);
   });
 
   it("omits unavailable parent history and never follows a reference into another channel", async () => {
