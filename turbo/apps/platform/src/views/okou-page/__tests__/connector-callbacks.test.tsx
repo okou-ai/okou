@@ -147,6 +147,68 @@ test("Refreshing a completed connector callback does not reconnect it", async ()
   ).toBeInTheDocument();
 });
 
+test("Complete a native Link wallet authorization without a catalog entry", async () => {
+  context.mocks.api(connectorCatalogContract.get, ({ never }) => {
+    return never();
+  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ params, query, respond }) => {
+      expect(params.connectorSlug).toBe("link");
+      expect(query).toMatchObject({
+        code: "oauth-code",
+        state: "oauth-state",
+        responseMode: "json",
+      });
+      return respond(200, { status: "success", username: null });
+    },
+  );
+
+  await setupPage({
+    context,
+    path: "/connectors/link/callback?code=oauth-code&state=oauth-state",
+    auth: null,
+  });
+
+  await expect(
+    screen.findByRole("heading", { name: "Link connected" }),
+  ).resolves.toBeInTheDocument();
+  expect(screen.getByRole("img", { name: "Link" })).toBeInTheDocument();
+  await waitFor(() => {
+    expect(pathname()).toBe("/connectors/link/callback/success");
+    expect(search()).toBe("");
+  });
+});
+
+test.each([
+  ["success", "Link connected"],
+  ["error", "Couldn’t connect Link"],
+])(
+  "Show the Link wallet icon on a refreshed %s page",
+  async (status, title) => {
+    context.mocks.api(connectorCatalogContract.get, ({ never }) => {
+      return never();
+    });
+    context.mocks.api(
+      builtinConnectorsSlugCallbackContract.callback,
+      ({ never }) => {
+        return never();
+      },
+    );
+
+    await setupPage({
+      context,
+      path: `/connectors/link/callback/${status}`,
+      auth: null,
+    });
+
+    await expect(
+      screen.findByRole("heading", { name: title }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Link" })).toBeInTheDocument();
+  },
+);
+
 test("Show Mercury attribution on a completed connector callback", async () => {
   context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
     expect(params.connectorSlug).toBe("mercury");
