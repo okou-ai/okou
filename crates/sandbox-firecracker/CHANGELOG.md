@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.14...sandbox-firecracker-v0.48.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
 ## [0.47.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.13...sandbox-firecracker-v0.47.14) (2026-10-13)
 
 ## [0.47.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.12...sandbox-firecracker-v0.47.13) (2026-10-13)

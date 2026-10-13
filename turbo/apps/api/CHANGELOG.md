@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.3](https://github.com/okou-ai/okou/compare/api-v1.732.2...api-v1.732.3) (2026-10-13)
+
+
+### Refactoring
+
+* **api:** localize browser reconciliation database ownership ([#39808](https://github.com/okou-ai/okou/issues/39808)) ([2b6e343](https://github.com/okou-ai/okou/commit/2b6e3431e0b01ba400d4575f2349e92d5f347075))
+* **api:** own discord admission terminal writes ([#39811](https://github.com/okou-ai/okou/issues/39811)) ([bd7f153](https://github.com/okou-ai/okou/commit/bd7f15385fce612a96a6cd9f5c15f3118b78678e))
+* **api:** remove unused teams persistence handle ([#39793](https://github.com/okou-ai/okou/issues/39793)) ([d437853](https://github.com/okou-ai/okou/commit/d437853427438f95cc3db83edfa7ac7101bf1332)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 1.335.3
+
 ## [1.732.2](https://github.com/okou-ai/okou/compare/api-v1.732.1...api-v1.732.2) (2026-10-13)
 
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.231.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.5...runner-rs-v0.231.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+
+### Bug Fixes
+
+* **runner:** protect native home cache restore from gc ([#39810](https://github.com/okou-ai/okou/issues/39810)) ([fcb41bc](https://github.com/okou-ai/okou/commit/fcb41bc6a645dc512e1a2669b23f0da89da0290d))
+
+
+### Refactoring
+
+* **runner:** reuse bounded websocket zlib input traversal ([#39797](https://github.com/okou-ai/okou/issues/39797)) ([87494f4](https://github.com/okou-ai/okou/commit/87494f4bcd90432594f7c99391dda6255412abc9))
+
 ## [0.230.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.4...runner-rs-v0.230.5) (2026-10-13)
 
 

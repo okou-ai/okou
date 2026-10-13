@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.5...runner-supervisor-v0.13.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
 ## [0.12.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.4...runner-supervisor-v0.12.5) (2026-10-13)
 
 ## [0.12.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.3...runner-supervisor-v0.12.4) (2026-10-13)
