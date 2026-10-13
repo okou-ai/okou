@@ -12,7 +12,7 @@ import {
   SCOUT_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
 
-test("A Cloudflare network removal refreshes the current chat's available SSH hosts", async () => {
+test("A Cloudflare-only notice refreshes current chat host metadata while preserving access", async () => {
   const orgId = "org_cloudflare_chat";
   const privateHost = {
     connectionId: "b0000000-0000-4000-8000-000000000001",
@@ -24,14 +24,14 @@ test("A Cloudflare network removal refreshes the current chat's available SSH ho
     displayName: "Direct server",
     defaultEnabled: false,
   };
-  let removed = false;
+  let currentPrivateHost = privateHost;
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
   context.mocks.data.org({ id: orgId, name: "Engineering", role: "member" });
   context.mocks.api(
     chatRemoteAccessContract.listHostDefaults,
     ({ respond }) => {
       return respond(200, {
-        ssh: removed ? [directHost] : [privateHost, directHost],
+        ssh: [currentPrivateHost, directHost],
         vnc: [],
       });
     },
@@ -39,7 +39,7 @@ test("A Cloudflare network removal refreshes the current chat's available SSH ho
   context.mocks.api(
     chatRemoteAccessContract.listThreadAccess,
     ({ respond }) => {
-      const hosts = removed ? [directHost] : [privateHost, directHost];
+      const hosts = [currentPrivateHost, directHost];
       return respond(200, {
         ssh: hosts.map((host) => {
           return {
@@ -73,13 +73,18 @@ test("A Cloudflare network removal refreshes the current chat's available SSH ho
   });
   click(remoteAccess);
   await screen.findByRole("combobox", { name: "SSH Private server" });
-  removed = true;
+  // A saved host was renamed elsewhere; the common SSH notice was missed.
+  currentPrivateHost = {
+    ...privateHost,
+    displayName: "Renamed private server",
+  };
   await act(() => {
     return context.mocks.ably.trigger("cloudflare-access:changed", { orgId });
   });
-  await waitFor(() => {
-    return expect(trigger).toHaveTextContent("0 enabled");
-  });
+  await expect(
+    screen.findByRole("combobox", { name: "SSH Renamed private server" }),
+  ).resolves.toHaveTextContent("Default (On)");
+  expect(trigger).toHaveTextContent("1 enabled");
   expect(
     screen.getByRole("combobox", { name: "SSH Direct server" }),
   ).toHaveTextContent("Default (Off)");

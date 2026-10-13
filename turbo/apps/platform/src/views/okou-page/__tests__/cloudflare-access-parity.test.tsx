@@ -109,8 +109,10 @@ test("Reviewing a conflict permits restoring the original name against the new r
     return respond(200, { configs: [current] });
   });
   context.mocks.api(cloudflareAccessContract.update, ({ body, respond }) => {
-    if (body.expectedRevision === 1) {
+    if (current.revision === 1) {
       current = { ...config, name: "Concurrent rename", revision: 2 };
+    }
+    if (body.expectedRevision !== current.revision) {
       return respond(409, {
         error: {
           code: "CLOUDFLARE_ACCESS_REVISION_CONFLICT",
@@ -118,7 +120,11 @@ test("Reviewing a conflict permits restoring the original name against the new r
         },
       });
     }
-    current = { ...current, name: body.name ?? current.name, revision: 3 };
+    current = {
+      ...current,
+      name: body.name ?? current.name,
+      revision: current.revision + 1,
+    };
     return respond(200, current);
   });
   await page();
@@ -189,7 +195,7 @@ test.each(operations)(
   },
 );
 
-test("A network-only removal refreshes a saved SSH host and its default access", async () => {
+test("A network-only removal refreshes SSH rebind requirements and preserves default access", async () => {
   let removed = false;
   const host: SshConnectionResponse = {
     id: "c0000000-0000-4000-8000-000000000001",
@@ -240,15 +246,13 @@ test("A network-only removal refreshes a saved SSH host and its default access",
     chatRemoteAccessContract.listHostDefaults,
     ({ respond }) => {
       return respond(200, {
-        ssh: removed
-          ? []
-          : [
-              {
-                connectionId: host.id,
-                displayName: host.displayName,
-                defaultEnabled: true,
-              },
-            ],
+        ssh: [
+          {
+            connectionId: host.id,
+            displayName: host.displayName,
+            defaultEnabled: true,
+          },
+        ],
         vnc: [],
       });
     },
@@ -268,13 +272,9 @@ test("A network-only removal refreshes a saved SSH host and its default access",
   await screen.findByText(
     "This host needs a new Cloudflare Access configuration. Edit it to rebind or choose Direct. It will not connect until you do.",
   );
-  await waitFor(() => {
-    const currentToggle = screen.getByRole("switch", {
-      name: "Enabled by default for chats",
-    });
-    expect(currentToggle).toHaveAttribute("aria-disabled", "true");
-    expect(currentToggle).not.toBeChecked();
-  });
+  expect(
+    screen.getByRole("switch", { name: "Enabled by default for chats" }),
+  ).toBeChecked();
 });
 
 test("Background network revalidation preserves an open name and credential draft", async () => {
