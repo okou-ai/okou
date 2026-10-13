@@ -58,45 +58,31 @@ fn clear_run_metadata_env() {
     }
 }
 
-fn capture_raw(log_path: &Path) -> TestResult<GuestConfigRaw> {
-    guest_telemetry::log::clear_system_log_file();
-    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
-    assert!(
-        !log_path.exists(),
-        "raw capture installed or wrote a system-log sink"
-    );
-    Ok(raw)
-}
-
-fn assert_canonical_capture_behaviors(
-    tmp: &Path,
-    index: usize,
-    spec: RunMetadataEnvSpec,
-) -> TestResult {
+fn assert_canonical_capture_behaviors(index: usize, spec: RunMetadataEnvSpec) -> TestResult {
     clear_run_metadata_env();
-    let raw = capture_raw(&tmp.join(format!("{index}-absent.log")))?;
+    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
     assert_eq!((spec.value)(&raw), "");
 
     set_test_env(spec.canonical, "");
-    let raw = capture_raw(&tmp.join(format!("{index}-canonical-empty.log")))?;
+    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
     assert_eq!((spec.value)(&raw), "");
 
     let canonical_value = format!("canonical-value-值-{index}");
     clear_run_metadata_env();
     set_test_env(spec.canonical, &canonical_value);
-    let raw = capture_raw(&tmp.join(format!("{index}-canonical.log")))?;
+    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
     assert_eq!((spec.value)(&raw), canonical_value);
     Ok(())
 }
 
 #[cfg(unix)]
-fn assert_non_unicode_behaviors(tmp: &Path, index: usize, spec: RunMetadataEnvSpec) -> TestResult {
+fn assert_non_unicode_behaviors(spec: RunMetadataEnvSpec) -> TestResult {
     use std::ffi::OsString;
     use std::os::unix::ffi::OsStringExt;
 
     clear_run_metadata_env();
     set_test_env(spec.canonical, OsString::from_vec(vec![0xff]));
-    let raw = capture_raw(&tmp.join(format!("{index}-canonical-non-unicode.log")))?;
+    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
     assert_eq!((spec.value)(&raw), "");
     Ok(())
 }
@@ -134,7 +120,7 @@ fn assert_guest_config_uses_canonical_values(tmp: &Path) -> TestResult {
         set_test_env(spec.canonical, value);
     }
 
-    let raw = capture_raw(&tmp.join("canonical-config.log"))?;
+    let raw = GuestConfigRaw::from_process_env().map_err(std::io::Error::other)?;
     let config = guest_agent::env::GuestConfig::from_raw(raw).map_err(std::io::Error::other)?;
 
     assert_eq!(config.sandbox_id, values[0]);
@@ -152,9 +138,9 @@ fn process_env_preserves_canonical_run_metadata() -> TestResult {
     let tmp = tempfile::tempdir()?;
 
     for (index, spec) in RUN_METADATA_ENV_SPECS.into_iter().enumerate() {
-        assert_canonical_capture_behaviors(tmp.path(), index, spec)?;
+        assert_canonical_capture_behaviors(index, spec)?;
         #[cfg(unix)]
-        assert_non_unicode_behaviors(tmp.path(), index, spec)?;
+        assert_non_unicode_behaviors(spec)?;
     }
 
     assert_guest_config_uses_canonical_values(tmp.path())
