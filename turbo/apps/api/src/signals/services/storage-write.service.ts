@@ -3,6 +3,8 @@ import {
   type FileEntryWithHash,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 import { MAX_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/storages";
+import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import { runResultSchema } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
@@ -101,6 +103,7 @@ export type StorageVersionRow = typeof storageVersions.$inferSelect;
 
 interface MountedWritebackStorage {
   readonly runStatus: typeof agentRuns.$inferSelect.status;
+  readonly runResult: typeof agentRuns.$inferSelect.result;
   readonly storage: StorageRow;
 }
 
@@ -202,7 +205,11 @@ const readMountedWritebackStorage$ = command(
     // One statement observes run authority and its first matching writeback mount
     // together with the exact Storage identity. Ordinality preserves Array.find.
     const [mounted] = await get(db$)
-      .select({ runStatus: agentRuns.status, storage: storageRowSelection() })
+      .select({
+        runStatus: agentRuns.status,
+        runResult: agentRuns.result,
+        storage: storageRowSelection(),
+      })
       .from(agentRuns)
       .leftJoin(
         storages,
@@ -234,7 +241,11 @@ const readMountedWritebackStorage$ = command(
       return notFound("Agent run not found");
     }
     return mounted.storage
-      ? { runStatus: mounted.runStatus, storage: mounted.storage }
+      ? {
+          runStatus: mounted.runStatus,
+          runResult: mounted.runResult,
+          storage: mounted.storage,
+        }
       : notFound("Writeback storage not found");
   },
 );
@@ -253,13 +264,35 @@ const guardMaintenancePreparation$ = command(
       return binding;
     }
     const [result] = await db
-      .select({ id: piMemoryPhase2Jobs.memoryStorageId })
+      .select({ versionId: maintenancePublicationResultVersion() })
       .from(piMemoryPhase2Jobs)
       .where(maintenancePublicationResultCondition(binding))
       .limit(1);
     signal.throwIfAborted();
     if (result) {
-      return notFound("Pi memory maintenance publication already committed");
+      const versionId = maintenancePublicationVersion(result);
+      if (versionId !== args.versionId) {
+        return notFound("Pi memory maintenance publication already committed");
+      }
+      const [version] = await db
+        .select({ id: storageVersions.id })
+        .from(storageVersions)
+        .where(
+          and(
+            eq(storageVersions.storageId, binding.memoryStorageId),
+            eq(storageVersions.id, args.versionId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      // Acknowledgement carries no new upload capability; a missing version
+      // cannot be recreated from the Job's historical result reference.
+      return version
+        ? {
+            status: 200 as const,
+            body: { versionId: args.versionId, existing: true },
+          }
+        : notFound("Pi memory maintenance publication version not found");
     }
     const [active] = await db
       .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })
@@ -819,7 +852,24 @@ export const commitSandboxStorageUpload$ = command(
           .limit(1)
       : [];
     signal.throwIfAborted();
-    const publicationVersionId = maintenancePublicationVersion(result);
+    const finalizedOutput =
+      binding &&
+      ["completed", "failed", "cancelled"].includes(mounted.runStatus) &&
+      mounted.runResult !== null
+        ? runResultSchema
+            .parse(mounted.runResult)
+            .storageOutputs?.find((output) => {
+              return (
+                output.name === mounted.storage.name &&
+                output.mountPath === PI_MEMORY_ROOT
+              );
+            })
+        : undefined;
+    // Finalized Run output fixes this Run's accepted publication independently
+    // of a newer Job/HEAD. Generic version or lineage existence is not proof.
+    const publicationVersionId = finalizedOutput
+      ? finalizedOutput.version
+      : maintenancePublicationVersion(result);
     if (publicationVersionId) {
       if (
         publicationVersionId !== args.versionId ||

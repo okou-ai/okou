@@ -5,13 +5,14 @@ import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
-import { and, eq, inArray, type SQL } from "drizzle-orm";
+import { and, eq, inArray, notExists, type SQL } from "drizzle-orm";
 
 import { notFound, runNotCancellable } from "../../lib/error";
 import { now } from "../../lib/time";
 import { writeDb$, type Db } from "../external/db";
 import { scheduleReleasedSlotPicks$ } from "./agent-run-slot-scheduling.service";
 import { lockCancellationProtection } from "./threadless-run-protection.service";
+import { publishedPiMemoryPhase2RunProtection } from "./pi-memory-phase2-lifecycle";
 import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 import { disconnectedPersonalAccountCleanupSql } from "./model-provider-account.service";
@@ -183,7 +184,15 @@ export const cancelRun$ = command(
           completedAt: new Date(apiStartTime),
           runnerCancellationMode,
         })
-        .where(and(eq(agentRuns.id, run.id), eq(agentRuns.status, run.status)))
+        .where(
+          and(
+            eq(agentRuns.id, run.id),
+            eq(agentRuns.status, run.status),
+            ...(args.protectThreadlessRuns
+              ? [notExists(publishedPiMemoryPhase2RunProtection())]
+              : []),
+          ),
+        )
         .returning({
           runId: agentRuns.id,
           orgId: agentRuns.orgId,
@@ -193,6 +202,11 @@ export const cancelRun$ = command(
           startedAt: agentRuns.startedAt,
         });
       if (transitions.length === 0) {
+        if (args.protectThreadlessRuns) {
+          return runNotCancellable(
+            "Run cannot be cancelled while its owner protects it",
+          );
+        }
         throw new Error("Locked cancellable run was not updated");
       }
       const transitionedRunIds = transitions.map((transition) => {

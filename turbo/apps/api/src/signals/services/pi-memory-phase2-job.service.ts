@@ -25,11 +25,13 @@ import {
   isNull,
   lte,
   ne,
+  notExists,
   or,
   sql,
 } from "drizzle-orm";
 
 import { writeDb$ } from "../external/db";
+import { unfinishedPiMemoryPhase2Runs } from "./pi-memory-phase2-lifecycle";
 
 export const PI_MEMORY_PHASE2_LEASE_DURATION_MS = 60 * 60 * 1000;
 export const PI_MEMORY_PHASE2_RETRY_DELAY_MS = 60 * 60 * 1000;
@@ -421,7 +423,7 @@ export const claimPiMemoryPhase2Job$ = command(
             currentTime: args.currentTime,
           }),
         )
-        .where(claimScopeCondition(job))
+        .where(and(claimScopeCondition(job), claimableJobCondition(args)))
         .returning({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId });
       if (!leased) {
         throw new Error("Locked Pi memory Phase 2 job could not be leased");
@@ -460,6 +462,7 @@ function claimableJobCondition(args: ClaimPiMemoryPhase2JobArgs) {
     args.currentTime.getTime() - PI_MEMORY_PHASE2_SUCCESS_COOLDOWN_MS,
   );
   return and(
+    notExists(unfinishedPiMemoryPhase2Runs()),
     gt(piMemoryPhase2Jobs.inputRevision, piMemoryPhase2Jobs.completedRevision),
     or(
       eq(piMemoryPhase2Jobs.status, "pending"),
