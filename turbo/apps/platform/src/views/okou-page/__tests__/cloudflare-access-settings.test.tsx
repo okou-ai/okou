@@ -1,5 +1,6 @@
 import {
   cloudflareAccessContract,
+  type CloudflareAccessImpactPreview,
   type ScopedCloudflareAccessConfig,
 } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -730,23 +731,29 @@ test("uncertain conversion result requires a fresh named impact review", async (
     ...config,
     scope: "organization",
   };
-  let previewCount = 0;
+  let currentImpact: CloudflareAccessImpactPreview = {
+    expectedRevision: 1,
+    ownHostCount: 0,
+    otherHostCount: 1,
+    affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
+    impactSnapshot: "a".repeat(64),
+  };
   context.mocks.api(cloudflareAccessContract.list, ({ respond }) => {
     return respond(200, { configs: [shared] });
   });
   context.mocks.api(cloudflareAccessContract.impactPreview, ({ respond }) => {
-    previewCount += 1;
-    return respond(200, {
-      expectedRevision: 1,
-      ownHostCount: 0,
-      otherHostCount: 1,
-      affectedOwners: [{ userId: "user-member-1", displayName: "Member One" }],
-      impactSnapshot: (previewCount === 1 ? "a" : "b").repeat(64),
-    });
+    return respond(200, currentImpact);
   });
   context.mocks.api(
     cloudflareAccessContract.convertToPersonal,
     ({ respond }) => {
+      currentImpact = {
+        ...currentImpact,
+        affectedOwners: [
+          { userId: "user-member-1", displayName: "Member Latest" },
+        ],
+        impactSnapshot: "b".repeat(64),
+      };
       return respond(500, {
         error: { code: "INTERNAL_ERROR", message: "private provider detail" },
       });
@@ -767,8 +774,8 @@ test("uncertain conversion result requires a fresh named impact review", async (
   expect(queryAction("button", "Make personal", dialog)).toBeNull();
   expect(dialog.textContent).not.toContain("private provider detail");
   click(getAction("button", "Review latest impact", dialog));
+  await within(dialog).findByText(/Member Latest/u);
   await waitFor(() => {
-    expect(previewCount).toBe(2);
     expect(getAction("button", "Make personal", dialog)).toBeDisabled();
   });
   expect(within(dialog).getByRole("checkbox")).not.toBeChecked();
