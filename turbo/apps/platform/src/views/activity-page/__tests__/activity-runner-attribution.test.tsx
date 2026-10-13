@@ -236,6 +236,22 @@ test("Runner diagnostics explain how the activity environment started", async ()
       label: "Unknown",
       description: "Startup reuse details are unavailable.",
     },
+    {
+      runId: "a0000000-0000-4000-a000-000000000311",
+      sandboxReuseResult: "reused",
+      homeReuseResult: "sandboxReused",
+      sandboxStartupPath: undefined,
+      label: "Sandbox reuse",
+      description: "The sandbox and its workspace were reused.",
+    },
+    {
+      runId: "a0000000-0000-4000-a000-000000000312",
+      sandboxReuseResult: "poolMiss",
+      homeReuseResult: "reused",
+      sandboxStartupPath: undefined,
+      label: "Home reuse",
+      description: "A fresh sandbox restored a cached home directory.",
+    },
   ] as const satisfies readonly {
     runId: string;
     sandboxReuseResult: RunRunnerResponse["sandboxReuseResult"];
