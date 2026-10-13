@@ -1,0 +1,1 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "chat_resources_enabled_by_default" boolean DEFAULT true NOT NULL;

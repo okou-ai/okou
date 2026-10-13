@@ -105,6 +105,8 @@ export function userPreferences({
           sendMode: orgMembersMetadata.sendMode,
           cloudBrowserEnabledByDefault:
             orgMembersMetadata.cloudBrowserEnabledByDefault,
+          chatResourcesEnabledByDefault:
+            orgMembersMetadata.chatResourcesEnabledByDefault,
           theme: orgMembersMetadata.theme,
           colorTheme: orgMembersMetadata.colorTheme,
           captureNetworkBodiesRemaining:
@@ -140,6 +142,7 @@ export function userPreferences({
         pinnedAgentIds: [],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
+        chatResourcesEnabledByDefault: true,
         theme: null,
         colorTheme: null,
         captureNetworkBodiesRemaining: 0,
@@ -156,6 +159,7 @@ export function userPreferences({
       ),
       sendMode: parseSendMode(row.sendMode),
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
+      chatResourcesEnabledByDefault: row.chatResourcesEnabledByDefault,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
@@ -248,6 +252,10 @@ function mergeUserPreferences(
     cloudBrowserEnabledByDefault:
       preferences.cloudBrowserEnabledByDefault ??
       existing.cloudBrowserEnabledByDefault,
+    chatResourcesEnabledByDefault:
+      preferences.chatResourcesEnabledByDefault ??
+      existing.chatResourcesEnabledByDefault ??
+      true,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
     captureNetworkBodiesRemaining:
@@ -273,6 +281,9 @@ function userPreferenceUpdateColumns(
     }),
     ...(preferences.cloudBrowserEnabledByDefault !== undefined && {
       cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
+    }),
+    ...(preferences.chatResourcesEnabledByDefault !== undefined && {
+      chatResourcesEnabledByDefault: preferences.chatResourcesEnabledByDefault,
     }),
     ...(preferences.theme !== undefined && { theme: preferences.theme }),
     ...(preferences.colorTheme !== undefined && {
@@ -321,6 +332,7 @@ export const updateUserPreferences$ = command(
         pinnedAgentIds: merged.pinnedAgentIds,
         sendMode: merged.sendMode,
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
+        chatResourcesEnabledByDefault: merged.chatResourcesEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,

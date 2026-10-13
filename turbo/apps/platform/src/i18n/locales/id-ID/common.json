@@ -2047,6 +2047,19 @@
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
     },
+    "resources": {
+      "copyLink": "Salin tautan",
+      "empty": "Chat ini belum memiliki hasil atau tautan",
+      "links": "Tautan",
+      "loadFailed": "Tidak dapat memuat sumber daya",
+      "loading": "Memuat sumber daya",
+      "outputs": "Hasil",
+      "retry": "Coba lagi",
+      "saveFailed": "Tidak dapat menyimpan preferensi sumber daya",
+      "show": "Tampilkan sumber daya",
+      "title": "Sumber daya chat",
+      "viewAll": "Lihat semua"
+    },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
       "creditUsage": "Penggunaan kredit",

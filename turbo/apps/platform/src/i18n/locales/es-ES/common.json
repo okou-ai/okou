@@ -2096,6 +2096,19 @@
       "title": "Acceso remoto",
       "unavailableSsh": "host SSH no disponible"
     },
+    "resources": {
+      "copyLink": "Copiar enlace",
+      "empty": "Este chat aún no tiene resultados ni enlaces",
+      "links": "Enlaces",
+      "loadFailed": "No se pudieron cargar los recursos",
+      "loading": "Cargando recursos",
+      "outputs": "Resultados",
+      "retry": "Reintentar",
+      "saveFailed": "No se pudo guardar tu preferencia de recursos",
+      "show": "Mostrar recursos",
+      "title": "Recursos del chat",
+      "viewAll": "Ver todo"
+    },
     "run": {
       "collapseWorkHistory": "Contraer el historial de trabajo",
       "creditUsage": "Consumo de créditos",

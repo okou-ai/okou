@@ -2047,6 +2047,19 @@
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
     },
+    "resources": {
+      "copyLink": "링크 복사",
+      "empty": "이 채팅에는 아직 결과물이나 링크가 없습니다",
+      "links": "링크",
+      "loadFailed": "리소스를 불러오지 못했습니다",
+      "loading": "리소스 불러오는 중",
+      "outputs": "결과물",
+      "retry": "다시 시도",
+      "saveFailed": "리소스 표시 설정을 저장하지 못했습니다",
+      "show": "리소스 표시",
+      "title": "채팅 리소스",
+      "viewAll": "모두 보기"
+    },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",
       "creditUsage": "크레딧 사용량",

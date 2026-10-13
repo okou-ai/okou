@@ -4,6 +4,9 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { ChatResourceLinks } from "./chat-resource-links.tsx";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -129,6 +132,8 @@ function ThreadSidebarHeader({
 
 function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -219,6 +224,11 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
               );
             }}
           />
+        )}
+        {resourcesEnabled && (
+          <div className="mt-4">
+            <ChatResourceLinks thread={thread} />
+          </div>
         )}
       </div>
     </FullscreenPanel>

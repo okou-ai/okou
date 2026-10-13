@@ -2096,6 +2096,19 @@
       "title": "Acesso remoto",
       "unavailableSsh": "host SSH indisponível"
     },
+    "resources": {
+      "copyLink": "Copiar link",
+      "empty": "Esta conversa ainda não tem resultados ou links",
+      "links": "Links",
+      "loadFailed": "Não foi possível carregar os recursos",
+      "loading": "Carregando recursos",
+      "outputs": "Resultados",
+      "retry": "Tentar novamente",
+      "saveFailed": "Não foi possível salvar sua preferência de recursos",
+      "show": "Mostrar recursos",
+      "title": "Recursos da conversa",
+      "viewAll": "Ver tudo"
+    },
     "run": {
       "collapseWorkHistory": "Recolher histórico de trabalho",
       "creditUsage": "Uso de créditos",

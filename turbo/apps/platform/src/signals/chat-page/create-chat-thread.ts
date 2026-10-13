@@ -33,6 +33,7 @@ import {
   type State,
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
+import { createChatResourceSignals } from "./chat-resources.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,
@@ -3902,6 +3903,10 @@ export function createChatPanelSignals(
     sharing,
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
+    resources: createChatResourceSignals(
+      messagePipeline.allChatGroups$,
+      artifact.artifacts$,
+    ),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

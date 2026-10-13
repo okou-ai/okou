@@ -60,6 +60,8 @@ export const userPreferencesResponseSchema = z.object({
   pinnedAgentIds: z.array(z.string()),
   sendMode: sendModeSchema,
   cloudBrowserEnabledByDefault: z.boolean(),
+  // Older API deployments omit this additive preference; the App defaults it on.
+  chatResourcesEnabledByDefault: z.boolean().optional(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
   captureNetworkBodiesRemaining: z.number().int().min(0),
@@ -89,6 +91,7 @@ export const updateUserPreferencesRequestSchema = z
     pinnedAgentIds: z.array(z.string()).optional(),
     sendMode: sendModeSchema.optional(),
     cloudBrowserEnabledByDefault: z.boolean().optional(),
+    chatResourcesEnabledByDefault: z.boolean().optional(),
     theme: themePreferenceSchema.optional(),
     colorTheme: colorThemeSchema.optional(),
     captureNetworkBodiesRemaining: z.number().int().min(0).optional(),
@@ -101,6 +104,7 @@ export const updateUserPreferencesRequestSchema = z
         data.pinnedAgentIds !== undefined ||
         data.sendMode !== undefined ||
         data.cloudBrowserEnabledByDefault !== undefined ||
+        data.chatResourcesEnabledByDefault !== undefined ||
         data.theme !== undefined ||
         data.colorTheme !== undefined ||
         data.captureNetworkBodiesRemaining !== undefined

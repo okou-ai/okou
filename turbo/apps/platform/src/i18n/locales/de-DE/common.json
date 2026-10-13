@@ -2055,6 +2055,19 @@
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
+    "resources": {
+      "copyLink": "Link kopieren",
+      "empty": "Dieser Chat enthält noch keine Ergebnisse oder Links",
+      "links": "Links",
+      "loadFailed": "Ressourcen konnten nicht geladen werden",
+      "loading": "Ressourcen werden geladen",
+      "outputs": "Ergebnisse",
+      "retry": "Erneut versuchen",
+      "saveFailed": "Ihre Ressourceneinstellung konnte nicht gespeichert werden",
+      "show": "Ressourcen anzeigen",
+      "title": "Chat-Ressourcen",
+      "viewAll": "Alle anzeigen"
+    },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",
       "creditUsage": "Credit-Nutzung",

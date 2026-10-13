@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ChatResourcePanel]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat resources",
+    description:
+      "Show a responsive panel of outputs and links from the current chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.TailscaleAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Tailscale setup",

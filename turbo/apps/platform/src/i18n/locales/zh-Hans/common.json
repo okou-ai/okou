@@ -2047,6 +2047,19 @@
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
     },
+    "resources": {
+      "copyLink": "复制链接",
+      "empty": "此聊天中还没有输出内容或链接",
+      "links": "链接",
+      "loadFailed": "无法加载聊天资源",
+      "loading": "正在加载资源",
+      "outputs": "输出内容",
+      "retry": "重试",
+      "saveFailed": "无法保存资源显示偏好",
+      "show": "显示资源",
+      "title": "聊天资源",
+      "viewAll": "查看全部"
+    },
     "run": {
       "collapseWorkHistory": "收起工作记录",
       "creditUsage": "积分用量",

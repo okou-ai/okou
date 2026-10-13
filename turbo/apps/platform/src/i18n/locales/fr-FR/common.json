@@ -2096,6 +2096,19 @@
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible"
     },
+    "resources": {
+      "copyLink": "Copier le lien",
+      "empty": "Ce chat ne contient pas encore de résultats ni de liens",
+      "links": "Liens",
+      "loadFailed": "Impossible de charger les ressources",
+      "loading": "Chargement des ressources",
+      "outputs": "Résultats",
+      "retry": "Réessayer",
+      "saveFailed": "Impossible d’enregistrer votre préférence de ressources",
+      "show": "Afficher les ressources",
+      "title": "Ressources du chat",
+      "viewAll": "Tout voir"
+    },
     "run": {
       "collapseWorkHistory": "Réduire l'historique du travail",
       "creditUsage": "Utilisation du crédit",
