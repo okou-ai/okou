@@ -13,6 +13,7 @@ use std::time::Duration;
 use tokio::process::Command;
 
 const THREAD_ID: &str = "019fac13-2355-74d3-8414-b467fbb80c70";
+const PRIMARY_CLI_ERROR: &str = "mock codex primary failure";
 
 struct EventFailureRun {
     process_exit_code: Option<i32>,
@@ -88,7 +89,8 @@ async fn nonzero_cli_remains_primary_when_event_delivery_also_fails()
         "guest-agent stderr:\n{}",
         run.stderr
     );
-    assert!(run.stderr.contains("mock codex primary failure"));
+    assert!(run.stderr.contains(PRIMARY_CLI_ERROR));
+    assert_eq!(run.error_message, PRIMARY_CLI_ERROR);
     assert_eq!(run.diagnostic.failure_class, FailureClass::CliNonzero);
     assert_eq!(run.diagnostic.cli_exit_code, Some(1));
     assert_confirmed_event_delivery(&run.diagnostic, 500, 3)?;
@@ -155,11 +157,15 @@ async fn run_event_failure_case(
         then.status(200);
     });
     let complete = server.mock(|when, then| {
-        when.method(POST)
+        let when = when
+            .method(POST)
             .path("/api/webhooks/agent/complete")
             .json_body_includes(format!(
                 r#"{{"exitCode":1,"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
             ));
+        if cli_exit_code != 0 {
+            when.json_body_includes(json!({"error": PRIMARY_CLI_ERROR}).to_string());
+        }
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({"success": true, "status": "failed"}));
