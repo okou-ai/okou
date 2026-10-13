@@ -240,7 +240,7 @@ test.each(["install", "connect"] as const)(
     await expect(
       screen.findByText(
         flow === "connect"
-          ? "Connected (Verified team)"
+          ? "Connected to Discord"
           : "Connect your Discord account through official browser consent.",
       ),
     ).resolves.toBeInTheDocument();
@@ -253,11 +253,24 @@ test.each(["install", "connect"] as const)(
     await waitFor(() => {
       const outcome =
         flow === "connect"
-          ? within(card).getByText(/^Connected(?: \(.+\))?$/u)
+          ? getAction("link", "Open Discord")
           : getAction("button", "Connect", card);
       expect(outcome).toBeInTheDocument();
       expect(outcome).not.toBeDisabled();
     });
+    expect(window.location.pathname).toBe(
+      flow === "connect" ? "/settings/discord" : "/works",
+    );
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get("status")).toBe(flow === "connect" ? "connected" : null);
+    expect(params.get("workspace")).toBe(
+      flow === "connect" ? "Verified team" : null,
+    );
+    expect(
+      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
+    ).toBe(
+      flow === "connect" ? "discord://-/channels/123456789012345678" : null,
+    );
   },
 );
 
@@ -524,72 +537,84 @@ test.each(["connected", "pending", "error"])(
       path: `/works?discord=${indicator}&discord_error=private-provider-detail&state=${attemptState}&completionToken=${completionToken}`,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    await expect(
-      screen.findByText(
-        "Connect your Discord account through official browser consent.",
-      ),
-    ).resolves.toBeInTheDocument();
-    const card = getIntegrationCard("Discord");
-    expect(getAction("button", "Connect", card)).toBeEnabled();
-    expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
-    expect(screen.queryByText("private-provider-detail")).toBeNull();
-    expect(completionRequests).toStrictEqual([]);
-    expect(within(card).queryByRole("alert") !== null).toBe(
-      indicator === "error",
+    expect(window.location.pathname).toBe("/settings/discord");
+    expect(new URLSearchParams(window.location.search).get("status")).toBe(
+      indicator,
     );
     expect(
-      within(card).queryByText(
-        "Discord authorization could not be completed. Try again from this card.",
+      screen.getByRole("heading", {
+        name:
+          indicator === "connected"
+            ? "Connect to Discord"
+            : "Connection failed",
+      }),
+    ).toBeInTheDocument();
+    expect(queryAction("button", "Connect") !== null).toBe(
+      indicator === "connected",
+    );
+    expect(getAction("link", "Back to settings")).toHaveAttribute(
+      "href",
+      "/works",
+    );
+    expect(queryAction("link", "Open Discord")).toBeNull();
+    expect(screen.queryByText("private-provider-detail")).toBeNull();
+    expect(completionRequests).toStrictEqual([]);
+    expect(
+      screen.queryByText(
+        "Discord authorization could not be completed. Try again.",
       ) !== null,
     ).toBe(indicator === "error");
   },
 );
 
-test("Consent browser automatically verifies the current account and closes without another confirmation or claiming connected", async () => {
-  const closed = vi.spyOn(window, "close").mockImplementation(() => {});
-  let approvalBody: unknown;
-  let authorization: string | null = null;
-  let approvalUrl: string | undefined;
-  let credentials: RequestCredentials | undefined;
-  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status({ isConnected: false, discordUserId: null }));
-  });
-  context.mocks.api(
-    discordOauthContract.approve,
-    ({ body, request, respond }) => {
-      approvalBody = body;
-      authorization = request.headers.get("Authorization");
-      approvalUrl = request.url;
-      credentials = request.credentials;
-      return respond(200, { approved: true });
-    },
-  );
-  await setupPage({
-    context,
-    host: "pr-37968-app.omby.ai",
-    path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
-    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
-  });
-  await expect(
-    screen.findByText(
-      "Connect your Discord account through official browser consent.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(window.location.hash).toBe("");
-  expect(window.location.href).not.toContain(approvalProof);
-  const card = getIntegrationCard("Discord");
-  await expect(
-    screen.findByText("Close this tab to finish connecting in Works."),
-  ).resolves.toBeInTheDocument();
-  expect(approvalBody).toStrictEqual({ state: attemptState, approvalProof });
-  expect(authorization).toMatch(/^Bearer /u);
-  expect(approvalUrl).toBe(
-    "https://pr-37968-api.vm6.ai/api/integrations/discord/oauth/approve",
-  );
-  expect(credentials).toBe("include");
-  expect(closed).toHaveBeenCalledOnce();
-  expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
-});
+test.each(["/works?discord=pending", "/settings/discord?status=pending"])(
+  "Consent browser at %s verifies the current account and closes without claiming connected",
+  async (callbackPath) => {
+    const closed = vi.spyOn(window, "close").mockImplementation(() => {});
+    let approvalBody: unknown;
+    let authorization: string | null = null;
+    let approvalUrl: string | undefined;
+    let credentials: RequestCredentials | undefined;
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, status({ isConnected: false, discordUserId: null }));
+    });
+    context.mocks.api(
+      discordOauthContract.approve,
+      ({ body, request, respond }) => {
+        approvalBody = body;
+        authorization = request.headers.get("Authorization");
+        approvalUrl = request.url;
+        credentials = request.credentials;
+        return respond(200, { approved: true });
+      },
+    );
+    await setupPage({
+      context,
+      host: "pr-37968-app.omby.ai",
+      path: `${callbackPath}#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    await expect(
+      screen.findByRole("heading", { name: "Connecting to Discord" }),
+    ).resolves.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings/discord");
+    expect(window.location.hash).toBe("");
+    expect(window.location.href).not.toContain(approvalProof);
+    await expect(
+      screen.findByText(
+        "Close this tab to finish connecting in the original tab.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(approvalBody).toStrictEqual({ state: attemptState, approvalProof });
+    expect(authorization).toMatch(/^Bearer /u);
+    expect(approvalUrl).toBe(
+      "https://pr-37968-api.vm6.ai/api/integrations/discord/oauth/approve",
+    );
+    expect(credentials).toBe("include");
+    expect(closed).toHaveBeenCalledOnce();
+    expect(queryAction("link", "Open Discord")).toBeNull();
+  },
+);
 
 test.each(["", "invalid-proof"])(
   "Malformed approval fragment %s is cleared and cannot authorize from callback markers",
@@ -609,12 +634,11 @@ test.each(["", "invalid-proof"])(
     });
     await expect(
       screen.findByText(
-        "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",
+        "Close this tab and restart the connection from the original tab.",
       ),
     ).resolves.toBeInTheDocument();
     expect(window.location.hash).toBe("");
-    const card = getIntegrationCard("Discord");
-    expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
+    expect(queryAction("link", "Open Discord")).toBeNull();
     expect(approvals).toStrictEqual([]);
   },
 );
@@ -642,24 +666,23 @@ test("A rejected consent-browser owner or proof shows restart guidance without c
     featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
   await expect(
-    screen.findByText(
-      "Connect your Discord account through official browser consent.",
-    ),
+    screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();
-  const card = getIntegrationCard("Discord");
-  await expect(within(card).findByRole("alert")).resolves.toHaveTextContent(
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
   );
-  expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
+  expect(queryAction("link", "Open Discord")).toBeNull();
   expect(closed).not.toHaveBeenCalled();
-  expect(getAction("button", "Retry", card)).toBeEnabled();
+  expect(getAction("button", "Retry")).toBeEnabled();
   denied = false;
-  click(getAction("button", "Retry", card));
+  click(getAction("button", "Retry"));
   await expect(
-    within(card).findByText("Close this tab to finish connecting in Works."),
+    screen.findByText(
+      "Close this tab to finish connecting in the original tab.",
+    ),
   ).resolves.toBeInTheDocument();
   expect(closed).toHaveBeenCalledOnce();
-  expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
+  expect(queryAction("link", "Open Discord")).toBeNull();
 });
 
 test("Leaving the consent route cancels automatic verification and destroys its proof", async () => {
@@ -687,25 +710,16 @@ test("Leaving the consent route cancels automatic verification and destroys its 
   await page.content;
   await approving.promise;
   await expect(
-    screen.findByText(
-      "Connect your Discord account through official browser consent.",
-    ),
+    screen.findByRole("heading", { name: "Connecting to Discord" }),
   ).resolves.toBeInTheDocument();
-  expect(
-    within(getIntegrationCard("Discord")).getByText("Authorizing…"),
-  ).toBeInTheDocument();
-  click(
-    getAction(
-      "link",
-      "Chat",
-      screen.getByRole("navigation", { name: "Sidebar" }),
-    ),
-  );
+  expect(queryAction("link", "Open Discord")).toBeNull();
+  click(getAction("link", "Back to settings"));
   await waitFor(() => {
-    expect(screen.queryByText("Discord")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Connecting to Discord" }),
+    ).toBeNull();
     expect(approvalSignal?.aborted).toBeTruthy();
   });
-  click(getAction("link", "Where Okou works"));
   await expect(
     screen.findByText(
       "Connect your Discord account through official browser consent.",

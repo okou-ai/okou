@@ -7,9 +7,14 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { bestEffort } from "../utils.ts";
 import { watchDiscordConnection$ } from "./discord.ts";
+import {
+  approveDiscordAuthorization$,
+  ownDiscordApprovalRoute$,
+} from "./discord-oauth-approval.ts";
 
 export const setupDiscordConnectPage$ = command(
   async ({ set }, signal: AbortSignal) => {
+    set(ownDiscordApprovalRoute$, signal);
     set(updatePage$, createElement(DiscordConnectPage));
     set(
       updateDocumentTitle$,
@@ -22,6 +27,7 @@ export const setupDiscordConnectPage$ = command(
     await Promise.all([
       set(hideAppSkeleton$, signal),
       bestEffort(set(watchDiscordConnection$, signal), signal),
+      set(approveDiscordAuthorization$, signal),
     ]);
   },
 );
