@@ -88,6 +88,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
     enabled: false,
   },
+  [FeatureSwitchKey.AgentSuggestion]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Agent Suggestion",
+    description: "Let Okou manage actionable suggestions on your home page.",
+    enabled: false,
+  },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",
     description:

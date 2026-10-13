@@ -37,6 +37,8 @@ const SKILL_IMPORT_TOKEN_PREFIX = "vm0_skillimport_";
 const SANDBOX_TOKEN_TTL_SECONDS = 3 * 60 * 60;
 
 const CONDITIONAL_CAPABILITIES = [
+  ["suggestion:read", FeatureSwitchKey.AgentSuggestion],
+  ["suggestion:write", FeatureSwitchKey.AgentSuggestion],
   ["banking:read", FeatureSwitchKey.Banking],
   ["wallet:write", FeatureSwitchKey.LinkWallet],
   ["lark:write", FeatureSwitchKey.LarkIntegration],
@@ -53,6 +55,7 @@ const AGENT_EXCLUDED_CAPABILITIES = [
 ] as const satisfies readonly Capability[];
 
 interface OkouTokenOptions {
+  readonly isDefaultAgent?: boolean;
   readonly computerUseHostId?: string;
   readonly cloudBrowserEnabled?: boolean;
   readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
@@ -180,6 +183,9 @@ function isCapabilityAvailableToAgent(
   capability: Capability,
   options: OkouTokenOptions | undefined,
 ): boolean {
+  if (capability === "suggestion:read" || capability === "suggestion:write") {
+    return options?.isDefaultAgent === true;
+  }
   if (
     AGENT_EXCLUDED_CAPABILITIES.some((excludedCapability) => {
       return excludedCapability === capability;

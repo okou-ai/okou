@@ -13,7 +13,7 @@ import type { VisualizationPreferences } from "./composer-visualization.ts";
  * selection or the first send reads as having silently cleared it.
  */
 export interface ComposerTaskSelection {
-  readonly task: ComposerTask | null;
+  readonly task: Exclude<ComposerTask, "suggestions"> | null;
   readonly presentationSlideCount: PresentationSlideCount;
   readonly visualization: VisualizationPreferences;
 }

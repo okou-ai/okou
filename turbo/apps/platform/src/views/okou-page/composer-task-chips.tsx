@@ -1,4 +1,4 @@
-import { useGet, useSet } from "ccstate-react";
+import { useGet, useSet, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -8,8 +8,11 @@ import {
   MessageSquare,
   Presentation,
   Route,
+  Lightbulb,
 } from "lucide-react";
-import { Button } from "@okouai/ui";
+import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@okouai/ui";
+import { agentSuggestionsEnabled$ } from "../../signals/okou-page/agent-suggestions.ts";
+import { AgentSuggestions } from "./agent-suggestions.tsx";
 import { cn } from "@okouai/ui/lib/utils";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -87,6 +90,7 @@ const TASK_IDEA_CARD = [
   "[&_svg]:order-2 [&_svg]:mt-auto",
 ].join(" ");
 const TASK_ICONS = {
+  suggestions: Lightbulb,
   workflow: Route,
   presentation: Presentation,
   image: Image,
@@ -404,13 +408,120 @@ function ComposerTaskIdeas({
   );
 }
 
+function ComposerTaskPanel({
+  signals,
+  selected,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: ComposerTask;
+}) {
+  if (selected === "suggestions") {
+    return <AgentSuggestions />;
+  }
+  return (
+    <div
+      key={selected}
+      className="flex min-w-0 flex-col gap-10 motion-safe:animate-composer-panel-in"
+    >
+      {selected === "presentation" && (
+        <>
+          <ComposerTaskIdeas signals={signals} task="presentation" />
+          <ComposerPresentationRecommendations signals={signals} />
+        </>
+      )}
+      {selected === "workflow" && (
+        <ComposerWorkflowRecommendations signals={signals} />
+      )}
+      {selected === "visualization" && (
+        <ComposerVisualizationOptions signals={signals} />
+      )}
+      {selected !== "presentation" &&
+        selected !== "workflow" &&
+        selected !== "visualization" && (
+          <>
+            <ComposerTaskIdeas signals={signals} task={selected} />
+            <ComposerTemplateShelf signals={signals} task={selected} />
+          </>
+        )}
+    </div>
+  );
+}
+
+function ComposerTaskTabs({
+  signals,
+  selected,
+  tasks,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: ComposerTask;
+  readonly tasks: readonly ComposerTask[];
+}) {
+  const { t } = useTranslation();
+  const browseTask = useSet(signals.taskChips.browseTask$);
+  const labels = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  return (
+    <Tabs
+      value={selected}
+      onValueChange={(value) => {
+        const task = tasks.find((candidate) => {
+          return candidate === value;
+        });
+        if (task) {
+          browseTask(task);
+        }
+      }}
+      className="flex min-w-0 flex-col gap-5"
+      aria-label={t(($) => {
+        return $.chat.taskChips.label;
+      })}
+    >
+      <TabsList className="mx-auto h-auto flex-wrap gap-2 bg-transparent p-0">
+        {tasks.map((task) => {
+          const Icon = TASK_ICONS[task];
+          return (
+            <TabsTrigger
+              key={task}
+              value={task}
+              render={
+                <Button type="button" variant="outline" className={TASK_CHIP} />
+              }
+            >
+              <Icon size={16} className="text-muted-foreground" aria-hidden />
+              {labels[task]}
+            </TabsTrigger>
+          );
+        })}
+      </TabsList>
+      {tasks.map((task) => {
+        return (
+          <TabsContent key={task} value={task}>
+            <ComposerTaskPanel signals={signals} selected={task} />
+          </TabsContent>
+        );
+      })}
+    </Tabs>
+  );
+}
+
 export function ComposerTaskChips({
   signals,
 }: {
   readonly signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
-  const selected = useGet(signals.taskChips.task$);
+  const suggestions = useLoadable(agentSuggestionsEnabled$);
+  const suggestionsEnabled =
+    suggestions.state === "hasData" && suggestions.data;
+  const current = useGet(signals.taskChips.task$);
+  const selected =
+    current === "suggestions" && !suggestionsEnabled
+      ? null
+      : (current ?? (suggestionsEnabled ? "suggestions" : null));
   const selectTask = useSet(signals.taskChips.selectTask$);
   const labels = t(
     ($) => {
@@ -418,13 +529,31 @@ export function ComposerTaskChips({
     },
     { returnObjects: true },
   );
-  const tasks = [
-    "workflow",
-    "presentation",
-    "image",
-    "website",
-    "visualization",
-  ] as const satisfies readonly ComposerTask[];
+  const tasks = (
+    [
+      "suggestions",
+      "workflow",
+      "presentation",
+      "image",
+      "website",
+      "visualization",
+    ] as const
+  ).filter((task) => {
+    if (task === "suggestions") {
+      return suggestionsEnabled;
+    }
+    return (
+      task === "workflow" ||
+      task === "website" ||
+      task === "visualization" ||
+      signals.create.modes.includes(task)
+    );
+  });
+  if (suggestionsEnabled && selected !== null) {
+    return (
+      <ComposerTaskTabs signals={signals} selected={selected} tasks={tasks} />
+    );
+  }
   return (
     <section
       className="flex min-w-0 flex-col gap-5"
@@ -440,76 +569,27 @@ export function ComposerTaskChips({
             return $.chat.taskChips.chooseTask;
           })}
         >
-          {tasks
-            .filter((task) => {
-              return (
-                task === "workflow" ||
-                task === "website" ||
-                task === "visualization" ||
-                signals.create.modes.includes(task)
-              );
-            })
-            .map((task) => {
-              const Icon = TASK_ICONS[task];
-              return (
-                <Button
-                  key={task}
-                  type="button"
-                  variant="outline"
-                  className={TASK_CHIP}
-                  onClick={() => {
-                    selectTask(task);
-                  }}
-                >
-                  <Icon
-                    size={16}
-                    className="text-muted-foreground"
-                    aria-hidden
-                  />
-                  {labels[task]}
-                </Button>
-              );
-            })}
+          {tasks.map((task) => {
+            const Icon = TASK_ICONS[task];
+            return (
+              <Button
+                key={task}
+                type="button"
+                variant="outline"
+                className={TASK_CHIP}
+                onClick={() => {
+                  return selectTask(task);
+                }}
+              >
+                <Icon size={16} className="text-muted-foreground" aria-hidden />
+                {labels[task]}
+              </Button>
+            );
+          })}
         </div>
       )}
       {selected !== null && (
-        // Keyed by the type so switching remounts the panel: a CSS entry runs
-        // on mount, and the rails inside start again from their first item and
-        // their own left edge, which is where a new catalog should begin.
-        <div
-          key={selected}
-          className={cn(
-            // The ideas row and the shelf under it are two groups, not two
-            // members of one: they need visibly more air between them than the
-            // `gap-3` a shelf keeps between its own title and its covers.
-            // 40px, the same step the entry column puts between the greeting
-            // and the composer — one block following another is one distance,
-            // wherever in the entry area it happens.
-            "flex min-w-0 flex-col gap-10",
-            "motion-safe:animate-composer-panel-in",
-          )}
-        >
-          {selected === "presentation" && (
-            <>
-              <ComposerTaskIdeas signals={signals} task="presentation" />
-              <ComposerPresentationRecommendations signals={signals} />
-            </>
-          )}
-          {selected === "workflow" && (
-            <ComposerWorkflowRecommendations signals={signals} />
-          )}
-          {selected === "visualization" && (
-            <ComposerVisualizationOptions signals={signals} />
-          )}
-          {selected !== "presentation" &&
-            selected !== "workflow" &&
-            selected !== "visualization" && (
-              <>
-                <ComposerTaskIdeas signals={signals} task={selected} />
-                <ComposerTemplateShelf signals={signals} task={selected} />
-              </>
-            )}
-        </div>
+        <ComposerTaskPanel signals={signals} selected={selected} />
       )}
     </section>
   );

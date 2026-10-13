@@ -1542,6 +1542,18 @@
       },
       "viewAgentProfile": "Ver perfil do agente"
     },
+    "agentSuggestions": {
+      "empty": "Nenhuma sugestão no momento.",
+      "existingThread": "Conversa existente",
+      "label": "Sugestões",
+      "loadFailed": "Não foi possível carregar as sugestões.",
+      "newThread": "Nova conversa com Okou",
+      "origin": "Do seu resumo matinal",
+      "showAll_one": "Ver todas ({{count}})",
+      "showAll_many": "Ver todas ({{count}})",
+      "showAll_other": "Ver todas ({{count}})",
+      "showLess": "Mostrar menos"
+    },
     "attachments": {
       "attach": "Anexar",
       "fileTooLarge": "{{filename}} excede o limite de 1 GB",
@@ -2442,6 +2454,7 @@
       "tasks": {
         "image": "Imagem",
         "presentation": "Slides",
+        "suggestions": "Sugestões",
         "visualization": "Visualização",
         "website": "Site",
         "workflow": "Fluxo de trabalho"

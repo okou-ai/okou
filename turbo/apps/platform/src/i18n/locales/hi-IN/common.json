@@ -1518,6 +1518,17 @@
       },
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
+    "agentSuggestions": {
+      "empty": "अभी कोई सुझाव नहीं है।",
+      "existingThread": "मौजूदा बातचीत",
+      "label": "सुझाव",
+      "loadFailed": "सुझाव लोड नहीं हो सके।",
+      "newThread": "Okou के साथ नई बातचीत",
+      "origin": "आपकी सुबह की ब्रीफ़िंग से",
+      "showAll_one": "सभी {{count}} देखें",
+      "showAll_other": "सभी {{count}} देखें",
+      "showLess": "कम दिखाएँ"
+    },
     "attachments": {
       "attach": "अटैच करें",
       "fileTooLarge": "{{filename}} 1 GB सीमा से अधिक है",
@@ -2394,6 +2405,7 @@
       "tasks": {
         "image": "चित्र",
         "presentation": "स्लाइड",
+        "suggestions": "सुझाव",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"

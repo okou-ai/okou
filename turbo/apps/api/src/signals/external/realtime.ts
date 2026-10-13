@@ -293,6 +293,13 @@ export function publishHomeTaskRecommendationsChangedSafely(
   );
 }
 
+export function publishAgentSuggestionsChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, "agentSuggestionsChanged");
+}
+
 /**
  * Schedule a per-user invalidation/notification signal.
  *

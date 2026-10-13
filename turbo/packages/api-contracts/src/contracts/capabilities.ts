@@ -3,6 +3,8 @@
  */
 export const CAPABILITIES = [
   "notify:write",
+  "suggestion:read",
+  "suggestion:write",
   "agent:read",
   "agent:write",
   "agent:delete",
@@ -74,6 +76,11 @@ export interface CapabilityMeta {
  * will produce a TypeScript compile error.
  */
 export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
+  "suggestion:read": { group: "Suggestions", label: "Read your suggestions" },
+  "suggestion:write": {
+    group: "Suggestions",
+    label: "Manage your suggestions",
+  },
   "notify:write": {
     group: "Notifications",
     label: "Send email notifications to you",

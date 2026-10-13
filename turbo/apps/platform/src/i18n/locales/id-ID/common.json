@@ -1517,6 +1517,16 @@
       },
       "viewAgentProfile": "Lihat profil agen"
     },
+    "agentSuggestions": {
+      "empty": "Belum ada saran saat ini.",
+      "existingThread": "Percakapan yang ada",
+      "label": "Saran",
+      "loadFailed": "Saran tidak dapat dimuat.",
+      "newThread": "Percakapan baru dengan Okou",
+      "origin": "Dari ringkasan pagimu",
+      "showAll_other": "Lihat semua ({{count}})",
+      "showLess": "Tampilkan lebih sedikit"
+    },
     "attachments": {
       "attach": "Lampirkan",
       "fileTooLarge": "{{filename}} melebihi batas 1 GB",
@@ -2383,6 +2393,7 @@
       "tasks": {
         "image": "Gambar",
         "presentation": "Slide",
+        "suggestions": "Saran",
         "visualization": "Visualisasi",
         "website": "Situs web",
         "workflow": "Alur kerja"

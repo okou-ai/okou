@@ -1517,6 +1517,16 @@
       },
       "viewAgentProfile": "檢視智能體資料"
     },
+    "agentSuggestions": {
+      "empty": "目前沒有建議。",
+      "existingThread": "現有對話",
+      "label": "建議",
+      "loadFailed": "無法載入建議。",
+      "newThread": "與 Okou 開始新對話",
+      "origin": "來自你的晨間簡報",
+      "showAll_other": "查看全部 {{count}} 則",
+      "showLess": "收合"
+    },
     "attachments": {
       "attach": "新增附件",
       "fileTooLarge": "{{filename}} 超過 1 GB 上限",
@@ -2383,6 +2393,7 @@
       "tasks": {
         "image": "圖片",
         "presentation": "簡報",
+        "suggestions": "建議",
         "visualization": "視覺化",
         "website": "網站",
         "workflow": "工作流"

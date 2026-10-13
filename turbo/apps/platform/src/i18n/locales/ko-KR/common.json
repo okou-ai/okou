@@ -1517,6 +1517,16 @@
       },
       "viewAgentProfile": "에이전트 프로필 보기"
     },
+    "agentSuggestions": {
+      "empty": "현재 제안이 없습니다.",
+      "existingThread": "기존 대화",
+      "label": "제안",
+      "loadFailed": "제안을 불러올 수 없습니다.",
+      "newThread": "Okou와 새 대화",
+      "origin": "모닝 브리프에서",
+      "showAll_other": "전체 {{count}}개 보기",
+      "showLess": "접기"
+    },
     "attachments": {
       "attach": "첨부",
       "fileTooLarge": "{{filename}} 파일이 1GB 제한을 초과했습니다",
@@ -2383,6 +2393,7 @@
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
+        "suggestions": "제안",
         "visualization": "시각화",
         "website": "웹사이트",
         "workflow": "워크플로"

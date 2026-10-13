@@ -57,15 +57,19 @@ export function createComposerCreateSignals(
   const mode$ = computed((get) => {
     return get(internalMode$);
   });
-  const setMode$ = command(({ set }, mode: ComposerCreateMode | null) => {
-    set(internalMode$, mode);
-    set(composer.closeSuggestionMenu$);
-    set(ui.model.setModelPickerOpen$, false);
-    if (mode !== "presentation") {
-      set(setPresentationSlideCount$, "8-12");
-    }
-    set(composer.focus$);
-  });
+  const setMode$ = command(
+    ({ set }, mode: ComposerCreateMode | null, focus = true) => {
+      set(internalMode$, mode);
+      set(composer.closeSuggestionMenu$);
+      set(ui.model.setModelPickerOpen$, false);
+      if (mode !== "presentation") {
+        set(setPresentationSlideCount$, "8-12");
+      }
+      if (focus) {
+        set(composer.focus$);
+      }
+    },
+  );
   const selectCommand$ = command(({ set }, mode: ComposerCreateMode) => {
     set(composer.clearSlashRange$);
     set(setMode$, mode);

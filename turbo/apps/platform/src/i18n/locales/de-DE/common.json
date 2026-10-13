@@ -1518,6 +1518,17 @@
       },
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
+    "agentSuggestions": {
+      "empty": "Derzeit keine Vorschläge.",
+      "existingThread": "Bestehende Unterhaltung",
+      "label": "Vorschläge",
+      "loadFailed": "Vorschläge konnten nicht geladen werden.",
+      "newThread": "Neue Unterhaltung mit Okou",
+      "origin": "Aus deinem Morgenbriefing",
+      "showAll_one": "Alle {{count}} anzeigen",
+      "showAll_other": "Alle {{count}} anzeigen",
+      "showLess": "Weniger anzeigen"
+    },
     "attachments": {
       "attach": "Anhängen",
       "fileTooLarge": "{{filename}} überschreitet die 1-GB-Grenze",
@@ -2394,6 +2405,7 @@
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",
+        "suggestions": "Vorschläge",
         "visualization": "Visualisierung",
         "website": "Website",
         "workflow": "Workflow"
