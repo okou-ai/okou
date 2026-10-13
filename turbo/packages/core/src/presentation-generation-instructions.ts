@@ -12,16 +12,15 @@ export const PRESENTATION_DELIVERY_INSTRUCTION =
 export function presentationDeliveryInstructions(
   options: {
     readonly hostCommand?: string;
-    readonly artifactPreviewsEnabled?: boolean;
   } = {},
 ): readonly string[] {
   const hostCommand =
     options.hostCommand ??
-    `okou host <output-dir> --site <slug> --artifact-kind presentation-html${options.artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png --json" : ""}`;
+    "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json";
   return [
     PRESENTATION_DELIVERY_INSTRUCTION,
     "- For PPTX, follow the platform's conversion instructions. For HTML, follow the preview and hosting steps below.",
-    ...(options.artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
+    ...artifactPreviewInstructions(),
     `- For HTML delivery, host the finished deck: ${hostCommand}`,
     "- Return the exact URL printed by the selected delivery command.",
   ];

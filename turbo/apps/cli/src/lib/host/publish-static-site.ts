@@ -95,6 +95,8 @@ export async function publishStaticSite(
     }),
   });
 
+  // Older serving/rollback APIs can skip a supplied preview. Keep both skip
+  // acknowledgments until those API targets are retired (#39754).
   if (prepared.previewSkipped) preview = undefined;
   if (preview && prepared.preview?.sha256 !== preview.metadata.sha256) {
     throw new Error(

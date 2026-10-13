@@ -19,7 +19,6 @@ import {
   artifactSharesContract,
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
 import sharp from "sharp";
@@ -31,7 +30,6 @@ import { mockEnv } from "../../../lib/env";
 import { signSandboxJwtForTests } from "../../auth/tokens";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactShareRoutes } from "../artifact-shares";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
@@ -61,7 +59,6 @@ const api = () => {
       ...artifactShareRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
-      ...featureSwitchesRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
       ...webFileUrlRoutes,
@@ -1959,13 +1956,6 @@ test("canonical file links disclose public previews only while explicitly public
 
 test("oG checks anonymous sharing again for old image URLs after a public share becomes organization-only or revoked", async () => {
   fixture();
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { artifactPreviews: true } },
-    }),
-    [200],
-  );
   const bytes = await sharp({
     create: { width: 600, height: 900, channels: 3, background: "#ee2200" },
   })
@@ -2036,36 +2026,6 @@ test("oG checks anonymous sharing again for old image URLs after a public share 
   ).resolves.toMatchObject({ width: 75, height: 112 });
   const brand = await accept(og.defaultImage(), [302]);
   expect(brand.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { artifactPreviews: false } },
-    }),
-    [200],
-  );
-  const workingStorage = context.mocks.s3.send.getMockImplementation()!;
-  context.mocks.s3.send.mockImplementation((cmd, ...args) => {
-    if (
-      cmd instanceof GetObjectCommand &&
-      cmd.input.Key?.startsWith("artifact-shares/")
-    ) {
-      return Promise.reject(new Error("Publication policy unavailable"));
-    }
-    return workingStorage(cmd, ...args);
-  });
-  expect((await accept(og.metadata({ query }), [200])).body).toStrictEqual({
-    available: false,
-  });
-  const disabled = await accept(og.image({ query: imageQuery }), [302]);
-  expect(disabled.headers.get("location")).toBe(ARTIFACT_OG_BRAND.imageUrl);
-  context.mocks.s3.send.mockImplementation(workingStorage);
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { artifactPreviews: true } },
-    }),
-    [200],
-  );
   for (const audience of ["organization", "private"] as const) {
     await accept(
       api()(artifactSharesContract).update({

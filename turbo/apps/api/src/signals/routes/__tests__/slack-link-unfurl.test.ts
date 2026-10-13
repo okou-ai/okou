@@ -22,7 +22,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -73,9 +72,6 @@ async function fixture(
   await flushWaitUntilForTest();
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
-  await updateFeatureSwitchesForUser(context, actor, {
-    artifactPreviews: true,
-  });
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command, ...rest) => {
@@ -215,9 +211,6 @@ describe("Slack link previews", () => {
 
   it("uses compact public branding for ordinary App pages without loading their content", async () => {
     const f = await fixture();
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: false,
-    });
     await flushWaitUntilForTest();
     context.mocks.s3.send.mockClear();
     const origin = new URL(env("APP_URL")).origin;
@@ -494,21 +487,12 @@ describe("Slack link previews", () => {
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
   });
 
-  it("does not preview a deleted site or a cover whose owner disabled previews", async () => {
+  it("does not preview a deleted site", async () => {
     const f = await fixture();
     const urls = [
       `https://dpl-${f.prepared.deploymentId}.okou.app/`,
       `https://${f.prepared.publicSlug}.okou.app/`,
     ];
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: false,
-    });
-    await accept(postLinks(f.teamId, urls), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: true,
-    });
     await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
     await accept(postLinks(f.teamId, urls), [200]);
     await flushWaitUntilForTest();

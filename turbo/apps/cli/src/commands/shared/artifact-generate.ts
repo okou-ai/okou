@@ -1,4 +1,3 @@
-import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import {
@@ -167,7 +166,6 @@ ${formatRegistryListing(templates, `${config.target} templates`)}`;
         ];
 
         const instructions = createHtmlArtifactAuthoringInstructions({
-          artifactPreviewsEnabled: await artifactPreviewsEnabled(),
           kind: config.target,
           prompt,
           slugSource: options.title,

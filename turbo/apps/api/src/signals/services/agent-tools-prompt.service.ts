@@ -25,7 +25,6 @@ const instructionsAndMemoryGuidance = Object.freeze([
  */
 function buildIntegrationToolsPrompt(
   deliveryFormatGuidanceEnabled: boolean,
-  artifactPreviewsEnabled: boolean,
 ): readonly string[] {
   const localFileContext = [
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
@@ -48,15 +47,11 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
-  return [
-    ...localFileContextLines,
-    ...(artifactPreviewsEnabled ? artifactPreviewInstructions() : []),
-  ];
+  return [...localFileContextLines, ...artifactPreviewInstructions()];
 }
 
 /** Feature and browser configuration that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
-  readonly artifactPreviewsEnabled: boolean;
   readonly walletEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
@@ -74,10 +69,6 @@ export function buildAgentToolsPromptInputs(args: {
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
-    artifactPreviewsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.ArtifactPreviews,
-      context,
-    ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
     walletEnabled: isFeatureEnabled(FeatureSwitchKey.LinkWallet, context),
     vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
@@ -178,10 +169,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
           "- Lark messages: when the task explicitly asks to send or post to Lark, use `okou lark message send --help` for chats, DMs, and replies.",
         ]
       : []),
-    ...buildIntegrationToolsPrompt(
-      args.deliveryFormatGuidanceEnabled,
-      args.artifactPreviewsEnabled,
-    ),
+    ...buildIntegrationToolsPrompt(args.deliveryFormatGuidanceEnabled),
     '- Maps, places, and routing: use `okou maps search "<query>"`. Treat its answer as display-ready: reproduce it without rewriting, with its Google Maps sources immediately following it. Use `--lat` and `--lng` only for a location the user explicitly supplied; never infer location from server IP or untrusted headers.',
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",

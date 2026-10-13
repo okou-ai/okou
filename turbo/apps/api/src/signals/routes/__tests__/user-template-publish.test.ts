@@ -1059,15 +1059,6 @@ describe("POST /api/user-templates", () => {
     });
     await enableFor(actor);
 
-    if (!actor.orgId) {
-      throw new Error("Expected a template owner organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId },
-      { [FeatureSwitchKey.ArtifactPreviews]: true },
-    );
-
     const threeFiles = await uploadTemplateFile(
       context,
       actor,

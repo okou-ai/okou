@@ -13,7 +13,6 @@ import {
  * message that doesn't reattach a template resolves to "".
  */
 export function resolveThreadGenerationTemplatePrompt(args: {
-  readonly artifactPreviewsEnabled?: boolean;
   readonly explicit: LiveGenerationTemplate | null | undefined;
   readonly explicitTemplates?: readonly LiveGenerationTemplate[];
   /**
@@ -28,7 +27,6 @@ export function resolveThreadGenerationTemplatePrompt(args: {
   readonly mountedUserTemplates: readonly MountedUserTemplate[];
 }): string {
   const options = {
-    artifactPreviewsEnabled: args.artifactPreviewsEnabled,
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
     mountedUserTemplates: args.mountedUserTemplates,
   };
