@@ -27,6 +27,8 @@ cleanup() {
   sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
 wait_for_unit_inactive

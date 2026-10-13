@@ -7,6 +7,7 @@ GROUP="vm0/process-containment-${JOB_REF}"
 RUNNER_DIR="/var/lib/vm0-runner/runners/${SVC}"
 GROUP_DIR="/var/lib/vm0-runner/groups/vm0/process-containment-${JOB_REF}"
 UNIT="vm0-runner-${SVC}.service"
+SCENARIO_WORKER=""
 
 fail() { echo "FAIL: $1"; exit 1; }
 
@@ -22,11 +23,16 @@ wait_for_unit_inactive() {
 
 cleanup() {
   echo "--- Cleanup ---"
+  if [ -n "$SCENARIO_WORKER" ]; then
+    rm -f "$SCENARIO_WORKER"
+  fi
   sudo "$BIN_DIR/runner" service stop --name "$SVC" --force || true
   wait_for_unit_inactive
   sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
 wait_for_unit_inactive
@@ -43,10 +49,18 @@ for _ in $(seq 1 30); do
 done
 [ -n "${INVOCATION_ID:-}" ] || fail "runner invocation ID unavailable"
 
-# Direct commands preserve each scenario's errexit and stop on its first failure.
-bash "$SCENARIO_DIR/managed-tasks.sh" "$BIN_DIR" "$GROUP"
-bash "$SCENARIO_DIR/lifecycle.sh" "$BIN_DIR" "$GROUP" "$RUNNER_DIR" "$GROUP_DIR"
-bash "$SCENARIO_DIR/resource-pressure.sh" "$BIN_DIR" "$GROUP" "$INVOCATION_ID"
+# Runner config directories are root-private. Read staged bytes through sudo,
+# then keep each interpreter's UID, environment and stdin with the durable owner.
+SCENARIO_WORKER=$(mktemp)
+run_scenario() {
+  local source=$1
+  shift
+  sudo cat -- "$SCENARIO_DIR/$source" | tee "$SCENARIO_WORKER" > /dev/null
+  bash "$SCENARIO_WORKER" "$@"
+}
+run_scenario managed-tasks.sh "$BIN_DIR" "$GROUP"
+run_scenario lifecycle.sh "$BIN_DIR" "$GROUP" "$RUNNER_DIR" "$GROUP_DIR"
+run_scenario resource-pressure.sh "$BIN_DIR" "$GROUP" "$INVOCATION_ID"
 
 LOGS=$(sudo journalctl --no-pager "_SYSTEMD_INVOCATION_ID=$INVOCATION_ID" 2>&1) \
   || fail "failed to read runner logs"
@@ -57,6 +71,7 @@ fi
 sudo "$BIN_DIR/runner" service stop --name "$SVC" --force
 wait_for_unit_inactive
 sudo rm -rf "$GROUP_DIR" "$RUNNER_DIR"
+rm -f "$SCENARIO_WORKER"
 trap - EXIT
 
 echo "=== Process-containment test passed ==="

@@ -40,6 +40,11 @@ case "$1:$2" in
     # The actual first scenario submits its guest program; reject it at Runner.
     test "$3" = submit
     test ! -f "$TEST_STATE/submitted"
+    # Script bytes must not become the Runner process's input stream.
+    if IFS= read -r unexpected_input; then
+      echo "scenario commands leaked to Runner stdin" >&2
+      exit 2
+    fi
     touch "$TEST_STATE/submitted"
     echo 'Runner rejected the managed-task scenario' >&2
     exit 73
@@ -49,6 +54,10 @@ case "$1:$2" in
     ;;
   systemctl:show)
     echo fixture-invocation
+    ;;
+  cat:--)
+    test "$3" = "$TEST_STATE/scenarios/managed-tasks.sh"
+    exec cat -- "$3"
     ;;
   rm:-rf)
     # Record fixture deletion while keeping privileged host paths isolated.
@@ -112,18 +121,19 @@ test "$unsafe_status" -eq 2
 test ! -e "$tmp/unsafe"
 
 state="$tmp/scenario-failed"
-mkdir -p "$state/scenarios"
+mkdir -p "$state/scenarios" "$state/temp"
 ln -s "$SCRIPT_DIR/runner-behavior-process-containment-managed-tasks.sh" "$state/scenarios/managed-tasks.sh"
 ln -s "$SCRIPT_DIR/runner-behavior-process-containment-lifecycle.sh" "$state/scenarios/lifecycle.sh"
 ln -s "$SCRIPT_DIR/runner-behavior-process-containment-resource-pressure.sh" "$state/scenarios/resource-pressure.sh"
 status=0
-TEST_MODE=scenario-failed TEST_STATE="$state" PATH="$tmp/bin:$PATH" \
+TEST_MODE=scenario-failed TEST_STATE="$state" TMPDIR="$state/temp" PATH="$tmp/bin:$PATH" \
   bash "$SCRIPT_DIR/runner-behavior-process-containment-remote.sh" \
-    /fake/bin test-case "$state/scenarios" > "$state/output" 2>&1 || status=$?
+    /fake/bin test-case "$state/scenarios" < /dev/null > "$state/output" 2>&1 || status=$?
 test "$status" -eq 1
 test -f "$state/submitted"
 test -f "$state/fixture-removed"
 test ! -e "$state/active"
+test -z "$(find "$state/temp" -mindepth 1 -print -quit)"
 grep -Fq 'Runner rejected the managed-task scenario' "$state/output"
 if grep -Fq 'Process-containment test passed' "$state/output"; then
   echo 'scenario failure was reported as suite success' >&2
