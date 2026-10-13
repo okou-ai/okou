@@ -257,6 +257,10 @@ import {
   audioInputQuota$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import {
+  SubscriptionLinkingComposerMenu,
+  useSubscriptionLinkingAvailable,
+} from "./subscription-linking.tsx";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
@@ -8323,7 +8327,25 @@ function ComposerModelPickerControls({
         open={open}
         onOpenChange={setOpen}
       />
-      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
+      <ComposerModelSlotDivider />
+    </>
+  );
+}
+
+function ComposerModelSlotDivider() {
+  return <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />;
+}
+
+/** The model slot of a member who can only run Auto; see the menu's note. */
+function ComposerSubscriptionLinkingSlot() {
+  const available = useSubscriptionLinkingAvailable();
+  if (!available) {
+    return null;
+  }
+  return (
+    <>
+      <SubscriptionLinkingComposerMenu />
+      <ComposerModelSlotDivider />
     </>
   );
 }
@@ -8346,6 +8368,9 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     models.models.every((runModel) => {
       return runModel.model === null;
     });
+  if (models !== undefined && autoOnly) {
+    return <ComposerSubscriptionLinkingSlot />;
+  }
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }

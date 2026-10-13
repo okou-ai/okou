@@ -19,10 +19,10 @@ import {
   ArrowRightLeft,
   ChevronRight,
   Coins,
+  Cpu,
   DatabaseBackup,
   FlaskConical,
   LayoutGrid,
-  Link2,
   LogOut,
   Plus,
   Route,
@@ -178,8 +178,8 @@ function MeNavigation({
 
   return (
     <div className={surfaceVariants({ className: "flex flex-col gap-1 p-1" })}>
-      {subscriptionEntry.enabled && (
-        <MeAction icon={Link2} onClick={subscriptionEntry.onClick}>
+      {subscriptionEntry.available && (
+        <MeAction icon={Cpu} onClick={subscriptionEntry.onClick}>
           {subscriptionEntry.label}
         </MeAction>
       )}

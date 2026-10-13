@@ -5380,17 +5380,6 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Conectar suscripción",
-    "description": "Usa tu suscripción actual de ChatGPT o Claude con {{brandName}}.",
-    "dismiss": "Cerrar aviso de suscripción",
-    "hint": "¿Ya tienes ChatGPT o Claude?",
-    "limits": "La disponibilidad y los límites de uso dependen de tu suscripción.",
-    "manage": "Gestionar suscripciones de IA",
-    "menuConnect": "Conectar suscripción de IA",
-    "menuLoading": "Suscripciones de IA",
-    "title": "Conecta tu suscripción"
-  },
   "tailscale": {
     "add": "Añadir Tailscale",
     "addressHelp": "Usa la IP, el nombre completo o el nombre corto de un nodo registrado de tu tailnet. Se siguen requiriendo el inicio de sesión SSH y la verificación de la clave del host.",

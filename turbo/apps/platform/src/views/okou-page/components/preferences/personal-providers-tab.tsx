@@ -337,20 +337,34 @@ function PersonalProviderAccountTable({
 }) {
   const { t } = useTranslation();
   const headingId = `personal-provider-accounts-${group.type}`;
+  // A provider without accounts is a single row: the status sits under its
+  // name instead of reserving an empty table body.
+  const empty = !isLoading && group.accounts.length === 0;
 
   return (
     <section aria-labelledby={headingId}>
       <div className="overflow-hidden rounded-xl border border-surface-border bg-card">
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/50 px-3 py-2.5">
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 px-3 py-2.5",
+            !empty && "border-b border-border/50",
+          )}
+        >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gray-50 dark:bg-gray-100">
             <ProviderIcon type={group.type} size={18} />
           </span>
-          <h4
-            id={headingId}
-            className="flex-1 text-sm font-medium text-foreground"
-          >
-            {group.title}
-          </h4>
+          <div className="min-w-0 flex-1">
+            <h4 id={headingId} className="text-sm font-medium text-foreground">
+              {group.title}
+            </h4>
+            {empty && (
+              <p className="text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.settings.models.personal.noAccounts;
+                })}
+              </p>
+            )}
+          </div>
           <ConnectPersonalAccountAction
             group={group}
             actionPending={actionPending}
@@ -358,49 +372,41 @@ function PersonalProviderAccountTable({
             onAdd={onConnect}
           />
         </div>
-        <div role="table" aria-labelledby={headingId}>
-          {isLoading ? (
-            <div role="rowgroup" className="p-2">
-              <OAuthAccountTableRowSkeleton />
-            </div>
-          ) : group.accounts.length === 0 ? (
-            <div role="rowgroup" className="p-2">
-              <div role="row" className="rounded-lg px-3 py-5">
-                <div role="cell" className="text-xs text-muted-foreground">
-                  {t(($) => {
-                    return $.settings.models.personal.noAccounts;
-                  })}
-                </div>
+        {!empty && (
+          <div role="table" aria-labelledby={headingId}>
+            {isLoading ? (
+              <div role="rowgroup" className="p-2">
+                <OAuthAccountTableRowSkeleton />
               </div>
-            </div>
-          ) : (
-            <div role="rowgroup" className="p-2">
-              {group.accounts.map((account, index) => {
-                return (
-                  <OAuthAccountTableRow
-                    showReconnectAction={showReconnectAction}
-                    key={account.id}
-                    account={account}
-                    fallbackIndex={index + 1}
-                    actionPending={actionPending}
-                    onActivate={() => {
-                      onActivate(account.id);
-                    }}
-                    onReconnect={() => {
-                      onReconnect(group.type, account.id);
-                    }}
-                    onDisconnect={() => {
-                      onDisconnect(account, index + 1);
-                    }}
-                    onReset={() => {
-                      onReset(account);
-                    }}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
+            ) : (
+              <div role="rowgroup" className="p-2">
+                {group.accounts.map((account, index) => {
+                  return (
+                    <OAuthAccountTableRow
+                      showReconnectAction={showReconnectAction}
+                      key={account.id}
+                      account={account}
+                      fallbackIndex={index + 1}
+                      actionPending={actionPending}
+                      onActivate={() => {
+                        onActivate(account.id);
+                      }}
+                      onReconnect={() => {
+                        onReconnect(group.type, account.id);
+                      }}
+                      onDisconnect={() => {
+                        onDisconnect(account, index + 1);
+                      }}
+                      onReset={() => {
+                        onReset(account);
+                      }}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

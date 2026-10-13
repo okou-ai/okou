@@ -326,28 +326,26 @@ test("Show no 5h availability when the weekly allowance is exhausted", async () 
 
 test("Organize personal subscriptions in accessible provider tables", async () => {
   const { accountA, rowA } = await setupPersonalSubscriptionIdentityReview();
-  const claudeTable = screen.getByRole("table", { name: "Claude" });
   const codexTable = screen.getByRole("table", { name: "ChatGPT (Codex)" });
   const claudeHeading = screen.getByRole("heading", {
     name: "Claude",
   });
   const codexHeading = screen.getByRole("heading", { name: "ChatGPT (Codex)" });
-  for (const [table, heading] of [
-    [claudeTable, claudeHeading],
-    [codexTable, codexHeading],
-  ] as const) {
-    expect(table.parentElement).toContainElement(heading);
-    expect(table).toHaveAttribute("aria-labelledby", heading.id);
-  }
-  expect(
-    within(claudeTable).getByText("No accounts connected."),
-  ).toBeInTheDocument();
+  expect(codexTable.parentElement).toContainElement(codexHeading);
+  expect(codexTable).toHaveAttribute("aria-labelledby", codexHeading.id);
   expect(within(codexTable).getByTestId(`oauth-account-${accountA.id}`)).toBe(
     rowA,
   );
+  // A provider without accounts is only its heading row, with the status
+  // under the name and no empty table.
+  const claudeSection = claudeHeading.closest("section");
+  if (!claudeSection) {
+    throw new Error("Claude section not found");
+  }
   expect(
-    within(claudeTable).queryByTestId(`oauth-account-${accountA.id}`),
-  ).toBeNull();
+    within(claudeSection).getByText("No accounts connected."),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("table", { name: "Claude" })).toBeNull();
 });
 
 test("Reset personal Codex account usage from the reset count", async () => {
