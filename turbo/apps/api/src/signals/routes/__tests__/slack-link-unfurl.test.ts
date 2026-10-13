@@ -78,7 +78,9 @@ async function fixture(
   await updateFeatureSwitchesForUser(context, actor, {
     artifactPreviews: true,
     privateArtifacts: options.privateArtifacts ?? false,
-    slackLinkUnfurls: options.enabled ?? true,
+    ...(options.enabled === undefined
+      ? {}
+      : { slackLinkUnfurls: options.enabled }),
   });
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
@@ -159,7 +161,7 @@ function postLinks(
 }
 
 describe("Slack link previews", () => {
-  it("adds a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
+  it("uses the global default to add a divider, linked title and compact image without requiring membership or an Okou user connection", async () => {
     const f = await fixture();
     const immutable = `https://dpl-${f.prepared.deploymentId}.okou.app/?source=slack&view=cover#cover|v1`;
     const alias = `https://${f.prepared.publicSlug}.okou.app/index.html`;
