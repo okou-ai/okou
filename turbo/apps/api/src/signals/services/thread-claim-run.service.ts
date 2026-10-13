@@ -228,7 +228,7 @@ import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   type MemorySummaryProjectionReadInput,
-  memorySummaryProjectionReadResult,
+  createMemorySummaryProjectionRead,
   type MemorySummaryProjectionReadResult,
 } from "./memory-summary-projection.service";
 
@@ -263,7 +263,6 @@ import { isStaffOrg } from "@okouai/core/staff-org";
 import {
   getInstructionsStorageName,
   MEMORY_ARTIFACT_NAME,
-  VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import type {
   AgentRunFullLaunchSnapshot,
@@ -285,10 +284,7 @@ import {
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
-import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
@@ -303,7 +299,6 @@ import {
   eq,
   inArray,
   isNotNull,
-  ne,
   notExists,
   sql,
   type SQL,
@@ -3332,10 +3327,11 @@ export function createThreadClaimRunObjects(
         : undefined;
     },
   );
-  const earlyMemorySummaryProjection$ = computed(async (get) => {
-    const input = await get(earlyProjectionInput$);
-    return input ? readMemorySummaryProjection(get(db$), input) : null;
-  });
+  const earlyMemorySummaryProjection$ = createMemorySummaryProjectionRead(
+    earlyProjectionInput$,
+  );
+  const canonicalMemorySummaryProjection$ =
+    createMemorySummaryProjectionRead(projectionInput$);
   const memorySummaryProjectionRead$ = computed(
     async (get): Promise<MemorySummaryProjectionReadResult | null> => {
       const [input, earlyInput] = await Promise.all([
@@ -3347,7 +3343,7 @@ export function createThreadClaimRunObjects(
       }
       return earlyInput && sameMemoryProjectionIdentity(earlyInput, input)
         ? get(earlyMemorySummaryProjection$)
-        : readMemorySummaryProjection(get(db$), input);
+        : get(canonicalMemorySummaryProjection$);
     },
   );
   const piMemoryRecallProjection$ = memorySummaryProjectionRead$;
@@ -4396,54 +4392,6 @@ function canonicalPiMemoryMount<
 }
 
 type AgentRunRecord = AgentRunRequestAgent;
-
-/** The memory summary projection for one exact memory storage version. */
-async function readMemorySummaryProjection(
-  db: ReadonlyDb,
-  input: MemorySummaryProjectionReadInput,
-): Promise<MemorySummaryProjectionReadResult> {
-  const { args } = input;
-  const [row] = await db
-    .select({
-      storageId: storages.id,
-      storageOrgId: storages.orgId,
-      storageUserId: storages.userId,
-      storageName: storages.name,
-      projectionStatus: memorySummaryProjections.status,
-      content: memorySummaryProjections.content,
-      sourceHash: memorySummaryProjections.sourceHash,
-      sourceSize: memorySummaryProjections.sourceSize,
-      tokenCount: memorySummaryProjections.tokenCount,
-    })
-    .from(storages)
-    .innerJoin(
-      storageVersions,
-      and(
-        eq(storageVersions.storageId, storages.id),
-        eq(storageVersions.id, args.storageVersionId),
-      ),
-    )
-    .leftJoin(
-      memorySummaryProjections,
-      and(
-        eq(memorySummaryProjections.memoryStorageId, storages.id),
-        eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-        eq(memorySummaryProjections.orgId, args.orgId),
-        eq(memorySummaryProjections.userId, args.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(storages.id, args.memoryStorageId),
-        eq(storages.orgId, args.orgId),
-        eq(storages.userId, args.userId),
-        eq(storages.name, MEMORY_ARTIFACT_NAME),
-        ne(storages.userId, VOLUME_ORG_USER_ID),
-      ),
-    )
-    .limit(1);
-  return memorySummaryProjectionReadResult(input, row);
-}
 
 function sameMemoryProjectionIdentity(
   left: MemorySummaryProjectionReadInput,
