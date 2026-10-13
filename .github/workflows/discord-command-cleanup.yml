@@ -1,5 +1,8 @@
 name: Clean Up Discord Commands
 
+env:
+  npm_config_audit: "false"
+
 on:
   workflow_dispatch:
     inputs:
