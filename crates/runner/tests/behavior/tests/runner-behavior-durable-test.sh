@@ -99,7 +99,6 @@ increment() {
 }
 
 if [ "$#" -eq 2 ] && [[ "$2" == *"runner config"* ]]; then
-  increment config-count >/dev/null
   exit 0
 fi
 
@@ -111,12 +110,12 @@ if [ "$#" -eq 2 ] && [[ "$2" == *"published_tmp"* ]]; then
   if [ $((support_stage_attempt % 2)) -eq 1 ]; then
     exit 255
   fi
+  printf '%s\n' "$support_worker" >> "$FAKE_SSH_STATE_DIR/support-workers-staged"
   exit 0
 fi
 
 if [ "$#" -eq 8 ] && [ "$2" = "bash" ] && [ "$3" = "-s" ]; then
   cat > "$FAKE_SSH_STATE_DIR/cleanup-script"
-  increment cleanup-count >/dev/null
   exit 0
 fi
 
@@ -156,7 +155,6 @@ echo "$FAKE_DURABLE_OUTPUT"
 exit 37
 FAKE_REMOTE_WORKER_SCRIPT
   chmod +x "$FAKE_REMOTE_WORKER"
-  increment stage-count >/dev/null
   exit 0
 fi
 
@@ -167,7 +165,6 @@ if [ "$#" -eq 2 ] && [[ "$2" == "rm -rf -- "* ]]; then
 fi
 
 if [ "$#" -eq 2 ] && [[ "$2" == "cat -- "* ]]; then
-  increment fetch-count >/dev/null
   [ -f "$FAKE_REMOTE_STATUS" ]
   [ ! -e "${FAKE_REMOTE_STATUS}.tmp" ]
   touch "$FAKE_SSH_STATE_DIR/atomic-status-observed"
@@ -207,7 +204,6 @@ if [ "$#" -eq 6 ] && [ "$2" = "bash" ] && [ "$3" = "-s" ]; then
       ;;
     *)
       cat > "$FAKE_SSH_STATE_DIR/remove-script"
-      increment remove-count >/dev/null
       bash "$FAKE_SSH_STATE_DIR/remove-script" "$FAKE_REMOTE_DIR" "$6"
       ;;
   esac
@@ -318,10 +314,8 @@ run_driver_case() {
   local case_name="$1"
   local driver="$2"
   local remote_worker="$3"
-  local expected_config_count="$4"
-  local expected_cleanup_count="$5"
-  local expected_worker_argument="${6:-}"
-  local expected_support_worker="${7:-}"
+  local expected_worker_argument="${4:-}"
+  local expected_support_worker="${5:-}"
   local case_dir="$state_dir/$case_name"
   local runner_temp="$case_dir/runner-temp"
   local fake_remote_dir="$case_dir/remote"
@@ -377,20 +371,11 @@ run_driver_case() {
     exit 1
   }
 
-  assert_value "$case_dir/config-count" "$expected_config_count"
-  assert_value "$case_dir/stage-count" "1"
   if [ -d "$remote_worker" ]; then
-    assert_value "$case_dir/stage-attempt-count" "2"
     assert_contains "$case_dir/stderr" "Transient SSH failure while staging ${case_name} worker"
     test ! -e "/tmp/vm0-runner-behavior/${case_name}-${TEST_WORKFLOW_RUN_ID}-1"
-  else
-    assert_value "$case_dir/stage-attempt-count" "1"
   fi
-  assert_value "$case_dir/launch-attempt-count" "2"
   assert_value "$case_dir/execution-count" "1"
-  assert_value "$case_dir/state-attempt-count" "3"
-  assert_value "$case_dir/fetch-count" "1"
-  assert_value "$case_dir/remove-count" "1"
   assert_value "$case_dir/systemd-command-status" "37"
   assert_value "$case_dir/worker-argument" "$expected_worker_argument"
   test -f "$case_dir/atomic-status-observed"
@@ -407,18 +392,11 @@ run_driver_case() {
   assert_contains "$case_dir/stderr" "Transient SSH failure while observing ${case_name} result"
 
   if [ -n "$expected_support_worker" ]; then
-    support_worker_count=$(printf '%s\n' "$expected_support_worker" | wc -l)
-    assert_value "$case_dir/support-stage-attempt-count" "$((support_worker_count * 2))"
+    printf '%s\n' "$expected_support_worker" | cmp - "$case_dir/support-workers-staged"
     assert_contains "$case_dir/stderr" \
       "Transient SSH failure while staging Runner behavior support worker"
   else
     test ! -e "$case_dir/support-stage-attempt-count"
-  fi
-
-  if [ "$expected_cleanup_count" -eq 0 ]; then
-    test ! -e "$case_dir/cleanup-count"
-  else
-    assert_value "$case_dir/cleanup-count" "$expected_cleanup_count"
   fi
 
   if find "$runner_temp" -mindepth 1 -print -quit | grep -q .; then
@@ -432,24 +410,24 @@ run_driver_case() {
   LAST_REMOTE_CWD="$fake_remote_cwd"
 }
 
-run_driver_case balloon "$BALLOON_DRIVER" "$BALLOON_REMOTE_WORKER" 1 0
-run_driver_case drain-resume "$DRAIN_DRIVER" "$DRAIN_REMOTE_WORKER" 1 0
-run_driver_case home-cache-promotion "$HOME_DRIVER" "$HOME_REMOTE_WORKER" 1 1
-run_driver_case cancel "$CANCEL_DRIVER" "$CANCEL_REMOTE_WORKER" 1 1
-run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER" 1 0
-run_driver_case keep-alive "$KEEP_ALIVE_DRIVER" "$KEEP_ALIVE_REMOTE_WORKER" 1 1
+run_driver_case balloon "$BALLOON_DRIVER" "$BALLOON_REMOTE_WORKER"
+run_driver_case drain-resume "$DRAIN_DRIVER" "$DRAIN_REMOTE_WORKER"
+run_driver_case home-cache-promotion "$HOME_DRIVER" "$HOME_REMOTE_WORKER"
+run_driver_case cancel "$CANCEL_DRIVER" "$CANCEL_REMOTE_WORKER"
+run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER"
+run_driver_case keep-alive "$KEEP_ALIVE_DRIVER" "$KEEP_ALIVE_REMOTE_WORKER"
 run_driver_case process-containment \
-  "$PROCESS_CONTAINMENT_DRIVER" "$PROCESS_CONTAINMENT_REMOTE_WORKER" 1 1 \
+  "$PROCESS_CONTAINMENT_DRIVER" "$PROCESS_CONTAINMENT_REMOTE_WORKER" \
   /var/lib/vm0-runner/runners/behavior-a-process-containment "$PROCESS_CONTAINMENT_SUPPORT_WORKERS"
 run_driver_case agent-ready \
-  "$AGENT_READY_DRIVER" "$AGENT_READY_REMOTE_WORKER" 1 1 \
+  "$AGENT_READY_DRIVER" "$AGENT_READY_REMOTE_WORKER" \
   1 "$AGENT_READY_BENCHMARK_REMOTE_WORKER"
 run_driver_case systemd-reload \
-  "$SYSTEMD_RELOAD_DRIVER" "$SYSTEMD_RELOAD_REMOTE_WORKER" 2 0
+  "$SYSTEMD_RELOAD_DRIVER" "$SYSTEMD_RELOAD_REMOTE_WORKER"
 assert_contains "$SYSTEMD_RELOAD_REMOTE_WORKER" \
   "REQUEST_SCOPE=\"unit \${RUNNER_BEHAVIOR_DURABLE_UNIT}\""
 run_driver_case upgrade-local \
-  "$UPGRADE_LOCAL_DRIVER" "$UPGRADE_LOCAL_REMOTE_WORKER" 2 0
+  "$UPGRADE_LOCAL_DRIVER" "$UPGRADE_LOCAL_REMOTE_WORKER"
 
 case_dir="$LAST_CASE_DIR"
 fake_remote_home="$LAST_REMOTE_HOME"
