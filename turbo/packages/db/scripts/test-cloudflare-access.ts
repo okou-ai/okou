@@ -46,6 +46,11 @@ const imageRowsSchema = z.array(
 const textRowsSchema = z
   .array(z.strictObject({ value: z.string().min(1) }))
   .length(1);
+// Canonical PG17 uses Etc/UTC; the private PG18 fixture uses UTC. Both
+// represent UTC without changing the parent or probe session clock.
+const timezoneRowsSchema = z
+  .array(z.strictObject({ value: z.enum(["UTC", "Etc/UTC"]) }))
+  .length(1);
 const pathRowsSchema = z
   .array(z.strictObject({ search_path: z.string().min(1) }))
   .length(1);
@@ -191,10 +196,9 @@ async function rejects(
   const parentCatalog = textRowsSchema.parse(
     (await client.query(catalogSql)).rows,
   );
-  const parentTimezone = textRowsSchema.parse(
+  const parentTimezone = timezoneRowsSchema.parse(
     (await client.query("SELECT current_setting('TimeZone') AS value")).rows,
   );
-  assert.deepEqual(parentTimezone, [{ value: "UTC" }]);
   const namespace = `access_negative_${randomUUID().replaceAll("-", "")}`;
   const probe = new Client({ connectionString: databaseUrl });
   let owned = false;
