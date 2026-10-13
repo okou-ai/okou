@@ -3187,28 +3187,31 @@ const claimExpiredInactiveBrowser$ = command(
   },
 );
 
-async function releaseExpiredInactiveBrowserClaim(
-  db: Db,
-  target: ExpiredInactiveBrowserTarget,
-  claimedAt: Date,
-): Promise<void> {
-  await db
-    .update(browserSessions)
-    .set({
-      status: target.status,
-      suspendedAt: target.suspendedAt,
-      suspensionReason: target.suspensionReason,
-      updatedAt: target.updatedAt,
-    })
-    .where(
-      and(
-        eq(browserSessions.id, target.browserId),
-        eq(browserSessions.chatThreadId, target.chatThreadId),
-        eq(browserSessions.status, "stopping"),
-        eq(browserSessions.updatedAt, claimedAt),
-      ),
-    );
-}
+const releaseExpiredInactiveBrowserClaim$ = command(
+  async (
+    { set },
+    target: ExpiredInactiveBrowserTarget,
+    claimedAt: Date,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(browserSessions)
+      .set({
+        status: target.status,
+        suspendedAt: target.suspendedAt,
+        suspensionReason: target.suspensionReason,
+        updatedAt: target.updatedAt,
+      })
+      .where(
+        and(
+          eq(browserSessions.id, target.browserId),
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserSessions.status, "stopping"),
+          eq(browserSessions.updatedAt, claimedAt),
+        ),
+      );
+  },
+);
 
 const retireExpiredInactiveBrowser$ = command(
   async (
@@ -3344,7 +3347,6 @@ const cleanupExpiredInactiveBrowser$ = command(
     cutoff: Date,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const claimedAt = await set(
       claimExpiredInactiveBrowser$,
       target,
@@ -3379,12 +3381,12 @@ const cleanupExpiredInactiveBrowser$ = command(
     );
     if (signal.aborted) {
       if (!cleanup.ok) {
-        await releaseExpiredInactiveBrowserClaim(db, target, claimedAt);
+        await set(releaseExpiredInactiveBrowserClaim$, target, claimedAt);
       }
       signal.throwIfAborted();
     }
     if (!cleanup.ok) {
-      await releaseExpiredInactiveBrowserClaim(db, target, claimedAt);
+      await set(releaseExpiredInactiveBrowserClaim$, target, claimedAt);
       signal.throwIfAborted();
       throw cleanup.error;
     }
@@ -3495,87 +3497,95 @@ const reconcileExpiredInactiveBrowsers$ = command(
   },
 );
 
-async function purgeExpiredStoppedBrowserInstances(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-): Promise<{ readonly checked: number; readonly cleaned: number }> {
-  const cutoff = new Date(nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS);
-  const rows = await db
-    .select({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.status, "stopped"),
-        lte(browserSessionInstances.finishedAt, cutoff),
-        notExists(
-          db
-            .select({
-              requestTokenHash: browserUserActionRequests.requestTokenHash,
-            })
-            .from(browserUserActionRequests)
-            .where(
-              eq(
-                browserUserActionRequests.providerSessionId,
-                browserSessionInstances.providerSessionId,
+const purgeExpiredStoppedBrowserInstances$ = command(
+  async (
+    { set },
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<{ readonly checked: number; readonly cleaned: number }> => {
+    const db = set(writeDb$);
+    const cutoff = new Date(
+      nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS,
+    );
+    const rows = await db
+      .select({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.status, "stopped"),
+          lte(browserSessionInstances.finishedAt, cutoff),
+          notExists(
+            db
+              .select({
+                requestTokenHash: browserUserActionRequests.requestTokenHash,
+              })
+              .from(browserUserActionRequests)
+              .where(
+                eq(
+                  browserUserActionRequests.providerSessionId,
+                  browserSessionInstances.providerSessionId,
+                ),
               ),
-            ),
+          ),
         ),
-      ),
-    )
-    .orderBy(browserSessionInstances.finishedAt)
-    .limit(limit);
-  signal.throwIfAborted();
-  if (rows.length === 0) {
-    return { checked: 0, cleaned: 0 };
-  }
-  const deleted = await db
-    .delete(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.status, "stopped"),
-        lte(browserSessionInstances.finishedAt, cutoff),
-        notExists(
-          db
-            .select({
-              requestTokenHash: browserUserActionRequests.requestTokenHash,
-            })
-            .from(browserUserActionRequests)
-            .where(
-              eq(
-                browserUserActionRequests.providerSessionId,
-                browserSessionInstances.providerSessionId,
+      )
+      .orderBy(browserSessionInstances.finishedAt)
+      .limit(limit);
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return { checked: 0, cleaned: 0 };
+    }
+    const deleted = await db
+      .delete(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.status, "stopped"),
+          lte(browserSessionInstances.finishedAt, cutoff),
+          notExists(
+            db
+              .select({
+                requestTokenHash: browserUserActionRequests.requestTokenHash,
+              })
+              .from(browserUserActionRequests)
+              .where(
+                eq(
+                  browserUserActionRequests.providerSessionId,
+                  browserSessionInstances.providerSessionId,
+                ),
               ),
-            ),
+          ),
+          inArray(
+            browserSessionInstances.providerSessionId,
+            rows.map((row) => {
+              return row.providerSessionId;
+            }),
+          ),
         ),
-        inArray(
-          browserSessionInstances.providerSessionId,
-          rows.map((row) => {
-            return row.providerSessionId;
-          }),
-        ),
-      ),
-    )
-    .returning({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    });
-  signal.throwIfAborted();
-  return { checked: rows.length, cleaned: deleted.length };
-}
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      });
+    signal.throwIfAborted();
+    return { checked: rows.length, cleaned: deleted.length };
+  },
+);
 
-async function deferBrowserInstanceReconcile(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .update(browserSessionInstances)
-    .set({ updatedAt: nowDate() })
-    .where(eq(browserSessionInstances.providerSessionId, providerSessionId));
-  signal.throwIfAborted();
-}
+const deferBrowserInstanceReconcile$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(browserSessionInstances)
+      .set({ updatedAt: nowDate() })
+      .where(eq(browserSessionInstances.providerSessionId, providerSessionId));
+    signal.throwIfAborted();
+  },
+);
 
 interface BrowserReconcileCandidate {
   readonly browser: BrowserSessionRow;
@@ -3637,57 +3647,63 @@ const reconcileOrphanedBrowserProfiles$ = command(
   },
 );
 
-async function reconcileOrphanedBrowserScreenshots(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-): Promise<{
-  readonly checked: number;
-  readonly cleaned: number;
-  readonly errors: number;
-}> {
-  const screenshots = await db
-    .select({
-      chatThreadId: browserSessionScreenshots.chatThreadId,
-      objectKey: browserSessionScreenshots.objectKey,
-    })
-    .from(browserSessionScreenshots)
-    .leftJoin(
-      chatThreads,
-      eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
-    )
-    .where(isNull(chatThreads.id))
-    .orderBy(browserSessionScreenshots.updatedAt)
-    .limit(limit);
-  signal.throwIfAborted();
-
-  let cleaned = 0;
-  let errors = 0;
-  for (const screenshot of screenshots) {
-    const result = await settleIncludingAbort(
-      db
-        .delete(browserSessionScreenshots)
-        .where(
-          and(
-            eq(browserSessionScreenshots.chatThreadId, screenshot.chatThreadId),
-            eq(browserSessionScreenshots.objectKey, screenshot.objectKey),
-          ),
-        ),
-    );
+const reconcileOrphanedBrowserScreenshots$ = command(
+  async (
+    { set },
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly checked: number;
+    readonly cleaned: number;
+    readonly errors: number;
+  }> => {
+    const db = set(writeDb$);
+    const screenshots = await db
+      .select({
+        chatThreadId: browserSessionScreenshots.chatThreadId,
+        objectKey: browserSessionScreenshots.objectKey,
+      })
+      .from(browserSessionScreenshots)
+      .leftJoin(
+        chatThreads,
+        eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
+      )
+      .where(isNull(chatThreads.id))
+      .orderBy(browserSessionScreenshots.updatedAt)
+      .limit(limit);
     signal.throwIfAborted();
-    if (result.ok) {
-      cleaned += 1;
-    } else {
-      errors += 1;
-      L.warn("Managed browser orphaned screenshot reconciliation failed", {
-        chatThreadId: screenshot.chatThreadId,
-        objectKey: screenshot.objectKey,
-        error: result.error,
-      });
+
+    let cleaned = 0;
+    let errors = 0;
+    for (const screenshot of screenshots) {
+      const result = await settleIncludingAbort(
+        db
+          .delete(browserSessionScreenshots)
+          .where(
+            and(
+              eq(
+                browserSessionScreenshots.chatThreadId,
+                screenshot.chatThreadId,
+              ),
+              eq(browserSessionScreenshots.objectKey, screenshot.objectKey),
+            ),
+          ),
+      );
+      signal.throwIfAborted();
+      if (result.ok) {
+        cleaned += 1;
+      } else {
+        errors += 1;
+        L.warn("Managed browser orphaned screenshot reconciliation failed", {
+          chatThreadId: screenshot.chatThreadId,
+          objectKey: screenshot.objectKey,
+          error: result.error,
+        });
+      }
     }
-  }
-  return { checked: screenshots.length, cleaned, errors };
-}
+    return { checked: screenshots.length, cleaned, errors };
+  },
+);
 
 const reconcileBrowserInstance$ = command(
   async (
@@ -3695,7 +3711,6 @@ const reconcileBrowserInstance$ = command(
     row: BrowserReconcileCandidate,
     signal: AbortSignal,
   ): Promise<BrowserReconcileOutcome> => {
-    const db = set(writeDb$);
     let reason: BrowserSuspensionReason | null = null;
     let stopProvider = true;
     if (row.chatThreadId === null) {
@@ -3712,8 +3727,8 @@ const reconcileBrowserInstance$ = command(
       );
       signal.throwIfAborted();
       if (provider.kind === "error") {
-        await deferBrowserInstanceReconcile(
-          db,
+        await set(
+          deferBrowserInstanceReconcile$,
           row.instance.providerSessionId,
           signal,
         );
@@ -3725,8 +3740,8 @@ const reconcileBrowserInstance$ = command(
       }
     }
     if (!reason) {
-      await deferBrowserInstanceReconcile(
-        db,
+      await set(
+        deferBrowserInstanceReconcile$,
         row.instance.providerSessionId,
         signal,
       );
@@ -3814,8 +3829,8 @@ export const reconcileBrowsers$ = command(
       RECONCILE_BATCH_SIZE,
       signal,
     );
-    const expiredInstanceCleanup = await purgeExpiredStoppedBrowserInstances(
-      db,
+    const expiredInstanceCleanup = await set(
+      purgeExpiredStoppedBrowserInstances$,
       RECONCILE_BATCH_SIZE,
       signal,
     );
@@ -3824,8 +3839,8 @@ export const reconcileBrowsers$ = command(
       RECONCILE_BATCH_SIZE,
       signal,
     );
-    const orphanedScreenshotCleanup = await reconcileOrphanedBrowserScreenshots(
-      db,
+    const orphanedScreenshotCleanup = await set(
+      reconcileOrphanedBrowserScreenshots$,
       RECONCILE_BATCH_SIZE,
       signal,
     );
