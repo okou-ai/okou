@@ -936,13 +936,14 @@ not by raising the button's paint order.
 
 - Shared floating primitives own their portals inside `@okouai/ui`. Base UI
   appends top-level portals after the isolated app root and nests descendant
-  portals under their owner. Preserve that structure so floating surfaces paint
-  above app content, each popup paints above its backdrop, and a nested surface
-  stays above its parent. Callers must not override this order with z-index.
-  The wrappers currently rely on this structure rather than a shared `z-50`.
-  Shadcn's `z-50` is a convention, not a browser requirement or proof of correct
-  stacking; changing it requires a demonstrated ordering failure and a browser
-  regression test.
+  portals under their owner. `DialogContent` and `SheetContent` give their portal
+  host `relative z-50`, keeping the backdrop, popup, and descendant portals in
+  one stacking context above page-level popovers, including those that mount
+  later after data loads. Anchored surfaces keep their natural paint order;
+  a menu opened inside a dialog remains inside that modal context and above
+  its parent. Preserve this nesting rather than raising only the dialog popup
+  or all popovers. Callers must not override this order with z-index. Changes
+  require a demonstrated ordering failure and a browser regression test.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
   fullscreen panels. Keep a small fixed set of literal Tailwind z-index
   utilities in shell-owned files, below the shared floating layer in the
