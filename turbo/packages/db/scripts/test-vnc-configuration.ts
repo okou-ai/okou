@@ -410,18 +410,38 @@ async function migration(name: string) {
 }
 
 let nativeOwnership: NativeOwnership | undefined;
+let originalPath: string | undefined;
+let positiveCreateAcknowledged = false;
 const failures: unknown[] = [];
+client.on("error", (error) => {
+  failures.push(error);
+});
 
 try {
   await client.connect();
+  originalPath = searchPathRows.parse(
+    (await client.query("SHOW search_path")).rows,
+  )[0].search_path;
   const prepared = await prepareNative(databaseUrl);
   nativeOwnership = prepared.ownership;
   throwFailures(prepared.failures);
   assert.ok(nativeOwnership);
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0435; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  assert.match(schema, /^vnc_configuration_[0-9a-f]{32}$/);
+  assert.deepEqual(
+    namespaceRows.parse(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+          [schema],
+        )
+      ).rows,
+    ),
+    [],
+  );
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  // Only the CREATE ACK owns this namespace on the disposable native-job DB.
+  positiveCreateAcknowledged = true;
+  await client.query("SELECT set_config('search_path',$1,false)", [schema]);
   await client.query("CREATE TABLE retained_owner_data (value text NOT NULL)");
   await client.query("INSERT INTO retained_owner_data VALUES ('retained')");
   await client.query(
@@ -1687,30 +1707,60 @@ try {
     [{ count: 10 }],
   );
   await client.query("DELETE FROM vnc_credentials");
-  console.log("VNC preservation migrations and storage constraints passed");
 } catch (error) {
   failures.push(error);
 } finally {
-  try {
-    if (nativeOwnership !== undefined) {
-      try {
-        await disposeNative(nativeOwnership);
-      } catch (error) {
-        failures.push(error);
-      }
-    }
-  } finally {
+  if (nativeOwnership !== undefined) {
     try {
-      await client.query("ROLLBACK");
+      await disposeNative(nativeOwnership);
     } catch (error) {
       failures.push(error);
-    } finally {
-      try {
-        await client.end();
-      } catch (error) {
-        failures.push(error);
-      }
     }
+  }
+  if (positiveCreateAcknowledged) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        namespaceRows.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+              [schema],
+            )
+          ).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (originalPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path',$1,false)", [
+        originalPath,
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        searchPathRows.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: originalPath }],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    failures.push(error);
   }
 }
 throwFailures(failures);
+console.log("VNC preservation migrations and storage constraints passed");
