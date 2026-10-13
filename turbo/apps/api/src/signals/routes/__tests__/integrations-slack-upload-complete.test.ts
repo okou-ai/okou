@@ -443,6 +443,247 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     };
   }
 
+  it("selects each request's installation across users and organizations", async () => {
+    const fixture = createUploadFixture();
+    const first = fixture.user({ orgRole: "org:admin" });
+    const member = fixture.user({ orgId: first.orgId, orgRole: "org:member" });
+    const second = fixture.user({ orgRole: "org:admin" });
+    const missing = fixture.user({ orgRole: "org:admin" });
+    await fixture.run(async () => {
+      for (const actor of [first, member, second, missing]) {
+        await fixture.prepareActor(actor);
+      }
+      const a = await slackOrgs.installOrg({
+        actor: first,
+        withConnection: true,
+      });
+      fixture.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+      });
+      const b = await slackOrgs.installOrg({
+        actor: second,
+        withConnection: true,
+      });
+      fixture.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      await flushWaitUntilForTest();
+      const requests = [
+        { actor: first, installation: a },
+        { actor: member, installation: a },
+        { actor: second, installation: b },
+        { actor: missing, installation: undefined },
+        { actor: first, installation: a },
+      ];
+      const initClient = setupApp({
+        context,
+        routes: integrationsSlackUploadInitRoutes,
+      })(integrationsSlackUploadInitContract);
+      const materializeClient = setupApp({
+        context,
+        routes: integrationsSlackUploadMaterializeRoutes,
+      })(integrationsSlackUploadMaterializeContract);
+      const completeClient = setupApp({
+        context,
+        routes: integrationsSlackUploadCompleteRoutes,
+      })(integrationsSlackUploadCompleteContract);
+      let previous:
+        { assetId: string; operationId: string; fileId: string } | undefined;
+      for (const [index, request] of requests.entries()) {
+        const claim = await fixture.claim(request.actor);
+        await flushWaitUntilForTest();
+        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: request.actor.orgRole,
+                organization: { id: request.actor.orgId },
+                publicUserData: { userId: request.actor.userId },
+              },
+            ],
+          },
+        );
+        const headers = { authorization: `Bearer ${claim.token}` };
+        const clients = context.mocks.slack.createClient.mock.calls.length;
+        const uploads =
+          context.mocks.slack.files.getUploadURLExternal.mock.calls.length;
+        const completions =
+          context.mocks.slack.files.completeUploadExternal.mock.calls.length;
+        const infos = context.mocks.slack.files.info.mock.calls.length;
+        if (!request.installation) {
+          if (!previous) {
+            throw new Error("Expected a preceding public upload");
+          }
+          const materialized = await accept(
+            materializeClient.materialize({
+              headers,
+              body: {
+                assetId: previous.assetId,
+                operationId: previous.operationId,
+              },
+            }),
+            [404],
+          );
+          expect(materialized.body.error.code).toBe("NOT_FOUND");
+          const completed = await accept(
+            completeClient.complete({
+              headers,
+              body: {
+                canonicalAssetId: previous.assetId,
+                operationId: previous.operationId,
+                fileId: previous.fileId,
+                channel: "C_GRAPH",
+              },
+            }),
+            [404],
+          );
+          expect(completed.body.error.code).toBe("NOT_FOUND");
+          expect(
+            context.mocks.slack.createClient.mock.calls.slice(clients),
+          ).toStrictEqual([]);
+          expect(
+            context.mocks.slack.files.getUploadURLExternal.mock.calls.slice(
+              uploads,
+            ),
+          ).toStrictEqual([]);
+          expect(
+            context.mocks.slack.files.completeUploadExternal.mock.calls.slice(
+              completions,
+            ),
+          ).toStrictEqual([]);
+          expect(
+            context.mocks.slack.files.info.mock.calls.slice(infos),
+          ).toStrictEqual([]);
+          continue;
+        }
+        const objectStore = chatCallbacks.acceptChatObjectStorage();
+        const operationId = randomUUID();
+        const filename = `request-${String(index)}.csv`;
+        const channel = `C_GRAPH_${String(index)}`;
+        const fileId = `F_GRAPH_${String(index)}`;
+        const uploadUrl = `https://files.slack.com/upload/v1/graph-${String(index)}`;
+        context.mocks.slack.files.getUploadURLExternal.mockResolvedValue({
+          ok: true,
+          file_id: fileId,
+          upload_url: uploadUrl,
+        });
+        context.mocks.slack.files.completeUploadExternal.mockResolvedValue({
+          ok: true,
+        });
+        mockSlackFileInfo(fileId);
+        const initialized = await accept(
+          initClient.init({
+            headers,
+            body: {
+              filename,
+              length: 42,
+              canonical: {
+                operationId,
+                contentType: "text/csv",
+                checksumSha256: "a".repeat(64),
+                channel,
+              },
+            },
+          }),
+          [200],
+        );
+        if (!("kind" in initialized.body)) {
+          throw new Error("Expected a canonical Slack upload");
+        }
+        const assetId = initialized.body.assetId;
+        const privateUpload =
+          initialized.body.uploadHeaders?.["x-amz-meta-filename"] === undefined;
+        objectStore.addObject({
+          bucket: privateUpload
+            ? "test-private-artifacts"
+            : "test-user-artifacts",
+          key: privateUpload
+            ? `private-artifacts/${assetId}/${filename}`
+            : `artifacts/${new URL(initialized.body.url).pathname.replace(/^\/+/u, "")}`,
+          size: 42,
+          body: Buffer.alloc(42, "a"),
+          metadata: {
+            "artifact-id": assetId,
+            filename,
+            "public-brand": "okou",
+            "user-id": encodeURIComponent(request.actor.userId),
+          },
+        });
+        const materialized = await accept(
+          materializeClient.materialize({
+            headers,
+            body: { assetId, operationId },
+          }),
+          [200],
+        );
+        expect(materialized.body).toStrictEqual({
+          assetId,
+          url: initialized.body.url,
+          delivery: { status: "pending", fileId, uploadUrl },
+        });
+        const completed = await accept(
+          completeClient.complete({
+            headers,
+            body: { canonicalAssetId: assetId, operationId, fileId, channel },
+          }),
+          [200],
+        );
+        expect(completed.body).toStrictEqual({
+          fileId,
+          permalink: `https://slack.example/files/${fileId}`,
+          channel,
+          assetId,
+          deliveryStatus: "delivered",
+        });
+        expect(
+          context.mocks.slack.createClient.mock.calls
+            .slice(clients)
+            .map(([token]) => {
+              return token;
+            }),
+        ).toStrictEqual([
+          request.installation.botToken,
+          request.installation.botToken,
+          request.installation.botToken,
+        ]);
+        expect(
+          context.mocks.slack.files.getUploadURLExternal.mock.calls.slice(
+            uploads,
+          ),
+        ).toStrictEqual([[{ filename, length: 42 }]]);
+        expect(
+          context.mocks.slack.files.completeUploadExternal.mock.calls.slice(
+            completions,
+          ),
+        ).toStrictEqual([
+          [
+            {
+              files: [{ id: fileId, title: undefined }],
+              channel_id: channel,
+              thread_ts: undefined,
+              initial_comment: undefined,
+            },
+          ],
+        ]);
+        expect(
+          context.mocks.slack.files.info.mock.calls.slice(infos),
+        ).toStrictEqual([[{ file: fileId }]]);
+        const files = await chatApi.listThreadArtifacts(
+          request.actor,
+          claim.threadId,
+        );
+        expect(
+          files.runs.flatMap((run) => {
+            return run.files;
+          }),
+        ).toContainEqual(
+          expect.objectContaining({ id: assetId, url: initialized.body.url }),
+        );
+        previous = { assetId, operationId, fileId };
+      }
+    });
+  });
+
   it.each(["missing", "undefined length", "mismatched length"] as const)(
     "keeps a canonical upload unpublished after %s storage verification and recovers on replay",
     async (failure) => {
