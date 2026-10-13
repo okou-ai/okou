@@ -384,26 +384,39 @@ function slashMenuButtonNames(): (string | undefined)[] {
 }
 
 test.each(COMPOSER_PATHS)(
-  "Composer-anchored slash suggestions at %s default to the bottom candidate and navigate visually",
+  "Composer-anchored slash suggestions at %s open without selecting a candidate and navigate visually",
   async (path) => {
     const user = userEvent.setup();
     await openSlashMenu("", true, path);
     const editor = await findComposerEditor();
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
-        `/${THIRD_WORKFLOW_NAME}`,
-        `/${SECOND_WORKFLOW_NAME}`,
         `/${WORKFLOW_NAME}`,
+        `/${SECOND_WORKFLOW_NAME}`,
+        `/${THIRD_WORKFLOW_NAME}`,
         "Website",
         "Illustration",
         "Presentation",
         "Browse all templates",
       ]);
     });
-    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    expect(
+      queryAllByRoleFast(
+        "button",
+        screen.getByTestId("slash-workflow-menu"),
+      ).filter((button) => {
+        return button.dataset.active === "true";
+      }),
+    ).toHaveLength(0);
+    expect(detailPane()).toBeNull();
     expect(editor).toHaveFocus();
 
     await user.keyboard("{ArrowDown}");
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await user.keyboard("{ArrowDown>5/}");
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.keyboard("{ArrowUp}");
     expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
@@ -464,14 +477,14 @@ test("Composer-anchored keyboard navigation crosses from categories into workflo
     return slashButton(`/${WORKFLOW_NAME}`);
   });
   const user = userEvent.setup();
-  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
-  expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+  await user.keyboard("{ArrowUp>4/}");
+  expect(slashButton(`/${THIRD_WORKFLOW_NAME}`)).toHaveAttribute(
     "data-active",
     "true",
   );
   await user.keyboard("{Tab}");
   const editor = await findComposerEditor();
-  expect(editor).toHaveTextContent(`Draft /${WORKFLOW_NAME}`);
+  expect(editor).toHaveTextContent(`Draft /${THIRD_WORKFLOW_NAME}`);
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
@@ -520,7 +533,7 @@ test("Keyboard navigation reveals collapsed workflows and reopening restores the
   const user = userEvent.setup();
   const editor = await openManyWorkflows();
 
-  await user.keyboard("{ArrowUp>7/}");
+  await user.keyboard("{ArrowDown>5/}");
 
   expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
   expect(querySlashButton("Show all workflows")).toBeNull();
@@ -543,12 +556,14 @@ test.each(COMPOSER_PATHS)(
     });
     await openSlashMenu("", true, path);
     const menu = screen.getByTestId("slash-workflow-menu");
+    expect(detailPane()).toBeNull();
+    const user = userEvent.setup();
+    await user.keyboard("{ArrowUp}");
     expect(
       within(menu).getByRole("region", { name: "Presentation" }),
     ).toBeInTheDocument();
     expect(flyout()).toBeNull();
 
-    const user = userEvent.setup();
     await user.keyboard("{ArrowUp}");
     expect(
       within(menu).getByRole("region", { name: "Illustration" }),
@@ -586,6 +601,9 @@ test.each(COMPOSER_PATHS)(
       return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
     });
     await openSlashMenu("", true, path);
+    expect(detailPane()).toBeNull();
+    const user = userEvent.setup();
+    await user.keyboard("{ArrowUp}");
     await waitFor(() => {
       expect(detailPane()).toHaveAttribute("data-category", "slides");
     });
@@ -597,7 +615,6 @@ test.each(COMPOSER_PATHS)(
     });
     expect(flyout()).toBeNull();
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    const user = userEvent.setup();
     await user.click(slashButton("Illustration"));
     await screen.findByRole("dialog");
     expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");

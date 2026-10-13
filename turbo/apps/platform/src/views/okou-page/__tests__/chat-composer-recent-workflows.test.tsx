@@ -101,13 +101,12 @@ test("The overview fills from the alphabet and expanding preserves the visible w
   mockWorkflows();
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
-  // Anchored suggestions put the highest priority nearest the composer.
-  const overview = ["/delta", "/charlie", "/beta", "/alpha"];
+  const overview = ["/alpha", "/beta", "/charlie", "/delta"];
   expect(workflowNames()).toStrictEqual(overview);
 
   click(button("Show all workflows"));
 
-  expect(workflowNames()).toStrictEqual(["/zulu", "/echo", ...overview]);
+  expect(workflowNames()).toStrictEqual([...overview, "/echo", "/zulu"]);
 });
 
 test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
@@ -121,10 +120,10 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
     await fill(editor, "Draft /");
     await waitFor(() => {
       expect(workflowNames()).toStrictEqual([
-        "/delta",
-        "/charlie",
-        "/beta",
         "/alpha",
+        "/beta",
+        "/charlie",
+        "/delta",
       ]);
     });
 
@@ -153,13 +152,13 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
     }
     await fill(editor, "Draft /");
     const expected = path.startsWith("/agents/")
-      ? ["/charlie", "/beta", "/alpha", "/zulu"]
-      : ["/beta", "/alpha", "/echo", "/zulu"];
+      ? ["/zulu", "/alpha", "/beta", "/charlie"]
+      : ["/zulu", "/echo", "/alpha", "/beta"];
     await waitFor(() => {
       expect(workflowNames()).toStrictEqual(expected);
     });
     click(button("Show all workflows"));
-    expect(workflowNames().slice(-4)).toStrictEqual(expected);
+    expect(workflowNames().slice(0, 4)).toStrictEqual(expected);
   },
 );
 
@@ -179,10 +178,10 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
   await fill(editor, "Draft /");
   await waitFor(() => {
     expect(workflowNames()).toStrictEqual([
-      "/delta",
-      "/charlie",
-      "/beta",
       "/alpha",
+      "/beta",
+      "/charlie",
+      "/delta",
     ]);
   });
   sendGate.resolve();
@@ -191,22 +190,22 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
   });
   click(button("Show all workflows"));
   expect(workflowNames()).toStrictEqual([
-    "/zulu",
-    "/echo",
-    "/delta",
-    "/charlie",
-    "/beta",
     "/alpha",
+    "/beta",
+    "/charlie",
+    "/delta",
+    "/echo",
+    "/zulu",
   ]);
   const user = userEvent.setup();
   await user.keyboard("{Escape}");
   await fill(editor, "Draft /");
   await waitFor(() => {
     expect(workflowNames()).toStrictEqual([
-      "/charlie",
-      "/beta",
-      "/alpha",
       "/zulu",
+      "/alpha",
+      "/beta",
+      "/charlie",
     ]);
   });
 });
@@ -223,10 +222,10 @@ test("Persisted recency is isolated by user and workspace and ignores unavailabl
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await openComposer();
   expect(workflowNames()).toStrictEqual([
-    "/charlie",
-    "/beta",
-    "/alpha",
     "/echo",
+    "/alpha",
+    "/beta",
+    "/charlie",
   ]);
 });
 

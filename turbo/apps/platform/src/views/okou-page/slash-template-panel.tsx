@@ -46,6 +46,7 @@ interface SlashTemplatePanelProps {
   readonly collapseWorkflows: boolean;
   readonly onExpandWorkflows: () => void;
   readonly reversed: boolean;
+  readonly reverseWorkflows: boolean;
   /** Categories precede workflows in the editor's shared suggestion index. */
   readonly selectedIndex: number;
   /** The row the pointer is previewing, or null while the keyboard leads. */
@@ -603,6 +604,7 @@ export function SlashTemplatePanel({
   collapseWorkflows,
   onExpandWorkflows,
   reversed,
+  reverseWorkflows,
   selectedIndex,
   previewIndex,
   onPreview,
@@ -643,7 +645,7 @@ export function SlashTemplatePanel({
       onExpandWorkflows={onExpandWorkflows}
       markedIndex={markedIndex - categories.length}
       selectedIndex={selectedIndex - categories.length}
-      reversed={reversed}
+      reversed={reverseWorkflows}
       onPreview={(index) => {
         onPreview(categories.length + index);
       }}

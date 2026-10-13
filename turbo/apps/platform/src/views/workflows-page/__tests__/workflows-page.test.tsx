@@ -2805,7 +2805,7 @@ test("Run a workflow automation now and promote it in the next composer overview
         return name.startsWith("/");
       });
     // The highest priority is nearest the composer in the anchored menu.
-    expect(names).toStrictEqual(["/alpha", "/sales-research"]);
+    expect(names).toStrictEqual(["/sales-research", "/alpha"]);
   });
 });
 
