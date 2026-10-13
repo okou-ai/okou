@@ -12,7 +12,7 @@ import {
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import type { DiscordChannel } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
@@ -28,35 +28,40 @@ import {
 } from "./discord-data.service";
 import { sendDiscordIngressNotice$ } from "./internal-discord-chat-run-callback.service";
 
-async function terminalIngress(
-  db: Db,
-  args: {
-    readonly ingressId: string;
-    readonly claimToken: string;
-    readonly reason: string;
+const terminalIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly claimToken: string;
+      readonly reason: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [updated] = await db
+      .update(discordChatIngress)
+      .set({
+        status: "terminal",
+        claimToken: null,
+        claimedAt: null,
+        retryAt: null,
+        lastErrorClass: args.reason,
+        lastError: null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(discordChatIngress.id, args.ingressId),
+          eq(discordChatIngress.claimToken, args.claimToken),
+          eq(discordChatIngress.status, "processing"),
+        ),
+      )
+      .returning({ id: discordChatIngress.id });
+    signal.throwIfAborted();
+    return updated !== undefined;
   },
-): Promise<boolean> {
-  const [updated] = await db
-    .update(discordChatIngress)
-    .set({
-      status: "terminal",
-      claimToken: null,
-      claimedAt: null,
-      retryAt: null,
-      lastErrorClass: args.reason,
-      lastError: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(discordChatIngress.id, args.ingressId),
-        eq(discordChatIngress.claimToken, args.claimToken),
-        eq(discordChatIngress.status, "processing"),
-      ),
-    )
-    .returning({ id: discordChatIngress.id });
-  return updated !== undefined;
-}
+);
 
 interface DiscordIngressClaim {
   readonly ingressId: string;
@@ -88,14 +93,18 @@ const resolveDiscordAdmissionSource$ = command(
     message: DiscordMessageCreate,
     signal: AbortSignal,
   ): Promise<DiscordAdmissionSource | null> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return candidate.connectionId === ingress.connectionId;
     });
     if (!binding) {
-      await terminalIngress(db, { ...args, reason: "binding_revoked" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "binding_revoked" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -120,15 +129,20 @@ const resolveDiscordAdmissionSource$ = command(
           "Discord access could not be verified",
         );
       }
-      await terminalIngress(db, {
-        ...args,
-        reason: "conversation_unavailable",
-      });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "conversation_unavailable" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
     if (sourceAccess.binding.connectionId !== binding.connectionId) {
-      await terminalIngress(db, { ...args, reason: "binding_changed" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "binding_changed" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -140,7 +154,11 @@ const resolveDiscordAdmissionSource$ = command(
       (!isDm && channel.guild_id !== message.guild_id) ||
       (!isDm && !isThread && ![0, 5].includes(channel.type))
     ) {
-      await terminalIngress(db, { ...args, reason: "unsupported_channel" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "unsupported_channel" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -155,14 +173,14 @@ const resolveDiscordAdmissionSource$ = command(
 const terminalAgentUnavailable$ = command(
   async (
     { set },
-    db: Db,
     { claim, message, source: { binding } }: DiscordAdmissionContext,
     signal: AbortSignal,
   ): Promise<void> => {
-    const terminal = await terminalIngress(db, {
-      ...claim,
-      reason: "agent_unavailable",
-    });
+    const terminal = await set(
+      terminalIngress$,
+      { ...claim, reason: "agent_unavailable" },
+      signal,
+    );
     signal.throwIfAborted();
     if (terminal) {
       await set(
@@ -195,13 +213,13 @@ const createDiscordAdmissionRoute$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const { binding } = context.source;
     const { effectiveAgent } = preferences;
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();
     if (!agent) {
-      await set(terminalAgentUnavailable$, db, context, signal);
+      await set(terminalAgentUnavailable$, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -301,7 +319,7 @@ const resolveCanonicalDiscordRoute$ = command(
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
     signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
-      await set(terminalAgentUnavailable$, db, context, signal);
+      await set(terminalAgentUnavailable$, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -362,7 +380,7 @@ const resolveDiscordAdmissionDestination$ = command(
     | { readonly kind: "ready"; readonly channelId: string }
     | { readonly kind: "unavailable" }
   > => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const { claim, source } = context;
     const { binding, channel, isDm, isThread } = source;
     let destinationChannelId = route.destinationChannelId;
@@ -392,7 +410,11 @@ const resolveDiscordAdmissionDestination$ = command(
           );
         }
         if (createAccess.binding.connectionId !== binding.connectionId) {
-          await terminalIngress(db, { ...claim, reason: "binding_changed" });
+          await set(
+            terminalIngress$,
+            { ...claim, reason: "binding_changed" },
+            signal,
+          );
           signal.throwIfAborted();
           return { kind: "unavailable" };
         }
@@ -422,7 +444,11 @@ const resolveDiscordAdmissionDestination$ = command(
       );
     }
     if (destinationAccess.binding.connectionId !== binding.connectionId) {
-      await terminalIngress(db, { ...claim, reason: "binding_changed" });
+      await set(
+        terminalIngress$,
+        { ...claim, reason: "binding_changed" },
+        signal,
+      );
       signal.throwIfAborted();
       return { kind: "unavailable" };
     }
