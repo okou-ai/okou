@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.5](https://github.com/okou-ai/okou/compare/api-v1.732.4...api-v1.732.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* **api:** serialize pi maintenance until run finalization ([#39860](https://github.com/okou-ai/okou/issues/39860)) ([5c61728](https://github.com/okou-ai/okou/commit/5c617286ca02f90c74d5a93fb65d2e47d5ff52f2))
+
+
+### Refactoring
+
+* **api:** retire tx-0326 stripe metadata binding transaction ([#39616](https://github.com/okou-ai/okou/issues/39616)) ([d896565](https://github.com/okou-ai/okou/commit/d89656505bd3c93f1fdff33322d1a439a85146be))
+* remove expired deployment compatibility ([#39868](https://github.com/okou-ai/okou/issues/39868)) ([8421077](https://github.com/okou-ai/okou/commit/842107763e1167424d94abee6ed6fe716019104a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.2
+    * @okouai/core bumped to 8.751.2
+    * @okouai/db bumped to 1.335.5
+    * @okouai/pi-agent-runtime bumped to 1.49.26
+
 ## [1.732.4](https://github.com/okou-ai/okou/compare/api-v1.732.3...api-v1.732.4) (2026-10-13)
 
 
