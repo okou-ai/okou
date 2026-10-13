@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
+    if [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
+      [ "${MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
       [ "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
       [ "${MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID:-1}" = "1" ]
@@ -125,7 +127,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
+    if [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
+      printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
+    elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
       printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
     elif [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
@@ -285,6 +289,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
 grep -Fxq "git merge-base --is-ancestor 39d60bba6aa3a317948d653b4c1d09781719b466 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must omit Pi memory compatibility storage"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
@@ -649,6 +654,24 @@ assert_failure "Rollback target predates the chat thread provenance runtime remo
 [ ! -s "${tmp_dir}/chat-thread-provenance-floor.output" ] || fail "provenance-dependent API must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "chat thread provenance floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Workflow namespace preparation" \
+    run_resolver "${tmp_dir}/workflow-name-scopes-history.output" "MOCK_WORKFLOW_NAME_SCOPES_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/workflow-name-scopes-history.output" ] || fail "invalid Workflow namespace history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Workflow namespace history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Workflow namespace preparation" \
+  run_resolver "${tmp_dir}/workflow-name-scopes-floor.output" MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID=0
+grep -Fq '52525252525252525252525252525252525252ab' "${tmp_dir}/failure.err" || fail "Workflow namespace rejection must identify the canonical preparation commit"
+[ ! -s "${tmp_dir}/workflow-name-scopes-floor.output" ] || fail "name-only API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Workflow namespace floor must fail before artifact or host access"
 fi
 
 for preparation_commit in "" invalid; do
