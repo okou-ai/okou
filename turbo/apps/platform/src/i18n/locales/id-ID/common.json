@@ -2808,6 +2808,14 @@
       "transcribing": "Mentranskripsi",
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
+    "walletAction": {
+      "approveButton": "Tinjau",
+      "approveTitle": "Tinjau pembelian",
+      "connectButton": "Izinkan",
+      "connectTitle": "Izinkan dompet Link",
+      "continueButton": "Lanjutkan",
+      "continueTitle": "Lanjutkan di Link"
+    },
     "workflows": {
       "named": "Alur kerja {{title}}",
       "open": "Buka alur kerja {{title}}"
@@ -5294,17 +5302,6 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Hubungkan langganan",
-    "description": "Gunakan langganan ChatGPT atau Claude Anda dengan {{brandName}}.",
-    "dismiss": "Tutup petunjuk langganan",
-    "hint": "Sudah berlangganan ChatGPT atau Claude?",
-    "limits": "Ketersediaan dan batas penggunaan bergantung pada langganan Anda.",
-    "manage": "Kelola langganan AI",
-    "menuConnect": "Hubungkan langganan AI",
-    "menuLoading": "Langganan AI",
-    "title": "Hubungkan langganan Anda"
-  },
   "tailscale": {
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
@@ -6366,6 +6363,8 @@
       "authorizing": "Mengotorisasi…",
       "browserConsent": "Selesaikan otorisasi di jendela Discord. Halaman ini akan diperbarui secara otomatis.",
       "chooseDmServer": "Pilih server",
+      "connectedTitle": "Terhubung ke Discord",
+      "connectTitle": "Hubungkan ke Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
       "dmServer": "Server default untuk pesan langsung",
@@ -6381,7 +6380,8 @@
       "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
       "uninstall": "Hapus Discord",
       "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
-      "uninstallTitle": "Hapus Discord dari organisasi ini?"
+      "uninstallTitle": "Hapus Discord dari organisasi ini?",
+      "workspaceMismatch": "Tautan ini untuk server Discord lain. Beralihlah ke ruang kerja Okou yang sesuai, lalu buka kembali tautan ini."
     },
     "documentTitle": "Berfungsi",
     "feishuConnected": "Feishu berhasil terhubung",

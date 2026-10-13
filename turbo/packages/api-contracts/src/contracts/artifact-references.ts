@@ -99,7 +99,7 @@ export const artifactReferencesContract = c.router({
       200: z.object({
         url: z.url(),
         expiresAt: z.string().optional(),
-        downloadUrl: z.url().optional(),
+        downloadUrl: z.url(),
         sharedThreadSnapshot: z.literal(true).optional(),
         preview: z.object({
           filename: z.string(),
@@ -130,7 +130,7 @@ export const artifactReferencesContract = c.router({
       200: z.object({
         url: z.url(),
         expiresAt: z.string(),
-        downloadUrl: z.url().optional(),
+        downloadUrl: z.url(),
         sharedThreadSnapshot: z.literal(true).optional(),
         filename: z.string(),
         contentType: z.string(),

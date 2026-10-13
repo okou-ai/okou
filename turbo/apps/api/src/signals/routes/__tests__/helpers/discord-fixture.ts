@@ -133,7 +133,27 @@ const sendBodySchema = z.object({
   content: z.string(),
   nonce: z.union([z.string(), z.number()]).optional(),
   enforce_nonce: z.boolean().optional(),
-  message_reference: z.object({ message_id: z.string() }).optional(),
+  components: z
+    .array(
+      z.object({
+        type: z.literal(1),
+        components: z.array(
+          z.object({
+            type: z.literal(2),
+            style: z.literal(5),
+            label: z.string(),
+            url: z.url(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
+  message_reference: z
+    .object({
+      message_id: z.string(),
+      fail_if_not_exists: z.boolean().optional(),
+    })
+    .optional(),
   allowed_mentions: z.object({
     parse: z.array(z.string()),
     replied_user: z.boolean(),
@@ -188,7 +208,11 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
   }
   const messages = new Map<string, DiscordMessage>();
   const guildIds = new Set([actor.guildId]);
-  const sentMessages: DiscordMessage[] = [];
+  const sentMessages: (DiscordMessage &
+    Pick<
+      z.infer<typeof sendBodySchema>,
+      "components" | "message_reference" | "allowed_mentions"
+    >)[] = [];
   /** Channels whose typing indicator Discord accepted, in request order. */
   const typingChannels: string[] = [];
   const deniedChannels = new Set<string>();
@@ -390,7 +414,12 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
           ...(nonce === undefined ? {} : { nonce }),
         };
         messages.set(message.id, message);
-        sentMessages.push(message);
+        sentMessages.push({
+          ...message,
+          components: body.components,
+          message_reference: body.message_reference,
+          allowed_mentions: body.allowed_mentions,
+        });
         const overridden = await state.afterMessageCreated?.(message);
         return overridden ?? HttpResponse.json(message);
       },

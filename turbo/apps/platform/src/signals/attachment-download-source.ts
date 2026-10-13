@@ -10,9 +10,26 @@ import { apiClient$ } from "./api-client.ts";
 import { clerk$ } from "./auth.ts";
 import { isAuthenticatedAttachmentUrl } from "./attachment-resource-url.ts";
 
+type AttachmentDownloadSource =
+  | {
+      readonly kind: "managed";
+      readonly resourceUrl: string;
+      readonly downloadUrl: string;
+      readonly hosted: boolean;
+    }
+  | {
+      readonly kind: "unmanaged";
+      readonly resourceUrl: string;
+      readonly hosted: false;
+    };
+
 /** Resolve on every click, under the action's cancellation and current access. */
 export const attachmentDownloadSource$ = command(
-  async ({ get }, inputUrl: string, signal: AbortSignal) => {
+  async (
+    { get },
+    inputUrl: string,
+    signal: AbortSignal,
+  ): Promise<AttachmentDownloadSource> => {
     const url = publicAttachmentUrl(inputUrl);
     const reference = parseArtifactReference(url, location.origin);
     if (reference) {
@@ -31,6 +48,7 @@ export const attachmentDownloadSource$ = command(
         );
         if (result.status === 200) {
           return {
+            kind: "managed",
             resourceUrl: result.body.url,
             downloadUrl: result.body.downloadUrl,
             hosted: result.body.target.kind === "html",
@@ -49,6 +67,7 @@ export const attachmentDownloadSource$ = command(
         signal,
       );
       return {
+        kind: "managed",
         resourceUrl: result.body.url,
         downloadUrl: result.body.downloadUrl,
         hosted:
@@ -69,11 +88,12 @@ export const attachmentDownloadSource$ = command(
         signal,
       );
       return {
+        kind: "managed",
         resourceUrl: result.body.url,
         downloadUrl: result.body.downloadUrl,
         hosted: false,
       };
     }
-    return { resourceUrl: url, downloadUrl: undefined, hosted: false };
+    return { kind: "unmanaged", resourceUrl: url, hosted: false };
   },
 );

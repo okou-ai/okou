@@ -39,6 +39,7 @@ test.each(["artifact-reference", "uploaded-file"] as const)(
       async ({ respond }) => {
         await authorized.promise;
         return respond(200, {
+          downloadUrl: new URL("?download=1", originalPoster).href,
           url: originalPoster,
           expiresAt: "2099-01-01T00:00:00Z",
           filename: "poster.jpg",
@@ -50,6 +51,7 @@ test.each(["artifact-reference", "uploaded-file"] as const)(
     context.mocks.api(webFilesContract.fileUrl, async ({ respond }) => {
       await authorized.promise;
       return respond(200, {
+        downloadUrl: new URL("?download=1", originalPoster).href,
         url: originalPoster,
         expiresAt: "2099-01-01T00:00:00Z",
         publicUrl: null,

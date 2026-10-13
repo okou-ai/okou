@@ -47,7 +47,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -343,28 +343,33 @@ function browserScreenHeightForAspectRatio(aspectRatio: number): number {
   );
 }
 
-async function loadBrowserScreen(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<BrowserScreen | null> {
-  const [screen] = await db
-    .select({
-      width: browserSessionResizeStates.screenWidth,
-      height: browserSessionResizeStates.screenHeight,
-    })
-    .from(browserSessionResizeStates)
-    .where(eq(browserSessionResizeStates.providerSessionId, providerSessionId))
-    .limit(1);
-  signal.throwIfAborted();
-  return screen?.width === BROWSER_SCREEN_WIDTH
-    ? {
-        width: BROWSER_SCREEN_WIDTH,
-        height: screen.height,
-        resizable: true,
-      }
-    : null;
-}
+const loadBrowserScreen$ = command(
+  async (
+    { get },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserScreen | null> => {
+    const db = get(db$);
+    const [screen] = await db
+      .select({
+        width: browserSessionResizeStates.screenWidth,
+        height: browserSessionResizeStates.screenHeight,
+      })
+      .from(browserSessionResizeStates)
+      .where(
+        eq(browserSessionResizeStates.providerSessionId, providerSessionId),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return screen?.width === BROWSER_SCREEN_WIDTH
+      ? {
+          width: BROWSER_SCREEN_WIDTH,
+          height: screen.height,
+          resizable: true,
+        }
+      : null;
+  },
+);
 
 const loadBrowserScreenshotUrl$ = command(
   async (
@@ -424,34 +429,37 @@ const loadBrowserScreenshotUrl$ = command(
   },
 );
 
-async function loadBrowserScreenHeightForThread(
-  db: Db,
-  chatThreadId: string,
-  signal: AbortSignal,
-): Promise<number> {
-  // Stopped instances retain their applied screen rows, so the latest one
-  // carries the thread's preferred height across provider replacements.
-  const [screen] = await db
-    .select({
-      width: browserSessionResizeStates.screenWidth,
-      height: browserSessionResizeStates.screenHeight,
-    })
-    .from(browserSessionResizeStates)
-    .innerJoin(
-      browserSessionInstances,
-      eq(
-        browserSessionInstances.providerSessionId,
-        browserSessionResizeStates.providerSessionId,
-      ),
-    )
-    .where(eq(browserSessionInstances.chatThreadId, chatThreadId))
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  signal.throwIfAborted();
-  return screen?.width === BROWSER_SCREEN_WIDTH
-    ? screen.height
-    : BROWSER_INITIAL_SCREEN_HEIGHT;
-}
+const loadBrowserScreenHeightForThread$ = command(
+  async (
+    { get },
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = get(db$);
+    // Stopped instances retain their applied screen rows, so the latest one
+    // carries the thread's preferred height across provider replacements.
+    const [screen] = await db
+      .select({
+        width: browserSessionResizeStates.screenWidth,
+        height: browserSessionResizeStates.screenHeight,
+      })
+      .from(browserSessionResizeStates)
+      .innerJoin(
+        browserSessionInstances,
+        eq(
+          browserSessionInstances.providerSessionId,
+          browserSessionResizeStates.providerSessionId,
+        ),
+      )
+      .where(eq(browserSessionInstances.chatThreadId, chatThreadId))
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    signal.throwIfAborted();
+    return screen?.width === BROWSER_SCREEN_WIDTH
+      ? screen.height
+      : BROWSER_INITIAL_SCREEN_HEIGHT;
+  },
+);
 
 // Extending the lease is unconditional and fixed-length: every toucher gets the
 // same 10 minutes from now, so leases cannot be stacked into a longer lifetime.
@@ -1200,25 +1208,27 @@ async function loadOwnedBrowserSidebarThread(
   return thread ?? null;
 }
 
-async function loadOwnedBrowser(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select({ browser: BROWSER_SESSION_SELECTION })
-    .from(browserSessions)
-    .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, access.chatThreadId),
-        eq(browserSessions.orgId, access.orgId),
-        eq(browserSessions.userId, access.userId),
-        eq(chatThreads.userId, access.userId),
-      ),
-    )
-    .limit(1);
-  return row?.browser ?? null;
-}
+const loadOwnedBrowser$ = command(
+  async (
+    { get },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserSessionRow | null> => {
+    const [row] = await get(db$)
+      .select({ browser: BROWSER_SESSION_SELECTION })
+      .from(browserSessions)
+      .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, access.chatThreadId),
+          eq(browserSessions.orgId, access.orgId),
+          eq(browserSessions.userId, access.userId),
+          eq(chatThreads.userId, access.userId),
+        ),
+      )
+      .limit(1);
+    return row?.browser ?? null;
+  },
+);
 
 async function loadCurrentBrowser(
   db: Db,
@@ -1800,8 +1810,8 @@ const startProviderInstance$ = command(
     }
     const profile = await loadBrowserProfileForBrowser(db, args.browser);
     signal.throwIfAborted();
-    const screenHeight = await loadBrowserScreenHeightForThread(
-      db,
+    const screenHeight = await set(
+      loadBrowserScreenHeightForThread$,
       args.context.chatThreadId,
       signal,
     );
@@ -2073,8 +2083,8 @@ const inspectActiveConnection$ = command(
         instance.providerSessionId,
         signal,
       );
-      const screen = await loadBrowserScreen(
-        db,
+      const screen = await set(
+        loadBrowserScreen$,
         instance.providerSessionId,
         signal,
       );
@@ -2494,7 +2504,7 @@ const leaseInstanceForBrowser$ = command(
       );
     }
     const [screen, screenshotUrl] = await Promise.all([
-      loadBrowserScreen(db, leased.providerSessionId, signal),
+      set(loadBrowserScreen$, leased.providerSessionId, signal),
       set(loadBrowserScreenshotUrl$, browser.chatThreadId, signal),
     ]);
     signal.throwIfAborted();
@@ -2538,7 +2548,7 @@ export const leaseBrowserByThread$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2559,7 +2569,7 @@ export const resizeBrowserByThread$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2583,8 +2593,8 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_NOT_LIVE",
       );
     }
-    const screen = await loadBrowserScreen(
-      db,
+    const screen = await set(
+      loadBrowserScreen$,
       instance.providerSessionId,
       signal,
     );
@@ -2668,7 +2678,7 @@ export const getBrowser$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
     const db = set(writeDb$);
-    const row = await loadOwnedBrowser(db, access);
+    const row = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
@@ -2691,8 +2701,8 @@ export const getBrowser$ = command(
       signal.throwIfAborted();
       if (instance) {
         idleExpiresAt = instance.idleExpiresAt;
-        screen = await loadBrowserScreen(
-          db,
+        screen = await set(
+          loadBrowserScreen$,
           instance.providerSessionId,
           signal,
         );

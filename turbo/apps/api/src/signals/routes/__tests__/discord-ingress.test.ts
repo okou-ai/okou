@@ -234,7 +234,7 @@ describe("canonical Discord ingress", () => {
     },
   );
 
-  it.each(["unmentioned", "unbound", "disabled"] as const)(
+  it.each(["unmentioned", "disabled"] as const)(
     "ignores %s messages without canonical chat or provider thread side effects",
     async (scenario) => {
       const actor = await connected();
@@ -254,10 +254,6 @@ describe("canonical Discord ingress", () => {
       const ignored = {
         ...message,
         mentions: scenario === "unmentioned" ? [] : message.mentions,
-        author:
-          scenario === "unbound"
-            ? { id: uniqueDiscordSnowflake(), username: "unbound-member" }
-            : message.author,
       };
       expect((await postDiscordMessage(context, ignored)).body.outcome).toBe(
         "ignored",
@@ -269,6 +265,75 @@ describe("canonical Discord ingress", () => {
         provider.dmChannelId,
       ]);
       expect(provider.sentMessages).toHaveLength(0);
+    },
+  );
+
+  it.each(["installed", "uninstalled", "connected-elsewhere"] as const)(
+    "replies to unconnected guild mentions with a setup link (%s)",
+    async (scenario) => {
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const guildId =
+        scenario === "installed" ? actor.guildId : uniqueDiscordSnowflake();
+      provider.channels.set(provider.guildChannelId, {
+        id: provider.guildChannelId,
+        type: 0,
+        guild_id: guildId,
+      });
+      const stranger =
+        scenario === "connected-elsewhere"
+          ? actor.discordUserId
+          : uniqueDiscordSnowflake();
+      const message = {
+        ...discordMessageForTest(actor, {
+          channelId: provider.guildChannelId,
+          content: `<@${actor.botUserId}> hello`,
+        }),
+        guild_id: guildId,
+        author: { id: stranger, username: "new-member" },
+      };
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "ignored",
+      );
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(1);
+      expect(provider.sentMessages[0]).toMatchObject({
+        channel_id: message.channel_id,
+        content: `<@${stranger}> Please connect your account to use Okou in this workspace.`,
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 5,
+                label: "Connect",
+                url: `https://app.okou.ai/settings/discord?guild_id=${guildId}`,
+              },
+            ],
+          },
+        ],
+        message_reference: { message_id: message.id },
+        allowed_mentions: { parse: [], replied_user: false },
+      });
+      await postDiscordMessage(context, message);
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(1);
+      // One sender's notice must not silence another unconnected member.
+      const other = {
+        ...message,
+        id: uniqueDiscordSnowflake(),
+        author: { id: uniqueDiscordSnowflake(), username: "another-member" },
+      };
+      await postDiscordMessage(context, other);
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(2);
+      await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+      expect([...provider.channels.keys()]).toStrictEqual([
+        provider.guildChannelId,
+        provider.dmChannelId,
+      ]);
     },
   );
 
@@ -1376,6 +1441,7 @@ describe("canonical Discord ingress", () => {
   });
 
   it("tells an unconnected DM sender how to connect about once an hour", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const stranger = uniqueDiscordSnowflake();
@@ -1407,7 +1473,22 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
-    expect(noticesTo(dmId)[0]?.content).toContain("/connect");
+    expect(noticesTo(dmId)[0]).toMatchObject({
+      content: "Please connect your account to use Okou in this workspace.",
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 5,
+              label: "Connect",
+              url: "https://app.okou.ai/settings/discord",
+            },
+          ],
+        },
+      ],
+    });
     // A relay retry of the same event and a follow-up DM send nothing more.
     await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
@@ -1693,7 +1774,10 @@ describe("canonical Discord ingress", () => {
     expect(provider.sentMessages).toStrictEqual([
       expect.objectContaining({
         channel_id: provider.guildChannelId,
-        message_reference: { message_id: waiting.id },
+        message_reference: {
+          message_id: waiting.id,
+          fail_if_not_exists: true,
+        },
         content:
           "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
       }),

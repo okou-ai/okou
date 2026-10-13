@@ -2819,6 +2819,14 @@
       "transcribing": "Transcribing",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
+    "walletAction": {
+      "approveButton": "Review",
+      "approveTitle": "Review purchase",
+      "connectButton": "Authorize",
+      "connectTitle": "Authorize Link wallet",
+      "continueButton": "Continue",
+      "continueTitle": "Continue in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"
@@ -5310,17 +5318,6 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
-  "subscriptionLinking": {
-    "connect": "Connect subscription",
-    "description": "Use your existing ChatGPT or Claude subscription with {{brandName}}.",
-    "dismiss": "Dismiss subscription hint",
-    "hint": "Already have ChatGPT or Claude?",
-    "limits": "Availability and usage limits depend on your subscription.",
-    "manage": "Manage AI subscriptions",
-    "menuConnect": "Connect AI subscription",
-    "menuLoading": "AI subscriptions",
-    "title": "Connect your subscription"
-  },
   "tailscale": {
     "add": "Add Tailscale",
     "addressHelp": "Use a registered tailnet peer IP, full hostname or short name. SSH login and host-key verification are still required.",
@@ -6384,6 +6381,8 @@
       "authorizing": "Authorizing…",
       "browserConsent": "Complete authorization in the Discord window. This page will update automatically.",
       "chooseDmServer": "Choose a server",
+      "connectedTitle": "Connected to Discord",
+      "connectTitle": "Connect to Discord",
       "description": "Mention Okou in a server or send the bot a direct message.",
       "disconnect": "Disconnect Discord",
       "dmServer": "Default server for direct messages",
@@ -6399,7 +6398,8 @@
       "unconfigured": "Discord is not configured for this organization yet.",
       "uninstall": "Remove Discord",
       "uninstallDescription": "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
-      "uninstallTitle": "Remove Discord from this organization?"
+      "uninstallTitle": "Remove Discord from this organization?",
+      "workspaceMismatch": "This link is for a different Discord server. Switch to its Okou workspace and open the link again."
     },
     "documentTitle": "Works",
     "feishuConnected": "Feishu connected successfully",

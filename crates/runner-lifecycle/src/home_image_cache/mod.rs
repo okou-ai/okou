@@ -1,9 +1,10 @@
 //! Home image cache. There is no old directory/layout/metadata reader.
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
-//! attempts capacity non-blockingly while holding entry; GC holds capacity and
-//! attempts entries non-blockingly. Routine inventory releases entry locks
-//! before attempting capacity. Never introduce blocking nested acquisition.
+//! retries capacity asynchronously with bounded contention while holding entry;
+//! GC holds capacity and attempts entries non-blockingly. Routine inventory
+//! releases entry locks before attempting capacity. A capacity owner must never
+//! wait for an entry lock.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic
@@ -75,6 +76,8 @@ pub struct HomeImageCache {
     routine_gc_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     gc_inventory_test_gate: Option<gc::GcInventoryTestGate>,
+    #[cfg(test)]
+    promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -216,6 +219,8 @@ impl HomeImageCache {
             routine_gc_test_gate: None,
             #[cfg(test)]
             gc_inventory_test_gate: None,
+            #[cfg(test)]
+            promotion_capacity_lock_test_gate: None,
         }
     }
     fn with_promotion_capacity(mut self, capacity: usize) -> Self {
@@ -252,6 +257,15 @@ impl HomeImageCache {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_prepare_lock_test_gate(mut self, gate: HomeImagePrepareLockTestGate) -> Self {
         self.prepare_lock_test_gate = Some(gate);
+        self
+    }
+    #[cfg(test)]
+    fn with_promotion_capacity_lock_test_gate(
+        mut self,
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<Semaphore>,
+    ) -> Self {
+        self.promotion_capacity_lock_test_gate = Some((entered, release));
         self
     }
     #[cfg(test)]

@@ -9,6 +9,42 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.729.2](https://github.com/okou-ai/okou/compare/api-v1.729.1...api-v1.729.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* **api:** align discord conversation history with slack ([#39567](https://github.com/okou-ai/okou/issues/39567)) ([fefc19c](https://github.com/okou-ai/okou/commit/fefc19c798ed9febdc2a5298a3e7ceef81a3f00a))
+* **api:** allow cli wss bootstrap and add protocol e2e ([#39486](https://github.com/okou-ai/okou/issues/39486)) ([64e5e3a](https://github.com/okou-ai/okou/commit/64e5e3a5500d549c8a049cbae8b2c7bfb5608e8c))
+* **api:** reduce slack preview image height without changing layout ([#39560](https://github.com/okou-ai/okou/issues/39560)) ([480ba61](https://github.com/okou-ai/okou/commit/480ba6149f7223a30b02c215d234e83104e4e73e))
+* **api:** reject stale forms activation and retire departure transaction ([#39565](https://github.com/okou-ai/okou/issues/39565)) ([36a76d6](https://github.com/okou-ai/okou/commit/36a76d65151866e033af948ec1a312434428b967))
+* apply artifact cover prompts to every html publication ([#39611](https://github.com/okou-ai/okou/issues/39611)) ([f8b01e9](https://github.com/okou-ai/okou/commit/f8b01e90332fd4fc9c06d85d61cfb01e0045bdf5))
+* **discord:** defer thread creation until first output ([#39582](https://github.com/okou-ai/okou/issues/39582)) ([5870943](https://github.com/okou-ai/okou/commit/5870943e7ad9d4a0d5df0c9e7086413f9bbd4933))
+* **maps:** explain citation validation failures ([#39575](https://github.com/okou-ai/okou/issues/39575)) ([0e5a5a6](https://github.com/okou-ai/okou/commit/0e5a5a6dba9ce3fd7fb0539e3bc72e29b96f31d3))
+* show link wallet icon and extend connection window ([#39585](https://github.com/okou-ai/okou/issues/39585)) ([7020b23](https://github.com/okou-ai/okou/commit/7020b2381e3140824f6cc419b966f0af289e0322))
+
+
+### Refactoring
+
+* **api:** connect slack org installation request graphs ([#39631](https://github.com/okou-ai/okou/issues/39631)) ([5155fdd](https://github.com/okou-ai/okou/commit/5155fdda924bd30503b7760531c51e3d7bb985f0)) [#37510](https://github.com/okou-ai/okou/issues/37510)
+* **api:** own browser session ownership reads ([#39600](https://github.com/okou-ai/okou/issues/39600)) ([1149418](https://github.com/okou-ai/okou/commit/11494180840f4c3ca4b3eea2793a906c1b5b9636))
+* **api:** own browser user-action liveness reads ([#39502](https://github.com/okou-ai/okou/issues/39502)) ([d6fb7a0](https://github.com/okou-ai/okou/commit/d6fb7a0b4e05efbdf36e46136f2a4a64f1ddd820))
+* **api:** own discord destination reads in the signal-aware command ([#39601](https://github.com/okou-ai/okou/issues/39601)) ([6e5210d](https://github.com/okou-ai/okou/commit/6e5210d6940245528e416684c0ef72b1fad26cda))
+* **api:** own exact browser user-action request reads ([#39570](https://github.com/okou-ai/okou/issues/39570)) ([363e583](https://github.com/okou-ai/okou/commit/363e583f628ea5e43b58ba7b8de0c66813f4a908))
+* **api:** own low-credit suppression query locally ([#39592](https://github.com/okou-ai/okou/issues/39592)) ([6ec1168](https://github.com/okou-ai/okou/commit/6ec1168a4550cc1a4edd172f28f3b3d4aee2f830))
+* **api:** own the teams default agent id read ([#39572](https://github.com/okou-ai/okou/issues/39572)) ([4b57138](https://github.com/okou-ai/okou/commit/4b5713810133cbde1cff3d362d588cda44b02381))
+* **api:** own the teams workspace agent reads ([#39615](https://github.com/okou-ai/okou/issues/39615)) ([fb0b1b0](https://github.com/okou-ai/okou/commit/fb0b1b01ee2548ee89b3a8955ed2334c15adcf93))
+* **api:** retire tx-0286 unpaid plan quote transaction ([#39571](https://github.com/okou-ai/okou/issues/39571)) ([4ca908b](https://github.com/okou-ai/okou/commit/4ca908b2b72b0f77f06ad69dd9a3ce822c55c432))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.748.3
+    * @okouai/db bumped to 1.332.2
+    * @okouai/pi-agent-runtime bumped to 1.49.20
+
 ## [1.729.1](https://github.com/okou-ai/okou/compare/api-v1.729.0...api-v1.729.1) (2026-10-13)
 
 

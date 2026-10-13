@@ -2,7 +2,7 @@
 name = "session-history-selector"
 version = "0.3.150"
 edition.workspace = true
-description = "Bounded native session-history pruning for Okou guest checkpoints"
+description = "Bounded native session-history pruning for Okou guests"
 
 [dependencies]
 guest-contracts.workspace = true

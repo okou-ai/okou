@@ -166,8 +166,14 @@ bash .github/scripts/check-packaged-addon-control.sh
 ```
 
 The wrapper selects the native supported architecture through the shared Runner
-target helper, downloads the mitmproxy version pinned in `deps.rs`, verifies both
+target helper, obtains the mitmproxy version pinned in `deps.rs`, verifies both
 archive and executable size/SHA-256, and invokes `tests/packaged_control.py`.
+CI restores an exact archive cache keyed by version, architecture and archive
+SHA-256, then saves a cold download after the packaged suite succeeds. Set
+`MITMPROXY_CONTROL_TEST_ARCHIVE` to an archive path with an existing parent to
+reuse it locally; otherwise the wrapper owns a temporary archive. Cache hits
+still undergo both archive and executable checks. Cold downloads use the shared
+verified downloader's bounded requests, retries and atomic publication.
 That explicitly selected suite fails if its verified executable is absent; normal
 pytest discovery does not download binaries. It loads the production addon with
 fixture-owned configuration, checks socket and TCP readiness, stops it, and starts

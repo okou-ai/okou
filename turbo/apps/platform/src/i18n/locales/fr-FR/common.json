@@ -2867,6 +2867,14 @@
       "transcribing": "Transcription",
       "transcriptionFailed": "Échec de la transcription vocale. Réessayez."
     },
+    "walletAction": {
+      "approveButton": "Vérifier",
+      "approveTitle": "Vérifier l’achat",
+      "connectButton": "Autoriser",
+      "connectTitle": "Autoriser le portefeuille Link",
+      "continueButton": "Continuer",
+      "continueTitle": "Continuer dans Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Ouvrir le workflow {{title}}"
@@ -5390,17 +5398,6 @@
     "unavailable": "L’accès SSH n’est pas disponible pour ce compte.",
     "username": "Nom d’utilisateur SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Connecter un abonnement",
-    "description": "Utilisez votre abonnement ChatGPT ou Claude avec {{brandName}}.",
-    "dismiss": "Fermer le rappel d’abonnement",
-    "hint": "Déjà abonné à ChatGPT ou Claude ?",
-    "limits": "La disponibilité et les limites d’utilisation dépendent de votre abonnement.",
-    "manage": "Gérer les abonnements IA",
-    "menuConnect": "Connecter un abonnement IA",
-    "menuLoading": "Abonnements IA",
-    "title": "Connecter votre abonnement"
-  },
   "tailscale": {
     "add": "Ajouter Tailscale",
     "addressHelp": "Utilisez l'IP, le nom d'hôte complet ou le nom court d'un pair enregistré du tailnet. L'authentification SSH et la vérification de la clé d'hôte restent nécessaires.",
@@ -6476,6 +6473,8 @@
       "authorizing": "Autorisation en cours…",
       "browserConsent": "Terminez l’autorisation dans la fenêtre Discord. Cette page se mettra à jour automatiquement.",
       "chooseDmServer": "Choisir un serveur",
+      "connectedTitle": "Connecté à Discord",
+      "connectTitle": "Se connecter à Discord",
       "description": "Mentionnez Okou sur un serveur ou envoyez un message privé au bot.",
       "disconnect": "Déconnecter Discord",
       "dmServer": "Serveur par défaut pour les messages privés",
@@ -6491,7 +6490,8 @@
       "unconfigured": "Discord n’est pas encore configuré pour cette organisation.",
       "uninstall": "Supprimer Discord",
       "uninstallDescription": "Cela déconnecte de Discord toutes les personnes de cette organisation. Les autres organisations conservent leurs connexions.",
-      "uninstallTitle": "Supprimer Discord de cette organisation ?"
+      "uninstallTitle": "Supprimer Discord de cette organisation ?",
+      "workspaceMismatch": "Ce lien concerne un autre serveur Discord. Passez à son espace de travail Okou, puis ouvrez à nouveau le lien."
     },
     "documentTitle": "Fonctionne",
     "feishuConnected": "Feishu connecté avec succès",

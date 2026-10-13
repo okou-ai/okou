@@ -5876,6 +5876,7 @@ export interface AutomationActionInput {
   readonly sourceRunId?: string;
   readonly inheritedAutonomyBudget?: number;
   readonly allowReservedOfficialMaterialization?: boolean;
+  readonly userRequestedEnable?: true;
 }
 export const deleteWorkflowAutomation$ = command(
   async (
@@ -6924,11 +6925,17 @@ const activateInactiveGoogleFormsAutomation$ = command(
         resetAutomationId: args.previousAutomation.id,
         activation: {
           automationSnapshot,
+          ...(args.previousAutomation.officialBlueprintKey === null
+            ? {}
+            : { officialAutomation: args.previousAutomation }),
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,
           nextRunAt: args.nextRunAt,
-          inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+          inheritedAutonomyBudget:
+            args.previousAutomation.officialBlueprintKey === null
+              ? args.inheritedAutonomyBudget
+              : undefined,
         },
       },
       signal,
@@ -6936,7 +6943,11 @@ const activateInactiveGoogleFormsAutomation$ = command(
     if (prepared.kind !== "ok") {
       return {
         kind: prepared.kind === "superseded" ? "conflict" : "bad-request",
-        message: prepared.message,
+        message:
+          prepared.kind === "superseded" &&
+          args.previousAutomation.officialBlueprintKey !== null
+            ? OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE
+            : prepared.message,
       };
     }
     if (!prepared.enabledAutomation) {
@@ -7110,12 +7121,16 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       readonly nextRunAt: Date | null;
       readonly now: Date;
       readonly inheritedAutonomyBudget?: number;
+      readonly userRequestedEnable: boolean;
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     if (
       args.automation.eventType === "google-forms-response-submitted" &&
-      args.automation.officialBlueprintKey === null
+      (args.automation.officialBlueprintKey === null ||
+        (args.userRequestedEnable &&
+          !args.automation.enabled &&
+          args.automation.officialIntendedEnabled === false))
     ) {
       if (args.automation.enabled) {
         return await set(
@@ -7369,6 +7384,7 @@ export const enableWorkflowAutomation$ = command(
         nextRunAt,
         now,
         inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+        userRequestedEnable: args.userRequestedEnable === true,
       },
       signal,
     );

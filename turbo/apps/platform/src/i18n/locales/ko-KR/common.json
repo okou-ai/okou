@@ -2808,6 +2808,14 @@
       "transcribing": "전사 중",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
+    "walletAction": {
+      "approveButton": "검토",
+      "approveTitle": "구매 검토",
+      "connectButton": "승인",
+      "connectTitle": "Link 지갑 승인",
+      "continueButton": "계속",
+      "continueTitle": "Link에서 계속"
+    },
     "workflows": {
       "named": "워크플로 {{title}}",
       "open": "워크플로 {{title}} 열기"
@@ -5294,17 +5302,6 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
-  "subscriptionLinking": {
-    "connect": "구독 연결",
-    "description": "기존 ChatGPT 또는 Claude 구독을 {{brandName}}에 연결하세요.",
-    "dismiss": "구독 안내 닫기",
-    "hint": "ChatGPT / Claude를 구독 중이신가요?",
-    "limits": "사용 가능한 기능과 사용 한도는 구독에 따라 다릅니다.",
-    "manage": "AI 구독 관리",
-    "menuConnect": "AI 구독 연결",
-    "menuLoading": "AI 구독",
-    "title": "구독 연결"
-  },
   "tailscale": {
     "add": "Tailscale 추가",
     "addressHelp": "등록된 Tailnet 피어의 IP, 전체 호스트 이름 또는 짧은 이름을 사용하세요. SSH 로그인과 호스트 키 검증은 여전히 필요합니다.",
@@ -6366,6 +6363,8 @@
       "authorizing": "인증 중…",
       "browserConsent": "Discord 창에서 인증을 완료하세요. 이 페이지는 자동으로 업데이트됩니다.",
       "chooseDmServer": "서버 선택",
+      "connectedTitle": "Discord에 연결됨",
+      "connectTitle": "Discord 연결",
       "description": "서버에서 Okou를 멘션하거나 봇에게 다이렉트 메시지를 보내세요.",
       "disconnect": "Discord 연결 해제",
       "dmServer": "다이렉트 메시지용 기본 서버",
@@ -6381,7 +6380,8 @@
       "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다.",
       "uninstall": "Discord 제거",
       "uninstallDescription": "이 조직의 모든 구성원의 Discord 연결이 해제됩니다. 다른 조직의 연결은 유지됩니다.",
-      "uninstallTitle": "이 조직에서 Discord를 제거할까요?"
+      "uninstallTitle": "이 조직에서 Discord를 제거할까요?",
+      "workspaceMismatch": "이 링크는 다른 Discord 서버용입니다. 해당 Okou 워크스페이스로 전환한 후 링크를 다시 여세요."
     },
     "documentTitle": "작업",
     "feishuConnected": "Feishu가 성공적으로 연결되었습니다",

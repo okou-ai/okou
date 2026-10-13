@@ -27,9 +27,9 @@ import {
 } from "./composer-rail.tsx";
 import {
   slashTemplatePreviews,
-  type SlashTemplatePreview,
   type SlashTemplatePreviewCategory,
 } from "./composer-template-catalog.ts";
+import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendations.tsx";
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 
@@ -164,15 +164,17 @@ const TASK_TEMPLATE_SHELF = {
  * attachment its chip stores.
  */
 function ComposerTemplateCover({
-  preview,
+  title,
+  coverUrl,
   width,
   ratio,
   onSelect,
 }: {
-  readonly preview: SlashTemplatePreview;
+  readonly title: string;
+  readonly coverUrl: string | null;
   readonly width: string;
   readonly ratio: string;
-  readonly onSelect: (preview: SlashTemplatePreview) => void;
+  readonly onSelect: () => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -184,26 +186,28 @@ function ComposerTemplateCover({
         ($) => {
           return $.chat.composer.slashPanel.useTemplate;
         },
-        { title: preview.title },
+        { title },
       )}
-      onClick={() => {
-        onSelect(preview);
-      }}
+      onClick={onSelect}
     >
       <span
         className={cn(
-          "block overflow-hidden rounded-xl border border-border bg-muted",
+          "flex items-center justify-center overflow-hidden rounded-xl border border-border bg-muted",
           ratio,
         )}
       >
-        <img
-          src={preview.coverUrl}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
-        />
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            alt=""
+            loading="lazy"
+            className="h-full w-full object-cover object-center transition-transform duration-200 group-hover/tile:scale-[1.04]"
+          />
+        ) : (
+          <Image size={24} aria-hidden />
+        )}
       </span>
-      <span className={RAIL_TILE_CAPTION}>{preview.title}</span>
+      <span className={RAIL_TILE_CAPTION}>{title}</span>
     </Button>
   );
 }
@@ -223,6 +227,7 @@ function ComposerTemplateShelf({
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
   const previews = slashTemplatePreviews(category);
+  const custom = useCustomTemplateRecommendations(signals, "illustration");
   const insertTemplate = useSet(signals.template.insertTemplate$);
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const saveDraft = useSet(signals.draft.save$);
@@ -266,20 +271,51 @@ function ComposerTemplateShelf({
         signals={signals}
         rail={`templates:${task}`}
         gap="gap-3"
-        items={previews.map((preview) => {
-          return (
-            <ComposerTemplateCover
-              key={preview.slug}
-              preview={preview}
-              width={width}
-              ratio={ratio}
-              onSelect={() => {
-                insertTemplate(preview.template, preview.attachment);
-                detach(saveDraft(pageSignal), Reason.DomCallback);
-              }}
-            />
-          );
-        })}
+        items={[
+          ...(task === "image" ? custom : []).map((template) => {
+            return (
+              <ComposerTemplateCover
+                key={template.id}
+                title={template.title}
+                coverUrl={template.previewAssets[0]?.url ?? null}
+                width={width}
+                ratio={ratio}
+                onSelect={() => {
+                  insertTemplate(
+                    {
+                      type: "custom",
+                      selection: { userTemplateId: template.id },
+                    },
+                    {
+                      type: "custom",
+                      title: template.title,
+                      category: "custom",
+                      ...(template.coverUrl === null
+                        ? {}
+                        : { previewImageUrl: template.coverUrl }),
+                    },
+                  );
+                  detach(saveDraft(pageSignal), Reason.DomCallback);
+                }}
+              />
+            );
+          }),
+          ...previews.map((preview) => {
+            return (
+              <ComposerTemplateCover
+                key={preview.slug}
+                title={preview.title}
+                coverUrl={preview.coverUrl}
+                width={width}
+                ratio={ratio}
+                onSelect={() => {
+                  insertTemplate(preview.template, preview.attachment);
+                  detach(saveDraft(pageSignal), Reason.DomCallback);
+                }}
+              />
+            );
+          }),
+        ]}
       />
     </div>
   );

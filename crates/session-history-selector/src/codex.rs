@@ -90,7 +90,7 @@ pub enum CodexHistorySelection {
     Ineligible(CodexHistoryIneligibleReason),
 }
 
-/// Raw Codex compact-generation bytes selected for checkpointing.
+/// Raw Codex compact-generation bytes selected for history upload.
 #[derive(Debug, PartialEq, Eq)]
 pub struct CodexHistoryCandidate {
     bytes: Vec<u8>,
@@ -110,7 +110,7 @@ impl CodexHistoryCandidate {
         self.bytes.len() as u64
     }
 
-    /// Borrow the exact raw JSONL bytes selected for checkpointing.
+    /// Borrow the exact raw JSONL bytes selected for history upload.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -130,7 +130,7 @@ pub enum CodexHistoryIneligibleReason {
     SourceWithinGuard,
     /// The canonical first record was missing or malformed.
     InvalidCanonicalMetadata,
-    /// The canonical thread identity did not match the checkpoint identity.
+    /// The canonical thread identity did not match the saved history identity.
     ThreadIdMismatch,
     /// The canonical history mode was neither legacy nor paginated.
     UnsupportedHistoryMode,
@@ -304,8 +304,8 @@ impl CandidateState {
 /// [`CodexHistorySelection::Ineligible`].
 ///
 /// `Ineligible` is an expected eligibility or compatibility outcome that lets
-/// the caller use its ordinary checkpoint path. The selector only chooses an
-/// in-memory candidate: staging, checkpoint commit, and live-file reconciliation
+/// the caller use its ordinary history-upload path. The selector only chooses an
+/// in-memory candidate: staging, history upload, and live-file reconciliation
 /// remain the caller's responsibility.
 ///
 /// # Errors

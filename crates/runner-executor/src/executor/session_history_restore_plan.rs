@@ -10,10 +10,14 @@ use std::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use super::cli_framework::effective_cli_framework;
+use super::session_history_attribution::{
+    HistoryMaterializationObservation, HistoryMaterializationOutcome, HistoryTimingWindow,
+    record_download_attribution,
+};
 use super::session_history_cpu::SessionHistoryCpuPool;
 use super::session_history_download::{
-    SessionHistoryMaterializer, SessionHistoryProbe, SessionHistoryReadiness,
-    SessionHistoryReadinessObserver,
+    SessionHistoryMaterialization, SessionHistoryMaterializer, SessionHistoryProbe,
+    SessionHistoryReadiness, SessionHistoryReadinessObserver,
 };
 use super::session_restore::restored_session_identity_from_context;
 use super::telemetry::{RunnerPreSpawnPhase, RunnerPreSpawnTiming};
@@ -21,6 +25,7 @@ use crate::idle_pool::IdleSandboxKind;
 use crate::restored_session_identity::{
     RestoredSessionIdentity, RestoredSessionIdentityMismatchReason,
 };
+use crate::telemetry::{JobTelemetry, SessionHistoryObservationStage};
 use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 use runner_provider::http::HttpClient;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
@@ -155,12 +160,30 @@ impl SessionHistoryRestorePlan {
         }
     }
 
-    pub(super) async fn cancel_and_drain(self) {
+    pub(super) async fn cancel_and_drain(self, telemetry: &mut JobTelemetry) {
         match self {
             Self::Prestarted { materializer, .. } => {
                 let cancel = CancellationToken::new();
                 cancel.cancel();
-                let _ = materializer.finish(&cancel).await;
+                let started = Instant::now();
+                let result = materializer.finish(&cancel).await;
+                let window = HistoryTimingWindow::new(started, Instant::now());
+                match result {
+                    SessionHistoryMaterialization::Failed { timings, .. }
+                    | SessionHistoryMaterialization::Downloaded { timings, .. } => {
+                        record_download_attribution(
+                            telemetry,
+                            &timings,
+                            HistoryMaterializationObservation {
+                                window,
+                                stage: SessionHistoryObservationStage::CancelDrain,
+                                outcome: HistoryMaterializationOutcome::Cancelled,
+                            },
+                        );
+                    }
+                    SessionHistoryMaterialization::Missing
+                    | SessionHistoryMaterialization::NoDownloadNeeded => {}
+                }
             }
             Self::HomeCacheCandidate { .. } => {}
             Self::Default | Self::DeferredHashBacked { .. } | Self::SkipVerified(_) => {}

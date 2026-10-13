@@ -168,6 +168,7 @@ test("a snapshot pasted into an ordinary thread cannot expose source permissions
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", IMAGE_URL).href,
       url: IMAGE_URL,
       expiresAt: EXPIRES_AT,
       sharedThreadSnapshot: true,

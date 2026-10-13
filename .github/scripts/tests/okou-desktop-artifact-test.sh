@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-build_script="${repo_root}/.github/scripts/build-okou-desktop-artifact.sh"
-verify_script="${repo_root}/.github/scripts/verify-okou-desktop-artifact.sh"
+build_script="${repo_root}/.github/scripts/artifacts/build-okou-desktop-artifact.sh"
+verify_script="${repo_root}/.github/scripts/artifacts/verify-okou-desktop-artifact.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 

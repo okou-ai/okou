@@ -546,7 +546,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 Some(&error.to_string()),
             );
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -574,7 +574,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 Some(&error.to_string()),
             );
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -596,7 +596,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         if controls.cancel.is_cancelled() {
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(RunnerError::Cancelled);
         }
@@ -652,7 +652,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -708,7 +708,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -722,7 +722,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -797,7 +797,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                         Some(&error.to_string()),
                     );
                     std::mem::take(&mut controls.session_history_restore_plan)
-                        .cancel_and_drain()
+                        .cancel_and_drain(telemetry)
                         .await;
                     return Err(error);
                 }

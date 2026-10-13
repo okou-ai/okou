@@ -2819,6 +2819,14 @@
       "transcribing": "Transkribieren",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
+    "walletAction": {
+      "approveButton": "Prüfen",
+      "approveTitle": "Kauf prüfen",
+      "connectButton": "Autorisieren",
+      "connectTitle": "Link-Wallet autorisieren",
+      "continueButton": "Weiter",
+      "continueTitle": "Weiter in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Workflow öffnen {{title}}"
@@ -5318,17 +5326,6 @@
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
-  "subscriptionLinking": {
-    "connect": "Abo verbinden",
-    "description": "Nutze dein bestehendes ChatGPT- oder Claude-Abo mit {{brandName}}.",
-    "dismiss": "Abo-Hinweis schließen",
-    "hint": "Schon ein ChatGPT- oder Claude-Abo?",
-    "limits": "Verfügbarkeit und Nutzungslimits hängen von deinem Abo ab.",
-    "manage": "KI-Abos verwalten",
-    "menuConnect": "KI-Abo verbinden",
-    "menuLoading": "KI-Abos",
-    "title": "Dein Abo verbinden"
-  },
   "tailscale": {
     "add": "Tailscale hinzufügen",
     "addressHelp": "Verwende die IP, den vollständigen Hostnamen oder Kurznamen eines registrierten Tailnet-Peers. SSH-Anmeldung und Hostschlüsselprüfung bleiben erforderlich.",
@@ -6392,6 +6389,8 @@
       "authorizing": "Autorisierung läuft…",
       "browserConsent": "Schließe die Autorisierung im Discord-Fenster ab. Diese Seite wird automatisch aktualisiert.",
       "chooseDmServer": "Server auswählen",
+      "connectedTitle": "Mit Discord verbunden",
+      "connectTitle": "Mit Discord verbinden",
       "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
       "disconnect": "Verbindung zu Discord trennen",
       "dmServer": "Standardserver für Direktnachrichten",
@@ -6407,7 +6406,8 @@
       "unconfigured": "Discord ist für diese Organisation noch nicht eingerichtet.",
       "uninstall": "Discord entfernen",
       "uninstallDescription": "Dadurch wird die Discord-Verbindung für alle in dieser Organisation getrennt. Die Verbindungen anderer Organisationen bleiben bestehen.",
-      "uninstallTitle": "Discord aus dieser Organisation entfernen?"
+      "uninstallTitle": "Discord aus dieser Organisation entfernen?",
+      "workspaceMismatch": "Dieser Link gehört zu einem anderen Discord-Server. Wechsle zum zugehörigen Okou-Arbeitsbereich und öffne den Link erneut."
     },
     "documentTitle": "Funktioniert",
     "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",

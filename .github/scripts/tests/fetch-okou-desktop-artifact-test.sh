@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/fetch-okou-desktop-artifact.sh"
+script="${repo_root}/.github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -80,14 +80,20 @@ fi
 retry_destination="${tmp_dir}/retry"
 mkdir -p "$retry_destination"
 printf '0\n' > "${tmp_dir}/retry-state"
-MOCK_AWS_TRANSIENT_FAILURES=2 \
+# App's suite covers shared transient recovery and the default budget. This
+# caller must pass its independently configured Desktop budget to the helper.
+if OKOU_DESKTOP_ARTIFACT_FETCH_ATTEMPTS=2 \
+  MOCK_AWS_TRANSIENT_FAILURES=99 \
   MOCK_AWS_STATE_FILE="${tmp_dir}/retry-state" \
   MOCK_AWS_LOG="${tmp_dir}/retry.log" \
   bash "$script" "$r2_endpoint" "$artifact_uri" "$retry_destination" \
-    >/dev/null 2>&1
-test -f "$retry_destination/okou-app.tar.gz"
-if (( "$(grep -c 's3 cp' "${tmp_dir}/retry.log")" != 5 )); then
-  echo "Expected two retries followed by all three object copies" >&2
+    >/dev/null 2>&1; then
+  echo "Expected an exhausted Desktop fetch to fail" >&2
+  exit 1
+fi
+test ! -e "$retry_destination/okou-app.tar.gz"
+if (( "$(grep -c 's3 cp' "${tmp_dir}/retry.log")" != 2 )); then
+  echo "Expected the configured Desktop budget of exactly two attempts" >&2
   exit 1
 fi
 

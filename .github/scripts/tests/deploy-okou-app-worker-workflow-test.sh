@@ -127,8 +127,8 @@ for shell_prepare_step in (prepare_step, preview_prepare_step):
 require_fragments(
     prepare_step,
     [
-        "bash .github/scripts/fetch-okou-app-artifact.sh",
-        "bash .github/scripts/verify-okou-app-artifact.sh",
+        "bash .github/scripts/artifacts/fetch-okou-app-artifact.sh",
+        "bash .github/scripts/artifacts/verify-okou-app-artifact.sh",
         "bash .github/scripts/prepare-okou-app-worker-shell.sh",
         'echo "canonical-dist=$canonical_dist"',
     ],

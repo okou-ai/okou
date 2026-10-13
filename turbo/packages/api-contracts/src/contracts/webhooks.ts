@@ -49,7 +49,7 @@ const sha256HexSchema = z
     "hash must be a lowercase 64-character SHA-256 hex string",
   );
 
-const piMemoryPhase2CheckpointAttestationSchema = z
+const piMemoryPhase2PublicationAttestationSchema = z
   .object({
     schemaVersion: z.literal(2),
     leaseToken: z.uuid(),
@@ -939,10 +939,89 @@ export type ArchiveConnectionAttempt = z.infer<
   typeof archiveConnectionAttemptSchema
 >;
 
+const sessionHistoryDownloadTimingMsSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
+// Every offset uses the same materializer-local monotonic origin. The UTC
+// calibration permits joins without interpreting legacy recording timestamps
+// or summed attempt durations as true phase intervals. All fields are optional
+// so draining Runners and rollback API versions can coexist.
+const sessionHistoryDownloadAttributionSchema = z.object({
+  session_history_observation_stage: z
+    .enum(["restore", "cancel_drain"])
+    .optional(),
+  session_history_timing_origin_unix_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_download_attempt: z.number().int().min(1).max(3).optional(),
+  session_history_attempt_count: z.number().int().min(0).max(3).optional(),
+  session_history_failed_attempt_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .optional(),
+  session_history_interrupted_attempt_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .optional(),
+  session_history_retry_count: z.number().int().min(0).max(2).optional(),
+  session_history_retry_backoff_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_request_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_request_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_wait_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_wait_max_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  session_history_body_copy_ms: sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_allocation_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_admission_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_admission_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_queue_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_queue_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_restore_wait_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_restore_wait_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+});
+
+export type SessionHistoryDownloadAttribution = z.infer<
+  typeof sessionHistoryDownloadAttributionSchema
+>;
+
+// The forwarding allowlist is derived only from this explicitly declared
+// schema, never from arbitrary operation keys supplied by the caller.
+export const sessionHistoryDownloadAttributionFields = Object.freeze(
+  sessionHistoryDownloadAttributionSchema.keyof().options,
+);
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
 const sandboxOperationSchema = z.object({
+  ...sessionHistoryDownloadAttributionSchema.shape,
   ts: z.string(),
   action_type: z.string(),
   duration_ms: z.number(),
@@ -1181,7 +1260,7 @@ export const webhookStoragesPrepareContract = c.router({
       changes: storageChangesSchema.optional(),
       /** Private proof emitted only after sandbox-local Phase 2 validation. */
       maintenanceAttestation:
-        piMemoryPhase2CheckpointAttestationSchema.optional(),
+        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({
@@ -1228,7 +1307,7 @@ export const webhookStoragesCommitContract = c.router({
       message: z.string().optional(),
       /** Private proof emitted only after sandbox-local Phase 2 validation. */
       maintenanceAttestation:
-        piMemoryPhase2CheckpointAttestationSchema.optional(),
+        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({

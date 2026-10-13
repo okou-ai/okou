@@ -7,11 +7,17 @@ import {
   signInWithClerkEmailCode,
   type ClerkEmailCodeSignInOptions,
 } from "./auth";
+import {
+  safeNetworkUrl,
+  startRunnerNetworkDiagnostics,
+} from "./runner-network-diagnostics";
 
 const MAX_REQUESTS = 64;
 const MAX_MILESTONES = 32;
 const PAGE_STATE_TIMEOUT_MS = 1_000;
 
+// A raw trace can contain bypass cookies, session tokens and request bodies.
+// Keep only allowlisted metadata, never the full URL or arbitrary error text.
 interface RequestObservation {
   readonly url: string;
   readonly resourceType: string;
@@ -21,19 +27,6 @@ interface RequestObservation {
   endedMs?: number;
   outcome: "pending" | "finished" | "failed";
   failureCode?: string;
-}
-
-// A raw trace can contain bypass cookies, session tokens and request bodies.
-// Keep only allowlisted metadata, never the full URL or arbitrary error text.
-function safeUrl(value: string): string {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:"
-      ? `${url.origin}${url.pathname}`.slice(0, 512)
-      : "non-http-url";
-  } catch {
-    return "invalid-url";
-  }
 }
 
 async function capturePageState(page: Page) {
@@ -92,7 +85,7 @@ export async function signInRunnerWithDiagnostics(
       milestones.push({
         event,
         elapsedMs: elapsed(),
-        url: safeUrl(page.url()),
+        url: safeNetworkUrl(page.url()),
       });
     } else {
       omittedMilestones++;
@@ -104,7 +97,7 @@ export async function signInRunnerWithDiagnostics(
       return;
     }
     requests.set(request, {
-      url: safeUrl(request.url()),
+      url: safeNetworkUrl(request.url()),
       resourceType: request.resourceType(),
       startedMs: elapsed(),
       outcome: "pending",
@@ -160,11 +153,13 @@ export async function signInRunnerWithDiagnostics(
   page.on("pageerror", onPageError);
   page.on("crash", onCrash);
   page.on("close", onClose);
+  const network = await startRunnerNetworkDiagnostics(page, elapsed);
   try {
     try {
       return await signInWithClerkEmailCode(page, email, appUrl, options);
     } finally {
       // Freeze the failure evidence before best-effort capture or caller cleanup.
+      network.freeze();
       page.off("request", onRequest);
       page.off("response", onResponse);
       page.off("requestfinished", onFinished);
@@ -180,7 +175,7 @@ export async function signInRunnerWithDiagnostics(
     try {
       const report = {
         elapsedMs: elapsed(),
-        route: safeUrl(page.url()),
+        route: safeNetworkUrl(page.url()),
         closed,
         crashed,
         pageErrors,
@@ -188,6 +183,7 @@ export async function signInRunnerWithDiagnostics(
         omittedMilestones,
         requests: [...requests.values()],
         omittedRequests,
+        network: network.freeze(),
         pageState: await capturePageState(page),
       };
       await mkdir(dirname(options.diagnosticPath), { recursive: true });
@@ -204,5 +200,7 @@ export async function signInRunnerWithDiagnostics(
       console.error("Unable to save runner sign-in diagnostics");
     }
     throw error;
+  } finally {
+    await network.dispose();
   }
 }

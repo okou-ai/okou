@@ -342,6 +342,7 @@ test("Use a public URL for a private Office attachment preview", async () => {
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     expect(query.file_id).toBe(fileId);
     return respond(200, {
+      downloadUrl: new URL("?download=1", privateUrl).href,
       url: privateUrl,
       publicUrl,
       expiresAt: "2099-01-01T00:00:00.000Z",
@@ -377,6 +378,7 @@ test("Render a generated private image and offer sharing by default", async () =
         artifactReferencePath(fileId, filename).slice("/artifacts/".length),
       );
       return respond(200, {
+        downloadUrl: new URL("?download=1", resourceUrl).href,
         url: resourceUrl,
         expiresAt: "2099-01-01T00:00:00Z",
         filename,

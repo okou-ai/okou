@@ -16,16 +16,19 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { computeVersionId } from "../presentation-template-release/shared.mjs";
+import { computeVersionId } from "../release/presentation-template-release/shared.mjs";
 
 const execFileAsync = promisify(execFile);
 const defaultTool = fileURLToPath(
-  new URL("../publish-presentation-template-archives.mjs", import.meta.url),
+  new URL(
+    "../release/publish-presentation-template-archives.mjs",
+    import.meta.url,
+  ),
 );
 const releaseTool =
   process.env.PRESENTATION_TEMPLATE_RELEASE_TOOL ?? defaultTool;
 const configUrl = new URL(
-  "../presentation-template-release.json",
+  "../release/presentation-template-release.json",
   import.meta.url,
 );
 

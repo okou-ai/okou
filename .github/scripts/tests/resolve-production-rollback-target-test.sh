@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/resolve-production-rollback-target.sh"
+script="${repo_root}/.github/scripts/release/resolve-production-rollback-target.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 fake_bin="${tmp_dir}/bin"
@@ -22,7 +22,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
+    if [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
+      [ "${MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "4747474747474747474747474747474747474747" ]; then
       [ "${MOCK_NATIVE_BRIEF_MEMBER_RUNTIME_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4646464646464646464646464646464646464646" ]; then
       [ "${MOCK_DESKTOP_MIGRATION_HOP_FLOOR_VALID:-1}" = "1" ]
@@ -79,7 +81,7 @@ case "${1:-}" in
     elif [ "${3:-}" = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1" ]; then
       [ "${MOCK_CHAT_EVENT_V8_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4242424242424242424242424242424242424242" ]; then
-      [ "${MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID:-1}" = "1" ]
+      [ "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
@@ -125,7 +127,9 @@ case "${1:-}" in
     fi
     ;;
   log)
-    if [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
+    if [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
+      printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"
+    elif [[ "$*" == *desktop-electron-migration-release.ts* ]]; then
       printf '%s\n' "${MOCK_DESKTOP_MIGRATION_HOP_COMMIT-4646464646464646464646464646464646464646}"
     elif [[ "$*" == *src/runtime/computer-use-host.ts* ]]; then
       printf '%s\n' "${MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT-4545454545454545454545454545454545454545}"
@@ -182,7 +186,7 @@ case "${1:-}" in
     elif [[ "$*" == *chat-event-v8* ]]; then
       printf '%s\n' "${MOCK_CHAT_EVENT_V8_COMMIT-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1}"
     elif [[ "$*" == *pi-memory-phase2-input-revision.ts* ]]; then
-      printf '%s\n' "${MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT-4242424242424242424242424242424242424242}"
+      printf '%s\n' "${MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT-4242424242424242424242424242424242424242}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
@@ -285,6 +289,7 @@ assert_failure() {
 : >"${tmp_dir}/boundaries.log"
 output_file="${tmp_dir}/success.output"
 run_resolver "$output_file" >"${tmp_dir}/success.log"
+grep -Fxq "git merge-base --is-ancestor 52525252525252525252525252525252525252ab ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the Workflow namespace preparation floor"
 grep -Fxq "git merge-base --is-ancestor 77357abdb29ce96b2caf9ee679299602757844dc ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must select Luna for memory"
 grep -Fxq "git merge-base --is-ancestor 39d60bba6aa3a317948d653b4c1d09781719b466 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must omit Pi memory compatibility storage"
 grep -Fxq "git merge-base --is-ancestor 4558c9fac46ce1a96a25745b477b32b70dab7ae6 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "compatible API target must pass the chat thread draft child-only writer floor"
@@ -653,6 +658,24 @@ fi
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
+  assert_failure "Cannot resolve the merged Workflow namespace preparation" \
+    run_resolver "${tmp_dir}/workflow-name-scopes-history.output" "MOCK_WORKFLOW_NAME_SCOPES_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/workflow-name-scopes-history.output" ] || fail "invalid Workflow namespace history must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Workflow namespace history must fail before artifact or host access"
+  fi
+done
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Workflow namespace preparation" \
+  run_resolver "${tmp_dir}/workflow-name-scopes-floor.output" MOCK_WORKFLOW_NAME_SCOPES_FLOOR_VALID=0
+grep -Fq '52525252525252525252525252525252525252ab' "${tmp_dir}/failure.err" || fail "Workflow namespace rejection must identify the canonical preparation commit"
+[ ! -s "${tmp_dir}/workflow-name-scopes-floor.output" ] || fail "name-only API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Workflow namespace floor must fail before artifact or host access"
+fi
+
+for preparation_commit in "" invalid; do
+  : >"${tmp_dir}/boundaries.log"
   assert_failure "Cannot resolve the merged Computer Use session-only host mapping" \
     run_resolver "${tmp_dir}/computer-use-host-history.output" "MOCK_COMPUTER_USE_HOST_SESSION_ONLY_COMMIT=${preparation_commit}"
   [ ! -s "${tmp_dir}/computer-use-host-history.output" ] || fail "invalid host preparation history must not publish outputs"
@@ -847,16 +870,16 @@ fi
 
 for preparation_commit in "" invalid; do
   : >"${tmp_dir}/boundaries.log"
-  assert_failure "Cannot resolve the merged checkpoint writer preparation" \
-    run_resolver "${tmp_dir}/checkpoint-writer-history.output" "MOCK_CHECKPOINT_WRITER_PREPARATION_COMMIT=${preparation_commit}"
-  [ ! -s "${tmp_dir}/checkpoint-writer-history.output" ] || fail "invalid checkpoint preparation history must not publish outputs"
+  assert_failure "Cannot resolve the merged Pi memory input-revision writer" \
+    run_resolver "${tmp_dir}/memory-input-revision-writer-history.output" "MOCK_PI_MEMORY_INPUT_REVISION_WRITER_COMMIT=${preparation_commit}"
+  [ ! -s "${tmp_dir}/memory-input-revision-writer-history.output" ] || fail "invalid memory input-revision writer history must not publish outputs"
 done
 : >"${tmp_dir}/boundaries.log"
-assert_failure "Rollback target predates checkpoint writer preparation" \
-  run_resolver "${tmp_dir}/checkpoint-writer-floor.output" MOCK_CHECKPOINT_WRITER_PREPARATION_FLOOR_VALID=0
-[ ! -s "${tmp_dir}/checkpoint-writer-floor.output" ] || fail "unprepared checkpoint writer must not publish outputs"
+assert_failure "Rollback target predates Pi memory input-revision writer preparation" \
+  run_resolver "${tmp_dir}/memory-input-revision-writer-floor.output" MOCK_PI_MEMORY_INPUT_REVISION_WRITER_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/memory-input-revision-writer-floor.output" ] || fail "unprepared memory input-revision writer must not publish outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
-  fail "checkpoint writer floor must fail before artifact or host access"
+  fail "memory input-revision writer floor must fail before artifact or host access"
 fi
 
 for mutation_commit in "" invalid; do

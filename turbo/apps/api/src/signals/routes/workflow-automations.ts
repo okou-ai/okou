@@ -371,6 +371,7 @@ const enableAutomationInner$ = command(
     const result = await set(
       enableWorkflowAutomation$,
       {
+        userRequestedEnable: true,
         orgId: auth.orgId,
         member: memberFromAuth(auth),
         automationId: params.id,

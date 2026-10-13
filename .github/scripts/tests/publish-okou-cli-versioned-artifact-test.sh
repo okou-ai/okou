@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-publisher="${REPO_ROOT}/.github/scripts/publish-okou-cli-versioned-artifact.sh"
+publisher="${REPO_ROOT}/.github/scripts/release/publish-okou-cli-versioned-artifact.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 commit_sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

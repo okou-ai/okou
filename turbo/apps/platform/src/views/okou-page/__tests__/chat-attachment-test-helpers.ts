@@ -231,6 +231,10 @@ export function mockPrivateUrlSequence(
     const call = calls.get(query.file_id) ?? 0;
     calls.set(query.file_id, call + 1);
     return respond(200, {
+      downloadUrl: new URL(
+        "?download=1",
+        urls[Math.min(call, urls.length - 1)]!,
+      ).href,
       url: urls[Math.min(call, urls.length - 1)]!,
       expiresAt: "2099-01-01T00:00:00.000Z",
       publicUrl:

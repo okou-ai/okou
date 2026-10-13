@@ -69,12 +69,10 @@ const downloadStoredArtifact$ = command(
     // longer than the preview grant. Never use this credential for copying.
     const source = await set(attachmentDownloadSource$, preview.url, signal);
     await downloadAttachmentUrl(
-      // Same new-App/old-API removal gate as downloadAttachment$ (#39235); legacy
-      // unmanaged URLs permanently require a CORS-readable blob download.
-      source.downloadUrl ?? source.resourceUrl,
+      source.kind === "managed" ? source.downloadUrl : source.resourceUrl,
       signal,
       preview.filename,
-      source.downloadUrl ? "native" : "blob",
+      source.kind === "managed" ? "native" : "blob",
     );
   },
 );

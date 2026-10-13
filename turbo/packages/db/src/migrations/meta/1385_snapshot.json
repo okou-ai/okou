@@ -1,5 +1,5 @@
 {
-  "id": "79659792-7f81-4184-8c55-de235ee64b8d",
+  "id": "b388483b-7710-4c2a-ae9c-fcf9c9daf369",
   "prevId": "1dcc8e81-a713-47bc-9ee4-1567549917fc",
   "version": "7",
   "dialect": "postgresql",
@@ -21227,13 +21227,6 @@
           "notNull": true,
           "default": true
         },
-        "chat_resources_enabled_by_default": {
-          "name": "chat_resources_enabled_by_default",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
         "theme": {
           "name": "theme",
           "type": "text",
@@ -35448,40 +35441,6 @@
           ],
           "isUnique": true,
           "where": "visibility = 'public'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_private_owner_agent_name_unique": {
-          "name": "idx_workflows_private_owner_agent_name_unique",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "visibility = 'private'",
           "concurrently": false,
           "method": "btree",
           "with": {}

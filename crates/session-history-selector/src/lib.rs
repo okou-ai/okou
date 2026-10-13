@@ -1,4 +1,4 @@
-//! Bounded native session-history selection for guest checkpoints.
+//! Bounded native session-history selection for guest uploads.
 //!
 //! The crate retains structurally valid native compact generations for Claude
 //! Code and legacy or paginated Codex rollouts without changing their native
@@ -46,7 +46,7 @@ pub enum ClaudeHistorySelection {
     Ineligible(ClaudeHistoryIneligibleReason),
 }
 
-/// Raw Claude compact-generation bytes selected for checkpointing.
+/// Raw Claude compact-generation bytes selected for history upload.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ClaudeHistoryCandidate {
     bytes: Vec<u8>,
@@ -66,7 +66,7 @@ impl ClaudeHistoryCandidate {
         self.bytes.len() as u64
     }
 
-    /// Borrow the exact raw JSONL bytes selected for checkpointing.
+    /// Borrow the exact raw JSONL bytes selected for history upload.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -290,8 +290,8 @@ impl CandidateState {
 /// the source [`ClaudeHistorySelection::Ineligible`].
 ///
 /// `Ineligible` is an expected eligibility or compatibility outcome that lets
-/// the caller use its ordinary checkpoint path. The selector only chooses an
-/// in-memory candidate: staging, checkpoint commit, and live-file reconciliation
+/// the caller use its ordinary history-upload path. The selector only chooses an
+/// in-memory candidate: staging, history upload, and live-file reconciliation
 /// remain the caller's responsibility.
 ///
 /// # Errors
@@ -325,8 +325,8 @@ pub fn select_claude_compact_generation(
 /// cursor repositioned. Cursor preservation is not guaranteed, so callers
 /// must not rely on the cursor position after this function returns.
 ///
-/// The selector only chooses an in-memory candidate; staging, checkpoint
-/// commit, and live-file reconciliation remain the caller's responsibility.
+/// The selector only chooses an in-memory candidate; staging, history upload,
+/// and live-file reconciliation remain the caller's responsibility.
 ///
 /// # Errors
 ///
