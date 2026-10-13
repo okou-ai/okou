@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.6](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.5...guest-control-server-v0.24.6) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
 ## [0.24.5](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.4...guest-control-server-v0.24.5) (2026-10-13)
 
 ## [0.24.4](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.3...guest-control-server-v0.24.4) (2026-10-12)

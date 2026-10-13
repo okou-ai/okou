@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.750.0](https://github.com/okou-ai/okou/compare/core-v8.749.0...core-v8.750.0) (2026-10-13)
+
+
+### Features
+
+* add agent-managed next-step suggestions ([#39632](https://github.com/okou-ai/okou/issues/39632)) ([dad6cd0](https://github.com/okou-ai/okou/commit/dad6cd007f63399ea88652e0a9fcb99123e5a87a))
+* enable artifact previews and slack link unfurls for everyone ([#39701](https://github.com/okou-ai/okou/issues/39701)) ([e8018ca](https://github.com/okou-ai/okou/commit/e8018cab8f6008bafa6905432215399d5893eac5))
+* enable the copper connector by default ([#39723](https://github.com/okou-ai/okou/issues/39723)) ([82b584e](https://github.com/okou-ai/okou/commit/82b584e5f6f3b7cbce92e8d49ce49f2f5ad9aa8d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.0
+
 ## [8.749.0](https://github.com/okou-ai/okou/compare/core-v8.748.4...core-v8.749.0) (2026-10-13)
 
 

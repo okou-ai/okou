@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.388.0](https://github.com/okou-ai/okou/compare/cli-v9.387.4...cli-v9.388.0) (2026-10-13)
+
+
+### Features
+
+* add agent-managed next-step suggestions ([#39632](https://github.com/okou-ai/okou/issues/39632)) ([dad6cd0](https://github.com/okou-ai/okou/commit/dad6cd007f63399ea88652e0a9fcb99123e5a87a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.556.0
+    * @okouai/core bumped to 8.750.0
+    * @okouai/pi-agent-runtime bumped to 1.49.23
+
 ## [9.387.4](https://github.com/okou-ai/okou/compare/cli-v9.387.3...cli-v9.387.4) (2026-10-13)
 
 

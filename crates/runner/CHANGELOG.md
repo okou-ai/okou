@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.230.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.2...runner-rs-v0.230.3) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.230.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.1...runner-rs-v0.230.2) (2026-10-13)
 
 

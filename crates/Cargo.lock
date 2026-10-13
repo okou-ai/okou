@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.106.8"
+version = "0.106.9"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2116,7 +2116,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.5"
+version = "0.24.6"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.61"
+version = "0.12.62"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2164,7 +2164,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.18.8"
+version = "0.18.9"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2914,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "kerberos-worker"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "kerberos-credentials",
  "rustix",
@@ -3090,7 +3090,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "bitvec",
  "libc",
@@ -3945,7 +3945,7 @@ dependencies = [
 
 [[package]]
 name = "rfb-client"
-version = "0.23.1"
+version = "0.23.2"
 dependencies = [
  "aes",
  "base64 0.23.1",
@@ -4087,7 +4087,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.230.2"
+version = "0.230.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4158,7 +4158,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.10.11"
+version = "0.10.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.14.4"
+version = "0.14.5"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4469,7 +4469,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4791,7 +4791,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.47.11"
+version = "0.47.12"
 dependencies = [
  "async-trait",
  "clap",

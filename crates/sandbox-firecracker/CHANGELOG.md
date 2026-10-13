@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.47.12](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.11...sandbox-firecracker-v0.47.12) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
 ## [0.47.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.10...sandbox-firecracker-v0.47.11) (2026-10-13)
 
 

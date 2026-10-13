@@ -9,6 +9,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.0](https://github.com/okou-ai/okou/compare/api-v1.731.0...api-v1.732.0) (2026-10-13)
+
+
+### Features
+
+* add agent-managed next-step suggestions ([#39632](https://github.com/okou-ai/okou/issues/39632)) ([dad6cd0](https://github.com/okou-ai/okou/commit/dad6cd007f63399ea88652e0a9fcb99123e5a87a))
+* enable artifact previews and slack link unfurls for everyone ([#39701](https://github.com/okou-ai/okou/issues/39701)) ([e8018ca](https://github.com/okou-ai/okou/commit/e8018cab8f6008bafa6905432215399d5893eac5))
+
+
+### Bug Fixes
+
+* **api:** retain forms progress through system configuration pauses ([#39703](https://github.com/okou-ai/okou/issues/39703)) ([855a6cd](https://github.com/okou-ai/okou/commit/855a6cd832f0a3141dabf4573f2710c1a94e77cd))
+
+
+### Refactoring
+
+* **api:** drop duplicate reads in run preparation ([#39716](https://github.com/okou-ai/okou/issues/39716)) ([bc1a52d](https://github.com/okou-ai/okou/commit/bc1a52d75b607877b041fa7e2c3dff85bc53ff00))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.0
+    * @okouai/core bumped to 8.750.0
+    * @okouai/db bumped to 1.335.0
+    * @okouai/pi-agent-runtime bumped to 1.49.23
+
 ## [1.731.0](https://github.com/okou-ai/okou/compare/api-v1.730.0...api-v1.731.0) (2026-10-13)
 
 
