@@ -604,6 +604,246 @@ const posthogMetadataPost = await worker.fetch(
 assert.equal(posthogMetadataPost.status, 405);
 assert.equal(posthogMetadataPost.headers.get("allow"), "GET, HEAD");
 
+async function copperFormCallback(body, query = "") {
+  return worker.fetch(
+    new Request(`https://app.okou.ai/connectors/copper/callback${query}`, {
+      method: "POST",
+      body: new globalThis.URLSearchParams(body),
+    }),
+    {},
+  );
+}
+
+const copperCallback = await copperFormCallback(
+  {
+    code: "copper+code/&=",
+    state: "state+with/special&characters",
+    redirect_uri: "https://untrusted.example/callback",
+    responseMode: "json",
+  },
+  "?x-vercel-protection-bypass=preview-bypass&next=https://untrusted.example",
+);
+assert.equal(copperCallback.status, 303);
+const copperCallbackUrl = new URL(copperCallback.headers.get("location"));
+assert.equal(copperCallbackUrl.origin, "https://app.okou.ai");
+assert.equal(copperCallbackUrl.pathname, "/connectors/copper/callback");
+assert.deepEqual(
+  [...copperCallbackUrl.searchParams],
+  [
+    ["code", "copper+code/&="],
+    ["state", "state+with/special&characters"],
+    ["x-vercel-protection-bypass", "preview-bypass"],
+  ],
+);
+assert.equal(copperCallback.headers.get("cache-control"), "no-store");
+assert.equal(copperCallback.headers.get("cdn-cache-control"), "no-store");
+assert.equal(
+  copperCallback.headers.get("cloudflare-cdn-cache-control"),
+  "no-store",
+);
+assert.equal(copperCallback.headers.get("referrer-policy"), "no-referrer");
+assert.equal(await copperCallback.text(), "");
+
+const copperCallbackPage = await worker.fetch(
+  new Request(copperCallbackUrl),
+  {},
+);
+assert.equal(copperCallbackPage.status, 200);
+assert.equal(copperCallbackPage.headers.get("cache-control"), "no-store");
+assert.equal(copperCallbackPage.headers.get("referrer-policy"), "no-referrer");
+assert.equal(documentTitle(await copperCallbackPage.text()), okouTitle);
+
+const copperDenied = await copperFormCallback({
+  state: "denied-state",
+  error: "access_denied",
+  error_description: "User denied access & no token was issued.",
+});
+assert.equal(copperDenied.status, 303);
+assert.deepEqual(
+  [...new URL(copperDenied.headers.get("location")).searchParams],
+  [
+    ["state", "denied-state"],
+    ["error", "access_denied"],
+    ["error_description", "User denied access & no token was issued."],
+  ],
+);
+
+for (const body of [
+  "code=missing-state",
+  "state=missing-code",
+  "state=state&code=first&code=second",
+  "state=first&state=second&code=code",
+  "state=state&code=code&error=access_denied",
+  "state=state&error=first&error=second",
+  "state=state&code=code&x-vercel-protection-bypass=body-bypass",
+]) {
+  const invalidCopperCallback = await copperFormCallback(body);
+  assert.equal(invalidCopperCallback.status, 400);
+  assert.equal(invalidCopperCallback.headers.get("location"), null);
+  assert.equal(invalidCopperCallback.headers.get("cache-control"), "no-store");
+  assert.equal(
+    invalidCopperCallback.headers.get("referrer-policy"),
+    "no-referrer",
+  );
+  assert.equal(await invalidCopperCallback.text(), "Invalid OAuth callback");
+}
+for (const query of [
+  "?state=query-state",
+  "?x-vercel-protection-bypass=first&x-vercel-protection-bypass=second",
+  "?x-vercel-protection-bypass=same&x-vercel-protection-bypass=same",
+]) {
+  const mixedCopperCallback = await copperFormCallback(
+    { state: "body-state", code: "code" },
+    query,
+  );
+  assert.equal(mixedCopperCallback.status, 400);
+  assert.equal(mixedCopperCallback.headers.get("location"), null);
+  assert.equal(mixedCopperCallback.headers.get("cache-control"), "no-store");
+  assert.equal(
+    mixedCopperCallback.headers.get("referrer-policy"),
+    "no-referrer",
+  );
+}
+
+const unsupportedCopperCallback = await worker.fetch(
+  new Request("https://app.okou.ai/connectors/copper/callback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state: "state", code: "code" }),
+  }),
+  {},
+);
+assert.equal(unsupportedCopperCallback.status, 415);
+assert.equal(unsupportedCopperCallback.headers.get("location"), null);
+assert.equal(
+  unsupportedCopperCallback.headers.get("cache-control"),
+  "no-store",
+);
+
+let oversizedCopperBodyCancelled = false;
+const oversizedCopperCallback = await worker.fetch(
+  new Request("https://app.okou.ai/connectors/copper/callback", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Content-Length": "32",
+    },
+    duplex: "half",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("state=state&code="));
+        controller.enqueue(new TextEncoder().encode("x".repeat(16 * 1024)));
+      },
+      cancel() {
+        oversizedCopperBodyCancelled = true;
+      },
+    }),
+  }),
+  {},
+);
+assert.equal(oversizedCopperCallback.status, 413);
+assert.equal(oversizedCopperCallback.headers.get("location"), null);
+assert.equal(
+  oversizedCopperCallback.headers.get("referrer-policy"),
+  "no-referrer",
+);
+assert.equal(oversizedCopperBodyCancelled, true);
+
+for (const body of [
+  new ReadableStream({
+    start(controller) {
+      controller.error(new Error("Unreadable sensitive callback body"));
+    },
+  }),
+  new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("x".repeat(17 * 1024)));
+    },
+    cancel() {
+      return Promise.reject(new Error("Sensitive body cleanup failure"));
+    },
+  }),
+]) {
+  const unreadableCopperCallback = await worker.fetch(
+    new Request("https://app.okou.ai/connectors/copper/callback", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      duplex: "half",
+      body,
+    }),
+    {},
+  );
+  assert.equal(unreadableCopperCallback.status, 400);
+  assert.equal(unreadableCopperCallback.headers.get("location"), null);
+  assert.equal(
+    unreadableCopperCallback.headers.get("cache-control"),
+    "no-store",
+  );
+  assert.equal(
+    unreadableCopperCallback.headers.get("referrer-policy"),
+    "no-referrer",
+  );
+  assert.equal(await unreadableCopperCallback.text(), "Invalid OAuth callback");
+}
+
+const pendingCopperBodyRead = Promise.withResolvers();
+const copperCallbackAbort = new globalThis.AbortController();
+let abortedCopperBodyCancelled = false;
+const abortedCopperCallbackPromise = worker.fetch(
+  new Request("https://app.okou.ai/connectors/copper/callback", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    signal: copperCallbackAbort.signal,
+    duplex: "half",
+    body: new ReadableStream(
+      {
+        pull() {
+          pendingCopperBodyRead.resolve();
+        },
+        cancel() {
+          abortedCopperBodyCancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    ),
+  }),
+  {},
+);
+await pendingCopperBodyRead.promise;
+copperCallbackAbort.abort();
+const abortedCopperCallback = await abortedCopperCallbackPromise;
+assert.equal(abortedCopperCallback.status, 400);
+assert.equal(abortedCopperCallback.headers.get("location"), null);
+assert.equal(abortedCopperCallback.headers.get("cache-control"), "no-store");
+assert.equal(
+  abortedCopperCallback.headers.get("referrer-policy"),
+  "no-referrer",
+);
+assert.equal(abortedCopperBodyCancelled, true);
+
+const previewCopperCallback = await worker.fetch(
+  new Request("https://pr-25304-app.vm6.ai/connectors/copper/callback", {
+    method: "POST",
+    body: new globalThis.URLSearchParams({ code: "code", state: "state" }),
+  }),
+  {},
+);
+assert.equal(previewCopperCallback.status, 303);
+assert.equal(
+  new URL(previewCopperCallback.headers.get("location")).origin,
+  "https://pr-25304-app.vm6.ai",
+);
+
+const posthogCallbackPost = await worker.fetch(
+  new Request("https://app.okou.ai/connectors/posthog/callback", {
+    method: "POST",
+    body: new globalThis.URLSearchParams({ code: "code", state: "state" }),
+  }),
+  {},
+);
+assert.equal(posthogCallbackPost.status, 405);
+assert.equal(posthogCallbackPost.headers.get("allow"), "GET, HEAD");
+
 const posthogCallbackResponse = await worker.fetch(
   new Request("https://app.okou.ai/connectors/posthog/callback?code=test"),
   {},
