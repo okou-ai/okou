@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
@@ -35,6 +35,40 @@ describe("bounded session-history download attribution", () => {
     expect(
       webhookTelemetryContract.send.body.parse(historyDownloadAttribution),
     ).toEqual(historyDownloadAttribution);
+  });
+
+  it("accepts truthful saturated and interrupted observations without new fields in legacy uploads", () => {
+    const attempt = historyDownloadAttribution.sandboxOperations[0];
+    assert.isDefined(attempt);
+    const interrupted = {
+      ...attempt,
+      success: false,
+      outcome: "interrupted",
+      session_history_body_poll_count: 4_294_967_295,
+      session_history_body_poll_counter_state: "saturated",
+      session_history_body_incomplete_poll_count: 1,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [interrupted],
+      }),
+    ).toEqual({ runId: "run", sandboxOperations: [interrupted] });
+    const prior = {
+      ts: attempt.ts,
+      action_type: attempt.action_type,
+      duration_ms: attempt.duration_ms,
+      success: attempt.success,
+      session_history_download_attempt: 1,
+      session_history_timing_origin_unix_ms:
+        attempt.session_history_timing_origin_unix_ms,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [prior],
+      }),
+    ).toEqual({ runId: "run", sandboxOperations: [prior] });
   });
 
   it("accepts legacy uploads and strips undeclared customer/transport details", () => {
@@ -74,6 +108,20 @@ describe("bounded session-history download attribution", () => {
     { session_history_chunk_wait_max_ms: Infinity },
     { session_history_chunk_count: 4_294_967_296 },
     { session_history_body_copy_ms: "private" },
+    { session_history_http_version: "HTTP/1.1 arbitrary" },
+    { session_history_body_received_bytes: -1 },
+    { session_history_body_received_bytes: Number.MAX_SAFE_INTEGER + 1 },
+    { session_history_body_poll_count: 4_294_967_296 },
+    { session_history_body_pending_poll_count: -1 },
+    { session_history_body_incomplete_poll_count: 0.5 },
+    { session_history_body_poll_wall_ms: Infinity },
+    { session_history_body_wake_count: "private" },
+    { session_history_body_wake_to_poll_count: -1 },
+    { session_history_body_wake_to_poll_wall_ms: NaN },
+    { session_history_body_wake_to_poll_max_ms: -1 },
+    { session_history_body_poll_without_wake_count: 4_294_967_296 },
+    { session_history_body_unconsumed_wake_count: -1 },
+    { session_history_body_poll_counter_state: "complete-network" },
     { session_history_cpu_admission_end_offset_ms: -1 },
     { session_history_cpu_queue_end_offset_ms: NaN },
     { session_history_restore_wait_end_offset_ms: -1 },

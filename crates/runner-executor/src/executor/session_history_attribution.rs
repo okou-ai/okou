@@ -7,11 +7,13 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use runner_storage::OBJECT_DOWNLOAD_MAX_ATTEMPTS;
 
+use super::session_history_body_poll::HistoryBodyPollStats;
 use super::session_history_download::SessionHistoryDownloadTimings;
 use crate::duration::duration_ms;
 use crate::telemetry::{
     JobTelemetry, SessionHistoryDownloadFields, SessionHistoryDownloadRecord,
-    SessionHistoryObservationStage, SessionHistoryResponseTelemetryMetadata,
+    SessionHistoryHttpVersion, SessionHistoryObservationStage, SessionHistoryPollCounterState,
+    SessionHistoryResponseTelemetryMetadata,
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -76,6 +78,9 @@ pub(super) struct HistoryAttemptTiming {
     pub copy: Duration,
     pub allocation: Option<Duration>,
     pub response: Option<SessionHistoryResponseTelemetryMetadata>,
+    pub http_version: Option<SessionHistoryHttpVersion>,
+    pub received_bytes: Option<u64>,
+    pub body_poll: Option<HistoryBodyPollStats>,
 }
 
 impl HistoryAttemptTiming {
@@ -91,6 +96,9 @@ impl HistoryAttemptTiming {
             copy: Duration::ZERO,
             allocation: None,
             response: None,
+            http_version: None,
+            received_bytes: None,
+            body_poll: None,
         }
     }
 }
@@ -160,6 +168,27 @@ impl SessionHistoryDownloadAttribution {
             fields.session_history_body_copy_ms = Some(duration_ms(attempt.copy));
         }
         fields.session_history_body_allocation_ms = attempt.allocation.map(duration_ms);
+        fields.session_history_http_version = attempt.http_version;
+        fields.session_history_body_received_bytes = attempt.received_bytes;
+        if let Some(poll) = attempt.body_poll {
+            fields.session_history_body_poll_count = Some(poll.polls);
+            fields.session_history_body_pending_poll_count = Some(poll.pending_polls);
+            fields.session_history_body_incomplete_poll_count = Some(poll.incomplete_polls);
+            fields.session_history_body_poll_wall_ms = Some(duration_ms(poll.poll_wall));
+            fields.session_history_body_wake_count = Some(poll.wakes);
+            fields.session_history_body_wake_to_poll_count = Some(poll.wake_to_poll_count);
+            fields.session_history_body_wake_to_poll_wall_ms =
+                Some(duration_ms(poll.wake_to_poll_wall));
+            fields.session_history_body_wake_to_poll_max_ms =
+                Some(duration_ms(poll.wake_to_poll_max));
+            fields.session_history_body_poll_without_wake_count = Some(poll.polls_without_wake);
+            fields.session_history_body_unconsumed_wake_count = Some(poll.unconsumed_wakes);
+            fields.session_history_body_poll_counter_state = Some(if poll.saturated {
+                SessionHistoryPollCounterState::Saturated
+            } else {
+                SessionHistoryPollCounterState::Exact
+            });
+        }
         Some(SessionHistoryDownloadRecord {
             action_type: "session_history_download_attempt",
             duration: attempt.window.elapsed(),

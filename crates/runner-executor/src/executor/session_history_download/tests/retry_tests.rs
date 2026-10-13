@@ -27,12 +27,20 @@ async fn materializer_retries_interrupted_zstd_body_without_reusing_partial_byte
             assert_phase_failure(timings.body_read());
             assert_phase_success(timings.decompression());
             assert_phase_success(timings.hash_verification());
-            assert_attempt_outcomes(
+            let attribution = assert_attempt_outcomes(
                 &timings,
                 &[
                     HistoryAttemptOutcome::Failed,
                     HistoryAttemptOutcome::Succeeded,
                 ],
+            );
+            assert_eq!(
+                attribution.attempts[0].unwrap().received_bytes,
+                Some(encoded_size - 1)
+            );
+            assert_eq!(
+                attribution.attempts[1].unwrap().received_bytes,
+                Some(encoded_size)
             );
         }
         _ => panic!("expected verified history after retry"),

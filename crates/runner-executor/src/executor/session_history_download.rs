@@ -1101,6 +1101,7 @@ async fn download_body_once(
             attempt.finish_request(false);
             SessionHistoryDownloadBodyError::from_reqwest("GET", url, error)
         })?;
+    attempt.observation.http_version = Some(response.version().into());
     if let Err(error) = response.error_for_status_ref() {
         attempt.finish_request(false);
         attempt.observation.response =
@@ -1155,9 +1156,12 @@ async fn download_body_once(
     let mut downloaded = 0u64;
     let body_started = Instant::now();
     attempt.phase = Some(HistoryAttemptPhase::Body(body_started));
+    let body_poll = super::session_history_body_poll::HistoryBodyPollObserver::new();
+    attempt.body_poll = Some(body_poll.clone());
+    attempt.observation.received_bytes = Some(0);
     loop {
         attempt.chunk_started = Some(Instant::now());
-        let chunk = response.chunk().await;
+        let chunk = body_poll.observe(response.chunk()).await;
         attempt.finish_chunk_wait();
         let Some(chunk) = (match chunk {
             Ok(chunk) => chunk,
@@ -1171,6 +1175,7 @@ async fn download_body_once(
             break;
         };
         downloaded += chunk.len() as u64;
+        attempt.observation.received_bytes = Some(downloaded);
         if let Some(expected_size) = expected_size
             && downloaded > expected_size
         {
@@ -1221,6 +1226,7 @@ struct HistoryAttemptObservation<'a> {
     observation: HistoryAttemptTiming,
     phase: Option<HistoryAttemptPhase>,
     chunk_started: Option<Instant>,
+    body_poll: Option<super::session_history_body_poll::HistoryBodyPollObserver>,
 }
 
 impl<'a> HistoryAttemptObservation<'a> {
@@ -1230,6 +1236,7 @@ impl<'a> HistoryAttemptObservation<'a> {
             observation: HistoryAttemptTiming::new(started_at),
             phase: Some(HistoryAttemptPhase::Request(started_at)),
             chunk_started: None,
+            body_poll: None,
         }
     }
 
@@ -1277,6 +1284,10 @@ impl<'a> HistoryAttemptObservation<'a> {
 impl Drop for HistoryAttemptObservation<'_> {
     fn drop(&mut self) {
         self.finish_chunk_wait();
+        self.observation.body_poll = self
+            .body_poll
+            .as_ref()
+            .and_then(|observer| observer.snapshot());
         let end = Instant::now();
         // Interrupted legacy phases remain omitted as before. Only the new
         // attempt observation gets a partial boundary; it is not a completed
@@ -1629,6 +1640,20 @@ mod tests {
                 assert!(attempt.window.end >= body.end);
                 assert!(attempt.chunk_wait_max <= attempt.chunk_wait);
                 assert!(attempt.copy + attempt.chunk_wait <= body.elapsed());
+                assert!(attempt.received_bytes.is_some());
+                let poll = attempt
+                    .body_poll
+                    .expect("a body interval must retain poll coverage");
+                assert!(!poll.saturated);
+                assert!(
+                    u64::from(poll.polls)
+                        >= u64::from(poll.pending_polls) + u64::from(poll.incomplete_polls)
+                );
+                assert!(poll.poll_wall <= attempt.chunk_wait);
+                assert!(poll.wake_to_poll_count <= poll.wakes);
+            } else {
+                assert!(attempt.received_bytes.is_none());
+                assert!(attempt.body_poll.is_none());
             }
         }
         for (earlier, later) in attempts.iter().zip(attempts.iter().skip(1)) {
@@ -2081,6 +2106,15 @@ mod tests {
                 assert_phase_success(timings.validation());
                 assert_no_phase(timings.decompression());
                 assert_phase_success(timings.hash_verification());
+                let attribution =
+                    assert_attempt_outcomes(&timings, &[HistoryAttemptOutcome::Succeeded]);
+                let attempt = attribution.attempts[0].unwrap();
+                assert_eq!(attempt.received_bytes, Some(body.len() as u64));
+                assert!(matches!(
+                    attempt.http_version,
+                    Some(crate::telemetry::SessionHistoryHttpVersion::Http11)
+                ));
+                assert!(attempt.body_poll.unwrap().polls > 0);
                 assert_response_metadata(
                     &timings,
                     SessionHistoryContentLengthState::MatchesExpected,
@@ -2878,6 +2912,11 @@ mod tests {
                 assert_phase_success(timings.validation());
                 assert_no_phase(timings.decompression());
                 assert_no_phase(timings.hash_verification());
+                let attribution =
+                    assert_attempt_outcomes(&timings, &[HistoryAttemptOutcome::Failed]);
+                let attempt = attribution.attempts[0].unwrap();
+                assert_eq!(attempt.received_bytes, Some(body.len() as u64));
+                assert_eq!(attempt.chunks, 0, "rejected received bytes were not copied");
             }
             _ => panic!("expected failed materialization"),
         }
@@ -3089,6 +3128,15 @@ mod tests {
                 assert_phase_failure(timings.validation());
                 assert_no_phase(timings.decompression());
                 assert_no_phase(timings.hash_verification());
+                let attribution =
+                    assert_attempt_outcomes(&timings, &[HistoryAttemptOutcome::Failed]);
+                let attempt = attribution.attempts[0].unwrap();
+                assert!(matches!(
+                    attempt.http_version,
+                    Some(crate::telemetry::SessionHistoryHttpVersion::Http11)
+                ));
+                assert!(attempt.received_bytes.is_none());
+                assert!(attempt.body_poll.is_none());
                 assert_response_metadata(
                     &timings,
                     SessionHistoryContentLengthState::MismatchesExpected,

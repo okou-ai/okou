@@ -32,7 +32,8 @@ mod session_history_download;
 mod storage_batch;
 
 pub(crate) use session_history_download::{
-    SessionHistoryDownloadFields, SessionHistoryDownloadRecord, SessionHistoryObservationStage,
+    SessionHistoryDownloadFields, SessionHistoryDownloadRecord, SessionHistoryHttpVersion,
+    SessionHistoryObservationStage, SessionHistoryPollCounterState,
 };
 pub(crate) use storage_batch::StorageBatchDimensions;
 
@@ -2165,6 +2166,21 @@ mod tests {
                     session_history_chunk_count: Some(2),
                     session_history_body_copy_ms: Some(1),
                     session_history_body_allocation_ms: Some(0),
+                    session_history_http_version: Some(SessionHistoryHttpVersion::Http11),
+                    session_history_body_received_bytes: Some(8192),
+                    session_history_body_poll_count: Some(4),
+                    session_history_body_pending_poll_count: Some(1),
+                    session_history_body_incomplete_poll_count: Some(0),
+                    session_history_body_poll_wall_ms: Some(1),
+                    session_history_body_wake_count: Some(2),
+                    session_history_body_wake_to_poll_count: Some(1),
+                    session_history_body_wake_to_poll_wall_ms: Some(2),
+                    session_history_body_wake_to_poll_max_ms: Some(2),
+                    session_history_body_poll_without_wake_count: Some(0),
+                    session_history_body_unconsumed_wake_count: Some(0),
+                    session_history_body_poll_counter_state: Some(
+                        SessionHistoryPollCounterState::Exact,
+                    ),
                     ..Default::default()
                 },
             },

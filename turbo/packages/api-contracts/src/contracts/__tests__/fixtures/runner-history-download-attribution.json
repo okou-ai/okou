@@ -18,7 +18,20 @@
       "session_history_chunk_wait_max_ms": 3,
       "session_history_chunk_count": 2,
       "session_history_body_copy_ms": 1,
-      "session_history_body_allocation_ms": 0
+      "session_history_body_allocation_ms": 0,
+      "session_history_http_version": "http11",
+      "session_history_body_received_bytes": 8192,
+      "session_history_body_poll_count": 4,
+      "session_history_body_pending_poll_count": 1,
+      "session_history_body_incomplete_poll_count": 0,
+      "session_history_body_poll_wall_ms": 1,
+      "session_history_body_wake_count": 2,
+      "session_history_body_wake_to_poll_count": 1,
+      "session_history_body_wake_to_poll_wall_ms": 2,
+      "session_history_body_wake_to_poll_max_ms": 2,
+      "session_history_body_poll_without_wake_count": 0,
+      "session_history_body_unconsumed_wake_count": 0,
+      "session_history_body_poll_counter_state": "exact"
     },
     {
       "ts": "2026-01-15T10:00:00.013Z",

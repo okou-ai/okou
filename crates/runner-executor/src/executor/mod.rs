@@ -38,6 +38,7 @@ mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
 mod session_history_attribution;
+mod session_history_body_poll;
 mod session_history_cpu;
 mod session_history_download;
 mod session_history_restore_plan;

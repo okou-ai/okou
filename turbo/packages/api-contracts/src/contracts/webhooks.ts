@@ -945,6 +945,12 @@ const sessionHistoryDownloadTimingMsSchema = z
   .nonnegative()
   .max(Number.MAX_SAFE_INTEGER);
 
+const sessionHistoryBodyPollCountSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(4_294_967_295);
+
 // Every offset uses the same materializer-local monotonic origin. The UTC
 // calibration permits joins without interpreting legacy recording timestamps
 // or summed attempt durations as true phase intervals. All fields are optional
@@ -993,6 +999,35 @@ const sessionHistoryDownloadAttributionSchema = z.object({
   session_history_body_copy_ms: sessionHistoryDownloadTimingMsSchema.optional(),
   session_history_body_allocation_ms:
     sessionHistoryDownloadTimingMsSchema.optional(),
+  // Observed poll/wake walls can overlap. A wake is not proof of bytes ready;
+  // exact counters mean no saturation, not complete scheduler attribution.
+  session_history_http_version: z
+    .enum(["http09", "http10", "http11", "http2", "http3", "other"])
+    .optional(),
+  // Bytes yielded by the body Future, including rejected chunks, not wire bytes.
+  session_history_body_received_bytes:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_poll_count: sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_pending_poll_count:
+    sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_incomplete_poll_count:
+    sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_poll_wall_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_wake_count: sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_wake_to_poll_count:
+    sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_wake_to_poll_wall_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_wake_to_poll_max_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_poll_without_wake_count:
+    sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_unconsumed_wake_count:
+    sessionHistoryBodyPollCountSchema.optional(),
+  session_history_body_poll_counter_state: z
+    .enum(["exact", "saturated"])
+    .optional(),
   session_history_cpu_admission_start_offset_ms:
     sessionHistoryDownloadTimingMsSchema.optional(),
   session_history_cpu_admission_end_offset_ms:
