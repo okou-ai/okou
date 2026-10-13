@@ -12,6 +12,31 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1017.0](https://github.com/okou-ai/okou/compare/app-v0.1016.0...app-v0.1017.0) (2026-10-13)
+
+
+### Features
+
+* **vnc:** expose owner kerberos creation choices ([#39425](https://github.com/okou-ai/okou/issues/39425)) ([9275875](https://github.com/okou-ai/okou/commit/92758756e23cdf0e597cbb8b28e6a36caf65fada))
+
+
+### Bug Fixes
+
+* **app:** suppress stale custom template preview toast ([#39403](https://github.com/okou-ai/okou/issues/39403)) ([1a45058](https://github.com/okou-ai/okou/commit/1a45058e969d66bb8f62f05db03a4d8c87c70283))
+
+
+### Refactoring
+
+* **api:** retire official workflow result email runtime ([#39514](https://github.com/okou-ai/okou/issues/39514)) ([991bc6b](https://github.com/okou-ai/okou/commit/991bc6b7a73e34d079a42da3ecdb5e51bc94b3a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.553.1
+    * @okouai/core bumped to 8.748.2
+
 ## [0.1016.0](https://github.com/okou-ai/okou/compare/app-v0.1015.2...app-v0.1016.0) (2026-10-12)
 
 

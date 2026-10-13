@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.10.0...runner-lifecycle-v0.10.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** retain required pool saving custody ([#39468](https://github.com/okou-ai/okou/issues/39468)) ([596aa18](https://github.com/okou-ai/okou/commit/596aa189a2baf22192a1574dc07d001bcf5c7853))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.9.3...runner-lifecycle-v0.10.0) (2026-10-12)
 
 

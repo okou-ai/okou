@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.387.1](https://github.com/okou-ai/okou/compare/cli-v9.387.0...cli-v9.387.1) (2026-10-13)
+
+
+### Refactoring
+
+* **api:** retire official workflow result email runtime ([#39514](https://github.com/okou-ai/okou/issues/39514)) ([991bc6b](https://github.com/okou-ai/okou/commit/991bc6b7a73e34d079a42da3ecdb5e51bc94b3a8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.553.1
+    * @okouai/core bumped to 8.748.2
+    * @okouai/pi-agent-runtime bumped to 1.49.19
+
 ## [9.387.0](https://github.com/okou-ai/okou/compare/cli-v9.386.9...cli-v9.387.0) (2026-10-12)
 
 
