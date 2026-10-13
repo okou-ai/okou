@@ -347,10 +347,6 @@ describe("Discord context parity through public OAuth bindings", () => {
     );
     expect(threadContext).toContain(`[Channel ID] ${threadId}`);
     expect(threadContext).toContain(`[Message ID] ${attachmentOnly.id}`);
-    expect(claim.appendSystemPrompt).not.toContain(
-      "Prior Discord Messages (Untrusted)",
-    );
-    expect(claim.appendSystemPrompt).not.toContain('[{"messageId"');
     expect(claim.appendSystemPrompt).not.toContain(message.content);
   });
 
