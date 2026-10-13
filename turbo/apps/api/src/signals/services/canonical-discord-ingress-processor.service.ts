@@ -1299,7 +1299,7 @@ const finishRecordedIngressFailure$ = command(
     if (recorded?.reply?.kind === "chat") {
       await set(sendDiscordChatReply$, db, recorded.reply.request, signal);
     } else if (recorded?.reply?.kind === "notice") {
-      await set(sendDiscordIngressNotice$, db, recorded.reply.notice, signal);
+      await set(sendDiscordIngressNotice$, recorded.reply.notice, signal);
     }
   },
 );
@@ -1313,12 +1313,7 @@ const sendIngressQueueWaitNotice$ = command(
   ): Promise<void> => {
     const content = chatQueueWaitNotice(pick.reason);
     if (content) {
-      await set(
-        sendDiscordIngressNotice$,
-        set(writeDb$),
-        { ...target, content },
-        signal,
-      );
+      await set(sendDiscordIngressNotice$, { ...target, content }, signal);
     }
   },
 );
