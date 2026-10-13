@@ -892,11 +892,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0375",
-      "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0376",
       "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
       "owner": "validateConnectorCatalogColumnContract"
