@@ -857,11 +857,6 @@
       "owner": "persistEnabledWorkflowAutomation$"
     },
     {
-      "id": "TX-0340",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "persistDisabledWorkflowAutomation$"
-    },
-    {
       "id": "TX-0341",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteOrphanedWorkflowVolume$"
