@@ -137,6 +137,448 @@ const catalogSql = `SELECT jsonb_build_object(
     WHERE n.nspname=current_schema() AND NOT t.tgisinternal)
 )::text AS value`;
 
+const catalogSchema = z.strictObject({
+  columns: z.array(
+    z.strictObject({
+      table: z.string().min(1),
+      ordinal: z.number().int().positive(),
+      name: z.string().min(1),
+      dropped: z.boolean(),
+      type: z.string(),
+      typmod: z.number().int(),
+      notnull: z.boolean(),
+      default: z.string().nullable(),
+      identity: z.string(),
+      generated: z.string(),
+      collation: z.string().nullable(),
+    }),
+  ),
+  constraints: z.array(
+    z.strictObject({
+      table: z.string().min(1),
+      name: z.string().min(1),
+      type: z.string().min(1),
+      validated: z.boolean(),
+      deferrable: z.boolean(),
+      deferred: z.boolean(),
+      definition: z.string().min(1),
+    }),
+  ),
+  indexes: z.array(
+    z.strictObject({
+      table: z.string().min(1),
+      name: z.string().min(1),
+      definition: z.string().min(1),
+      valid: z.boolean(),
+      ready: z.boolean(),
+      live: z.boolean(),
+    }),
+  ),
+  functions: z
+    .array(
+      z.strictObject({
+        name: z.string().min(1),
+        body: z.string().min(1),
+        definition: z.string().min(1),
+        volatility: z.enum(["i", "s", "v"]),
+        config: z.array(z.string()).nullable(),
+      }),
+    )
+    .length(2),
+  triggers: z
+    .array(
+      z.strictObject({
+        table: z.string().min(1),
+        name: z.string().min(1),
+        enabled: z.enum(["O", "D"]),
+        definition: z.string().min(1),
+      }),
+    )
+    .length(2),
+});
+const catalogRowsSchema = z
+  .array(
+    z.strictObject({
+      value: z
+        .string()
+        .transform((value, context): unknown => {
+          try {
+            return JSON.parse(value);
+          } catch {
+            context.addIssue({
+              code: "custom",
+              message: "Invalid native catalog JSON TEXT",
+            });
+            return z.NEVER;
+          }
+        })
+        .pipe(catalogSchema),
+    }),
+  )
+  .length(1);
+type HistoricalCatalog = z.infer<typeof catalogSchema>;
+type FixtureImage = {
+  table: FixtureTable;
+  rows: z.infer<typeof imageRowsSchema>;
+};
+const guardRowsSchema = z
+  .array(
+    z.strictObject({
+      table: z.string().min(1),
+      name: z.enum([
+        "cloudflare_access_scope_change_guard",
+        "ssh_cloudflare_access_binding_guard",
+      ]),
+      enabled: z.enum(["O", "D"]),
+      trigger_oid: z.string().regex(/^[1-9][0-9]*$/),
+      relation_oid: z.string().regex(/^[1-9][0-9]*$/),
+      trigger_function_oid: z.string().regex(/^[1-9][0-9]*$/),
+      function_oid: z.string().regex(/^[1-9][0-9]*$/),
+      expected_function_oid: z.string().regex(/^[1-9][0-9]*$/),
+      function_name: z.string().min(1),
+      body: z.string().min(1),
+      digest: z.string().regex(/^[a-f0-9]{32}$/),
+      definition: z.string().min(1),
+    }),
+  )
+  .length(2);
+const guardSql = `SELECT r.relname AS table, t.tgname AS name, t.tgenabled AS enabled,
+  t.oid::text AS trigger_oid, r.oid::text AS relation_oid,
+  t.tgfoid::text AS trigger_function_oid, p.oid::text AS function_oid,
+  p.proname AS function_name, p.prosrc AS body, md5(p.prosrc) AS digest,
+  pg_get_triggerdef(t.oid) AS definition,
+  to_regprocedure(format('%I.%I()', current_schema(),
+    CASE t.tgname WHEN 'ssh_cloudflare_access_binding_guard'
+      THEN 'validate_ssh_cloudflare_access_binding'
+      ELSE 'reject_cloudflare_access_scope_change' END))::oid::text AS expected_function_oid
+  FROM pg_trigger t JOIN pg_class r ON r.oid=t.tgrelid
+  JOIN pg_namespace n ON n.oid=r.relnamespace JOIN pg_proc p ON p.oid=t.tgfoid
+  WHERE n.nspname=current_schema() AND NOT t.tgisinternal
+    AND t.tgname IN ('ssh_cloudflare_access_binding_guard','cloudflare_access_scope_change_guard')
+  ORDER BY t.tgname`;
+const catalogErrorSchema = z.object({
+  code: z.literal("P0001"),
+  message: z.string(),
+});
+
+function checkGuards(
+  rows: z.infer<typeof guardRowsSchema>,
+  scopeEnabled: "O" | "D",
+) {
+  assert.deepEqual(
+    rows.map((row) => {
+      return row.name;
+    }),
+    [
+      "cloudflare_access_scope_change_guard",
+      "ssh_cloudflare_access_binding_guard",
+    ],
+  );
+  for (const row of rows) {
+    assert.equal(row.trigger_function_oid, row.function_oid);
+    assert.equal(row.function_oid, row.expected_function_oid);
+    const scope = row.name === "cloudflare_access_scope_change_guard";
+    assert.equal(
+      row.table,
+      scope ? "cloudflare_access_configs" : "ssh_connections",
+    );
+    assert.equal(
+      row.function_name,
+      scope
+        ? "reject_cloudflare_access_scope_change"
+        : "validate_ssh_cloudflare_access_binding",
+    );
+    assert.equal(
+      row.digest,
+      scope
+        ? "9a32858723d6facc53fb33925484a8f3"
+        : "78a8128b76b3379792960174c17b9bf1",
+    );
+    assert.equal(row.enabled, scope ? scopeEnabled : "O");
+  }
+}
+
+function normalizeCatalog(catalog: HistoricalCatalog, namespace: string) {
+  const reference = (value: string) => {
+    return value
+      .replaceAll(`"${namespace}".`, '"$OWNED_SCHEMA".')
+      .replaceAll(`${namespace}.`, "$OWNED_SCHEMA.");
+  };
+  return {
+    ...catalog,
+    columns: catalog.columns.map((column) => {
+      return {
+        ...column,
+        type: reference(column.type),
+        default: column.default === null ? null : reference(column.default),
+      };
+    }),
+    constraints: catalog.constraints.map((constraint) => {
+      return { ...constraint, definition: reference(constraint.definition) };
+    }),
+    indexes: catalog.indexes.map((index) => {
+      return { ...index, definition: reference(index.definition) };
+    }),
+    functions: catalog.functions.map((routine) => {
+      return { ...routine, definition: reference(routine.definition) };
+    }),
+    triggers: catalog.triggers.map((trigger) => {
+      return { ...trigger, definition: reference(trigger.definition) };
+    }),
+  };
+}
+
+async function checkCatalogMismatch(input: {
+  connectionString: string;
+  sourceNamespace: string;
+  migrations: readonly string[];
+  images: FixtureImage[];
+  catalog: HistoricalCatalog;
+}) {
+  // This operation owns its Client, acknowledged schema and every cleanup step.
+  // Its caller supplies only captured plain data from the uncommitted parent.
+  const probe = new Client({ connectionString: input.connectionString });
+  const namespace = `access_catalog_${randomUUID().replaceAll("-", "")}`;
+  let owned = false;
+  let searchPath: string | undefined;
+  let nativeRejection: unknown;
+  const errors: unknown[] = [];
+  try {
+    await probe.connect();
+    const paths = pathRowsSchema.parse(
+      (await probe.query("SHOW search_path")).rows,
+    );
+    const path = paths[0];
+    assert.ok(path);
+    searchPath = path.search_path;
+    timezoneRowsSchema.parse(
+      (await probe.query("SELECT current_setting('TimeZone') AS value")).rows,
+    );
+    assert.deepEqual(
+      namespaceRowsSchema.parse(
+        (
+          await probe.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+            [namespace],
+          )
+        ).rows,
+      ),
+      [],
+    );
+    // Only a returned CREATE ACK confers ownership. Never adopt a collision or
+    // an uncertain acknowledgement; dispose the exclusive job DB after a crash.
+    await probe.query(`CREATE SCHEMA "${namespace}"`);
+    owned = true;
+    await probe.query(`SET search_path TO "${namespace}"`);
+    await probe.query(
+      "CREATE TABLE agents (id uuid PRIMARY KEY, org_id text, owner text)",
+    );
+    assert.deepEqual(input.migrations, migrationTags.slice(0, 7));
+    for (const tag of input.migrations) {
+      const sql = await readFile(
+        new URL(`../src/migrations/${tag}.sql`, import.meta.url),
+        "utf8",
+      );
+      await probe.query(sql.replaceAll('"public".', `"${namespace}".`));
+    }
+    const catalogs = catalogRowsSchema.parse(
+      (await probe.query(catalogSql)).rows,
+    );
+    const catalog = catalogs[0];
+    assert.ok(catalog);
+    assert.deepEqual(
+      normalizeCatalog(catalog.value, namespace),
+      normalizeCatalog(input.catalog, input.sourceNamespace),
+    );
+    assert.deepEqual(
+      input.images.map((image) => {
+        return image.table;
+      }),
+      fixtureTables,
+    );
+    for (const image of input.images) {
+      assert.deepEqual(
+        image.rows.map((row) => {
+          return row.identity;
+        }),
+        expectedIdentities(image.table, 7),
+      );
+      assert.ok(
+        image.rows.every((row) => {
+          return row.value.length >= 3;
+        }),
+      );
+      // Preserve each server TEXT image intact; native composite decoding owns
+      // timestamps, ciphertext, NULLs, dropped positions and integer precision.
+      const payload = `[${image.rows
+        .map((row) => {
+          return row.value;
+        })
+        .join(",")}]`;
+      const restored = await probe.query(
+        `INSERT INTO "${image.table.name}" SELECT * FROM jsonb_populate_recordset(NULL::"${image.table.name}", $1::jsonb)`,
+        [payload],
+      );
+      assert.equal(restored.rowCount, image.rows.length);
+    }
+    for (const image of input.images) {
+      assert.deepEqual(
+        imageRowsSchema.parse(
+          (await probe.query(snapshotSql(image.table))).rows,
+        ),
+        image.rows,
+      );
+    }
+    const guards = guardRowsSchema.parse((await probe.query(guardSql)).rows);
+    checkGuards(guards, "O");
+    await probe.query(
+      "ALTER TABLE cloudflare_access_configs DISABLE TRIGGER cloudflare_access_scope_change_guard",
+    );
+    const disabledCatalog = catalogRowsSchema.parse(
+      (await probe.query(catalogSql)).rows,
+    );
+    const expectedCatalog = {
+      ...catalog.value,
+      triggers: catalog.value.triggers.map((trigger) => {
+        return {
+          ...trigger,
+          enabled:
+            trigger.name === "cloudflare_access_scope_change_guard"
+              ? "D"
+              : trigger.enabled,
+        };
+      }),
+    };
+    assert.deepEqual(disabledCatalog, [{ value: expectedCatalog }]);
+    const disabledGuards = guardRowsSchema.parse(
+      (await probe.query(guardSql)).rows,
+    );
+    checkGuards(disabledGuards, "D");
+    assert.deepEqual(
+      disabledGuards,
+      guards.map((guard) => {
+        return {
+          ...guard,
+          enabled:
+            guard.name === "cloudflare_access_scope_change_guard"
+              ? "D"
+              : guard.enabled,
+        };
+      }),
+    );
+    for (const image of input.images) {
+      assert.deepEqual(
+        imageRowsSchema.parse(
+          (await probe.query(snapshotSql(image.table))).rows,
+        ),
+        image.rows,
+      );
+    }
+    const sql = await readFile(
+      new URL(
+        "../src/migrations/1290_retire_cloudflare_access_triggers.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    let rejected: unknown;
+    try {
+      // One complete original native message, no binds, before all four DROPs.
+      await probe.query(sql.replaceAll('"public".', `"${namespace}".`));
+    } catch (error) {
+      rejected = error;
+      nativeRejection = error;
+    }
+    assert.ok(rejected, "Catalog mismatch migration unexpectedly succeeded");
+    try {
+      await assert.rejects(Promise.reject(rejected), {
+        message: /Cloudflare Access legacy trigger catalog differs/,
+      });
+      const error = catalogErrorSchema.parse(rejected);
+      assert.equal(
+        error.message,
+        "Cloudflare Access legacy trigger catalog differs from the prepared schema",
+      );
+    } catch (error) {
+      throw new AggregateError(
+        [rejected, error],
+        "Catalog mismatch error frontier differs",
+      );
+    }
+    for (const image of input.images) {
+      assert.deepEqual(
+        imageRowsSchema.parse(
+          (await probe.query(snapshotSql(image.table))).rows,
+        ),
+        image.rows,
+      );
+    }
+    assert.deepEqual(
+      catalogRowsSchema.parse((await probe.query(catalogSql)).rows),
+      disabledCatalog,
+    );
+    const afterGuards = guardRowsSchema.parse(
+      (await probe.query(guardSql)).rows,
+    );
+    assert.deepEqual(afterGuards, disabledGuards);
+    // A rejected later autocommit message cannot roll back the earlier ALTER.
+    checkGuards(afterGuards, "D");
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    if (owned) {
+      try {
+        await probe.query(`DROP SCHEMA "${namespace}" CASCADE`);
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        assert.deepEqual(
+          namespaceRowsSchema.parse(
+            (
+              await probe.query(
+                "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+                [namespace],
+              )
+            ).rows,
+          ),
+          [],
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (searchPath !== undefined) {
+      try {
+        await probe.query("SELECT set_config('search_path', $1, false)", [
+          searchPath,
+        ]);
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        assert.deepEqual(
+          pathRowsSchema.parse((await probe.query("SHOW search_path")).rows),
+          [{ search_path: searchPath }],
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    try {
+      await probe.end();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(
+      nativeRejection === undefined ? errors : [nativeRejection, ...errors],
+      `Catalog mismatch probe or cleanup failed; CREATE acknowledged: ${owned}; namespace: ${namespace}`,
+    );
+  }
+}
+
 const schema = `access_${randomUUID().replaceAll("-", "")}`;
 async function migrate(name: string) {
   const sql = await readFile(
@@ -851,15 +1293,62 @@ try {
   );
   // The trigger-specific rejections above belong to their historical stages.
   // A catalog mismatch must fail before either trigger can be removed.
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0375; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT mismatched_catalog");
-  await client.query(
-    "ALTER TABLE cloudflare_access_configs DISABLE TRIGGER cloudflare_access_scope_change_guard",
+  assert.deepEqual(appliedMigrations, migrationTags.slice(0, 7));
+  const mismatchImages: FixtureImage[] = [];
+  for (const table of fixtureTables) {
+    const rows = imageRowsSchema.parse(
+      (await client.query(snapshotSql(table))).rows,
+    );
+    assert.deepEqual(
+      rows.map((row) => {
+        return row.identity;
+      }),
+      expectedIdentities(table, 7),
+    );
+    mismatchImages.push({ table, rows });
+  }
+  assert.deepEqual(
+    mismatchImages.map((image) => {
+      return image.rows.length;
+    }),
+    [1, 1, 2, 5, 4, 1],
   );
-  await assert.rejects(migrate("1290_retire_cloudflare_access_triggers"), {
-    message: /Cloudflare Access legacy trigger catalog differs/,
+  const mismatchCatalog = catalogRowsSchema.parse(
+    (await client.query(catalogSql)).rows,
+  );
+  const capturedCatalog = mismatchCatalog[0];
+  assert.ok(capturedCatalog);
+  const mismatchGuards = guardRowsSchema.parse(
+    (await client.query(guardSql)).rows,
+  );
+  checkGuards(mismatchGuards, "O");
+  timezoneRowsSchema.parse(
+    (await client.query("SELECT current_setting('TimeZone') AS value")).rows,
+  );
+  await checkCatalogMismatch({
+    connectionString: databaseUrl,
+    sourceNamespace: schema,
+    migrations: [...appliedMigrations],
+    images: mismatchImages,
+    catalog: capturedCatalog.value,
   });
-  await client.query("ROLLBACK TO SAVEPOINT mismatched_catalog");
+  for (const image of mismatchImages) {
+    assert.deepEqual(
+      imageRowsSchema.parse(
+        (await client.query(snapshotSql(image.table))).rows,
+      ),
+      image.rows,
+    );
+  }
+  assert.deepEqual(
+    catalogRowsSchema.parse((await client.query(catalogSql)).rows),
+    mismatchCatalog,
+  );
+  assert.deepEqual(
+    guardRowsSchema.parse((await client.query(guardSql)).rows),
+    mismatchGuards,
+  );
+  assert.deepEqual(appliedMigrations, migrationTags.slice(0, 7));
 
   const beforeDrop = await client.query(
     "SELECT to_jsonb(cloudflare_access_configs) AS value FROM cloudflare_access_configs ORDER BY id",
