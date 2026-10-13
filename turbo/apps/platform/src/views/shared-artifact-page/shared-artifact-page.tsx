@@ -373,7 +373,7 @@ export function SharedArtifactPage({
           <a
             href="/"
             aria-label={BRAND_NAME}
-            className="shrink-0 text-foreground hover:opacity-70"
+            className="shrink-0 text-foreground hover:opacity-70 focus:not-focus-visible:outline-none"
           >
             <ProductBrandMark size="small" />
           </a>

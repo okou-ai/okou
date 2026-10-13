@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, countDistinct, eq } from "drizzle-orm";
+import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -14,7 +14,7 @@ import { discordClient } from "../external/discord-client";
 import { settle } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
 import {
   resolveIntegrationAdmissionFailurePresentation,
@@ -82,9 +82,15 @@ const currentDestinationAccess$ = command(
             eq(discordChatThreadRoutes.id, destination.routeId),
             eq(discordChatThreadRoutes.connectionId, destination.connectionId),
             eq(discordChatThreadRoutes.userId, destination.userId),
-            eq(
-              discordChatThreadRoutes.destinationChannelId,
-              destination.channelId,
+            or(
+              eq(
+                discordChatThreadRoutes.destinationChannelId,
+                destination.channelId,
+              ),
+              and(
+                isNull(discordChatThreadRoutes.destinationChannelId),
+                eq(discordChatThreadRoutes.sessionKey, destination.channelId),
+              ),
             ),
           ),
         )
@@ -95,13 +101,13 @@ const currentDestinationAccess$ = command(
       }
     }
     const access = await set(
-      requireDiscordConversationAccess$,
+      requireDiscordOutputAccess$,
       {
         orgId: destination.orgId,
         userId: destination.userId,
         guildId: connection.guildId,
         channelId: destination.channelId,
-        mode: "write",
+        createThread: destination.routeId !== null,
       },
       signal,
     );
@@ -134,14 +140,17 @@ async function postParts(
   botToken: string,
   channelId: string,
   content: string,
+  replyToMessageId: string | undefined,
   signal: AbortSignal,
 ): Promise<void> {
+  let reference = replyToMessageId;
   for (const part of splitDiscordMessage(content)) {
     const result = await discordClient.createDiscordMessage(
-      { botToken, channelId, content: part },
+      { botToken, channelId, content: part, replyToMessageId: reference },
       signal,
     );
     signal.throwIfAborted();
+    reference = undefined;
     if (result.kind !== "ok") {
       throw new Error(
         result.kind === "unavailable"
@@ -166,21 +175,6 @@ export const sendDiscordChatReply$ = command(
   ): Promise<void> => {
     const sent = await settle(
       (async (): Promise<void> => {
-        const access = await set(
-          currentDestinationAccess$,
-          {
-            connectionId: request.target.connectionId,
-            orgId: request.orgId,
-            userId: request.userId,
-            channelId: request.target.channelId,
-            routeId: request.target.routeId,
-          },
-          signal,
-        );
-        if (!access) {
-          return;
-        }
-        const binding = access.binding;
         const [event] = await db
           .select({
             content: canonicalChatEventContent(),
@@ -209,6 +203,21 @@ export const sendDiscordChatReply$ = command(
         if (!event?.content) {
           throw new Error("Discord reply canonical event is unavailable");
         }
+        const access = await set(
+          currentDestinationAccess$,
+          {
+            connectionId: request.target.connectionId,
+            orgId: request.orgId,
+            userId: request.userId,
+            channelId: request.target.channelId,
+            routeId: request.target.routeId,
+          },
+          signal,
+        );
+        if (!access) {
+          return;
+        }
+        const binding = access.binding;
         const [mentionerCount] = await db
           .select({ count: countDistinct(discordChatThreadRoutes.userId) })
           .from(discordChatThreadRoutes)
@@ -257,6 +266,7 @@ export const sendDiscordChatReply$ = command(
           access.botToken,
           request.target.channelId,
           content,
+          undefined,
           signal,
         );
       })(),
@@ -286,6 +296,7 @@ export const sendDiscordIngressNotice$ = command(
       (async (): Promise<void> => {
         const [owner] = await db
           .select({
+            messageId: discordChatIngress.messageId,
             userId: discordOrgConnections.userId,
             orgId: discordOrgInstallations.orgId,
           })
@@ -309,6 +320,9 @@ export const sendDiscordIngressNotice$ = command(
         if (!owner) {
           return;
         }
+        // A thread's starter has the thread ID but belongs to its parent.
+        const replyToMessageId =
+          notice.channelId === owner.messageId ? undefined : owner.messageId;
         const access = await set(
           currentDestinationAccess$,
           {
@@ -327,6 +341,7 @@ export const sendDiscordIngressNotice$ = command(
           access.botToken,
           notice.channelId,
           notice.content,
+          replyToMessageId,
           signal,
         );
       })(),

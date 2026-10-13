@@ -1293,7 +1293,7 @@ describe("Canonical Discord file publication and delivery", () => {
     });
   });
 
-  it("publishes a Discord-origin Run's output to its native thread and canonical artifact list", async () => {
+  it("creates the Discord output thread only when the prepared file is sent", async () => {
     const connected = await setupConnectedDiscordActor(context);
     onTestFinished(async () => {
       await flushWaitUntilForTest();
@@ -1348,7 +1348,9 @@ describe("Canonical Discord file publication and delivery", () => {
       channelId: source.id,
       headers,
     };
+    expect(provider.channels.has(source.id)).toBeFalsy();
     const upload = await canonicalUpload(fixture);
+    expect(provider.channels.has(source.id)).toBeFalsy();
     const client = fileClients();
     const materialized = await accept(
       client.materialize({ headers, body: upload.operation }),
@@ -1359,12 +1361,16 @@ describe("Canonical Discord file publication and delivery", () => {
       url: upload.initialized.url,
       delivery: { status: "pending" },
     });
+    expect(provider.channels.has(source.id)).toBeFalsy();
     const deliveredMessageId = discordSnowflake();
     const deliveredAttachmentId = discordSnowflake();
     server.use(
       http.post(
         `${discordApiOrigin}/channels/${source.id}/messages`,
         async ({ request }) => {
+          expect(provider.channels.get(source.id)?.parent_id).toBe(
+            provider.guildChannelId,
+          );
           await expectUploadedDiscordFile(request, upload.bytes);
           return HttpResponse.json(
             discordFileMessage({
@@ -1384,6 +1390,20 @@ describe("Canonical Discord file publication and delivery", () => {
         },
       ),
     );
+    server.use(
+      http.post(
+        `${discordApiOrigin}/channels/${provider.guildChannelId}/messages/${source.id}/threads`,
+        () => {
+          return HttpResponse.json(
+            { message: "Rate limited", retry_after: 60, global: false },
+            { status: 429 },
+          );
+        },
+        { once: true },
+      ),
+    );
+    await accept(client.complete({ headers, body: upload.operation }), [429]);
+    expect(provider.channels.has(source.id)).toBeFalsy();
     const completed = await accept(
       client.complete({ headers, body: upload.operation }),
       [200],

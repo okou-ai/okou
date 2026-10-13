@@ -13,6 +13,7 @@ import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { env } from "../../lib/env";
 import { hostedLinkDomain } from "../../lib/link-layout";
+import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { db$ } from "../external/db";
 import {
   unfurlSlackLinks,
@@ -212,7 +213,9 @@ const slackArtifactUnfurl$ = command(
     const imageUrl = new URL(
       target
         ? metadata.imageUrl
-        : r2ImageTransformUrl(metadata.imageUrl, { height: 200 }),
+        : r2ImageTransformUrl(metadata.imageUrl, {
+            height: SLACK_PREVIEW_IMAGE_HEIGHT,
+          }),
     );
     if (target) {
       imageUrl.searchParams.set("variant", "slack");

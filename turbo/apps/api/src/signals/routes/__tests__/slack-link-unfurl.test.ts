@@ -53,7 +53,7 @@ const previousBotScopes = [
 
 function compactBrandImageUrl() {
   const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
-  return `${brandUrl.origin}/cdn-cgi/image/height=200,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
+  return `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
 }
 
 async function fixture(

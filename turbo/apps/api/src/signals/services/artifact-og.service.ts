@@ -15,6 +15,7 @@ import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { db$ } from "../external/db";
 import {
   downloadHostedSitesS3Buffer,
@@ -411,8 +412,10 @@ export const artifactOgImage$ = command(
     }
     image.rotate();
     if (variant === "slack") {
-      // Slack image blocks use the intrinsic dimensions, not CSS sizing.
-      image.resize({ height: 200, withoutEnlargement: true });
+      image.resize({
+        height: SLACK_PREVIEW_IMAGE_HEIGHT,
+        withoutEnlargement: true,
+      });
     }
     const normalized = await image.png().toBuffer();
     signal.throwIfAborted();

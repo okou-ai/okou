@@ -3,17 +3,20 @@ import type {
   ChatSlackMessageFile,
 } from "@okouai/db/jsonb-contracts/chat-slack-context";
 import { CONVERSATION_GUIDANCE } from "./conversation-guidance";
-
 import {
-  formatSenderBlock,
-  type SlackClient,
-  type SlackConversationMessage,
-  type SlackMessageAttachment,
-  type SlackMessageBlock,
-  type SlackRichTextElement,
-  type SlackRichTextStyle,
-  type SlackUserInfo,
-  type SlackUserInfoResolver,
+  CHANNEL_CONTEXT_MESSAGE_LIMIT,
+  formatConversationContext,
+} from "./integration-conversation-context";
+
+import type {
+  SlackClient,
+  SlackConversationMessage,
+  SlackMessageAttachment,
+  SlackMessageBlock,
+  SlackRichTextElement,
+  SlackRichTextStyle,
+  SlackUserInfo,
+  SlackUserInfoResolver,
 } from "../signals/external/slack-message-client";
 
 export type SlackFile = ChatSlackMessageFile;
@@ -285,72 +288,32 @@ function addMentionedUserIdsFromElements(
   }
 }
 
-function formatMessageWithMetadata(
-  message: SlackConversationMessage,
-  relativeIndex: number,
-  fileParts: readonly string[],
-  userInfoMap?: Map<string, SlackUserInfo>,
-): string {
-  const senderId = message.bot_id ? "BOT" : (message.user ?? "unknown");
-  const userInfo = userInfoMap?.get(senderId);
-  const rawText = extractTextFromBlocks(message.blocks) ?? message.text ?? "";
-  const text = resolveUserMentions(rawText, userInfoMap);
-
-  const parts = [
-    "---",
-    "",
-    `- RELATIVE_INDEX: ${relativeIndex}`,
-    formatSenderBlock(userInfo ?? { id: senderId }),
-    "",
-    text,
-  ];
-  if (fileParts.length > 0) {
-    parts.push(...fileParts);
-  }
-  return parts.join("\n");
-}
-
-const CONTEXT_PREAMBLE = [
-  "The messages below are from a Slack conversation. When responding:",
-  "- Messages closer to RELATIVE_INDEX 0 are more recent \u2014 prioritize them.",
-].join("\n");
-
 function formatContextForAgent(
   messages: readonly SlackConversationMessage[],
-  contextType: "thread" | "channel" = "thread",
-  userInfoMap?: Map<string, SlackUserInfo>,
+  contextType: "thread" | "channel",
+  userInfoMap: Map<string, SlackUserInfo>,
 ): string {
-  if (messages.length === 0) {
-    return "";
-  }
-
-  const totalMessages = messages.length;
-  const formattedMessages = messages.map((message, index) => {
-    const fileParts: string[] = [];
-    for (const file of message.files ?? []) {
-      fileParts.push(formatFileInfo(file));
-    }
-    for (const attachment of message.attachments ?? []) {
-      const attachmentInfo = formatAttachmentImage(attachment);
-      if (attachmentInfo) {
-        fileParts.push(attachmentInfo);
+  return formatConversationContext({
+    integration: "Slack",
+    contextType,
+    messages: messages.map((message) => {
+      const senderId = message.bot_id ? "BOT" : (message.user ?? "unknown");
+      const rawText =
+        extractTextFromBlocks(message.blocks) ?? message.text ?? "";
+      const files = (message.files ?? []).map(formatFileInfo);
+      for (const attachment of message.attachments ?? []) {
+        const attachmentInfo = formatAttachmentImage(attachment);
+        if (attachmentInfo) {
+          files.push(attachmentInfo);
+        }
       }
-    }
-    return formatMessageWithMetadata(
-      message,
-      index - totalMessages,
-      fileParts,
-      userInfoMap,
-    );
+      return {
+        sender: userInfoMap.get(senderId) ?? { id: senderId },
+        text: resolveUserMentions(rawText, userInfoMap),
+        files,
+      };
+    }),
   });
-
-  const header =
-    contextType === "thread"
-      ? "# Slack Thread Context"
-      : "# Recent Channel Messages";
-  return `${header}\n\n${CONTEXT_PREAMBLE}\n\n${formattedMessages.join(
-    "\n\n",
-  )}\n\n---`;
 }
 
 function formatCurrentMessageFiles(files: readonly SlackFile[]): string {
@@ -496,7 +459,11 @@ export async function fetchConversationContexts(
       isDm
         ? Promise.resolve([])
         : measureContext("history", async () => {
-            return await client.fetchChannelMessages(channelId, 10, threadTs);
+            return await client.fetchChannelMessages(
+              channelId,
+              CHANNEL_CONTEXT_MESSAGE_LIMIT,
+              threadTs,
+            );
           }),
     ]);
     allMessages = unwrapSettled(threadResult);
@@ -505,7 +472,10 @@ export async function fetchConversationContexts(
     allMessages = isDm
       ? []
       : await measureContext("history", async () => {
-          return await client.fetchChannelMessages(channelId, 10);
+          return await client.fetchChannelMessages(
+            channelId,
+            CHANNEL_CONTEXT_MESSAGE_LIMIT,
+          );
         });
     channelMessages = [];
   }

@@ -2960,6 +2960,7 @@
       "genericLabel": "커넥터",
       "githubLabel": "GitHub",
       "invalidUrl": "잘못된 커넥터 콜백 URL입니다.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",

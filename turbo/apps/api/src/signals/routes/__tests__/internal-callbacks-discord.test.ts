@@ -2,7 +2,10 @@ import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
+import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -14,6 +17,7 @@ import {
   removePublicDiscordBinding,
   mockDiscordMemberships,
   mockDiscordApplication,
+  uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
   discordChatThreads,
@@ -40,6 +44,7 @@ const trackDiscordFixture = createFixtureTracker(
 
 async function startDiscordRun(
   options: {
+    readonly channelType?: "channel" | "thread" | "dm";
     readonly configureProvider?: (
       provider: ReturnType<typeof mockDiscordProvider>,
     ) => void;
@@ -56,8 +61,15 @@ async function startDiscordRun(
   const provider = mockDiscordProvider(actor);
   options.configureProvider?.(provider);
   await options.beforeMessage?.(actor);
+  const channelId =
+    options.channelType === "channel"
+      ? provider.guildChannelId
+      : options.channelType === "dm"
+        ? provider.dmChannelId
+        : provider.createThread(uniqueDiscordSnowflake()).id;
   const message = discordMessageForTest(actor, {
-    channelId: provider.guildChannelId,
+    channelId,
+    guild: options.channelType !== "dm",
     content: `<@${actor.botUserId}> Finish the Discord task`,
   });
   provider.messages.set(message.id, message);
@@ -83,7 +95,9 @@ async function startDiscordRun(
     provider,
     runId: input.runId,
     threadId: thread.id,
-    channelId: message.id,
+    channelId: options.channelType === "channel" ? message.id : channelId,
+    sourceChannelId: channelId,
+    message,
   };
 }
 
@@ -135,21 +149,19 @@ async function completeRun(args: {
     headers,
     history,
   );
-  await webhooks.requestAgentComplete(
-    {
-      runId: args.runId,
-      exitCode: 0,
-      completion: {
-        cliAgentType: "claude-code",
-        cliAgentSessionId: `discord-session-${args.runId}`,
-        cliAgentSessionHistoryHash: hash,
-      },
-      ...(args.text === undefined ? {} : { lastEventSequence: 1 }),
+  const completion = {
+    runId: args.runId,
+    exitCode: 0,
+    completion: {
+      cliAgentType: "claude-code" as const,
+      cliAgentSessionId: `discord-session-${args.runId}`,
+      cliAgentSessionHistoryHash: hash,
     },
-    headers,
-    [200],
-  );
+    ...(args.text === undefined ? {} : { lastEventSequence: 1 }),
+  };
+  await webhooks.requestAgentComplete(completion, headers, [200]);
   await flushWaitUntilForTest();
+  return completion;
 }
 
 function sentContents(started: Awaited<ReturnType<typeof startDiscordRun>>) {
@@ -177,6 +189,196 @@ function setThreadState(
   }
   thread.thread_metadata = { ...thread.thread_metadata, ...state };
 }
+
+describe("lazy Discord reply threads", () => {
+  it.each(["channel", "thread", "dm"] as const)(
+    "keeps typing in the source %s and creates a thread only for an actual channel reply",
+    async (channelType) => {
+      const started = await startDiscordRun({ channelType });
+      expect(started.provider.typingChannels).toContain(
+        started.sourceChannelId,
+      );
+      expect(started.provider.channels.has(started.channelId)).toBe(
+        channelType !== "channel",
+      );
+      const claim = await claimRun(started.actor, started.runId);
+      mockNow(now() + 9000);
+      await webhooks.requestAgentHeartbeat(
+        { runId: started.runId },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(new Set(started.provider.typingChannels)).toStrictEqual(
+        new Set([started.sourceChannelId]),
+      );
+      expect(started.provider.sentMessages).toHaveLength(0);
+      expect(started.provider.channels.has(started.channelId)).toBe(
+        channelType !== "channel",
+      );
+      const completion = await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "Ready to deliver.",
+      });
+      if (!completion) {
+        throw new Error("Expected successful completion");
+      }
+      await webhooks.requestAgentComplete(
+        completion,
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(started.provider.channels.has(started.channelId)).toBeTruthy();
+      expect(started.provider.sentMessages).toMatchObject([
+        {
+          channel_id: started.channelId,
+          content: expect.stringContaining("Ready to deliver."),
+        },
+      ]);
+    },
+  );
+
+  it("reuses a thread created by the user while the answer is being prepared", async () => {
+    const started = await startDiscordRun({ channelType: "channel" });
+    const claim = await claimRun(started.actor, started.runId);
+    const thread = started.provider.createThread(started.channelId);
+    thread.name = "User-created discussion";
+    // An existing thread needs neither thread-creation nor parent send permission.
+    started.provider.state.everyonePermissions = (
+      BigInt(MEMBER_PERMISSIONS) & ~(1n << 11n)
+    ).toString();
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "Continue in your thread.",
+    });
+    expect(started.provider.channels.get(started.channelId)?.name).toBe(
+      "User-created discussion",
+    );
+    expect(started.provider.sentMessages).toMatchObject([
+      {
+        channel_id: started.channelId,
+        content: expect.stringContaining("Continue in your thread."),
+      },
+    ]);
+  });
+
+  it.each(["created concurrently", "create response lost"] as const)(
+    "recovers the first reply when the thread is %s",
+    async (scenario) => {
+      const started = await startDiscordRun({ channelType: "channel" });
+      const claim = await claimRun(started.actor, started.runId);
+      if (scenario === "created concurrently") {
+        server.use(
+          http.post(
+            `https://discord.com/api/v10/channels/${started.sourceChannelId}/messages/${started.message.id}/threads`,
+            () => {
+              const thread = started.provider.createThread(started.channelId);
+              thread.name = "Created during the race";
+              return HttpResponse.json(
+                { code: 160_004, message: "Thread already exists" },
+                { status: 400 },
+              );
+            },
+          ),
+        );
+      } else {
+        started.provider.state.afterThreadCreated = () => {
+          return HttpResponse.error();
+        };
+      }
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        text: "Recovered reply.",
+      });
+      expect(started.provider.sentMessages).toMatchObject([
+        {
+          channel_id: started.channelId,
+          content: expect.stringContaining("Recovered reply."),
+        },
+      ]);
+      expect(
+        [...started.provider.channels.values()].filter((channel) => {
+          return channel.type === 11;
+        }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("retries a rate-limited thread creation before sending the reply once", async () => {
+    const started = await startDiscordRun({ channelType: "channel" });
+    const claim = await claimRun(started.actor, started.runId);
+    server.use(
+      http.post(
+        `https://discord.com/api/v10/channels/${started.sourceChannelId}/messages/${started.message.id}/threads`,
+        () => {
+          return HttpResponse.json(
+            { message: "Rate limited", retry_after: 0, global: false },
+            { status: 429 },
+          );
+        },
+        { once: true },
+      ),
+    );
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "Created after the rate limit.",
+    });
+    expect(started.provider.sentMessages).toMatchObject([
+      {
+        channel_id: started.channelId,
+        content: expect.stringContaining("Created after the rate limit."),
+      },
+    ]);
+  });
+
+  it("moves typing and the final reply to the thread opened by an in-run message", async () => {
+    const started = await startDiscordRun({ channelType: "channel" });
+    const claim = await claimRun(started.actor, started.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the run's Okou token");
+    }
+    const delivered = await accept(
+      setupApp({ context, routes: integrationsDiscordMessageRoutes })(
+        integrationsDiscordMessageContract,
+      ).sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          channelId: started.channelId,
+          text: "An update before completion.",
+        },
+      }),
+      [200],
+    );
+    expect(delivered.body.messages[0]?.channelId).toBe(started.channelId);
+    mockNow(now() + 9000);
+    await webhooks.requestAgentHeartbeat(
+      { runId: started.runId },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(started.provider.typingChannels.at(-1)).toBe(started.channelId);
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      text: "The final answer.",
+    });
+    expect(started.provider.sentMessages).toHaveLength(2);
+    expect(
+      new Set(
+        started.provider.sentMessages.map((message) => {
+          return message.channel_id;
+        }),
+      ),
+    ).toStrictEqual(new Set([started.channelId]));
+  });
+});
 
 describe("canonical Discord terminal replies", () => {
   it("delivers canonical output after a long task to the native thread exactly once", async () => {
