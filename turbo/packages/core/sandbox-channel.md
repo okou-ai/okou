@@ -64,6 +64,8 @@ captured operation descriptor. `sandboxChannelHandler` and
 consumer functions. A handler receives the epoch signal and peer for reverse
 calls; it must honor cancellation. It may await a reverse call without blocking
 the independent response reader.
+The peer validates every handler result against its captured operation before
+emission, including handlers registered directly without a typed adapter.
 
 Initial common policies are 64 KiB per complete frame, eight outgoing waits,
 eight incoming work slots, eight queued frames / 256 KiB and 64 levels of JSON

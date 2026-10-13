@@ -510,6 +510,36 @@ describe("admitted application peer", () => {
     expect(other.peer.state).toBe("failed");
   });
 
+  it("validates the captured operation result for directly registered handlers", async () => {
+    const h = harness({
+      handlers: [
+        {
+          operation: sandboxDiagnosticsEcho,
+          async handle() {
+            return { payload: "not base64", privatePath: "/private" };
+          },
+        },
+      ],
+    });
+    const socket = await h.ready();
+    socket.receive(incoming(402));
+    const reply = await socket.frames.next();
+    expect(reply).toMatchObject({
+      type: "response",
+      requestId: uuid(402),
+      error: { code: "unavailable" },
+    });
+    expect(reply).not.toHaveProperty("result");
+    expect(h.peer.state).toBe("ready");
+    const next = h.peer.call(
+      sandboxDiagnosticsEcho,
+      { payload: "YQ==" },
+      h.controller.signal,
+    );
+    socket.reply(await nextRequest(socket), { payload: "YQ==" });
+    expect(await next).toEqual({ payload: "YQ==" });
+  });
+
   it("rejects a duplicate active inbound ID without executing it twice", async () => {
     const h = harness({
       handlers: [

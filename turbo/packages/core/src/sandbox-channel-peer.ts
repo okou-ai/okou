@@ -46,7 +46,7 @@ export interface SandboxChannelEventHandler {
   ) => Promise<void>;
 }
 
-/** Typed adapter; no cast erases untrusted params or results. */
+/** Typed params adapter; the peer validates the captured operation's result. */
 export function sandboxChannelHandler<P, R>(
   operation: SandboxChannelOperation<P, R>,
   handle: (params: P, context: SandboxChannelHandlerContext) => R | Promise<R>,
@@ -56,11 +56,7 @@ export function sandboxChannelHandler<P, R>(
     async handle(params, context) {
       const parsed = operation.params.safeParse(params);
       if (!parsed.success) throw new SandboxChannelError("invalid_params");
-      const result = operation.result.safeParse(
-        await handle(parsed.data, context),
-      );
-      if (!result.success) throw new SandboxChannelError("unavailable");
-      return result.data;
+      return handle(parsed.data, context);
     },
   };
 }
@@ -652,12 +648,14 @@ export class SandboxChannelPeer {
     if (epoch.incoming.has(message.id))
       throw new SandboxChannelError("invalid_request");
     let handler: SandboxChannelHandler;
+    let operation: SandboxChannelOperation;
     try {
       this.gate(epoch, message.category, message.categoryVersion);
-      const operation = this.operations.get(
+      const selected = this.operations.get(
         key(message.category, message.operation),
       );
-      if (!operation) throw new SandboxChannelError("unknown_operation");
+      if (!selected) throw new SandboxChannelError("unknown_operation");
+      operation = selected;
       if (operation.origin === "external")
         throw new SandboxChannelError("forbidden");
       if (!operation.params.safeParse(message.params).success)
@@ -681,11 +679,15 @@ export class SandboxChannelPeer {
     epoch.incoming.add(message.id);
     const work = async () => {
       try {
-        const result = await handler.handle(message.params, {
-          signal: epoch.owner.signal,
-          peer: this,
-        });
-        if (this.current(epoch)) this.response(epoch, message.id, { result });
+        const result = operation.result.safeParse(
+          await handler.handle(message.params, {
+            signal: epoch.owner.signal,
+            peer: this,
+          }),
+        );
+        if (!result.success) throw new SandboxChannelError("unavailable");
+        if (this.current(epoch))
+          this.response(epoch, message.id, { result: result.data });
       } catch (error) {
         if (this.current(epoch))
           this.response(epoch, message.id, {
