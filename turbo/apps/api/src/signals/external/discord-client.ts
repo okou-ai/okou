@@ -446,6 +446,7 @@ function createDiscordMessage(
     readonly channelId: string;
     readonly content: string;
     readonly replyToMessageId?: string;
+    readonly components?: readonly DiscordActionRow[];
     readonly files?: readonly DiscordUploadFile[];
     readonly nonce?: string;
   },
@@ -466,6 +467,14 @@ function createDiscordMessage(
   const payload = {
     content,
     allowed_mentions: allowedMentions,
+    ...(args.components !== undefined
+      ? {
+          components: z
+            .array(discordActionRowSchema)
+            .max(5)
+            .parse(args.components),
+        }
+      : {}),
     ...(args.replyToMessageId !== undefined
       ? {
           message_reference: {

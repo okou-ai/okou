@@ -6356,6 +6356,8 @@
       "authorizing": "正在授权…",
       "browserConsent": "在 Discord 窗口中完成授权，此页面会自动更新。",
       "chooseDmServer": "选择服务器",
+      "connectedTitle": "已连接 Discord",
+      "connectTitle": "连接 Discord",
       "description": "在服务器中提及 Okou，或给机器人发送私信。",
       "disconnect": "断开 Discord 连接",
       "dmServer": "私信默认服务器",
@@ -6371,7 +6373,8 @@
       "unconfigured": "此组织尚未配置 Discord。",
       "uninstall": "移除 Discord",
       "uninstallDescription": "这会断开此组织所有成员与 Discord 的连接。其他组织的连接会保留。",
-      "uninstallTitle": "从此组织移除 Discord？"
+      "uninstallTitle": "从此组织移除 Discord？",
+      "workspaceMismatch": "此链接对应另一个 Discord 服务器。请切换到对应的 Okou 工作区，然后重新打开链接。"
     },
     "documentTitle": "工作渠道",
     "feishuConnected": "飞书连接成功",

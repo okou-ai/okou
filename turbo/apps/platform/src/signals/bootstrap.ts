@@ -32,6 +32,7 @@ import { ROUTES, type RoutePath } from "./route-paths.ts";
 import { setupGlobalMethod$ } from "./bootstrap/global-method.ts";
 import { setupLoggers$ } from "./bootstrap/loggers.ts";
 import { setupSlackConnectPage$ } from "./okou-page/slack-connect-page.ts";
+import { setupDiscordConnectPage$ } from "./okou-page/discord-connect-page.ts";
 import { setupAgentPhoneConnectPage$ } from "./okou-page/agentphone-connect-page.ts";
 import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
@@ -357,6 +358,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.settingsSlack,
     setup: setupAuthSidebarPageWrapper(setupSlackConnectPage$),
+  },
+  {
+    path: ROUTES.settingsDiscord,
+    setup: setupAuthSidebarPageWrapper(setupDiscordConnectPage$),
   },
   {
     path: ROUTES.settingsTeams,

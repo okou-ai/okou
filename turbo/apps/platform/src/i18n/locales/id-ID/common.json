@@ -6356,6 +6356,8 @@
       "authorizing": "Mengotorisasi…",
       "browserConsent": "Selesaikan otorisasi di jendela Discord. Halaman ini akan diperbarui secara otomatis.",
       "chooseDmServer": "Pilih server",
+      "connectedTitle": "Terhubung ke Discord",
+      "connectTitle": "Hubungkan ke Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
       "dmServer": "Server default untuk pesan langsung",
@@ -6371,7 +6373,8 @@
       "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
       "uninstall": "Hapus Discord",
       "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
-      "uninstallTitle": "Hapus Discord dari organisasi ini?"
+      "uninstallTitle": "Hapus Discord dari organisasi ini?",
+      "workspaceMismatch": "Tautan ini untuk server Discord lain. Beralihlah ke ruang kerja Okou yang sesuai, lalu buka kembali tautan ini."
     },
     "documentTitle": "Berfungsi",
     "feishuConnected": "Feishu berhasil terhubung",

@@ -42,6 +42,7 @@ export const ROUTES = {
   directedAuthorize: "/connectors/:connectorSlug/authorize",
   settings: "/settings",
   settingsSlack: "/settings/slack",
+  settingsDiscord: "/settings/discord",
   settingsTeams: "/settings/teams",
   settingsFeishu: "/settings/feishu",
   settingsLark: "/settings/lark",

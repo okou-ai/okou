@@ -52,7 +52,8 @@ const applicationId = DISCORD_TEST_APPLICATION_ID;
 const messageComponentSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal(2),
-    custom_id: z.string().max(100),
+    custom_id: z.string().max(100).optional(),
+    url: z.url().optional(),
     label: z.string(),
   }),
   z.object({
@@ -445,7 +446,18 @@ describe("Discord account preferences through private controls", () => {
       commandPayload(guildSender(scope), "disconnect"),
     );
 
-    expect(message.components).toStrictEqual([]);
+    expect(message.components).toMatchObject([
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            label: "Connect",
+            url: expect.stringContaining("/settings/discord?"),
+          },
+        ],
+      },
+    ]);
     expect((await readStatus(scope.owner)).isAvailable).toBeFalsy();
     await enableDiscord(scope.owner);
     expect((await readStatus(scope.owner)).isConnected).toBeTruthy();
