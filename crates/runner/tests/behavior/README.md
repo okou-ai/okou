@@ -5,6 +5,13 @@ provisioned metal host. Driver/remote-worker pairs and the agent-ready benchmark
 belong to this suite; `runner-behavior-durable.sh` owns staging, bounded systemd
 execution, reconnectable status and cleanup. Keep scenario logic with its owner.
 
+The home-cache promotion scenario pins its committed entry through the changed
+rootfs build and restore Runner startup. Before checkout, it acquires the shared
+routine-GC and capacity locks with bounded waits, then releases the entry pin.
+The restore submit has a 60-second deadline; success, failure and cleanup release
+the GC locks before service teardown. This protects restoration assertions from
+concurrent collectors on the shared native host.
+
 Run a driver from the repository root, for example:
 
 ```bash
