@@ -6849,18 +6849,18 @@ function ConnectorsPopoverButton({
             render={
               <TooltipTrigger
                 render={
-                  <button
+                  <Button
                     type="button"
-                    className={cn(
-                      "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                      COMPOSER_CONTROL_FOCUS_CLASS,
-                    )}
+                    variant="quiet"
+                    size="icon-sm"
+                    iconSize="md"
+                    className="shrink-0"
                     aria-label={t(($) => {
                       return $.chat.connectors.title;
                     })}
                   >
                     <Plug size={18} />
-                  </button>
+                  </Button>
                 }
               />
             }
