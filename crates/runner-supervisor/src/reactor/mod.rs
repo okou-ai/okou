@@ -1092,35 +1092,27 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let lifecycle = signal.lifecycle;
     let mut signal_handler_task = signal.handler_task;
 
-    if let Err(error) = shared.status.write_initial().await {
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "initial_status_persistence_failure",
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, "initial_status_persistence_failure").await;
-        }
-        return Err(RunnerError::Internal(format!(
-            "persist initial runner status: {error}"
-        )));
-    }
-
-    let prune_listener = match crate::idle_prune_control::PruneIdleListener::bind(
-        &paths.home,
-        &paths.base_dir,
-        runner.identity,
-    ) {
+    // Both failures precede WSS and own the same startup resources.
+    let prune_listener = match shared
+        .status
+        .write_initial()
+        .await
+        .map_err(|error| {
+            (
+                RunnerError::Internal(format!("persist initial runner status: {error}")),
+                "initial_status_persistence_failure",
+            )
+        })
+        .and_then(|()| {
+            crate::idle_prune_control::PruneIdleListener::bind(
+                &paths.home,
+                &paths.base_dir,
+                runner.identity,
+            )
+            .map_err(|error| (RunnerError::from(error), "prune_control_startup_failure"))
+        }) {
         Ok(listener) => listener,
-        Err(error) => {
+        Err((error, context)) => {
             shutdown_startup_resources_after_startup_failure(
                 StartupFailureResources {
                     provider: provider_state.provider.as_ref(),
@@ -1131,13 +1123,13 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     memory_prefetch: &mut memory_prefetch,
                     status: shared.status.as_ref(),
                 },
-                "prune_control_startup_failure",
+                context,
             )
             .await;
             if let Some(handler_task) = signal_handler_task.take() {
-                abort_signal_handler_task(handler_task, "prune_control_startup_failure").await;
+                abort_signal_handler_task(handler_task, context).await;
             }
-            return Err(error.into());
+            return Err(error);
         }
     };
     let prune_admission = Arc::new(tokio::sync::Semaphore::new(1));
