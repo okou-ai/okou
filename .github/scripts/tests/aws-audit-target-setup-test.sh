@@ -6,4 +6,4 @@ trap 'rm -rf "$sdk_dir"' EXIT
 python3 -m pip install --disable-pip-version-check --no-input --quiet \
   --target "$sdk_dir" boto3==1.40.0
 PYTHONPATH="$sdk_dir${PYTHONPATH:+:$PYTHONPATH}" \
-  python3 "$repo_root/.github/scripts/tests/aws-audit-target-setup-test.py"
+  python3 "$repo_root/ops/aws-audit-32264/tests/aws-audit-target-setup-test.py"
