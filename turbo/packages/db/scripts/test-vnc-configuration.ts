@@ -35,9 +35,7 @@ const fixtureTables = [
 ] as const;
 
 const namespaceRows = z.array(z.strictObject({ nspname: z.string() }));
-const searchPathRows = z
-  .array(z.strictObject({ search_path: z.string() }))
-  .length(1);
+const searchPathRows = z.tuple([z.strictObject({ search_path: z.string() })]);
 const fixtureSnapshotRows = z
   .array(
     z.strictObject({
@@ -163,8 +161,7 @@ async function prepareNative(connectionString: string) {
     await localClient.connect();
     path = searchPathRows.parse(
       (await localClient.query("SHOW search_path")).rows,
-    )[0]?.search_path;
-    assert.ok(path);
+    )[0].search_path;
     assert.deepEqual(
       namespaceRows.parse(
         (
@@ -251,8 +248,7 @@ async function rejects(
     await localClient.connect();
     path = searchPathRows.parse(
       (await localClient.query("SHOW search_path")).rows,
-    )[0]?.search_path;
-    assert.ok(path);
+    )[0].search_path;
     await localClient.query("SELECT set_config('search_path',$1,false)", [
       ownership.namespace,
     ]);
@@ -348,8 +344,7 @@ async function disposeNative(ownership: NativeOwnership) {
     try {
       path = searchPathRows.parse(
         (await localClient.query("SHOW search_path")).rows,
-      )[0]?.search_path;
-      assert.ok(path);
+      )[0].search_path;
     } catch (error) {
       failures.push(error);
     }
