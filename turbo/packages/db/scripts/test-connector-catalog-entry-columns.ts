@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { jsonb, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import {
@@ -34,270 +35,591 @@ const connectorCatalogEntries = pgTable(
 );
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
+// Compare physical contracts across namespaces without comparing allocated OIDs
+// or the private namespace prefix. Keep dropped attributes in the frontier.
+const catalogFrontierSql = `SELECT jsonb_build_object(
+  'columns', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'table', c.relname, 'position', a.attnum, 'name', a.attname,
+    'type', format_type(a.atttypid, a.atttypmod), 'notNull', a.attnotnull,
+    'default', pg_get_expr(d.adbin, d.adrelid), 'identity', a.attidentity,
+    'generated', a.attgenerated, 'dropped', a.attisdropped,
+    'collation', co.collname) ORDER BY c.relname, a.attnum), '[]'::jsonb)
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0
+    LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
+    LEFT JOIN pg_collation co ON co.oid = a.attcollation
+    WHERE n.nspname = $1 AND c.relkind = 'r'),
+  'constraints', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'name', c.conname, 'type', c.contype, 'validated', c.convalidated,
+    'deferrable', c.condeferrable, 'deferred', c.condeferred,
+    'definition', pg_get_constraintdef(c.oid)) ORDER BY c.conname), '[]'::jsonb)
+    FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace
+    WHERE n.nspname = $1),
+  'indexes', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'table', tablename, 'name', indexname,
+    'definition', replace(indexdef, quote_ident($1) || '.', ''))
+    ORDER BY indexname), '[]'::jsonb)
+    FROM pg_indexes WHERE schemaname = $1),
+  'relations', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'name', c.relname, 'kind', c.relkind, 'persistence', c.relpersistence,
+    'rls', c.relrowsecurity, 'forceRls', c.relforcerowsecurity)
+    ORDER BY c.relname), '[]'::jsonb)
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = $1),
+  'triggers', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'name', t.tgname, 'definition', pg_get_triggerdef(t.oid))
+    ORDER BY t.tgname), '[]'::jsonb)
+    FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = $1 AND NOT t.tgisinternal),
+  'routines', (SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'name', r.proname, 'kind', r.prokind, 'body', r.prosrc)
+    ORDER BY r.proname), '[]'::jsonb)
+    FROM pg_proc r JOIN pg_namespace n ON n.oid = r.pronamespace
+    WHERE n.nspname = $1)
+) AS catalog`;
+const catalogRowsSchema = z
+  .array(
+    z.strictObject({
+      catalog: z.strictObject({
+        columns: z.array(
+          z.strictObject({
+            table: z.string(),
+            position: z.number().int(),
+            name: z.string(),
+            type: z.string(),
+            notNull: z.boolean(),
+            default: z.string().nullable(),
+            identity: z.string(),
+            generated: z.string(),
+            dropped: z.boolean(),
+            collation: z.string().nullable(),
+          }),
+        ),
+        constraints: z.array(
+          z.strictObject({
+            name: z.string(),
+            type: z.string(),
+            validated: z.boolean(),
+            deferrable: z.boolean(),
+            deferred: z.boolean(),
+            definition: z.string(),
+          }),
+        ),
+        indexes: z.array(
+          z.strictObject({
+            table: z.string(),
+            name: z.string(),
+            definition: z.string(),
+          }),
+        ),
+        relations: z.array(
+          z.strictObject({
+            name: z.string(),
+            kind: z.string(),
+            persistence: z.string(),
+            rls: z.boolean(),
+            forceRls: z.boolean(),
+          }),
+        ),
+        triggers: z.array(
+          z.strictObject({ name: z.string(), definition: z.string() }),
+        ),
+        routines: z.array(
+          z.strictObject({
+            name: z.string(),
+            kind: z.string(),
+            body: z.string(),
+          }),
+        ),
+      }),
+    }),
+  )
+  .length(1);
+const namespaceRowsSchema = z.array(z.strictObject({ nspname: z.string() }));
+const fixtureSettings = [
+  "search_path",
+  "lock_timeout",
+  "statement_timeout",
+] as const;
+function shownSetting(rows: unknown, setting: string): string {
+  const shown = z.array(z.record(z.string(), z.string())).length(1).parse(rows);
+  const row = shown[0];
+  assert.ok(row);
+  assert.deepEqual(Object.keys(row), [setting]);
+  const value = row[setting];
+  assert.equal(typeof value, "string");
+  assert.ok(value !== undefined);
+  return value;
+}
+
+async function validateRetiredWriter(args: {
+  readonly databaseUrl: string;
+  readonly entries: (typeof runtimeEntries.$inferSelect)[];
+  readonly pointers: (typeof connectorCatalog.$inferSelect)[];
+  readonly frontier: z.infer<typeof catalogRowsSchema>;
+  readonly base: ConnectorCatalogArtifactConnector;
+  readonly expansion: string;
+  readonly preparation: string;
+  readonly contraction: string;
+}) {
+  const client = new Client({ connectionString: args.databaseUrl });
+  const testSchema = `catalog_retired_writer_${randomUUID().replaceAll("-", "")}`;
+  const errors: unknown[] = [];
+  const observeError = (error: Error) => {
+    errors.push(error);
+  };
+  client.on("error", observeError);
+  const settings: Partial<Record<(typeof fixtureSettings)[number], string>> =
+    {};
+  let connected = false;
+  let ownsSchema = false;
+  try {
+    await client.connect();
+    connected = true;
+    for (const setting of fixtureSettings) {
+      settings[setting] = shownSetting(
+        (await client.query(`SHOW ${setting}`)).rows,
+        setting,
+      );
+    }
+    assert.deepEqual(
+      namespaceRowsSchema.parse(
+        (
+          await client.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+            [testSchema],
+          )
+        ).rows,
+      ),
+      [],
+    );
+    const created = await client.query(`CREATE SCHEMA "${testSchema}"`);
+    assert.equal(created.command, "CREATE");
+    ownsSchema = true;
+    await client.query(`SET search_path TO "${testSchema}"`);
+    await client.query("SET lock_timeout = '1s'");
+    await client.query("SET statement_timeout = '10s'");
+    assert.equal(
+      shownSetting(
+        (await client.query("SHOW search_path")).rows,
+        "search_path",
+      ),
+      testSchema,
+    );
+    assert.equal(
+      shownSetting(
+        (await client.query("SHOW lock_timeout")).rows,
+        "lock_timeout",
+      ),
+      "1s",
+    );
+    assert.equal(
+      shownSetting(
+        (await client.query("SHOW statement_timeout")).rows,
+        "statement_timeout",
+      ),
+      "10s",
+    );
+    await client.query(`CREATE TABLE connector_catalog_entries (
+    hash text NOT NULL, slug text NOT NULL, payload jsonb NOT NULL,
+    PRIMARY KEY (hash, slug)
+  )`);
+    await client.query(`CREATE TABLE connector_catalog (
+    schema_version integer PRIMARY KEY, hash text NOT NULL
+  )`);
+    await client.query(args.expansion);
+    await client.query(args.preparation);
+    await client.query(args.contraction);
+    const db = drizzle(client);
+    await db.insert(connectorCatalog).values(args.pointers);
+    await db.insert(runtimeEntries).values(args.entries);
+    assert.deepEqual(
+      await db
+        .select()
+        .from(runtimeEntries)
+        .orderBy(runtimeEntries.hash, runtimeEntries.slug),
+      args.entries,
+    );
+    assert.deepEqual(await db.select().from(connectorCatalog), args.pointers);
+    assert.deepEqual(
+      catalogRowsSchema.parse(
+        (await client.query(catalogFrontierSql, [testSchema])).rows,
+      ),
+      args.frontier,
+    );
+    // Use the actual outgoing ORM column list, including the dropped payload.
+    const base = args.base;
+    await assert.rejects(
+      db.insert(connectorCatalogEntries).values({
+        hash: "retired-dual-writer",
+        slug: base.slug,
+        payload: base,
+        ...connectorCatalogEntryColumns(base),
+      }),
+      (error: unknown) => {
+        return (
+          error instanceof Error &&
+          "cause" in error &&
+          error.cause instanceof Error &&
+          "code" in error.cause &&
+          error.cause.code === "42703"
+        );
+      },
+    );
+    assert.deepEqual(
+      await db
+        .select()
+        .from(runtimeEntries)
+        .orderBy(runtimeEntries.hash, runtimeEntries.slug),
+      args.entries,
+    );
+    assert.deepEqual(await db.select().from(connectorCatalog), args.pointers);
+    assert.deepEqual(
+      catalogRowsSchema.parse(
+        (await client.query(catalogFrontierSql, [testSchema])).rows,
+      ),
+      args.frontier,
+    );
+  } catch (error: unknown) {
+    errors.push(error);
+  } finally {
+    if (ownsSchema) {
+      try {
+        await client.query(`DROP SCHEMA "${testSchema}" CASCADE`);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+    }
+    if (connected) {
+      try {
+        const namespaces = namespaceRowsSchema.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+              [testSchema],
+            )
+          ).rows,
+        );
+        if (ownsSchema) assert.deepEqual(namespaces, []);
+      } catch (error: unknown) {
+        errors.push(error);
+      }
+      for (const setting of fixtureSettings) {
+        const value = settings[setting];
+        if (value !== undefined) {
+          try {
+            await client.query("SELECT set_config($1, $2, false)", [
+              setting,
+              value,
+            ]);
+          } catch (error: unknown) {
+            errors.push(error);
+          }
+          try {
+            assert.equal(
+              shownSetting(
+                (await client.query(`SHOW ${setting}`)).rows,
+                setting,
+              ),
+              value,
+            );
+          } catch (error: unknown) {
+            errors.push(error);
+          }
+        }
+      }
+    }
+    try {
+      await client.end();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    client.removeListener("error", observeError);
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "Retired writer validation and cleanup failed",
+    );
+  }
+}
+
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
-const db = drizzle(client);
-const testSchema = `catalog_entry_columns_${randomUUID().replaceAll("-", "")}`;
-const expansion = await readFile(
-  new URL(
-    "../src/migrations/1339_expand_connector_catalog_entry_columns.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const backfill = await readFile(
-  new URL(
-    "../src/migrations/1340_backfill_connector_catalog_entry_columns.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const preparation = await readFile(
-  new URL(
-    "../src/migrations/1348_connector_catalog_payload_independent_api.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const contraction = await readFile(
-  new URL(
-    "../src/migrations/1351_drop_connector_catalog_payload.sql",
-    import.meta.url,
-  ),
-  "utf8",
-);
-const rawCatalog: unknown = JSON.parse(
-  await readFile(
+const errors: unknown[] = [];
+const observeError = (error: Error) => {
+  errors.push(error);
+};
+client.on("error", observeError);
+let connected = false;
+let successMessage: string | undefined;
+try {
+  await client.connect();
+  connected = true;
+  const db = drizzle(client);
+  const testSchema = `catalog_entry_columns_${randomUUID().replaceAll("-", "")}`;
+  const expansion = await readFile(
     new URL(
-      "../../connectors/src/__tests__/fixtures/published-v4-catalog.json",
+      "../src/migrations/1339_expand_connector_catalog_entry_columns.sql",
       import.meta.url,
     ),
     "utf8",
-  ),
-);
-const catalog = connectorCatalogArtifactSchema.parse(rawCatalog);
-const base = catalog.connectors.find((connector) => {
-  return connector.mcp === undefined && connector.firewall.kind === "generated";
-});
-assert.ok(base);
-assert.equal(base.firewall.kind, "generated");
-const generated = base.firewall;
-assert.ok(generated.kind === "generated");
-const firstApi = generated.config.apis[0];
-assert.ok(firstApi);
-
-function firewallConnector(args: {
-  readonly slug: string;
-  readonly permissions: readonly string[];
-  readonly defaultAllowed: readonly string[] | null;
-  readonly unknownPolicy?: "allow" | "deny" | "ask";
-  readonly categories?: boolean;
-  readonly mcp?: boolean;
-}): ConnectorCatalogArtifactConnector {
-  assert.ok(base);
-  assert.ok(generated.kind === "generated");
-  assert.ok(firstApi);
-  const apiWithoutPermissions = { ...firstApi };
-  delete apiWithoutPermissions.permissions;
-  return {
-    ...base,
-    slug: args.slug,
-    ...(args.mcp
-      ? {
-          mcp: {
-            transport: "streamable-http",
-            endpoint: "https://example.com/mcp",
-          },
-        }
-      : {}),
-    firewall: {
-      ...generated,
-      categories: args.categories
-        ? { byPermission: {}, displayOrder: [] }
-        : null,
-      defaultAllowed:
-        args.defaultAllowed === null ? null : [...args.defaultAllowed],
-      defaultUnknownPolicy: args.unknownPolicy ?? "allow",
-      config: {
-        ...generated.config,
-        apis: [
-          {
-            ...firstApi,
-            permissions: args.permissions.map((name) => {
-              return { name, rules: ["GET /"] };
-            }),
-          },
-          // A repeated permission in another API must count only once.
-          {
-            ...firstApi,
-            permissions: args.permissions.slice(0, 1).map((name) => {
-              return { name, rules: ["POST /"] };
-            }),
-          },
-          // APIs without permission metadata contribute nothing.
-          apiWithoutPermissions,
-        ],
-      },
-    },
-  };
-}
-
-const cases = [
-  {
-    connector: firewallConnector({
-      slug: "all-allowed",
-      permissions: ["read", "write"],
-      defaultAllowed: null,
-    }),
-    count: 2,
-    overrides: false,
-  },
-  {
-    connector: firewallConnector({
-      slug: "explicit-allowed",
-      permissions: ["read", "write"],
-      defaultAllowed: ["read", "write", "unused"],
-    }),
-    count: 2,
-    overrides: false,
-  },
-  {
-    connector: firewallConnector({
-      slug: "deny-majority",
-      permissions: ["read", "write", "delete"],
-      defaultAllowed: ["read"],
-    }),
-    count: 3,
-    overrides: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "tied-policy",
-      permissions: ["read", "write"],
-      defaultAllowed: ["read"],
-    }),
-    count: 2,
-    overrides: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "deny-all",
-      permissions: ["read", "write"],
-      defaultAllowed: [],
-    }),
-    count: 2,
-    overrides: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "empty-allowed",
-      permissions: [],
-      defaultAllowed: [],
-    }),
-    count: 0,
-    overrides: false,
-  },
-  {
-    connector: firewallConnector({
-      slug: "empty-default",
-      permissions: [],
-      defaultAllowed: null,
-      categories: true,
-    }),
-    count: 0,
-    overrides: false,
-    categories: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "unknown-deny",
-      permissions: [],
-      defaultAllowed: null,
-      unknownPolicy: "deny",
-    }),
-    count: 0,
-    overrides: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "unknown-ask",
-      permissions: ["read"],
-      defaultAllowed: null,
-      unknownPolicy: "ask",
-    }),
-    count: 1,
-    overrides: true,
-  },
-  {
-    connector: firewallConnector({
-      slug: "mcp-suppressed",
-      permissions: ["read"],
-      defaultAllowed: [],
-      unknownPolicy: "deny",
-      categories: true,
-      mcp: true,
-    }),
-    count: 0,
-    overrides: false,
-  },
-  {
-    connector: {
-      ...base,
-      slug: "firewall-none",
-      firewall: { kind: "none" },
-    } satisfies ConnectorCatalogArtifactConnector,
-    count: 0,
-    overrides: false,
-  },
-];
-const connectors = [
-  ...catalog.connectors,
-  ...cases.map((item) => {
-    return item.connector;
-  }),
-];
-for (const item of cases) {
-  assert.deepEqual(
-    connectorCatalogPermissionSummary(item.connector),
-    {
-      hasPermissions: item.count > 0,
-      permissionCount: item.count,
-      hasCategories: item.categories ?? false,
-      hasDefaultPolicyOverrides: item.overrides,
-    },
-    item.connector.slug,
   );
-}
-assert.deepEqual(
-  compactConnectorCatalogDefaultPolicy(
-    firewallConnector({
-      slug: "policy-tie",
-      permissions: ["write", "read"],
-      defaultAllowed: ["read"],
-    }),
-  ),
-  {
-    permissionDefault: "allow",
-    permissionOverrides: { deny: ["write"] },
-    unknownPolicy: "allow",
-  },
-);
-assert.deepEqual(
-  compactConnectorCatalogDefaultPolicy(
-    firewallConnector({
-      slug: "policy-majority",
-      permissions: ["write", "read", "delete"],
-      defaultAllowed: ["read"],
-    }),
-  ),
-  {
-    permissionDefault: "deny",
-    permissionOverrides: { allow: ["read"] },
-    unknownPolicy: "allow",
-  },
-);
+  const backfill = await readFile(
+    new URL(
+      "../src/migrations/1340_backfill_connector_catalog_entry_columns.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const preparation = await readFile(
+    new URL(
+      "../src/migrations/1348_connector_catalog_payload_independent_api.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const contraction = await readFile(
+    new URL(
+      "../src/migrations/1351_drop_connector_catalog_payload.sql",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const rawCatalog: unknown = JSON.parse(
+    await readFile(
+      new URL(
+        "../../connectors/src/__tests__/fixtures/published-v4-catalog.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  );
+  const catalog = connectorCatalogArtifactSchema.parse(rawCatalog);
+  const base = catalog.connectors.find((connector) => {
+    return (
+      connector.mcp === undefined && connector.firewall.kind === "generated"
+    );
+  });
+  assert.ok(base);
+  assert.equal(base.firewall.kind, "generated");
+  const generated = base.firewall;
+  assert.ok(generated.kind === "generated");
+  const firstApi = generated.config.apis[0];
+  assert.ok(firstApi);
 
-try {
+  function firewallConnector(args: {
+    readonly slug: string;
+    readonly permissions: readonly string[];
+    readonly defaultAllowed: readonly string[] | null;
+    readonly unknownPolicy?: "allow" | "deny" | "ask";
+    readonly categories?: boolean;
+    readonly mcp?: boolean;
+  }): ConnectorCatalogArtifactConnector {
+    assert.ok(base);
+    assert.ok(generated.kind === "generated");
+    assert.ok(firstApi);
+    const apiWithoutPermissions = { ...firstApi };
+    delete apiWithoutPermissions.permissions;
+    return {
+      ...base,
+      slug: args.slug,
+      ...(args.mcp
+        ? {
+            mcp: {
+              transport: "streamable-http",
+              endpoint: "https://example.com/mcp",
+            },
+          }
+        : {}),
+      firewall: {
+        ...generated,
+        categories: args.categories
+          ? { byPermission: {}, displayOrder: [] }
+          : null,
+        defaultAllowed:
+          args.defaultAllowed === null ? null : [...args.defaultAllowed],
+        defaultUnknownPolicy: args.unknownPolicy ?? "allow",
+        config: {
+          ...generated.config,
+          apis: [
+            {
+              ...firstApi,
+              permissions: args.permissions.map((name) => {
+                return { name, rules: ["GET /"] };
+              }),
+            },
+            // A repeated permission in another API must count only once.
+            {
+              ...firstApi,
+              permissions: args.permissions.slice(0, 1).map((name) => {
+                return { name, rules: ["POST /"] };
+              }),
+            },
+            // APIs without permission metadata contribute nothing.
+            apiWithoutPermissions,
+          ],
+        },
+      },
+    };
+  }
+
+  const cases = [
+    {
+      connector: firewallConnector({
+        slug: "all-allowed",
+        permissions: ["read", "write"],
+        defaultAllowed: null,
+      }),
+      count: 2,
+      overrides: false,
+    },
+    {
+      connector: firewallConnector({
+        slug: "explicit-allowed",
+        permissions: ["read", "write"],
+        defaultAllowed: ["read", "write", "unused"],
+      }),
+      count: 2,
+      overrides: false,
+    },
+    {
+      connector: firewallConnector({
+        slug: "deny-majority",
+        permissions: ["read", "write", "delete"],
+        defaultAllowed: ["read"],
+      }),
+      count: 3,
+      overrides: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "tied-policy",
+        permissions: ["read", "write"],
+        defaultAllowed: ["read"],
+      }),
+      count: 2,
+      overrides: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "deny-all",
+        permissions: ["read", "write"],
+        defaultAllowed: [],
+      }),
+      count: 2,
+      overrides: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "empty-allowed",
+        permissions: [],
+        defaultAllowed: [],
+      }),
+      count: 0,
+      overrides: false,
+    },
+    {
+      connector: firewallConnector({
+        slug: "empty-default",
+        permissions: [],
+        defaultAllowed: null,
+        categories: true,
+      }),
+      count: 0,
+      overrides: false,
+      categories: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "unknown-deny",
+        permissions: [],
+        defaultAllowed: null,
+        unknownPolicy: "deny",
+      }),
+      count: 0,
+      overrides: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "unknown-ask",
+        permissions: ["read"],
+        defaultAllowed: null,
+        unknownPolicy: "ask",
+      }),
+      count: 1,
+      overrides: true,
+    },
+    {
+      connector: firewallConnector({
+        slug: "mcp-suppressed",
+        permissions: ["read"],
+        defaultAllowed: [],
+        unknownPolicy: "deny",
+        categories: true,
+        mcp: true,
+      }),
+      count: 0,
+      overrides: false,
+    },
+    {
+      connector: {
+        ...base,
+        slug: "firewall-none",
+        firewall: { kind: "none" },
+      } satisfies ConnectorCatalogArtifactConnector,
+      count: 0,
+      overrides: false,
+    },
+  ];
+  const connectors = [
+    ...catalog.connectors,
+    ...cases.map((item) => {
+      return item.connector;
+    }),
+  ];
+  for (const item of cases) {
+    assert.deepEqual(
+      connectorCatalogPermissionSummary(item.connector),
+      {
+        hasPermissions: item.count > 0,
+        permissionCount: item.count,
+        hasCategories: item.categories ?? false,
+        hasDefaultPolicyOverrides: item.overrides,
+      },
+      item.connector.slug,
+    );
+  }
+  assert.deepEqual(
+    compactConnectorCatalogDefaultPolicy(
+      firewallConnector({
+        slug: "policy-tie",
+        permissions: ["write", "read"],
+        defaultAllowed: ["read"],
+      }),
+    ),
+    {
+      permissionDefault: "allow",
+      permissionOverrides: { deny: ["write"] },
+      unknownPolicy: "allow",
+    },
+  );
+  assert.deepEqual(
+    compactConnectorCatalogDefaultPolicy(
+      firewallConnector({
+        slug: "policy-majority",
+        permissions: ["write", "read", "delete"],
+        defaultAllowed: ["read"],
+      }),
+    ),
+    {
+      permissionDefault: "deny",
+      permissionOverrides: { allow: ["read"] },
+      unknownPolicy: "allow",
+    },
+  );
+
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0378; new non-billing transactions are prohibited.
   await client.query("BEGIN");
   await client.query(`CREATE SCHEMA "${testSchema}"`);
@@ -448,29 +770,27 @@ try {
     [testSchema],
   );
   assert.deepEqual(physicalColumns.rows, []);
-  // DROP is incompatible with a still-serving dual writer. This rejection
-  // makes the separate preparation-release/drain boundary explicit.
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0381; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT retired_writer");
-  await assert.rejects(
-    db.insert(connectorCatalogEntries).values({
-      hash: "retired-dual-writer",
-      slug: base.slug,
-      payload: base,
-      ...connectorCatalogEntryColumns(base),
-    }),
-    (error: unknown) => {
-      return (
-        error instanceof Error &&
-        "cause" in error &&
-        error.cause instanceof Error &&
-        "code" in error.cause &&
-        error.cause.code === "42703"
-      );
-    },
+  // DROP is incompatible with a still-serving dual writer. Execute the frozen
+  // outgoing statement in its own fully populated contracted namespace.
+  const frontier = catalogRowsSchema.parse(
+    (await client.query(catalogFrontierSql, [testSchema])).rows,
   );
-  await client.query("ROLLBACK TO SAVEPOINT retired_writer");
-  await client.query("RELEASE SAVEPOINT retired_writer");
+  await validateRetiredWriter({
+    databaseUrl,
+    entries: retained,
+    pointers,
+    frontier,
+    base,
+    expansion,
+    preparation,
+    contraction,
+  });
+  assert.deepEqual(
+    catalogRowsSchema.parse(
+      (await client.query(catalogFrontierSql, [testSchema])).rows,
+    ),
+    frontier,
+  );
   assert.deepEqual(
     await db
       .select()
@@ -507,10 +827,30 @@ try {
     }),
   );
   await validateConnectorCatalogColumnContract(client);
-  console.log(
-    `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, transactional DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`,
-  );
+  successMessage = `Catalog entry expansion/backfill/preparation/contraction: ${rows.length} retained rows, ${cases.length} summary boundaries, transactional DDL rollback, outgoing/new writers, unchanged identity/projections/pointer, post-DROP runtime reads`;
+} catch (error: unknown) {
+  errors.push(error);
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  if (connected) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error: unknown) {
+    errors.push(error);
+  }
+  client.removeListener("error", observeError);
 }
+if (errors.length === 1) throw errors[0];
+if (errors.length > 1) {
+  throw new AggregateError(
+    errors,
+    "Catalog entry validation and cleanup failed",
+  );
+}
+assert.ok(successMessage);
+console.log(successMessage);
