@@ -689,9 +689,17 @@ marker. Their completion leaves an interrupted message's marker, decompressor
 and cumulative budgets intact; only data-message completion or terminal cleanup
 can end that state.
 
-RFC 7692 messages omit the final deflate block on the wire. The adapter restores
-the empty-deflate trailer (`00 00 ff ff`) at the end of a compressed message and
-runs that output through the same bound before dispatch. Uncompressed messages
+RFC 7692 messages omit the final four bytes of an empty stored block on the
+wire. The adapter restores that trailer (`00 00 ff ff`) at the end of a
+compressed message and runs that output through the same bound before dispatch.
+Permitted `BFINAL=1` blocks end a raw zlib stream, including within a fragmented
+message. The adapter continues through unused input with a replacement raw
+decoder seeded by the retained sliding window. Every stream shares the same
+cumulative output allowance. Retained history is limited to the directional
+negotiated window (at most 32 KiB), survives controls and uncompressed messages,
+and clears with the decoder on negotiated no-context-takeover completion or
+terminal cleanup. No-context-takeover still preserves history between streams
+within one logical message. Uncompressed messages
 after a compressed message, context takeover, and negotiated no-context-takeover
 are connection-local states covered by the real-layer tests. Any rejected or
 terminally closed compressed flow clears its decompressor and partial framing
