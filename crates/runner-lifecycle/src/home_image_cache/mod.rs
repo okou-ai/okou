@@ -60,6 +60,9 @@ const CACHE_FORMAT_VERSION: u32 = 3;
 const HOME_DRIVE_LAYOUT: &str = runner_host::paths::HOME_DRIVE_LAYOUT;
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIN_FREE_BYTES_FLOOR: u64 = 50 * GIB;
+/// Shared reserve for home cache publication and runtime image allocation.
+pub const HOME_IMAGE_SPACE_RESERVE: sandbox::HomeDriveSpaceReserve =
+    sandbox::HomeDriveSpaceReserve::new(MIN_FREE_BYTES_FLOOR, 10);
 const MAX_HOME_PROMOTION_CONCURRENCY: usize = 4;
 #[cfg(any(test, feature = "test-support"))]
 const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;

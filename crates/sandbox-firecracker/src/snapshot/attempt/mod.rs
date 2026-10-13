@@ -252,6 +252,7 @@ impl SnapshotAttempt {
         if let Err(e) = prepare_home_drive_image(
             &home_image_path,
             &sandbox::HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                 size_mb: config.home_disk_mb,
                 seed_image: None,
             },

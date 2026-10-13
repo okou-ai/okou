@@ -1772,6 +1772,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
             },
             device_rate_limits: None,
             home_drive: Some(sandbox::HomeDriveConfig {
+                space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 size_mb: params.home_disk_mb,
                 seed_image: None,
             }),

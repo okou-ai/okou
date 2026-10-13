@@ -121,6 +121,37 @@ pub enum HomeDriveSeedImage {
     Move(PathBuf),
 }
 
+/// Free space to retain on the destination filesystem after image allocation.
+///
+/// This is an observed headroom policy, not a reservation against concurrent
+/// writers. A zero default is useful for isolated image builders. Runtime
+/// callers supply their host policy explicitly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HomeDriveSpaceReserve {
+    minimum_bytes: u64,
+    percent: u8,
+}
+
+impl HomeDriveSpaceReserve {
+    /// Create a reserve with an absolute floor and a percentage of capacity.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `percent` exceeds 100.
+    pub const fn new(minimum_bytes: u64, percent: u8) -> Self {
+        assert!(percent <= 100);
+        Self {
+            minimum_bytes,
+            percent,
+        }
+    }
+
+    /// Calculate the reserve for the filesystem that will receive the image.
+    pub fn bytes_for_capacity(self, capacity_bytes: u64) -> u64 {
+        (capacity_bytes.saturating_mul(u64::from(self.percent)) / 100).max(self.minimum_bytes)
+    }
+}
+
 /// Provider-neutral home block image configuration for one sandbox.
 ///
 /// The image is mounted by runner-controlled guest setup at `/home/user`,
@@ -139,6 +170,10 @@ pub struct HomeDriveConfig {
     /// home image. The seed variant determines whether providers must
     /// preserve the source image or consume it with a move.
     pub seed_image: Option<HomeDriveSeedImage>,
+    /// Destination free-space policy for fresh creation or seed copying.
+    /// A same-filesystem Move does not duplicate image blocks and does not
+    /// require image-allocation headroom.
+    pub space_reserve: HomeDriveSpaceReserve,
 }
 
 /// Per-sandbox creation configuration passed to [`crate::SandboxFactory::create`].

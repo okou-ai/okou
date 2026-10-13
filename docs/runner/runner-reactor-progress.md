@@ -199,7 +199,23 @@ wait and immediate-fallback policy. Proven guest exit releases healthy
 reclamation CPU permits before publication, but the entry and applicable logical
 lease remain owned until their cleanup contract completes. Waiting can therefore
 affect same-key checkout, resource-limited blank refill and joined shutdown; its
-contention deadline does not bound filesystem I/O or startup's pressure GC.
+contention deadline does not bound filesystem I/O.
+
+Checkout protects and examines the requested entry before considering disk
+pressure, with the existing short entry wait or immediate fallback. It never
+acquires capacity or runs a whole-cache GC on startup. A valid Move seed can be
+consumed by same-filesystem rename even below the reserve; periodic maintenance
+owns reclamation. A pressure miss may therefore fail promptly until maintenance
+frees space.
+
+Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
+cache publication. Firecracker queries the actual destination filesystem before
+fresh creation, Copy or EXDEV copy. Sparse seeds need their allocated bytes plus
+metadata headroom, while fresh images conservatively need their logical size.
+Refusal precedes image truncation, copying and source removal. Pristine retries
+retain the reserve policy. This is an observed allocation check, not a reservation
+against other writers or a guarantee about future guest growth. Same-filesystem
+rename still performs ordinary filesystem I/O and can fail.
 
 Successful routine completion emits `entry_count` (the unlocked candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
