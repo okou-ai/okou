@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.2](https://github.com/okou-ai/okou/compare/api-v1.732.1...api-v1.732.2) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner app and api release markers ([#39784](https://github.com/okou-ai/okou/issues/39784)) ([5ac9e98](https://github.com/okou-ai/okou/commit/5ac9e98778dcd2b0e4b3b262ad363b1cfa0c2891))
+
+
+### Refactoring
+
+* **api:** derive slack connect installation in a private read node ([#39786](https://github.com/okou-ai/okou/issues/39786)) ([119a587](https://github.com/okou-ai/okou/commit/119a58779e787c88cf850a8e718341503254ea2e))
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.1
+    * @okouai/core bumped to 8.751.1
+    * @okouai/db bumped to 1.335.2
+    * @okouai/pi-agent-runtime bumped to 1.49.25
+
 ## [1.732.1](https://github.com/okou-ai/okou/compare/api-v1.732.0...api-v1.732.1) (2026-10-13)
 
 

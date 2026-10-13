@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.751.1](https://github.com/okou-ai/okou/compare/core-v8.751.0...core-v8.751.1) (2026-10-13)
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.1
+
 ## [8.751.0](https://github.com/okou-ai/okou/compare/core-v8.750.0...core-v8.751.0) (2026-10-13)
 
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.230.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.4...runner-rs-v0.230.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner app and api release markers ([#39784](https://github.com/okou-ai/okou/issues/39784)) ([5ac9e98](https://github.com/okou-ai/okou/commit/5ac9e98778dcd2b0e4b3b262ad363b1cfa0c2891))
+
+
+### Refactoring
+
+* **runner:** remove redundant mitmproxy compatibility guards ([#39773](https://github.com/okou-ai/okou/issues/39773)) ([dfb6dec](https://github.com/okou-ai/okou/commit/dfb6decddbf85dd549a8081d781e001fdd1869da))
+* **test:** split containment scenarios and restore guest build ([#39758](https://github.com/okou-ai/okou/issues/39758)) ([5c7c5a5](https://github.com/okou-ai/okou/commit/5c7c5a5cd191dd3b4c6ee6e23e08008baa8b4ec4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.230.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.3...runner-rs-v0.230.4) (2026-10-13)
 
 

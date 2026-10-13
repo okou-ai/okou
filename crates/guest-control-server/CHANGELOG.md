@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.24.8](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.7...guest-control-server-v0.24.8) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** preserve chat shortcuts with resources open ([#39775](https://github.com/okou-ai/okou/issues/39775)) ([5ccf3a7](https://github.com/okou-ai/okou/commit/5ccf3a714a0fee9a1444f7369d9b1a9304aff31e))
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+* **test:** split containment scenarios and restore guest build ([#39758](https://github.com/okou-ai/okou/issues/39758)) ([5c7c5a5](https://github.com/okou-ai/okou/commit/5c7c5a5cd191dd3b4c6ee6e23e08008baa8b4ec4))
+
 ## [0.24.7](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.6...guest-control-server-v0.24.7) (2026-10-13)
 
 

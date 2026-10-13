@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.388.2](https://github.com/okou-ai/okou/compare/cli-v9.388.1...cli-v9.388.2) (2026-10-13)
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.556.1
+    * @okouai/core bumped to 8.751.1
+    * @okouai/pi-agent-runtime bumped to 1.49.25
+
 ## [9.388.1](https://github.com/okou-ai/okou/compare/cli-v9.388.0...cli-v9.388.1) (2026-10-13)
 
 
