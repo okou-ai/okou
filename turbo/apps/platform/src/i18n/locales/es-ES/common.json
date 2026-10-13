@@ -1788,6 +1788,7 @@
       "workflows": {
         "empty": "No hay flujos de trabajo coincidentes",
         "loading": "Cargando flujos de trabajo...",
+        "showAll": "Mostrar todos los flujos de trabajo",
         "title": "Flujos de trabajo"
       }
     },

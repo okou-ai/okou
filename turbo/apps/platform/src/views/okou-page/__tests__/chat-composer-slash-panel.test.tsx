@@ -475,6 +475,66 @@ test("Composer-anchored keyboard navigation crosses from categories into workflo
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
+async function openManyWorkflows(): Promise<HTMLElement> {
+  setupModels();
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(
+      200,
+      Array.from({ length: 12 }, (_, index) => {
+        return composerWorkflow(`daily-${String(index + 1)}`, "Daily workflow");
+      }),
+    );
+  });
+  mockChatLifecycle(context, { threadId: THREAD_ID });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
+  });
+  const editor = await findComposerEditor();
+  await fill(editor, "Draft /");
+  await waitFor(() => {
+    expect(slashButton("Show all workflows")).toBeInTheDocument();
+  });
+  return editor;
+}
+
+test("The workflow overview expands without losing the token or its selectable workflows", async () => {
+  const user = userEvent.setup();
+  const editor = await openManyWorkflows();
+  expect(querySlashButton("/daily-12")).toBeNull();
+  expect(slashButton("Website")).toBeInTheDocument();
+  expect(slashButton("Browse all templates")).toBeInTheDocument();
+
+  await user.click(slashButton("Show all workflows"));
+
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent("Draft /");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  await user.click(slashButton("/daily-12"));
+  expect(editor).toHaveTextContent("Draft /daily-12");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+test("Keyboard navigation reveals collapsed workflows and reopening restores the overview", async () => {
+  const user = userEvent.setup();
+  const editor = await openManyWorkflows();
+
+  await user.keyboard("{ArrowUp>7/}");
+
+  expect(slashButton("/daily-5")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  await user.keyboard("{Escape}");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  await fill(editor, "Draft /");
+  expect(slashButton("Show all workflows")).toBeInTheDocument();
+  expect(querySlashButton("/daily-12")).toBeNull();
+
+  await fill(editor, "Draft /daily");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(slashButton("/daily-12")).toBeInTheDocument();
+});
+
 test.each(COMPOSER_PATHS)(
   "Composer-anchored desktop suggestions at %s embed selectable previews inside the menu",
   async (path) => {

@@ -1759,6 +1759,7 @@
       "workflows": {
         "empty": "Keine passenden Workflows",
         "loading": "Workflows werden geladen...",
+        "showAll": "Alle Workflows anzeigen",
         "title": "Workflows"
       }
     },

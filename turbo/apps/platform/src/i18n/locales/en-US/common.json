@@ -1759,6 +1759,7 @@
       "workflows": {
         "empty": "No matching workflows",
         "loading": "Loading workflows...",
+        "showAll": "Show all workflows",
         "title": "Workflows"
       }
     },

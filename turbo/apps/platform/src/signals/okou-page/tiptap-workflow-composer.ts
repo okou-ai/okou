@@ -238,6 +238,8 @@ export interface WorkflowComposerSignals {
   /** Null while the pointer is not previewing, so keyboard selection leads. */
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
+  readonly slashWorkflowsExpanded$: Computed<boolean>;
+  readonly expandSlashWorkflows$: Command<void, []>;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
     (() => void) | undefined,
@@ -2957,6 +2959,27 @@ function createTemplateSignals(
   return { commands, legacy, selection };
 }
 
+function createSlashWorkflowExpansionSignals(
+  editor: Editor,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  // Expansion belongs to one open slash interaction. Dismissing the menu or
+  // editing its token produces a new range and restores the compact overview.
+  const expandedSlashRange$ = state<SlashWorkflowRange | null>(null);
+  return {
+    slashWorkflowsExpanded$: computed((get) => {
+      const range = get(activeSlashRange$);
+      return range !== null && range === get(expandedSlashRange$);
+    }),
+    expandSlashWorkflows$: command(({ get, set }) => {
+      // The ellipsis leaves the DOM after activation. Return focus to the
+      // editor, which owns suggestion keyboard navigation, before removing it.
+      editor.view.focus();
+      set(expandedSlashRange$, get(activeSlashRange$));
+    }),
+  };
+}
+
 export function createWorkflowComposerSignals<
   T extends AgentIdValue = Promise<string | null>,
 >(
@@ -3078,6 +3101,7 @@ export function createWorkflowComposerSignals<
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,
+    ...createSlashWorkflowExpansionSignals(editor, activeSlashRange$),
     closeSuggestionMenu$,
     setSuggestionMenuRef$: suggestionMenu.ref$,
     ...suggestionInsertionCommands,

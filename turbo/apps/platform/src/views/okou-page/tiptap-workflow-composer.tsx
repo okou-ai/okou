@@ -30,6 +30,7 @@ import {
 } from "./slash-workflow.tsx";
 import {
   SlashTemplatePanel,
+  SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -325,6 +326,8 @@ interface ComposerSuggestionMenuState {
   ) => void;
   readonly browseAllTemplates: () => void;
   readonly workflowsLoading: boolean;
+  readonly collapseWorkflows: boolean;
+  readonly expandWorkflows: () => void;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -562,6 +565,10 @@ function useComposerSuggestionMenu({
     composer.suggestion.setSelectedSuggestionIndex$,
   );
   const close = useSet(composer.suggestion.closeSuggestionMenu$);
+  const workflowsExpanded = useGet(composer.suggestion.slashWorkflowsExpanded$);
+  const expandWorkflows = useSet(composer.suggestion.expandSlashWorkflows$);
+  const collapseWorkflows =
+    reversedSuggestions && slashRange?.query === "" && !workflowsExpanded;
   const templatePanel = useSlashTemplatePanelActions(
     composer,
     slashRange?.query,
@@ -623,7 +630,17 @@ function useComposerSuggestionMenu({
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
       reversedSuggestions,
-      setSelectedSuggestionIndex: setSelectedIndex,
+      setSelectedSuggestionIndex: (index) => {
+        // Keep the existing relevance order and make a hidden row visible
+        // before the editor scrolls to or accepts it.
+        if (
+          collapseWorkflows &&
+          index >= headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+        ) {
+          expandWorkflows();
+        }
+        setSelectedIndex(index);
+      },
       closeSuggestionMenu: close,
       selectSuggestion,
       scrollSuggestionIntoView,
@@ -644,6 +661,8 @@ function useComposerSuggestionMenu({
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
     workflowsLoading: workflowResult.loading,
+    collapseWorkflows,
+    expandWorkflows,
     showWorkflows,
     agents,
     chatThreads,
@@ -807,6 +826,8 @@ export function TiptapWorkflowComposer({
             reversed={composerAnchored}
             workflows={suggestionMenu.workflows}
             workflowsLoading={suggestionMenu.workflowsLoading}
+            collapseWorkflows={suggestionMenu.collapseWorkflows}
+            onExpandWorkflows={suggestionMenu.expandWorkflows}
             selectedIndex={suggestionMenu.selectedIndex}
             previewIndex={suggestionMenu.previewIndex}
             onPreview={suggestionMenu.previewSuggestion}
