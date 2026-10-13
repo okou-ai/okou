@@ -529,14 +529,47 @@ test("The workflow overview expands without losing the token or its selectable w
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
-test("Keyboard navigation reveals collapsed workflows and reopening restores the overview", async () => {
+test("Keyboard navigation keeps workflows collapsed until the ellipsis is activated", async () => {
   const user = userEvent.setup();
   const editor = await openManyWorkflows();
 
   await user.keyboard("{ArrowDown>5/}");
 
+  expect(slashButton("Show all workflows")).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+  expect(slashButton("Show all workflows")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(querySlashButton("/daily-2")).toBeNull();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent(/^Draft \/$/);
+
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Website")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("/daily-2")).toBeNull();
+  await user.keyboard("{ArrowUp>2/}");
+  expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Show all workflows")).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+
+  await user.keyboard("{Enter}");
   expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
   expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent(/^Draft \/$/);
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("/daily-3")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{Enter}");
+  expect(editor).toHaveTextContent("Draft /daily-3");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+
+  await fill(editor, "Draft /");
   await user.keyboard("{Escape}");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   await fill(editor, "Draft /");

@@ -36,6 +36,7 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 // Four single-line rows fit within 128px, leaving room for both section
 // headings, creation categories and the footer in the 380px overview.
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
+export const SLASH_PANEL_EXPAND_WORKFLOWS_ID = "expand-workflows";
 
 interface SlashTemplatePanelProps {
   readonly menuRef: Ref<HTMLDivElement>;
@@ -444,6 +445,8 @@ function SlashPanelWorkflowSection({
   const visibleWorkflows = hasCollapsedWorkflows
     ? workflows.slice(0, SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT)
     : workflows;
+  const expandMarked =
+    listProps.markedIndex === SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;
   return (
     <div>
       <SectionLabel>
@@ -462,11 +465,19 @@ function SlashPanelWorkflowSection({
         <div className="px-1">
           <Button
             variant="quiet"
-            className="w-full justify-start rounded-lg px-2"
+            id={listProps.workflowOptionId(SLASH_PANEL_EXPAND_WORKFLOWS_ID)}
+            className={cn(
+              "w-full justify-start rounded-lg px-2",
+              expandMarked && "bg-state-selected hover:bg-state-selected-hover",
+            )}
+            data-active={expandMarked ? "true" : undefined}
             aria-label={t(($) => {
               return $.chat.composer.workflows.showAll;
             })}
             aria-expanded={false}
+            onMouseMove={() => {
+              listProps.onPreview(SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT);
+            }}
             onClick={onExpandWorkflows}
           >
             <Ellipsis size={16} aria-hidden />

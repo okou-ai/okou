@@ -33,6 +33,7 @@ import {
 import {
   SlashTemplatePanel,
   SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
+  SLASH_PANEL_EXPAND_WORKFLOWS_ID,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -505,12 +506,14 @@ interface SuggestionRows {
   readonly panelCategories: readonly SlashTemplateCategory[];
   /** How many rows sit above the workflow suggestions. */
   readonly headCount: number;
+  readonly expandIndex: number | null;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
 }
 
 interface SuggestionRowActions {
+  readonly expandWorkflows: () => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
@@ -530,6 +533,12 @@ function selectSlashSuggestionRow(
   rows: SuggestionRows,
   actions: SuggestionRowActions,
 ): void {
+  if (index === rows.expandIndex) {
+    // The ellipsis occupies the first hidden workflow's index. Activating
+    // it reveals that row and keeps keyboard selection at the same position.
+    actions.expandWorkflows();
+    return;
+  }
   const category = rows.panelCategories[index];
   if (category) {
     actions.selectCategory(category);
@@ -565,6 +574,9 @@ function suggestionRowScrollTarget(
   index: number,
   rows: SuggestionRows,
 ): { readonly id: string } | undefined {
+  if (index === rows.expandIndex) {
+    return { id: SLASH_PANEL_EXPAND_WORKFLOWS_ID };
+  }
   const head = suggestionHeadRow(index, rows);
   return head === undefined
     ? rows.workflows[index - rows.headCount]
@@ -636,8 +648,15 @@ function useComposerSuggestionMenu({
       ? chatThreadRange
       : null;
   const headCount = panelCategories.length;
+  const expandIndex =
+    collapseWorkflows &&
+    workflowSuggestions.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      ? headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      : null;
   const suggestionCount = showWorkflows
-    ? headCount + workflowSuggestions.length
+    ? expandIndex === null
+      ? headCount + workflowSuggestions.length
+      : expandIndex + 1
     : agents.length + chatThreads.length;
   const suggestionOrder = suggestionNavigationOrder(
     suggestionCount,
@@ -649,6 +668,7 @@ function useComposerSuggestionMenu({
     showWorkflows,
     panelCategories,
     headCount,
+    expandIndex,
     workflows: workflowSuggestions,
     agents,
     chatThreads,
@@ -656,6 +676,7 @@ function useComposerSuggestionMenu({
 
   function selectSuggestion(index: number): void {
     selectSuggestionRow(index, rows, {
+      expandWorkflows,
       selectCategory: templatePanel.selectCategory,
       insertWorkflow,
       insertAgent,
@@ -677,17 +698,7 @@ function useComposerSuggestionMenu({
       suggestionOrder,
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
-      setSelectedSuggestionIndex: (index) => {
-        // Keep the existing relevance order and make a hidden row visible
-        // before the editor scrolls to or accepts it.
-        if (
-          collapseWorkflows &&
-          index >= headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
-        ) {
-          expandWorkflows();
-        }
-        setSelectedIndex(index);
-      },
+      setSelectedSuggestionIndex: setSelectedIndex,
       closeSuggestionMenu: close,
       selectSuggestion,
       scrollSuggestionIntoView,
