@@ -1419,10 +1419,18 @@ describe("Official Forms system configuration pause", () => {
       installCatalogStorageFixture();
       const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
       const definitionName = "forms-system-pause-" + suffix;
-      const responseDuringPause = "2026-09-01T08:20:00.123456Z";
-      const resumeBaseline = "2026-09-01T08:25:00.123456Z";
-      const responseAfterPause = "2026-09-01T08:26:00.123456Z";
-      let seed = GOOGLE_FORM_SEED_CURSOR;
+      const startedAt = now();
+      mockNow(startedAt);
+      const responseTime = (minutes: number) => {
+        // Preserve Google's microseconds while advancing the application phases.
+        return new Date(startedAt + minutes * 60 * 1000)
+          .toISOString()
+          .replace("Z", "456Z");
+      };
+      const responseDuringPause = responseTime(10);
+      const resumeBaseline = responseDuringPause;
+      let responseAfterPause = responseTime(16);
+      let seed = responseTime(0);
       let pending = false;
       let failResumeSeed = false;
       let watchId = "";
@@ -1542,9 +1550,19 @@ describe("Official Forms system configuration pause", () => {
                 responses: [
                   {
                     responseId: "baseline",
-                    createTime: seed,
-                    lastSubmittedTime: seed,
+                    createTime: responseTime(0),
+                    lastSubmittedTime: responseTime(0),
                   },
+                  ...(seed === responseDuringPause
+                    ? [
+                        {
+                          responseId: "response-during-system-pause",
+                          createTime: responseDuringPause,
+                          lastSubmittedTime: responseDuringPause,
+                          respondentEmail: "during-system-pause@example.test",
+                        },
+                      ]
+                    : []),
                 ],
               });
             }
@@ -1775,6 +1793,7 @@ describe("Official Forms system configuration pause", () => {
           autonomyBudget: { parameter: "budget" },
         },
       };
+      mockNow(startedAt + 5 * 60 * 1000);
       await syncCatalog(
         catalog([activeDefinition(definitionName, [requiredBudget])]),
       );
@@ -1786,6 +1805,7 @@ describe("Official Forms system configuration pause", () => {
         ];
       };
       const resume = async () => {
+        mockNow(startedAt + 15 * 60 * 1000);
         return await accept(
           installationClient().reconfigure({
             headers,
@@ -1866,6 +1886,7 @@ describe("Official Forms system configuration pause", () => {
       expect(sourceIdentity(paused.body)).toStrictEqual(
         sourceIdentity(automation),
       );
+      mockNow(startedAt + 15 * 60 * 1000);
       seed = resumeBaseline;
       const interruptRecovery = async () => {
         if (
@@ -2107,6 +2128,10 @@ describe("Official Forms system configuration pause", () => {
         );
       }
       watchId = remoteWatch[0];
+      responseAfterPause = new Date(now() + 60 * 1000)
+        .toISOString()
+        .replace("Z", "456Z");
+      mockNow(now() + 2 * 60 * 1000);
       pending = true;
       const result = await push(currentFormId, watchId);
       const { events } = await chat.listThreadEvents(
