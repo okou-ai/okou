@@ -676,6 +676,7 @@
       "selectWorkflow": "Seleziona il modello di flusso di lavoro {{title}}",
       "showVariant": "Mostra variante {{variantNumber}}",
       "singleAccent": "Singolo accento",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} anteprima diapositiva",
       "slideThumbnail": "{{title}} diapositiva {{slideNumber}} anteprima",
       "template": "Modello",

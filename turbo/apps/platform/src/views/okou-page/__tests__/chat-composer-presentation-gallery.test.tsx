@@ -147,3 +147,38 @@ test("Navigate every slide in a presentation template", async () => {
   );
   expect(screen.getByLabelText("Preview slide 3")).toBeVisible();
 });
+
+test("Name every theme and count slides in a presentation template preview", async () => {
+  mockTemplateChat();
+  const template = builtInTemplate();
+  mockPresentationHtml(template.embedUrl, ["One", "Two", "Three"]);
+  const user = userEvent.setup();
+
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+
+  await openTemplatePicker(user, "Presentation");
+  await user.click(
+    screen.getByLabelText(`Preview ${template.title} at current slide`),
+  );
+  const preview = await waitFor(() => {
+    return detailGroup(template.title);
+  });
+  await waitFor(() => {
+    expect(within(preview).getByText("1 / 3")).toBeVisible();
+  });
+  await user.click(screen.getByLabelText("Preview next slide"));
+  expect(within(preview).getByText("2 / 3")).toBeVisible();
+
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Candy party")).toBeVisible();
+  await user.click(within(dialog).getByText("Deep dive"));
+  expect(screen.getByLabelText("Select style Deep dive")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(preview).getByText("2 / 3")).toBeVisible();
+});

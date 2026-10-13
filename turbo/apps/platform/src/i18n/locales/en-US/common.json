@@ -657,6 +657,7 @@
       "selectWorkflow": "Select workflow template {{title}}",
       "showVariant": "Show variant {{variantNumber}}",
       "singleAccent": "Single-accent",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} slide preview",
       "slideThumbnail": "{{title}} slide {{slideNumber}} preview",
       "template": "Template",

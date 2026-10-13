@@ -656,6 +656,7 @@
       "selectWorkflow": "选择工作流模板 {{title}}",
       "showVariant": "显示变体 {{variantNumber}}",
       "singleAccent": "单一口音",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 幻灯片预览",
       "slideThumbnail": "{{title}} 第 {{slideNumber}} 页预览",
       "template": "模板",

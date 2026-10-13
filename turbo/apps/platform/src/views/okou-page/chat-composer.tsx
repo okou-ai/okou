@@ -1,4 +1,5 @@
 import { Combobox } from "@base-ui/react/combobox";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -72,6 +73,7 @@ import {
   ElapsedTime,
   getShortcutLabel,
   processShortcut,
+  ScrollBar,
   type KeyboardEventLike,
 } from "@okouai/ui";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
@@ -130,6 +132,8 @@ import {
   ArrowUp,
   Bolt,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Globe,
   Image as ImageIcon,
@@ -139,7 +143,6 @@ import {
   Lock,
   Mic,
   Monitor,
-  Palette,
   Paperclip,
   Plug,
   Plus,
@@ -318,6 +321,10 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
+import {
+  SCROLL_FADE_X_WHEN_OVERFLOWING,
+  SCROLL_FADE_Y_WHEN_OVERFLOWING,
+} from "./scroll-fade.ts";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
@@ -2292,22 +2299,12 @@ function TemplatePreviewPage({
       selectDetailSlide(activeSlideIndex + 1);
     }
   };
-  const multiAccentThemes = PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-    (theme) => {
-      return theme.group === "multi-accent";
-    },
-  );
-  const singleAccentThemes = PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-    (theme) => {
-      return theme.group === "single-accent";
-    },
-  );
 
   return (
     <>
       <DialogHeader
         data-presentation-template-detail-header=""
-        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
+        className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
           <button
@@ -2325,286 +2322,444 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
-        <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
-          <div
-            ref={focusPreview}
-            role="group"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.slidePreview;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            tabIndex={0}
+      {/* One height owner: the dialog. From lg the body is a size container
+          and the stage takes the 16:9 box that fits beside the theme list and
+          above the filmstrip, so no viewport height clips the page. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
+        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6">
+          <TemplateDetailStage
+            title={item.title}
+            focusRef={focusPreview}
+            activeSlideIndex={activeSlideIndex}
+            slideCount={detailSlideCount}
+            lowResolutionImage={detailLowResolutionImage}
+            highResolutionImage={detailHighResolutionImage}
+            html={html.state === "hasData" ? html.data : null}
+            onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
-            className="relative aspect-[16/9] overflow-hidden rounded-lg bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ProgressiveTemplatePreviewImage
-              alt=""
-              className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
-              dataTestId={`${item.title} detail image preview`}
-              fetchPriority="high"
-              highResolutionUrl={detailHighResolutionImage}
-              loading="eager"
-              lowResolutionUrl={detailLowResolutionImage}
-            />
-            <PresentationTemplateHtmlFrame
-              html={html.state === "hasData" ? html.data : null}
-              title={t(
-                ($) => {
-                  return $.artifacts.templates.htmlPreview;
-                },
-                {
-                  title: item.title,
-                },
-              )}
-              dataTestId={`${item.title} detail HTML preview`}
-              className="z-40"
-            />
-            <button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.templates.previousSlide;
-              })}
-              disabled={activeSlideIndex === 0}
-              tabIndex={-1}
-              onClick={() => {
-                selectDetailSlide(activeSlideIndex - 1);
-              }}
-              className="absolute inset-y-0 left-0 w-1/2 cursor-w-resize bg-transparent focus:outline-none disabled:cursor-default"
-            />
-            <button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.templates.nextSlide;
-              })}
-              disabled={activeSlideIndex >= detailSlideCount - 1}
-              tabIndex={-1}
-              onClick={() => {
-                selectDetailSlide(activeSlideIndex + 1);
-              }}
-              className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
-            />
-          </div>
-          <div
-            className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
+          />
+          <TemplateDetailFilmstrip
+            item={item}
+            slideCount={Math.min(detailSlideCount, 15)}
+            activeSlideIndex={activeSlideIndex}
+            theme={selectedTheme}
+            htmlPreviewFailed={htmlPreviewFailed}
+            thumbnails={thumbnails.state === "hasData" ? thumbnails.data : null}
+            onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
-          >
-            {Array.from(
-              { length: Math.min(detailSlideCount, 15) },
-              (_, index) => {
-                return index + 1;
-              },
-            ).map((slideNumber) => {
-              const slideIndex = slideNumber - 1;
-              const active = slideIndex === activeSlideIndex;
-              const thumbnailImage = r2ImageTransformUrl(
-                presentationTemplateDetailSlideImageSource(
-                  item,
-                  slideIndex,
-                  selectedTheme,
-                  htmlPreviewFailed,
-                ),
-                TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
-              );
-              return (
-                <button
-                  key={slideNumber}
-                  type="button"
-                  aria-label={t(
-                    ($) => {
-                      return $.artifacts.templates.previewSlide;
-                    },
-                    {
-                      slideNumber,
-                    },
-                  )}
-                  aria-pressed={active}
-                  onClick={() => {
-                    selectDetailSlide(slideIndex);
-                  }}
-                  className={cn(
-                    "relative aspect-[16/9] overflow-hidden rounded-md border bg-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active
-                      ? "border-ring ring-1 ring-ring"
-                      : "border-border hover:border-muted-foreground/50",
-                  )}
-                >
-                  <img
-                    src={thumbnailImage}
-                    alt=""
-                    loading="lazy"
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                  <PresentationTemplateHtmlFrame
-                    html={
-                      thumbnails.state === "hasData"
-                        ? (thumbnails.data[slideIndex] ?? null)
-                        : null
-                    }
-                    loading="lazy"
-                    title={t(
-                      ($) => {
-                        return $.artifacts.templates.slideThumbnail;
-                      },
-                      {
-                        title: item.title,
-                        slideNumber,
-                      },
-                    )}
-                  />
-                  <span className="absolute bottom-1 right-1 rounded border border-border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm backdrop-blur">
-                    {slideNumber}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          />
+          <TemplateDetailThemeList
+            item={item}
+            selectedTheme={selectedTheme}
+            onSelect={selectDetailTheme}
+          />
         </div>
-        <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
-          <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-            <h3 className="break-words text-xl font-semibold text-foreground">
-              {item.title}
-            </h3>
-            <div className="my-5 border-t border-border" />
-            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Palette size={14} />
-              <span>
-                {t(($) => {
-                  return $.artifacts.templates.theme;
-                })}
-              </span>
-            </p>
-            <div className="mt-3 space-y-4">
-              <div className="space-y-2">
-                <p className="px-1 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
-                    return $.artifacts.templates.multiAccent;
-                  })}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {multiAccentThemes.map((theme) => {
-                    const active = theme.id === selectedTheme.id;
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        aria-label={t(
-                          ($) => {
-                            return $.artifacts.templates.selectStyle;
-                          },
-                          { style: presentationTemplateThemeName(theme) },
-                        )}
-                        aria-pressed={active}
-                        onClick={() => {
-                          selectDetailTheme(theme);
-                        }}
-                        className={cn(
-                          "relative h-7 w-14 overflow-hidden rounded-lg border bg-background transition-colors hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          active
-                            ? "border-ring ring-1 ring-ring"
-                            : "border-border hover:border-muted-foreground/60",
-                        )}
-                      >
-                        <span className="flex h-full overflow-hidden rounded-md">
-                          {presentationTemplateThemePreviewSwatches(theme).map(
-                            (swatch) => {
-                              return (
-                                <span
-                                  key={`${theme.id}-${swatch.id}`}
-                                  className="flex-1"
-                                  style={{ backgroundColor: swatch.color }}
-                                />
-                              );
-                            },
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="px-1 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
-                    return $.artifacts.templates.singleAccent;
-                  })}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {singleAccentThemes.map((theme) => {
-                    const active = theme.id === selectedTheme.id;
-                    const swatches = presentationTemplateThemeAccentSwatches(
+      </div>
+      <div className="flex shrink-0 items-center justify-end px-6 py-4">
+        <Button
+          type="button"
+          size="lg"
+          aria-label={t(
+            ($) => {
+              return $.artifacts.templates.selectTemplate;
+            },
+            {
+              title: item.title,
+            },
+          )}
+          onClick={() => {
+            setCardThemeId(item.slug, selectedTheme.id);
+            onSelect(item, presentationTemplateColorSystemId(selectedTheme.id));
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.templates.useThisTemplate;
+          })}
+        </Button>
+      </div>
+    </>
+  );
+}
+
+// From lg the stage is as wide as the body allows once the theme list keeps
+// its 180px floor and the 24px gap beside it, and as tall as the body allows
+// once the filmstrip's 74px row and the 12px gap under the stage are taken.
+// The smaller of the two decides, so the slide is never cropped and never
+// letterboxed. Spelled out because Tailwind only emits what it finds written.
+const TEMPLATE_DETAIL_STAGE_WIDTH =
+  "lg:w-[min(calc(100cqw_-_204px),calc((100cqh_-_86px)*16/9))]";
+
+// The stage controls sit on cover art, which looks the same in both themes, so
+// the counter's ground is a literal black like `TEMPLATE_TILE_SCRIM`. Arrows
+// show on hover where the pointer can hover, and stay visible on touch.
+const TEMPLATE_DETAIL_STAGE_ARROW =
+  "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur transition-opacity hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
+
+function TemplateDetailStage({
+  title,
+  focusRef,
+  activeSlideIndex,
+  slideCount,
+  lowResolutionImage,
+  highResolutionImage,
+  html,
+  onChange,
+  onKeyDown,
+}: {
+  readonly title: string;
+  readonly focusRef: (element: HTMLDivElement | null) => void;
+  readonly activeSlideIndex: number;
+  readonly slideCount: number;
+  readonly lowResolutionImage: string;
+  readonly highResolutionImage: string;
+  readonly html: string | null;
+  readonly onChange: (index: number) => void;
+  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      ref={focusRef}
+      role="group"
+      aria-label={t(
+        ($) => {
+          return $.artifacts.templates.slidePreview;
+        },
+        { title },
+      )}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className={cn(
+        TEMPLATE_TILE_MEDIA,
+        TEMPLATE_DETAIL_STAGE_WIDTH,
+        "group/stage aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
+      )}
+    >
+      <ProgressiveTemplatePreviewImage
+        alt=""
+        className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
+        dataTestId={`${title} detail image preview`}
+        fetchPriority="high"
+        highResolutionUrl={highResolutionImage}
+        loading="eager"
+        lowResolutionUrl={lowResolutionImage}
+      />
+      <PresentationTemplateHtmlFrame
+        html={html}
+        title={t(
+          ($) => {
+            return $.artifacts.templates.htmlPreview;
+          },
+          { title },
+        )}
+        dataTestId={`${title} detail HTML preview`}
+        className="z-40"
+      />
+      <button
+        type="button"
+        aria-label={t(($) => {
+          return $.artifacts.templates.previousSlide;
+        })}
+        disabled={activeSlideIndex === 0}
+        tabIndex={-1}
+        onClick={() => {
+          onChange(activeSlideIndex - 1);
+        }}
+        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "left-3")}
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <button
+        type="button"
+        aria-label={t(($) => {
+          return $.artifacts.templates.nextSlide;
+        })}
+        disabled={activeSlideIndex >= slideCount - 1}
+        tabIndex={-1}
+        onClick={() => {
+          onChange(activeSlideIndex + 1);
+        }}
+        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "right-3")}
+      >
+        <ChevronRight size={16} />
+      </button>
+      <span className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-white">
+        {t(
+          ($) => {
+            return $.artifacts.templates.slideCounter;
+          },
+          { current: activeSlideIndex + 1, total: slideCount },
+        )}
+      </span>
+    </div>
+  );
+}
+
+// Keep this ref stable: the strip follows the selection only when a different
+// thumbnail becomes the active one, not on every theme or HTML re-render.
+function scrollActiveTemplateThumbnailIntoView(
+  thumbnail: HTMLButtonElement | null,
+): (() => void) | undefined {
+  if (!thumbnail) {
+    return;
+  }
+  const frame = window.requestAnimationFrame(() => {
+    thumbnail.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  });
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}
+
+function TemplateDetailFilmstrip({
+  item,
+  slideCount,
+  activeSlideIndex,
+  theme,
+  htmlPreviewFailed,
+  thumbnails,
+  onChange,
+  onKeyDown,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly slideCount: number;
+  readonly activeSlideIndex: number;
+  readonly theme: PresentationTemplateThemeOption;
+  readonly htmlPreviewFailed: boolean;
+  readonly thumbnails: readonly string[] | null;
+  readonly onChange: (index: number) => void;
+  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ScrollArea.Root className="group relative -mx-0.5 min-w-0 lg:col-span-2 lg:row-start-2">
+      <ScrollArea.Viewport
+        data-slot="scroll-area-viewport"
+        className={cn(
+          SCROLL_FADE_X_WHEN_OVERFLOWING,
+          "focus-visible:outline-none",
+        )}
+      >
+        <ScrollArea.Content
+          className="flex w-max gap-2 p-0.5"
+          onKeyDown={onKeyDown}
+        >
+          {Array.from({ length: slideCount }, (_, slideIndex) => {
+            const slideNumber = slideIndex + 1;
+            const active = slideIndex === activeSlideIndex;
+            return (
+              <button
+                key={slideNumber}
+                ref={active ? scrollActiveTemplateThumbnailIntoView : undefined}
+                type="button"
+                aria-label={t(
+                  ($) => {
+                    return $.artifacts.templates.previewSlide;
+                  },
+                  { slideNumber },
+                )}
+                aria-pressed={active}
+                onClick={() => {
+                  onChange(slideIndex);
+                }}
+                className={cn(
+                  "relative aspect-video w-[124px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-lg after:border-(length:--border-width-emphasis) after:border-transparent after:transition-colors",
+                  active
+                    ? "after:border-primary"
+                    : "hover:after:border-muted-foreground/40",
+                )}
+              >
+                <img
+                  src={r2ImageTransformUrl(
+                    presentationTemplateDetailSlideImageSource(
                       item,
+                      slideIndex,
                       theme,
-                    );
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        aria-label={t(
-                          ($) => {
-                            return $.artifacts.templates.selectStyle;
-                          },
-                          { style: presentationTemplateThemeName(theme) },
-                        )}
-                        aria-pressed={active}
-                        onClick={() => {
-                          selectDetailTheme(theme);
-                        }}
-                        className={cn(
-                          "relative h-7 w-7 overflow-hidden rounded-md border transition-colors hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          active
-                            ? "border-ring ring-1 ring-ring"
-                            : "border-border hover:border-muted-foreground/60",
-                        )}
-                      >
-                        <span className="flex h-full">
-                          {swatches.map((swatch) => {
-                            return (
-                              <span
-                                key={`${theme.id}-${swatch.id}`}
-                                className="flex-1"
-                                style={{ backgroundColor: swatch.color }}
-                              />
-                            );
-                          })}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-            <Button
+                      htmlPreviewFailed,
+                    ),
+                    TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
+                  )}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <PresentationTemplateHtmlFrame
+                  html={thumbnails?.[slideIndex] ?? null}
+                  loading="lazy"
+                  title={t(
+                    ($) => {
+                      return $.artifacts.templates.slideThumbnail;
+                    },
+                    { title: item.title, slideNumber },
+                  )}
+                />
+              </button>
+            );
+          })}
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar orientation="horizontal" />
+    </ScrollArea.Root>
+  );
+}
+
+// A theme reads as a small page: its ground, one line of its ink, and its
+// accent dots. Light and dark grounds separate at a glance, which a split
+// square of ground and accent could not show when 13 of 16 grounds are white.
+function PresentationTemplateThemeSwatch({
+  item,
+  theme,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly theme: PresentationTemplateThemeOption;
+}) {
+  const accents =
+    theme.group === "multi-accent"
+      ? presentationTemplateThemePreviewSwatches(theme).slice(1)
+      : [presentationTemplateAccentSwatchColor(item, theme)];
+  return (
+    <span
+      aria-hidden
+      className="flex h-5 w-8 shrink-0 flex-col justify-between rounded p-1 ring-1 ring-inset ring-black/10"
+      style={{ backgroundColor: theme.colors[0] }}
+    >
+      <span
+        className="block h-0.5 w-1/2 rounded-full"
+        style={{ backgroundColor: theme.colors[2] }}
+      />
+      <span className="flex gap-0.5">
+        {accents.map((accent) => {
+          return (
+            <span
+              key={accent.id}
+              className="size-1.5 rounded-full"
+              style={{ backgroundColor: accent.color }}
+            />
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
+function TemplateDetailThemeOptions({
+  item,
+  label,
+  themes,
+  selectedTheme,
+  onSelect,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly label: string;
+  readonly themes: readonly PresentationTemplateTheme[];
+  readonly selectedTheme: PresentationTemplateTheme;
+  readonly onSelect: (theme: PresentationTemplateThemeOption) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">{label}</p>
+      <div className="grid grid-cols-2 gap-x-1 lg:grid-cols-1">
+        {themes.map((theme) => {
+          const active = theme.id === selectedTheme.id;
+          const name = presentationTemplateThemeName(theme);
+          return (
+            <button
+              key={theme.id}
               type="button"
               aria-label={t(
                 ($) => {
-                  return $.artifacts.templates.selectTemplate;
+                  return $.artifacts.templates.selectStyle;
                 },
-                {
-                  title: item.title,
-                },
+                { style: name },
               )}
-              className="mt-4 h-12 w-full font-semibold shadow-sm"
+              aria-pressed={active}
               onClick={() => {
-                setCardThemeId(item.slug, selectedTheme.id);
-                onSelect(
-                  item,
-                  presentationTemplateColorSystemId(selectedTheme.id),
-                );
+                onSelect(theme);
               }}
+              className={cn(
+                "flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                active
+                  ? "bg-state-selected hover:bg-state-selected-hover"
+                  : "hover:bg-state-hover",
+              )}
             >
-              {t(($) => {
-                return $.artifacts.templates.useThisTemplate;
-              })}
-            </Button>
-          </div>
-        </div>
+              <PresentationTemplateThemeSwatch item={item} theme={theme} />
+              <span className="min-w-0 truncate">{name}</span>
+            </button>
+          );
+        })}
       </div>
-    </>
+    </div>
+  );
+}
+
+function TemplateDetailThemeList({
+  item,
+  selectedTheme,
+  onSelect,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly selectedTheme: PresentationTemplateTheme;
+  readonly onSelect: (theme: PresentationTemplateThemeOption) => void;
+}) {
+  const { t } = useTranslation();
+  const groups = [
+    {
+      group: "multi-accent",
+      label: t(($) => {
+        return $.artifacts.templates.multiAccent;
+      }),
+    },
+    {
+      group: "single-accent",
+      label: t(($) => {
+        return $.artifacts.templates.singleAccent;
+      }),
+    },
+  ] as const;
+  // From lg the list sits beside the stage and must not add height to the row,
+  // so it is laid out against the stage's box and scrolls inside it.
+  return (
+    <div className="relative min-w-0 pt-3 lg:col-start-2 lg:row-start-1 lg:pt-0">
+      <div className="flex flex-col lg:absolute lg:inset-0">
+        <p className="px-2 text-sm font-medium text-foreground">
+          {t(($) => {
+            return $.artifacts.templates.theme;
+          })}
+        </p>
+        <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
+          <ScrollArea.Viewport
+            data-slot="scroll-area-viewport"
+            className={cn(
+              "h-full focus-visible:outline-none",
+              SCROLL_FADE_Y_WHEN_OVERFLOWING,
+            )}
+          >
+            <ScrollArea.Content className="flex flex-col gap-2 pb-1">
+              {groups.map(({ group, label }) => {
+                return (
+                  <TemplateDetailThemeOptions
+                    key={group}
+                    item={item}
+                    label={label}
+                    themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
+                      (theme) => {
+                        return theme.group === group;
+                      },
+                    )}
+                    selectedTheme={selectedTheme}
+                    onSelect={onSelect}
+                  />
+                );
+              })}
+            </ScrollArea.Content>
+          </ScrollArea.Viewport>
+          <ScrollBar />
+        </ScrollArea.Root>
+      </div>
+    </div>
   );
 }
 
