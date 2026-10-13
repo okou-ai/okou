@@ -922,11 +922,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0395",
-      "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0397",
       "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
       "owner": "validatePermanentUsagePackPendingSnapshotState"
