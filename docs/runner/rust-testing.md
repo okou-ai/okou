@@ -138,7 +138,7 @@ requires an acyclic declared workspace graph.
 Check the policy and release workspace coverage from the repository root:
 
 ```bash
-.github/scripts/check-release-please-workspace-coverage.sh
+.github/scripts/checks/check-release-please-workspace-coverage.sh
 ```
 
 The check reuses `cargo metadata --locked --no-deps`, without compiling crates or

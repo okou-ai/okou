@@ -101,7 +101,7 @@ scenarios = [
     ('native-environment', ['.github/scripts/native-test-environment.sh'], 'coverage', True, True, True, True),
     ('native-routing-tests', ['.github/scripts/tests/runner-firewall-contract-workflow-test.sh'],
      'coverage', True, True, True, True),
-    ('base-selector', ['.github/scripts/changed-base-ref.sh'], 'coverage', True, True, True, True),
+    ('base-selector', ['.github/scripts/checks/changed-base-ref.sh'], 'coverage', True, True, True, True),
     ('crate-selector', ['scripts/crate-changed.sh'], None, False, False, True, True),
     ('toolchain', ['docker/toolchain/Dockerfile'], None, False, False, True, True),
     ('qemu-producer', ['.github/scripts/prepare-qemu-gssapi-fixture.py'], 'coverage', True, True, False, False),
@@ -243,7 +243,7 @@ CHECK
     assert refused.returncode != 0 and 'must be unprivileged' in refused.stderr
     repo = directory / 'repo'
     repo.mkdir()
-    for relative in ['scripts/crate-changed.sh', '.github/scripts/changed-base-ref.sh',
+    for relative in ['scripts/crate-changed.sh', '.github/scripts/checks/changed-base-ref.sh',
                      '.github/scripts/runner-image-context.sh', '.github/scripts/runner-image-target.sh']:
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHANGED_BASE_REF="${SCRIPT_DIR}/changed-base-ref.sh"
+CHANGED_BASE_REF="${SCRIPT_DIR}/checks/changed-base-ref.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 

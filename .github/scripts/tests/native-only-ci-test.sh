@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 source = Path(sys.argv[1])
-script = source / '.github/scripts/detect-native-only.sh'
+script = source / '.github/scripts/checks/detect-native-only.sh'
 
 def run(args, *, cwd, env=None, check=True):
     return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True, check=check)
