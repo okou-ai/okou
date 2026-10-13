@@ -318,7 +318,7 @@ function ArtifactSharedConversationList({
               }}
               className="group flex w-full items-center gap-3 px-4 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground transition-colors group-hover:text-foreground">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground transition-colors group-hover:text-foreground">
                 <MessagesSquare size={16} aria-hidden />
               </span>
               <span

@@ -290,6 +290,11 @@
    * Elements that do carry an opaque fill cannot use a translucent layer
    * (the layer would replace the fill instead of sitting on it), so each fill
    * gets its own pre-mixed pair below.
+   *
+   * A fill drawn inside an element that takes a state -- the icon tile in a
+   * menu or list row -- must be translucent too: `nested-fill` below. The
+   * ladder is solved to land on ramp stops, so an opaque ramp fill there
+   * coincides with one of the states and vanishes into the row.
    * =================================== */
   --color-state-hover: hsl(var(--state-layer) / var(--state-hover-alpha));
   /* Layer hover over an opaque control fill without replacing that fill. */
@@ -307,6 +312,10 @@
     var(--color-state-pressed),
     var(--color-state-pressed)
   );
+  /* One step off whatever it is drawn on, so it keeps that step when the row
+     under it hovers. An opaque `bg-muted` tile does not: light hover over a
+     white card composites to gray-100, which is `--muted`. */
+  --color-nested-fill: hsl(var(--state-layer) / var(--nested-fill-alpha));
 
   --color-background-hover: color-mix(
     in srgb,
@@ -760,6 +769,8 @@
     --state-pressed-alpha: 13%;
     --state-on-filled-hover-alpha: 10%;
     --state-on-filled-pressed-alpha: 16%;
+    /* Solved so a nested fill on a white card weighs what `bg-muted` does. */
+    --nested-fill-alpha: 6%;
 
     /* Segment control (light): white lifts off the track.
        The track takes gray-200 rather than the `--muted` gray-100 the base
@@ -921,6 +932,8 @@
     --state-pressed-alpha: 19%;
     --state-on-filled-hover-alpha: 12%;
     --state-on-filled-pressed-alpha: 20%;
+    /* Solved so a nested fill on the card weighs what `bg-muted` does. */
+    --nested-fill-alpha: 8.6%;
 
     /* Segment control (dark): the selection steps *up* the grey ramp from the
        gray-200 track, and the veil turns black so it still reads as a lift. */

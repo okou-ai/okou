@@ -8332,7 +8332,7 @@ function relatedArtifactHost(url: string): string | null {
 function RelatedArtifactIcon({ kind }: { readonly kind: ArtifactKind }) {
   const Icon = kind === "image" ? Image : kind === "video" ? Video : File;
   return (
-    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground transition-colors group-hover/artifact:text-foreground">
+    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground transition-colors group-hover/artifact:text-foreground">
       <Icon aria-hidden size={16} />
     </span>
   );

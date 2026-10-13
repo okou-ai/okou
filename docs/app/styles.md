@@ -19,6 +19,7 @@ Building something:
 | Building a card, panel or page surface                    | [Page surfaces](#page-surfaces)                                                                                                                                                 |
 | Building a badge, tag or chip                             | [Inline badges](#inline-badges)                                                                                                                                                 |
 | Building a dropdown, menu or select row                   | [Menu and select rows](#menu-and-select-rows)                                                                                                                                   |
+| Putting an icon tile or fill inside a hoverable row       | [Fills inside interactive rows](#fills-inside-interactive-rows)                                                                                                                 |
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
@@ -503,6 +504,24 @@ Two-line rows are a different control, not a taller menu row. The model picker's
 type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
+
+### Fills inside interactive rows
+
+A fill drawn inside an element that takes a state — the icon tile in a menu
+item, a command palette result or a hoverable list row — uses `bg-nested-fill`.
+It is the state-layer colour at its own `--nested-fill-alpha` (6% light, 8.6%
+dark), solved so a tile on the card weighs what `bg-muted` does at rest. Being a
+layer, it stays one step off whatever is under it, including the row's hover
+and highlight, and the palette presets carry it through `--state-layer`.
+
+Do not reach for an opaque ramp stop there. The state ladder is solved to land
+back on the ramp, so every opaque neutral coincides with some state: light hover
+over a white card composites to `gray-100`, which is `--muted`, `--secondary`
+and `--accent`, and sits within a hair of `gray-50`; dark hover over the card
+lands on `gray-200`, which is dark `--muted`. The tile then reads as the row.
+
+An image thumbnail in the same slot keeps its own fill behind `object-cover`;
+the rule is for fills that are seen.
 
 ### Inline references
 
