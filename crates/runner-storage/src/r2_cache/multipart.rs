@@ -367,6 +367,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn multipart_scheduler_preserves_final_partial_part_bytes() {
+        for (input, expected_parts) in [
+            (
+                b"abcde".as_slice(),
+                vec![(1, b"abcd".as_slice()), (2, b"e".as_slice())],
+            ),
+            (
+                b"abcdefg".as_slice(),
+                vec![(1, b"abcd".as_slice()), (2, b"efg".as_slice())],
+            ),
+            (b"abc".as_slice(), vec![(1, b"abc".as_slice())]),
+        ] {
+            let (uploaded_tx, mut uploaded_rx) = mpsc::unbounded_channel();
+            let upload = move |part_number: i32, chunk: bytes::Bytes| {
+                let uploaded_tx = uploaded_tx.clone();
+                async move {
+                    uploaded_tx
+                        .send((part_number, chunk))
+                        .expect("record uploaded part");
+                    Ok(CompletedPart::builder()
+                        .e_tag(format!("etag-{part_number}"))
+                        .part_number(part_number)
+                        .build())
+                }
+            };
+
+            let parts = tokio::time::timeout(
+                Duration::from_secs(5),
+                upload_parts_streaming_with(Cursor::new(input), 4, 2, upload),
+            )
+            .await
+            .expect("multipart scheduler test timed out")
+            .expect("multipart scheduler failed");
+
+            let mut uploaded_parts = Vec::new();
+            while let Ok(part) = uploaded_rx.try_recv() {
+                uploaded_parts.push(part);
+            }
+            uploaded_parts.sort_by_key(|(part_number, _)| *part_number);
+            let uploaded_bodies = uploaded_parts
+                .iter()
+                .map(|(part_number, chunk)| (*part_number, chunk.as_ref()))
+                .collect::<Vec<_>>();
+            assert_eq!(uploaded_bodies, expected_parts, "input: {input:?}");
+
+            let reconstructed = uploaded_parts
+                .iter()
+                .flat_map(|(_, chunk)| chunk.iter().copied())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                reconstructed, input,
+                "uploaded bytes must preserve the input"
+            );
+            assert_eq!(
+                parts
+                    .iter()
+                    .map(|part| part.part_number().expect("part_number"))
+                    .collect::<Vec<_>>(),
+                expected_parts
+                    .iter()
+                    .map(|(part_number, _)| *part_number)
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn multipart_scheduler_bounds_concurrency_and_returns_parts_ordered() {
         let queued_read_allowed = Arc::new(AtomicBool::new(false));
         let reader = WindowGuardReader {
