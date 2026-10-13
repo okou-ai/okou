@@ -384,6 +384,7 @@ jobs:
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-binary-github.sh .github/scripts/tests/runner-binary-github-test.sh
           shellcheck -x -P .github/scripts:.github/scripts/runner .github/scripts/runner/runner-image-architecture.sh .github/scripts/tests/runner-image-architecture-test.sh
           shellcheck -x -P .github/scripts/runner .github/scripts/runner/wait-runner-image.sh
+          shellcheck -x -P crates/runner/tests/behavior/exec crates/runner/tests/behavior/exec/*.sh
           # actionlint assumes Bash when shell is omitted and does not model the
           # sh default used by container jobs.
           .github/scripts/checks/check-workflow-shell-compatibility.sh
