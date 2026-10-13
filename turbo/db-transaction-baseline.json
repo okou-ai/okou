@@ -1045,11 +1045,6 @@
       "id": "TX-0435",
       "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0437",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "<module>"
     }
   ]
 }
