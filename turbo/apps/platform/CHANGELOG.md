@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1017.1](https://github.com/okou-ai/okou/compare/app-v0.1017.0...app-v0.1017.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** align discord works loading with slack ([#39564](https://github.com/okou-ai/okou/issues/39564)) ([b569fe9](https://github.com/okou-ai/okou/commit/b569fe9b53bee5c923e485c65080c05f210e94ee))
+* **app:** hide artifact logo outline outside keyboard focus ([#39576](https://github.com/okou-ai/okou/issues/39576)) ([110a1cd](https://github.com/okou-ai/okou/commit/110a1cd7772e58f26d43cfdab4bbe09f5470b3e4))
+* **app:** show custom templates in task shelves ([#39608](https://github.com/okou-ai/okou/issues/39608)) ([7564402](https://github.com/okou-ai/okou/commit/75644023b86605cfc41b2ff870705e62692359e2))
+* **app:** stop reporting expected mcp oauth setup failures ([#39561](https://github.com/okou-ai/okou/issues/39561)) ([ad84b30](https://github.com/okou-ai/okou/commit/ad84b30b09f535ee1a219a66c3fba17e5b2c76ba))
+* keep workflow slash-menu overview within its height limit ([#39555](https://github.com/okou-ai/okou/issues/39555)) ([6bbac59](https://github.com/okou-ai/okou/commit/6bbac595424837c25b5738d5ca3ec09cc9a8c10a))
+* **platform:** add spaces between chinese text and numbers ([#39577](https://github.com/okou-ai/okou/issues/39577)) ([9b4ea10](https://github.com/okou-ai/okou/commit/9b4ea10be53ffe169f39844c9124dbe85ec56d00))
+* show link wallet icon and extend connection window ([#39585](https://github.com/okou-ai/okou/issues/39585)) ([7020b23](https://github.com/okou-ai/okou/commit/7020b2381e3140824f6cc419b966f0af289e0322))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.748.3
+
 ## [0.1017.0](https://github.com/okou-ai/okou/compare/app-v0.1016.0...app-v0.1017.0) (2026-10-13)
 
 
