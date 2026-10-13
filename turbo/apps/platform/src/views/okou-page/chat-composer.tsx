@@ -7013,9 +7013,9 @@ function ComposerConnectorsPopoverBody({
       )}
     >
       {(connectorItems.length > 0 || connectorsLoading) && (
-        <div className="flex min-h-0 flex-1 flex-col py-1">
+        <div className="flex min-h-0 flex-1 flex-col">
           {showSearch && (
-            <div className="flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
+            <div className="mt-1 flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
               <Search
                 size={16}
                 aria-hidden="true"
@@ -7042,7 +7042,7 @@ function ComposerConnectorsPopoverBody({
             </div>
           )}
           {waitingForConnectors ? (
-            <div className="flex flex-col animate-pulse">
+            <div className="flex flex-col pt-1 pb-2 animate-pulse">
               {Array.from({ length: 3 }, (_, i) => {
                 return (
                   <div key={i} className="flex items-center gap-2 px-3 py-2">
@@ -7059,7 +7059,13 @@ function ComposerConnectorsPopoverBody({
               aria-label={t(($) => {
                 return $.chat.connectors.title;
               })}
-              className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto"
+              // The list's air lives inside the scroller, so a clipped row runs
+              // to the card edge and the rule instead of stopping short of
+              // them. With search the panel's fixed height bounds the list.
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-y-auto pb-2",
+                !showSearch && "max-h-67 pt-1",
+              )}
             >
               {visibleConnectors.map((item) => {
                 if (item.kind === "custom") {
@@ -7189,12 +7195,10 @@ function ComposerConnectorsPopoverBody({
               })}
             </div>
           )}
+          <div className="mx-3 shrink-0 border-t border-border/50" />
         </div>
       )}
       <div className="flex shrink-0 flex-col p-1">
-        {(connectorItems.length > 0 || connectorsLoading) && (
-          <div className="mx-2 mb-1 border-t border-border/50" />
-        )}
         <PopoverClose
           render={
             <button
