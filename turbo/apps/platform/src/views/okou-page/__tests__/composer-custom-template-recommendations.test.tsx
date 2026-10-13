@@ -182,7 +182,7 @@ test.each(SHELVES)(
 
     const { shelf } = await openShelf(task, label, false);
     expect(
-      within(shelf).queryByLabelText("Import your own image"),
+      within(shelf).queryByLabelText("Import your own"),
     ).not.toBeInTheDocument();
     expect(within(shelf).getByText(builtInTitle)).toBeInTheDocument();
     if (kind === "presentation") {
@@ -205,7 +205,7 @@ test("The Image shelf imports a reusable style without requesting image generati
   });
   const user = userEvent.setup({ delay: null });
   const { editor, shelf } = await openShelf("Image", "Image styles");
-  const input = within(shelf).getByLabelText("Import your own image");
+  const input = within(shelf).getByLabelText("Import your own");
   expect(input).toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.bmp");
 
   await user.upload(
@@ -252,7 +252,7 @@ test("A failed image import keeps the draft and does not start an analysis", asy
   const { editor, shelf } = await openShelf("Image", "Image styles");
 
   await user.upload(
-    within(shelf).getByLabelText("Import your own image"),
+    within(shelf).getByLabelText("Import your own"),
     new File(["brand"], "brand.png", { type: "image/png" }),
   );
   await screen.findByText("Failed to upload brand.png");
