@@ -112,7 +112,7 @@
       "engineering": {
         "cases": {
           "batch-create-issues": {
-            "description": "粘贴一份清单，{{assistantName}}就替你把 issue 逐条建好",
+            "description": "粘贴一份清单，{{assistantName}} 就替你把 issue 逐条建好",
             "title": "批量创建 issue"
           },
           "browserbase-web-testing": {
@@ -124,7 +124,7 @@
             "title": "Cloudflare 流量与安全报告"
           },
           "codebase-investigation": {
-            "description": "给一个 URL，{{assistantName}}就在代码库里追查这个缺陷",
+            "description": "给一个 URL，{{assistantName}} 就在代码库里追查这个缺陷",
             "title": "代码库排查"
           },
           "daily-standup-report": {
@@ -168,8 +168,8 @@
             "title": "Vercel 部署摘要"
           },
           "zapier-okou-migration": {
-            "description": "把你的 Zapier 工作流重建为{{brandName}}智能体",
-            "title": "Zapier → {{brandName}}迁移"
+            "description": "把你的 Zapier 工作流重建为 {{brandName}} 智能体",
+            "title": "Zapier → {{brandName}} 迁移"
           }
         },
         "title": "工程"
@@ -603,7 +603,7 @@
     "pinned": "已固定",
     "pinnedAgents": "已固定的智能体",
     "pinSuccess": "已固定{{agentName}}",
-    "resultCount_other": "{{count}}条结果",
+    "resultCount_other": "{{count}} 条结果",
     "searchAgents": "搜索智能体…",
     "searching": "搜索中…",
     "searchWorkspace": "搜索工作区…",
