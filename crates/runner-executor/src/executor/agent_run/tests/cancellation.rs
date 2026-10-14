@@ -11,7 +11,7 @@ use tokio::io::AsyncReadExt;
 use tokio::net::UnixStream;
 use tokio_util::sync::CancellationToken;
 
-use super::run_pre_spawn_phase;
+use super::super::run_pre_spawn_phase;
 use crate::test_fixtures::guest_control::{read_frame, send_frame};
 
 const BOUND: Duration = Duration::from_secs(5);
