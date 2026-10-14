@@ -643,68 +643,83 @@ async fn exercise_retirement(
                 };
                 assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
                 assert_eq!(result.retirements.len(), 1);
-                // Prepare a different guest before joining old cleanup. Ordinary
-                // external gates establish still-live overlap, without timing claims.
-                let next_factory = factory.clone();
-                let next_cache = cache.clone();
-                let next_rootfs = rootfs_hash.clone();
-                let next_proof = proof.cloned();
-                let work = permit.spawn(move |mut operation| async move {
-                    let next_run = RunId::new_v4();
-                    let next_id = SandboxId::new_v4();
-                    let key = format!("thread:native-logical-replacement-{next_run}");
-                    let mut home =
-                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
-                    let mut next = next_factory
-                        .create(fixture::sandbox_config(next_id, &mut home))
-                        .await?;
-                    let prepared: TestResult<()> = async {
-                        let backing = next
-                            .backing_process()
-                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
-                        operation.bind_backing(backing)?;
-                        fixture::prepare_guest(&mut *next, next_run).await?;
-                        loop {
-                            match operation.complete_phase().await {
-                                Ok(()) => break,
-                                Err(MemoryOperationError::AccountingChanged) => {
-                                    tokio::task::yield_now().await
+                let completed: TestResult<()> = async {
+                    // Prepare a different guest before joining old cleanup;
+                    // this adds no old-exit barrier or still-live overlap claim.
+                    let next_factory = factory.clone();
+                    let next_cache = cache.clone();
+                    let next_rootfs = rootfs_hash.clone();
+                    let next_proof = proof.cloned();
+                    let work = permit.spawn(move |mut operation| async move {
+                        let next_run = RunId::new_v4();
+                        let next_id = SandboxId::new_v4();
+                        let key = format!("thread:native-logical-replacement-{next_run}");
+                        let mut home =
+                            fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                        let mut next = next_factory
+                            .create(fixture::sandbox_config(next_id, &mut home))
+                            .await?;
+                        let prepared: TestResult<()> = async {
+                            // The Fresh operation covers startup; Firecracker exposes
+                            // its backing only after the process has started.
+                            fixture::start_guest(&mut *next, next_run).await?;
+                            let backing = next
+                                .backing_process()
+                                .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                            operation.bind_backing(backing)?;
+                            fixture::prepare_started_guest(&mut *next, next_run).await?;
+                            loop {
+                                match operation.complete_phase().await {
+                                    Ok(()) => break,
+                                    Err(MemoryOperationError::AccountingChanged) => {
+                                        tokio::task::yield_now().await
+                                    }
+                                    Err(error) => return Err(error.into()),
                                 }
-                                Err(error) => return Err(error.into()),
                             }
+                            if let Some(proof) = &next_proof {
+                                proof.pressure_witness(
+                                    "different_guest_prepared",
+                                    serde_json::json!({
+                                        "incoming_sandbox_id": next_id.to_string(),
+                                        "admitted": true,
+                                    }),
+                                )?;
+                            }
+                            Ok(())
                         }
-                        if let Some(proof) = &next_proof {
-                            proof.pressure_witness(
-                                "different_guest_prepared",
-                                serde_json::json!({
-                                    "incoming_sandbox_id": next_id.to_string(),
-                                    "admitted": true,
-                                }),
-                            )?;
-                        }
-                        Ok(())
+                        .await;
+                        next_factory.destroy(next).await;
+                        prepared
+                    })?;
+                    work.join().await??;
+                    if let Some(proof) = proof {
+                        proof.pressure_witness(
+                            "original_join_requested",
+                            serde_json::json!({"retirements": result.retirements.len()}),
+                        )?;
                     }
-                    .await;
-                    next_factory.destroy(next).await;
-                    prepared
-                })?;
-                work.join().await??;
-                if let Some(proof) = proof {
-                    proof.pressure_witness(
-                        "original_join_requested",
-                        serde_json::json!({"retirements": result.retirements.len()}),
-                    )?;
+                    for task in &mut result.retirements {
+                        let completion = task.join().await??;
+                        if completion.outcome != DestroyOutcome::Completed
+                            || !completion.home_cache_promoted
+                        {
+                            return Err(io::Error::other(
+                                "native logical retirement did not prove complete saving",
+                            )
+                            .into());
+                        }
+                    }
+                    Ok(())
                 }
-                for task in &mut result.retirements {
-                    let completion = task.join().await??;
-                    if completion.outcome != DestroyOutcome::Completed
-                        || !completion.home_cache_promoted
-                    {
-                        return Err(io::Error::other(
-                            "native logical retirement did not prove complete saving",
-                        )
-                        .into());
+                .await;
+                if let Err(error) = completed {
+                    if let Some(proof) = proof {
+                        // Accepted saving can outlive failed replacement work.
+                        // Preserve its complete original lease with the owners.
+                        proof.retain(lease);
                     }
+                    return Err(error);
                 }
                 Ok(Some(lease))
             }

@@ -176,8 +176,17 @@ fn runtime_dir(run_id: RunId) -> TestResult<String> {
 }
 
 pub async fn prepare_guest(sandbox: &mut dyn Sandbox, run_id: RunId) -> TestResult<()> {
+    start_guest(sandbox, run_id).await?;
+    prepare_started_guest(sandbox, run_id).await
+}
+
+pub async fn start_guest(sandbox: &mut dyn Sandbox, run_id: RunId) -> TestResult<()> {
     sandbox.bind_run_control(&run_id.to_string())?;
     sandbox.start().await?;
+    Ok(())
+}
+
+pub async fn prepare_started_guest(sandbox: &mut dyn Sandbox, run_id: RunId) -> TestResult<()> {
     ensure_home_drive_mounted(sandbox, run_id)
         .await
         .map_err(|failure| failure.error)?;
