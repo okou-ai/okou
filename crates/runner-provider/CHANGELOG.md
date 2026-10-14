@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.18...runner-provider-v0.7.19) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
 ## [0.7.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.17...runner-provider-v0.7.18) (2026-10-14)
 
 ## [0.7.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.16...runner-provider-v0.7.17) (2026-10-14)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.21...runner-executor-v0.10.22) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
 ## [0.10.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.20...runner-executor-v0.10.21) (2026-10-14)
 
 ## [0.10.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.19...runner-executor-v0.10.20) (2026-10-14)

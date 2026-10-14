@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.390.0](https://github.com/okou-ai/okou/compare/cli-v9.389.4...cli-v9.390.0) (2026-10-14)
+
+
+### Features
+
+* add link payment credential retrieval to wallet cli ([#40016](https://github.com/okou-ai/okou/issues/40016)) ([6844864](https://github.com/okou-ai/okou/commit/6844864ee67b12e4d95967214a6487f454fa82c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.559.0
+    * @okouai/core bumped to 8.754.0
+    * @okouai/pi-agent-runtime bumped to 1.49.33
+
 ## [9.389.4](https://github.com/okou-ai/okou/compare/cli-v9.389.3...cli-v9.389.4) (2026-10-14)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.49.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.6...sandbox-firecracker-v0.49.0) (2026-10-14)
+
+
+### Features
+
+* add native sandbox channel peer and diagnostics ([#39953](https://github.com/okou-ai/okou/issues/39953)) ([0fed55f](https://github.com/okou-ai/okou/commit/0fed55fb786b7532d9f4cf9b38aa0f7a1cc9c7e7))
+
 ## [0.48.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.5...sandbox-firecracker-v0.48.6) (2026-10-14)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/okou-ai/okou/compare/guest-init-v0.18.13...guest-init-v0.19.0) (2026-10-14)
+
+
+### Features
+
+* add native sandbox channel peer and diagnostics ([#39953](https://github.com/okou-ai/okou/issues/39953)) ([0fed55f](https://github.com/okou-ai/okou/commit/0fed55fb786b7532d9f4cf9b38aa0f7a1cc9c7e7))
+
 ## [0.18.13](https://github.com/okou-ai/okou/compare/guest-init-v0.18.12...guest-init-v0.18.13) (2026-10-14)
 
 ## [0.18.12](https://github.com/okou-ai/okou/compare/guest-init-v0.18.11...guest-init-v0.18.12) (2026-10-14)
