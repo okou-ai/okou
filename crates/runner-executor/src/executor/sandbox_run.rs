@@ -1576,26 +1576,25 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
-    // Preparation and replacement have settled the actual resource. Own the
-    // bounded upload alongside execution so it never gates Agent startup.
-    let (_, result) = tokio::join!(
-        super::startup::report_startup_path(
-            &config.http,
-            context.run_id,
-            &context.sandbox_token,
-            sandbox_startup_path,
-            &cleanup_cancel,
-        ),
-        run_in_sandbox_with_process_cancel_timeouts(
-            sandbox.as_ref(),
-            context,
-            config,
-            start,
-            telemetry,
-            inputs,
-            process_cancel_timeouts,
-        ),
+    // The actual resource has settled. Transfer this bounded task to the caller
+    // without holding execution, successor handoff, or resource release on HTTP.
+    let startup_report = super::StartupReport::spawn(
+        config.http.clone(),
+        context.run_id,
+        context.sandbox_token.clone(),
+        sandbox_startup_path,
+        cleanup_cancel.clone(),
     );
+    let result = run_in_sandbox_with_process_cancel_timeouts(
+        sandbox.as_ref(),
+        context,
+        config,
+        start,
+        telemetry,
+        inputs,
+        process_cancel_timeouts,
+    )
+    .await;
 
     let remote_cleanup = match guest_rpc {
         Some(guest_rpc) => guest_rpc.shutdown().await,
@@ -1689,6 +1688,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         network_log_session: Some(network_log_session),
         home_image: None,
         home_reuse_result: Some(home_reuse_result),
+        startup_report: Some(startup_report),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }

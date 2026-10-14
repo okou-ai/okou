@@ -5,12 +5,51 @@ use std::time::Duration;
 use api_contracts::generated::{routes, types::runners::runs::startup::Request};
 use runner_provider::{ProviderError, http::HttpClient};
 use runner_types::{ids::RunId, types::SandboxStartupPath};
-use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
+use tracing::{Instrument, error, info};
 
 const STARTUP_REPORT_TIMEOUT: Duration = Duration::from_secs(2);
 const STARTUP_REPORT_MAX_ATTEMPTS: usize = 3;
 const STARTUP_REPORT_RETRY_DELAY: Duration = Duration::from_secs(2);
+
+/// Owned delivery of the settled startup fact, independent of Run finalization.
+///
+/// The supervisor joins this task after releasing the Run's resources. Dropping
+/// the owner aborts delivery, including an in-flight HTTP request.
+#[must_use = "finish the startup report after resource settlement, or drop it to abort delivery"]
+pub struct StartupReport {
+    run_id: RunId,
+    task: AbortOnDropHandle<()>,
+}
+
+impl StartupReport {
+    pub(super) fn spawn(
+        http: HttpClient,
+        run_id: RunId,
+        sandbox_token: String,
+        sandbox_startup_path: SandboxStartupPath,
+        cancel: CancellationToken,
+    ) -> Self {
+        let task = tokio::spawn(
+            async move {
+                report_startup_path(&http, run_id, &sandbox_token, sandbox_startup_path, &cancel)
+                    .await;
+            }
+            .in_current_span(),
+        );
+        Self {
+            run_id,
+            task: AbortOnDropHandle::new(task),
+        }
+    }
+
+    /// Drain bounded delivery without changing the Run's execution outcome.
+    pub async fn finish(self) {
+        if let Err(error) = self.task.await {
+            error!(run_id = %self.run_id, %error, "sandbox startup report task failed");
+        }
+    }
+}
 
 pub(super) async fn report_startup_path(
     http: &HttpClient,
@@ -90,7 +129,6 @@ mod tests {
     use super::*;
     use httpmock::prelude::*;
     use runner_provider::http::HttpClientConfig;
-    use tokio_util::task::AbortOnDropHandle;
     use tracing::{Level, instrument::WithSubscriber};
     use tracing_subscriber::prelude::*;
     use tracing_test_support::CapturedEvents;
@@ -288,6 +326,21 @@ mod tests {
         server.next_request("startup before cancellation").await;
         cancel.cancel();
         task.await.unwrap();
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn dropping_report_owner_closes_an_in_flight_startup_request() {
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
+        let report = StartupReport::spawn(
+            client(server.url()),
+            RunId::new_v4(),
+            "startup-run-token".into(),
+            SandboxStartupPath::Home,
+            CancellationToken::new(),
+        );
+        server.next_request("startup before owner drop").await;
+        drop(report);
         server.assert_finished().await;
     }
 }

@@ -135,7 +135,7 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         assert_proxy_registry_empty(dir.path()).await;
         assert!(!task.is_finished());
         destroy.release_one();
-        let (outcome, telemetry) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
+        let (mut outcome, telemetry) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
         assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
         assert!(
             telemetry
@@ -157,6 +157,7 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(overrides.start_process_calls().len(), 1);
         assert_eq!(overrides.start_agent_process_calls().len(), 1);
+        outcome.startup_report.take().unwrap().finish().await;
         cold_report.assert_calls_async(1).await;
         tentative_blank.assert_calls_async(0).await;
         assert_eq!(overrides.guest_state_restore_calls().len(), 1);

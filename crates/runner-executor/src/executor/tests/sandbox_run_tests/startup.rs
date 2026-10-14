@@ -19,7 +19,7 @@ fn startup_http(api_url: String) -> HttpClient {
 }
 
 #[tokio::test]
-async fn startup_upload_does_not_gate_guest_execution() {
+async fn startup_upload_does_not_gate_guest_execution_or_execution_result() {
     let dir = tempfile::tempdir().unwrap();
     let (release, released) = tokio::sync::oneshot::channel();
     let mut api = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
@@ -58,10 +58,15 @@ async fn startup_upload_does_not_gate_guest_execution() {
         .await
         .expect("guest must execute while the startup response is held");
     assert_eq!(overrides.start_agent_process_calls().len(), 1);
-    release.send(()).unwrap();
     wait.release_one();
-    let (outcome, _) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
+    let (mut outcome, _) = tokio::time::timeout(WAIT, task)
+        .await
+        .expect("execution must finish while the startup response is held")
+        .unwrap();
     assert_eq!(outcome.exit_code(), 0);
+    let report = outcome.startup_report.take().expect("owned startup report");
+    release.send(()).unwrap();
+    report.finish().await;
     api.assert_finished().await;
 }
 
@@ -79,7 +84,7 @@ async fn startup_upload_failure_does_not_fail_the_run() {
                 .json_body(serde_json::json!({ "sandboxStartupPath": "cold" }));
             then.status(status);
         });
-        let (outcome, _) = execute_job(
+        let (mut outcome, _) = execute_job(
             &MockSandboxFactory::new(),
             context,
             NewSandboxDispatch {
@@ -92,6 +97,7 @@ async fn startup_upload_failure_does_not_fail_the_run() {
         )
         .await;
         assert_eq!(outcome.exit_code(), 0);
+        outcome.startup_report.take().unwrap().finish().await;
         report.assert_calls_async(expected_requests).await;
     }
 }
