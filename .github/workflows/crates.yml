@@ -1539,8 +1539,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install AWS CLI
-        uses: ./.github/actions/setup-aws-cli
+      - name: Verify native acceptance tools
+        run: |
+          gh --version
+          aws --version
 
       - name: Download native test from R2
         env:
