@@ -338,7 +338,10 @@ export async function loadMoreFiles(panel: HTMLElement): Promise<void> {
 }
 
 function expectEnabled(control: HTMLElement): void {
-  if (control.hasAttribute("disabled")) {
+  if (
+    control.hasAttribute("disabled") ||
+    control.getAttribute("aria-disabled") === "true"
+  ) {
     throw new Error("Files page is still loading");
   }
 }

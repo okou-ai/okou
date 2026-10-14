@@ -17,7 +17,15 @@ test("Files connects only on demand, browses raw names and paginates without dup
   const fixture = await setupFilesPage(context, {
     handler: (request) => {
       if (request.params.cursor) {
-        return listing([entry(".hidden"), entry("second.txt")], null);
+        return listing(
+          [
+            entry(".hidden"),
+            entry("second.txt"),
+            entry("another", "directory"),
+            entry("aaa.txt"),
+          ],
+          null,
+        );
       }
       if (Array.isArray(request.params.path) && request.params.path.length) {
         return listing([entry("inside.txt")], null, "child");
@@ -49,6 +57,11 @@ test("Files connects only on demand, browses raw names and paginates without dup
     within(panel).findByText("second.txt"),
   ).resolves.toBeInTheDocument();
   expect(within(panel).getAllByText(".hidden")).toHaveLength(1);
+  const labels = [...panel.querySelectorAll("li")].map((row) => {
+    return row.textContent;
+  });
+  expect(labels.slice(0, 2)).toStrictEqual(["another", "workspace"]);
+  expect(labels.indexOf("aaa.txt")).toBeLessThan(labels.indexOf("second.txt"));
   const folder = filesButton("workspace", panel);
   folder.focus();
   await userEvent.keyboard("{Enter}");
@@ -66,6 +79,10 @@ test("Files connects only on demand, browses raw names and paginates without dup
   click(filesButton("Refresh", panel));
   await waitFor(() => {
     expect(filesButton("Refresh", panel)).toBeEnabled();
+    expect(filesButton("Refresh", panel)).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
   expect(fixture.sockets).toHaveLength(1);
   await expect(

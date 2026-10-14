@@ -12,6 +12,7 @@ import { ScrollArea } from "@base-ui/react/scroll-area";
 import { Button, ScrollBar, cn } from "@okouai/ui";
 import type {
   FilesError,
+  FilesDirectory,
   SandboxFilesSidebarSignals,
 } from "../../signals/chat-page/sandbox-files-sidebar.ts";
 import {
@@ -60,7 +61,6 @@ function FilesRow({
   const signal = useGet(pageSignal$);
   const toggle = useSet(signals.toggle$);
   const more = useSet(signals.more$);
-  const refresh = useSet(signals.refresh$);
   if (row.type === "entry") {
     const { entry } = row;
     if (entry.kind === "directory") {
@@ -126,6 +126,8 @@ function FilesRow({
         size="sm"
         className="h-11"
         disabled={row.directory.loading}
+        focusableWhenDisabled
+        aria-busy={row.directory.loading}
         onClick={() => {
           detach(more(row.path, signal), Reason.DomCallback);
         }}
@@ -136,8 +138,28 @@ function FilesRow({
       </Button>
     );
   }
-  const { directory } = row;
-  if (directory.loading) {
+  return (
+    <FilesDirectoryStatus
+      signals={signals}
+      directory={row.directory}
+      path={row.path}
+    />
+  );
+}
+
+function FilesDirectoryStatus({
+  signals,
+  directory,
+  path,
+}: {
+  readonly signals: SandboxFilesSidebarSignals;
+  readonly directory: FilesDirectory;
+  readonly path: readonly string[];
+}) {
+  const { t } = useTranslation();
+  const signal = useGet(pageSignal$);
+  const refresh = useSet(signals.refresh$);
+  if (directory.loading && directory.listingId === null) {
     return (
       <p role="status" className="px-3 py-2 text-sm text-muted-foreground">
         {t(($) => {
@@ -158,11 +180,11 @@ function FilesRow({
             variant="neutral"
             size="sm"
             onClick={() => {
-              detach(refresh(row.path, signal), Reason.DomCallback);
+              detach(refresh(path, signal), Reason.DomCallback);
             }}
           >
             {t(($) => {
-              return $.chat.files.refresh;
+              return $.chat.files.retry;
             })}
           </Button>
         )}
@@ -293,6 +315,8 @@ export function SandboxFilesSidebarBody({
             return $.chat.files.refresh;
           })}
           disabled={root?.loading}
+          focusableWhenDisabled
+          aria-busy={root?.loading}
           onClick={() => {
             detach(refresh([], signal), Reason.DomCallback);
           }}

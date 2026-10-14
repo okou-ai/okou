@@ -1,4 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { interval } from "signal-timers";
 import type { z } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
@@ -24,6 +25,7 @@ import {
   Reason,
   resetSignal,
   tapError,
+  withCleanup,
 } from "../utils.ts";
 import { createActiveRunSubscription } from "./active-run-subscription.ts";
 import {
@@ -59,6 +61,7 @@ interface Connection {
 }
 const MAX_ENTRIES = 4096;
 const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_REFRESH_PAGES = 128;
 function beneath(path: readonly string[], parent: readonly string[]): boolean {
   return parent.every((token, index) => {
     return path[index] === token;
@@ -132,6 +135,7 @@ function createFilesGraph(chatEvents$: Computed<ChatEvent[]>) {
     mounted$: state(false),
     ownerKey$: state<string | null>(null),
     resetDemand$: resetSignal(),
+    resetPolling$: resetSignal(),
     limit$: state(false),
     activeRunId$: computed((get) => {
       return liveRunIdsFromChatEvents(get(chatEvents$)).at(-1) ?? null;
@@ -285,21 +289,62 @@ function createPrepareListingCommand(graph: FilesGraph) {
   );
 }
 
+function compareFilesEntries(a: FilesEntry, b: FilesEntry): number {
+  return (
+    Number(b.kind === "directory") - Number(a.kind === "directory") ||
+    a.displayName.localeCompare(b.displayName) ||
+    a.nameToken.localeCompare(b.nameToken)
+  );
+}
+
+function mergeSortedEntries(
+  previous: readonly FilesEntry[],
+  additions: FilesEntry[],
+): readonly FilesEntry[] {
+  additions.sort(compareFilesEntries);
+  const firstNew = additions.at(0);
+  const previousLast = previous.at(-1);
+  if (
+    !firstNew ||
+    !previousLast ||
+    compareFilesEntries(previousLast, firstNew) <= 0
+  ) {
+    return [...previous, ...additions];
+  }
+  const pending = additions.values();
+  let next = pending.next();
+  const merged: FilesEntry[] = [];
+  for (const entry of previous) {
+    while (!next.done && compareFilesEntries(next.value, entry) < 0) {
+      merged.push(next.value);
+      next = pending.next();
+    }
+    merged.push(entry);
+  }
+  if (!next.done) {
+    merged.push(next.value);
+  }
+  merged.push(...pending);
+  return merged;
+}
+
 function appendPage(
   directory: FilesDirectory,
   result: ListResult,
 ): FilesDirectory {
-  const entries = new Map(
+  const seen = new Set(
     directory.entries.map((entry) => {
-      return [entry.nameToken, entry];
+      return entry.nameToken;
     }),
   );
+  const additions: FilesEntry[] = [];
   let entryBytes = directory.entryBytes;
   for (const entry of result.entries) {
-    if (entries.has(entry.nameToken)) {
+    if (seen.has(entry.nameToken)) {
       continue;
     }
-    entries.set(entry.nameToken, entry);
+    seen.add(entry.nameToken);
+    additions.push(entry);
     entryBytes +=
       new TextEncoder().encode(JSON.stringify(entry)).byteLength +
       1 +
@@ -310,13 +355,7 @@ function appendPage(
     ...directory,
     entryBytes,
     loading: false,
-    entries: [...entries.values()].sort((a, b) => {
-      return (
-        Number(b.kind === "directory") - Number(a.kind === "directory") ||
-        a.displayName.localeCompare(b.displayName) ||
-        a.nameToken.localeCompare(b.nameToken)
-      );
-    }),
+    entries: mergeSortedEntries(directory.entries, additions),
     listingId: result.listingId,
     cursor: result.nextCursor,
   };
@@ -351,6 +390,7 @@ function createPublishListingCommand(
             error: "stale",
           }),
         );
+        set(graph.virtual.reconcileFocus$);
         await set(cursors.release$, request, result, true, signal);
         return;
       }
@@ -368,18 +408,18 @@ function createPublishListingCommand(
             error: "limit",
           }),
         );
+        set(graph.virtual.reconcileFocus$);
         await set(cursors.release$, request, result, true, signal);
         return;
       }
       set(graph.directories$, candidate);
+      set(graph.virtual.reconcileFocus$);
     },
   );
 }
 
-function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
-  const prepare$ = createPrepareListingCommand(graph);
-  const publish$ = createPublishListingCommand(graph, cursors);
-  const fail$ = command(
+function createFailListingCommand(graph: FilesGraph, cursors: CursorCommands) {
+  return command(
     async (
       { get, set },
       request: ListingRequest,
@@ -399,6 +439,7 @@ function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
           error: filesError(error),
         }),
       );
+      set(graph.virtual.reconcileFocus$);
       if (directory.cursor) {
         await set(
           cursors.close$,
@@ -410,9 +451,16 @@ function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
       }
     },
   );
+}
+
+function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
+  const prepare$ = createPrepareListingCommand(graph);
+  const publish$ = createPublishListingCommand(graph, cursors);
+  const fail$ = createFailListingCommand(graph, cursors);
+  const automaticRefresh$ = createAutomaticRefreshCommand(graph, cursors);
   const load$ = command(
     async (
-      { set },
+      { get, set },
       path: readonly string[],
       more: boolean,
       signal: AbortSignal,
@@ -426,8 +474,25 @@ function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
       // alive for terminal cursor inspection. The peer owns epoch cancellation.
       const result = await tapError(
         request.connection.peer.call(sandboxFsList, request.params, signal),
-        (error) => {
-          return set(fail$, request, error, signal);
+        async (error) => {
+          if (
+            more &&
+            error instanceof SandboxChannelError &&
+            error.code === "cursor_expired" &&
+            set(cursors.current$, request)
+          ) {
+            // Start a fresh listing once, preserving expansion and loaded coverage.
+            set(
+              graph.directories$,
+              new Map(get(graph.directories$)).set(request.key, {
+                ...request.directory,
+                loading: false,
+              }),
+            );
+            await set(automaticRefresh$, path, signal);
+          } else {
+            await set(fail$, request, error, signal);
+          }
         },
       );
       signal.throwIfAborted();
@@ -456,6 +521,7 @@ function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
         }
       }
       set(graph.directories$, retained);
+      set(graph.virtual.reconcileFocus$);
       if (path.length === 0) {
         set(graph.virtual.reset$);
       }
@@ -473,11 +539,294 @@ function createListingCommands(graph: FilesGraph, cursors: CursorCommands) {
       }
     },
   );
-  return { load$, discard$ };
+  return { load$, discard$, automaticRefresh$ };
 }
 type ListingCommands = ReturnType<typeof createListingCommands>;
 
+function createCollectFreshListingCommand(cursors: CursorCommands) {
+  const close$ = command(
+    async (
+      { set },
+      request: ListingRequest,
+      handles: readonly (string | null | undefined)[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      for (const cursor of new Set(handles)) {
+        if (cursor) {
+          await set(
+            cursors.close$,
+            request.connection.peer,
+            request.connection.epoch,
+            cursor,
+            signal,
+          );
+        }
+      }
+    },
+  );
+  return command(
+    async (
+      { set },
+      request: ListingRequest,
+      signal: AbortSignal,
+    ): Promise<FilesDirectory | FilesError | null> => {
+      const { connection, directory } = request;
+      let fresh: FilesDirectory = {
+        ...directory,
+        entries: [],
+        entryBytes: 0,
+        cursor: null,
+        listingId: null,
+        loading: false,
+      };
+      let failure: FilesError = "unavailable";
+      for (let page = 0; page < MAX_REFRESH_PAGES; page++) {
+        signal.throwIfAborted();
+        if (!set(cursors.current$, request)) {
+          await set(close$, request, [fresh.cursor], signal);
+          return null;
+        }
+        const result = await tapError(
+          connection.peer.call(
+            sandboxFsList,
+            fresh.cursor
+              ? { cursor: fresh.cursor }
+              : { path: [...directory.path] },
+            signal,
+          ),
+          (error) => {
+            failure = filesError(error);
+          },
+        );
+        signal.throwIfAborted();
+        if (!set(cursors.current$, request)) {
+          await set(
+            close$,
+            request,
+            [fresh.cursor, result?.nextCursor],
+            signal,
+          );
+          return null;
+        }
+        if (
+          !result ||
+          (fresh.listingId && fresh.listingId !== result.listingId)
+        ) {
+          await set(
+            close$,
+            request,
+            [fresh.cursor, result?.nextCursor],
+            signal,
+          );
+          return result ? "stale" : failure;
+        }
+        fresh = appendPage(fresh, result);
+        if (
+          fresh.entries.length > MAX_ENTRIES ||
+          fresh.entryBytes > MAX_BYTES
+        ) {
+          await set(close$, request, [fresh.cursor], signal);
+          return "limit";
+        }
+        if (!fresh.cursor || fresh.entries.length >= directory.entries.length) {
+          return fresh;
+        }
+      }
+      await set(close$, request, [fresh.cursor], signal);
+      return "limit";
+    },
+  );
+}
+
+function pruneRefreshedDescendants(
+  next: Map<string, FilesDirectory>,
+  fresh: FilesDirectory,
+) {
+  const orphaned: FilesDirectory[] = [];
+  for (const [childKey, child] of next) {
+    if (
+      child.path.length > fresh.path.length &&
+      beneath(child.path, fresh.path) &&
+      !fresh.entries.some((entry) => {
+        return (
+          entry.kind === "directory" &&
+          entry.nameToken === child.path[fresh.path.length]
+        );
+      })
+    ) {
+      next.delete(childKey);
+      orphaned.push(child);
+    }
+  }
+  return orphaned;
+}
+
+function createAutomaticRefreshCommand(
+  graph: FilesGraph,
+  cursors: CursorCommands,
+) {
+  const collect$ = createCollectFreshListingCommand(cursors);
+  return command(
+    async (
+      { get, set },
+      path: readonly string[],
+      signal: AbortSignal,
+    ): Promise<void> => {
+      signal.throwIfAborted();
+      const connection = get(graph.connection$);
+      const key = filesDirectoryKey(path);
+      const previous = get(graph.directories$).get(key);
+      if (
+        !connection ||
+        !previous ||
+        previous.loading ||
+        previous.error ||
+        !set(cursors.live$, connection)
+      ) {
+        return;
+      }
+      const revision = get(graph.revision$) + 1;
+      set(graph.revision$, revision);
+      const directory = { ...previous, revision, loading: true };
+      const request: ListingRequest = {
+        connection,
+        key,
+        directory,
+        more: false,
+        params: { path: [...path] },
+      };
+      set(
+        graph.directories$,
+        new Map(get(graph.directories$)).set(key, directory),
+      );
+      if (previous.cursor) {
+        await set(
+          cursors.close$,
+          connection.peer,
+          connection.epoch,
+          previous.cursor,
+          signal,
+        );
+      }
+      const fresh = await set(collect$, request, signal);
+      signal.throwIfAborted();
+      if (fresh === null) {
+        return;
+      }
+      if (!set(cursors.current$, request)) {
+        if (typeof fresh !== "string" && fresh.cursor) {
+          await set(
+            cursors.close$,
+            connection.peer,
+            connection.epoch,
+            fresh.cursor,
+            signal,
+          );
+        }
+        return;
+      }
+      const next = new Map(get(graph.directories$));
+      if (
+        typeof fresh === "string" ||
+        !withinBudget(new Map(next).set(key, fresh))
+      ) {
+        if (typeof fresh !== "string" && fresh.cursor) {
+          await set(
+            cursors.close$,
+            connection.peer,
+            connection.epoch,
+            fresh.cursor,
+            signal,
+          );
+        }
+        if (set(cursors.current$, request)) {
+          set(
+            graph.directories$,
+            new Map(get(graph.directories$)).set(key, {
+              ...directory,
+              loading: false,
+              cursor: null,
+              error: typeof fresh === "string" ? fresh : "limit",
+            }),
+          );
+          set(graph.virtual.reconcileFocus$);
+        }
+        return;
+      }
+      next.set(key, fresh);
+      const orphaned = pruneRefreshedDescendants(next, fresh);
+      set(graph.directories$, next);
+      set(graph.virtual.reconcileFocus$);
+      for (const child of orphaned) {
+        if (child.cursor) {
+          await set(
+            cursors.close$,
+            connection.peer,
+            connection.epoch,
+            child.cursor,
+            signal,
+          );
+        }
+      }
+    },
+  );
+}
+
+function createPollingCommands(
+  graph: FilesGraph,
+  refresh$: Command<Promise<void>, [readonly string[], AbortSignal]>,
+) {
+  const busy$ = state(false);
+  const refreshOffset$ = state(0);
+  const refreshVisible$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      const paths = new Map<string, readonly string[]>([
+        [filesDirectoryKey([]), []],
+      ]);
+      for (const row of get(graph.virtual.window$).rows) {
+        paths.set(filesDirectoryKey(row.path), row.path);
+        if (row.type === "entry" && row.expanded) {
+          const child = [...row.path, row.entry.nameToken];
+          paths.set(filesDirectoryKey(child), child);
+        }
+      }
+      const children = [...paths.values()].filter((path) => {
+        return path.length > 0;
+      });
+      const offset = get(refreshOffset$) % Math.max(1, children.length);
+      const selected = [
+        ...children.slice(offset),
+        ...children.slice(0, offset),
+      ].slice(0, 7);
+      set(refreshOffset$, (offset + 7) % Math.max(1, children.length));
+      for (const path of [[], ...selected]) {
+        await set(refresh$, path, signal);
+      }
+    },
+  );
+  const tick$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      if (signal.aborted || document.hidden || get(busy$)) {
+        return;
+      }
+      set(busy$, true);
+      await withCleanup(set(refreshVisible$, signal), () => {
+        set(busy$, false);
+      });
+    },
+  );
+  return command(({ set }, signal: AbortSignal): void => {
+    const owner = set(graph.resetPolling$, signal);
+    const refresh = () => {
+      detach(set(tick$, owner), Reason.Daemon, "refresh visible sandbox files");
+    };
+    interval(refresh, 5000, { signal: owner });
+    document.addEventListener("visibilitychange", refresh, { signal: owner });
+  });
+}
+
 function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
+  const startPolling$ = createPollingCommands(graph, listing.automaticRefresh$);
   const peerState$ = command(
     (
       { get, set },
@@ -490,6 +839,7 @@ function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
         return;
       }
       if (state === "connecting" || state === "reconnecting") {
+        set(graph.resetPolling$);
         set(graph.directories$, new Map());
         set(graph.virtual.reset$);
         set(graph.limit$, false);
@@ -506,12 +856,14 @@ function createConnectionCommands(graph: FilesGraph, listing: ListingCommands) {
           return;
         }
         set(graph.phase$, "ready");
+        set(startPolling$, signal);
         detach(
           set(listing.load$, [], false, signal),
           Reason.Daemon,
           "load sandbox home for the current epoch",
         );
       } else if (state === "failed" || state === "closed") {
+        set(graph.resetPolling$);
         if (get(graph.connection$)?.peer !== peer) {
           return;
         }

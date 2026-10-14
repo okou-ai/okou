@@ -60,7 +60,7 @@ export function createSandboxFilesVirtualListSignals(
         }
       }
       if (
-        directory.loading ||
+        (directory.loading && directory.listingId === null) ||
         directory.error ||
         (directory.entries.length === 0 && !directory.cursor)
       ) {
@@ -133,6 +133,22 @@ export function createSandboxFilesVirtualListSignals(
     reset$,
     focus$: command(({ set }, key: string | null) => {
       set(focusedKey$, key);
+    }),
+    reconcileFocus$: command(({ get, set }) => {
+      const focusedKey = get(focusedKey$);
+      if (
+        !focusedKey ||
+        get(rows$).rows.some((row) => {
+          return row.key === focusedKey;
+        })
+      ) {
+        return;
+      }
+      const viewport = get(scroll.scrollViewport$);
+      if (viewport?.contains(document.activeElement)) {
+        viewport.focus({ preventScroll: true });
+      }
+      set(focusedKey$, null);
     }),
   };
 }

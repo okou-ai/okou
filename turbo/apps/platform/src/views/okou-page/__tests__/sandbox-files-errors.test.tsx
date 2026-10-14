@@ -49,7 +49,7 @@ test.each<Record<string, number>>([{}, { fs: 2 }])(
   },
 );
 
-test.each(["directory_changed", "cursor_expired"] as const)(
+test.each(["directory_changed"] as const)(
   "A %s continuation preserves partial rows and can refresh",
   async (code) => {
     const fixture = await setupFilesPage(context, {
@@ -87,6 +87,65 @@ test.each(["directory_changed", "cursor_expired"] as const)(
     });
   },
 );
+
+test("An expired continuation automatically starts a fresh directory listing", async () => {
+  let initialListings = 0;
+  const fixture = await setupFilesPage(context, {
+    handler: (request) => {
+      if (request.params.cursor) {
+        return { error: { code: "cursor_expired" } };
+      }
+      initialListings++;
+      return initialListings === 1
+        ? listing([entry("old.txt")], "expired-cursor")
+        : listing([entry("fresh.txt")], null, "fresh");
+    },
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("old.txt"),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("Load more", panel));
+  await expect(
+    within(panel).findByText("fresh.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("old.txt")).toBeNull();
+  expect(within(panel).queryByText("Load more")).toBeNull();
+  expect(initialListings).toBe(2);
+  expect(fixture.requests).toContainEqual(
+    expect.objectContaining({
+      operation: "list.close",
+      params: { cursor: "expired-cursor" },
+    }),
+  );
+});
+
+test("A failed fresh listing after expiration stops automatic recovery", async () => {
+  let initialListings = 0;
+  await setupFilesPage(context, {
+    handler: (request) => {
+      if (request.params.cursor) {
+        return { error: { code: "cursor_expired" } };
+      }
+      initialListings++;
+      return initialListings === 1
+        ? listing([entry("old.txt")], "expired-cursor")
+        : { error: { code: "cursor_expired" } };
+    },
+  });
+  const panel = await openFiles();
+  await expect(
+    within(panel).findByText("old.txt"),
+  ).resolves.toBeInTheDocument();
+  click(filesButton("Load more", panel));
+  await expect(
+    within(panel).findByText(
+      "This listing changed or expired. Refresh to continue.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(filesButton("Refresh", panel)).toBeEnabled();
+  expect(initialListings).toBe(2);
+});
 
 test("A malformed terminal result remains an error and never publishes unsafe names", async () => {
   await setupFilesPage(context, {
