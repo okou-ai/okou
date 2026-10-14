@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.733.4](https://github.com/okou-ai/okou/compare/api-v1.733.3...api-v1.733.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** use official link wallet sdk ([#39977](https://github.com/okou-ai/okou/issues/39977)) ([e75340c](https://github.com/okou-ai/okou/commit/e75340c2ae508d32045e2decd02ba9b4ecade8ff))
+
 ## [1.733.3](https://github.com/okou-ai/okou/compare/api-v1.733.2...api-v1.733.3) (2026-10-14)
 
 
