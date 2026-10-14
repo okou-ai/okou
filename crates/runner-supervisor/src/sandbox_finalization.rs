@@ -25,6 +25,7 @@ use crate::job_lifecycle::{
 use crate::ownership::OwnershipTransitions;
 use runner_executor::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
 use runner_executor::telemetry::JobTelemetry;
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
 use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
@@ -53,13 +54,22 @@ use runner_types::types::{
 struct FinalizationTelemetry<'a> {
     telemetry: Option<&'a mut JobTelemetry>,
     physical_park_completed_at: Option<Instant>,
+    home_identity: HomeObservation,
 }
 
 impl<'a> FinalizationTelemetry<'a> {
-    fn new(telemetry: &'a mut JobTelemetry) -> Self {
+    fn new(telemetry: &'a mut JobTelemetry, ctx: &FinalizeContext) -> Self {
+        let mut home_identity = HomeObservation::new(
+            HomeObservationKind::Preservation,
+            HomeObservationOutcome::Retained,
+        );
+        home_identity.run_id = Some(ctx.run_id);
+        home_identity.reuse_key = ctx.reuse_key.clone();
+        home_identity.profile_name = Some(ctx.profile_name.clone());
         Self {
             telemetry: Some(telemetry),
             physical_park_completed_at: None,
+            home_identity,
         }
     }
 
@@ -68,6 +78,10 @@ impl<'a> FinalizationTelemetry<'a> {
         Self {
             telemetry: None,
             physical_park_completed_at: None,
+            home_identity: HomeObservation::new(
+                HomeObservationKind::Preservation,
+                HomeObservationOutcome::Retained,
+            ),
         }
     }
 
@@ -82,6 +96,11 @@ impl<'a> FinalizationTelemetry<'a> {
                 success,
                 error,
             );
+            if success {
+                let mut observation = self.home_identity.clone();
+                observation.reason = Some("idle_pool".into());
+                telemetry.observe_home(observation);
+            }
         }
     }
 
@@ -105,6 +124,11 @@ impl<'a> FinalizationTelemetry<'a> {
                 error,
                 Some(outcome),
             );
+            if success {
+                let mut observation = self.home_identity.clone();
+                observation.reason = Some("exact_handoff".into());
+                telemetry.observe_home(observation);
+            }
         }
     }
 }
@@ -375,7 +399,7 @@ async fn finalize_claimed_run_inner(
     let ready = finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         #[cfg(any(test, feature = "test-support"))]
         test_hooks,
@@ -434,7 +458,7 @@ pub async fn finalize_sandbox_for_completion_with_telemetry(
     finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         #[cfg(any(test, feature = "test-support"))]
         FinalizationTestHooks::default(),
@@ -455,7 +479,7 @@ pub async fn finalize_sandbox_for_completion_with_test_hooks(
     finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         test_hooks,
     )
@@ -2455,11 +2479,24 @@ mod tests {
         context.home_image = Some(home_image);
         context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
-        let _finalization_ready = finalize_sandbox_for_completion(
+        let recorded =
+            runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
+        let http =
+            runner_provider::http::HttpClient::new(runner_provider::http::HttpClientConfig {
+                api_url: "http://localhost".into(),
+                vercel_bypass: None,
+                client_session_id: "retained-home-test".into(),
+                runner_version: env!("CARGO_PKG_VERSION"),
+            })
+            .unwrap();
+        let mut telemetry = JobTelemetry::new(http, run_id, String::new(), None)
+            .with_home_observations(recorded.handle());
+        let _finalization_ready = finalize_sandbox_for_completion_with_telemetry(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
                 "guest-session-promotion",
             ))),
             ActiveBudgetLease::new(lease),
+            &mut telemetry,
             context,
         )
         .await;
@@ -2472,6 +2509,17 @@ mod tests {
             cache_states.is_empty(),
             "parked sandboxes keep the live home mounted and must not publish a separate cache image"
         );
+        let facts = recorded.events();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].kind, HomeObservationKind::Preservation);
+        assert_eq!(facts[0].outcome, HomeObservationOutcome::Retained);
+        assert_eq!(facts[0].run_id, Some(run_id));
+        assert_eq!(
+            facts[0].reuse_key.as_deref(),
+            Some("unused-context-session")
+        );
+        assert_eq!(facts[0].reason.as_deref(), Some("idle_pool"));
+        assert!(facts[0].image_generation.is_none());
     }
 
     #[tokio::test]

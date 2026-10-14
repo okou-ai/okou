@@ -20,10 +20,147 @@ use super::{
 use httpmock::Method::POST;
 use httpmock::MockServer;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
+use runner_host::home_observation::{
+    HomeObservation, HomeObservationHandle, HomeObservationKind as HomeKind,
+    HomeObservationOutcome as HomeOutcome,
+};
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+
+#[tokio::test]
+async fn typed_home_success_uses_existing_dispatcher_without_forwarding_generic_info() {
+    let server = MockServer::start_async().await;
+    let (_mock, captured) = capture_axiom_ingest(&server).await;
+    let (layer, guard) = init_with_base_url_and_hostname(
+        &server.base_url(),
+        "synthetic-token",
+        "test",
+        Some("runner-test".into()),
+    )
+    .unwrap();
+    let observations = layer.home_observations();
+    let subscriber = tracing_subscriber::registry().with(with_ingest_filter(layer));
+    tracing::subscriber::with_default(subscriber, || {
+        tracing::info!("ordinary info remains local");
+        tracing::warn!("ordinary warning is retained");
+        let mut observation = HomeObservation::new(HomeKind::Publication, HomeOutcome::Published);
+        observation.run_id = Some(runner_types::ids::RunId::from(uuid::Uuid::nil()));
+        observation.image_generation = Some(uuid::Uuid::nil().to_string());
+        observation.reuse_key = Some("thread:tracked".into());
+        observation.allocated_bytes = Some(4096);
+        observations.observe(observation);
+    });
+    guard.shutdown().await;
+    let events = captured.events();
+    assert_eq!(events.len(), 2);
+    assert!(!has_event_with_message(
+        &events,
+        "ordinary info remains local"
+    ));
+    assert!(has_event_with_message(
+        &events,
+        "ordinary warning is retained"
+    ));
+    let fact = events
+        .iter()
+        .find(|event| event["event_type"] == "runner_home_image_publication")
+        .unwrap();
+    assert_eq!(fact["outcome"], "published");
+    assert_eq!(fact["level"], "info");
+    assert_eq!(fact["service"], "runner");
+    assert_eq!(fact["runner_hostname"], "runner-test");
+    assert_eq!(fact["runner_version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(fact["allocated_bytes"], 4096);
+    assert_eq!(fact["run_id"], uuid::Uuid::nil().to_string());
+    assert!(fact.get("reason").is_none());
+    assert!(fact.get("_time").is_some());
+}
+
+#[test]
+fn typed_home_sink_is_nonblocking_when_disabled_full_or_closed() {
+    HomeObservationHandle::default().observe(HomeObservation::new(
+        HomeKind::Publication,
+        HomeOutcome::Published,
+    ));
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    assert!(tx.try_send(Msg::Event(json!({"existing": true}))).is_ok());
+    let dropped = Arc::new(AtomicU64::new(0));
+    let layer = AxiomLayer {
+        tx,
+        dropped: Arc::clone(&dropped),
+        runner_hostname: None,
+    };
+    let observations = layer.home_observations();
+    observations.observe(HomeObservation::new(
+        HomeKind::Publication,
+        HomeOutcome::Published,
+    ));
+    assert_eq!(dropped.load(Ordering::Relaxed), 1);
+    assert!(matches!(rx.try_recv().unwrap(), Msg::Event(value) if value["existing"] == true));
+    rx.close();
+    observations.observe(HomeObservation::new(
+        HomeKind::Removal,
+        HomeOutcome::Deleted,
+    ));
+    assert_eq!(dropped.load(Ordering::Relaxed), 2);
+    assert!(rx.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn typed_home_sink_does_not_retry_failed_ingest_or_change_the_observation() {
+    let server = MockServer::start_async().await;
+    let mock = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path("/v1/datasets/vm0-web-logs-test/ingest");
+            then.status(500);
+        })
+        .await;
+    let (layer, guard) = init_with_base_url(&server.base_url(), "synthetic-token", "test").unwrap();
+    layer.home_observations().observe(HomeObservation::new(
+        HomeKind::Removal,
+        HomeOutcome::Deleted,
+    ));
+    guard.shutdown().await;
+    mock.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn typed_home_observations_continue_while_ingest_is_held() {
+    use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::WaitThenRespond {
+            release: release_rx,
+            response: json_response("200 OK", "{}"),
+        },
+        RawHttpAction::Respond(json_response("200 OK", "{}")),
+    ])
+    .await;
+    let (layer, guard) = init_with_base_url(&server.url(), "synthetic-token", "test").unwrap();
+    let observations = layer.home_observations();
+    observations.observe(HomeObservation::new(
+        HomeKind::Publication,
+        HomeOutcome::Published,
+    ));
+    let first = server.next_request("first typed home fact").await;
+    observations.observe(HomeObservation::new(
+        HomeKind::Preservation,
+        HomeOutcome::Retained,
+    ));
+    release_tx.send(()).unwrap();
+    guard.shutdown().await;
+    let second = server
+        .next_request("typed home fact queued behind held ingest")
+        .await;
+    let first: Value = serde_json::from_str(first.split_once("\r\n\r\n").unwrap().1).unwrap();
+    let second: Value = serde_json::from_str(second.split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(first[0]["outcome"], "published");
+    assert_eq!(second[0]["outcome"], "retained");
+    server.assert_finished().await;
+}
 
 #[derive(Clone, Debug)]
 struct RecordedEvent {
@@ -957,7 +1094,7 @@ fn burst_past_channel_cap_drops_without_blocking() {
     let (tx, receiver) = tokio::sync::mpsc::channel(CHANNEL_CAP);
     let layer = AxiomLayer {
         tx,
-        dropped: AtomicU64::new(0),
+        dropped: Arc::new(AtomicU64::new(0)),
         runner_hostname: None,
     };
     let subscriber = tracing_subscriber::registry().with(with_ingest_filter(layer));
@@ -1051,7 +1188,7 @@ fn rejected_events_are_not_serialized() {
 
     let layer = AxiomLayer {
         tx,
-        dropped: AtomicU64::new(0),
+        dropped: Arc::new(AtomicU64::new(0)),
         runner_hostname: None,
     };
     let subscriber = tracing_subscriber::registry().with(with_ingest_filter(layer));

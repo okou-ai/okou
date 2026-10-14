@@ -24,6 +24,7 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
     tokio::fs::create_dir_all(&log_dir).await.unwrap();
 
     ExecutorConfig {
+        home_observations: runner_host::home_observation::HomeObservationHandle::default(),
         api_url: "http://localhost:9999".into(),
         runner_hostname: None,
         registry: proxy::ProxyRegistryHandle::new(registry_path, lock_path),

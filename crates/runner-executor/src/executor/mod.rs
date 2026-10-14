@@ -196,6 +196,7 @@ fn guest_runtime_path(
 
 /// Shared configuration for all executions (profile-independent).
 pub struct ExecutorConfig {
+    pub home_observations: runner_host::home_observation::HomeObservationHandle,
     pub api_url: String,
     pub runner_hostname: Option<String>,
     pub registry: ProxyRegistryHandle,
@@ -668,7 +669,8 @@ pub async fn execute_job_with_prepared_notifier(
         run_id,
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
-    );
+    )
+    .with_home_observations(config.home_observations.clone());
     telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
@@ -793,7 +795,8 @@ pub async fn execute_job_reuse_with_hooks(
         run_id,
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
-    );
+    )
+    .with_home_observations(config.home_observations.clone());
     telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 

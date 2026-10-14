@@ -803,6 +803,7 @@ server:
             assert!(base_dir.is_dir(), "base dir must exist before home loading");
             Ok(home)
         },
+        runner_host::home_observation::HomeObservationHandle::default(),
     )
     .await
     .expect_err("local provider setup should fail before runtime creation");

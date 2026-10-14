@@ -293,6 +293,7 @@ fn build_mock_run_config_with_runtime(
             mitm_crash_rx,
         },
         exec_config: Arc::new(executor::ExecutorConfig {
+            home_observations: runner_host::home_observation::HomeObservationHandle::default(),
             api_url: api_url.to_string(),
             runner_hostname: None,
             registry,

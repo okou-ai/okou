@@ -630,6 +630,13 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         let cache_hit = home_image
             .as_ref()
             .is_some_and(HomeImageLease::is_cache_hit);
+        if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
+            image.observe_consumption(
+                Some(context.run_id),
+                runner_host::home_observation::HomeObservationOutcome::Failed,
+                "sandbox_prepare_failed",
+            );
+        }
         if failure.invalidate_consumed_home_cache && cache_hit {
             controls.session_history_restore_plan = discard_home_candidate_restore_plan(
                 std::mem::take(&mut controls.session_history_restore_plan),
@@ -754,6 +761,19 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         }
 
         if cache_hit {
+            if let Some(image) = &home_image {
+                image.observe_consumption(
+                    Some(context.run_id),
+                    runner_host::home_observation::HomeObservationOutcome::Fallback,
+                    if retry_guest_dns {
+                        "guest_dns_replacement"
+                    } else if retry_without_codex_prefetch {
+                        "codex_prefetch_replacement"
+                    } else {
+                        "home_preparation_failed"
+                    },
+                );
+            }
             used_home_fallback = true;
             controls.session_history_restore_plan =
                 replace_home_candidate_restore_plan_for_home_retry(

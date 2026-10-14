@@ -92,14 +92,18 @@ struct HomeImageCacheListOutput {
     entries: Vec<HomeImageCacheInspectionEntry>,
 }
 
-pub async fn run_home_image_cache(args: HomeImageCacheArgs) -> RunnerResult<()> {
+pub async fn run_home_image_cache(
+    args: HomeImageCacheArgs,
+    observations: runner_host::home_observation::HomeObservationHandle,
+) -> RunnerResult<()> {
     let home = HomePaths::new()?;
-    run_home_image_cache_with_home(args, &home).await
+    run_home_image_cache_with_home(args, &home, observations).await
 }
 
 async fn run_home_image_cache_with_home(
     args: HomeImageCacheArgs,
     home: &HomePaths,
+    observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
     match args.command {
         HomeImageCacheCommand::Info(info) => {
@@ -122,7 +126,10 @@ async fn run_home_image_cache_with_home(
             }
         }
         HomeImageCacheCommand::Gc(gc) => {
-            let freed = shared_cache(home).gc(gc.dry_run).await?;
+            let freed = shared_cache(home)
+                .with_observations(observations)
+                .gc(gc.dry_run)
+                .await?;
             let verb = if gc.dry_run {
                 "would be freed"
             } else {
@@ -562,6 +569,7 @@ mod tests {
                 command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs { dry_run: false }),
             },
             &home,
+            runner_host::home_observation::HomeObservationHandle::default(),
         )
         .await
         .unwrap();
@@ -583,6 +591,7 @@ mod tests {
                 command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs { dry_run: true }),
             },
             &home,
+            runner_host::home_observation::HomeObservationHandle::default(),
         )
         .await
         .unwrap();

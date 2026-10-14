@@ -71,7 +71,9 @@ fn set_reuse_and_session_history_ref(
 async fn home_mount_retry_starts_a_new_codex_catalog_prefetch_owner() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded =
+        runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -109,6 +111,21 @@ async fn home_mount_retry_starts_a_new_codex_catalog_prefetch_owner() {
     assert_eq!(outcome.exit_code(), 0);
     assert!(outcome.home_image.is_none());
     assert_eq!(overrides.create_configs().len(), 2);
+    let facts = recorded.events();
+    assert_eq!(
+        facts
+            .iter()
+            .filter(|fact| fact.kind
+                == runner_host::home_observation::HomeObservationKind::Consumption
+                && fact.outcome == runner_host::home_observation::HomeObservationOutcome::Failed)
+            .count(),
+        1,
+    );
+    assert!(facts.iter().any(|fact| fact.kind
+        == runner_host::home_observation::HomeObservationKind::Consumption
+        && fact.outcome == runner_host::home_observation::HomeObservationOutcome::Fallback
+        && fact.run_id == Some(ctx.run_id)
+        && fact.image_generation.is_some()));
     assert_eq!(overrides.destroy_call_count(), 1);
     let start_calls = overrides.start_process_calls();
     assert_eq!(start_calls.len(), 2);
@@ -607,7 +624,9 @@ async fn dns_replacement_storage_classification_failure_prevents_agent_start() {
 async fn execute_inner_cache_hit_retry_requires_completed_cleanup() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded =
+        runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -650,6 +669,18 @@ async fn execute_inner_cache_hit_retry_requires_completed_cleanup() {
     assert!(error.to_string().contains("start failed"));
     assert_eq!(overrides.create_configs().len(), 1);
     assert_eq!(overrides.destroy_call_count(), 1);
+    let consumption: Vec<_> = recorded
+        .events()
+        .into_iter()
+        .filter(|fact| fact.kind == runner_host::home_observation::HomeObservationKind::Consumption)
+        .collect();
+    assert_eq!(consumption.len(), 1);
+    assert_eq!(
+        consumption[0].outcome,
+        runner_host::home_observation::HomeObservationOutcome::Failed,
+    );
+    assert_eq!(consumption[0].run_id, Some(ctx.run_id));
+    assert!(consumption[0].image_generation.is_some());
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_sandbox_retry_without_home_image",

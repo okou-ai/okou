@@ -18,6 +18,7 @@ async fn startup_failure_joins_the_passive_observer_before_returning() {
         },
         &sandbox_firecracker::FirecrackerRuntimeProvider,
         || panic!("invalid startup must not load runtime home"),
+        runner_host::home_observation::HomeObservationHandle::default(),
     ))
     .await
     .expect("startup task must return without panicking");

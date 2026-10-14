@@ -13,6 +13,7 @@ use tracing::warn;
 use crate::duration::duration_ms;
 use crate::error::ApiFailureKind;
 use crate::resource_budget::ResourceBudget;
+use runner_host::home_observation::{HomeObservation, HomeObservationHandle};
 use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
@@ -261,6 +262,7 @@ pub struct JobTelemetry {
     sandbox_startup_path: Option<RunnerStartupPath>,
     is_first_run: Option<bool>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
+    home_observations: HomeObservationHandle,
     pending_ops: Vec<SandboxOp>,
     oldest_pending: Option<Instant>,
     in_flight_flushes: Vec<JoinHandle<()>>,
@@ -353,6 +355,7 @@ impl JobTelemetry {
             sandbox_startup_path: None,
             is_first_run: None,
             runner_pre_spawn_attribution: None,
+            home_observations: HomeObservationHandle::default(),
             pending_ops: Vec::new(),
             oldest_pending: None,
             in_flight_flushes: Vec::new(),
@@ -373,6 +376,15 @@ impl JobTelemetry {
 
     pub(crate) fn set_first_run(&mut self, is_first_run: Option<bool>) {
         self.is_first_run = is_first_run;
+    }
+
+    pub fn with_home_observations(mut self, observations: HomeObservationHandle) -> Self {
+        self.home_observations = observations;
+        self
+    }
+
+    pub fn observe_home(&self, observation: HomeObservation) {
+        self.home_observations.observe(observation);
     }
 
     /// Publish one actual-start fact promptly without changing the batching
@@ -416,6 +428,7 @@ impl JobTelemetry {
             sandbox_startup_path: self.sandbox_startup_path,
             is_first_run: self.is_first_run,
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
+            home_observations: self.home_observations.clone(),
             pending_ops: Vec::new(),
             oldest_pending: None,
             in_flight_flushes: Vec::new(),

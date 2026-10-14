@@ -1245,9 +1245,11 @@ mod tests {
             .request_handoff(successor_run_id)
             .expect("exact successor should register one handoff");
 
-        let finalized = finalization
-            .finalize(executor_phase_outcome(run_id, "direct-handoff", None))
-            .await;
+        let recorded =
+            runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
+        let mut outcome = executor_phase_outcome(run_id, "direct-handoff", None);
+        outcome.telemetry = outcome.telemetry.with_home_observations(recorded.handle());
+        let finalized = finalization.finalize(outcome).await;
 
         assert_telemetry_action(&finalized.telemetry, "runner_host_exact_sandbox_handoff");
         assert_telemetry_outcome(
@@ -1262,6 +1264,20 @@ mod tests {
         );
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
         assert!(handoff.accepted().await);
+        let facts = recorded.events();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(
+            facts[0].kind,
+            runner_host::home_observation::HomeObservationKind::Preservation,
+        );
+        assert_eq!(
+            facts[0].outcome,
+            runner_host::home_observation::HomeObservationOutcome::Retained,
+        );
+        assert_eq!(facts[0].run_id, Some(run_id));
+        assert_eq!(facts[0].reuse_key.as_deref(), Some(reuse_key));
+        assert_eq!(facts[0].reason.as_deref(), Some("exact_handoff"));
+        assert!(facts[0].image_generation.is_none());
         let candidate = handoff
             .receive()
             .await
