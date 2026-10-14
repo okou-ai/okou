@@ -1,8 +1,7 @@
-//! Resource facts written to the existing local logger and optional remote sink.
+//! Content-free home dimensions carried by ordinary sandbox operations.
 
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
 
 use runner_types::ids::RunId;
 use serde::Serialize;
@@ -60,12 +59,15 @@ impl fmt::Display for HomeObservationOutcome {
 /// observations never grant resource or deletion authority.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct HomeObservation {
-    #[serde(rename = "event_type")]
+    #[serde(skip)]
     pub kind: HomeObservationKind,
+    #[serde(skip)]
     pub outcome: HomeObservationOutcome,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run_id: Option<RunId>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
+    pub is_first_run: Option<bool>,
+    #[serde(skip)]
     pub reuse_key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cache_key: Option<String>,
@@ -75,7 +77,7 @@ pub struct HomeObservation {
     pub image_generation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub allocated_bytes: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip)]
     pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub handoff_path: Option<String>,
@@ -87,6 +89,7 @@ impl HomeObservation {
             kind,
             outcome,
             run_id: None,
+            is_first_run: None,
             reuse_key: None,
             cache_key: None,
             profile_name: None,
@@ -98,12 +101,6 @@ impl HomeObservation {
     }
 }
 
-/// Implementations enqueue synchronously without waiting for transport,
-/// retaining resources, or changing the caller's outcome.
-pub trait HomeObservationSink: Send + Sync {
-    fn observe(&self, observation: HomeObservation);
-}
-
 /// Borrowed diagnostics for the local logger only, excluded from remote facts.
 #[derive(Default)]
 pub struct HomeObservationLocalDetails<'a> {
@@ -111,46 +108,24 @@ pub struct HomeObservationLocalDetails<'a> {
     pub path: Option<&'a Path>,
 }
 
-#[derive(Clone, Default)]
-pub struct HomeObservationHandle {
-    sink: Option<Arc<dyn HomeObservationSink>>,
-}
-
-impl HomeObservationHandle {
-    pub fn new(sink: Arc<dyn HomeObservationSink>) -> Self {
-        Self { sink: Some(sink) }
-    }
-
-    pub fn observe(&self, observation: HomeObservation) {
-        self.observe_with_local_details(observation, HomeObservationLocalDetails::default());
-    }
-
-    pub fn observe_with_local_details(
-        &self,
-        observation: HomeObservation,
-        details: HomeObservationLocalDetails<'_>,
-    ) {
-        // Local evidence survives an unconfigured or dropping remote sink. The
-        // uniform WARN+ Axiom tracing filter excludes this INFO event, so the
-        // typed sink remains the sole remote producer of this resource fact.
+impl HomeObservation {
+    pub fn log_local(&self, details: HomeObservationLocalDetails<'_>) {
         tracing::info!(
             target: "runner::home_observation",
-            event_type = %observation.kind,
-            outcome = %observation.outcome,
-            run_id = observation.run_id.as_ref().map(tracing::field::display),
-            reuse_key = observation.reuse_key.as_deref(),
-            cache_key = observation.cache_key.as_deref(),
-            profile_name = observation.profile_name.as_deref(),
-            image_generation = observation.image_generation.as_deref(),
-            allocated_bytes = observation.allocated_bytes,
-            reason = observation.reason.as_deref(),
-            handoff_path = observation.handoff_path.as_deref(),
+            op_type = %self.kind,
+            outcome = %self.outcome,
+            run_id = self.run_id.as_ref().map(tracing::field::display),
+            is_first_run = self.is_first_run,
+            reuse_key = self.reuse_key.as_deref(),
+            cache_key = self.cache_key.as_deref(),
+            profile_name = self.profile_name.as_deref(),
+            image_generation = self.image_generation.as_deref(),
+            allocated_bytes = self.allocated_bytes,
+            reason = self.reason.as_deref(),
+            handoff_path = self.handoff_path.as_deref(),
             local_detail = details.detail,
             local_path = details.path.map(|path| tracing::field::display(path.display())),
             "home resource observation"
         );
-        if let Some(sink) = &self.sink {
-            sink.observe(observation);
-        }
     }
 }

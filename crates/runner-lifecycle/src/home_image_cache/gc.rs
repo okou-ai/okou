@@ -125,7 +125,7 @@ impl HomeImageCache {
         outcome: HomeObservationOutcome,
         reason: &str,
     ) {
-        self.observations.observe(removal_observation(
+        self.observe_home(removal_observation(
             key, generation, allocated, outcome, reason,
         ));
     }
@@ -472,7 +472,7 @@ impl HomeImageCache {
 
         match fs::remove_dir_all(entry.paths.entry_dir()).await {
             Ok(()) => {
-                self.observations.observe_with_local_details(
+                self.observe_home_with_local_details(
                     removal_observation(
                         &entry.cache_key,
                         image_generation,
@@ -641,7 +641,7 @@ impl HomeImageCache {
             } else {
                 match remove_home_cache_path_if_exists(&path).await {
                     Ok(true) => {
-                        self.observations.observe_with_local_details(
+                        self.observe_home_with_local_details(
                             removal_observation(
                                 &entry.cache_key,
                                 super::entry::image_generation(file_name),

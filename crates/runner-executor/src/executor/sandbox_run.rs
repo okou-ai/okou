@@ -629,7 +629,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             .as_ref()
             .is_some_and(HomeImageLease::is_cache_hit);
         if let Some(image) = home_image.as_ref().filter(|image| image.is_cache_hit()) {
-            image.observe_consumption(
+            telemetry.observe_home(image.consumption_observation(
                 Some(context.run_id),
                 runner_host::home_observation::HomeObservationOutcome::Failed,
                 if !used_retry
@@ -640,7 +640,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 } else {
                     "sandbox_prepare_failed"
                 },
-            );
+            ));
         }
         if failure.invalidate_consumed_home_cache && cache_hit {
             controls.session_history_restore_plan = discard_home_candidate_restore_plan(
@@ -761,7 +761,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
 
         if cache_hit {
             if let Some(image) = &home_image {
-                image.observe_consumption(
+                telemetry.observe_home(image.consumption_observation(
                     Some(context.run_id),
                     runner_host::home_observation::HomeObservationOutcome::Fallback,
                     if retry_guest_dns {
@@ -771,7 +771,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     } else {
                         "home_preparation_failed"
                     },
-                );
+                ));
             }
             used_home_fallback = true;
             controls.session_history_restore_plan =
@@ -967,6 +967,7 @@ pub(super) async fn prepare_home_image(
     telemetry: &mut JobTelemetry,
 ) -> Option<HomeImageLease> {
     let cache = config.home_cache.as_ref()?;
+    let cache = cache.clone().with_first_run(context.is_first_run);
     let prepare_started = Instant::now();
     let reuse_key = context.reuse_key();
     let request = HomeImagePrepareRequest {

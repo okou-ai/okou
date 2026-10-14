@@ -4,7 +4,7 @@ use crate::storage_fingerprints::StorageFingerprints;
 use runner_host::home_observation::{
     HomeObservationKind as Kind, HomeObservationOutcome as Outcome,
 };
-use runner_host::test_fixtures::home_observation::RecordedHomeObservations;
+use runner_storage::operation_test_support::RecordedHomeObservations;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::CapturedEvents;
 
@@ -12,7 +12,7 @@ use tracing_test_support::CapturedEvents;
 async fn publication_observations_follow_synced_commit_and_replaced_generation_removal() {
     let mut f = Fixture::new().await;
     let recorded = RecordedHomeObservations::default();
-    f.cache = f.cache.with_observations(recorded.handle());
+    f.cache = f.cache.with_telemetry(recorded.handle());
     let old = f
         .commit("thread", b"old-home", "2026-10-09T09:00:00Z")
         .await;
@@ -59,9 +59,7 @@ async fn publication_skips_and_failures_do_not_claim_success_or_remove_previous_
         .commit("thread", b"old-home", "2026-10-09T09:00:00Z")
         .await;
     let recorded = RecordedHomeObservations::default();
-    f.cache = f
-        .cache_under_pressure()
-        .with_observations(recorded.handle());
+    f.cache = f.cache_under_pressure().with_telemetry(recorded.handle());
     let context = f
         .context(
             "thread",
@@ -84,7 +82,7 @@ async fn publication_skips_and_failures_do_not_claim_success_or_remove_previous_
 
     let mut f = Fixture::new().await;
     let recorded = RecordedHomeObservations::default();
-    f.cache = f.cache.with_observations(recorded.handle());
+    f.cache = f.cache.with_telemetry(recorded.handle());
     let context = f
         .context(
             "failure",
@@ -112,7 +110,7 @@ async fn publication_skips_and_failures_do_not_claim_success_or_remove_previous_
 async fn checkout_fallback_records_known_context_without_claiming_a_generation() {
     let mut f = Fixture::new().await;
     let recorded = RecordedHomeObservations::default();
-    f.cache = f.cache.with_observations(recorded.handle());
+    f.cache = f.cache.with_telemetry(recorded.handle());
     let paths = f.cache.entry_paths(&f.key("thread"));
     tokio::fs::create_dir_all(paths.entry_dir()).await.unwrap();
     tokio::fs::write(paths.metadata(), b"invalid metadata")
@@ -142,9 +140,7 @@ async fn gc_reports_the_removed_current_generation_and_dry_run_has_no_deletion_f
     let mut f = Fixture::new().await;
     let old = f.commit("thread", b"home", "2026-10-09T09:00:00Z").await;
     let recorded = RecordedHomeObservations::default();
-    f.cache = f
-        .cache_under_pressure()
-        .with_observations(recorded.handle());
+    f.cache = f.cache_under_pressure().with_telemetry(recorded.handle());
     assert!(f.cache.gc(true).await.unwrap() > 0);
     assert!(f.image("thread", &old).exists());
     assert!(recorded.events().is_empty());
@@ -169,7 +165,7 @@ async fn gc_reports_the_removed_current_generation_and_dry_run_has_no_deletion_f
         1,
         "successful removal has one canonical local record"
     );
-    assert_eq!(local[0].fields["event_type"], "runner_home_image_removal");
+    assert_eq!(local[0].fields["op_type"], "runner_home_image_removal");
     assert_eq!(local[0].fields["outcome"], "deleted");
     assert_eq!(
         local[0].fields["image_generation"],
@@ -188,7 +184,7 @@ async fn gc_keeps_unusable_detail_and_temporary_path_in_the_canonical_local_reco
     std::fs::create_dir_all(broken.entry_dir()).unwrap();
     std::fs::write(broken.metadata(), b"invalid metadata").unwrap();
     let recorded = RecordedHomeObservations::default();
-    f.cache = f.cache.with_observations(recorded.handle());
+    f.cache = f.cache.with_telemetry(recorded.handle());
     let local = CapturedEvents::default();
     let guard =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(local.clone()));

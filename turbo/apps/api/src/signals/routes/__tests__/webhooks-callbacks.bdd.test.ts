@@ -2240,6 +2240,26 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
       );
       expectApiError(mismatch.body);
       expect(mismatch.body.error.code).toBe("UNAUTHORIZED");
+      const nestedRunMismatch = await api.requestAgentTelemetryUnchecked(
+        {
+          ...body,
+          sandboxOperations: body.sandboxOperations.map((operation) => {
+            return { ...operation, run_id: randomUUID() };
+          }),
+        },
+        headers,
+        [401],
+      );
+      expectApiError(nestedRunMismatch.body);
+      expect(nestedRunMismatch.body.error.code).toBe("UNAUTHORIZED");
+      const unlinkedSandboxCredential =
+        await api.requestAgentTelemetryUnchecked(
+          { sandboxOperations: body.sandboxOperations },
+          headers,
+          [401],
+        );
+      expectApiError(unlinkedSandboxCredential.body);
+      expect(unlinkedSandboxCredential.body.error.code).toBe("UNAUTHORIZED");
       const unauthenticated = await api.requestAgentTelemetryUnchecked(
         body,
         {},

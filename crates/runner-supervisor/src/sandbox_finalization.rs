@@ -2473,8 +2473,6 @@ mod tests {
         context.home_image = Some(home_image);
         context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
-        let recorded =
-            runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
         let http =
             runner_provider::http::HttpClient::new(runner_provider::http::HttpClientConfig {
                 api_url: "http://localhost".into(),
@@ -2483,8 +2481,7 @@ mod tests {
                 runner_version: env!("CARGO_PKG_VERSION"),
             })
             .unwrap();
-        let mut telemetry = JobTelemetry::new(http, run_id, String::new(), None)
-            .with_home_observations(recorded.handle());
+        let mut telemetry = JobTelemetry::new(http, run_id, String::new(), None);
         let _finalization_ready = finalize_sandbox_for_completion_with_telemetry(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
                 "guest-session-promotion",
@@ -2503,7 +2500,7 @@ mod tests {
             cache_states.is_empty(),
             "parked sandboxes keep the live home mounted and must not publish a separate cache image"
         );
-        let facts = recorded.events();
+        let facts = telemetry.pending_home_snapshot();
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].kind, HomeObservationKind::Preservation);
         assert_eq!(facts[0].outcome, HomeObservationOutcome::Retained);

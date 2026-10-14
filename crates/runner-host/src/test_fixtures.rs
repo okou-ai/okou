@@ -6,5 +6,4 @@
     allow(clippy::expect_used, clippy::panic, clippy::indexing_slicing)
 )]
 
-pub mod home_observation;
 pub mod ignored_child;

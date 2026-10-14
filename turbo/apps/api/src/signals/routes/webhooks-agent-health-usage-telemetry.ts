@@ -34,6 +34,7 @@ import {
   ingestAxiomDirect,
 } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
+import { runnerAuth$ } from "../auth/runner-auth";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
@@ -106,6 +107,12 @@ interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownload
   readonly runner_startup_path?: RunnerStartupPath;
   readonly is_first_run?: boolean;
   readonly reuse_key?: string;
+  readonly run_id?: string;
+  readonly cache_key?: string;
+  readonly profile_name?: string;
+  readonly image_generation?: string;
+  readonly allocated_bytes?: number;
+  readonly handoff_path?: string;
   readonly home_reuse_result?: HomeReuseResult;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
@@ -353,6 +360,15 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
+    ...(op.cache_key === undefined ? {} : { cache_key: op.cache_key }),
+    ...(op.profile_name === undefined ? {} : { profile_name: op.profile_name }),
+    ...(op.image_generation === undefined
+      ? {}
+      : { image_generation: op.image_generation }),
+    ...(op.allocated_bytes === undefined
+      ? {}
+      : { allocated_bytes: op.allocated_bytes }),
+    ...(op.handoff_path === undefined ? {} : { handoff_path: op.handoff_path }),
     ...(op.archive_size_mismatch
       ? {
           archive_size_mismatch_expected_bytes:
@@ -840,7 +856,7 @@ function telemetryOomEvents(
 }
 
 const telemetryBody$ = bodyResultOf(webhookTelemetryContract.send);
-const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
+const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bodyResult = await get(telemetryBody$);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
@@ -848,7 +864,70 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
   }
 
   const body = bodyResult.data;
-  const authResult = resolveSandboxAuthForRun(body.runId, get(authorization$));
+  const runId = body.runId;
+  if (runId === undefined) {
+    if (
+      body.systemLog !== undefined ||
+      body.metrics !== undefined ||
+      body.networkLogs !== undefined ||
+      body.oomEvidence !== undefined ||
+      body.sandboxId !== undefined ||
+      !body.sandboxOperations?.length
+    ) {
+      return badRequestMessage(
+        "Runless telemetry accepts sandbox operations only",
+      );
+    }
+    const runnerAuth = await set(runnerAuth$, get(authorization$), signal);
+    signal.throwIfAborted();
+    if (!runnerAuth) {
+      return unauthorizedRunMismatch;
+    }
+    if (runnerAuth.type === "user") {
+      const runIds = [
+        ...new Set(
+          body.sandboxOperations.flatMap((op) => {
+            return op.run_id === undefined ? [] : [op.run_id];
+          }),
+        ),
+      ];
+      if (runIds.length > 0) {
+        const runs = await get(db$)
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              inArray(agentRuns.id, runIds),
+              eq(agentRuns.userId, runnerAuth.userId),
+            ),
+          );
+        signal.throwIfAborted();
+        if (runs.length !== runIds.length) {
+          return unauthorizedRunMismatch;
+        }
+      }
+    }
+    for (const op of body.sandboxOperations) {
+      recordSandboxOperation({
+        actionType: op.action_type,
+        sandboxType: "runner",
+        durationMs: op.duration_ms,
+        success: op.success,
+        runId: op.run_id,
+        timestamp: op.ts,
+        dimensions: {
+          ...sandboxOperationDimensions(op, {
+            runnerHostname: body.runnerHostname,
+            runnerVersion: body.runnerVersion,
+          }),
+          runner_auth_type: runnerAuth.type,
+          source: "runner",
+        },
+      });
+    }
+    return { status: 200 as const, body: { success: true } };
+  }
+  const authResult = resolveSandboxAuthForRun(runId, get(authorization$));
   if (!authResult.ok) {
     L.warn("Agent telemetry rejected sandbox auth", {
       authFailureReason: authResult.reason,
@@ -856,12 +935,19 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     return unauthorizedRunMismatch;
   }
   const { auth } = authResult;
+  if (
+    body.sandboxOperations?.some((op) => {
+      return op.run_id !== undefined && op.run_id !== runId;
+    })
+  ) {
+    return unauthorizedRunMismatch;
+  }
 
   const db = get(db$);
   const [run] = await db
     .select({ id: agentRuns.id })
     .from(agentRuns)
-    .where(and(eq(agentRuns.id, body.runId), eq(agentRuns.userId, auth.userId)))
+    .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, auth.userId)))
     .limit(1);
   signal.throwIfAborted();
 
@@ -877,7 +963,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
       events: [
         {
           _time: nowDate().toISOString(),
-          runId: body.runId,
+          runId: runId,
           userId: auth.userId,
           log: body.systemLog,
         },
@@ -889,7 +975,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     telemetryBatches.push({
       dataset: getDatasetName(SANDBOX_TELEMETRY_METRICS_DATASET),
       events: body.metrics.map((metric) => {
-        return telemetryMetricEvent(metric, body.runId, auth.userId);
+        return telemetryMetricEvent(metric, runId, auth.userId);
       }),
     });
   }
@@ -900,7 +986,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
       dataset: getDatasetName(SANDBOX_TELEMETRY_METRICS_DATASET),
       events: telemetryOomEvents(
         body.oomEvidence,
-        body.runId,
+        runId,
         auth.userId,
         body.sandboxId,
       ),
@@ -914,7 +1000,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
         return {
           ...rest,
           _time: timestamp,
-          runId: body.runId,
+          runId: runId,
           userId: auth.userId,
         };
       }),
@@ -951,7 +1037,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
         sandboxType: "runner",
         durationMs: op.duration_ms,
         success: op.success,
-        runId: body.runId,
+        runId: runId,
         timestamp: op.ts,
         dimensions: sandboxOperationDimensions(op, {
           runnerHostname: body.runnerHostname,
@@ -965,7 +1051,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       success: true,
-      id: body.runId,
+      id: runId,
       ...(oomEvidenceIngested ? { oomEvidenceVersion: 1 as const } : {}),
     },
   };

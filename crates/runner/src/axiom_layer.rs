@@ -10,12 +10,10 @@
 //! see <https://axiom.co/docs/restapi/ingest>.
 
 use std::fmt::Write as _;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use reqwest::Client;
-use runner_host::home_observation::{HomeObservation, HomeObservationHandle, HomeObservationSink};
 use serde_json::{Map, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -230,7 +228,7 @@ fn init_with_base_url_and_hostname(
     Some((
         AxiomLayer {
             tx: tx.clone(),
-            dropped: Arc::new(AtomicU64::new(0)),
+            dropped: AtomicU64::new(0),
             runner_hostname,
         },
         AxiomGuard {
@@ -242,75 +240,8 @@ fn init_with_base_url_and_hostname(
 
 pub(crate) struct AxiomLayer {
     tx: mpsc::Sender<Msg>,
-    dropped: Arc<AtomicU64>,
+    dropped: AtomicU64,
     runner_hostname: Option<String>,
-}
-
-impl AxiomLayer {
-    pub(crate) fn home_observations(&self) -> HomeObservationHandle {
-        HomeObservationHandle::new(Arc::new(AxiomHomeObservationSink {
-            tx: self.tx.clone(),
-            dropped: Arc::clone(&self.dropped),
-            runner_hostname: self.runner_hostname.clone(),
-        }))
-    }
-}
-
-struct AxiomHomeObservationSink {
-    tx: mpsc::Sender<Msg>,
-    dropped: Arc<AtomicU64>,
-    runner_hostname: Option<String>,
-}
-
-#[derive(serde::Serialize)]
-struct AxiomHomeObservation<'a> {
-    #[serde(flatten)]
-    observation: HomeObservation,
-    _time: String,
-    level: &'static str,
-    context: &'static str,
-    service: &'static str,
-    runner_version: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    runner_hostname: Option<&'a str>,
-}
-
-impl HomeObservationSink for AxiomHomeObservationSink {
-    fn observe(&self, mut observation: HomeObservation) {
-        let Ok(permit) = self.tx.try_reserve() else {
-            record_dropped(&self.dropped);
-            return;
-        };
-        for text in [
-            &mut observation.reuse_key,
-            &mut observation.cache_key,
-            &mut observation.profile_name,
-            &mut observation.image_generation,
-            &mut observation.reason,
-            &mut observation.handoff_path,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            *text = format_bounded(format_args!("{text}"));
-        }
-        permit.send(Msg::Event(serde_json::json!(AxiomHomeObservation {
-            observation,
-            _time: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-            level: "info",
-            context: "runner::home_observation",
-            service: SERVICE_NAME,
-            runner_version: env!("CARGO_PKG_VERSION"),
-            runner_hostname: self.runner_hostname.as_deref(),
-        })));
-    }
-}
-
-fn record_dropped(dropped: &AtomicU64) {
-    let prev = dropped.fetch_add(1, Ordering::Relaxed);
-    if prev.is_multiple_of(1000) {
-        tracing::warn!(target: INTERNAL_TARGET, dropped = prev + 1, "axiom channel full");
-    }
 }
 
 fn should_ingest(metadata: &Metadata<'_>) -> bool {
@@ -345,7 +276,14 @@ where
             // best-effort diagnostic under `INTERNAL_TARGET`; if tracing
             // observes it, the Axiom per-layer filter keeps it out of remote
             // ingest.
-            record_dropped(&self.dropped);
+            let prev = self.dropped.fetch_add(1, Ordering::Relaxed);
+            if prev.is_multiple_of(1000) {
+                tracing::warn!(
+                    target: INTERNAL_TARGET,
+                    dropped = prev + 1,
+                    "axiom channel full",
+                );
+            }
             return;
         };
 

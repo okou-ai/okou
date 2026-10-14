@@ -11,8 +11,8 @@
 //! metadata commit. It never replaces bytes selected by an older commit. Proof
 //! is a generation-bound candidate, not authority to skip live verification.
 use crate::error::{LifecycleError, LifecycleResult};
-use runner_host::home_observation::HomeObservationHandle;
 use runner_host::paths::{HomePaths, RunnerPaths};
+use runner_storage::SandboxOpReporter;
 use std::collections::HashMap;
 use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
@@ -72,7 +72,8 @@ const TEST_FS_AVAILABLE_BYTES: u64 = 1_000 * GIB;
 
 #[derive(Clone)]
 pub struct HomeImageCache {
-    observations: HomeObservationHandle,
+    telemetry: Option<SandboxOpReporter>,
+    is_first_run: Option<bool>,
     inner: Arc<HomeImageCacheInner>,
     idle_home_reclamation: Arc<IdleHomeReclamation>,
     #[cfg(any(test, feature = "test-support"))]
@@ -182,7 +183,8 @@ impl HomeImageCache {
         #[cfg(not(any(test, feature = "test-support")))]
         {
             Self {
-                observations: HomeObservationHandle::default(),
+                telemetry: None,
+                is_first_run: None,
                 inner: Arc::new(HomeImageCacheInner {
                     paths,
                     cache_dir,
@@ -205,7 +207,8 @@ impl HomeImageCache {
         stats: FsStats,
     ) -> Self {
         Self {
-            observations: HomeObservationHandle::default(),
+            telemetry: None,
+            is_first_run: None,
             inner: Arc::new(HomeImageCacheInner {
                 paths,
                 cache_dir,
@@ -230,8 +233,13 @@ impl HomeImageCache {
             promotion_capacity_lock_test_gate: None,
         }
     }
-    pub fn with_observations(mut self, observations: HomeObservationHandle) -> Self {
-        self.observations = observations;
+    pub fn with_telemetry(mut self, telemetry: SandboxOpReporter) -> Self {
+        self.telemetry = Some(telemetry);
+        self
+    }
+
+    pub fn with_first_run(mut self, is_first_run: Option<bool>) -> Self {
+        self.is_first_run = is_first_run;
         self
     }
 

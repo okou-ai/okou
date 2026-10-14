@@ -304,6 +304,27 @@ impl HomeImageLease {
 }
 
 impl HomeImageCache {
+    pub(crate) fn observe_home(&self, observation: HomeObservation) {
+        self.observe_home_with_local_details(observation, Default::default());
+    }
+
+    pub(crate) fn observe_home_with_local_details(
+        &self,
+        mut observation: HomeObservation,
+        details: runner_host::home_observation::HomeObservationLocalDetails<'_>,
+    ) {
+        if observation.run_id.is_some() {
+            observation.is_first_run = self.is_first_run;
+        }
+        observation.log_local(details);
+        if let Some(telemetry) = &self.telemetry {
+            let mut record =
+                runner_storage::SandboxOpRecord::new("home", Duration::ZERO, true, None);
+            record.home = Some(observation);
+            telemetry.record(record);
+        }
+    }
+
     fn observe_invalidated_entry(
         &self,
         run_id: RunId,
@@ -315,7 +336,7 @@ impl HomeImageCache {
         observation.run_id = Some(run_id);
         observation.cache_key = Some(cache_key.to_owned());
         observation.reason = Some(reason.to_owned());
-        self.observations.observe(observation);
+        self.observe_home(observation);
     }
 
     fn observe_checkout(
@@ -335,7 +356,7 @@ impl HomeImageCache {
         observation.profile_name = Some(common.profile_name.to_owned());
         observation.image_generation = generation.map(str::to_owned);
         observation.reason = Some(reason.to_owned());
-        self.observations.observe(observation);
+        self.observe_home(observation);
     }
 
     fn observe_publication(
@@ -354,7 +375,7 @@ impl HomeImageCache {
         observation.image_generation = generation.map(str::to_owned);
         observation.allocated_bytes = allocated;
         observation.reason = Some(reason.to_owned());
-        self.observations.observe(observation);
+        self.observe_home(observation);
     }
 
     fn local_entry_lock_observation(&self, cache_key: &str) -> Option<HomeCacheLockRegistration> {
@@ -1490,7 +1511,7 @@ impl HomeImageCache {
             observation.profile_name = Some(input.profile_name.to_owned());
             observation.image_generation = Some(previous.image_generation);
             observation.reason = Some("replaced_generation".into());
-            self.observations.observe(observation);
+            self.observe_home(observation);
             let _ = sync_directory(paths.entry_dir()).await;
         }
         if copied
@@ -1543,6 +1564,16 @@ impl HomeImageLease {
         outcome: HomeObservationOutcome,
         reason: &str,
     ) {
+        self.cache
+            .observe_home(self.consumption_observation(run_id, outcome, reason));
+    }
+
+    pub fn consumption_observation(
+        &self,
+        run_id: Option<RunId>,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+    ) -> HomeObservation {
         let mut observation = HomeObservation::new(HomeObservationKind::Consumption, outcome);
         observation.run_id = run_id;
         observation.reuse_key = self.reuse_key.clone();
@@ -1556,7 +1587,8 @@ impl HomeImageLease {
             .and_then(super::entry::image_generation)
             .map(str::to_owned);
         observation.reason = Some(reason.to_owned());
-        self.cache.observations.observe(observation);
+        observation.is_first_run = self.cache.is_first_run;
+        observation
     }
 
     pub fn lock_outcome_and_reason(&self) -> Option<(&'static str, Option<&'static str>)> {
@@ -1701,7 +1733,7 @@ impl HomeImageLease {
                 }
                 .into(),
             );
-            self.cache.observations.observe(observation);
+            self.cache.observe_home(observation);
             return None;
         };
         let storage_fingerprints = match terminal_status {
@@ -1906,7 +1938,7 @@ impl HomeImagePromotionContext {
         observation.cache_key = Some(self.cache_key.clone());
         observation.profile_name = Some(self.profile_name.clone());
         observation.reason = Some(reason.to_owned());
-        self.cache.observations.observe(observation);
+        self.cache.observe_home(observation);
     }
 
     pub async fn abandon_unpublished(self, reason: &str) -> LifecycleResult<bool> {

@@ -63,6 +63,12 @@ struct HomeImageCacheListArgs {
 
 #[derive(Args)]
 struct HomeImageCacheGcArgs {
+    /// API URL for optional sandbox operation reporting.
+    #[arg(long, env = "OKOU_API_BACKEND_URL", hide_env_values = true)]
+    api_url: Option<String>,
+    /// Runner authentication for optional sandbox operation reporting.
+    #[arg(long, env = "OKOU_RUNNER_TOKEN", hide_env_values = true)]
+    token: Option<String>,
     /// Evaluate the same cleanup policy and report what would be deleted without deleting data.
     #[arg(long)]
     dry_run: bool,
@@ -92,18 +98,14 @@ struct HomeImageCacheListOutput {
     entries: Vec<HomeImageCacheInspectionEntry>,
 }
 
-pub async fn run_home_image_cache(
-    args: HomeImageCacheArgs,
-    observations: runner_host::home_observation::HomeObservationHandle,
-) -> RunnerResult<()> {
+pub async fn run_home_image_cache(args: HomeImageCacheArgs) -> RunnerResult<()> {
     let home = HomePaths::new()?;
-    run_home_image_cache_with_home(args, &home, observations).await
+    run_home_image_cache_with_home(args, &home).await
 }
 
 async fn run_home_image_cache_with_home(
     args: HomeImageCacheArgs,
     home: &HomePaths,
-    observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
     match args.command {
         HomeImageCacheCommand::Info(info) => {
@@ -126,17 +128,43 @@ async fn run_home_image_cache_with_home(
             }
         }
         HomeImageCacheCommand::Gc(gc) => {
-            let freed = shared_cache(home)
-                .with_observations(observations)
-                .gc(gc.dry_run)
-                .await?;
-            let verb = if gc.dry_run {
-                "would be freed"
-            } else {
-                "freed"
+            let telemetry = match (gc.api_url, gc.token) {
+                (Some(api_url), Some(token)) => {
+                    match runner_provider::http::HttpClient::new(
+                        runner_provider::http::HttpClientConfig {
+                            api_url,
+                            vercel_bypass: None,
+                            client_session_id: uuid::Uuid::new_v4().to_string(),
+                            runner_version: env!("CARGO_PKG_VERSION"),
+                        },
+                    ) {
+                        Ok(http) => Some(runner_executor::telemetry::JobTelemetry::new_runner(
+                            http, token, None,
+                        )),
+                        Err(error) => {
+                            tracing::warn!(%error, "optional GC operation telemetry unavailable");
+                            None
+                        }
+                    }
+                }
+                _ => None,
             };
-            tracing::info!("home image cache: {freed} bytes {verb}");
-            Ok(())
+            let mut cache = shared_cache(home);
+            if let Some(telemetry) = &telemetry {
+                cache = cache.with_telemetry(telemetry.reporter());
+            }
+            let result = cache.gc(gc.dry_run).await.map(|freed| {
+                let verb = if gc.dry_run {
+                    "would be freed"
+                } else {
+                    "freed"
+                };
+                tracing::info!("home image cache: {freed} bytes {verb}");
+            });
+            if let Some(telemetry) = telemetry {
+                telemetry.flush().await;
+            }
+            result.map_err(Into::into)
         }
     }
 }
@@ -566,10 +594,13 @@ mod tests {
         tokio::fs::write(&tmp, b"partial image").await.unwrap();
         run_home_image_cache_with_home(
             HomeImageCacheArgs {
-                command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs { dry_run: false }),
+                command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs {
+                    dry_run: false,
+                    api_url: None,
+                    token: None,
+                }),
             },
             &home,
-            runner_host::home_observation::HomeObservationHandle::default(),
         )
         .await
         .unwrap();
@@ -588,10 +619,13 @@ mod tests {
         tokio::fs::write(&tmp, b"partial image").await.unwrap();
         run_home_image_cache_with_home(
             HomeImageCacheArgs {
-                command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs { dry_run: true }),
+                command: HomeImageCacheCommand::Gc(HomeImageCacheGcArgs {
+                    dry_run: true,
+                    api_url: None,
+                    token: None,
+                }),
             },
             &home,
-            runner_host::home_observation::HomeObservationHandle::default(),
         )
         .await
         .unwrap();

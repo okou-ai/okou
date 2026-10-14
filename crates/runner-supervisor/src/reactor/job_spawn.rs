@@ -1247,10 +1247,8 @@ mod tests {
             .request_handoff(successor_run_id)
             .expect("exact successor should register one handoff");
 
-        let recorded =
-            runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
-        let mut outcome = executor_phase_outcome(run_id, "direct-handoff", None);
-        outcome.telemetry = outcome.telemetry.with_home_observations(recorded.handle());
+        let outcome = executor_phase_outcome(run_id, "direct-handoff", None);
+
         let local = CapturedEvents::default();
         let guard =
             tracing::subscriber::set_default(tracing_subscriber::registry().with(local.clone()));
@@ -1264,7 +1262,7 @@ mod tests {
         );
         assert_eq!(fixture.idle_pool.lock().await.len(), 0);
         assert!(handoff.accepted().await);
-        let facts = recorded.events();
+        let facts = finalized.telemetry.pending_home_snapshot();
         assert_eq!(facts.len(), 1);
         assert_eq!(
             facts[0].kind,
@@ -1283,8 +1281,7 @@ mod tests {
             .entries()
             .into_iter()
             .filter(|event| {
-                event.fields.get("event_type").map(String::as_str)
-                    == Some("runner_home_preservation")
+                event.fields.get("op_type").map(String::as_str) == Some("runner_home_preservation")
             })
             .collect();
         assert_eq!(local_facts.len(), 1);

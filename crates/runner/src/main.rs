@@ -283,10 +283,6 @@ async fn main() -> ExitCode {
         None => (None, None),
     };
 
-    let home_observations = axiom_layer
-        .as_ref()
-        .map(axiom_layer::AxiomLayer::home_observations)
-        .unwrap_or_default();
     let was_enabled = axiom_layer.is_some();
     let (_guard, axiom_installed) = match &cli.command {
         Command::Start(_) => match init_tracing_with_file(axiom_layer) {
@@ -312,11 +308,6 @@ async fn main() -> ExitCode {
         tracing::info!("axiom telemetry disabled");
     }
 
-    let home_observations = if axiom_installed {
-        home_observations
-    } else {
-        runner_host::home_observation::HomeObservationHandle::default()
-    };
     let result = match cli.command {
         Command::Setup => cmd::run_setup().await.map(|()| ExitCode::SUCCESS),
         Command::Build(args) => {
@@ -333,16 +324,14 @@ async fn main() -> ExitCode {
         }
         Command::Exec(args) => cmd::run_exec(args, &sandbox_firecracker::FirecrackerControl).await,
         Command::Kill(args) => cmd::run_kill(args, &sandbox_firecracker::FirecrackerControl).await,
-        Command::Start(args) => cmd::run_start(
-            *args,
-            &sandbox_firecracker::FirecrackerRuntimeProvider,
-            home_observations,
-        )
-        .await
-        .map(|()| ExitCode::SUCCESS),
+        Command::Start(args) => {
+            cmd::run_start(*args, &sandbox_firecracker::FirecrackerRuntimeProvider)
+                .await
+                .map(|()| ExitCode::SUCCESS)
+        }
         Command::Service(args) => cmd::run_service(args).await.map(|()| ExitCode::SUCCESS),
         Command::Gc(args) => cmd::run_gc(args).await.map(|()| ExitCode::SUCCESS),
-        Command::HomeImageCache(args) => cmd::run_home_image_cache(args, home_observations)
+        Command::HomeImageCache(args) => cmd::run_home_image_cache(args)
             .await
             .map(|()| ExitCode::SUCCESS),
         Command::Doctor(args) => cmd::run_doctor(args).await,

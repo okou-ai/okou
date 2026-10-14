@@ -290,22 +290,14 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
 pub async fn run_start(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
-    home_observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
-    run_start_with_home(
-        args,
-        runtime_provider,
-        || Ok(HomePaths::new()?),
-        home_observations,
-    )
-    .await
+    run_start_with_home(args, runtime_provider, || Ok(HomePaths::new()?)).await
 }
 
 async fn run_start_with_home(
     args: StartArgs,
     runtime_provider: &dyn RuntimeProvider,
     load_home: impl FnOnce() -> RunnerResult<HomePaths> + Send,
-    home_observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
     // Register lifecycle signals (SIGTERM/SIGINT/SIGUSR1/SIGUSR2) before
     // any slow startup work. Tokio's `signal()` installs the process-wide
@@ -317,14 +309,7 @@ async fn run_start_with_home(
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
     // Share the startup body across home loaders while retaining lazy evaluation.
-    run_start_with_observer(
-        args,
-        runtime_provider,
-        Box::new(load_home),
-        signals,
-        home_observations,
-    )
-    .await
+    run_start_with_observer(args, runtime_provider, Box::new(load_home), signals).await
 }
 
 async fn run_start_with_observer(
@@ -332,20 +317,12 @@ async fn run_start_with_observer(
     runtime_provider: &dyn RuntimeProvider,
     load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
-    home_observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
     // This passive owner surrounds every fallible startup/reactor return. It starts
     // before optional warming and never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
     // Construct startup inside this boundary to retain a single startup await slot.
-    let result = run_start_observed(
-        args,
-        runtime_provider,
-        load_home,
-        signals,
-        home_observations,
-    )
-    .await;
+    let result = run_start_observed(args, runtime_provider, load_home, signals).await;
     finish_host_memory_observation(observer, result).await
 }
 
@@ -376,7 +353,6 @@ async fn run_start_observed(
     runtime_provider: &dyn RuntimeProvider,
     load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
     signals: EarlySignals,
-    home_observations: runner_host::home_observation::HomeObservationHandle,
 ) -> RunnerResult<()> {
     let mut runner_config = config::load_for_start(&args.config, args.api_url.as_deref()).await?;
     let registry_config_path = tokio::fs::canonicalize(&args.config).await.map_err(|e| {
@@ -742,6 +718,15 @@ async fn run_start_observed(
             crate::MitmUsageHandle::from(&mitm),
         )),
     });
+    let host_telemetry = if args.local {
+        None
+    } else {
+        Some(runner_executor::telemetry::JobTelemetry::new_runner(
+            http.clone(),
+            server.token.clone(),
+            hostname.clone(),
+        ))
+    };
     let (provider, group_name, connector_runtime_sync): (
         Arc<dyn JobProvider>,
         String,
@@ -778,8 +763,12 @@ async fn run_start_observed(
         (provider, group_name, Some(connector_runtime_sync))
     };
 
+    let mut home_cache = HomeImageCache::shared(paths.clone(), &home, &group_name)
+        .with_promotion_host_cpus(host_cpus);
+    if let Some(telemetry) = &host_telemetry {
+        home_cache = home_cache.with_telemetry(telemetry.reporter());
+    }
     let exec_config = Arc::new(ExecutorConfig {
-        home_observations: home_observations.clone(),
         api_url: server.url,
         runner_hostname: hostname,
         registry: registry_handle,
@@ -799,11 +788,7 @@ async fn run_start_observed(
         background_fill,
         pre_spawn_admission,
         home: home.clone(),
-        home_cache: Some(
-            HomeImageCache::shared(paths.clone(), &home, &group_name)
-                .with_observations(home_observations)
-                .with_promotion_host_cpus(host_cpus),
-        ),
+        home_cache: Some(home_cache),
     });
 
     let live_runner_instance_metadata = crate::live_runner_instances::LiveRunnerInstanceMetadata {
@@ -896,6 +881,9 @@ async fn run_start_observed(
     drop(resource_locks);
     if let Err(e) = live_runner_instance_handle.remove_if_current().await {
         tracing::warn!(error = %e, "failed to remove live runner instance record");
+    }
+    if let Some(telemetry) = host_telemetry {
+        telemetry.flush().await;
     }
     run_result
 }
