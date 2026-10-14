@@ -5,6 +5,7 @@ import {
   agentRunSourceAnnotation,
   projectUserMessage,
   requiredUserMessageForEvent,
+  userMessageReferences,
 } from "../chat-user-message.service";
 import { resolveIntegrationNotePrompt } from "../integration-note-prompt.service";
 import { buildWebChatAppendSystemPrompt } from "../web-chat-session-prompt.service";
@@ -56,6 +57,7 @@ export function createWebThreadPrompt(
             computerUseHostDisplayName: null,
             triggerSource,
             agentRunSource: agentRunSourceAnnotation(message),
+            references: userMessageReferences(message),
             integrationNote: resolveIntegrationNotePrompt({
               triggerSource,
               featureSwitchContext,

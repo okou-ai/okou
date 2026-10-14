@@ -89,6 +89,53 @@ export function agentRunSourceAnnotation(
   return null;
 }
 
+export interface UserMessageReferences {
+  readonly agents: readonly {
+    readonly agentId: string;
+    readonly nameSnapshot: string;
+  }[];
+  readonly chatThreads: readonly {
+    readonly threadId: string;
+    readonly titleSnapshot: string;
+  }[];
+}
+
+/**
+ * Agents and chat threads the user linked in the message, including links in
+ * quoted feedback notes, deduplicated in first-mention order.
+ */
+export function userMessageReferences(
+  document: UserMessageDocument,
+): UserMessageReferences {
+  const agents = new Map<string, string>();
+  const chatThreads = new Map<string, string>();
+  const collect = (part: UserMessagePart | FeedbackNotePart) => {
+    if (part.type === "agent" && !agents.has(part.agentId)) {
+      agents.set(part.agentId, part.nameSnapshot);
+    }
+    if (part.type === "chat_thread" && !chatThreads.has(part.threadId)) {
+      chatThreads.set(part.threadId, part.titleSnapshot);
+    }
+  };
+  for (const part of document.parts) {
+    if (part.type !== "feedback") {
+      collect(part);
+      continue;
+    }
+    for (const notePart of part.note) {
+      collect(notePart);
+    }
+  }
+  return {
+    agents: [...agents].map(([agentId, nameSnapshot]) => {
+      return { agentId, nameSnapshot };
+    }),
+    chatThreads: [...chatThreads].map(([threadId, titleSnapshot]) => {
+      return { threadId, titleSnapshot };
+    }),
+  };
+}
+
 export function hasAgentRunSourceAnnotation(
   document: UserMessageDocument,
 ): boolean {

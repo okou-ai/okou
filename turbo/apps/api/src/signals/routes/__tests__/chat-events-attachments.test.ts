@@ -280,6 +280,58 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, sent.runId);
   }, 90_000);
 
+  it("lists the agents and chat threads the message links", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const referencedAgentId = randomUUID();
+    const referencedThreadId = randomUUID();
+    const referencedThread = {
+      type: "chat_thread",
+      threadId: referencedThreadId,
+      titleSnapshot: 'Q3 "launch" plan',
+    } as const;
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Ask " },
+        {
+          type: "agent",
+          agentId: referencedAgentId,
+          nameSnapshot: "Research Scout",
+        },
+        { type: "text", text: " to summarize " },
+        referencedThread,
+        {
+          type: "feedback",
+          quote: "Draft",
+          note: [{ type: "text", text: "Compare with " }, referencedThread],
+        },
+      ],
+    };
+
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "legacy fallback",
+      userMessage,
+    });
+
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.appendSystemPrompt).toContain(
+      [
+        "# Referenced Agents and Threads",
+        "",
+        "The current message links:",
+        `- Agent "Research Scout": AGENT_ID=${referencedAgentId}`,
+        `- Chat thread "Q3 \\"launch\\" plan": CHAT_THREAD_ID=${referencedThreadId}`,
+        "",
+        "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
+      ].join("\n"),
+    );
+
+    await cancelChatRun(actor, sent.runId);
+  }, 90_000);
+
   it("projects referenced passages without requiring every feedback note", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -312,6 +364,9 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const run = await api.readRun(actor, sent.runId);
     expect(run.prompt).toBe(prompt);
+    expect(run.appendSystemPrompt).not.toContain(
+      "# Referenced Agents and Threads",
+    );
 
     const messages = await waitForThreadMessages(
       actor,
