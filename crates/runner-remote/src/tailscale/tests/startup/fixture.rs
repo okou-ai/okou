@@ -225,7 +225,9 @@ impl NoiseService {
                                 let writer = SinkWriter::new(CopyToBytes::new(
                                     sink.sink_map_err(io::Error::other),
                                 ));
-                                let registered_key = Arc::new(Mutex::new(None::<String>));
+                                let registered = Arc::new(Mutex::new(
+                                    None::<(String, serde_json::Value)>,
+                                ));
                                 let service = service_fn(
                                     move |request: hyper::Request<hyper::body::Incoming>| {
                                         let path = request.uri().path().to_owned();
@@ -240,7 +242,7 @@ impl NoiseService {
                                         let map = map.clone();
                                         let map_seen = Arc::clone(&map_seen);
                                         let map_gate = map_gate.clone();
-                                        let registered_key = Arc::clone(&registered_key);
+                                        let registered = Arc::clone(&registered);
                                         let auth = Arc::clone(&auth);
                                         let home = Arc::clone(&home);
                                         let status = Arc::clone(&status);
@@ -264,9 +266,10 @@ impl NoiseService {
                                                     header.unwrap().to_str().unwrap(),
                                                     request["NodeKey"].as_str().unwrap()
                                                 );
-                                                *registered_key.lock().unwrap() = Some(
+                                                *registered.lock().unwrap() = Some((
                                                     request["NodeKey"].as_str().unwrap().to_owned(),
-                                                );
+                                                    request["Hostinfo"].clone(),
+                                                ));
                                                 seen.notify_one();
                                                 gate.cancelled().await;
                                                 Ok::<_, Infallible>(Response::new(
@@ -274,9 +277,18 @@ impl NoiseService {
                                                 ))
                                             } else {
                                                 assert!(header.is_none());
-                                                let node_key =
-                                                    registered_key.lock().unwrap().clone().unwrap();
+                                                let (node_key, hostinfo) =
+                                                    registered.lock().unwrap().clone().unwrap();
                                                 assert_eq!(request["NodeKey"], node_key);
+                                                let mut map_hostinfo = request["HostInfo"].clone();
+                                                map_hostinfo
+                                                    .as_object_mut()
+                                                    .unwrap()
+                                                    .remove("NetInfo");
+                                                assert_eq!(
+                                                    map_hostinfo, hostinfo,
+                                                    "map requests must preserve the registered HostInfo"
+                                                );
                                                 if request
                                                     .get("Stream")
                                                     .is_none_or(|stream| stream == false)
