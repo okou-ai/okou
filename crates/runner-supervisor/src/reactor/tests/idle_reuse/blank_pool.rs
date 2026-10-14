@@ -575,12 +575,12 @@ async fn foreground_admission_drains_cancelled_blank_park_before_destroy() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn blank_park_and_kill_panics_keep_budget_owned_through_destroy() {
+async fn blank_park_and_stop_panics_keep_budget_owned_through_destroy() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     let destroy_gate = sandbox_mock::MockLifecycleGate::new();
     overrides.push_park_panic("simulated blank park panic");
-    overrides.push_kill_panic("simulated blank kill panic");
+    overrides.push_stop_panic("simulated blank stop panic");
     overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
     let budget = Arc::clone(&config.capacity.budget);
@@ -590,6 +590,7 @@ async fn blank_park_and_kill_panics_keep_budget_owned_through_destroy() {
         .wait_entered(1, Duration::from_secs(5))
         .await
         .expect("panicked blank lifecycle should still reach factory destroy");
+    assert_eq!(calls.stop_call_count(), 1);
     assert_eq!(calls.destroy_call_count(), 1);
     assert_eq!(
         budget.allocated().2,
