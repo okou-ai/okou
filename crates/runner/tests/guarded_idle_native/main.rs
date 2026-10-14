@@ -587,35 +587,48 @@ async fn exercise_retirement(
         if sandbox.park().await? != SandboxParkOutcome::Reusable {
             return Err(io::Error::other("native fixture could not physically park").into());
         }
-        let promotion = home
-            .into_promotion_context(HomeImagePromotionRequest {
-                run_id,
-                sandbox_id,
-                restored_session_identity: session_identity.as_ref(),
-                terminal_status: if original_exit == 0 {
-                    HomeCacheTerminalStatus::Success
-                } else {
-                    HomeCacheTerminalStatus::NonzeroExit
-                },
-                completed_at: chrono::Utc::now().to_rfc3339(),
-                storage_fingerprints: storage_fingerprints.clone(),
-            })
-            .ok_or_else(|| io::Error::other("native fixture could not own home saving"))?;
         let lease = if corpus == Corpus::Continuation {
             first_lease.take()
         } else {
             ResourceBudget::try_reserve_lease(&budget, 2, 4096)
         }
         .ok_or_else(|| io::Error::other("native fixture could not acquire its logical lease"))?;
-        Ok((backing, promotion, lease))
+        Ok((backing, lease))
     }
     .await;
-    let (backing, promotion, lease) = match parked {
+    let (backing, lease) = match parked {
         Ok(parked) => parked,
         Err(error) => {
-            factory.destroy(sandbox).await;
+            if let Some(proof) = proof {
+                proof.retain(sandbox);
+                proof.retain(home);
+                proof.retain(first_lease);
+            } else {
+                factory.destroy(sandbox).await;
+            }
             return Err(error);
         }
+    };
+    let promotion = home.into_promotion_context(HomeImagePromotionRequest {
+        run_id,
+        sandbox_id,
+        restored_session_identity: session_identity.as_ref(),
+        terminal_status: if original_exit == 0 {
+            HomeCacheTerminalStatus::Success
+        } else {
+            HomeCacheTerminalStatus::NonzeroExit
+        },
+        completed_at: chrono::Utc::now().to_rfc3339(),
+        storage_fingerprints: storage_fingerprints.clone(),
+    });
+    let Some(promotion) = promotion else {
+        if let Some(proof) = proof {
+            proof.retain(sandbox);
+            proof.retain(lease);
+        } else {
+            factory.destroy(sandbox).await;
+        }
+        return Err(io::Error::other("native fixture could not own home saving").into());
     };
     let mut pool = IdlePool::new(IdlePoolConfig {
         max_idle: if matches!(scope, NativeScope::OptionalOrdinary) {
@@ -641,6 +654,10 @@ async fn exercise_retirement(
     };
     let mut candidate = candidate.build();
     if let Err(error) = candidate.capture_retirement_backing() {
+        if let Some(proof) = proof {
+            proof.retain(candidate);
+            return Err(error.into());
+        }
         // Explicit disposal of this invocation's native fixture, never a
         // production guarded-admission fallback.
         let (payload, lease) = candidate.into_active_destroy_parts();
