@@ -5406,6 +5406,11 @@
     },
     "importHint": "문서, 프레젠테이션 또는 이미지를 가져오세요.",
     "loadFailed": "템플릿을 불러오지 못했습니다.",
+    "rename": {
+      "action": "이름 변경",
+      "cancel": "취소",
+      "save": "저장"
+    },
     "renameFailed": "템플릿의 이름을 바꾸지 못했습니다.",
     "retry": "다시 시도",
     "sharedBy": "{{owner}} 님이 공유함",

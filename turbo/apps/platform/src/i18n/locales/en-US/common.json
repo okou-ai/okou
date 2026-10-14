@@ -5423,6 +5423,11 @@
     },
     "importHint": "Import a document, presentation or image.",
     "loadFailed": "Couldn't load templates.",
+    "rename": {
+      "action": "Rename",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
     "renameFailed": "Couldn't rename the template.",
     "retry": "Try again",
     "sharedBy": "Shared by {{owner}}",

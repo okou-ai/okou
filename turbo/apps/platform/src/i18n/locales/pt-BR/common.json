@@ -5504,6 +5504,11 @@
     },
     "importHint": "Importe um documento, uma apresentação ou uma imagem.",
     "loadFailed": "Não foi possível carregar os modelos.",
+    "rename": {
+      "action": "Renomear",
+      "cancel": "Cancelar",
+      "save": "Salvar"
+    },
     "renameFailed": "Não foi possível renomear o modelo.",
     "retry": "Tentar novamente",
     "sharedBy": "Compartilhado por {{owner}}",

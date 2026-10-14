@@ -5406,6 +5406,11 @@
     },
     "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
+    "rename": {
+      "action": "Ubah nama",
+      "cancel": "Batal",
+      "save": "Simpan"
+    },
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
