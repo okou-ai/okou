@@ -377,6 +377,8 @@ pub struct GuestConfig {
     /// system prompt; non-empty content is transferred through the selected
     /// CLI's launch payload or private prompt file.
     pub append_system_prompt: String,
+    /// Native-only continuation intent from the current API claim.
+    pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     /// Optional Vercel protection-bypass secret from
     /// [`guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV`]. A non-empty
     /// value is attached to guest-agent API requests as the bypass header.
@@ -587,6 +589,14 @@ impl GuestConfig {
             },
             prompt: payload.prompt,
             append_system_prompt: payload.append_system_prompt,
+            native_continuation: if payload.native_continuation.is_empty() {
+                None
+            } else {
+                Some(
+                    serde_json::from_str(&payload.native_continuation)
+                        .map_err(|error| format!("invalid native continuation: {error}"))?,
+                )
+            },
             vercel_bypass: raw.vercel_bypass,
             resume_session_id: raw.resume_session_id,
             api_start_time: raw.api_start_time,
@@ -1103,6 +1113,7 @@ mod tests {
         let payload = guest_contracts::env::RunPayload {
             prompt: "hello".to_string(),
             append_system_prompt: "extra system".to_string(),
+            native_continuation: String::new(),
             secret_values: "encoded-secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -1250,6 +1261,7 @@ mod tests {
         let payload = guest_contracts::env::RunPayload {
             prompt: "payload prompt".to_string(),
             append_system_prompt: "payload system".to_string(),
+            native_continuation: String::new(),
             secret_values: "payload-secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),

@@ -1,3 +1,4 @@
+import { chatThreadEventRows } from "../services/chat-event-row-read.service";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatRelationsRoutes } from "./chat-relations";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
@@ -32,7 +33,6 @@ import {
 import { chatSearch } from "../services/chat-search.service";
 import {
   catchUpChatThreadEvents,
-  chatThreadEventRows,
   chatThreadEventSnapshot,
 } from "../services/chat-event-snapshot.service";
 import {

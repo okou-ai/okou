@@ -475,7 +475,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       completion: {
         cliAgentType: "pi" as const,
         cliAgentSessionId: run.runId,
-        cliAgentSessionHistoryDisposition: "unavailable" as const,
+        cliAgentSessionHistoryDisposition: "native_only" as const,
         artifactSnapshots: [
           {
             name: run.memory.name,

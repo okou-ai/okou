@@ -31,19 +31,11 @@ export function chatThreadColumns() {
      * context, so the prompt is only applied once.
      */
     sourceScheduleRunId: uuid("source_schedule_run_id"),
-    /**
-     * Canonical application session for runs admitted on this thread.
-     * Every thread-bound run source resolves continuation through this binding.
-     * No FK: binding writes must not lock agent_sessions, and a deleted session
-     * resolves to "initialized" because continuity left-joins it.
-     */
-    agentSessionId: uuid("agent_session_id"),
-    /**
-     * Run whose final admission most recently established agentSessionId.
-     * Provides route provenance for session rotation and binding snapshots.
-     * No FK, for the same reason as agentSessionId; a dangling id is harmless.
-     */
-    agentSessionRunId: uuid("agent_session_run_id"),
+    /** Native identity for the retained files; no remote history ownership. */
+    framework: varchar("framework", { length: 64 }),
+    frameworkSessionId: varchar("framework_session_id", { length: 255 }),
+    /** Run that reported this native identity, used for model compatibility. */
+    frameworkSessionRunId: uuid("framework_session_run_id"),
     /**
      * Slack-style watermark: the last timestamp up to which the user has read
      * messages in this thread. It normally advances to the latest run-finish

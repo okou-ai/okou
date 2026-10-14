@@ -57,6 +57,11 @@ export const piMemoryStage1Selections = pgTable(
     memoryStorageId: uuid("memory_storage_id").notNull(),
     piSessionId: varchar("pi_session_id", { length: 255 }).notNull(),
     sourceRunId: uuid("source_run_id").notNull(),
+    sourceFormat: varchar("source_format", { length: 32 })
+      .$type<"pi-jsonl" | "chat-events-v1">()
+      .default("pi-jsonl")
+      .notNull(),
+    sourceChatEventSeqId: integer("source_chat_event_seq_id"),
     sourceHistoryHash: varchar("source_history_hash", { length: 64 }).notNull(),
     sourceCompletedAt: timestamp("source_completed_at").notNull(),
     sourceActivityAt: timestamp("source_activity_at").notNull(),

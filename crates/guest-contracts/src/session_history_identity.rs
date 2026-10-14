@@ -64,6 +64,8 @@ impl From<crate::env::CliFramework> for SessionHistoryFramework {
 pub enum SessionHistoryRefKind {
     /// Hash-backed blob storage.
     Blob,
+    /// Integrity of disposable native bytes retained only in the local home.
+    LocalHome,
 }
 
 /// Canonical framework-owned source for final session-history bytes.
@@ -246,6 +248,7 @@ impl SessionHistoryRefKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Blob => "blob",
+            Self::LocalHome => "local-home",
         }
     }
 
@@ -253,6 +256,7 @@ impl SessionHistoryRefKind {
     pub fn parse_cli_arg(value: &str) -> Result<Self, SessionHistoryIdentityError> {
         match value {
             "blob" => Ok(Self::Blob),
+            "local-home" => Ok(Self::LocalHome),
             _ => Err(SessionHistoryIdentityError::InvalidHistoryRefKind),
         }
     }

@@ -57,12 +57,7 @@ import {
 
 import { http, HttpResponse } from "msw";
 import { gunzipSync } from "node:zlib";
-import {
-  createHash,
-  generateKeyPairSync,
-  randomUUID,
-  sign as signData,
-} from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 import { createApp } from "../../../app-factory";
 import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
 import { chatEventDisplayText } from "./helpers/chat-event";
@@ -7695,7 +7690,7 @@ describe("Official Workflow Run admission", () => {
       await fixture.completeChatRunOk(
         official.runId,
         { authorization: `Bearer ${claim.sandboxToken}` },
-        { cliAgentSessionId: sessionId, sessionHistory: "official history" },
+        { cliAgentSessionId: sessionId },
       );
       await flushWaitUntilForTest();
     });
@@ -7703,11 +7698,9 @@ describe("Official Workflow Run admission", () => {
       return waiting.launchedRun();
     });
     const laterClaim = await assertOrdinaryMounts(later.runId);
-    expect(laterClaim.resumeSession).toMatchObject({
+    expect(laterClaim.nativeContinuation).toMatchObject({
       sessionId,
-      historyRef: {
-        hash: createHash("sha256").update("official history").digest("hex"),
-      },
+      generationRunId: official.runId,
     });
     await owned.run(async () => {
       await fixture.completeChatRunOk(
@@ -7715,7 +7708,6 @@ describe("Official Workflow Run admission", () => {
         { authorization: `Bearer ${laterClaim.sandboxToken}` },
         {
           cliAgentSessionId: sessionId,
-          sessionHistory: "official history\nordinary continuation",
         },
       );
       await flushWaitUntilForTest();
@@ -7738,13 +7730,9 @@ describe("Official Workflow Run admission", () => {
       owned.runnerGroup,
       nextOfficial.runId,
     );
-    expect(nextClaim.resumeSession).toMatchObject({
+    expect(nextClaim.nativeContinuation).toMatchObject({
       sessionId,
-      historyRef: {
-        hash: createHash("sha256")
-          .update("official history\nordinary continuation")
-          .digest("hex"),
-      },
+      generationRunId: later.runId,
     });
     expect(
       expectCanonicalStorageManifest(

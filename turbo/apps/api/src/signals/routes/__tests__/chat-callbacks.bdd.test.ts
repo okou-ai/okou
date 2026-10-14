@@ -16,7 +16,7 @@ import {
   ILLUSTRATION_TEMPLATE_ITEMS,
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
@@ -369,18 +369,11 @@ async function waitForRunContext(actor: ApiTestUser, runId: string) {
   return response;
 }
 
-function chatRunCompletion(runId: string): {
-  readonly cliAgentType: "claude-code";
-  readonly cliAgentSessionId: string;
-  readonly cliAgentSessionHistoryHash: string;
-} {
-  const historyHash = createHash("sha256")
-    .update(`bdd chat session history ${runId}`)
-    .digest("hex");
+function chatRunCompletion(runId: string) {
   return {
-    cliAgentType: "claude-code",
+    cliAgentType: "claude-code" as const,
     cliAgentSessionId: cliAgentSessionIdForChatRun(runId),
-    cliAgentSessionHistoryHash: historyHash,
+    cliAgentSessionHistoryDisposition: "native_only" as const,
   };
 }
 
@@ -4694,7 +4687,9 @@ describe("CHAT-02: auto-send after failures", () => {
     });
 
     const completedFirst = await api.readRun(actor, first.runId);
-    expect(completedFirst.result?.agentSessionId).toMatch(/[0-9a-f-]{36}/);
+    expect(completedFirst.result?.frameworkSessionId).toBe(
+      cliAgentSessionIdForChatRun(first.runId),
+    );
 
     const contextUpload = await chat.prepareUpload(actor, {
       filename: "incomplete-context.txt",

@@ -3,7 +3,6 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
 import { createRouteMocks } from "./helpers/route-test";
-import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { gzipSync } from "node:zlib";
 import { Header } from "tar";
@@ -226,15 +225,6 @@ async function sandboxStorageWriteFixture(label: string) {
             "Storage writer failed",
           );
         } else {
-          const hash = await prepareSessionHistoryBytes(
-            context,
-            claimed.runId,
-            claimed.sandboxHeaders,
-            Buffer.from(`Public storage writer session ${claimed.runId}`),
-            (restore) => {
-              restoreAccepted = restore;
-            },
-          );
           await run(() => {
             return api.requestAgentComplete(
               {
@@ -243,7 +233,7 @@ async function sandboxStorageWriteFixture(label: string) {
                 completion: {
                   cliAgentType: "claude-code",
                   cliAgentSessionId: claimed.threadId,
-                  cliAgentSessionHistoryHash: hash,
+                  cliAgentSessionHistoryDisposition: "native_only",
                 },
               },
               claimed.sandboxHeaders,
@@ -2600,49 +2590,6 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       const headers = {
         authorization: `Bearer ${claim.sandboxToken}`,
       };
-
-      // Native history blobs: first prepare issues an upload URL, the
-      // second sees the registered blob and skips the upload.
-      const historyHash = createHash("sha256")
-        .update(`bdd history blob ${run.runId}`)
-        .digest("hex");
-      const firstHistory = await api.requestAgentSessionHistoryPrepare(
-        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-        headers,
-        [200],
-      );
-      if (firstHistory.status !== 200) {
-        throw new Error("Expected the first history prepare to succeed");
-      }
-      expect(firstHistory.body.existing).toBeFalsy();
-      expect(firstHistory.body.presignedUrl).toMatch(/^https/);
-
-      const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
-        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-        headers,
-        [200],
-      );
-      if (repeatedHistory.status !== 200) {
-        throw new Error("Expected the repeated history prepare to succeed");
-      }
-      expect(repeatedHistory.body).toStrictEqual({
-        existing: true,
-        encoding: "identity",
-      });
-
-      // A real Run token cannot authorize a different, unknown Run identity.
-      const foreignHistory = await api.requestAgentSessionHistoryPrepare(
-        {
-          runId: randomUUID(),
-          hash: historyHash,
-          rawSize: 456,
-          encodedSize: 456,
-        },
-        headers,
-        [401],
-      );
-      expectApiError(foreignHistory.body);
-      expect(foreignHistory.body.error.code).toBe("UNAUTHORIZED");
 
       const unmountedStorage = await api.requestAgentStoragePrepare(
         {

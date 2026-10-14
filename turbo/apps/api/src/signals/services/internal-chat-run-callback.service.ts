@@ -90,10 +90,6 @@ import {
   type ChatCompletionContextMessage,
 } from "./chat-title.service";
 import {
-  projectUserMessage,
-  requiredUserMessageForEvent,
-} from "./chat-user-message.service";
-import {
   discordDeliveryTargetSchema,
   type DiscordDeliveryTarget,
 } from "./discord-chat-callback-payload";
@@ -151,7 +147,6 @@ import {
 import { loadTelegramQueuedLaunchMaterial } from "./telegram-queued-launch-context.service";
 
 const log = logger("callback:chat");
-const PRIOR_MESSAGE_CHAR_CAP = 4000;
 type ChatCallbackPreCreateTimingSpanKind = "top_level" | "nested";
 
 type ChatCallbackPreCreateTimingActionType =
@@ -344,20 +339,6 @@ interface CompletedChatOutputLoad {
   readonly assistantItemsToInsert: readonly AssistantEventItem[];
   readonly latestAssistant: AssistantEventItem | null;
   readonly resultFallback: ResultEventItem | null;
-}
-
-export interface PriorRunEvent {
-  readonly eventType: ChatEventType;
-  readonly role: "user" | "assistant";
-  readonly content: string | null;
-  readonly userMessage: ChatEventUserMessage | null;
-}
-
-export interface PriorRun {
-  readonly runId: string;
-  readonly status: string;
-  readonly prompt: string;
-  readonly events: readonly PriorRunEvent[];
 }
 
 interface AgentForAutoSend {
@@ -2077,102 +2058,6 @@ async function runTerminalChatCallbackSideEffects(args: {
       error,
     });
   });
-}
-
-function truncatePrior(value: string): string {
-  if (value.length <= PRIOR_MESSAGE_CHAR_CAP) {
-    return value;
-  }
-  return `${value.slice(0, PRIOR_MESSAGE_CHAR_CAP)}...[truncated]`;
-}
-
-function formatPriorRunEvent(event: PriorRunEvent): string {
-  const roleLabel = event.role === "user" ? "User" : "Assistant";
-  const userMessage = requiredUserMessageForEvent(
-    event.eventType,
-    event.userMessage,
-  );
-  if (userMessage) {
-    const prompt = projectUserMessage(userMessage).agentPrompt;
-    return `${roleLabel}: ${truncatePrior(prompt) || "[empty message]"}`;
-  }
-  return `${roleLabel}: ${
-    event.content === null
-      ? "[empty message]"
-      : truncatePrior(event.content) || "[empty message]"
-  }`;
-}
-
-function priorRunsContextLabel(
-  contextType: QueuedUserMessageContextType,
-  triggerSource: QueuedUserMessageTriggerSource,
-): string {
-  switch (contextType) {
-    case "slack": {
-      return "Slack";
-    }
-    case "feishu": {
-      return triggerSource === "lark" ? "Lark" : "Feishu";
-    }
-    case "teams": {
-      return "Microsoft Teams";
-    }
-    case "discord": {
-      return "Discord";
-    }
-    case "telegram": {
-      return "Telegram";
-    }
-    case "web":
-    case "agent_run":
-    case "agentphone": {
-      return "Web Chat";
-    }
-    case "automation": {
-      return unreachableQueuedMessageContext(contextType);
-    }
-    default: {
-      return unreachableQueuedContextType(contextType);
-    }
-  }
-}
-
-export function buildChatPriorRunsContext(
-  runs: readonly PriorRun[],
-  contextType: QueuedUserMessageContextType,
-  triggerSource: QueuedUserMessageTriggerSource,
-): string {
-  if (runs.length === 0) {
-    return "";
-  }
-  const sections = runs.map((run, index) => {
-    const renderedEvents = run.events.map((event) => {
-      return formatPriorRunEvent(event);
-    });
-    const transcript =
-      renderedEvents.length > 0
-        ? renderedEvents.join("\n\n")
-        : [
-            `User: ${truncatePrior(run.prompt) || "[empty message]"}`,
-            "Assistant: [no visible assistant message recorded]",
-          ].join("\n\n");
-    return [
-      `## Recent Run ${index + 1}`,
-      `- RUN_ID: ${run.runId}`,
-      `- RUN_STATUS: ${run.status}`,
-      `- AGENT_SESSION_COMMAND: okou search "${run.runId}" --source agent-session`,
-      "",
-      transcript,
-    ].join("\n");
-  });
-  return [
-    `# ${priorRunsContextLabel(contextType, triggerSource)} Run Context`,
-    "The current CLI session is fresh, so recent visible chat rounds are provided here for continuity.",
-    "- Treat the newest run below as the most recent prior round.",
-    "- Use the AGENT_SESSION_COMMAND for a run if you need more detailed agent session context.",
-    "",
-    ...sections,
-  ].join("\n");
 }
 
 async function chatThreadForRunFromDb(

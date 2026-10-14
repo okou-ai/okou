@@ -42,6 +42,11 @@ export const piMemoryStage1Candidates = pgTable(
     userId: text("user_id").notNull(),
     piSessionId: varchar("pi_session_id", { length: 255 }).notNull(),
     sourceRunId: uuid("source_run_id").notNull(),
+    sourceFormat: varchar("source_format", { length: 32 })
+      .$type<"pi-jsonl" | "chat-events-v1">()
+      .default("pi-jsonl")
+      .notNull(),
+    sourceChatEventSeqId: integer("source_chat_event_seq_id"),
     sourceHistoryHash: varchar("source_history_hash", { length: 64 })
       .notNull()
       .references(() => {
@@ -91,6 +96,10 @@ export const piMemoryStage1Candidates = pgTable(
       index("idx_pi_memory_stage1_candidates_phase2")
         .on(table.memoryStorageId, table.generatedAt, table.piSessionId)
         .where(sql`${table.status} IN ('succeeded', 'succeeded_no_output')`),
+      check(
+        "pi_memory_stage1_candidates_source_format_check",
+        sql`(${table.sourceFormat} = 'pi-jsonl' AND ${table.sourceChatEventSeqId} IS NULL) OR (${table.sourceFormat} = 'chat-events-v1' AND ${table.sourceChatEventSeqId} IS NOT NULL AND ${table.sourceChatEventSeqId} > 0)`,
+      ),
       check(
         "pi_memory_stage1_candidates_status_check",
         sql`${table.status} IN (

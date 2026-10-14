@@ -237,6 +237,15 @@ impl AppServerState {
             write_error(output, id, INVALID_REQUEST, "missing threadId")?;
             return Ok(ServerAction::Continue);
         };
+        if self.scenario == Scenario::ResumeRolloutMissing {
+            write_error(
+                output,
+                id,
+                -32602,
+                &format!("no rollout found for thread id {thread_id}"),
+            )?;
+            return Ok(ServerAction::Continue);
+        }
         if self.scenario == Scenario::ResumeRpcErrorWithThreadId {
             write_error(
                 output,
@@ -422,6 +431,7 @@ impl AppServerState {
         if matches!(
             self.scenario,
             Scenario::RuntimeTurnComplete
+                | Scenario::ResumeRolloutMissing
                 | Scenario::RuntimeTurnCompleteBeforeHeartbeat
                 | Scenario::RuntimeTurnCompleteWithoutThreadStarted
                 | Scenario::RuntimeTurnUsageResumeNoReplay

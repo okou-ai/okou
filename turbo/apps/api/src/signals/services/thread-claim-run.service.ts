@@ -86,7 +86,7 @@ import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
-import { recordSandboxOperation } from "../external/sandbox-op-log";
+
 import { getOfficialTelegramBotConfig } from "../external/telegram-official";
 import { safeSync, settle, tapError } from "../utils";
 import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
@@ -164,10 +164,7 @@ import {
   advancePendingOfficialAdmission,
   pendingOfficialAdmissionStart,
 } from "./pending-launch-official-plan";
-import {
-  pendingLaunchInsertSql,
-  pendingLaunchUpdateSql,
-} from "./pending-launch-sql";
+import { pendingLaunchInsertSql } from "./pending-launch-sql";
 import {
   advancePendingLaunchTail,
   type PendingLaunchTailInput,
@@ -215,7 +212,6 @@ import type {
 import type {
   ChatThreadExecutionSnapshot,
   ChatThreadSessionResolution,
-  ChatThreadSessionResolutionAction,
   ChatThreadSessionRoute,
 } from "./chat-session-continuity.service";
 import { compactRecord } from "./connector-runtime-preparation.service";
@@ -273,7 +269,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 
@@ -335,11 +330,7 @@ import {
   canReuseSession,
   type SessionExecutionIdentity,
 } from "./session-compatibility";
-import {
-  type CompressedSessionHistoryBlobEncoding,
-  isCompressedSessionHistoryBlobEncoding,
-  normalizeSessionHistoryBlobEncoding,
-} from "./session-history-blobs";
+
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
 
 import { telegramDeliveryTargetSchema } from "./telegram-chat-callback-payload";
@@ -2499,11 +2490,6 @@ export function createThreadClaimRunObjects(
       return input;
     }
     const body: ThreadRunBody = { ...fullCommand.body };
-    if (resolution?.sessionId) {
-      body.sessionId = resolution.sessionId;
-    } else if (fullCommand.chatThreadId) {
-      delete body.sessionId;
-    }
     return {
       ...input,
       catalog,
@@ -2674,7 +2660,6 @@ export function createThreadClaimRunObjects(
     return await resolveProductAgentExecution(
       {
         agentId: agent.id,
-        ...(session?.sessionId ? { sessionId: session.sessionId } : {}),
       },
       command.owner.userId,
       command.owner.orgId,
@@ -2687,7 +2672,7 @@ export function createThreadClaimRunObjects(
           ownerUserId: agent.owner,
           agentOrgId: agent.orgId,
         },
-        resetNativeSession: session?.resetNativeSession,
+        nativeFramework: session?.expected.framework,
         sessionSnapshot: session?.executionSnapshot,
         timing,
       },
@@ -3413,11 +3398,8 @@ export function createThreadClaimRunObjects(
     if (!(await get(selectionInput$))) {
       return null;
     }
-    const session = await get(threadSession$);
     return {
       runId: ids.runId,
-      sessionId: session?.sessionId ?? ids.newSessionId,
-      shouldCreateSession: !session?.sessionId,
     };
   });
   const runPlan$ = computed(
@@ -3443,7 +3425,7 @@ export function createThreadClaimRunObjects(
       }
       const { args, timing } = await get(contextInput$);
       const launchSnapshot = {
-        schemaVersion: 3 as const,
+        schemaVersion: 5 as const,
         framework:
           context.piSandbox === undefined ? context.framework : ("pi" as const),
         runnerProfile: DEFAULT_PROFILE,
@@ -3471,8 +3453,6 @@ export function createThreadClaimRunObjects(
           officialWorkflowFacts,
           resolved: {
             agentId: context.resolved.agentId,
-            continuedFromAgentSessionId:
-              context.resolved.continuedFromAgentSessionId,
           },
           modelProvider: modelProvider
             ? {
@@ -3559,8 +3539,6 @@ export function createThreadClaimRunObjects(
       ...input.runner,
       run: {
         id: identity.runId,
-        sessionId: identity.sessionId,
-        shouldCreateSession: identity.shouldCreateSession,
       },
       timing: input.timing,
     };
@@ -4426,14 +4404,6 @@ interface ExplicitConnectorScope {
   readonly source?: Exclude<ConnectorScopeSource, "empty">;
 }
 
-// Session naming in this service:
-// - agentSessionId is the Okou application session (`agent_sessions.id`) used
-//   for product-level continuation and future correctness checks.
-// - cliAgentSessionId is the Claude/Codex/Pi agent session stored on
-//   `conversations.cli_agent_session_id`.
-// Existing API/runner wire fields named `sessionId` are preserved for
-// compatibility and normalized to these semantic names at the boundary.
-
 function runnerReuseKey(chatThreadId: string | undefined): string | null {
   return chatThreadId ? `thread:${chatThreadId}` : null;
 }
@@ -4441,33 +4411,19 @@ function runnerReuseKey(chatThreadId: string | undefined): string | null {
 interface RunRecord {
   readonly id: string;
   readonly createdAt: Date;
-  readonly sessionId: string;
-  readonly shouldCreateSession: boolean;
   readonly status: "pending";
 }
 
 interface LaunchRunIdentity {
   readonly runId: string;
-  readonly sessionId: string;
-  readonly shouldCreateSession: boolean;
 }
 
 type LaunchRunStatus = "pending" | "failed";
-
-type ThreadSessionBindingAction = ChatThreadSessionResolutionAction;
-
-interface ThreadSessionBindingWrite {
-  readonly chatThreadId: string;
-  readonly agentSessionId: string;
-  readonly agentSessionRunId: string;
-  readonly action: ThreadSessionBindingAction;
-}
 
 interface PersistedAtomicLaunchRows {
   readonly kind: "pending";
   readonly run: RunRecord;
   readonly runnerJobCreatedAt: Date;
-  readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
 }
 
 interface PreparedRunnerLaunch {
@@ -4486,8 +4442,9 @@ interface ValidatedThreadSessionSnapshot {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly threadAgentId: string | null;
-  readonly agentSessionId: string | null;
-  readonly agentSessionRunId: string | null;
+  readonly framework: string | null;
+  readonly frameworkSessionId: string | null;
+  readonly frameworkSessionRunId: string | null;
 }
 
 type AtomicLaunchCommitResult =
@@ -4498,7 +4455,6 @@ type AtomicLaunchCommitResult =
       readonly runnerJobCreatedAt: Date;
       readonly runContextSnapshot: RunContextAxiomSnapshot;
       readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
-      readonly threadSessionBinding: ThreadSessionBindingWrite | undefined;
     }
   | QueueFirstRunClaimLost;
 
@@ -4535,7 +4491,6 @@ interface PendingRunContext {
   readonly officialWorkflowFacts: OfficialWorkflowContextFacts;
   readonly resolved: {
     readonly agentId: string | null;
-    readonly continuedFromAgentSessionId?: string;
   };
   readonly modelProvider: Pick<
     ResolvedModelProviderEnvironment,
@@ -4604,8 +4559,6 @@ function runRecordFromLaunchIdentity(
   return {
     id: identity.runId,
     createdAt,
-    sessionId: identity.sessionId,
-    shouldCreateSession: identity.shouldCreateSession,
     status,
   };
 }
@@ -4616,10 +4569,7 @@ interface LaunchRunRowsArgs {
   readonly identity: LaunchRunIdentity;
   readonly status: LaunchRunStatus;
   readonly validatedAccountIdentity?: string | null;
-  readonly resolved: Pick<
-    ResolvedRunExecution,
-    "agentId" | "continuedFromAgentSessionId"
-  >;
+  readonly resolved: Pick<ResolvedRunExecution, "agentId">;
   readonly body: CreateRunBody;
   readonly runStorageMounts: readonly PersistedStorageMount[] | undefined;
   readonly modelProvider: Pick<
@@ -4645,24 +4595,6 @@ interface LaunchRunRowsArgs {
   readonly creditAdmitted: boolean;
 }
 
-interface LaunchSessionValues {
-  readonly id: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string | null;
-  readonly conversationId: null;
-}
-
-function launchSessionValues(args: LaunchRunRowsArgs): LaunchSessionValues {
-  return {
-    id: args.identity.sessionId,
-    userId: args.userId,
-    orgId: args.orgId,
-    agentId: args.resolved.agentId,
-    conversationId: null,
-  };
-}
-
 function launchRunValues(
   args: LaunchRunRowsArgs,
   createdAt: Date,
@@ -4681,8 +4613,6 @@ function launchRunValues(
     vars: args.body.vars ?? null,
     secretNames: args.body.secrets ? Object.keys(args.body.secrets) : null,
     storageMounts: args.runStorageMounts ? [...args.runStorageMounts] : null,
-    continuedFromSessionId: args.resolved.continuedFromAgentSessionId ?? null,
-    sessionId: args.identity.sessionId,
     runnerGroup: args.runnerGroup ?? null,
     launchSnapshot: args.launchSnapshot,
     officialWorkflowProvenance: args.officialWorkflowProvenance ?? null,
@@ -4796,28 +4726,6 @@ function bestEffortTelemetry(record: () => unknown): void {
 function ingestRunContextSnapshot(snapshot: RunContextAxiomSnapshot): void {
   bestEffortTelemetry(() => {
     return ingestToAxiom(getDatasetName("run-context"), [snapshot]);
-  });
-}
-
-function recordThreadSessionBindingTelemetry(args: {
-  readonly binding: ThreadSessionBindingWrite;
-  readonly runStatus: "pending";
-}): void {
-  bestEffortTelemetry(() => {
-    recordSandboxOperation({
-      sandboxType: "chat",
-      actionType: "chat_thread_session_binding_persisted",
-      durationMs: 0,
-      success: true,
-      runId: args.binding.agentSessionRunId,
-      dimensions: {
-        chat_thread_id: args.binding.chatThreadId,
-        agent_session_id: args.binding.agentSessionId,
-        agent_session_run_id: args.binding.agentSessionRunId,
-        binding_action: args.binding.action,
-        run_status: args.runStatus,
-      },
-    });
   });
 }
 
@@ -4935,31 +4843,28 @@ function launchThreadBindingCte(args: {
   readonly insertedRun: ReturnedIdCte;
   readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
 }) {
-  if (!args.chatThreadId || !args.validatedThreadSession) {
+  const expected = args.validatedThreadSession;
+  if (!args.chatThreadId || !expected) {
     return undefined;
   }
-  if (args.validatedThreadSession.chatThreadId !== args.chatThreadId) {
-    throw new Error("Validated chat thread does not match binding target");
+  if (expected.chatThreadId !== args.chatThreadId) {
+    throw new Error("Validated thread does not match launch");
   }
-  return new QueryBuilder()
-    .$with("updated_launch_thread_binding", { id: chatThreads.id })
-    .as(
-      pendingLaunchUpdateSql(
-        chatThreads,
-        {
-          agentSessionId: args.identity.sessionId,
-          agentSessionRunId: returnedCteId(args.insertedRun),
-        },
+  return new QueryBuilder().$with("validated_launch_thread").as(
+    new QueryBuilder()
+      .select({ id: chatThreads.id })
+      .from(chatThreads)
+      .where(
         and(
           eq(chatThreads.id, args.chatThreadId),
           eq(chatThreads.userId, args.userId),
-          sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${args.validatedThreadSession.threadAgentId}::uuid`,
-          sql`${chatThreads.agentSessionId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionId}::uuid`,
-          sql`${chatThreads.agentSessionRunId} IS NOT DISTINCT FROM ${args.validatedThreadSession.agentSessionRunId}::uuid`,
+          sql`${chatThreads.agentId} IS NOT DISTINCT FROM ${expected.threadAgentId}::uuid`,
+          sql`${chatThreads.framework} IS NOT DISTINCT FROM ${expected.framework}::text`,
+          sql`${chatThreads.frameworkSessionId} IS NOT DISTINCT FROM ${expected.frameworkSessionId}::text`,
+          sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${expected.frameworkSessionRunId}::uuid`,
         ),
-        ["id"],
       ),
-    );
+  );
 }
 
 function buildAtomicLaunchCteContext(
@@ -4969,20 +4874,6 @@ function buildAtomicLaunchCteContext(
   const { rowsArgs, metadata } = args.commit.persistence.rows;
   const createdAt = nowDate();
   const ctes: WithSubquery[] = [];
-  const insertedSession = rowsArgs.identity.shouldCreateSession
-    ? new QueryBuilder()
-        .$with("inserted_launch_session", { id: agentSessions.id })
-        .as(
-          pendingLaunchInsertSql(
-            agentSessions,
-            [launchSessionValues(rowsArgs)],
-            ["id"],
-          ),
-        )
-    : undefined;
-  if (insertedSession) {
-    ctes.push(insertedSession);
-  }
 
   const insertedRun = new QueryBuilder()
     .$with("inserted_launch_run", {
@@ -4997,9 +4888,6 @@ function buildAtomicLaunchCteContext(
             ...launchRunValues(rowsArgs, createdAt, metadata),
             creditAdmitted,
             modelProviderAccountIdentity: args.validatedAccountIdentity,
-            sessionId: insertedSession
-              ? returnedCteId(insertedSession)
-              : rowsArgs.identity.sessionId,
           },
         ],
         ["id", "createdAt"],
@@ -5055,47 +4943,6 @@ interface AdmittedPreparedLaunch extends ValidatedPreparedLaunchAdmission {
   readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
 }
 
-function atomicThreadSessionBinding(args: {
-  readonly context: AtomicLaunchCteContext;
-  readonly commit: Omit<CommitPreparedLaunchArgs, "db">;
-  readonly validatedThreadSession: ValidatedThreadSessionSnapshot | undefined;
-  readonly boundThreadId: string | null;
-  readonly runId: string;
-}): ThreadSessionBindingWrite | undefined {
-  if (!args.boundThreadId) {
-    return undefined;
-  }
-  if (!args.validatedThreadSession) {
-    throw new Error("Atomic thread binding requires a validated snapshot");
-  }
-  return {
-    chatThreadId: args.boundThreadId,
-    agentSessionId: args.context.rowsArgs.identity.sessionId,
-    agentSessionRunId: args.runId,
-    action: threadSessionBindingAction({
-      identity: args.context.rowsArgs.identity,
-      previousAgentSessionId: args.validatedThreadSession.agentSessionId,
-      resolution: args.commit.createArgs.threadSessionResolution,
-    }),
-  };
-}
-
-function threadSessionBindingAction(args: {
-  readonly identity: LaunchRunIdentity;
-  readonly previousAgentSessionId: string | null;
-  readonly resolution: PendingThreadSessionResolution | undefined;
-}): ThreadSessionBindingAction {
-  return (
-    args.resolution?.action ??
-    (args.previousAgentSessionId === null
-      ? "initialized"
-      : args.previousAgentSessionId === args.identity.sessionId
-        ? "reused"
-        : "rotated")
-  );
-}
-
-/** The thread's session binding changed after the launch read its snapshot. */
 class ChatThreadBindingChanged extends Error {
   constructor() {
     super("Chat thread session binding changed during launch");
@@ -5112,7 +4959,6 @@ function createdRunResponse(
     body: {
       runId: run.id,
       status: dispatchResult.status,
-      sessionId: run.sessionId,
       createdAt: run.createdAt.toISOString(),
     },
   };
@@ -5125,12 +4971,6 @@ function committedAtomicLaunchResponse(args: {
   readonly timing: ApiDispatchTimingCollector;
   readonly phaseTiming: ApiDispatchPhaseCollector;
 }): Extract<CreateRunRouteResult, { readonly status: 201 }> {
-  if (args.committed.threadSessionBinding) {
-    recordThreadSessionBindingTelemetry({
-      binding: args.committed.threadSessionBinding,
-      runStatus: args.committed.kind,
-    });
-  }
   args.phaseTiming.checkpoint(
     "api_dispatch_phase_queue_insert",
     args.committed.runnerJobCreatedAt.getTime(),
@@ -5267,7 +5107,7 @@ interface ThreadRunOwner {
 /** The run-request facts Thread sets for a claimed queue head. */
 type ThreadRunBody = Pick<
   AgentRunCreateBody,
-  "modelProvider" | "realAgentInPreview" | "captureNetworkBodies" | "sessionId"
+  "modelProvider" | "realAgentInPreview" | "captureNetworkBodies"
 > & {
   /** The queue head's Agent; a Thread run always names it. */
   readonly agentId: string;
@@ -5519,13 +5359,26 @@ function buildStoredExecutionContextDraft(
         return key === undefined ? [] : [key];
       })
     : null;
+  if (
+    args.chatThreadId !== undefined &&
+    args.resolved.nativeContinuation === undefined
+  ) {
+    throw new Error(
+      "Thread Run is missing captured native continuation intent",
+    );
+  }
   return {
     context: {
       environment,
       platformEnvironment,
       secretValueEnvironmentKeys,
       vars: args.environment.vars ?? null,
-      resumeSession: args.resolved.resumeSession ?? null,
+      resumeSession: null,
+      nativeContinuation: args.resolved.nativeContinuation ?? {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
       encryptedSecrets,
       secretConnectorMap: executionSecrets.secretConnectorMap,
       secretConnectorMetadataMap: executionSecrets.secretConnectorMetadataMap,
@@ -5586,7 +5439,7 @@ function buildStoredExecutionSecrets(
 interface BuildRunnerJobPayloadInput {
   readonly capturedStorageMounts?: readonly PersistedStorageMount[];
   readonly deferredPiResources?: PreparedPiLaunchResources;
-  readonly run: Pick<RunRecord, "id" | "sessionId" | "shouldCreateSession">;
+  readonly run: Pick<RunRecord, "id">;
   readonly userId: string;
   readonly orgId: string;
   readonly resolved: ResolvedRunExecution;
@@ -5672,7 +5525,10 @@ function assembleRunnerLaunch(args: {
     builtContext: { ...builtContext, context: storedContext },
   });
   const cliAgentSessionId =
-    storedContext.piSessionId ?? storedContext.resumeSession?.sessionId ?? null;
+    storedContext.piSessionId ??
+    storedContext.nativeContinuation?.sessionId ??
+    storedContext.resumeSession?.sessionId ??
+    null;
   return {
     runnerJobPayload: runnerJobPayload({
       runnerGroup: args.runnerGroup,
@@ -5758,6 +5614,7 @@ interface ResolveAgentExecutionOptions {
   readonly preloadedAgentExecutionObservation?: AgentExecutionRequestObservation;
   readonly timing?: ApiDispatchTimingCollector;
   readonly resetNativeSession?: boolean;
+  readonly nativeFramework?: string | null;
   readonly sessionSnapshot?: ChatThreadExecutionSnapshot;
 }
 
@@ -5811,161 +5668,47 @@ function resolveAgentObservation(
   };
 }
 
-interface ResumeSessionSnapshot {
-  readonly runId: string;
-  readonly cliAgentSessionId: string;
-  readonly cliAgentSessionHistory: string | null;
-  readonly cliAgentSessionHistoryHash: string | null;
-  readonly sessionHistoryBlobEncoding: string | null;
-}
-
-function resumeSessionFromSnapshot(
-  snapshot: ResumeSessionSnapshot,
-): StoredExecutionContext["resumeSession"] | undefined {
-  const hash = snapshot.cliAgentSessionHistoryHash;
-  let encoding: CompressedSessionHistoryBlobEncoding | undefined;
-  if (snapshot.sessionHistoryBlobEncoding !== null) {
-    const parsedEncoding = normalizeSessionHistoryBlobEncoding(
-      snapshot.sessionHistoryBlobEncoding,
-    );
-    if (isCompressedSessionHistoryBlobEncoding(parsedEncoding)) {
-      encoding = parsedEncoding;
-    }
-  }
-  if (hash) {
-    return {
-      sessionId: snapshot.cliAgentSessionId,
-      historyGenerationRunId: snapshot.runId,
-      historyRef: {
-        kind: "blob",
-        hash,
-        ...(encoding ? { encoding } : {}),
-      },
-    };
-  }
-  if (snapshot.cliAgentSessionHistory) {
-    return {
-      sessionId: snapshot.cliAgentSessionId,
-      sessionHistory: snapshot.cliAgentSessionHistory,
-    };
-  }
-  return undefined;
-}
-
-async function resolveSessionExecution(
-  snapshot: ChatThreadExecutionSnapshot | undefined,
-  options: ProductResolutionOptions,
-): Promise<ResolvedAgentExecution | CreateRunErrorResult> {
-  if (!snapshot) {
-    return notFound("Agent session not found");
-  }
-  if (!snapshot.agent) {
-    return notFound("Agent not found");
-  }
-
-  const conversation = snapshot.conversation;
-  const resumeSession = conversation
-    ? await measureApiDispatchTiming(
-        options.timing,
-        "api_dispatch_resolve_agent_execution_resolve_session_history",
-        "nested",
-        (): StoredExecutionContext["resumeSession"] | undefined => {
-          return resumeSessionFromSnapshot({
-            ...conversation,
-            sessionHistoryBlobEncoding: snapshot.historyBlob?.encoding ?? null,
-          });
-        },
-      )
-    : undefined;
-
-  return {
-    agentId: snapshot.agent.id,
-    ownerUserId: snapshot.agent.owner,
-    orgId: snapshot.agent.orgId,
-    instructionsStorageName: options.instructionsStorageName,
-    agentSessionId: snapshot.session.id,
-    continuedFromAgentSessionId: snapshot.session.id,
-    resumeSession,
-    resumeSessionIdentity: {
-      selectedModel: snapshot.previousRun?.selectedModel ?? null,
-      cliAgentType: conversation?.cliAgentType ?? null,
-    },
-  };
-}
-
-function requireResolvedAgentIdMatch(
-  resolved: ResolvedAgentExecution | CreateRunErrorResult,
-  agentId: string | undefined,
-): ResolvedAgentExecution | CreateRunErrorResult {
-  if (
-    !isRouteError(resolved) &&
-    agentId !== undefined &&
-    resolved.agentId !== agentId
-  ) {
-    return badRequestMessage("agentId does not match sessionId");
-  }
-  return resolved;
-}
-
-/** Product execution depends only on identity and the captured session/agent. */
-async function resolveProductAgentExecution(
-  body: Pick<CreateRunBody, "agentId" | "sessionId">,
+/** Product identity is authorized by the Agent; native provenance belongs to Thread. */
+function resolveProductAgentExecution(
+  body: Pick<CreateRunBody, "agentId">,
   userId: string,
   orgId: string,
   options: ResolveAgentExecutionOptions,
-): Promise<ResolvedRunExecution | CreateRunErrorResult> {
-  if (body.sessionId) {
-    const resolved = await measureApiDispatchTiming(
-      options.timing,
-      "api_dispatch_resolve_agent_execution_by_session_id",
-      "nested",
-      async () => {
-        return await resolveSessionExecution(options.sessionSnapshot, {
-          instructionsStorageName: options.instructionsStorageName,
-          timing: options.timing,
-        });
-      },
-    );
-    if (!isRouteError(resolved) && options.resetNativeSession) {
-      return {
-        ...resolved,
-        agentId: body.agentId ?? resolved.agentId,
-        resumeSession: undefined,
-        resumeSessionIdentity: undefined,
-      };
-    }
-    return requireResolvedAgentIdMatch(resolved, body.agentId);
-  }
+): ResolvedRunExecution | CreateRunErrorResult {
   if (!body.agentId) {
-    return badRequestMessage("Missing agentId or sessionId");
+    return badRequestMessage("Missing agentId");
   }
   const agentId = body.agentId;
-  const preloadedAgent = options.preloadedAgentExecutionObservation;
-  if (
-    preloadedAgent &&
-    preloadedAgent.requestUserId === userId &&
-    preloadedAgent.requestOrgId === orgId &&
-    preloadedAgent.agentId === agentId &&
-    preloadedAgent.agentOrgId === orgId
-  ) {
-    return {
-      agentId,
-      ownerUserId: preloadedAgent.ownerUserId,
-      orgId: preloadedAgent.agentOrgId,
-      instructionsStorageName: options.instructionsStorageName,
-    };
+  const preloaded = options.preloadedAgentExecutionObservation;
+  const resolved =
+    preloaded &&
+    preloaded.requestUserId === userId &&
+    preloaded.requestOrgId === orgId &&
+    preloaded.agentId === agentId &&
+    preloaded.agentOrgId === orgId
+      ? {
+          agentId,
+          ownerUserId: preloaded.ownerUserId,
+          orgId: preloaded.agentOrgId,
+          instructionsStorageName: options.instructionsStorageName,
+        }
+      : resolveAgentObservation(options.agentObservation, options);
+  if (isRouteError(resolved)) {
+    return resolved;
   }
-  return await measureApiDispatchTiming(
-    options.timing,
-    "api_dispatch_resolve_agent_execution_by_agent_id",
-    "nested",
-    () => {
-      return resolveAgentObservation(options.agentObservation, {
-        instructionsStorageName: options.instructionsStorageName,
-        timing: options.timing,
-      });
-    },
-  );
+  const snapshot = options.sessionSnapshot;
+  return {
+    ...resolved,
+    ...(snapshot
+      ? {
+          nativeContinuation: snapshot.nativeContinuation,
+          resumeSessionIdentity: {
+            selectedModel: snapshot.previousRun?.selectedModel ?? null,
+            cliAgentType: options.nativeFramework ?? null,
+          },
+        }
+      : {}),
+  };
 }
 
 function enforceCaptureNetworkBodiesGate(
@@ -6232,7 +5975,19 @@ function resolveCompatibleDirectResumeSession(args: {
   const previous = args.resolved.resumeSessionIdentity;
   return previous && canReuseSession(previous, args.next)
     ? args.resolved
-    : { ...args.resolved, resumeSession: undefined };
+    : {
+        ...args.resolved,
+        resumeSession: undefined,
+        ...(args.resolved.nativeContinuation
+          ? {
+              nativeContinuation: {
+                ...args.resolved.nativeContinuation,
+                sessionId: null,
+                generationRunId: null,
+              },
+            }
+          : {}),
+      };
 }
 
 // --- Thread-private implementation: Pi launch resources ---
@@ -6400,7 +6155,10 @@ function buildRunContextSnapshot(args: {
     args.builtContext.secretValues,
   );
   const cliAgentSessionId =
-    storedContext.piSessionId ?? storedContext.resumeSession?.sessionId ?? null;
+    storedContext.piSessionId ??
+    storedContext.nativeContinuation?.sessionId ??
+    storedContext.resumeSession?.sessionId ??
+    null;
   const snapshot: RunContextAxiomSnapshot = {
     _time: nowDate().toISOString(),
     runId: args.runId,
@@ -6602,13 +6360,10 @@ function tailFacts(
     orgId: args.createArgs.orgId,
     userId: args.createArgs.userId,
     runId: persisted.run.id,
-    sessionId: args.identity.sessionId,
     runCreatedAt: persisted.run.createdAt,
     snapshot: args.persistence.rows.rowsArgs.launchSnapshot,
     triggerSource: args.persistence.rows.metadata.triggerSource,
     chatThreadId: args.persistence.rows.metadata.chatThreadId,
-    bindingThreadId: args.createArgs.chatThreadId,
-    action: args.createArgs.threadSessionResolution?.action,
     // Memory flags are captured, not a launch-time transaction fence.
     requestMemory:
       Boolean(claim) &&
@@ -6618,10 +6373,6 @@ function tailFacts(
       Boolean(admission.validatedThreadSession) &&
       admission.validatedThreadSession?.threadAgentId ===
         args.context.resolved.agentId,
-    needsBinding:
-      Boolean(args.createArgs.chatThreadId) &&
-      !admission.validatedThreadSession,
-    binding: persisted.threadSessionBinding,
   };
 }
 
@@ -6654,34 +6405,6 @@ function pendingLaunchActiveRunValues(
     chatThreadId: commit.createArgs.chatThreadId ?? null,
     lastHeartbeatAt: run.createdAt,
   };
-}
-
-function preparedSessionUpdateStatements(
-  commit: PreparedCommitPreparedLaunchArgs,
-) {
-  const resolution = commit.createArgs.threadSessionResolution;
-  if (
-    !resolution ||
-    resolution.expected.sessionId === null ||
-    (!resolution.resetNativeSession &&
-      resolution.previousAgentId === commit.context.resolved.agentId)
-  ) {
-    return [];
-  }
-  return [
-    pendingLaunchUpdateSql(
-      agentSessions,
-      {
-        agentId: commit.context.resolved.agentId,
-        ...(resolution.resetNativeSession
-          ? {
-              conversationId: null,
-            }
-          : {}),
-      },
-      eq(agentSessions.id, commit.identity.sessionId),
-    ),
-  ];
 }
 
 const pendingLaunchRowSchema = z.object({
@@ -6722,13 +6445,6 @@ function pendingAtomicLaunchResult(
       row.createdAt,
     ),
     runnerJobCreatedAt: row.runnerJobCreatedAt,
-    threadSessionBinding: atomicThreadSessionBinding({
-      context,
-      commit: args.commit,
-      validatedThreadSession: args.validatedThreadSession,
-      boundThreadId: row.boundThreadId,
-      runId: row.runId,
-    }),
   };
   return { persisted };
 }
@@ -6877,9 +6593,6 @@ export const commitPreparedPendingLaunch$ = command(
             // account/session/queue authority is still checked by this writer.
             const capabilities = args.planCapabilities;
             signal.throwIfAborted();
-            for (const update of preparedSessionUpdateStatements(args)) {
-              await tx.execute(update);
-            }
             const prepared = pendingLaunchRowsPlan(
               args,
               admission,
@@ -6932,7 +6645,7 @@ export const commitPreparedPendingLaunch$ = command(
               signal.throwIfAborted();
               tail = advancePendingLaunchTail(input, step, rows);
             }
-            return { ...rowsPersisted, threadSessionBinding: tail.binding };
+            return rowsPersisted;
           },
         );
         // Keep this unique insertion last: do not acquire another row after it.

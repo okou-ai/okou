@@ -14,6 +14,8 @@ import type {
 } from "@earendil-works/pi-ai";
 
 import { projectPiMemoryCitationSegments } from "@okouai/api-contracts/contracts/pi-memory-citations";
+import { piMemoryChatInputSchema } from "@okouai/api-contracts/contracts/pi-memory-chat-source";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { piAgentStreamForConfig } from "./model";
 import { MemoryPiSession } from "./session-memory";
@@ -228,6 +230,73 @@ export function projectPiMemoryStage1Evidence(args: {
   }
   // Pi has no safe Context provenance or audio content type. Runtime context,
   // recalled memory, reasoning and custom records stay excluded, not retagged.
+  return boundStage1Evidence(rows);
+}
+
+export function projectPiMemoryChatStage1Evidence(args: {
+  readonly input: unknown;
+  readonly threadId: string;
+  readonly sourceRunId: string;
+  readonly lastSeqId: number;
+}): PiMemoryStage1Evidence[] {
+  const input = piMemoryChatInputSchema.parse(args.input);
+  if (
+    input.threadId !== args.threadId ||
+    input.sourceRunId !== args.sourceRunId ||
+    input.lastSeqId !== args.lastSeqId
+  ) {
+    throw new Error("Memory Chat source identity mismatch");
+  }
+  let previous = 0;
+  const revoked = new Set<string>();
+  let completed = false;
+  for (const event of input.events) {
+    if (
+      event.chatThreadId !== input.threadId ||
+      event.seqId <= previous ||
+      event.seqId > input.lastSeqId
+    ) {
+      throw new Error("Memory Chat source ordering mismatch");
+    }
+    previous = event.seqId;
+    if (event.eventType === "control.revoke" && event.revokesEventId)
+      revoked.add(event.revokesEventId);
+    if (
+      event.eventType === "run.completed" &&
+      event.runId === input.sourceRunId
+    )
+      completed = true;
+  }
+  if (previous > input.lastSeqId || !completed)
+    throw new Error("Memory Chat source is not settled");
+  const rows: PiMemoryStage1Evidence[] = [];
+  for (const event of input.events) {
+    if (revoked.has(event.id)) continue;
+    if (event.eventType === "input.prompt") {
+      const message = userMessageDocumentSchema.parse(
+        event.payload?.userMessage,
+      );
+      const text = message.parts
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("\n")
+        .trim();
+      if (text && !isRuntimeOrMemoryFeedback(text))
+        rows.push({
+          kind: isOtherAgentEnvelope(text) ? "other_agent" : "human",
+          content: redactPiMemoryStage1Secrets(text),
+        });
+    } else if (event.eventType === "output.message" && event.payload?.content) {
+      const visible = projectPiMemoryCitationSegments([event.payload.content]);
+      const text = redactPiMemoryStage1Segments(visible.visibleSegments)
+        .join("")
+        .trim();
+      if (text)
+        rows.push({
+          kind: isOtherAgentEnvelope(text) ? "other_agent" : "assistant",
+          content: text,
+        });
+    }
+  }
   return boundStage1Evidence(rows);
 }
 

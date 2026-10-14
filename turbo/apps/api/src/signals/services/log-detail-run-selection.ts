@@ -8,6 +8,7 @@ export function logDetailRunSelection() {
     error: agentRuns.error,
     failureReason: agentRuns.failureReason,
     id: agentRuns.id,
+    frameworkSessionId: agentRuns.frameworkSessionId,
     launchSnapshot: agentRuns.launchSnapshot,
     prompt: agentRuns.prompt,
     result: agentRuns.result,

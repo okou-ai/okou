@@ -3,7 +3,7 @@ import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
 import { claimPublicToolRun } from "./helpers/public-tool-actor";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
-import { completePublicCodexHistory } from "./helpers/public-pi-history";
+import { completePublicClaudeRun } from "./helpers/public-native-run";
 
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
@@ -2723,7 +2723,7 @@ describe("FW-5: terminal runs close firewall credential authority", () => {
               [200],
             );
           } else {
-            await completePublicCodexHistory(
+            await completePublicClaudeRun(
               context,
               run,
               headers,

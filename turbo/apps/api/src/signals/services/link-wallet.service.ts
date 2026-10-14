@@ -10,7 +10,6 @@ import {
   walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   linkWalletConnections,
   linkWalletOAuthAttempts,
@@ -82,12 +81,12 @@ export const walletRunOwner$ = computed(async (get): Promise<WalletOwner> => {
   const db = get(db$);
   const [run] = await db
     .select({
-      agentId: agentSessions.agentId,
+      agentId: agentRuns.agentId,
       triggerSource: agentRuns.triggerSource,
       status: agentRuns.status,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
+
     .where(
       and(
         eq(agentRuns.id, auth.runId),

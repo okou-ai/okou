@@ -1,42 +1,44 @@
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentSessions } from "@okouai/db/schema/agent-session";
-import { conversations } from "@okouai/db/schema/conversation";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { and, eq, inArray, isNull, ne, notExists, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 
 /** A terminal output is immutable; cancellation additionally owns a recovery barrier. */
 function finalizedPrivateMaintenanceOutput() {
-  return new QueryBuilder()
-    .select({ id: conversations.id })
-    .from(conversations)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .where(
+  return sql`(SELECT ${agentRuns.id} WHERE ${and(
+    inArray(agentRuns.status, ["completed", "failed", "cancelled"]),
+    or(
+      ne(agentRuns.status, "cancelled"),
+      isNull(agentRuns.cancellationRecoveryCompleted),
+      eq(agentRuns.cancellationRecoveryCompleted, true),
+    ),
+    eq(agentRuns.framework, "pi"),
+    eq(agentRuns.frameworkSessionId, sql`${agentRuns.id}::text`),
+    isNull(agentRuns.legacyConversationHistoryHash),
+    or(
       and(
-        inArray(agentRuns.status, ["completed", "failed", "cancelled"]),
-        or(
-          ne(agentRuns.status, "cancelled"),
-          isNull(agentRuns.cancellationRecoveryCompleted),
-          eq(agentRuns.cancellationRecoveryCompleted, true),
-        ),
-        eq(conversations.runId, agentRuns.id),
-        eq(conversations.cliAgentType, "pi"),
-        eq(conversations.cliAgentSessionId, sql`${agentRuns.id}::text`),
-        isNull(conversations.cliAgentSessionHistoryHash),
-        eq(agentSessions.conversationId, conversations.id),
+        eq(sql`${agentRuns.result}->>'framework'`, "pi"),
         eq(
-          sql`${agentRuns.result}->>'conversationId'`,
-          sql`${conversations.id}::text`,
+          sql`${agentRuns.result}->>'frameworkSessionId'`,
+          sql`${agentRuns.id}::text`,
         ),
-        eq(
-          sql`${agentRuns.result}->>'agentSessionId'`,
-          sql`${agentRuns.sessionId}::text`,
-        ),
-        sql`${agentRuns.result}->'storageOutputs' @> jsonb_build_array(jsonb_build_object('name', 'memory', 'mountPath', ${PI_MEMORY_ROOT}::text))`,
       ),
-    );
+      // The prepared outgoing API commits the native mirrors and exact
+      // storage receipt together, but its result still carries legacy IDs.
+      // It can finish after migration; native-only writers never use this.
+      // Remove after outgoing API/finalizer drain and projection of their late
+      // terminal receipts in #37970's physical contraction.
+      and(
+        sql`${agentRuns.launchSnapshot}->>'schemaVersion' <> '5'`,
+        sql`NOT (${agentRuns.result} ?| ARRAY['framework', 'frameworkSessionId'])`,
+        sql`jsonb_typeof(${agentRuns.result}->'agentSessionId') = 'string'`,
+        sql`jsonb_typeof(${agentRuns.result}->'conversationId') = 'string'`,
+      ),
+    ),
+    sql`${agentRuns.result}->'storageOutputs' @> jsonb_build_array(jsonb_build_object('name', 'memory', 'mountPath', ${PI_MEMORY_ROOT}::text))`,
+  )})`;
 }
 
 /**

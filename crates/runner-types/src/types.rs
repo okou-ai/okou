@@ -92,6 +92,9 @@ pub struct ExecutionContext {
     pub platform_environment: HashMap<String, String>,
     #[serde(default)]
     pub resume_session: Option<ResumeSession>,
+    /// Native-only continuation from the intended Thread's retained home.
+    #[serde(default)]
+    pub native_continuation: Option<guest_contracts::env::NativeContinuation>,
     // Plain secret values used only for redaction. These are values, not names.
     #[serde(default)]
     pub secret_values: Option<Vec<String>>,
@@ -1670,11 +1673,15 @@ impl ExecutionContext {
     /// the executor reads the CLI-generated session id from the guest filesystem
     /// post-execution (see `read_guest_cli_agent_session_id`).
     pub fn cli_agent_session_id(&self) -> Option<&str> {
-        self.pi_session_id.as_deref().or_else(|| {
-            self.resume_session
-                .as_ref()
-                .map(|r| r.cli_agent_session_id.as_str())
-        })
+        self.native_continuation
+            .as_ref()
+            .and_then(|native| native.session_id.as_deref())
+            .or_else(|| self.pi_session_id.as_deref())
+            .or_else(|| {
+                self.resume_session
+                    .as_ref()
+                    .map(|r| r.cli_agent_session_id.as_str())
+            })
     }
 }
 

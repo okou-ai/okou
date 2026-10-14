@@ -71,6 +71,7 @@ struct ClaimRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_hostname: Option<&'a str>,
     capabilities: RunnerClaimCapabilities,
+    native_continuation_supported: bool,
     telemetry: ClaimRequestTelemetry,
     /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
     /// strip the field; a runner without an installed CLI omits it.
@@ -1828,6 +1829,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
+        native_continuation_supported: true,
         telemetry: ClaimRequestTelemetry {
             discovery_source: candidate.discovery_source().map(JobDiscoverySource::as_str),
             job_discovered_to_claim_request_ms: claim_telemetry_duration_ms(

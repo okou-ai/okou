@@ -2,13 +2,8 @@ import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicFirewallFixture } from "./helpers/public-firewall-fixture";
 import { getCustomSkillStorageName } from "@okouai/core/storage-names";
 import { createHash, randomUUID } from "node:crypto";
-import { gzipSync, zstdCompressSync } from "node:zlib";
 
-import {
-  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-  SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-} from "@okouai/api-contracts/contracts/runners";
+import { CANONICAL_CLAUDE_MEMORY_MOUNT_PATH } from "@okouai/api-contracts/contracts/runners";
 
 import { describe, expect, it, onTestFinished } from "vitest";
 import { HttpResponse, http } from "msw";
@@ -167,19 +162,6 @@ function s3CommandName(command: unknown): string | undefined {
     .constructor?.name;
 }
 
-interface S3NotFoundError extends Error {
-  Code: string;
-  $metadata: { httpStatusCode: number };
-}
-
-function s3ObjectNotFoundError(): S3NotFoundError {
-  const error = new Error("NotFound") as S3NotFoundError;
-  error.name = "NotFound";
-  error.Code = "NoSuchKey";
-  error.$metadata = { httpStatusCode: 404 };
-  return error;
-}
-
 function presignedUrlKeysSince(
   startIndex: number,
 ): readonly (string | undefined)[] {
@@ -194,14 +176,6 @@ function hasManifestPresign(keys: readonly (string | undefined)[]): boolean {
   return keys.some((key) => {
     return key?.endsWith("/manifest.json") ?? false;
   });
-}
-
-function s3BytesBody(bytes: Buffer): AsyncIterable<Buffer> {
-  return {
-    async *[Symbol.asyncIterator]() {
-      yield bytes;
-    },
-  };
 }
 
 /**
@@ -222,9 +196,7 @@ async function completeRun(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`bdd run reads history ${runId}`)
-          .digest("hex"),
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(options.lastEventSequence === undefined
         ? {}
@@ -666,371 +638,6 @@ describe("RUN-03: cancel through the run cancel route", () => {
 });
 
 describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinning", () => {
-  it("returns compressed session continuation history refs", async () => {
-    mockEnv("S3_ENDPOINT", undefined);
-    mockEnv("S3_PUBLIC_ENDPOINT", "https://public-s3.example.test");
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-compressed-resume");
-    const history = `{"type":"init"}\n{"type":"human","text":"compressed-${randomUUID()}"}\n`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = gzipSync(Buffer.from(history, "utf8"));
-    const compressedKey = `blobs/${historyHash}.blob.gz`;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (s3CommandKey(command) === compressedKey) {
-        return Promise.resolve({
-          ContentLength: compressedHistory.length,
-          Body: s3BytesBody(compressedHistory),
-        });
-      }
-      return Promise.resolve({});
-    });
-
-    const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "create compressed history",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
-    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    expect(prepared.body).toMatchObject({
-      existing: false,
-      encoding: "gzip",
-    });
-    const duplicatePrepared = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length + 1,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    expect(duplicatePrepared.body).toStrictEqual({
-      existing: true,
-      encoding: "gzip",
-    });
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        completion: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-cli-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
-    );
-
-    const compressedContinuation = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      threadId: run.threadId,
-      prompt: "continue with compressed ref",
-    });
-    const compressedClaim = await api.claimRunnerJob(
-      compressedContinuation.runId,
-    );
-    expect(compressedClaim.resumeSession).toMatchObject({
-      sessionId: `bdd-cli-${run.runId}`,
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: expect.any(String),
-        encoding: "gzip",
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        downloadSource:
-          SESSION_HISTORY_DOWNLOAD_SOURCE_CONFIGURED_PUBLIC_ENDPOINT,
-      },
-    });
-    await api.requestCancelRun(actor, compressedContinuation.runId, [200]);
-  });
-
-  it("returns zstd-compressed session continuation history refs", async () => {
-    mockEnv("S3_ENDPOINT", undefined);
-    mockEnv("S3_PUBLIC_ENDPOINT", undefined);
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-compressed-resume");
-    const history = `{"type":"init"}\n{"type":"human","text":"zstd-${randomUUID()}"}\n`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = zstdCompressSync(Buffer.from(history, "utf8"));
-    const compressedKey = `blobs/${historyHash}.blob.zst`;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const commandKey = s3CommandKey(command);
-      if (commandKey === compressedKey) {
-        return Promise.resolve({
-          ContentLength: compressedHistory.length,
-          Body: s3BytesBody(compressedHistory),
-        });
-      }
-      if (commandKey?.startsWith(`blobs/${historyHash}.blob`)) {
-        return Promise.reject(s3ObjectNotFoundError());
-      }
-      return Promise.resolve({});
-    });
-
-    const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "create zstd compressed history",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
-    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        encoding: "zstd",
-      },
-      headers,
-      [200],
-    );
-    expect(prepared.body).toMatchObject({
-      existing: false,
-      encoding: "zstd",
-    });
-    const duplicatePrepared = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length + 1,
-        encoding: "zstd",
-      },
-      headers,
-      [200],
-    );
-    expect(duplicatePrepared.body).toStrictEqual({
-      existing: true,
-      encoding: "zstd",
-    });
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        completion: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: `bdd-cli-${run.runId}`,
-          cliAgentSessionHistoryHash: historyHash,
-        },
-      },
-      headers,
-      [200],
-    );
-
-    const compressedContinuation = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      threadId: run.threadId,
-      prompt: "continue with zstd compressed ref",
-    });
-    const compressedClaim = await api.claimRunnerJob(
-      compressedContinuation.runId,
-    );
-    expect(compressedClaim.resumeSession).toMatchObject({
-      sessionId: `bdd-cli-${run.runId}`,
-      historyRef: {
-        kind: "blob",
-        hash: historyHash,
-        url: expect.any(String),
-        encoding: "zstd",
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        downloadSource: SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-      },
-    });
-    await api.requestCancelRun(actor, compressedContinuation.runId, [200]);
-  });
-
-  it("rejects identity repair for a missing compressed session history blob", async () => {
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-gzip-repair");
-    const history = `{"type":"init"}\n{"type":"human","text":"repair-${randomUUID()}"}\n`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedKey = `blobs/${historyHash}.blob.gz`;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      if (s3CommandKey(command) === compressedKey) {
-        return Promise.reject(s3ObjectNotFoundError());
-      }
-      return Promise.resolve({});
-    });
-
-    const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "create missing compressed blob metadata",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
-    const compressedPrepare = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: gzipSync(Buffer.from(history, "utf8")).length,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    expect(compressedPrepare.body).toMatchObject({
-      existing: false,
-      encoding: "gzip",
-    });
-
-    const mismatchedEncodedSize =
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: gzipSync(Buffer.from(history, "utf8")).length + 1,
-          encoding: "gzip",
-        },
-        headers,
-        [400],
-      );
-    expectApiError(mismatchedEncodedSize.body);
-    expect(mismatchedEncodedSize.body.error.message).toBe(
-      "Session history encoded size does not match the existing blob",
-    );
-
-    const compressedRetry = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: gzipSync(Buffer.from(history, "utf8")).length,
-        encoding: "gzip",
-      },
-      headers,
-      [200],
-    );
-    expect(compressedRetry.body).toMatchObject({
-      existing: false,
-      encoding: "gzip",
-    });
-
-    const identityRepair = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: Buffer.byteLength(history, "utf8"),
-        encoding: "identity",
-      },
-      headers,
-      [400],
-    );
-    expectApiError(identityRepair.body);
-    expect(identityRepair.body.error.message).toBe(
-      "Identity session history upload cannot repair a compressed blob",
-    );
-  });
-
-  it("rejects identity repair for a missing zstd session history blob", async () => {
-    const actor = await entitledActor();
-    const compose = await createThreadAgent(actor, "bdd-zstd-repair");
-    const history = `{"type":"init"}\n{"type":"human","text":"repair-zstd-${randomUUID()}"}\n`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    const compressedHistory = zstdCompressSync(Buffer.from(history, "utf8"));
-    const compressedKey = `blobs/${historyHash}.blob.zst`;
-    context.mocks.s3.send.mockImplementation((command: unknown) => {
-      const commandKey = s3CommandKey(command);
-      if (commandKey === compressedKey) {
-        return Promise.reject(s3ObjectNotFoundError());
-      }
-      if (commandKey?.startsWith(`blobs/${historyHash}.blob`)) {
-        return Promise.reject(s3ObjectNotFoundError());
-      }
-      return Promise.resolve({});
-    });
-
-    const run = await api.createThreadRun(actor, {
-      agentId: compose.agentId,
-      prompt: "create missing zstd blob metadata",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
-    const compressedPrepare = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: compressedHistory.length,
-        encoding: "zstd",
-      },
-      headers,
-      [200],
-    );
-    expect(compressedPrepare.body).toMatchObject({
-      existing: false,
-      encoding: "zstd",
-    });
-
-    const mismatchedEncodedSize =
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: compressedHistory.length + 1,
-          encoding: "zstd",
-        },
-        headers,
-        [400],
-      );
-    expectApiError(mismatchedEncodedSize.body);
-    expect(mismatchedEncodedSize.body.error.message).toBe(
-      "Session history encoded size does not match the existing blob",
-    );
-
-    const mismatchedEncodingRepair =
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash: historyHash,
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: gzipSync(Buffer.from(history, "utf8")).length,
-          encoding: "gzip",
-        },
-        headers,
-        [400],
-      );
-    expectApiError(mismatchedEncodingRepair.body);
-    expect(mismatchedEncodingRepair.body.error.message).toBe(
-      "Compressed session history upload encoding must match the existing blob",
-    );
-
-    const identityRepair = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: historyHash,
-        rawSize: Buffer.byteLength(history, "utf8"),
-        encodedSize: Buffer.byteLength(history, "utf8"),
-        encoding: "identity",
-      },
-      headers,
-      [400],
-    );
-    expectApiError(identityRepair.body);
-    expect(identityRepair.body.error.message).toBe(
-      "Identity session history upload cannot repair a compressed blob",
-    );
-  });
-
   it("restores volumes, memory, and conversation state when continuing sessions", async () => {
     const fixture = createPublicFirewallFixture(context);
     await fixture.run(async () => {
@@ -1260,7 +867,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId,
-            cliAgentSessionHistoryHash: historyHash,
+            cliAgentSessionHistoryDisposition: "native_only",
             artifactSnapshots: [
               {
                 name: "memory",
@@ -1287,17 +894,10 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
       expect(continuedClaim.vars).toStrictEqual(claim1.vars);
-      expect(continuedClaim.resumeSession).toStrictEqual({
+      expect(continuedClaim.resumeSession).toBeNull();
+      expect(continuedClaim.nativeContinuation).toMatchObject({
         sessionId: `bdd-cli-${r1.runId}`,
-        historyRef: {
-          kind: "blob",
-          hash: historyHash,
-          url: "https://r2.example.com/storages/presigned?sig=bdd",
-          encoding: "identity",
-          rawSize: Buffer.byteLength(history, "utf8"),
-          encodedSize: Buffer.byteLength(history, "utf8"),
-          downloadSource: SESSION_HISTORY_DOWNLOAD_SOURCE_DEFAULT_R2_ENDPOINT,
-        },
+        generationRunId: r1.runId,
       });
       const continuedMemory = expectCanonicalStorageManifest(
         continuedClaim.storageManifest,
@@ -2433,9 +2033,7 @@ describe("RUN-04: agent run telemetry families", () => {
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `bdd-cli-${run.runId}`,
-            cliAgentSessionHistoryHash: createHash("sha256")
-              .update(`bdd sandbox reuse ${run.runId}`)
-              .digest("hex"),
+            cliAgentSessionHistoryDisposition: "native_only",
           },
           sandboxReuseResult: scenario.sandboxResult,
           homeReuseResult: scenario.homeResult,
@@ -2577,9 +2175,7 @@ describe("RUN-04: agent run telemetry families", () => {
         completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId: `bdd-cli-${agentRun.runId}`,
-          cliAgentSessionHistoryHash: createHash("sha256")
-            .update(`bdd zero detail ${agentRun.runId}`)
-            .digest("hex"),
+          cliAgentSessionHistoryDisposition: "native_only",
         },
         sandboxReuseResult: "reused",
         homeReuseResult: "sandboxReused",

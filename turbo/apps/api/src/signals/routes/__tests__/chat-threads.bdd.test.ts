@@ -10,7 +10,7 @@ import {
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import AdmZip from "adm-zip";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -240,9 +240,7 @@ async function completeChatRunOk(
       [200],
     );
   }
-  const historyHash = createHash("sha256")
-    .update(`bdd chat thread history ${runId}`)
-    .digest("hex");
+
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -250,7 +248,7 @@ async function completeChatRunOk(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(stagedOutputEvents.length === 0
         ? {}

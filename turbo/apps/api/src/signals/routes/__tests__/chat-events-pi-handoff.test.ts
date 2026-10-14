@@ -1,22 +1,16 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { createHash, randomUUID } from "node:crypto";
-import { gzipSync, zstdCompressSync } from "node:zlib";
+import { randomUUID } from "node:crypto";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
-import {
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  RESUME_SESSION_HISTORY_MAX_BYTES,
-} from "@okouai/api-contracts/contracts/runners";
+import { PI_SANDBOX_INSTALLED_CLI_MIN_VERSION } from "@okouai/api-contracts/contracts/runners";
 import {
   PI_AGENT_RUNTIME_VERSION,
   PI_SESSION_CONSTRUCTION_DIGEST,
 } from "@okouai/pi-agent-runtime";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
-import { env, mockEnv } from "../../../lib/env";
+import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { readCompletedRunSessionId } from "./helpers/public-run-session";
 import {
@@ -28,239 +22,29 @@ import {
   claimEnvironment,
   modelProviderSecretPlaceholder,
   eventBackedContents,
-  type PiObjectStoreCommand,
-  piS3ObjectKey,
   PI_RESOURCE_ARCHIVE_DOWNLOAD_URL,
 } from "./helpers/chat-events-fixture";
-
 const context = testContext();
 const {
   api,
   chat,
   webhooks,
-  entitledChatActor,
   configureSubscriptionPiModel,
-  sendChatRun,
-  claimChatRun,
   waitForRunStatus,
   failChatRun,
-  cancelChatRun,
   mockPiObjectStore,
-  piSandboxBaseSession,
   completeSandboxFirstPiRun,
   completeChatRunOk,
 } = createChatEventsFixture(context);
 
 describe("CHAT-02: model-first routing", () => {
-  it.each(["identity", "gzip", "zstd"] as const)(
-    "references Pi %s resume history without API history or resource IO",
-    async (encoding) => {
-      const { actor, agentId, runnerGroup } = await entitledChatActor();
-      await configureSubscriptionPiModel(actor);
-      const historyObjects = mockPiObjectStore();
-      let resourceDownloads = 0;
-      server.use(
-        http.get(PI_RESOURCE_ARCHIVE_DOWNLOAD_URL, () => {
-          resourceDownloads += 1;
-          return HttpResponse.json(
-            { error: "API resources unavailable" },
-            { status: 503 },
-          );
-        }),
-      );
-      const run = await sendChatRun(actor, {
-        agentId,
-        prompt: "/skill:long-session finish in sandbox",
-        model: "gpt-6-luna",
-      });
-      await flushWaitUntilForTest();
-      const claimed = await claimChatRun(runnerGroup, run.runId);
-      const session = MemoryPiSession.create({
-        cwd: "/home/user/workspace",
-        id: run.threadId,
-      });
-      session.appendMessage({
-        role: "user",
-        content: "preserve the complete native history",
-        timestamp: 1,
-      });
-      session.appendMessage({
-        role: "assistant",
-        content: [
-          {
-            type: "text",
-            text: "x".repeat(64),
-          },
-        ],
-        api: "openai-responses",
-        provider: "openai",
-        model: "gpt-6-luna",
-        usage: {
-          input: 0,
-          output: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          totalTokens: 0,
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-        },
-        stopReason: "stop",
-        timestamp: 2,
-      });
-      const raw = Buffer.from(session.toJsonl());
-      const encoded =
-        encoding === "gzip"
-          ? gzipSync(raw)
-          : encoding === "zstd"
-            ? zstdCompressSync(raw)
-            : raw;
-      const hash = createHash("sha256").update(raw).digest("hex");
-      const invalidHash = createHash("sha256")
-        .update(randomUUID())
-        .digest("hex");
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash: invalidHash,
-          rawSize: encoding === "identity" ? raw.length : 1,
-          encodedSize: encoded.length,
-          encoding,
-        },
-        claimed.sandboxHeaders,
-        [200],
-      );
-      const invalidSuffix =
-        encoding === "identity"
-          ? "blob"
-          : encoding === "gzip"
-            ? "blob.gz"
-            : "blob.zst";
-      historyObjects.set(
-        `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidHash}.${invalidSuffix}`,
-        encoded,
-      );
-      const invalidCompletion = await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "pi",
-            cliAgentSessionId: run.threadId,
-            cliAgentSessionHistoryHash: invalidHash,
-          },
-        },
-        claimed.sandboxHeaders,
-        [400],
-      );
-      expect(JSON.stringify(invalidCompletion.body)).toContain(
-        encoding === "identity"
-          ? "[PI_H2_HASH_MISMATCH]"
-          : "[PI_H2_DECOMPRESSION_FAILED]",
-      );
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "running",
-      });
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: run.runId,
-          hash,
-          rawSize: raw.length,
-          encodedSize: encoded.length,
-          encoding,
-        },
-        claimed.sandboxHeaders,
-        [200],
-      );
-      const suffix =
-        encoding === "identity"
-          ? "blob"
-          : encoding === "gzip"
-            ? "blob.gz"
-            : "blob.zst";
-      const blobKey = `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${hash}.${suffix}`;
-      historyObjects.set(blobKey, encoded);
-      const completed = await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          completion: {
-            cliAgentType: "pi",
-            cliAgentSessionId: run.threadId,
-            cliAgentSessionHistoryHash: hash,
-          },
-        },
-        claimed.sandboxHeaders,
-        [200],
-      );
-      expect(completed.body).toStrictEqual({
-        success: true,
-        status: "completed",
-      });
-      await flushWaitUntilForTest();
-      await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
-        status: "completed",
-      });
-      const callsBeforeResume = context.mocks.s3.send.mock.calls.length;
-      const resumed = await sendChatRun(actor, {
-        agentId,
-        threadId: run.threadId,
-        prompt: "continue the long session",
-        model: "gpt-6-luna",
-      });
-      await flushWaitUntilForTest();
-      const resumedClaim = await claimChatRun(runnerGroup, resumed.runId);
-      const resumeSession = resumedClaim.claim.resumeSession;
-      expect(resumeSession).toMatchObject({
-        sessionId: run.threadId,
-        historyRef: {
-          kind: "blob",
-          hash,
-          encoding,
-          rawSize: raw.length,
-          encodedSize: encoded.length,
-          url: expect.any(String),
-        },
-      });
-      if (!resumeSession || !("historyRef" in resumeSession)) {
-        throw new Error("Expected a referenced resume history");
-      }
-      expect(
-        new URL(resumeSession.historyRef.url).searchParams.get("object"),
-      ).toBe(blobKey);
-      expect(resourceDownloads).toBe(0);
-      expect(
-        context.mocks.s3.send.mock.calls
-          .slice(callsBeforeResume)
-          .some(([command]) => {
-            const candidate = command as PiObjectStoreCommand;
-            return (
-              candidate.constructor?.name === "GetObjectCommand" &&
-              piS3ObjectKey(candidate) === blobKey
-            );
-          }),
-      ).toBeFalsy();
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: resumed.runId,
-          hash: "f".repeat(64),
-          rawSize: RESUME_SESSION_HISTORY_MAX_BYTES + 1,
-          encodedSize: 1,
-          encoding,
-        },
-        resumedClaim.sandboxHeaders,
-        [400],
-      );
-      await cancelChatRun(actor, resumed.runId, resumedClaim.sandboxHeaders);
-    },
-    30_000,
-  );
-
   it.each([
     "/skill:handoff-skill first  argument\nsecond line",
     " \n\t/skill:handoff-skill first  argument\nsecond line",
     "/unknown-command first  argument\nsecond line",
     "/home/user/workspace/report.txt first  argument\nsecond line",
   ] as const)(
-    "claims native input %j with exact fresh and resumed Sandbox H0",
+    "passes native input %j unchanged across queued and continued rounds",
     async (prompt) => {
       const {
         actor,
@@ -286,7 +70,6 @@ describe("CHAT-02: model-first routing", () => {
             );
           }),
         );
-        await api.heartbeatRunner(runnerGroup);
         const anchor = await sendChatRun(actor, {
           agentId,
           prompt: "hold capacity for the personal Pi input",
@@ -301,9 +84,7 @@ describe("CHAT-02: model-first routing", () => {
         });
         await completeChatRunOk(anchor.runId, anchorClaim.sandboxHeaders);
         let run = await waiting.launchedRun();
-        let expectedH0: Buffer | undefined;
-        let applicationSession: string | undefined;
-        const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
+        let previousRunId: string | undefined;
         for (const turn of [1, 2]) {
           const originalPrompt = turn === 1 ? prompt : `${prompt}\nresume once`;
           if (turn === 2) {
@@ -314,8 +95,6 @@ describe("CHAT-02: model-first routing", () => {
               model: "gpt-6-luna",
             });
           }
-          await flushWaitUntilForTest();
-          expect(resourceDownloads).toBe(0);
           const claim = await claimChatRun(runnerGroup, run.runId);
           expect(claim.claim).toMatchObject({
             cliAgentType: "pi",
@@ -328,46 +107,22 @@ describe("CHAT-02: model-first routing", () => {
                 PI_SESSION_CONSTRUCTION_DIGEST,
             },
           });
-          expect(claim.claim.piLaunchConfig).toMatchObject({
-            schemaVersion: 2,
+          expect(claim.claim.resumeSession).toBeNull();
+          expect(claim.claim.nativeContinuation).toMatchObject({
+            sessionId: turn === 1 ? null : run.threadId,
+            generationRunId: previousRunId ?? null,
           });
           if (turn === 1) {
-            expect(claim.claim.resumeSession).toBeNull();
+            expect(claim.claim.nativeContinuation?.recoveryPrompt).toBeNull();
           } else {
-            if (!expectedH0) {
-              throw new Error("Expected settled first-turn history");
-            }
-            const hash = createHash("sha256").update(expectedH0).digest("hex");
-            const resumeSession = claim.claim.resumeSession;
-            expect(resumeSession).toMatchObject({
-              sessionId: run.threadId,
-              historyRef: {
-                kind: "blob",
-                hash,
-                encoding: "identity",
-                rawSize: expectedH0.length,
-                encodedSize: expectedH0.length,
-                url: expect.any(String),
-              },
-            });
-            if (!resumeSession || !("historyRef" in resumeSession)) {
-              throw new Error("Expected referenced resume history");
-            }
-            expect(
-              new URL(resumeSession.historyRef.url).searchParams.get("object"),
-            ).toBe(`${bucket}/blobs/${hash}.blob`);
+            expect(claim.claim.nativeContinuation?.recoveryPrompt).toContain(
+              "okou chat messages --output-dir threads",
+            );
           }
-          const h0 = piSandboxBaseSession(claim.claim, historyObjects);
-          if (turn === 2) {
-            expect(h0).toStrictEqual(expectedH0);
-          }
-          const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
-          expect(session.getSessionId()).toBe(run.threadId);
-          expect(session.buildSessionContext().messages).toHaveLength(
-            (turn - 1) * 2,
+          expect(claim.claim.appendSystemPrompt).not.toContain(
+            "native Sandbox answer 1",
           );
-
-          const sandboxUsage = {
+          const usage = {
             idempotencyKey: randomUUID(),
             kind: "model" as const,
             provider: "gpt-6-luna",
@@ -376,15 +131,12 @@ describe("CHAT-02: model-first routing", () => {
           };
           for (const _receipt of [1, 2]) {
             await webhooks.requestAgentUsageEvent(
-              { runId: run.runId, events: [sandboxUsage] },
+              { runId: run.runId, events: [usage] },
               claim.sandboxHeaders,
               [200],
             );
           }
           const answer = `native Sandbox answer ${turn}`;
-          // This exercises the external Sandbox output/completion boundary.
-          // pi-agent-loop.test.ts separately runs the real official RPC/AgentSession
-          // with a mounted skill and checks its actual expanded provider input.
           await completeSandboxFirstPiRun({
             actor,
             answer,
@@ -413,36 +165,20 @@ describe("CHAT-02: model-first routing", () => {
             }),
           ).toHaveLength(1);
           await expectThreadModelTokens(context, actor, run.threadId, 0);
-          const completedSession = await readCompletedRunSessionId(
-            context,
-            actor,
-            run.runId,
-          );
-          if (applicationSession === undefined) {
-            applicationSession = completedSession;
-          }
-          expect(completedSession).toBe(applicationSession);
-          const blob = [...historyObjects.entries()]
-            .filter(([key]) => {
-              return key.startsWith(`${bucket}/blobs/`);
-            })
-            .at(-1);
-          if (!blob) {
-            throw new Error("Expected the Sandbox's settled history");
-          }
-          expectedH0 = blob[1];
-          const settled = MemoryPiSession.fromJsonl(
-            expectedH0.toString("utf8"),
-          );
-          expect(settled.getSessionId()).toBe(run.threadId);
-          expect(settled.isSettledHistory()).toBeTruthy();
-          expect(settled.buildSessionContext().messages).toHaveLength(turn * 2);
+          await expect(
+            readCompletedRunSessionId(context, actor, run.runId),
+          ).resolves.toBe(run.threadId);
+          previousRunId = run.runId;
         }
+        expect(resourceDownloads).toBe(0);
+        expect(
+          [...historyObjects.keys()].filter((key) => {
+            return key.includes("/blobs/");
+          }),
+        ).toHaveLength(0);
       });
     },
-    90_000,
   );
-
   it.each(["gpt-6-luna"] as const)(
     "claims %s with Sandbox credentials without charging duplicate personal usage",
     async (selectedModel) => {

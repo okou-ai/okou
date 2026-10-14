@@ -1,7 +1,6 @@
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -28,7 +27,6 @@ import {
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
   runFreeAgentDeleteSql,
-  runFreeUserSessionDeleteSql,
   throwClerkLifecycleFailure,
   throwLateRunConversation,
   type ClerkDeletionScope,
@@ -89,22 +87,11 @@ const deleteClerkUserLifecycleData$ = command(
         }
         await tx.delete(artifacts).where(ownership.catalogScope);
         signal.throwIfAborted();
-        const userSessions = tx
-          .select({ id: agentSessions.id })
-          .from(agentSessions)
-          .where(eq(agentSessions.userId, userId));
-        // UNION deduplicates the user's direct runs and runs in the user's sessions.
         const runIds = idsOf(
           await tx
             .select({ id: agentRuns.id })
             .from(agentRuns)
-            .where(eq(agentRuns.userId, userId))
-            .union(
-              tx
-                .select({ id: agentRuns.id })
-                .from(agentRuns)
-                .where(inArray(agentRuns.sessionId, userSessions)),
-            ),
+            .where(eq(agentRuns.userId, userId)),
         );
         // Delete this exact Run snapshot and release its held references.
         // A missing Run or reference rolls back the whole cleanup.
@@ -120,15 +107,6 @@ const deleteClerkUserLifecycleData$ = command(
             runIds.length,
           );
         }
-        await tx.execute(runFreeUserSessionDeleteSql(userId));
-        const [lateSession] = await tx
-          .select({ id: agentSessions.id })
-          .from(agentSessions)
-          .where(eq(agentSessions.userId, userId))
-          .limit(1);
-        if (lateSession) {
-          throwLateRunConversation();
-        }
         await tx
           .delete(chatThreadDrafts)
           .where(eq(chatThreadDrafts.userId, userId));
@@ -139,8 +117,7 @@ const deleteClerkUserLifecycleData$ = command(
         )) {
           await tx.execute(statement);
         }
-        // A fresh statement also observes direct Runs committed while the
-        // Thread/publication cleanup waited; Session membership is insufficient.
+        // Observe immutable Run ownership again after Thread/publication cleanup.
         const [lateRun] = await tx
           .select({ id: agentRuns.id })
           .from(agentRuns)

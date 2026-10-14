@@ -64,6 +64,7 @@ pub(super) enum Scenario {
     RuntimeMalformedThreadItem,
     ResumeDifferentThreadId,
     ResumeRpcErrorWithThreadId,
+    ResumeRolloutMissing,
     ThreadStartInvalidThreadId,
     UnexpectedThreadOutputItemStarted,
     UnexpectedTurnOutputItemStarted,
@@ -204,6 +205,7 @@ impl Scenario {
                 "runtime-malformed-thread-item" => Ok(Self::RuntimeMalformedThreadItem),
                 "resume-different-thread-id" => Ok(Self::ResumeDifferentThreadId),
                 "resume-rpc-error-with-thread-id" => Ok(Self::ResumeRpcErrorWithThreadId),
+                "resume-rollout-missing" => Ok(Self::ResumeRolloutMissing),
                 "thread-start-invalid-thread-id" => Ok(Self::ThreadStartInvalidThreadId),
                 "unexpected-thread-output-item-started" => {
                     Ok(Self::UnexpectedThreadOutputItemStarted)

@@ -802,6 +802,9 @@ export const rustTypeBindings = [
             "The native history exceeded the bounded Run output limit.",
           ],
           unavailable: ["The native history was unavailable or unusable."],
+          native_only: [
+            "Native history is retained only in the disposable sandbox/home.",
+          ],
         },
       },
       {

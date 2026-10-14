@@ -136,16 +136,13 @@ export function createPromptAndSkillVolumesSignals(
     agent$,
     memberMetadata$,
     featureSwitches$,
-    memberRoutes$,
     authorizedConnectors$,
     selectedImageModel$,
   } = sources;
   const workflowSkills$ = computed((get) => {
     return get(threadContext.workflowSkills$);
   });
-  const modelCatalog$ = computed((get) => {
-    return get(bootstrap.modelCatalog$);
-  });
+
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
     if (!thread) {
@@ -168,13 +165,7 @@ export function createPromptAndSkillVolumesSignals(
     pickedEvent$,
     threadContext.computerUseHostGrant$,
   );
-  const rotatedPrompt$ = createRotatedPrompt(
-    pickedEvent$,
-    threadContext.session$,
-    memberRoutes$,
-    modelCatalog$,
-    featureSwitches$,
-  );
+  const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);
   const systemSkills$ = createSystemSkillsContext();

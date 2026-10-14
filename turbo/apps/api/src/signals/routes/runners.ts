@@ -31,7 +31,6 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { blobs } from "@okouai/db/schema/blob";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -820,7 +819,9 @@ const findPendingRunnerJob$ = command(
         cliAgentSessionId: runnerJobQueue.cliAgentSessionId,
         reuseKey: runnerJobQueue.reuseKey,
         historyGenerationRunId:
-          sql`${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId'`.mapWith(
+          sql`CASE WHEN ${runnerJobQueue.executionContext} ? 'nativeContinuation'
+            THEN ${runnerJobQueue.executionContext}->'nativeContinuation'->>'generationRunId'
+            ELSE ${runnerJobQueue.executionContext}->'resumeSession'->>'historyGenerationRunId' END`.mapWith(
             nullableDriverValueDecoder(pgTextDecoder),
           ),
         createdAt: runnerJobQueue.createdAt,
@@ -990,8 +991,8 @@ async function getRunNetworkPolicyScope(
       status: agentRuns.status,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-    .innerJoin(agents, eq(agents.id, agentSessions.agentId))
+
+    .innerJoin(agents, eq(agents.id, agentRuns.agentId))
     .where(eq(agentRuns.id, runId))
     .limit(1);
   signal.throwIfAborted();
@@ -1042,7 +1043,7 @@ async function getClaimableJob(
         id: agentRuns.id,
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
-        agentId: agentSessions.agentId,
+        agentId: agentRuns.agentId,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
@@ -1050,25 +1051,10 @@ async function getClaimableJob(
     })
     .from(runnerJobQueue)
     .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-    .innerJoin(
-      agentSessions,
-      and(
-        eq(agentSessions.id, agentRuns.sessionId),
-        or(
-          isNotNull(agentSessions.agentId),
-          // An unbound session belongs directly to the run's owner. Its
-          // producer owns admission and lifecycle fencing, not runner claim.
-          and(
-            eq(agentSessions.orgId, agentRuns.orgId),
-            eq(agentSessions.userId, agentRuns.userId),
-            isNull(agentRuns.chatThreadId),
-          ),
-        ),
-      ),
-    )
     .where(
       and(
         eq(runnerJobQueue.runId, runId),
+        or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
         gt(runnerJobQueue.expiresAt, sql`now()`),
       ),
     )
@@ -2466,6 +2452,7 @@ async function resolveStoredExecutionContextForClaim(
     readonly orgId: string;
     readonly executionContext: unknown;
     readonly capabilities: RunnerClaimCapabilities;
+    readonly nativeContinuationSupported: boolean;
     readonly timing: ClaimRouteTimingCollector;
     readonly scheduleFailedSideEffects: (
       args: ClaimFailedSideEffectArgs,
@@ -2492,6 +2479,15 @@ async function resolveStoredExecutionContextForClaim(
     return {
       compatible: false as const,
       response: await failClaimForInvalidStoredExecutionContext(args, signal),
+    };
+  }
+  if (
+    storedContextResult.data.nativeContinuation !== undefined &&
+    !args.nativeContinuationSupported
+  ) {
+    return {
+      compatible: false as const,
+      response: notFound("Job not found in queue"),
     };
   }
   const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2533,6 +2529,7 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
+      readonly nativeContinuationSupported: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2550,6 +2547,7 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
+        nativeContinuationSupported: args.nativeContinuationSupported,
         timing: claimRouteTiming,
         scheduleFailedSideEffects(failedArgs) {
           set(scheduleClaimFailedSideEffects$, failedArgs, signal);
@@ -2722,6 +2720,8 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
+      nativeContinuationSupported:
+        body.data.nativeContinuationSupported === true,
       jobWithRun,
       telemetry: body.data.telemetry
         ? { ...body.data.telemetry, runnerPreference }

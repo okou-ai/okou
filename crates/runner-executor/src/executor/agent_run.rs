@@ -2625,6 +2625,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // inputs before crossing the process-spawn ownership boundary.
     let mut session_restore_diagnostics = staged_restore_diagnostics;
     let mut pre_run_restored_session_identity = None;
+    let mut native_home_proof_failed = false;
     if let Some(session_history_restore_plan) = session_history_restore_plan {
     let session_history_materializer = match session_history_restore_plan {
         SessionHistoryRestorePlan::SkipVerified(identity) => {
@@ -2710,6 +2711,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(), None);
                 None
             } else {
+                native_home_proof_failed = context.native_continuation.is_some();
                 record_session_history_restore_fallback(telemetry, fallback);
                 telemetry.record("session_history_home_cache_miss", Duration::ZERO, true, None);
                 Some(SessionHistoryMaterializer::start_cancellable(
@@ -2843,7 +2845,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // guest file and injected into the CLI child after guest-agent has started.
     let mut user_env_map = build_user_env_json(context);
     let env_build_started = Instant::now();
-    let run_payload = match prepared_run_payload.into_run_payload(context) {
+    let mut run_payload = match prepared_run_payload.into_run_payload(context) {
         Ok(run_payload) => run_payload,
         Err(error) => {
             telemetry.record(
@@ -2855,6 +2857,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    if native_home_proof_failed {
+        let mut native = context.native_continuation.clone().ok_or_else(|| RunnerError::Internal("native home proof lost its intent".into()))?;
+        native.session_id = None;
+        native.generation_run_id = None;
+        run_payload.native_continuation = serde_json::to_string(&native).map_err(|error| RunnerError::Internal(format!("serialize fresh native intent: {error}")))?;
+    }
     info!(
         run_id = %context.run_id,
         prompt_bytes = run_payload.prompt.len(),
