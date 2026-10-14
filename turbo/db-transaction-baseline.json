@@ -877,11 +877,6 @@
       "owner": "validateConnectorCatalogColumnContract"
     },
     {
-      "id": "TX-0377",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
-      "owner": "validatePermanentConnectorCatalogColumns"
-    },
-    {
       "id": "TX-0378",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
       "owner": "<module>"
