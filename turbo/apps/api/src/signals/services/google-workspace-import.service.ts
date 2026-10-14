@@ -1,5 +1,5 @@
 import { read as readCompoundFile } from "cfb";
-import { decodeXML } from "entities";
+import { decodeXML, escapeUTF8 } from "entities";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import {
   googleWorkspaceConversion,
@@ -130,14 +130,11 @@ function xmlText(value: string): string {
       invalidSource("This table contains unsupported control characters");
     }
   }
-  return value
-    .replace(/_x[\da-f]{4}_/giu, (match) => {
+  return escapeUTF8(
+    value.replace(/_x[\da-f]{4}_/giu, (match) => {
       return `_x005F_${match.slice(1)}`;
-    })
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll("\r", "&#13;");
+    }),
+  ).replaceAll("\r", "&#13;");
 }
 
 function columnName(index: number): string {

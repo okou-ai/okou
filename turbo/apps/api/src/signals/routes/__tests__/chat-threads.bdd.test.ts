@@ -2927,7 +2927,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     "workspace conversion preserves $extension fields as literal text",
     async ({ extension, delimiter }) => {
       const bytes = Buffer.from(
-        `\ufeff00123${delimiter}12345678901234567890${delimiter}=SUM(A1:A2)${delimiter}2026-01-02${delimiter}"line 1\nline 2"${delimiter}"a""b"\r\n`,
+        `\ufeff00123${delimiter}12345678901234567890${delimiter}=SUM(A1:A2)${delimiter}2026-01-02${delimiter}"line 1\nline 2"${delimiter}"a""b"${delimiter}a&b <c>\u00a0文${delimiter}_x0041_\r\n`,
       );
       const fixture = await workspaceSource(`table.${extension}`, bytes);
       const native = {
@@ -2954,11 +2954,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         "=SUM(A1:A2)",
         "2026-01-02",
         "line 1\nline 2",
-        'a"b',
+        "a&quot;b",
+        "a&amp;b &lt;c&gt;\u00a0文",
+        "_x005F_x0041_",
       ]) {
         expect(sheet).toContain(`<t xml:space="preserve">${value}</t>`);
       }
-      expect(sheet.match(/t="inlineStr"/gu)).toHaveLength(6);
+      expect(sheet.match(/t="inlineStr"/gu)).toHaveLength(8);
       expect(sheet).not.toContain("<f>");
       await fixture.finish();
     },
