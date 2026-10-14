@@ -145,6 +145,23 @@ the current table shapes. The validator asserted only the one-time route
 consolidation and installation rebinding; the resulting canonical DM route keys
 are enforced by the integration ingress tests.
 
+### Retired Pi memory compatibility-storage transition validator (2026-10-14)
+
+`scripts/test-pi-memory-storage-retirement-preparation.ts` and its outgoing Job
+fixture protected writer preparation `1374_prepare_pi_memory_storage_retirement`
+and contraction `1379_retire_pi_memory_compatibility_storage` (#39171). The
+preparation shipped in API 1.727.7 (release #39239) and the contraction in API
+1.728.1 (release #39415), as separate production releases. The 1.728.1
+[production promotion job](https://github.com/okou-ai/okou/actions/runs/38251606106/job/114855647823)
+checked out the release commit and completed production migrations at
+2026-10-12 13:06:26 UTC. This is execution evidence, not a direct production
+journal SELECT. The production rollback resolver enforces the writer-preparation
+floor `39d60bba6aa3a317948d653b4c1d09781719b466`, so no selectable API writes
+the dropped table or Job columns. `scripts/test-pi-memory-job-permanent.ts`
+remains in the schema consistency suite and protects canonical Job statements,
+root queries, ownership, claim/result constraints and published/no-diff/failure
+outcomes against both replayed and freshly generated schemas.
+
 ### Active transition validators
 
 - `scripts/test-run-native-facts-preparation.ts` replays the additive Run fact
@@ -190,17 +207,6 @@ are enforced by the integration ingress tests.
   `test-official-automation-binding-schema.ts` protects the surviving ordinary
   and Official binding invariants on both replayed and freshly generated
   schemas.
-
-- `scripts/test-pi-memory-storage-retirement-preparation.ts` replays writer
-  preparation and the actual compatibility-storage contraction. Unexpected
-  indexes, checks, views, routines, triggers, inheritance and foreign keys reject
-  deletion without advancing the migration journal. Matching compatibility
-  leases block contraction; real prepared leases, latest results, native history
-  and Storage content/lineage survive it. Keep this historical replay through
-  independent production contraction acceptance under #39171.
-  `scripts/test-pi-memory-job-permanent.ts` protects canonical Job statements,
-  root queries, ownership, claim/result constraints and published/no-diff/failure
-  outcomes against both replayed and freshly generated schemas.
 
 - `scripts/test-run-checkpoint-retirement.ts` replays the generic checkpoint
   contraction against populated historical data and preserves Runs/results,
