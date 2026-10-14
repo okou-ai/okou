@@ -389,24 +389,38 @@ export const vncConflict$ = computed((get) => {
   return get(conflict$);
 });
 
-type VncConflictReviewState = VncDialogState &
+export type VncConflictReviewState = VncDialogState &
   (
-    | { readonly kind: "edit"; readonly connection: VncConnectionResponse }
+    | {
+        readonly kind: "edit";
+        readonly connection: VncConnectionResponse;
+      }
+    | {
+        readonly kind: "delete";
+        readonly connection: VncConnectionResponse;
+      }
     | {
         readonly kind: "edit-credential";
         readonly credential: VncCredentialResponse;
       }
+    | {
+        readonly kind: "delete-credential";
+        readonly credential: VncCredentialResponse;
+      }
   );
 
-export function isVncEditVersionConflict(
+export function isVncReviewableConflict(
   dialog: VncDialogState,
   message: string | null,
 ) {
   return (
-    (dialog.kind === "edit" &&
+    ((dialog.kind === "edit" || dialog.kind === "delete") &&
       message === VNC_ERROR_CODES.GENERATION_CONFLICT) ||
-    (dialog.kind === "edit-credential" &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT)
+    ((dialog.kind === "edit-credential" ||
+      dialog.kind === "delete-credential") &&
+      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
+    (dialog.kind === "delete-credential" &&
+      message === VNC_ERROR_CODES.CREDENTIAL_IN_USE)
   );
 }
 
@@ -425,28 +439,27 @@ export const vncConflictReview$ = computed(
   async (get): Promise<VncConflictReviewState | null> => {
     const dialog = await get(vncDialog$);
     const message = get(saveMessage$);
-    if (!dialog || !get(conflict$)) {
+    if (
+      !dialog ||
+      !get(conflict$) ||
+      !isVncReviewableConflict(dialog, message)
+    ) {
       return null;
     }
-    if (
-      dialog.kind === "edit" &&
-      message === VNC_ERROR_CODES.GENERATION_CONFLICT
-    ) {
+    if (dialog.kind === "edit" || dialog.kind === "delete") {
       const connection = (await get(vncConnections$))?.find((candidate) => {
         return candidate.id === dialog.connection?.id;
       });
-      return connection ? { ...dialog, kind: "edit", connection } : null;
+      return connection ? { ...dialog, kind: dialog.kind, connection } : null;
     }
     if (
-      dialog.kind === "edit-credential" &&
-      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT
+      dialog.kind === "edit-credential" ||
+      dialog.kind === "delete-credential"
     ) {
       const credential = (await get(vncCredentials$))?.find((candidate) => {
         return candidate.id === dialog.credential?.id;
       });
-      return credential
-        ? { ...dialog, kind: "edit-credential", credential }
-        : null;
+      return credential ? { ...dialog, kind: dialog.kind, credential } : null;
     }
     return null;
   },
@@ -466,8 +479,11 @@ export const acceptVncConflictReview$ = command(
       get(dialog$) !== current ||
       !get(conflict$) ||
       !isSameVncDialog(current, reviewed) ||
-      reviewed.credential?.authMethod !== current.credential?.authMethod ||
-      !isVncEditVersionConflict(current, message)
+      (current.kind === "edit-credential" &&
+        reviewed.credential?.authMethod !== current.credential?.authMethod) ||
+      (reviewed.kind === "delete-credential" &&
+        reviewed.credential.hosts.length > 0) ||
+      !isVncReviewableConflict(current, message)
     ) {
       return;
     }
@@ -475,7 +491,7 @@ export const acceptVncConflictReview$ = command(
     set(resetKerberosImport$);
     set(
       reviewedVersion$,
-      reviewed.kind === "edit"
+      reviewed.kind === "edit" || reviewed.kind === "delete"
         ? reviewed.connection.generation
         : reviewed.credential.revision,
     );
@@ -1267,7 +1283,9 @@ function connectionRequest(
     return () => {
       return clients.connections.delete({
         params,
-        body: { expectedGeneration: connection.generation },
+        body: {
+          expectedGeneration: editor.reviewedVersion ?? connection.generation,
+        },
         fetchOptions: { signal },
       });
     };
@@ -1316,7 +1334,9 @@ function credentialRequest(
     return () => {
       return clients.credentials.delete({
         params,
-        body: { expectedRevision: credential.revision },
+        body: {
+          expectedRevision: editor.reviewedVersion ?? credential.revision,
+        },
         fetchOptions: { signal },
       });
     };

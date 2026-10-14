@@ -5588,8 +5588,10 @@
     },
     "save": "Speichern",
     "saveRecovery": {
+      "deleteHelp": "Prüfe diese gespeicherten Angaben vor dem Löschen. Diese Aktion wählt nur die Version aus; bestätige das Löschen anschließend separat.",
       "incompatible": "Die Authentifizierungsmethode wurde geändert. Schließe diesen Dialog und öffne die Zugangsdaten erneut, um die aktuelle Methode zu bearbeiten.",
       "keepChanges": "Meine Änderungen mit dieser Version behalten",
+      "keepDeletion": "Diese Version zum Löschen verwenden",
       "keepHelp": "Prüfe diese Angaben, behalte dann deinen Entwurf und speichere ihn auf Basis dieser Version. Deine Authentifizierungs- und Vertrauenseinstellungen bleiben erhalten.",
       "latest": "Aktuell gespeicherte Angaben",
       "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden. Schließe diesen Dialog und versuche es erneut.",

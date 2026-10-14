@@ -5666,8 +5666,10 @@
     },
     "save": "Enregistrer",
     "saveRecovery": {
+      "deleteHelp": "Vérifiez ces informations enregistrées avant de supprimer. Cette action sélectionne uniquement la version ; confirmez ensuite la suppression séparément.",
       "incompatible": "La méthode d’authentification a changé. Fermez cette boîte de dialogue et rouvrez les identifiants pour modifier la méthode actuelle.",
       "keepChanges": "Conserver mes modifications avec cette version",
+      "keepDeletion": "Utiliser cette version pour la suppression",
       "keepHelp": "Vérifiez ces informations, puis conservez votre brouillon et enregistrez-le à partir de cette version. Vos choix d’authentification et de confiance seront conservés.",
       "latest": "Informations actuellement enregistrées",
       "resourceIdConflict": "Impossible de créer cette ressource. Fermez cette boîte de dialogue et réessayez.",

@@ -20,7 +20,7 @@ import {
   vncDialog$,
   vncEditor$,
   vncCredentialMatchesProfile,
-  isVncEditVersionConflict,
+  isVncReviewableConflict,
   vncSaveMessage$,
   vncSaveUncertain$,
   type VncDialogState,
@@ -117,7 +117,7 @@ function VncSaveNotice({
   const uncertain = useGet(vncSaveUncertain$);
   const message = useGet(vncSaveMessage$);
   const conflict = useGet(vncConflict$);
-  const reviewable = isVncEditVersionConflict(dialog, message);
+  const reviewable = isVncReviewableConflict(dialog, message);
   if (saving || (!uncertain && !message)) {
     return null;
   }
@@ -322,7 +322,7 @@ function VncForm({
             {dialog.connection?.displayName ?? dialog.credential?.name}
           </p>
         )}
-        {dialog.credential && (
+        {dialog.credential && !(destructive && conflict) && (
           <VncCredentialImpact credential={dialog.credential} />
         )}
         <VncSaveNotice saving={saving} dialog={dialog} />

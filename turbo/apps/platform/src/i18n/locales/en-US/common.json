@@ -5580,8 +5580,10 @@
     },
     "save": "Save",
     "saveRecovery": {
+      "deleteHelp": "Review these saved details before deleting. This action only selects the version; confirm deletion separately.",
       "incompatible": "The authentication method changed. Close this dialog and reopen the credential to edit the current method.",
       "keepChanges": "Keep my changes with this version",
+      "keepDeletion": "Use this version for deletion",
       "keepHelp": "Review these details, then keep your draft and save it against this version. Your authentication and trust choices will be kept.",
       "latest": "Current saved details",
       "resourceIdConflict": "This resource could not be created. Close this dialog and try again.",

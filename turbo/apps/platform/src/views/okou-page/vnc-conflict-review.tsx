@@ -9,7 +9,9 @@ import {
   vncConflictReview$,
   vncSaveMessage$,
   vncSshConnectionId,
-  isVncEditVersionConflict,
+  retryVnc$,
+  isVncReviewableConflict,
+  type VncConflictReviewState,
   type VncDialogState,
 } from "../../signals/vnc.ts";
 import { sshConnections$ } from "../../signals/ssh.ts";
@@ -194,6 +196,63 @@ function CredentialDetails({
   );
 }
 
+function VncConflictReviewActions({
+  dialog,
+  reviewed,
+}: {
+  readonly dialog: VncDialogState;
+  readonly reviewed: VncConflictReviewState;
+}) {
+  const { t } = useTranslation();
+  const accept = useSet(acceptVncConflictReview$);
+  const retry = useSet(retryVnc$);
+  const signal = useGet(pageSignal$);
+  const destructive =
+    dialog.kind === "delete" || dialog.kind === "delete-credential";
+  const incompatible =
+    dialog.kind === "edit-credential" &&
+    reviewed.credential?.authMethod !== dialog.credential?.authMethod;
+  const inUse =
+    reviewed.kind === "delete-credential" &&
+    reviewed.credential.hosts.length > 0;
+  return (
+    <>
+      <p role={incompatible || inUse ? "alert" : undefined}>
+        {t(($) => {
+          return inUse
+            ? $.vnc.credential.inUse
+            : incompatible
+              ? $.vnc.saveRecovery.incompatible
+              : destructive
+                ? $.vnc.saveRecovery.deleteHelp
+                : $.vnc.saveRecovery.keepHelp;
+        })}
+      </p>
+      {inUse && (
+        <Button type="button" variant="outline" onClick={retry}>
+          {t(($) => {
+            return $.global.actions.tryAgain;
+          })}
+        </Button>
+      )}
+      <Button
+        type="button"
+        variant="outline"
+        disabled={incompatible || inUse}
+        onClick={() => {
+          detach(accept(reviewed, signal), Reason.DomCallback);
+        }}
+      >
+        {t(($) => {
+          return destructive
+            ? $.vnc.saveRecovery.keepDeletion
+            : $.vnc.saveRecovery.keepChanges;
+        })}
+      </Button>
+    </>
+  );
+}
+
 export function VncConflictReview({
   dialog,
 }: {
@@ -203,14 +262,10 @@ export function VncConflictReview({
   const conflict = useGet(vncConflict$);
   const message = useGet(vncSaveMessage$);
   const review = useLoadable(vncConflictReview$);
-  const accept = useSet(acceptVncConflictReview$);
-  const signal = useGet(pageSignal$);
-  if (!conflict || !isVncEditVersionConflict(dialog, message)) {
+  if (!conflict || !isVncReviewableConflict(dialog, message)) {
     return null;
   }
   const current = review.state === "hasData" ? review.data : null;
-  const incompatible =
-    current?.credential?.authMethod !== dialog.credential?.authMethod;
   return (
     <section
       aria-label={t(($) => {
@@ -247,7 +302,7 @@ export function VncConflictReview({
               },
               {
                 version:
-                  current.kind === "edit"
+                  current.kind === "edit" || current.kind === "delete"
                     ? current.connection.generation
                     : current.credential.revision,
               },
@@ -259,25 +314,7 @@ export function VncConflictReview({
           {current.credential && (
             <CredentialDetails credential={current.credential} />
           )}
-          <p role={incompatible ? "alert" : undefined}>
-            {t(($) => {
-              return incompatible
-                ? $.vnc.saveRecovery.incompatible
-                : $.vnc.saveRecovery.keepHelp;
-            })}
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={incompatible}
-            onClick={() => {
-              detach(accept(current, signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.vnc.saveRecovery.keepChanges;
-            })}
-          </Button>
+          <VncConflictReviewActions dialog={dialog} reviewed={current} />
         </>
       )}
     </section>

@@ -5666,8 +5666,10 @@
     },
     "save": "Salva",
     "saveRecovery": {
+      "deleteHelp": "Controlla questi dettagli salvati prima di eliminare. Questa azione seleziona solo la versione; conferma l’eliminazione separatamente.",
       "incompatible": "Il metodo di autenticazione è cambiato. Chiudi questa finestra e riapri la credenziale per modificare il metodo attuale.",
       "keepChanges": "Mantieni le mie modifiche con questa versione",
+      "keepDeletion": "Usa questa versione per l’eliminazione",
       "keepHelp": "Controlla questi dati, poi mantieni la bozza e salvala a partire da questa versione. Le scelte di autenticazione e attendibilità saranno mantenute.",
       "latest": "Dati attualmente salvati",
       "resourceIdConflict": "Impossibile creare questa risorsa. Chiudi questa finestra e riprova.",

@@ -5561,8 +5561,10 @@
     },
     "save": "Simpan",
     "saveRecovery": {
+      "deleteHelp": "Tinjau detail tersimpan ini sebelum menghapus. Tindakan ini hanya memilih versi; konfirmasikan penghapusan secara terpisah.",
       "incompatible": "Metode autentikasi telah berubah. Tutup dialog ini dan buka kembali kredensial untuk mengedit metode saat ini.",
       "keepChanges": "Pertahankan perubahan saya dengan versi ini",
+      "keepDeletion": "Gunakan versi ini untuk penghapusan",
       "keepHelp": "Tinjau detail ini, lalu pertahankan draf dan simpan berdasarkan versi ini. Pilihan autentikasi dan kepercayaan Anda akan dipertahankan.",
       "latest": "Detail yang tersimpan saat ini",
       "resourceIdConflict": "Sumber daya ini tidak dapat dibuat. Tutup dialog ini dan coba lagi.",

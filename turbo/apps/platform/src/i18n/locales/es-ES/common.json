@@ -5666,8 +5666,10 @@
     },
     "save": "Guardar",
     "saveRecovery": {
+      "deleteHelp": "Revisa estos datos guardados antes de eliminar. Esta acción solo selecciona la versión; confirma la eliminación por separado.",
       "incompatible": "El método de autenticación ha cambiado. Cierra este diálogo y vuelve a abrir la credencial para editar el método actual.",
       "keepChanges": "Conservar mis cambios con esta versión",
+      "keepDeletion": "Usar esta versión para eliminar",
       "keepHelp": "Revisa estos datos, conserva tu borrador y guárdalo sobre esta versión. Se mantendrán tus opciones de autenticación y confianza.",
       "latest": "Datos guardados actualmente",
       "resourceIdConflict": "No se pudo crear este recurso. Cierra este diálogo y vuelve a intentarlo.",
