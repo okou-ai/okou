@@ -583,7 +583,39 @@ async fn finalize_sandbox_for_completion_inner(
         .map(|promotion| promotion.reuse_key().to_owned());
 
     let mut reuse_state_changed = false;
-    let budget = if let Some(reuse_key) = parkable_reuse_key {
+    let budget = 'finalization: {
+        let Some(reuse_key) = parkable_reuse_key else {
+            // No parkable reuse key — stop + destroy.
+            let cleanup_reason = active_cleanup_reason(
+                sandbox_reuse_disposition,
+                hard_cancelled,
+                parking_gate.is_open(),
+            );
+            let destroy_result = stop_and_destroy_sandbox(
+                sandbox,
+                &**factory,
+                home_promotion,
+                ActiveCleanupContext {
+                    run_id,
+                    sandbox_id,
+                    profile_name: &profile_name,
+                    cli_agent_session_id: resolved_cli_agent_session_id,
+                    reason: cleanup_reason,
+                    network_log_session: network_log_session.take(),
+                    network_log_drain: network_log_drain.clone(),
+                },
+            )
+            .await;
+            reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                &home_cache_snapshot,
+                home_promotion_reuse_key.as_deref(),
+                &profile_name,
+                &completed_at,
+                destroy_result.home_cache_promoted,
+            );
+            record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
+            break 'finalization BudgetOwnership::active(active_lease);
+        };
         let reuse_key_fingerprint = runner_host::paths::short_digest(&reuse_key);
         let reuse_kind = reuse_key_kind(&reuse_key);
         // Inflate the guest balloon BEFORE acquiring the pool lock —
@@ -714,17 +746,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
                 IdleParkFailureParts::RunningHandoff {
                     candidate,
@@ -899,17 +928,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
                     ExactHandoffAttempt::Delivered { handoff_point } => {
@@ -984,17 +1010,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
             };
             #[cfg(any(test, feature = "test-support"))]
@@ -1026,17 +1049,14 @@ async fn finalize_sandbox_for_completion_inner(
                             destroy_bookkeeping,
                         )
                         .await;
-                        let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        reuse_state_changed = mark_home_cache_snapshot_promoted(
                             &home_cache_snapshot,
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,
                             destroy_result.home_cache_promoted,
                         );
-                        return mark_reuse_state_refresh(
-                            FinalizationReady::new(destroy_result.budget),
-                            home_cache_promoted,
-                        );
+                        break 'finalization destroy_result.budget;
                     }
                     drop(transfer_guard);
                     continue;
@@ -1060,17 +1080,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
                 break match pool.park(candidate) {
                     ParkResult::Parked => {
@@ -1173,37 +1190,6 @@ async fn finalize_sandbox_for_completion_inner(
                 };
             }
         }
-    } else {
-        // No parkable reuse key — stop + destroy.
-        let cleanup_reason = active_cleanup_reason(
-            sandbox_reuse_disposition,
-            hard_cancelled,
-            parking_gate.is_open(),
-        );
-        let destroy_result = stop_and_destroy_sandbox(
-            sandbox,
-            &**factory,
-            home_promotion,
-            ActiveCleanupContext {
-                run_id,
-                sandbox_id,
-                profile_name: &profile_name,
-                cli_agent_session_id: resolved_cli_agent_session_id,
-                reason: cleanup_reason,
-                network_log_session: network_log_session.take(),
-                network_log_drain: network_log_drain.clone(),
-            },
-        )
-        .await;
-        reuse_state_changed |= mark_home_cache_snapshot_promoted(
-            &home_cache_snapshot,
-            home_promotion_reuse_key.as_deref(),
-            &profile_name,
-            &completed_at,
-            destroy_result.home_cache_promoted,
-        );
-        record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
-        BudgetOwnership::active(active_lease)
     };
 
     mark_reuse_state_refresh(FinalizationReady::new(budget), reuse_state_changed)
