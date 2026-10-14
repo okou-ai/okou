@@ -1,14 +1,14 @@
-export const LINK_WALLET_GUIDE = `# Link Wallet: Hosted Consent and Approval
+export const LINK_WALLET_GUIDE = `# Link Wallet: Consent, Approval and Payment Credentials
 
 Use native okou wallet commands, not link-cli, the Stripe merchant connector,
 raw Link API calls, or environment-variable tokens. Client credentials and user
 OAuth tokens belong only to the Okou API server.
 
-This first version prepares wallet consent and purchase approval only. It does
-NOT retrieve a virtual card, expose payment tokens, fill checkout, or execute a
-purchase. Before creating an approval-only request, explain this limitation and
-obtain the user's agreement. Never describe wallet connection or approval as a
-successful payment or order.
+Native wallet commands manage consent, purchase approval and one-time virtual
+card retrieval. They do not poll for approval, fill checkout or execute a
+purchase. Paying the merchant requires a separate payment tool. Never describe
+wallet connection, approval or credential retrieval as a successful payment or
+order.
 
 1. Run okou wallet status --json. If disconnected, run okou wallet connect
    --json, share the exact returned Link URL, and end the turn. The user must
@@ -36,12 +36,21 @@ successful payment or order.
    Only auto_resume continues the same request; other resolutions need a new
    explicit approval after the issue is resolved. Never silently replace an
    uncertain payment with another intent or blindly retry a purchase.
-6. Approved means permission, not payment. nextAction=secure_checkout_unavailable
-   requires stopping and explaining that managed checkout is not implemented.
+6. Approved means permission, not payment. For nextAction=retrieve_credentials,
+   run okou wallet spend credentials <id> --output-file <new-private-json-path>
+   --json. This checks Link's current approval and writes the one-time card to a
+   new file with mode 0600; stdout contains only its path and redacted summary.
+   Use a temporary path outside the repository. Existing files are never
+   overwritten. Optional CVC, billing address and validUntil are included only
+   when Link supplies them; do not invent missing payment information.
+   Pass the file directly to the payment tool. Never print, upload or paste its
+   contents into chat, model context, transcripts or logs. Delete it after use.
    Never retrieve a card or token through an alternate tool or ask the user to
-   paste PAN/CVC, passwords or tokens in chat. submitted is an uncertain/in-flight
-   payment; succeeded still needs merchant order/receipt verification before
-   claiming fulfillment. Never treat an approval as a completed order.
+   paste PAN/CVC, passwords or tokens in chat. Recheck the merchant and final
+   total before payment; use test credentials only with a test checkout.
+   submitted is an uncertain/in-flight payment; succeeded still needs merchant
+   order/receipt verification before claiming fulfillment. Never treat an
+   approval or a saved credential file as a completed order.
 7. An intent is immutable: changing amount, currency, merchant, context, mode,
    or wallet authorization must not reuse it. A changed purchase requires fresh
    user agreement and a new Link approval. Do not increase a budget silently.

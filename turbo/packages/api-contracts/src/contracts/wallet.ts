@@ -71,7 +71,7 @@ export const walletSpendSchema = z.object({
   nextAction: z.enum([
     "wait_for_user",
     "check_status",
-    "secure_checkout_unavailable",
+    "retrieve_credentials",
     "payment_pending",
     "verify_order",
     "stop",
@@ -92,6 +92,37 @@ export const walletSpendSchema = z.object({
 
 export type WalletCreateSpend = z.infer<typeof walletCreateSpendSchema>;
 export type WalletSpend = z.infer<typeof walletSpendSchema>;
+
+export const walletCardSchema = z.object({
+  brand: z.string().regex(/^[a-zA-Z_-]{1,32}$/),
+  number: z.string().regex(/^\d{12,19}$/),
+  cvc: z
+    .string()
+    .regex(/^\d{3,4}$/)
+    .optional(),
+  expMonth: z.number().int().min(1).max(12),
+  expYear: z.number().int().min(2000).max(9999),
+  billingAddress: z
+    .object({
+      name: z.string(),
+      line1: z.string(),
+      line2: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      postalCode: z.string().optional(),
+      country: z.string().regex(/^[A-Z]{2}$/),
+    })
+    .optional(),
+  validUntil: z.iso.datetime({ offset: true }).optional(),
+});
+
+export const walletSpendCredentialsSchema = z.object({
+  spend: walletSpendSchema.extend({ status: z.literal("approved") }),
+  card: walletCardSchema,
+});
+export type WalletSpendCredentials = z.infer<
+  typeof walletSpendCredentialsSchema
+>;
 
 const walletSpendResponses = {
   200: walletSpendSchema,
@@ -179,6 +210,26 @@ export const walletContract = c.router({
     pathParams: spendParams,
     body: z.object({}),
     responses: walletSpendResponses,
+  },
+  spendCredentials: {
+    method: "POST",
+    path: "/api/wallet/spend/:id/credentials",
+    headers: authHeadersSchema,
+    pathParams: spendParams,
+    body: z.object({}).strict(),
+    responses: {
+      200: c.otherResponse({
+        contentType: "application/octet-stream",
+        body: c.type<Blob>(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+    },
   },
 });
 

@@ -32,7 +32,10 @@ export type LinkWalletSpendRequest =
 
 export type LinkWalletSdkRequest =
   | LinkWalletSpendRequest
-  | { readonly operation: "spend_approval"; readonly id: string };
+  | {
+      readonly operation: "spend_approval" | "spend_credentials";
+      readonly id: string;
+    };
 
 const validationIssuesSchema = z.object({
   issues: z.array(
@@ -69,6 +72,14 @@ export async function callLinkWalletSdk(
         // Do not request card or payment-token expansions.
         return await link.spendRequests.retrieve(
           encodeURIComponent(request.id),
+        );
+      }
+      case "spend_credentials": {
+        return await link.spendRequests.retrieve(
+          encodeURIComponent(request.id),
+          {
+            include: ["card"],
+          },
         );
       }
       case "spend_cancel": {
