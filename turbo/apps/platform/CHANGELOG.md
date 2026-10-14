@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1024.0](https://github.com/okou-ai/okou/compare/app-v0.1023.0...app-v0.1024.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Bug Fixes
+
+* report billing models from captured usage providers ([#40036](https://github.com/okou-ai/okou/issues/40036)) ([72071ff](https://github.com/okou-ai/okou/commit/72071ff711d0f9452a1e44cf52302696f29bf31b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+    * @okouai/core bumped to 8.756.0
+
 ## [0.1023.0](https://github.com/okou-ai/okou/compare/app-v0.1022.3...app-v0.1023.0) (2026-10-14)
 
 
