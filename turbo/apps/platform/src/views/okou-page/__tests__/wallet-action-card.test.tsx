@@ -81,7 +81,6 @@ function mockAuthorization(
     return HttpResponse.html("<p>Link authorization</p>");
   });
   let status = initial;
-  let reads = 0;
   const read = createDeferredPromise<void>(context.signal);
   const subscribedRead = createDeferredPromise<void>(context.signal);
   context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
@@ -89,11 +88,9 @@ function mockAuthorization(
       agentId: AGENT_ID,
       state: OAUTH_STATE,
     });
-    reads++;
     if (!read.settled()) {
       read.resolve();
-    }
-    if (reads > 1 && !subscribedRead.settled()) {
+    } else if (!subscribedRead.settled()) {
       subscribedRead.resolve();
     }
     return respond(200, status);
@@ -101,9 +98,6 @@ function mockAuthorization(
   return {
     read: read.promise,
     subscribedRead: subscribedRead.promise,
-    readCount: () => {
-      return reads;
-    },
     complete: (notify = true) => {
       status = { status: "authorized", authorizationId: AUTHORIZATION_ID };
       if (notify) {
@@ -112,7 +106,10 @@ function mockAuthorization(
     },
     fail: (next: "failed" | "unavailable") => {
       status = { status: next };
-      context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
+      context.mocks.ably.trigger("wallet:changed", {
+        agentId: AGENT_ID,
+        authorized: true,
+      });
     },
   };
 }
@@ -142,19 +139,10 @@ test("a wallet consent updates its card and automatically continues the owning c
   click(link);
   await screen.findByText("Waiting for authorization");
   await authorization.subscribedRead;
-  const readsBeforeNotification = authorization.readCount();
   context.mocks.ably.trigger("wallet:changed", {
     agentId: crypto.randomUUID(),
   });
   context.mocks.ably.trigger("wallet:changed", { agentId: "invalid" });
-  context.mocks.ably.trigger("wallet:changed", {
-    agentId: AGENT_ID,
-    authorized: true,
-  });
-  await waitFor(() => {
-    expect(authorization.readCount()).toBe(readsBeforeNotification + 1);
-  });
-  expect(prompts).toStrictEqual([]);
   authorization.complete();
   context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
   const completed = await findControl("button", "Authorized");
@@ -210,7 +198,7 @@ test.each([
   ["failed", "Authorization not completed"],
   ["unavailable", "Authorization unavailable"],
 ] as const)(
-  "a %s consent notification stops waiting without sending a message",
+  "a %s consent stops waiting without sending a message even when its notification claims authorization",
   async (status, label) => {
     const authorization = mockAuthorization();
     const prompts = captureContinuation();
