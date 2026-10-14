@@ -340,6 +340,35 @@ impl Service {
         *self.noise.home_status.lock().unwrap() = status;
     }
 
+    pub(in crate::tailscale::tests) fn logout_count(&self) -> usize {
+        self.noise.logout.requests.lock().unwrap().len()
+    }
+
+    pub(in crate::tailscale::tests) fn set_logout_reply(
+        &self,
+        status: hyper::StatusCode,
+        body: Vec<u8>,
+    ) {
+        *self.noise.logout.status.lock().unwrap() = status;
+        *self.noise.logout.body.lock().unwrap() = body;
+    }
+
+    pub(in crate::tailscale::tests) fn pause_logout(&self) {
+        self.noise
+            .logout
+            .blocked
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub(in crate::tailscale::tests) async fn logout_requested(&self) {
+        bounded(self.noise.logout.requested.notified()).await;
+    }
+
+    pub(in crate::tailscale::tests) fn assert_control_open(&self) {
+        let fd = self.control_fd.lock().unwrap().unwrap();
+        assert_ne!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+    }
+
     pub(in crate::tailscale::tests) async fn registration_requested(&self) {
         bounded(self.noise.requested.notified()).await;
     }
@@ -369,6 +398,7 @@ impl Service {
 
     pub(in crate::tailscale::tests) async fn finish(self) {
         self.allow_all();
+        self.noise.logout.response.cancel();
         self.noise.handshake_continue.cancel();
         bounded(self.key_task).await.unwrap();
         bounded(self.noise.task).await.unwrap();

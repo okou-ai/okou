@@ -11,6 +11,7 @@ use super::{
     Failure,
     configuration::Configuration,
     domain::Control,
+    logout::Logout,
     provisioning_effect::{Cleanup, Journal},
     provisioning_io::{Admission, Api, Dial, encoded},
 };
@@ -30,6 +31,7 @@ struct Inner<D> {
     api: Api<D>,
     token: RefCell<Option<Token>>,
     journal: Arc<Journal>,
+    logout: Rc<RefCell<Option<Logout>>>,
 }
 
 pub(super) struct Provider<D> {
@@ -40,6 +42,7 @@ pub(super) struct Provider<D> {
 pub(super) struct Key {
     secret: SecretText<4096>,
     journal: Arc<Journal>,
+    logout: Rc<RefCell<Option<Logout>>>,
 }
 
 impl Key {
@@ -47,8 +50,16 @@ impl Key {
         self.secret.expose()
     }
 
-    pub(super) fn consuming(&self) -> Result<(), Failure> {
-        self.journal.consuming()
+    pub(super) fn consuming(&self, logout: Logout) -> Result<(), Failure> {
+        let mut retained = self.logout.borrow_mut();
+        if retained.is_some() {
+            return Err(Failure::DomainFailed);
+        }
+        self.journal.consuming()?;
+        // Retain before the register write: cancellation may discard its reply
+        // after the server has already created this exact ephemeral node.
+        *retained = Some(logout);
+        Ok(())
     }
 }
 
@@ -67,11 +78,12 @@ impl<D: Dial> Provider<D> {
             api: Api::new(dial),
             token: RefCell::new(None),
             journal,
+            logout: Rc::new(RefCell::new(None)),
         });
         let retained = Rc::clone(&inner);
         let ready = control.ready_receipt();
-        // This receipt, OAuth authority and finalizer exist before the first
-        // provider await; dropping startup cannot discard known-unused cleanup.
+        // Install before the first provider await. Dropping startup cannot
+        // discard known-unused key cleanup or a retained node logout.
         control.retain_finalizer(Box::pin(async move { retained.cleanup(ready()).await }))?;
         Ok(Self {
             inner,
@@ -177,6 +189,7 @@ impl<D: Dial> Provider<D> {
         Ok(Key {
             secret: response.key,
             journal: Arc::clone(&self.inner.journal),
+            logout: Rc::clone(&self.inner.logout),
         })
     }
 }
@@ -255,6 +268,10 @@ impl<D: Dial> Inner<D> {
     }
 
     async fn cleanup(&self, established: bool) -> Result<(), Failure> {
+        let logout = self.logout.borrow_mut().take();
+        if let Some(logout) = logout {
+            logout.run().await;
+        }
         if let Cleanup::Unused(id) = self.journal.cleanup(established)? {
             super::diagnostics::Stage::UnusedKeyCleanup.record();
             let authorization = self.authorization(None).await?;

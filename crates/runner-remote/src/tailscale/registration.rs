@@ -364,7 +364,21 @@ impl Registration {
             .await
             .map_err(|_| Failure::DomainFailed)?;
         if let Some(key) = provider_key {
-            key.consuming()?;
+            // Match the official client's self-logout: expire the current node
+            // through its authenticated Noise session, without reusing auth.
+            let logout = RegisterRequest {
+                auth: None,
+                expiry: Some(
+                    chrono::DateTime::from_timestamp(123, 0).ok_or(Failure::DomainFailed)?,
+                ),
+                ..request
+            };
+            key.consuming(super::logout::Logout::new(
+                client.clone(),
+                url.clone(),
+                header.clone(),
+                &logout,
+            )?)?;
         }
         let response = client
             .post(&url, [header], Bytes::from(body).into())

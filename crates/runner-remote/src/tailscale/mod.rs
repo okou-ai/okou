@@ -11,6 +11,7 @@ mod diagnostic_fixture;
 mod diagnostics;
 mod domain;
 mod lease;
+mod logout;
 mod map_reader;
 mod node_root;
 mod peers;

@@ -1,6 +1,8 @@
 //! Public SDK Noise and the actual native startup owner over controlled OS IO.
 //! The synthetic Noise service is a protocol fixture, not a production stack.
 
+mod logout;
+
 use crate::tailscale::{Control, Failure, Work, registration::Registration};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use bytes::Bytes;
@@ -34,6 +36,7 @@ pub(super) struct NoiseService {
     pub(super) expected_auth: Arc<Mutex<String>>,
     pub(super) announced_home: Arc<Mutex<Vec<u32>>>,
     pub(super) home_status: Arc<Mutex<hyper::StatusCode>>,
+    pub(super) logout: Arc<logout::Service>,
     pub(super) requested: Arc<tokio::sync::Notify>,
     pub(super) response: CancellationToken,
     pub(super) map_requested: Arc<tokio::sync::Notify>,
@@ -94,6 +97,8 @@ impl NoiseService {
         let home = Arc::clone(&announced_home);
         let home_status = Arc::new(Mutex::new(hyper::StatusCode::OK));
         let status = Arc::clone(&home_status);
+        let logout = Arc::new(logout::Service::new());
+        let logout_service = Arc::clone(&logout);
         let requested = Arc::new(tokio::sync::Notify::new());
         let seen = Arc::clone(&requested);
         let response = CancellationToken::new();
@@ -147,6 +152,7 @@ impl NoiseService {
                         let auth = Arc::clone(&auth);
                         let home = Arc::clone(&home);
                         let status = Arc::clone(&status);
+                        let logout = Arc::clone(&logout_service);
                         let body = body.clone();
                         let seen = Arc::clone(&seen);
                         let gate = gate.clone();
@@ -246,6 +252,7 @@ impl NoiseService {
                                         let auth = Arc::clone(&auth);
                                         let home = Arc::clone(&home);
                                         let status = Arc::clone(&status);
+                                        let logout = Arc::clone(&logout);
                                         let streaming = Arc::clone(&streaming);
                                         let updates = Arc::clone(&updates);
                                         async move {
@@ -259,12 +266,23 @@ impl NoiseService {
                                             if path == "/machine/register" {
                                                 assert_eq!(request["Ephemeral"], true);
                                                 assert_eq!(
-                                                    request["Auth"]["AuthKey"],
-                                                    *auth.lock().unwrap()
-                                                );
-                                                assert_eq!(
                                                     header.unwrap().to_str().unwrap(),
                                                     request["NodeKey"].as_str().unwrap()
+                                                );
+                                                if request.get("Expiry").is_some() {
+                                                    let (node_key, hostinfo) = registered
+                                                        .lock()
+                                                        .unwrap()
+                                                        .clone()
+                                                        .unwrap();
+                                                    return Ok(logout
+                                                        .reply(request, node_key, hostinfo)
+                                                        .await
+                                                        .map(BodyExt::boxed_unsync));
+                                                }
+                                                assert_eq!(
+                                                    request["Auth"]["AuthKey"],
+                                                    *auth.lock().unwrap()
                                                 );
                                                 *registered.lock().unwrap() = Some((
                                                     request["NodeKey"].as_str().unwrap().to_owned(),
@@ -431,6 +449,7 @@ impl NoiseService {
             expected_client,
             expected_auth,
             announced_home,
+            logout,
             home_status,
             requested,
             response,

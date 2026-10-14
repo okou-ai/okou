@@ -137,6 +137,11 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     control.allow_all();
     bounded(node.ready()).await.unwrap();
     assert_eq!(control.announced_home(), vec![1]);
+    assert_eq!(control.logout_count(), 0);
+    control.set_logout_reply(
+        hyper::StatusCode::OK,
+        br#"{"NodeKeyExpired":true}"#.to_vec(),
+    );
     let (mut frames, _) = bounded(relay.task).await.unwrap();
     run.close();
     bounded(node.physical()).await.unwrap();
@@ -149,6 +154,7 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     crate::tailscale::tests::peers::relay::closed(frames.get_mut(), true).await;
     assert_eq!(descriptors.lock().unwrap().len(), 1);
     control.assert_control_closed();
+    assert_eq!(control.logout_count(), 1);
     dial.assert_closed(2);
     // A possibly consumed key is never deleted as an unused key. Validated
     // registration + map + relay readiness allows later legitimate lifetimes.
@@ -156,6 +162,13 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     api.finish().await;
     control.finish().await;
     let events = captured.entries();
+    let logout = events
+        .iter()
+        .filter(|event| event.fields.get("stage").map(String::as_str) == Some("logout"))
+        .collect::<Vec<_>>();
+    assert_eq!(logout.len(), 1);
+    assert_eq!(logout[0].level, tracing::Level::INFO);
+    assert_eq!(logout[0].fields["reason"], "confirmed");
     let startup = events
         .iter()
         .filter(|event| {
@@ -236,6 +249,7 @@ async fn cancelling_a_received_registration_or_unready_map_never_deletes_or_recr
         let replacement = cache.register(run_id);
         assert_eq!(bounded(node.ready()).await, Err(Failure::Cancelled));
         bounded(node.physical()).await.unwrap();
+        assert_eq!(control.logout_count(), 1);
         drop(node);
         let fresh = replacement.lookup(uuid::Uuid::new_v4()).unwrap();
         assert!(matches!(
