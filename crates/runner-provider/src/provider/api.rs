@@ -246,7 +246,9 @@ const CLAIM_DETERMINISTIC_COOLDOWN: Duration = POLL_SLOW;
 const POLL_DEGRADED_AFTER: Duration = Duration::from_secs(60);
 /// Runner reuse requires a heartbeat observed within this freshness window.
 const HEARTBEAT_DEGRADED_AFTER: Duration = Duration::from_secs(30);
-const BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
+// The full catalog is multi-megabyte. This budget covers connection setup,
+// response headers and the entire body, rather than restarting for each chunk.
+const BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct DegradationEpisode {
     started_at: Instant,

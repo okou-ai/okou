@@ -131,9 +131,9 @@ async fn next_send_failure(
     let request = server.next_request("periodic catalog send failure").await;
     if release.is_some() {
         // No response headers have been sent. Expire the production request's
-        // ten-second budget only after the external server has received the request.
+        // sixty-second budget only after the external server has received the request.
         tokio::time::pause();
-        tokio::time::advance(Duration::from_secs(10) + Duration::from_millis(1)).await;
+        tokio::time::advance(Duration::from_secs(60) + Duration::from_millis(1)).await;
         tokio::time::resume();
     }
     let event = outcome(captured).await;
