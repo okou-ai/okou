@@ -20,6 +20,7 @@ const {
   runs,
   webhooks,
   cronHeaders,
+  createChatActor,
   prepareMaintenance,
   publication,
   publish,
@@ -39,32 +40,28 @@ async function cleanupMaintenance() {
 }
 
 describe("Pi maintenance cleanup and active publication", () => {
+  it("keeps an unpublished live Run's output authority through cleanup", async () => {
+    const run = await prepareMaintenance();
+    await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      run.headers,
+      [200],
+    );
+    await cleanupMaintenance();
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+    await publish(run);
+  });
+
   it.each(["published", "no-diff"])(
-    "retains an active %s result while an independent owner progresses",
+    "retains an active %s result through cleanup with queued owned updates",
     async (outcome) => {
-      const run = await prepareMaintenance({ independentOwner: true });
+      const run = await prepareMaintenance();
       const first = await publish(
         run,
         outcome === "published" ? "First serial memory.\n" : undefined,
       );
       expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
       await publishOrdinaryMemory(run, "Queued owned update.\n", 1);
-      const independentAdmission = await accept(
-        run.stage2.consolidate({ headers: cronHeaders() }),
-        [200],
-      );
-      expect(independentAdmission.body).toMatchObject({
-        claimed: 1,
-        failed: 0,
-      });
-      const independent = await run.claimMaintenance(1);
-      expect(independent.actor.userId).not.toBe(run.actor.userId);
-      expect(independent.memory.storageId).not.toBe(run.memory.storageId);
-      const independentOutput = await publish(
-        independent,
-        "Independent owner's memory.\n",
-      );
-      await completeMaintenance(independent, independentOutput.versionId);
       await expectBlocked(run);
       await webhooks.requestAgentHeartbeat(
         { runId: run.runId },
@@ -209,8 +206,10 @@ describe("Pi maintenance publication ownership", () => {
     "rejects foreign claims, foreign memory and altered launch evidence from %s",
     async (scope) => {
       const run = await prepareMaintenance();
-      const peer = await chat.entitledChatActor(
-        scope === "the same organization" ? { orgId: run.actor.orgId } : {},
+      const peer = await createChatActor(
+        run.runnerGroup,
+        scope === "the same organization" ? run.actor.orgId : undefined,
+        "claude-fable-5-1",
       );
       const ordinary = await chat.sendChatRun(peer.actor, {
         agentId: peer.agentId,

@@ -24,6 +24,31 @@ const {
 } = createPiMemoryMaintenanceFixture(context);
 
 describe("Pi maintenance recovery", () => {
+  it("rejects a successful launch-base output without publication proof", async () => {
+    const run = await prepareMaintenance();
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "pi",
+          cliAgentSessionId: run.runId,
+          cliAgentSessionHistoryDisposition: "unavailable",
+          artifactSnapshots: [
+            {
+              name: run.memory.name,
+              mountPath: run.memory.mountPath,
+              version: run.maintenance.claimedBaseVersionId,
+            },
+          ],
+        },
+      },
+      run.headers,
+      [400],
+    );
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+  });
+
   it("retries a still-owned nonzero maintenance completion through the operator", async () => {
     const run = await prepareMaintenance();
     await webhooks.requestAgentComplete(
@@ -222,29 +247,8 @@ describe("Pi maintenance recovery", () => {
     },
   );
 
-  it("does not turn missing publication proof into a successful launch-base output", async () => {
+  it("keeps a nonzero launch-base output without publication proof failed", async () => {
     const run = await prepareMaintenance();
-    await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        completion: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.runId,
-          cliAgentSessionHistoryDisposition: "unavailable",
-          artifactSnapshots: [
-            {
-              name: run.memory.name,
-              mountPath: run.memory.mountPath,
-              version: run.maintenance.claimedBaseVersionId,
-            },
-          ],
-        },
-      },
-      run.headers,
-      [400],
-    );
-    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
     await completeMaintenance(
       run,
       run.maintenance.claimedBaseVersionId,

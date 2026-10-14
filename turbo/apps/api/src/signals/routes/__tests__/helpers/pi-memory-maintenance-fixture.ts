@@ -57,6 +57,35 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     return { maintenance, memory: memory[0] };
   }
 
+  async function createChatActor(
+    runnerGroup: string,
+    orgId?: string,
+    model: "gpt-6-luna" | "claude-fable-5-1" = "gpt-6-luna",
+  ) {
+    const identity = chat.bdd.user(orgId ? { orgId } : {});
+    if (!identity.orgId) {
+      throw new Error("Expected the Pi actor's organization");
+    }
+    const actor = { ...identity, orgId: identity.orgId };
+    if (!orgId) {
+      await runs.grantProEntitlement(actor);
+    }
+    const onboarding = await chat.bdd.readOnboardingStatus(actor);
+    if (!onboarding.defaultAgentId) {
+      throw new Error("Expected paid onboarding to create a default agent");
+    }
+    if (orgId) {
+      const completed = await chat.bdd.completeOnboarding(actor);
+      expect(completed.status).toBe(200);
+    }
+    if (model === "gpt-6-luna") {
+      await chat.configureSubscriptionPiModel(actor);
+    } else {
+      await runs.ensurePersonalSubscriptionModel(actor);
+    }
+    return { actor, agentId: onboarding.defaultAgentId, runnerGroup };
+  }
+
   async function prepareMaintenance(options: { independentOwner?: true } = {}) {
     mockNow(now());
     mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
@@ -80,11 +109,13 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       [401],
     );
 
-    const actor = await chat.entitledChatActor();
-    if (!actor.actor.orgId) {
-      throw new Error("Expected the ordinary source Run's organization");
-    }
-    await chat.configureSubscriptionPiModel(actor.actor);
+    chat.chatCallbacks.acceptChatObjectStorage();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    mockOptionalEnv("OPENROUTER_API_KEY", undefined);
+    chat.chatCallbacks.disableVapid();
+    const runnerGroup = runs.configureRunnerGroup();
+    const actor = await createChatActor(runnerGroup);
     await updateFeatureSwitchesForUser(
       context,
       { ...actor.actor, orgId: actor.actor.orgId },
@@ -93,16 +124,14 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       },
     );
     const peerActor = options.independentOwner
-      ? await chat.entitledChatActor({ orgId: actor.actor.orgId })
+      ? await createChatActor(runnerGroup, actor.actor.orgId)
       : undefined;
     if (peerActor) {
-      await chat.configureSubscriptionPiModel(peerActor.actor);
       await updateFeatureSwitchesForUser(
         context,
         { ...peerActor.actor, orgId: actor.actor.orgId },
         { [FeatureSwitchKey.PiMemory]: true },
       );
-      mockOptionalEnv("RUNNER_DEFAULT_GROUP", actor.runnerGroup);
     }
     const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
     let snapshotSequence = 0;
@@ -197,16 +226,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       prompt: "Start another Thread after the source has become idle.",
       model: "gpt-6-luna",
     });
-    const triggerClaim = await claimOrdinaryRun(trigger.runId);
-    await webhooks.requestAgentComplete(
-      {
-        runId: trigger.runId,
-        exitCode: 1,
-        error: "No source history for this Thread",
-      },
-      triggerClaim.sandboxHeaders,
-      [200],
-    );
+    await runs.requestCancelRun(actor.actor, trigger.runId, [200]);
     await flushWaitUntilForTest();
     if (peerActor) {
       const peerTrigger = await chat.sendChatRun(peerActor.actor, {
@@ -214,16 +234,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
         prompt: "Request the next day's selection",
         model: "gpt-6-luna",
       });
-      const peerClaim = await claimOrdinaryRun(peerTrigger.runId);
-      await webhooks.requestAgentComplete(
-        {
-          runId: peerTrigger.runId,
-          exitCode: 1,
-          error: "No source history for this Thread",
-        },
-        peerClaim.sandboxHeaders,
-        [200],
-      );
+      await runs.requestCancelRun(peerActor.actor, peerTrigger.runId, [200]);
       await flushWaitUntilForTest();
     }
 
@@ -643,6 +654,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     runs,
     webhooks,
     cronHeaders,
+    createChatActor,
     prepareMaintenance,
     publication,
     publish,

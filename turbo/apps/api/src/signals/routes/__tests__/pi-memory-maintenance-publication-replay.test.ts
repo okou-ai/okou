@@ -11,6 +11,7 @@ const {
   runs,
   webhooks,
   cronHeaders,
+  createChatActor,
   prepareMaintenance,
   publish,
   completeMaintenance,
@@ -19,19 +20,27 @@ const {
 } = createPiMemoryMaintenanceFixture(context);
 
 describe("Genuine Pi maintenance publication results", () => {
-  it("publishes and replays a maintenance result before private completion", async () => {
-    const run = await prepareMaintenance();
-    const body = await publish(run, "Prefer focused public API tests.\n");
-    const replay = await webhooks.requestAgentStorageCommit(
-      body,
-      run.headers,
-      [200],
-    );
-    expect(replay.body).toMatchObject({
-      versionId: body.versionId,
-      deduplicated: true,
-    });
-  });
+  it.each(["no-diff", "published"])(
+    "publishes and replays a %s maintenance result before private completion",
+    async (outcome) => {
+      const run = await prepareMaintenance();
+      const body = await publish(
+        run,
+        outcome === "published"
+          ? "Prefer focused public API tests.\n"
+          : undefined,
+      );
+      const replay = await webhooks.requestAgentStorageCommit(
+        body,
+        run.headers,
+        [200],
+      );
+      expect(replay.body).toMatchObject({
+        versionId: body.versionId,
+        deduplicated: true,
+      });
+    },
+  );
 
   it("replays a maintenance result after private completion", async () => {
     const run = await prepareMaintenance();
@@ -123,40 +132,110 @@ describe("Genuine Pi maintenance publication results", () => {
     );
     expect(recovered.body).toStrictEqual(completed.response.body);
     await flushWaitUntilForTest();
-    for (const completion of [
-      { ...completed.body.completion, cliAgentSessionId: next.runId },
-      { ...completed.body.completion, cliAgentType: "claude-code" },
-      {
-        ...completed.body.completion,
-        cliAgentSessionHistoryDisposition: "discarded_oversized" as const,
-      },
-      {
-        ...completed.body.completion,
-        artifactSnapshots: [
-          {
-            name: run.memory.name,
-            mountPath: run.memory.mountPath,
-            version: latest.versionId,
-          },
-        ],
-      },
-      { ...completed.body.completion, artifactSnapshots: [] },
-      {
-        ...completed.body.completion,
-        artifactSnapshots: [
-          ...completed.body.completion.artifactSnapshots,
-          ...completed.body.completion.artifactSnapshots,
-        ],
-      },
-    ]) {
-      await webhooks.requestAgentComplete(
-        { ...completed.body, completion },
-        run.headers,
-        [400],
-      );
-    }
     await webhooks.requestAgentComplete(completed.body, next.headers, [401]);
-    const peer = await chat.entitledChatActor({ orgId: run.actor.orgId });
+    await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+      firstResult,
+    );
+    await expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
+      latestResult,
+    );
+    expect(
+      (await observeMemory(run, "Later maintenance memory.\n")).memory
+        .versionId,
+    ).toBe(latest.versionId);
+    const settled = await accept(
+      run.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(settled.body).toMatchObject({ claimed: 0, noWork: 1 });
+    // Advancing the same case clock expires the original genuine credential.
+    mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
+    await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
+  });
+
+  it("rejects altered completion after a later maintenance replaces the latest Job result", async () => {
+    const run = await prepareMaintenance();
+    const first = await publish(run);
+    const completed = await completeMaintenance(run, first.versionId);
+    const firstResult = await runs.readRun(run.actor, run.runId);
+    expect(firstResult).toMatchObject({
+      status: "completed",
+      result: { storageOutputs: [{ version: first.versionId }] },
+    });
+    await publishOrdinaryMemory(run, "Queue a later maintenance.\n");
+    const dispatched = await accept(
+      run.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(dispatched.body).toMatchObject({ claimed: 1, failed: 0 });
+    const next = await run.claimMaintenance();
+    const latest = await publish(next, "Later maintenance memory.\n");
+    await completeMaintenance(next, latest.versionId);
+    const latestResult = await runs.readRun(run.actor, next.runId);
+    expect(latestResult).toMatchObject({
+      status: "completed",
+      result: { storageOutputs: [{ version: latest.versionId }] },
+    });
+    await Promise.all(
+      [
+        { ...completed.body.completion, cliAgentSessionId: next.runId },
+        { ...completed.body.completion, cliAgentType: "claude-code" },
+        {
+          ...completed.body.completion,
+          cliAgentSessionHistoryDisposition: "discarded_oversized" as const,
+        },
+        {
+          ...completed.body.completion,
+          artifactSnapshots: [
+            {
+              name: run.memory.name,
+              mountPath: run.memory.mountPath,
+              version: latest.versionId,
+            },
+          ],
+        },
+        { ...completed.body.completion, artifactSnapshots: [] },
+        {
+          ...completed.body.completion,
+          artifactSnapshots: [
+            ...completed.body.completion.artifactSnapshots,
+            ...completed.body.completion.artifactSnapshots,
+          ],
+        },
+      ].map((completion) => {
+        return webhooks.requestAgentComplete(
+          { ...completed.body, completion },
+          run.headers,
+          [400],
+        );
+      }),
+    );
+    await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+      firstResult,
+    );
+    await expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
+      latestResult,
+    );
+    expect(
+      (await observeMemory(run, "Later maintenance memory.\n")).memory
+        .versionId,
+    ).toBe(latest.versionId);
+  });
+
+  it("rejects a foreign claim and read after private completion", async () => {
+    const run = await prepareMaintenance();
+    const first = await publish(run);
+    const completed = await completeMaintenance(run, first.versionId);
+    const firstResult = await runs.readRun(run.actor, run.runId);
+    expect(firstResult).toMatchObject({
+      status: "completed",
+      result: { storageOutputs: [{ version: first.versionId }] },
+    });
+    const peer = await createChatActor(
+      run.runnerGroup,
+      run.actor.orgId,
+      "claude-fable-5-1",
+    );
     const foreign = await chat.sendChatRun(peer.actor, {
       agentId: peer.agentId,
       prompt: "Own a foreign Run",
@@ -184,21 +263,6 @@ describe("Genuine Pi maintenance publication results", () => {
     await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
       firstResult,
     );
-    await expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
-      latestResult,
-    );
-    expect(
-      (await observeMemory(run, "Later maintenance memory.\n")).memory
-        .versionId,
-    ).toBe(latest.versionId);
-    const settled = await accept(
-      run.stage2.consolidate({ headers: cronHeaders() }),
-      [200],
-    );
-    expect(settled.body).toMatchObject({ claimed: 0, noWork: 1 });
-    // Advancing the same case clock expires the original genuine credential.
-    mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
-    await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
   });
 
   it("replays a no-diff result without restoring an older memory head", async () => {

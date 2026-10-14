@@ -18,6 +18,19 @@ const {
 } = createPiMemoryMaintenanceFixture(context);
 
 describe("Serial private Pi maintenance", () => {
+  it("renews an unpublished live attempt without launching another Run", async () => {
+    const run = await prepareMaintenance();
+    const renewed = await accept(
+      run.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(renewed.body).toMatchObject({ claimed: 1, failed: 0 });
+    const pending = await runs.pollRunner(run.runnerGroup);
+    expect(pending.body.job).toBeNull();
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+    await publish(run);
+  });
+
   it("renews one live attempt without starving another owner's claimable memory", async () => {
     const run = await prepareMaintenance({ independentOwner: true });
     const admitted = await accept(
@@ -34,6 +47,40 @@ describe("Serial private Pi maintenance", () => {
     const first = await publish(run);
     await completeMaintenance(run, first.versionId);
   });
+
+  it.each(["published", "no-diff"])(
+    "retains an active %s result while an independent owner progresses",
+    async (outcome) => {
+      const run = await prepareMaintenance({ independentOwner: true });
+      const first = await publish(
+        run,
+        outcome === "published" ? "First serial memory.\n" : undefined,
+      );
+      const admitted = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(admitted.body).toMatchObject({ claimed: 1, failed: 0 });
+      const independent = await run.claimMaintenance(1);
+      expect(independent.actor.userId).not.toBe(run.actor.userId);
+      expect(independent.memory.storageId).not.toBe(run.memory.storageId);
+      const independentOutput = await publish(
+        independent,
+        "Independent owner's memory.\n",
+      );
+      await completeMaintenance(independent, independentOutput.versionId);
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+      await completeMaintenance(
+        run,
+        run.maintenance.claimedBaseVersionId,
+        true,
+      );
+      await expect(runs.readRun(run.actor, run.runId)).resolves.toMatchObject({
+        status: "completed",
+        result: { storageOutputs: [{ version: first.versionId }] },
+      });
+    },
+  );
 
   it.each(["published", "no-diff"])(
     "replays a %s result across finalization without losing queued updates",
