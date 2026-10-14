@@ -1,5 +1,8 @@
 import { computed } from "ccstate";
-import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
+import {
+  runRunnerContract,
+  runStartupContract,
+} from "@okouai/api-contracts/contracts/run-routes";
 import type {
   SandboxReuseResult,
   HomeReuseResult,
@@ -46,4 +49,22 @@ export const activityRunner$ = computed(async (get) => {
       runnerHeartbeatGeneration: result.body.runnerHeartbeatGeneration ?? null,
     },
   } satisfies ActivityRunner;
+});
+
+export const activityRunnerStartup$ = computed(async (get) => {
+  const runId = get(currentRunId$);
+  const detail = await get(activityDetail$);
+  if (!runId || !detail || detail.id !== runId) {
+    return null;
+  }
+  const result = await accept(
+    get(apiClient$)(runStartupContract).getStartup({
+      params: { id: runId },
+    }),
+    [200],
+  );
+  return {
+    runId,
+    sandboxStartupPath: result.body.sandboxStartupPath,
+  };
 });

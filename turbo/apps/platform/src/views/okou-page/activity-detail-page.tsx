@@ -31,6 +31,7 @@ import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
 import type {
   SandboxReuseResult,
   HomeReuseResult,
+  SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -68,7 +69,10 @@ import {
 import { EventGroupCard } from "./components/log-views/event-group-card.tsx";
 import { StatusDot } from "./components/log-views/status-dot.tsx";
 import { activityContext$ } from "../../signals/activity-page/activity-context-signals.ts";
-import { activityRunner$ } from "../../signals/activity-page/activity-runner-signals.ts";
+import {
+  activityRunner$,
+  activityRunnerStartup$,
+} from "../../signals/activity-page/activity-runner-signals.ts";
 import {
   activityNetworkLogs$,
   loadNetworkLogsNextPage$,
@@ -669,7 +673,7 @@ function ActivityContextTab({ detail }: { detail: LogDetail }) {
   );
 }
 
-type RunnerStartupPath = "sandbox" | "home" | "cold" | "unknown";
+type RunnerStartupPath = SandboxStartupPath | "unknown";
 
 interface ReuseOutcomeInfo {
   readonly label: string;
@@ -686,22 +690,19 @@ function isCurrentSandboxMiss(result: SandboxReuseResult | null): boolean {
   );
 }
 
-function isHomeMiss(result: HomeReuseResult | null): boolean {
-  return result !== null && result !== "reused" && result !== "sandboxReused";
-}
-
 function runnerStartupPath(
   sandbox: SandboxReuseResult | null,
   home: HomeReuseResult | null,
+  observed: SandboxStartupPath | null,
 ): RunnerStartupPath {
+  if (observed !== null) {
+    return observed;
+  }
   if (sandbox === "reused" && home === "sandboxReused") {
     return "sandbox";
   }
   if (isCurrentSandboxMiss(sandbox) && home === "reused") {
     return "home";
-  }
-  if (isCurrentSandboxMiss(sandbox) && isHomeMiss(home)) {
-    return "cold";
   }
   return "unknown";
 }
@@ -867,6 +868,7 @@ function RunnerAttributionGrid({
 function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
   const { t } = useTranslation();
   const runnerLoadable = useLastLoadable(activityRunner$);
+  const startupLoadable = useLastLoadable(activityRunnerStartup$);
 
   if (
     runnerLoadable.state === "loading" ||
@@ -976,6 +978,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     cold: t(($) => {
       return $.activity.detail.runner.startupCold;
     }),
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlank;
+    }),
     unknown: t(($) => {
       return $.activity.detail.runner.startupUnknown;
     }),
@@ -990,11 +995,23 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     cold: t(($) => {
       return $.activity.detail.runner.startupColdDescription;
     }),
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlankDescription;
+    }),
     unknown: t(($) => {
       return $.activity.detail.runner.startupUnknownDescription;
     }),
   } satisfies Record<RunnerStartupPath, string>;
-  const startupPath = runnerStartupPath(sandboxReuse, homeReuse);
+  const observedStartup =
+    startupLoadable.state === "hasData" &&
+    startupLoadable.data?.runId === detail.id
+      ? startupLoadable.data.sandboxStartupPath
+      : null;
+  const startupPath = runnerStartupPath(
+    sandboxReuse,
+    homeReuse,
+    observedStartup,
+  );
   const startupInfo = {
     label: startupLabels[startupPath],
     description: startupDescriptions[startupPath],

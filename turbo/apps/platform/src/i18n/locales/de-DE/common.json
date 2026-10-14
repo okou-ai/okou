@@ -151,6 +151,8 @@
         "sandboxPrepareFallback": "Ein zwischengespeichertes Home-Verzeichnis wurde gefunden, konnte aber nach der Sandbox-Vorbereitung nicht verwendet werden.",
         "sandboxReusedDescription": "Das Home-Verzeichnis blieb in der wiederverwendeten Sandbox verfügbar.",
         "startup": "Start",
+        "startupBlank": "Start mit leerer Sandbox",
+        "startupBlankDescription": "Eine vorbereitete Sandbox startete mit einem neuen Home-Verzeichnis.",
         "startupCold": "Kaltstart",
         "startupColdDescription": "Eine neue Sandbox und ein neuer Arbeitsbereich wurden vorbereitet.",
         "startupHome": "Wiederverwendung des Home-Verzeichnisses",

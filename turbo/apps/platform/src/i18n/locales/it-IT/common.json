@@ -153,6 +153,8 @@
         "sandboxPrepareFallback": "È stata trovata una directory home nella cache, ma non è stato possibile utilizzarla dopo la preparazione della sandbox.",
         "sandboxReusedDescription": "La directory home è rimasta disponibile nella sandbox riutilizzata.",
         "startup": "Avvio",
+        "startupBlank": "Avvio da sandbox vuota",
+        "startupBlankDescription": "Una sandbox preparata è stata avviata con una nuova directory home.",
         "startupCold": "Avvio a freddo",
         "startupColdDescription": "Sono stati preparati una nuova sandbox e un nuovo spazio di lavoro.",
         "startupHome": "Riutilizzo della directory home",

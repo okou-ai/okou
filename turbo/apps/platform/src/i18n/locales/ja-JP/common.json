@@ -151,6 +151,8 @@
         "sandboxPrepareFallback": "キャッシュ済みホームディレクトリが見つかりましたが、サンドボックスの準備後に使用できませんでした。",
         "sandboxReusedDescription": "ホームディレクトリは再利用されたサンドボックス内で引き続き利用できました。",
         "startup": "起動",
+        "startupBlank": "空のサンドボックスから起動",
+        "startupBlankDescription": "準備済みのサンドボックスが新しいホームディレクトリで起動しました。",
         "startupCold": "コールドスタート",
         "startupColdDescription": "新しいサンドボックスとワークスペースが準備されました。",
         "startupHome": "ホームディレクトリの再利用",

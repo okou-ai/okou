@@ -151,6 +151,8 @@
         "sandboxPrepareFallback": "캐시된 홈 디렉터리를 찾았지만 샌드박스 준비 후 사용할 수 없었습니다.",
         "sandboxReusedDescription": "홈 디렉터리는 재사용된 샌드박스에서 사용 가능한 상태로 유지되었습니다.",
         "startup": "시작",
+        "startupBlank": "빈 샌드박스에서 시작",
+        "startupBlankDescription": "준비된 샌드박스가 새 홈 디렉터리로 시작되었습니다.",
         "startupCold": "콜드 스타트",
         "startupColdDescription": "새 샌드박스와 작업 공간이 준비되었습니다.",
         "startupHome": "홈 디렉터리 재사용",
