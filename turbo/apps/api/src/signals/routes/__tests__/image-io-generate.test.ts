@@ -1396,33 +1396,56 @@ describe("POST /api/image-io/generate", () => {
       };
       await expect(orgCredits(fixture)).resolves.toBe(30_000);
       const generationIds = new Set<string>();
-      for (let submission = 0; submission < 50; submission++) {
-        const response = await fixture.request(app, path, request);
-        expect(response.status).toBe(202);
-        const generationId = readAcceptedGenerationId(
-          await response.json(),
-          "image",
-          fixture.userId,
-        );
-        expect(generationIds.has(generationId)).toBeFalsy();
-        generationIds.add(generationId);
-        await postFalWebhook(
-          app,
-          requestUrls[submission] ?? null,
-          completionPayload,
+      for (let start = 0; start < 50; start += 3) {
+        const group: { generationId: string; requestUrl: string | null }[] = [];
+        for (
+          let submission = start;
+          submission < Math.min(start + 3, 50);
+          submission++
+        ) {
+          const response = await fixture.request(app, path, request);
+          expect(response.status).toBe(202);
+          const generationId = readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          );
+          expect(generationIds.has(generationId)).toBeFalsy();
+          generationIds.add(generationId);
+          expect(requestUrls).toHaveLength(submission + 1);
+          group.push({
+            generationId,
+            requestUrl: requestUrls[submission] ?? null,
+          });
+        }
+        await Promise.all(
+          group.map(({ requestUrl }) => {
+            return fixture.run(() => {
+              return postFalWebhook(app, requestUrl, completionPayload);
+            });
+          }),
         );
         await flushWaitUntilForTest();
-        const completed = await fixture.request(
-          app,
-          `/api/built-in-generations/${generationId}`,
-          { headers: request.headers },
+        await Promise.all(
+          group.map(({ generationId }) => {
+            return fixture.run(async () => {
+              const completed = await fixture.request(
+                app,
+                `/api/built-in-generations/${generationId}`,
+                { headers: request.headers },
+              );
+              expect(completed.status).toBe(200);
+              const statusBody: unknown = await completed.json();
+              expect(statusBody).toMatchObject({
+                generationId,
+                status: "completed",
+              });
+              expect(readGenerationResult(statusBody)).toMatchObject({
+                creditsCharged: 50,
+              });
+            });
+          }),
         );
-        expect(completed.status).toBe(200);
-        const statusBody: unknown = await completed.json();
-        expect(statusBody).toMatchObject({ generationId, status: "completed" });
-        expect(readGenerationResult(statusBody)).toMatchObject({
-          creditsCharged: 50,
-        });
       }
       expect(generationIds.size).toBe(50);
       expect(requestUrls).toHaveLength(50);
