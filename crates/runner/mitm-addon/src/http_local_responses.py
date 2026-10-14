@@ -372,7 +372,13 @@ def block_gmail_send(flow: http.HTTPFlow) -> None:
     )
 
 
-def set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
+def set_firewall_block_response(
+    flow: http.HTTPFlow,
+    result: matching.FirewallBlock,
+    *,
+    send_response: bool = True,
+) -> None:
+    """Record denial context; header-phase callers terminate without a response."""
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if result.reason == "malformed_network_policy":
         block_message = "malformed network policy"
@@ -397,6 +403,9 @@ def set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBl
     flow.metadata[metadata_keys.FIREWALL_PERMISSION] = (
         result.permissions[0] if len(result.permissions) == 1 else ""
     )
+    if not send_response:
+        return
+
     original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
     diagnostic_url = _diagnostic_url_without_query_or_fragment(original_url)
     flow.response = make_local_json_response(

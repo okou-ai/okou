@@ -889,6 +889,15 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         flow.kill()
         return None
 
+    if classification.kind == "firewall_block" and request_end_stream is not True:
+        _start_request_timing(flow)
+        _set_firewall_block_response(flow, classification.firewall_block, send_response=False)
+        # A local response still waits for body EOF. Terminate before mitmproxy
+        # sends 100 Continue or buffers this already-denied unbounded upload.
+        flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+        flow.kill()
+        return None
+
     if (
         classification.kind == "firewall_allow"
         and connector_diagnostics.maybe_make_connector_owner_local_response(
@@ -1254,8 +1263,13 @@ async def _try_firewall_request_stream_from_headers(
         raise
 
 
-def _set_firewall_block_response(flow: http.HTTPFlow, result: matching.FirewallBlock) -> None:
-    http_local_responses.set_firewall_block_response(flow, result)
+def _set_firewall_block_response(
+    flow: http.HTTPFlow,
+    result: matching.FirewallBlock,
+    *,
+    send_response: bool = True,
+) -> None:
+    http_local_responses.set_firewall_block_response(flow, result, send_response=send_response)
 
 
 def _set_firewall_ambiguous_response(

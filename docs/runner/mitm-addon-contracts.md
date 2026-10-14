@@ -631,7 +631,22 @@ their embedded-addon behavior until replaced. Native dependency coverage in
 byte accounting, capture privacy, admission and terminal release; cryptographic
 TLS verification remains covered by the native auth-wait suites.
 
-## Header-phase credential-resolution failures
+## Header-phase rejected uploads
+
+If firewall policy already rejects an upload at headers, the addon terminates
+the flow before body consumption unless a valid Content-Length without
+Transfer-Encoding bounds it to the shared 64 KiB buffer cap or the transport
+marks the request end-stream. This applies
+with body capture both enabled and disabled. Bounded small bodies and finished
+bodyless requests retain their structured JSON 403; the request hook still
+revalidates their current policy before returning that denial.
+
+For unbounded denied uploads, the native transport closes the HTTP/1 connection
+or resets only the affected HTTP/2 stream before sending `100 Continue`. No
+credentials are resolved, upstream body is forwarded, or billable usage is
+admitted. The denial's firewall context and proxy warning remain available;
+the error hook records one terminal network failure with status `0` and owns
+resource release. No unsent local response is constructed for body capture.
 
 If credential resolution fails while preparing a request for authenticated
 streaming, the addon terminates that upload from `requestheaders()`. The pinned

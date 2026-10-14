@@ -504,7 +504,7 @@ async def test_capture_enabled_body_dependent_firewall_auth_does_not_install_req
 
 
 def test_capture_enabled_firewall_block_does_not_install_request_stream(
-    tmp_path, real_flow, mitm_ctx
+    tmp_path, real_flow, mitm_ctx, headers
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -529,6 +529,7 @@ def test_capture_enabled_firewall_block_does_not_install_request_stream(
         client_ip="10.200.0.5",
         host="api.github.com",
         path="/repos/octocat/hello",
+        request_headers=headers(("Host", "api.github.com"), ("Content-Length", "0")),
     )
 
     with mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"):
