@@ -7,6 +7,7 @@ mod finalizing;
 mod fixture;
 mod optional;
 mod pressure;
+mod refusal;
 mod tail;
 mod transitions;
 

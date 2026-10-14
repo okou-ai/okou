@@ -105,6 +105,7 @@ pub async fn exercise(
         Err(error) => {
             if let Some(receipts) = receipts {
                 receipts.retain(error);
+                receipts.retain(guard);
             }
             return Err(io::Error::other("native finalizing park/preparation failed").into());
         }
@@ -112,13 +113,23 @@ pub async fn exercise(
     let candidate = match (running, parked) {
         (false, IdleParkOutcome::Reusable(candidate)) => IdleParkCandidate::Ordinary(candidate),
         (true, IdleParkOutcome::Handoff(candidate)) => {
-            assert_eq!(
-                candidate.handoff_point(),
-                SandboxFinalExecParkHandoffPoint::BeforeBalloon
-            );
+            if candidate.handoff_point() != SandboxFinalExecParkHandoffPoint::BeforeBalloon {
+                if let Some(receipts) = receipts {
+                    receipts.retain(candidate);
+                    receipts.retain(guard);
+                }
+                return Err(io::Error::other(
+                    "native finalizing handoff reached an unexpected physical boundary",
+                )
+                .into());
+            }
             IdleParkCandidate::Immediate(candidate)
         }
-        _ => {
+        (_, outcome) => {
+            if let Some(receipts) = receipts {
+                receipts.retain(outcome);
+                receipts.retain(guard);
+            }
             return Err(io::Error::other(
                 "native provider did not reach requested finalizing state",
             )

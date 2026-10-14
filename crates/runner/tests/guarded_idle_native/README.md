@@ -242,3 +242,8 @@ native cancellation races remain the separate parent acceptance gate.
 Ordinary `cargo test -p runner --test guarded_idle_native` executes the report
 consumer's real-file regressions through Python 3 and compiles the opt-in native
 tests. The report regressions do not substitute for executing KVM/NBD cases.
+The ordinary provider-boundary refusal test also drives actual finalizing park
+with controlled external park errors, an unexpected parked return and an
+unexpected running handoff point. It verifies the original file bytes and cache
+lock remain owned, the complete logical lease stays allocated and no destruction
+occurs until explicit disposal of the ordinary mock fixture.
