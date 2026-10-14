@@ -5451,7 +5451,7 @@
     "close": "닫기",
     "configured": "구성됨",
     "connectionStatus": {
-      "loading": "연결 기록을 불러오는 중…",
+      "attention_other": "VNC 호스트 {{count}}개에 확인이 필요합니다",
       "observedAt": "기록 시각 {{time}}",
       "reasons": {
         "authentication_failed": "인증 또는 서버 신원 확인에 실패했습니다.",
@@ -5466,9 +5466,7 @@
         "unsafe_destination": "네트워크 정책에 의해 대상이 거부되었습니다.",
         "unsupported_profile": "서버가 선택한 보안 프로필을 지원하지 않습니다."
       },
-      "succeeded": "최근 기록된 연결 시도가 성공했습니다.",
-      "unavailable": "연결 기록을 사용할 수 없습니다.",
-      "unobserved": "이 설정에 대한 연결 시도 기록이 없습니다."
+      "unavailable": "VNC 연결 상태를 확인할 수 없습니다"
     },
     "credential": {
       "add": "자격 증명 추가",

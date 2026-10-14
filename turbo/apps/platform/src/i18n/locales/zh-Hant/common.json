@@ -5451,7 +5451,7 @@
     "close": "關閉",
     "configured": "已配置",
     "connectionStatus": {
-      "loading": "正在載入連線記錄…",
+      "attention_other": "{{count}} 臺 VNC 主機需要處理",
       "observedAt": "記錄於 {{time}}",
       "reasons": {
         "authentication_failed": "身分驗證或伺服器身分校驗失敗。",
@@ -5466,9 +5466,7 @@
         "unsafe_destination": "網路原則拒絕了目標位址。",
         "unsupported_profile": "伺服器不支援所選安全設定。"
       },
-      "succeeded": "最近一次有記錄的連線嘗試成功。",
-      "unavailable": "連線記錄暫不可用。",
-      "unobserved": "此設定尚無連線嘗試記錄。"
+      "unavailable": "無法獲取 VNC 連線狀態"
     },
     "credential": {
       "add": "新增憑據",

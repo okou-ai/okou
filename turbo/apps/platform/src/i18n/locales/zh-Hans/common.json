@@ -5451,7 +5451,7 @@
     "close": "关闭",
     "configured": "已配置",
     "connectionStatus": {
-      "loading": "正在加载连接记录…",
+      "attention_other": "{{count}} 台 VNC 主机需要处理",
       "observedAt": "记录于 {{time}}",
       "reasons": {
         "authentication_failed": "身份验证或服务器身份校验失败。",
@@ -5466,9 +5466,7 @@
         "unsafe_destination": "网络策略拒绝了目标地址。",
         "unsupported_profile": "服务器不支持所选安全配置。"
       },
-      "succeeded": "最近一次有记录的连接尝试成功。",
-      "unavailable": "连接记录暂不可用。",
-      "unobserved": "此配置尚无连接尝试记录。"
+      "unavailable": "无法获取 VNC 连接状态"
     },
     "credential": {
       "add": "添加凭据",

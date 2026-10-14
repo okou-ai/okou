@@ -833,10 +833,17 @@ impl Authority {
                     &body,
                 )
                 .ok()?;
-            self.transport.execute(request).await.ok().map(|_| ())
+            let response = self.transport.execute(request).await.ok()?;
+            response.status().is_success().then_some(())
         };
         // An old API's missing route and reporting outages never change connection results.
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), report).await;
+        if !tokio::time::timeout(std::time::Duration::from_secs(1), report)
+            .await
+            .is_ok_and(|result| result.is_some())
+        {
+            // No raw response/error, credentials, session or output at this boundary.
+            tracing::info!(run_id = %run, connection_id = %connection, "VNC observation report not confirmed");
+        }
     }
 
     pub(super) fn new(

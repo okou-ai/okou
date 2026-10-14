@@ -1,10 +1,75 @@
-import { useLoadable } from "ccstate-react";
+import { useLoadable, useLastLoadable } from "ccstate-react";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import type { VncConnectionObservation } from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import { currentLocale } from "../../i18n/index.ts";
 import { vncIdentity$, vncObservationsSnapshot$ } from "../../signals/vnc.ts";
 
-export function VncConnectionStatus({
+function useVncObservations():
+  | {
+      readonly kind: "available";
+      readonly observations: readonly VncConnectionObservation[];
+    }
+  | { readonly kind: "loading" | "unavailable" } {
+  const identity = useLoadable(vncIdentity$);
+  const current = useLoadable(vncObservationsSnapshot$);
+  const retained = useLastLoadable(vncObservationsSnapshot$);
+  if (identity.state !== "hasData" || identity.data === null) {
+    return { kind: "loading" };
+  }
+  if (current.state === "hasError") {
+    return { kind: "unavailable" };
+  }
+  if (
+    retained.state !== "hasData" ||
+    retained.data.identity !== identity.data
+  ) {
+    return { kind: "loading" };
+  }
+  return retained.data.observations === null
+    ? { kind: "unavailable" }
+    : { kind: "available", observations: retained.data.observations };
+}
+
+export function VncAttention() {
+  const { t } = useTranslation();
+  const status = useVncObservations();
+  const count =
+    status.kind === "available"
+      ? status.observations.filter((observation) => {
+          return observation.failureReason !== null;
+        }).length
+      : 0;
+  const label =
+    status.kind === "unavailable"
+      ? t(($) => {
+          return $.vnc.connectionStatus.unavailable;
+        })
+      : count > 0
+        ? t(
+            ($) => {
+              return $.vnc.connectionStatus.attention;
+            },
+            { count },
+          )
+        : null;
+  if (!label) {
+    return null;
+  }
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      title={label}
+      className="inline-flex min-w-0 items-center gap-1 text-amber-600 dark:text-amber-400"
+    >
+      <AlertTriangle size={12} className="shrink-0" aria-hidden="true" />
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+export function VncHostWarning({
   connectionId,
   generation,
 }: {
@@ -12,78 +77,30 @@ export function VncConnectionStatus({
   readonly generation: number;
 }) {
   const { t } = useTranslation();
-  const identity = useLoadable(vncIdentity$);
-  const snapshot = useLoadable(vncObservationsSnapshot$);
-  if (snapshot.state === "hasError") {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.connectionStatus.unavailable;
-        })}
-      </p>
-    );
-  }
-  if (
-    identity.state !== "hasData" ||
-    !identity.data ||
-    snapshot.state !== "hasData" ||
-    snapshot.data.identity !== identity.data
-  ) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.connectionStatus.loading;
-        })}
-      </p>
-    );
-  }
-  if (snapshot.data.observations === null) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.connectionStatus.unavailable;
-        })}
-      </p>
-    );
-  }
-  const observation = snapshot.data.observations.find((item) => {
-    return item.connectionId === connectionId && item.generation === generation;
-  });
-  if (!observation) {
-    return (
-      <p role="status" className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.vnc.connectionStatus.unobserved;
-        })}
-      </p>
-    );
+  const status = useVncObservations();
+  const observation =
+    status.kind === "available"
+      ? status.observations.find((item) => {
+          return (
+            item.connectionId === connectionId && item.generation === generation
+          );
+        })
+      : undefined;
+  if (!observation?.failureReason) {
+    return null;
   }
   const reason = observation.failureReason;
   return (
     <div
       role="status"
-      className={
-        reason
-          ? "flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400"
-          : "flex items-start gap-2 text-sm text-muted-foreground"
-      }
+      className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400"
     >
-      {reason && (
-        <AlertTriangle
-          size={16}
-          className="mt-0.5 shrink-0"
-          aria-hidden="true"
-        />
-      )}
+      <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
       <div className="grid gap-1">
         <p>
-          {reason
-            ? t(($) => {
-                return $.vnc.connectionStatus.reasons[reason];
-              })
-            : t(($) => {
-                return $.vnc.connectionStatus.succeeded;
-              })}
+          {t(($) => {
+            return $.vnc.connectionStatus.reasons[reason];
+          })}
         </p>
         <time
           dateTime={observation.observedAt}

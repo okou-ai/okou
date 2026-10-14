@@ -5451,7 +5451,7 @@
     "close": "Tutup",
     "configured": "Terkonfigurasi",
     "connectionStatus": {
-      "loading": "Memuat catatan koneksi…",
+      "attention_other": "{{count}} host VNC perlu diperhatikan",
       "observedAt": "Diamati {{time}}",
       "reasons": {
         "authentication_failed": "Autentikasi atau verifikasi identitas server gagal.",
@@ -5466,9 +5466,7 @@
         "unsafe_destination": "Tujuan ditolak oleh kebijakan jaringan.",
         "unsupported_profile": "Server tidak mendukung profil keamanan yang dipilih."
       },
-      "succeeded": "Percobaan koneksi terakhir yang tercatat berhasil.",
-      "unavailable": "Catatan koneksi tidak tersedia.",
-      "unobserved": "Belum ada percobaan koneksi yang tercatat untuk konfigurasi ini."
+      "unavailable": "Status koneksi VNC tidak tersedia"
     },
     "credential": {
       "add": "Tambah kredensial",

@@ -476,16 +476,18 @@ impl Run {
             Ok(session)
         }
         .await;
-        if let Some(report) = observation.finish(result.as_ref().err().copied())
-            && let Ok(permit) = Arc::clone(&self.runtime.reports).try_acquire_owned()
-        {
-            let runtime = Arc::clone(&self.runtime);
-            let run = self.id;
-            // Reporting owns no session capacity, operation lease or guest output.
-            self.tasks.spawn(async move {
-                let _permit = permit;
-                runtime.authority.observe(run, connection_id, report).await;
-            });
+        if let Some(report) = observation.finish(result.as_ref().err().copied()) {
+            if let Ok(permit) = Arc::clone(&self.runtime.reports).try_acquire_owned() {
+                let runtime = Arc::clone(&self.runtime);
+                let run = self.id;
+                // Reporting owns no session capacity, operation lease or guest output.
+                self.tasks.spawn(async move {
+                    let _permit = permit;
+                    runtime.authority.observe(run, connection_id, report).await;
+                });
+            } else {
+                tracing::info!(run_id = %self.id, connection_id = %connection_id, "VNC observation report capacity exhausted");
+            }
         }
         result
     }

@@ -5477,7 +5477,8 @@
     "close": "Schließen",
     "configured": "Konfiguriert",
     "connectionStatus": {
-      "loading": "Verbindungsbeobachtungen werden geladen…",
+      "attention_one": "{{count}} VNC-Host benötigt Aufmerksamkeit",
+      "attention_other": "{{count}} VNC-Hosts benötigen Aufmerksamkeit",
       "observedAt": "Beobachtet {{time}}",
       "reasons": {
         "authentication_failed": "Authentifizierung oder Überprüfung der Serveridentität fehlgeschlagen.",
@@ -5492,9 +5493,7 @@
         "unsafe_destination": "Das Ziel wurde durch die Netzwerkrichtlinie abgelehnt.",
         "unsupported_profile": "Der Server unterstützt das gewählte Sicherheitsprofil nicht."
       },
-      "succeeded": "Der letzte aufgezeichnete Verbindungsversuch war erfolgreich.",
-      "unavailable": "Verbindungsbeobachtungen sind nicht verfügbar.",
-      "unobserved": "Für diese Konfiguration wurde noch kein Verbindungsversuch aufgezeichnet."
+      "unavailable": "VNC-Verbindungsstatus nicht verfügbar"
     },
     "credential": {
       "add": "Zugangsdaten hinzufügen",

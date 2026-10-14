@@ -5451,7 +5451,7 @@
     "close": "閉じる",
     "configured": "設定済み",
     "connectionStatus": {
-      "loading": "接続記録を読み込み中…",
+      "attention_other": "{{count}} 個の VNC ホストで対応が必要です",
       "observedAt": "記録日時 {{time}}",
       "reasons": {
         "authentication_failed": "認証またはサーバーの識別情報の検証に失敗しました。",
@@ -5466,9 +5466,7 @@
         "unsafe_destination": "ネットワークポリシーにより接続先が拒否されました。",
         "unsupported_profile": "サーバーは選択したセキュリティ設定に対応していません。"
       },
-      "succeeded": "最後に記録された接続試行は成功しました。",
-      "unavailable": "接続記録を利用できません。",
-      "unobserved": "この設定での接続試行はまだ記録されていません。"
+      "unavailable": "VNC 接続の状態を取得できません"
     },
     "credential": {
       "add": "認証情報を追加",

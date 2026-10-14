@@ -5469,7 +5469,8 @@
     "close": "Close",
     "configured": "Configured",
     "connectionStatus": {
-      "loading": "Loading connection observations…",
+      "attention_one": "{{count}} VNC host needs attention",
+      "attention_other": "{{count}} VNC hosts need attention",
       "observedAt": "Observed {{time}}",
       "reasons": {
         "authentication_failed": "Authentication or server identity verification failed.",
@@ -5484,9 +5485,7 @@
         "unsafe_destination": "The destination was rejected by network policy.",
         "unsupported_profile": "The server does not support the selected security profile."
       },
-      "succeeded": "Last recorded connection attempt succeeded.",
-      "unavailable": "Connection observations are unavailable.",
-      "unobserved": "No connection attempt recorded for this configuration."
+      "unavailable": "VNC connection status is unavailable"
     },
     "credential": {
       "add": "Add credential",

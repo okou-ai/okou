@@ -5553,7 +5553,9 @@
     "close": "Fermer",
     "configured": "Configuré",
     "connectionStatus": {
-      "loading": "Chargement des observations de connexion…",
+      "attention_one": "{{count}} hôte VNC nécessite votre attention",
+      "attention_many": "{{count}} hôtes VNC nécessitent votre attention",
+      "attention_other": "{{count}} hôtes VNC nécessitent votre attention",
       "observedAt": "Observé {{time}}",
       "reasons": {
         "authentication_failed": "L’authentification ou la vérification de l’identité du serveur a échoué.",
@@ -5568,9 +5570,7 @@
         "unsafe_destination": "La destination a été refusée par la politique réseau.",
         "unsupported_profile": "Le serveur ne prend pas en charge le profil de sécurité sélectionné."
       },
-      "succeeded": "La dernière tentative de connexion enregistrée a réussi.",
-      "unavailable": "Les observations de connexion sont indisponibles.",
-      "unobserved": "Aucune tentative de connexion enregistrée pour cette configuration."
+      "unavailable": "L’état de la connexion VNC est indisponible"
     },
     "credential": {
       "add": "Ajouter des identifiants",

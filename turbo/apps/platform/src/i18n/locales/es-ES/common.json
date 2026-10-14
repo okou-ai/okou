@@ -5553,7 +5553,9 @@
     "close": "Cerrar",
     "configured": "Configurado",
     "connectionStatus": {
-      "loading": "Cargando observaciones de conexión…",
+      "attention_one": "{{count}} host VNC requiere atención",
+      "attention_many": "{{count}} hosts VNC requieren atención",
+      "attention_other": "{{count}} hosts VNC requieren atención",
       "observedAt": "Observado {{time}}",
       "reasons": {
         "authentication_failed": "Falló la autenticación o la verificación de identidad del servidor.",
@@ -5568,9 +5570,7 @@
         "unsafe_destination": "La política de red rechazó el destino.",
         "unsupported_profile": "El servidor no admite el perfil de seguridad seleccionado."
       },
-      "succeeded": "El último intento de conexión registrado tuvo éxito.",
-      "unavailable": "Las observaciones de conexión no están disponibles.",
-      "unobserved": "No hay intentos de conexión registrados para esta configuración."
+      "unavailable": "El estado de la conexión VNC no está disponible"
     },
     "credential": {
       "add": "Añadir credenciales",
