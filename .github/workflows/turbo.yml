@@ -1418,6 +1418,9 @@ jobs:
           /tmp/awscli/aws/install
           aws --version
 
+          # AWS CLI 2.38 defaults to CRT, whose R2 downloads can fail signing.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Resolve artifact commit SHA
         id: artifact
         run: |
