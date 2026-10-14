@@ -34,7 +34,7 @@ import {
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
-const RESOURCE_PREVIEW_LIMIT = 6;
+const RESOURCE_PREVIEW_LIMIT = 3;
 
 export function ChatResourcesButton({
   thread,
