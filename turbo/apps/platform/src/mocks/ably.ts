@@ -527,7 +527,6 @@ export const XHRPolling = Symbol("XHRPolling");
 
 function isSharedDatabaseRealtimeTopic(topic: string): boolean {
   return (
-    topic === "homeTaskRecommendationsChanged" ||
     topic === "agentSuggestionsChanged" ||
     topic === "chatThreadReadCursorUpdated" ||
     topic === "threadListChanged" ||

@@ -1946,15 +1946,6 @@
       "threads": "Chats",
       "title": "Weiterleiten an"
     },
-    "homeTasks": {
-      "empty": "Noch keine Aufgabenvorschläge",
-      "existingThread": "Chat fortsetzen",
-      "exploreWorkflow": "Workflow prüfen",
-      "heading": "Aus Ihrer letzten Arbeit aufgegriffen",
-      "newTasksAvailable": "Neue Aufgaben verfügbar",
-      "newThread": "Neuer Chat",
-      "reload": "Aufgaben neu laden"
-    },
     "mail": {
       "bcc": "BCC",
       "cc": "CC",

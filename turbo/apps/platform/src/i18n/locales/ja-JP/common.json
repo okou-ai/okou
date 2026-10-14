@@ -1938,15 +1938,6 @@
       "threads": "チャット",
       "title": "転送先"
     },
-    "homeTasks": {
-      "empty": "おすすめのタスクはまだありません",
-      "existingThread": "チャットを続ける",
-      "exploreWorkflow": "ワークフローを検討",
-      "heading": "最近の作業から選んだタスク",
-      "newTasksAvailable": "新しいタスクがあります",
-      "newThread": "新しいチャット",
-      "reload": "タスクを再読み込み"
-    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",

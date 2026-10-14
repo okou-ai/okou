@@ -27,7 +27,6 @@ import {
   useChatHomeComplianceVisible,
 } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
-import { HomeTaskRecommendations } from "./home-task-recommendations.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
   chatGreetingShouldAnimate$,
@@ -542,18 +541,6 @@ function AgentComposerPage() {
               lift the composer the click came from. The panel hangs below the
               row's slot instead and the page scrolls to it. */}
           <div className="contents sm:flex sm:min-h-0 sm:grow sm:basis-14 sm:flex-col sm:gap-10 sm:pt-5 md:basis-28">
-            {/* Above the generic starting points and below the composer: these
-                cards describe the member's own unfinished work, so they are
-                only worth the position when there are any, and the section
-                renders nothing when there are not. It is mounted bare rather
-                than in a wrapper: a wrapper would stay a flex item after the
-                section returned null, and the `gap` would then be charged
-                twice — the 80px the composer once sat above the chips was two
-                40px steps with an empty box between them, not one deliberate
-                step. The ordering the wrapper carried moved onto the section
-                itself. */}
-            <HomeTaskRecommendations agentId={currentChatAgentId} />
-
             {/* The bottom padding is the end of the page once a panel has
                 overflowed the box and the page scrolls. */}
             <div className="order-2 sm:order-none sm:pb-10">

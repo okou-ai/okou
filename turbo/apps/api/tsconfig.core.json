@@ -402,8 +402,6 @@
     "src/signals/external/axiom-datasets.ts",
     "src/signals/external/axiom.ts",
     "src/signals/external/discord-client.ts",
-    "src/signals/external/openrouter-failure.ts",
-    "src/signals/external/openrouter.ts",
     "src/signals/external/gcp-llm-auth.ts",
     "src/signals/external/gcp-llm-transport.ts",
     "src/signals/external/vertex-models.ts",

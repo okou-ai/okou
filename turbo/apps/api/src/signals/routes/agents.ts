@@ -19,10 +19,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$, type Db } from "../external/db";
-import {
-  publishHomeTaskRecommendationsChangedSafely,
-  publishUserSignal,
-} from "../external/realtime";
+import { publishUserSignal } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import {
   nullableDriverValueDecoder,
@@ -938,11 +935,6 @@ const updateAgentUserConnectorsInner$ = command(
     await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
       agentId: params.id,
     });
-    signal.throwIfAborted();
-    await publishHomeTaskRecommendationsChangedSafely(
-      { userId: auth.userId, orgId: auth.orgId },
-      { agentId: params.id },
-    );
     signal.throwIfAborted();
     return {
       status: 200 as const,
