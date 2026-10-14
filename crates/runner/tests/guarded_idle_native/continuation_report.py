@@ -113,7 +113,8 @@ def validate(directory):
                 or type(continued.get("exit_code")) is not int or continued["exit_code"] != 0
                 or continued.get("home_cache_hit") is not True
                 or continued.get("history_proof_bound") is not True
-                or saved != {"required_cleanup_joined": True, "complete_continued_bytes_restored": True}):
+                or saved != {"required_cleanup_joined": True, "complete_continued_bytes_restored": True,
+                             "verified_final_identity_preserved": True}):
             raise ValueError("native continuation/required saving did not positively complete")
         available, age, cost = [condition.get(k) for k in ("available_bytes", "age_ns", "read_duration_ns")]
         can_fit = case.startswith(("ContinuationReplacement-", "ContinuationRestore-", "ContinuationAged-"))

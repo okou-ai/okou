@@ -53,7 +53,8 @@ class ContinuationReportTests(unittest.TestCase):
                          "restored_history_sha256":"3"*64,"restored_history_bytes":len(continuation.SEED)+256,
                          "continued_history_sha256":"4"*64,"continued_history_bytes":len(continuation.SEED)+512,
                          "exit_code":0,"home_cache_hit":True,"history_proof_bound":True}
-            saved = {"required_cleanup_joined":True,"complete_continued_bytes_restored":True}
+            saved = {"required_cleanup_joined":True,"complete_continued_bytes_restored":True,
+                     "verified_final_identity_preserved":True}
             clocks = (events[0]["monotonic_ns"]+3,events[0]["monotonic_ns"]+6,
                       events[-2]["monotonic_ns"]+3,events[-2]["monotonic_ns"]+6)
             for phase, proof, clock in zip(continuation.PHASES,(original,condition,continued,saved),clocks):
@@ -139,6 +140,9 @@ class ContinuationReportTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.validate()
         self.setUp()
         self.witnesses[3]["evidence"]["required_cleanup_joined"]=False
+        with self.assertRaises(ValueError): self.validate()
+        self.setUp()
+        self.witnesses[3]["evidence"]["verified_final_identity_preserved"]=False
         with self.assertRaises(ValueError): self.validate()
         self.setUp()
         self.events[3]["evidence"]["full_logical_lease"]=[2,2048,1]

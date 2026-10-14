@@ -1000,8 +1000,6 @@ async fn exercise_retirement(
         continuation
             .continue_and_save(continuation::Saving {
                 factory: factory.clone(),
-                paths: &paths,
-                cache: &cache,
                 operations: &operations,
                 inputs,
                 budget: &budget,

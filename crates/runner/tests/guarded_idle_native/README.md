@@ -310,11 +310,21 @@ metadata, export/freeze, original positive backing wait, saved-home continuation
 and joined continued saving. The actual process checks the original full prefix
 and 64 KiB home payload.
 
+After saving the first continuation, a second Executor assignment reopens that
+image and checks the entire continued history and original home again. Its own
+fresh final identity goes through required saving, so validation preserves a
+usable session/history binding in the final cache rather than promoting a
+read-only assignment without an Agent identity.
+
 Keep the existing artifact and supplied P2 policy environment. Additionally set
 `USE_MOCK_CODEX=true` and `OKOU_TEST_NATIVE_API_HOST` to the authorized test host's
 actual private IPv4 address reachable by its disposable Guests. The synthetic peer
 uses no real model credentials. Missing input, verified final identity, matching
 artifacts or safe headroom fails the native run.
+
+The synthetic Agent request explicitly supplies the canonical Guest HOME with
+its mock scenario/timestamp environment; the fixture does not assume an inherited
+shell environment when the control server starts the Agent.
 
 Select the exact ignored entry through bounded P1. Its metadata must contain
 `native_continuation_policy_json` equal to the raw supplied policy file bytes.

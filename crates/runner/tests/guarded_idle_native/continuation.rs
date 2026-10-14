@@ -1,6 +1,6 @@
 //! Complete native session bytes through the public Executor and real saving.
 
-use std::{collections::HashMap, path::Path, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 use runner_executor::{
     executor::{self, ExecutorConfig, JobParams, NewSandboxDispatch},
@@ -13,7 +13,7 @@ use runner_lifecycle::{
     },
     host_memory_operations::{HostMemoryOperations, MemoryOperationError},
     idle_pool::{
-        IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
+        ActivationCleanupOutcome, IdlePool, IdlePoolConfig, IdleRetirementBatchScope, ParkResult,
         test_support::ParkedIdleCandidateBuilder,
     },
     resource_budget::ResourceBudget,
@@ -30,7 +30,7 @@ use runner_storage::{
     },
     storage_fingerprints::StorageFingerprints,
 };
-use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolBatchRetirementRequest};
+use runner_supervisor::idle_lifecycle::{IdleDestroyTracker, IdlePoolRetirementRequest};
 use runner_types::{
     ids::RunId,
     storage_manifest::{ArtifactEntry, StorageManifest},
@@ -39,7 +39,7 @@ use runner_types::{
         ResumeSessionHistoryRef, ResumeSessionHistoryRefKind, SandboxReuseResult,
     },
 };
-use sandbox::{CopyFileOptions, Sandbox, SandboxFactory, SandboxId, SandboxParkOutcome};
+use sandbox::{Sandbox, SandboxFactory, SandboxId, SandboxParkOutcome};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use shell_quote::quote_shell_arg;
@@ -86,8 +86,6 @@ pub struct Execution<'a> {
 
 pub struct Saving<'a> {
     pub factory: Arc<Box<dyn SandboxFactory>>,
-    pub paths: &'a RunnerPaths,
-    pub cache: &'a HomeImageCache,
     pub operations: &'a HostMemoryOperations,
     pub inputs: &'a fixture::Inputs,
     pub budget: &'a Arc<ResourceBudget>,
@@ -170,6 +168,11 @@ impl Fixture {
         context.sandbox_token = TOKEN.into();
         context.real_agent_in_preview = Some(false);
         context.environment = Some(HashMap::from([
+            (
+                "HOME".into(),
+                api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR
+                    .into(),
+            ),
             (
                 "MOCK_CODEX_APP_SERVER_SCENARIO".into(),
                 if !continued && self.nonzero {
@@ -336,58 +339,92 @@ impl Fixture {
     }
 
     pub async fn continue_and_save(self: &Arc<Self>, request: Saving<'_>) -> TestResult<()> {
-        let Saving {
-            factory,
-            paths,
-            cache,
-            operations,
-            inputs,
-            budget,
-            tracker,
-            status,
-            key,
-            original,
-            history,
-        } = request;
-        let lease = ResourceBudget::try_reserve_lease(budget, 2, 4096)
-            .ok_or_else(|| io::Error::other("continued native full lease unavailable"))?;
-        let next = RunId::new_v4();
-        let id = SandboxId::new_v4();
-        let result = self
-            .execute(Execution {
-                factory: factory.clone(),
-                operations: operations.clone(),
-                inputs,
-                run: next,
-                id,
-                key: key.into(),
-                history: history.to_vec(),
-                original,
-                continued: true,
-            })
-            .await;
-        let mut prepared = match result {
-            Ok(prepared) => prepared,
-            Err(error) => {
+        let mut history = request.history.to_vec();
+        // Reopen the resulting saved image through Executor too. A read-only
+        // Guest has no new verified identity and would erase the final cache
+        // binding when its consumed image is promoted.
+        for generation in 0..2 {
+            let lease = ResourceBudget::try_reserve_lease(request.budget, 2, 4096)
+                .ok_or_else(|| io::Error::other("continued native full lease unavailable"))?;
+            let run = RunId::new_v4();
+            let id = SandboxId::new_v4();
+            let result = self
+                .execute(Execution {
+                    factory: request.factory.clone(),
+                    operations: request.operations.clone(),
+                    inputs: request.inputs,
+                    run,
+                    id,
+                    key: request.key.into(),
+                    history: history.clone(),
+                    original: request.original,
+                    continued: true,
+                })
+                .await;
+            let prepared = match result {
+                Ok(prepared) => prepared,
+                Err(error) => {
+                    self.case.retain(lease);
+                    return Err(error);
+                }
+            };
+            let checked: TestResult<()> = async {
+                fixture::verify_saved_guest(&*prepared.sandbox, request.original).await?;
+                if prepared.history.len() <= history.len() {
+                    return Err(io::Error::other("native continuation did not extend complete history").into());
+                }
+                if generation == 0 {
+                    self.case.continuation_witness("continued_executor_completed", json!({
+                        "continued_run_id":run.to_string(),"continued_sandbox_id":id.to_string(),
+                        "thread_id":THREAD,"restored_history_sha256":digest(&history),"restored_history_bytes":history.len(),
+                        "continued_history_sha256":digest(&prepared.history),"continued_history_bytes":prepared.history.len(),
+                        "original_home_sha256":digest(&fixture::home_payload(request.original)),"original_home_bytes":fixture::PAYLOAD_BYTES,
+                        "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,
+                        "preparation_observed_by_native_process":true,"home_cache_hit":true,"history_proof_bound":true,
+                    }))?;
+                }
+                Ok(())
+            }.await;
+            if let Err(error) = checked {
+                self.case.retain(prepared);
                 self.case.retain(lease);
                 return Err(error);
             }
-        };
-        let checked: TestResult<()> = async {
-        fixture::verify_saved_guest(&*prepared.sandbox, original).await?;
-        self.case.continuation_witness("continued_executor_completed",json!({
-            "continued_run_id":next.to_string(),"continued_sandbox_id":id.to_string(),
-            "thread_id":THREAD,"restored_history_sha256":digest(history),"restored_history_bytes":history.len(),
-            "continued_history_sha256":digest(&prepared.history),"continued_history_bytes":prepared.history.len(),
-            "original_home_sha256":digest(&fixture::home_payload(original)),"original_home_bytes":fixture::PAYLOAD_BYTES,
-            "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,
-            "preparation_observed_by_native_process":true,"home_cache_hit":true,"history_proof_bound":true,
-        }))?;
-        if prepared.sandbox.park().await? != SandboxParkOutcome::Reusable {
-            return Err(io::Error::other("continued native Guest could not park").into());
+            history = prepared.history.clone();
+            self.save_prepared(&request, run, id, prepared, lease)
+                .await?;
         }
+        self.case.continuation_witness(
+            "continued_saving_completed",
+            json!({"required_cleanup_joined":true,"complete_continued_bytes_restored":true,"verified_final_identity_preserved":true}),
+        )?;
         Ok(())
-        }.await;
+    }
+
+    async fn save_prepared(
+        &self,
+        request: &Saving<'_>,
+        run: RunId,
+        id: SandboxId,
+        mut prepared: Prepared,
+        lease: runner_lifecycle::resource_budget::BudgetLease,
+    ) -> TestResult<()> {
+        let checked: TestResult<()> = async {
+            if !matches!(
+                prepared.home.result(),
+                runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Hit
+                    | runner_lifecycle::home_image_cache::HomeCacheCheckoutResult::Miss
+            ) {
+                return Err(
+                    io::Error::other("native required home promotion is unavailable").into(),
+                );
+            }
+            if prepared.sandbox.park().await? != SandboxParkOutcome::Reusable {
+                return Err(io::Error::other("continued native Guest could not park").into());
+            }
+            Ok(())
+        }
+        .await;
         if let Err(error) = checked {
             self.case.retain(prepared);
             self.case.retain(lease);
@@ -398,24 +435,28 @@ impl Fixture {
         let promotion = prepared
             .home
             .into_promotion_context(HomeImagePromotionRequest {
-                run_id: next,
+                run_id: run,
                 sandbox_id: id,
                 restored_session_identity: Some(&prepared.identity),
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: chrono::Utc::now().to_rfc3339(),
                 storage_fingerprints: prepared.storage,
-            })
-            .ok_or_else(|| io::Error::other("continued native required promotion unavailable"))?;
+            });
+        let Some(promotion) = promotion else {
+            self.case.retain(prepared.sandbox);
+            self.case.retain(lease);
+            return Err(io::Error::other("native required promotion context missing").into());
+        };
         let pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
             max_idle: 0,
         })));
-        let mut candidate = ParkedIdleCandidateBuilder::new(key, lease)
+        let mut candidate = ParkedIdleCandidateBuilder::new(request.key, lease)
             .with_sandbox(prepared.sandbox)
-            .with_factory(factory.clone())
+            .with_factory(request.factory.clone())
             .with_sandbox_id(id)
             .with_profile_name(fixture::PROFILE)
             .with_rootfs_hash(&self.rootfs_hash)
-            .with_history_generation_run_id(next)
+            .with_history_generation_run_id(run)
             .with_restored_session_identity(identity)
             .with_storage_fingerprints(storage)
             .with_home_promotion(promotion)
@@ -433,158 +474,68 @@ impl Fixture {
             }
         }
         self.case.retain(pool.clone());
-        let mut task = tracker
-            .start_pool_retirement_batch(
-                pool,
-                status.clone(),
-                operations.clone(),
-                IdlePoolBatchRetirementRequest {
-                    scope: IdleRetirementBatchScope::All,
-                    envelope: inputs.envelope(),
+        let selections = pool
+            .lock()
+            .await
+            .retirement_batch(IdleRetirementBatchScope::All);
+        if selections.len() != 1 {
+            return Err(
+                io::Error::other("continued native required owner selection changed").into(),
+            );
+        }
+        let selected = selections
+            .into_iter()
+            .next()
+            .ok_or_else(|| io::Error::other("continued native required owner missing"))?;
+        let (_, _, candidate) = selected.into_parts();
+        let mut task = request
+            .tracker
+            .retire_pool_entry(
+                &pool,
+                request.operations,
+                IdlePoolRetirementRequest {
+                    candidate: candidate?,
+                    envelope: request.inputs.envelope(),
                     context: "native_complete_continuation",
                 },
             )
-            .await?;
-        if !task.join().await?.is_complete() {
-            return Err(io::Error::other("continued native required saving incomplete").into());
-        }
-        let check_run = RunId::new_v4();
-        let check_id = SandboxId::new_v4();
-        let mut check_home =
-            fixture::checkout(cache, check_run, check_id, key, &self.rootfs_hash).await;
-        if !check_home.is_cache_hit() {
-            return Err(io::Error::other("continued native home was not durably promoted").into());
-        }
-        // Verify all continued bytes from the saved image, not merely the first generation.
-        let mut request = operations.request(inputs.replacement_plan()?)?;
-        let permit = request.try_grant().await?;
-        let check_lease = ResourceBudget::try_reserve_lease(budget, 2, 4096)
-            .ok_or_else(|| io::Error::other("saved image check full logical lease unavailable"))?;
-        let factory = factory.clone();
-        let expected = prepared.history;
-        let root = paths.base_dir().to_owned();
-        let proof = self.case.clone();
-        let operations = operations.clone();
-        let tracker = tracker.clone();
-        let status = status.clone();
-        let key = key.to_owned();
-        let rootfs = self.rootfs_hash.clone();
-        let envelope = inputs.envelope();
-        let work = permit.spawn(move |mut operation| async move {
-            let created = factory
-                .create(fixture::sandbox_config(check_id, &mut check_home))
-                .await;
-            let mut sandbox = match created {
-                Ok(sandbox) => sandbox,
-                Err(error) => {
-                    proof.retain(check_home);
-                    proof.retain(check_lease);
-                    proof.retain(factory);
-                    return Err::<(), Box<dyn std::error::Error + Send + Sync>>(error.into());
-                }
-            };
-            let checked: TestResult<()> =
-                async {
-                    fixture::start_guest(&mut *sandbox, check_run).await?;
-                    operation.bind_backing(sandbox.backing_process().ok_or_else(|| {
-                        io::Error::other("continued image check has no backing")
-                    })?)?;
-                    runner_lifecycle::home_mount::ensure_home_drive_mounted(&*sandbox, check_run)
-                        .await
-                        .map_err(|e| e.error)?;
-                    let actual = copy_history(&*sandbox, &root).await?;
-                    if actual != expected {
-                        return Err(io::Error::other(
-                            "continued complete history bytes were not saved",
-                        )
-                        .into());
-                    }
-                    fixture::verify_saved_guest(&*sandbox, original).await?;
-                    loop {
-                        match operation.complete_phase().await {
-                            Ok(()) => break,
-                            Err(MemoryOperationError::AccountingChanged) => {
-                                tokio::task::yield_now().await
-                            }
-                            Err(e) => return Err(e.into()),
-                        }
-                    }
-                    Ok(())
-                }
-                .await;
-            if let Err(error) = checked {
-                proof.retain(sandbox);
-                proof.retain(check_home);
-                proof.retain(check_lease);
-                return Err(error);
-            }
-            // This read-only validation assignment has no new agent identity.
-            // Preserve its consumed saved image through the required saving owner.
-            let parked = sandbox.park().await;
-            if !matches!(parked, Ok(SandboxParkOutcome::Reusable)) {
-                proof.retain(sandbox);
-                proof.retain(check_home);
-                proof.retain(check_lease);
-                return Err(io::Error::other("saved image check Guest could not park").into());
-            }
-            let promotion = check_home
-                .into_promotion_context(HomeImagePromotionRequest {
-                    run_id: check_run,
-                    sandbox_id: check_id,
-                    restored_session_identity: None,
-                    terminal_status: HomeCacheTerminalStatus::Success,
-                    completed_at: chrono::Utc::now().to_rfc3339(),
-                    storage_fingerprints: StorageFingerprints::default(),
-                })
-                .ok_or_else(|| io::Error::other("saved image check required promotion missing"))?;
-            let pool = Arc::new(tokio::sync::Mutex::new(IdlePool::new(IdlePoolConfig {
-                max_idle: 0,
-            })));
-            let mut candidate = ParkedIdleCandidateBuilder::new(&key, check_lease)
-                .with_sandbox(sandbox)
-                .with_factory(factory)
-                .with_sandbox_id(check_id)
-                .with_profile_name(fixture::PROFILE)
-                .with_rootfs_hash(rootfs)
-                .with_home_promotion(promotion)
-                .build();
-            if let Err(error) = candidate.capture_retirement_backing() {
-                proof.retain(candidate);
+            .await?
+            .task;
+        let outcome = match task.join().await {
+            Ok(Ok(outcome)) => outcome,
+            Ok(Err(error)) => {
+                self.case.retain(task);
                 return Err(error.into());
             }
-            match pool.lock().await.park(candidate) {
-                ParkResult::Parked => {}
-                other => {
-                    proof.retain(other);
-                    proof.retain(pool.clone());
-                    return Err(
-                        io::Error::other("saved image check required owner not parked").into(),
-                    );
-                }
+            Err(error) => {
+                self.case.retain(task);
+                return Err(error.into());
             }
-            proof.retain(pool.clone());
-            let mut cleanup = tracker
-                .start_pool_retirement_batch(
-                    pool,
-                    status,
-                    operations,
-                    IdlePoolBatchRetirementRequest {
-                        scope: IdleRetirementBatchScope::All,
-                        envelope,
-                        context: "native_continued_image_check",
-                    },
-                )
-                .await?;
-            if !cleanup.join().await?.is_complete() {
-                return Err(io::Error::other("saved image check cleanup incomplete").into());
+        };
+        if !matches!(
+            outcome,
+            ActivationCleanupOutcome::Completed {
+                home_cache_promoted: true
             }
-            Ok(())
-        })?;
-        work.join().await??;
-        self.case.continuation_witness(
-            "continued_saving_completed",
-            json!({"required_cleanup_joined":true,"complete_continued_bytes_restored":true}),
-        )?;
+        ) {
+            self.case.retain(task);
+            return Err(io::Error::other(
+                "continued native saving did not preserve its verified cache identity",
+            )
+            .into());
+        }
+        let snapshot = pool.lock().await.status_snapshot();
+        if let Err(error) = request.status.set_idle_snapshot(snapshot).await {
+            self.case.retain(task);
+            return Err(error.into());
+        }
+        match task.take_completed_lease() {
+            Ok(lease) => drop(lease),
+            Err(error) => {
+                self.case.retain(task);
+                return Err(error.into());
+            }
+        }
         Ok(())
     }
 
@@ -595,31 +546,4 @@ impl Fixture {
 
 pub fn digest(bytes: &[u8]) -> String {
     hex::encode(Sha256::digest(bytes))
-}
-
-async fn copy_history(sandbox: &dyn Sandbox, root: &Path) -> TestResult<Vec<u8>> {
-    let result=fixture::exec(sandbox,&format!("if test -f {HISTORY_PATH}; then printf plain; elif test -f {HISTORY_PATH}.zst; then printf zstd; else exit 1; fi")).await?;
-    let (path, compressed) = match result.as_slice() {
-        b"plain" => (HISTORY_PATH.to_string(), false),
-        b"zstd" => (format!("{HISTORY_PATH}.zst"), true),
-        _ => return Err(io::Error::other("saved native history format unavailable").into()),
-    };
-    let file = tempfile::NamedTempFile::new_in(root)?;
-    sandbox
-        .copy_file(
-            &path,
-            file.path(),
-            CopyFileOptions {
-                max_bytes: 4 * 1024 * 1024,
-                timeout: Duration::from_secs(30),
-                missing_ok: false,
-            },
-        )
-        .await?;
-    let bytes = std::fs::read(file.path())?;
-    if compressed {
-        Ok(zstd::decode_all(bytes.as_slice())?)
-    } else {
-        Ok(bytes)
-    }
 }
