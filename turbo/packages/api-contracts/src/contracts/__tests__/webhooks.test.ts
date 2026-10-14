@@ -1146,6 +1146,36 @@ describe("webhook telemetry contract", () => {
     ).toStrictEqual(homeStartupTelemetry);
   });
 
+  it("preserves false first-run context and actual home-use evidence", () => {
+    const payload = {
+      runId: "00000000-0000-4000-8000-000000000000",
+      sandboxOperations: [
+        {
+          ts: "2026-10-14T03:00:00.000Z",
+          action_type: "runner_sandbox_startup",
+          duration_ms: 0,
+          success: true,
+          runner_startup_path: "blank",
+          is_first_run: false,
+          reuse_key: "thread:00000000-0000-4000-8000-000000000000",
+          sandbox_reuse_result: "poolMiss",
+          home_reuse_result: "cacheMiss",
+        },
+      ],
+    };
+    expect(webhookTelemetryContract.send.body.parse(payload)).toStrictEqual(
+      payload,
+    );
+    expect(
+      webhookTelemetryContract.send.body.safeParse({
+        ...payload,
+        sandboxOperations: [
+          { ...payload.sandboxOperations[0], is_first_run: "false" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts bounded startup outcomes and keeps them optional", () => {
     const startupOutcomes = [
       ["sandbox", "reused"],

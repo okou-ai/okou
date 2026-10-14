@@ -16,7 +16,7 @@ use crate::resource_budget::ResourceBudget;
 use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
-use runner_types::types::SandboxReuseResult;
+use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 pub(crate) use session_history::{
     SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
@@ -259,6 +259,7 @@ pub struct JobTelemetry {
     sandbox_token: String,
     runner_hostname: Option<String>,
     sandbox_startup_path: Option<RunnerStartupPath>,
+    is_first_run: Option<bool>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
     pending_ops: Vec<SandboxOp>,
     oldest_pending: Option<Instant>,
@@ -279,6 +280,12 @@ struct SandboxOp {
     reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_startup_path: Option<RunnerStartupPath>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_first_run: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reuse_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    home_reuse_result: Option<HomeReuseResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox_reuse_result: Option<SandboxReuseResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -344,6 +351,7 @@ impl JobTelemetry {
             sandbox_token,
             runner_hostname,
             sandbox_startup_path: None,
+            is_first_run: None,
             runner_pre_spawn_attribution: None,
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -363,6 +371,37 @@ impl JobTelemetry {
         self.sandbox_startup_path = Some(path);
     }
 
+    pub(crate) fn set_first_run(&mut self, is_first_run: Option<bool>) {
+        self.is_first_run = is_first_run;
+    }
+
+    /// Publish one actual-start fact promptly without changing the batching
+    /// cadence of preparation/timing observations. The parent owns its send.
+    pub(crate) fn record_sandbox_startup(
+        &mut self,
+        path: RunnerStartupPath,
+        sandbox_reuse_result: SandboxReuseResult,
+        home_reuse_result: HomeReuseResult,
+        reuse_key: Option<&str>,
+    ) {
+        let mut phase = self.fork_concurrent_phase();
+        let mut op = sandbox_op(
+            "runner_sandbox_startup",
+            Duration::ZERO,
+            true,
+            None,
+            None,
+            None,
+        );
+        op.runner_startup_path = Some(path);
+        op.sandbox_reuse_result = Some(sandbox_reuse_result);
+        op.home_reuse_result = Some(home_reuse_result);
+        op.reuse_key = reuse_key.map(str::to_owned);
+        phase.push_operation(op);
+        phase.start_auto_flush();
+        self.merge_concurrent_phase(phase);
+    }
+
     /// Create an empty collector for one concurrently owned job phase.
     ///
     /// The fork carries the same job identity and attribution but owns its own
@@ -375,6 +414,7 @@ impl JobTelemetry {
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
             sandbox_startup_path: self.sandbox_startup_path,
+            is_first_run: self.is_first_run,
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -590,6 +630,7 @@ impl JobTelemetry {
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
             sandbox_startup_path: self.sandbox_startup_path,
+            is_first_run: self.is_first_run,
         }
     }
 
@@ -727,6 +768,7 @@ impl JobTelemetry {
     }
 
     fn push_operation(&mut self, mut operation: SandboxOp) {
+        operation.is_first_run = self.is_first_run;
         if operation.runner_startup_path.is_none() {
             operation.runner_startup_path = self.sandbox_startup_path;
         }
@@ -913,6 +955,7 @@ pub(crate) struct SandboxOpReporter {
     sandbox_token: String,
     runner_hostname: Option<String>,
     sandbox_startup_path: Option<RunnerStartupPath>,
+    is_first_run: Option<bool>,
 }
 
 impl SandboxOpReporter {
@@ -929,6 +972,7 @@ impl SandboxOpReporter {
                     None,
                 );
                 operation.runner_startup_path = self.sandbox_startup_path;
+                operation.is_first_run = self.is_first_run;
                 operation
             })
             .collect();
@@ -1050,6 +1094,9 @@ fn sandbox_op_at(
         outcome: outcome.map(String::from),
         reason: None,
         runner_startup_path: None,
+        is_first_run: None,
+        reuse_key: None,
+        home_reuse_result: None,
         sandbox_reuse_result: None,
         runner_pre_spawn_concurrency_bucket: None,
         runner_resource_budget_vcpu_utilization_bucket: None,
@@ -1207,6 +1254,9 @@ mod tests {
             outcome: None,
             reason: None,
             runner_startup_path: None,
+            is_first_run: None,
+            reuse_key: None,
+            home_reuse_result: None,
             sandbox_reuse_result: None,
             runner_pre_spawn_concurrency_bucket: None,
             runner_resource_budget_vcpu_utilization_bucket: None,
@@ -1704,6 +1754,9 @@ mod tests {
                 outcome: None,
                 reason: None,
                 runner_startup_path: None,
+                is_first_run: None,
+                reuse_key: None,
+                home_reuse_result: None,
                 sandbox_reuse_result: None,
                 runner_pre_spawn_concurrency_bucket: None,
                 runner_resource_budget_vcpu_utilization_bucket: None,
@@ -2547,6 +2600,7 @@ mod tests {
             Some("prod-1.aws.vm3.ai".to_string()),
         );
         telemetry.set_sandbox_startup_path(RunnerStartupPath::Blank);
+        telemetry.set_first_run(Some(false));
         telemetry
             .reporter()
             .report(vec![SandboxOpRecord::new(
@@ -2568,5 +2622,158 @@ mod tests {
             payload["sandboxOperations"][0]["runner_startup_path"],
             "blank"
         );
+        assert_eq!(payload["sandboxOperations"][0]["is_first_run"], false);
+    }
+
+    #[tokio::test]
+    async fn sandbox_startup_fact_is_published_before_final_flush_without_flushing_preparation() {
+        for (path, wire_path, sandbox_result, home_result) in [
+            (
+                RunnerStartupPath::Sandbox,
+                "sandbox",
+                SandboxReuseResult::Reused,
+                HomeReuseResult::SandboxReused,
+            ),
+            (
+                RunnerStartupPath::Home,
+                "home",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::Reused,
+            ),
+            (
+                RunnerStartupPath::Blank,
+                "blank",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::CacheMiss,
+            ),
+            (
+                RunnerStartupPath::Cold,
+                "cold",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::CacheMiss,
+            ),
+        ] {
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let mut server = RawHttpTestServer::spawn(vec![
+                RawHttpAction::WaitThenRespond {
+                    release: release_rx,
+                    response: json_response("200 OK", r#"{"success":true}"#),
+                },
+                RawHttpAction::Respond(json_response("200 OK", r#"{"success":true}"#)),
+            ])
+            .await;
+            let mut telemetry = JobTelemetry::new(
+                http_client_for_api_url(&server.url()),
+                RunId::new_v4(),
+                "tok".into(),
+                None,
+            );
+            telemetry.set_first_run(Some(false));
+            telemetry.set_sandbox_startup_path(path);
+            telemetry.record("preparation", Duration::ZERO, true, None);
+            telemetry.record_sandbox_startup(
+                path,
+                sandbox_result,
+                home_result,
+                Some("thread:tracked"),
+            );
+
+            let request = server.next_request("startup fact before final flush").await;
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            let operations = payload["sandboxOperations"].as_array().unwrap();
+            assert_eq!(operations.len(), 1);
+            let operation = &operations[0];
+            assert_eq!(operation["action_type"], "runner_sandbox_startup");
+            assert_eq!(operation["runner_startup_path"], wire_path);
+            assert_eq!(operation["is_first_run"], false);
+            assert_eq!(operation["success"], true);
+            assert_eq!(operation["reuse_key"], "thread:tracked");
+            assert_eq!(
+                operation["home_reuse_result"],
+                serde_json::to_value(home_result).unwrap()
+            );
+            assert_eq!(
+                operation["sandbox_reuse_result"],
+                serde_json::to_value(sandbox_result).unwrap()
+            );
+
+            // Recording continues while the startup request's response is held.
+            telemetry.record("after_start", Duration::ZERO, true, None);
+            release_tx.send(()).unwrap();
+            telemetry.flush().await;
+            let request = server.next_request("ordinary batch at final flush").await;
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            let operations = payload["sandboxOperations"].as_array().unwrap();
+            assert_eq!(operations.len(), 2);
+            assert_eq!(operations[0]["action_type"], "preparation");
+            assert_eq!(operations[1]["action_type"], "after_start");
+            assert!(operations.iter().all(|op| op["is_first_run"] == false));
+            server.assert_finished().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn sandbox_startup_without_first_context_omits_it_and_keeps_the_send_owned() {
+        use futures_util::FutureExt;
+
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+            release: release_rx,
+            response: json_response("200 OK", r#"{"success":true}"#),
+        }])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::new_v4(),
+            "tok".into(),
+            None,
+        );
+        telemetry.record_sandbox_startup(
+            RunnerStartupPath::Cold,
+            SandboxReuseResult::NoReuseKey,
+            HomeReuseResult::NoReuseKey,
+            None,
+        );
+        let request = server.next_request("startup without context").await;
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operation = &payload["sandboxOperations"][0];
+        assert!(operation.get("is_first_run").is_none());
+        assert!(operation.get("reuse_key").is_none());
+        assert_eq!(operation["runner_startup_path"], "cold");
+        let mut flush = Box::pin(telemetry.flush());
+        assert!(flush.as_mut().now_or_never().is_none());
+        release_tx.send(()).unwrap();
+        flush.await;
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn first_run_context_survives_concurrent_phase_ownership() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::new_v4(),
+            "tok".into(),
+            None,
+        );
+        telemetry.set_first_run(Some(true));
+        let mut phase = telemetry.fork_concurrent_phase();
+        phase.record("concurrent", Duration::ZERO, true, None);
+        telemetry.merge_concurrent_phase(phase);
+        telemetry.record("continued", Duration::ZERO, true, None);
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operations = payload["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        assert!(operations.iter().all(|op| op["is_first_run"] == true));
     }
 }

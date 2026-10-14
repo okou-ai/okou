@@ -1249,6 +1249,8 @@ export const claimCompatibleStoredExecutionContextSchema =
  * See `crates/runner-types/src/types.rs`.
  */
 const executionContextObjectSchema = z.object({
+  // Response-only telemetry context; unavailable for non-chat or older claims.
+  isFirstRun: z.boolean().optional(),
   runId: z.uuid(),
   reuseKey: z.string().nullable().optional(),
   prompt: z.string(),

@@ -78,13 +78,11 @@ export function SlashWorkflowMenu({
   menuRef,
   anchor,
   side,
-  composerAnchored,
   children,
 }: {
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly side: "top" | "bottom";
-  readonly composerAnchored: boolean;
   readonly children: ReactNode;
 }) {
   return (
@@ -94,20 +92,15 @@ export function SlashWorkflowMenu({
       side={side}
       align="start"
       sideOffset={8}
-      collisionAvoidance={composerAnchored ? { side: "none" } : undefined}
+      collisionAvoidance={{ side: "none" }}
       // Keep focus in the TipTap editor: the menu's keyboard navigation is
       // handled there, so the popover must never steal focus when it opens.
       initialFocus={false}
       // The selected row owns focus once the menu closes.
       finalFocus={false}
-      // The flyout never affects the index's width. Base UI tracks the card's
+      // The preview never affects the menu's width. Base UI tracks the card's
       // width and available space when the composer or visual viewport resizes.
-      className={cn(
-        "flex flex-col overflow-hidden p-0",
-        composerAnchored
-          ? "max-h-[min(380px,var(--available-height))] w-(--anchor-width)"
-          : "h-[min(380px,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)]",
-      )}
+      className="flex max-h-[min(380px,var(--available-height))] w-(--anchor-width) flex-col overflow-hidden p-0"
       data-testid="slash-workflow-menu"
     >
       {children}
