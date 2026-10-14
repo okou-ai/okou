@@ -96,6 +96,7 @@ function queryTab(name: string) {
 }
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
+  const consumed: string[] = [];
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
     return respond(200, { suggestions: items });
   });
@@ -108,12 +109,14 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
         error: { code: "CONFLICT", message: "Already consumed" },
       });
     }
+    consumed.push(params.id);
     items = items.filter((entry) => {
       return entry.id !== params.id;
     });
     return respond(200, { ...found, status: "consumed" });
   });
   return {
+    consumed,
     publish: (item: Suggestion) => {
       items = [...items, item];
     },
@@ -396,32 +399,66 @@ test("Realtime removal hides Suggestions without changing another selected categ
     screen.queryByText("No suggestions right now."),
   ).not.toBeInTheDocument();
 });
-test("The action list starts with five suggestions and expands without modifying the composer", async () => {
-  mockPool(
-    Array.from({ length: 10 }, (_, index) => {
-      return {
-        ...makeSuggestion(),
-        id: `a0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-        title: `Suggested action ${index + 1}`,
-      };
-    }),
-  );
+function numberedSuggestions(count: number): Suggestion[] {
+  return Array.from({ length: count }, (_, index) => {
+    return {
+      ...makeSuggestion(),
+      id: `a0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+      title: `Suggested action ${index + 1}`,
+    };
+  });
+}
+test("Suggestions show one at a time and page without modifying the composer", async () => {
+  mockPool(numberedSuggestions(3));
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
   await screen.findByText("Suggested action 1");
-  expect(screen.getByText("Suggested action 5")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 6")).not.toBeInTheDocument();
+  expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
+  expect(button("Previous suggestion")).toBeDisabled();
   await fill(composer(), "Keep this draft");
-  click(button("View all 10"));
-  await screen.findByText("Suggested action 10");
+  click(button("Next suggestion"));
+  await screen.findByText("Suggested action 2");
+  expect(screen.getByText("2 of 3")).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
+  click(button("Next suggestion"));
+  await screen.findByText("Suggested action 3");
+  expect(button("Next suggestion")).toBeDisabled();
+  click(button("Previous suggestion"));
+  await screen.findByText("Suggested action 2");
   expect(composer()).toHaveTextContent("Keep this draft");
-  click(button("Show fewer"));
-  await waitFor(() => {
-    expect(screen.queryByText("Suggested action 6")).not.toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+});
+test("Dismissing a suggestion consumes it without opening it and brings up the next one", async () => {
+  const pool = mockPool(numberedSuggestions(2));
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
   });
+  await screen.findByText("Suggested action 1");
+  await fill(composer(), "Keep this draft");
+  click(button("Dismiss"));
+  await screen.findByText("Suggested action 2");
+  expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(pool.consumed).toStrictEqual([
+      "a0000000-0000-4000-a000-000000000001",
+    ]);
+  });
+  expect(composer()).toHaveTextContent("Keep this draft");
+  expect(composer()).not.toHaveTextContent("Referenced decision");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  click(button("Dismiss"));
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+    expect(pool.consumed).toHaveLength(2);
+  });
+  expect(composer()).toHaveTextContent("Keep this draft");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 test("A deleted target shows the ordinary missing-thread state after consuming the suggestion", async () => {
   mockPool([{ ...makeSuggestion(), threadId }]);

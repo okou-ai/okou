@@ -1544,14 +1544,13 @@
       "viewAgentProfile": "Ver perfil del agente"
     },
     "agentSuggestions": {
-      "existingThread": "Conversación existente",
+      "continueChat": "Continuar chat",
+      "dismiss": "Descartar",
       "label": "Sugerencias",
-      "newThread": "Nueva conversación con Okou",
-      "origin": "De tu resumen matutino",
-      "showAll_one": "Ver las {{count}}",
-      "showAll_many": "Ver las {{count}}",
-      "showAll_other": "Ver las {{count}}",
-      "showLess": "Mostrar menos"
+      "newChat": "Nuevo chat",
+      "next": "Siguiente sugerencia",
+      "position": "{{current}} de {{total}}",
+      "previous": "Sugerencia anterior"
     },
     "attachments": {
       "attach": "Adjuntar",

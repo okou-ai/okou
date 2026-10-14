@@ -1519,12 +1519,13 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "existingThread": "現有對話",
+      "continueChat": "繼續聊天",
+      "dismiss": "忽略",
       "label": "建議",
-      "newThread": "與 Okou 開始新對話",
-      "origin": "來自你的晨間簡報",
-      "showAll_other": "查看全部 {{count}} 則",
-      "showLess": "收合"
+      "newChat": "新建聊天",
+      "next": "下一則建議",
+      "position": "{{current}} / {{total}}",
+      "previous": "上一則建議"
     },
     "attachments": {
       "attach": "新增附件",

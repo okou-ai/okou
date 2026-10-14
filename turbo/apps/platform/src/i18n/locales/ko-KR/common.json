@@ -1519,12 +1519,13 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
-      "existingThread": "기존 대화",
+      "continueChat": "채팅 계속하기",
+      "dismiss": "무시",
       "label": "제안",
-      "newThread": "Okou와 새 대화",
-      "origin": "모닝 브리프에서",
-      "showAll_other": "전체 {{count}}개 보기",
-      "showLess": "접기"
+      "newChat": "새 채팅",
+      "next": "다음 제안",
+      "position": "{{current}} / {{total}}",
+      "previous": "이전 제안"
     },
     "attachments": {
       "attach": "첨부",

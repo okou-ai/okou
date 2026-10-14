@@ -1520,13 +1520,13 @@
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
     "agentSuggestions": {
-      "existingThread": "Bestehende Unterhaltung",
+      "continueChat": "Chat fortsetzen",
+      "dismiss": "Verwerfen",
       "label": "Vorschläge",
-      "newThread": "Neue Unterhaltung mit Okou",
-      "origin": "Aus deinem Morgenbriefing",
-      "showAll_one": "Alle {{count}} anzeigen",
-      "showAll_other": "Alle {{count}} anzeigen",
-      "showLess": "Weniger anzeigen"
+      "newChat": "Neuer Chat",
+      "next": "Nächster Vorschlag",
+      "position": "{{current}} von {{total}}",
+      "previous": "Vorheriger Vorschlag"
     },
     "attachments": {
       "attach": "Anhängen",

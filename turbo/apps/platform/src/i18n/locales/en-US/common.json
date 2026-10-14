@@ -1520,13 +1520,13 @@
       "viewAgentProfile": "View agent profile"
     },
     "agentSuggestions": {
-      "existingThread": "Existing conversation",
+      "continueChat": "Continue chat",
+      "dismiss": "Dismiss",
       "label": "Suggestions",
-      "newThread": "New conversation with Okou",
-      "origin": "From your Morning Brief",
-      "showAll_one": "View all {{count}}",
-      "showAll_other": "View all {{count}}",
-      "showLess": "Show fewer"
+      "newChat": "New chat",
+      "next": "Next suggestion",
+      "position": "{{current}} of {{total}}",
+      "previous": "Previous suggestion"
     },
     "attachments": {
       "attach": "Attach",
