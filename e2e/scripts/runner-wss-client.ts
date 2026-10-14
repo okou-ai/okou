@@ -1,24 +1,38 @@
+import { randomUUID } from "node:crypto";
 import { WebSocket, type RawData } from "ws";
+import {
+  SANDBOX_CHANNEL_LIMITS as limits,
+  decodeSandboxChannelFrame,
+  encodeSandboxChannelFrame,
+  sandboxChannelHelloResultSchema,
+  type SandboxChannelMessage,
+  type SandboxChannelPayloadSchema,
+} from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel";
+import {
+  sandboxDiagnosticsEchoSchema,
+  sandboxDiagnosticsNoticeSchema,
+} from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel-diagnostics";
 import type { WssTicket } from "./runner-wss-api";
 
-export const FRAME_SIZES = [0, 1, 17, 1024, 65536, 37] as const;
+export const ECHO_SIZES = [0, 1, 17, 1024, 16384, 37] as const;
+type Pending = { complete(value: unknown): void; reject(error: Error): void };
 
 export class RunnerWssClient {
   private readonly sockets = new Set<WebSocket>();
+  private readonly pending = new Map<string, Pending>();
   private primary: WebSocket | undefined;
   private admitted = false;
+  private ready = false;
   private closing = false;
   private failure: Error | undefined;
   private admission:
     { resolve(): void; reject(error: Error): void } | undefined;
-  private echoPending:
-    | {
-        frames: readonly Buffer[];
-        received: number;
-        resolve(): void;
-        reject(error: Error): void;
-      }
-    | undefined;
+  private noticeWait:
+    { resolve(): void; reject(error: Error): void } | undefined;
+  private expectedReverse: string | undefined;
+  private probing = false;
+  private reverseCount = 0;
+  private noticeCount = 0;
 
   constructor(
     private readonly runId: string,
@@ -29,6 +43,13 @@ export class RunnerWssClient {
     if (new URL(ticket.wssUrl).protocol !== "wss:")
       throw new Error("Secure WSS target required");
     this.signal.addEventListener("abort", this.abort, { once: true });
+  }
+
+  get receipts() {
+    return {
+      reverseCalls: this.reverseCount,
+      noticesReceived: this.noticeCount,
+    };
   }
 
   private readonly abort = () => {
@@ -42,11 +63,10 @@ export class RunnerWssClient {
       rejectUnauthorized: true,
       ...(this.ca ? { ca: this.ca } : {}),
       handshakeTimeout: 15_000,
-      maxPayload: 65_536,
+      maxPayload: limits.maxFrameBytes,
       perMessageDeflate: false,
     });
     this.sockets.add(socket);
-    // Every owned socket has an error observer, including rejected replay streams.
     socket.on("error", () => {});
     socket.once("close", () => this.sockets.delete(socket));
     return socket;
@@ -55,13 +75,131 @@ export class RunnerWssClient {
   private fail(message: string): void {
     this.failure ??= new Error(message);
     this.admission?.reject(this.failure);
-    this.echoPending?.reject(this.failure);
+    this.noticeWait?.reject(this.failure);
+    for (const pending of this.pending.values()) pending.reject(this.failure);
+    this.pending.clear();
   }
 
   assertHealthy(): void {
     if (this.failure) throw this.failure;
     if (!this.admitted || this.primary?.readyState !== WebSocket.OPEN)
       throw new Error("Admitted WSS connection unavailable");
+  }
+
+  private send(message: SandboxChannelMessage): void {
+    this.assertHealthy();
+    const socket = this.primary;
+    const frame = encodeSandboxChannelFrame(message);
+    if (
+      !socket ||
+      socket.bufferedAmount + frame.byteLength > limits.maxQueuedBytes
+    )
+      throw new Error("WSS probe backpressure");
+    socket.send(Buffer.from(frame), { binary: true }, (error) => {
+      if (error) this.fail("WSS write failed");
+    });
+  }
+
+  private frame(data: RawData, binary: boolean): void {
+    try {
+      if (!binary) throw new Error("Binary application frame required");
+      const message = decodeSandboxChannelFrame(
+        new Uint8Array(bytes(data)).buffer,
+      );
+      if (message.type === "response") {
+        const pending = this.pending.get(message.requestId);
+        if (!pending) return;
+        this.pending.delete(message.requestId);
+        if (message.error)
+          pending.reject(new Error("Sandbox diagnostic request failed"));
+        else {
+          try {
+            pending.complete(message.result);
+          } catch {
+            pending.reject(new Error("Invalid sandbox channel result"));
+            this.fail("Invalid sandbox channel frame or result");
+          }
+        }
+        return;
+      }
+      if (!this.ready) throw new Error("Business message preceded hello");
+      if (message.type === "event") {
+        if (
+          message.category !== "diagnostics" ||
+          message.categoryVersion !== 1 ||
+          message.event !== "notice"
+        )
+          throw new Error("Unexpected Guest event");
+        const parsed = sandboxDiagnosticsNoticeSchema.safeParse(message.data);
+        if (!parsed.success) throw new Error("Invalid notice");
+        this.noticeCount += 1;
+        this.noticeWait?.resolve();
+        return; // One-way events never receive a response or ACK.
+      }
+      if (message.type !== "request") throw new Error("Unexpected Guest hello");
+      const parsed = sandboxDiagnosticsEchoSchema.safeParse(message.params);
+      if (
+        message.category !== "diagnostics" ||
+        message.categoryVersion !== 1 ||
+        message.operation !== "echo" ||
+        !parsed.success
+      )
+        throw new Error("Invalid Guest reverse request");
+      if (parsed.data.payload !== this.expectedReverse)
+        throw new Error("Guest reverse payload mismatch");
+      this.send({
+        schemaVersion: limits.schemaVersion,
+        type: "response",
+        id: randomUUID(),
+        requestId: message.id,
+        result: parsed.data,
+      });
+      this.reverseCount += 1;
+    } catch {
+      this.fail("Invalid sandbox channel frame or result");
+    }
+  }
+
+  private async call<T>(
+    message: Extract<SandboxChannelMessage, { type: "hello" | "request" }>,
+    schema: SandboxChannelPayloadSchema<T>,
+    apply?: (value: T) => void,
+  ): Promise<T> {
+    this.assertHealthy();
+    if (this.pending.size >= limits.maxPending)
+      throw new Error("WSS probe pending budget exceeded");
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await new Promise<T>((resolve, reject) => {
+        this.pending.set(message.id, {
+          complete: (value) => {
+            const parsed = schema.safeParse(value);
+            if (!parsed.success) {
+              reject(new Error("Invalid sandbox channel result"));
+              this.fail("Invalid sandbox channel frame or result");
+              return;
+            }
+            apply?.(parsed.data);
+            resolve(parsed.data);
+          },
+          reject,
+        });
+        timer = setTimeout(
+          () => reject(new Error("Sandbox diagnostic deadline exceeded")),
+          message.type === "hello"
+            ? limits.helloTimeoutMs
+            : limits.requestTimeoutMs,
+        );
+        try {
+          this.send(message);
+        } catch {
+          reject(new Error("Sandbox diagnostic write failed"));
+        }
+      });
+    } finally {
+      clearTimeout(timer);
+      this.pending.delete(message.id);
+    }
   }
 
   async connect(): Promise<void> {
@@ -84,17 +222,7 @@ export class RunnerWssClient {
         this.admission?.resolve();
         return;
       }
-      const pending = this.echoPending;
-      const expected = pending?.frames[pending.received];
-      if (!binary || !pending || !expected || !bytes(data).equals(expected)) {
-        this.fail("Opaque Guest echo mismatch");
-        return;
-      }
-      pending.received += 1;
-      if (pending.received === pending.frames.length) {
-        this.echoPending = undefined;
-        pending.resolve();
-      }
+      this.frame(data, binary);
     });
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -118,38 +246,95 @@ export class RunnerWssClient {
           sent = true;
         });
       });
-      this.assertHealthy();
     } finally {
       clearTimeout(timer);
       this.admission = undefined;
     }
+    await this.call(
+      {
+        schemaVersion: limits.schemaVersion,
+        type: "hello",
+        id: randomUUID(),
+        categories: { diagnostics: 1 },
+      },
+      sandboxChannelHelloResultSchema,
+      (hello) => {
+        if (hello.categories.diagnostics !== 1)
+          throw new Error("Diagnostics unavailable");
+        this.ready = true; // Apply synchronously before resolving hello.
+      },
+    );
+    if (!this.noticeCount) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          this.noticeWait = { resolve, reject };
+          timer = setTimeout(
+            () => reject(new Error("Guest notice deadline exceeded")),
+            limits.helloTimeoutMs,
+          );
+        });
+      } finally {
+        clearTimeout(timer);
+        this.noticeWait = undefined;
+      }
+    }
+    this.assertHealthy();
   }
 
-  async echo(): Promise<void> {
+  async diagnostics(): Promise<void> {
     this.assertHealthy();
-    if (this.echoPending) throw new Error("Guest echo already pending");
-    const frames = FRAME_SIZES.map((size, frameIndex) =>
-      Buffer.from(
-        Uint8Array.from(
-          { length: size },
-          (_, index) => (index * 31 + frameIndex * 17) % 256,
-        ),
-      ),
-    );
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!this.ready || this.probing)
+      throw new Error("Diagnostics probe already active or unavailable");
+    this.probing = true;
     try {
-      await new Promise<void>((resolve, reject) => {
-        this.echoPending = { frames, received: 0, resolve, reject };
-        timer = setTimeout(
-          () => this.fail("Guest echo deadline exceeded"),
-          10_000,
-        );
-        for (const frame of frames) this.primary?.send(frame, { binary: true });
+      this.send({
+        schemaVersion: limits.schemaVersion,
+        type: "event",
+        id: randomUUID(),
+        category: "diagnostics",
+        categoryVersion: 1,
+        event: "notice",
+        data: { message: "probe" },
       });
+      for (const [frameIndex, size] of ECHO_SIZES.entries()) {
+        const payload = Buffer.from(
+          Uint8Array.from(
+            { length: size },
+            (_, index) => (index * 31 + frameIndex * 17) % 256,
+          ),
+        ).toString("base64");
+        for (const operation of ["echo", "peer.echo"]) {
+          const before = this.reverseCount;
+          if (operation === "peer.echo") this.expectedReverse = payload;
+          try {
+            const result = await this.call(
+              {
+                schemaVersion: limits.schemaVersion,
+                type: "request",
+                id: randomUUID(),
+                category: "diagnostics",
+                categoryVersion: 1,
+                operation,
+                params: { payload },
+              },
+              sandboxDiagnosticsEchoSchema,
+            );
+            if (result.payload !== payload)
+              throw new Error("Guest diagnostics echo mismatch");
+            if (
+              this.reverseCount !==
+              before + (operation === "peer.echo" ? 1 : 0)
+            )
+              throw new Error("Guest reverse diagnostics missing");
+          } finally {
+            this.expectedReverse = undefined;
+          }
+        }
+      }
       this.assertHealthy();
     } finally {
-      clearTimeout(timer);
-      this.echoPending = undefined;
+      this.expectedReverse = undefined;
+      this.probing = false;
     }
   }
 
@@ -207,8 +392,11 @@ export class RunnerWssClient {
   async close(): Promise<void> {
     this.closing = true;
     this.signal.removeEventListener("abort", this.abort);
-    this.admission?.reject(new Error("WSS client closed"));
-    this.echoPending?.reject(new Error("WSS client closed"));
+    const error = new Error("WSS client closed");
+    this.admission?.reject(error);
+    this.noticeWait?.reject(error);
+    for (const pending of this.pending.values()) pending.reject(error);
+    this.pending.clear();
     await Promise.all([...this.sockets].map(closeSocket));
   }
 }

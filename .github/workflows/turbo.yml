@@ -1889,7 +1889,11 @@ jobs:
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check Playwright E2E types
-        run: cd e2e && pnpm check-types
+        # The WSS probe imports the canonical Zod contracts from captured source.
+        # Install their owning workspace instead of maintaining another schema.
+        run: |
+          pnpm --dir turbo install --frozen-lockfile --filter @okouai/api-contracts... --ignore-scripts
+          pnpm --dir e2e check-types
       - name: Install Playwright browsers
         run: cd e2e && pnpm exec playwright install --only-shell chromium
       - name: Run Playwright fixture integration tests
@@ -2636,6 +2640,9 @@ jobs:
           echo "::add-mask::$token"
           echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
           echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
+      - name: Install WSS contract dependencies
+        if: contains(matrix.files, 'tests/03-runner/run-t25-run-wss.bats')
+        run: pnpm --dir turbo install --frozen-lockfile --filter @okouai/api-contracts... --ignore-scripts
       - name: Initialize runner E2E shard
         shell: bash
         run: |
