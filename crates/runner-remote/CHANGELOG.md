@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.9...runner-remote-v0.14.10) (2026-10-14)
+
+
+### Bug Fixes
+
+* isolate vnc invalidation from ssh sessions ([#39843](https://github.com/okou-ai/okou/issues/39843)) ([0ec2680](https://github.com/okou-ai/okou/commit/0ec26807a5073e76d3b3fbbcb48c9452422d25cb))
+
 ## [0.14.9](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.8...runner-remote-v0.14.9) (2026-10-14)
 
 ## [0.14.8](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.7...runner-remote-v0.14.8) (2026-10-13)

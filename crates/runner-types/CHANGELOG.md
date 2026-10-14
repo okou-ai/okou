@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.13](https://github.com/okou-ai/okou/compare/runner-types-v0.6.12...runner-types-v0.6.13) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
 ## [0.6.12](https://github.com/okou-ai/okou/compare/runner-types-v0.6.11...runner-types-v0.6.12) (2026-10-14)
 
 ## [0.6.11](https://github.com/okou-ai/okou/compare/runner-types-v0.6.10...runner-types-v0.6.11) (2026-10-13)

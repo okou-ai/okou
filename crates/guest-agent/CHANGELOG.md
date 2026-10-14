@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.106.14](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.13...guest-agent-v0.106.14) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
 ## [0.106.13](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.12...guest-agent-v0.106.13) (2026-10-14)
 
 ## [0.106.12](https://github.com/okou-ai/okou/compare/guest-agent-v0.106.11...guest-agent-v0.106.12) (2026-10-13)

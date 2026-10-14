@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.16...runner-executor-v0.10.17) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
 ## [0.10.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.15...runner-executor-v0.10.16) (2026-10-14)
 
 ## [0.10.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.14...runner-executor-v0.10.15) (2026-10-13)

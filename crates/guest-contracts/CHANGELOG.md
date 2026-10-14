@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.23.0...guest-contracts-v0.23.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
 ## [0.23.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.3...guest-contracts-v0.23.0) (2026-10-14)
 
 
