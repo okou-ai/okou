@@ -6,7 +6,10 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { settle } from "../utils.ts";
+import { replaceSearchParams$ } from "../route.ts";
+import { bestEffort, onDomEventFn, settle } from "../utils.ts";
+import { refreshDiscordOrg$ } from "./discord.ts";
+import { discordOauthCompletionSchema } from "./discord-oauth-message.ts";
 
 type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 
@@ -61,8 +64,30 @@ export const captureDiscordApprovalFragment$ = command(
   },
 );
 
+const showDiscordApprovalResult$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    // Completion can reach this tab before its approval response has settled.
+    const request = get(approvalRequest$);
+    if (!request) {
+      return;
+    }
+    await bestEffort(request, signal);
+    signal.throwIfAborted();
+    if (!get(approvalSucceeded$)) {
+      return;
+    }
+    // Keep the checking card visible until the authenticated status is ready.
+    // The connection view owns a failed read; the message is not status data.
+    await bestEffort(set(refreshDiscordOrg$, signal), signal);
+    signal.throwIfAborted();
+    set(approvalSucceeded$, false);
+    set(approvalRequest$, null);
+    set(replaceSearchParams$, new URLSearchParams({ status: "connected" }));
+  },
+);
+
 export const ownDiscordApprovalRoute$ = command(
-  ({ set }, signal: AbortSignal) => {
+  ({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
     signal.addEventListener(
       "abort",
@@ -73,6 +98,24 @@ export const ownDiscordApprovalRoute$ = command(
       },
       { once: true },
     );
+    const attemptState = get(approvalProof$)?.state;
+    const opener: Window | null = window.opener;
+    if (!attemptState || !opener) {
+      return;
+    }
+    // The listener is ready before approval allows the original tab to finish.
+    const onCompleted = onDomEventFn((event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin || event.source !== opener) {
+        return;
+      }
+      const message = discordOauthCompletionSchema.safeParse(event.data);
+      if (!message.success || message.data.state !== attemptState) {
+        return;
+      }
+      window.removeEventListener("message", onCompleted);
+      return set(showDiscordApprovalResult$, signal);
+    });
+    window.addEventListener("message", onCompleted, { signal });
   },
 );
 
@@ -93,7 +136,7 @@ const verifyDiscordAuthorization$ = command(
     set(approvalProof$, null);
     set(approvalSucceeded$, true);
     // Keep the authorization tab open while the original tab completes with
-    // its separately retained proof and navigates this tab to the result page.
+    // its separately retained proof and notifies this page of completion.
   },
 );
 

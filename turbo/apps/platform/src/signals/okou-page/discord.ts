@@ -10,6 +10,7 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { ROUTES } from "../route-paths.ts";
 import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
+import type { DiscordOauthCompletion } from "./discord-oauth-message.ts";
 
 const reloadVersion$ = state(0);
 
@@ -34,7 +35,7 @@ const reloadDiscordOrg$ = command(({ set }) => {
 
 // Mutations stay pending until the card has the refreshed status, so the
 // previous server choice or connection never reappears after a save.
-const refreshDiscordOrg$ = command(
+export const refreshDiscordOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(reloadDiscordOrg$);
     await get(discordOrgData$);
@@ -138,18 +139,25 @@ export const startDiscordAuthorization$ = command(
           flowSignal,
         );
         flowSignal.throwIfAborted();
-        // The original tab stays on Works; only the authorization tab moves
-        // to the result page, after the authenticated completion has settled.
-        const destination = new URL(
-          ROUTES.settingsDiscord,
-          window.location.origin,
-        );
-        destination.searchParams.set(
-          "status",
-          completed.ok ? "connected" : "error",
-        );
+        // Let the consent page show success in place. A document navigation
+        // would restart App bootstrap and flash its skeleton a second time.
         if (!popup.closed) {
-          popup.location.href = destination.toString();
+          if (completed.ok) {
+            popup.postMessage(
+              {
+                type: "discord-oauth-completed",
+                state: attemptState,
+              } satisfies DiscordOauthCompletion,
+              window.location.origin,
+            );
+          } else {
+            const destination = new URL(
+              ROUTES.settingsDiscord,
+              window.location.origin,
+            );
+            destination.searchParams.set("status", "error");
+            popup.location.href = destination.toString();
+          }
         }
         showingResult = true;
         flowSignal.removeEventListener("abort", closePopup);

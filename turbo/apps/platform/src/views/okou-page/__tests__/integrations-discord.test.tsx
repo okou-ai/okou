@@ -4,7 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
@@ -121,6 +121,7 @@ test.each([
 
 function authorizationWindow() {
   const popup = context.mocks.browser.authWindow();
+  vi.spyOn(popup, "postMessage");
   Object.defineProperty(popup, "location", {
     configurable: true,
     value: { href: "" },
@@ -161,7 +162,7 @@ test("A disabled Discord integration cannot automatically approve a callback pro
 });
 
 test.each([true, false])(
-  "Discord updates Works and sends the separate authorization tab to success (admin: %s)",
+  "Discord updates Works and notifies the separate authorization tab of success (admin: %s)",
   async (isAdmin) => {
     let approved = false;
     const approvalPending = context.mocks.deferred<void>();
@@ -260,11 +261,10 @@ test.each([true, false])(
     expect(queryAction("button", "Disconnect Discord")).toBeNull();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(popup.closed).toBeFalsy();
-    expect(popup.location.href).toBe(
-      new URL(
-        "/settings/discord?status=connected",
-        window.location.origin,
-      ).toString(),
+    expect(popup.location.href).toBe(authorizationUrl);
+    expect(popup.postMessage).toHaveBeenCalledWith(
+      { type: "discord-oauth-completed", state: attemptState },
+      window.location.origin,
     );
     click(
       getAction(
@@ -345,8 +345,9 @@ test.each([
     expect(completeUrl).toBe(
       `${apiOrigin}/api/integrations/discord/oauth/complete`,
     );
-    expect(popup.location.href).toBe(
-      `https://${host}/settings/discord?status=connected`,
+    expect(popup.postMessage).toHaveBeenCalledWith(
+      { type: "discord-oauth-completed", state: attemptState },
+      `https://${host}`,
     );
     expect(popup.closed).toBeFalsy();
     expect(window.location.pathname).toBe("/works");
@@ -716,6 +717,8 @@ test("A rejected consent-browser owner or proof shows restart guidance without c
 });
 
 test("Leaving the consent route cancels automatic verification and destroys its proof", async () => {
+  const opener = context.mocks.browser.authWindow();
+  vi.stubGlobal("opener", opener);
   const closed = vi.spyOn(window, "close").mockImplementation(() => {});
   const approvals: unknown[] = [];
   const approving = context.mocks.deferred<void>();
@@ -755,6 +758,14 @@ test("Leaving the consent route cancels automatic verification and destroys its 
       "Mention Okou in a server or send the bot a direct message.",
     ),
   ).resolves.toBeInTheDocument();
+  await act(() => {
+    context.mocks.browser.message(
+      { type: "discord-oauth-completed", state: attemptState },
+      { origin: window.location.origin, source: opener },
+    );
+  });
+  expect(window.location.pathname).toBe("/works");
+  expect(window.location.search).toBe("");
   expect(approvals).toStrictEqual([{ state: attemptState, approvalProof }]);
   expect(closed).not.toHaveBeenCalled();
 });
@@ -972,14 +983,26 @@ test.each([true, false])(
     expect(window.location.pathname).toBe("/works");
     finished = true;
     await waitFor(() => {
-      expect(popup.location.href).toBe(
-        new URL(
-          `/settings/discord?status=${approved ? "connected" : "error"}`,
-          window.location.origin,
-        ).toString(),
-      );
       expect(getAction("button", "Add new server")).toBeEnabled();
     });
+    expect(vi.mocked(popup.postMessage).mock.calls).toStrictEqual(
+      approved
+        ? [
+            [
+              { type: "discord-oauth-completed", state: attemptState },
+              window.location.origin,
+            ],
+          ]
+        : [],
+    );
+    expect(popup.location.href).toBe(
+      approved
+        ? authorizationUrl
+        : new URL(
+            "/settings/discord?status=error",
+            window.location.origin,
+          ).toString(),
+    );
     expect(getAction("button", "Disconnect Discord")).toBeEnabled();
     expect(within(card).getByText("Connected")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/works");

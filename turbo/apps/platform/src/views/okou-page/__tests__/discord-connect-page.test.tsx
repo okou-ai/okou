@@ -4,10 +4,11 @@ import {
 } from "@okouai/api-contracts/contracts/integrations-discord";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { act, screen, waitFor } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
 import {
   getAction,
@@ -42,6 +43,7 @@ test.each([true, false])(
     let finished = false;
     let current = status({ isConnected: true, guildId: "345678901234567890" });
     const popup = context.mocks.browser.authWindow();
+    vi.spyOn(popup, "postMessage");
     Object.defineProperty(popup, "location", {
       configurable: true,
       value: { href: "" },
@@ -124,6 +126,7 @@ test.each(["install", "connect"] as const)(
       return respond(200, current);
     });
     const popup = context.mocks.browser.authWindow();
+    vi.spyOn(popup, "postMessage");
     Object.defineProperty(popup, "location", {
       configurable: true,
       value: { href: "" },
@@ -195,14 +198,144 @@ test.each(["install", "connect"] as const)(
       queryAction("link", "Open in browser")?.getAttribute("href") ?? null,
     ).toBe(`https://discord.com/channels/${guildId}`);
     expect(popup.closed).toBeFalsy();
-    expect(popup.location.href).toBe(
-      new URL(
-        "/settings/discord?status=connected",
-        window.location.origin,
-      ).toString(),
+    expect(popup.location.href).toBe(authorizationUrl);
+    expect(popup.postMessage).toHaveBeenCalledWith(
+      { type: "discord-oauth-completed", state },
+      window.location.origin,
     );
   },
 );
+
+test.each(["connected", "disconnected", "error"] as const)(
+  "Discord consent finishes in place after the refreshed status is %s",
+  async (result) => {
+    const opener = context.mocks.browser.authWindow();
+    vi.stubGlobal("opener", opener);
+    const state = "s".repeat(43);
+    const approvalProof = "p".repeat(43);
+    const approving = context.mocks.deferred<void>();
+    const approved = context.mocks.deferred<void>();
+    const refreshing = context.mocks.deferred<void>();
+    const refreshed = context.mocks.deferred<void>();
+    let completed = false;
+    context.mocks.api(
+      integrationsDiscordContract.getStatus,
+      async ({ respond }) => {
+        if (!completed) {
+          // An older connection must not count as this attempt completing.
+          return respond(
+            200,
+            status({ isConnected: true, guildId: "345678901234567890" }),
+          );
+        }
+        if (!refreshing.settled()) {
+          refreshing.resolve();
+        }
+        await refreshed.promise;
+        return result === "error"
+          ? respond(403, {
+              error: { code: "FORBIDDEN", message: "Discord access denied" },
+            })
+          : respond(200, status({ isConnected: result === "connected" }));
+      },
+    );
+    context.mocks.api(discordOauthContract.approve, async ({ respond }) => {
+      approving.resolve();
+      await approved.promise;
+      return respond(200, { approved: true });
+    });
+    const page = await startPage({
+      context,
+      path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${approvalProof}`,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    await page.content;
+    await approving.promise;
+    expect(
+      screen.getByRole("heading", { name: "Checking account status..." }),
+    ).toBeInTheDocument();
+    expect(queryAction("link", "Open Discord")).toBeNull();
+    expect(window.location.hash).toBe("");
+    const completion = { type: "discord-oauth-completed", state };
+    const origin = window.location.origin;
+    completed = true;
+    // The server can finish while this tab's approval response is in flight.
+    context.mocks.browser.message(completion, { origin, source: opener });
+    approved.resolve();
+    await page.ready;
+    await refreshing.promise;
+    expect(
+      screen.getByRole("heading", { name: "Checking account status..." }),
+    ).toBeInTheDocument();
+    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
+    expect(queryAction("link", "Open Discord")).toBeNull();
+    refreshed.resolve();
+    await expect(
+      screen.findByRole("heading", {
+        name:
+          result === "connected"
+            ? "Connected to Discord"
+            : result === "error"
+              ? "Connection failed"
+              : "Connect to Discord",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
+    expect(window.location.pathname).toBe("/settings/discord");
+    expect(new URLSearchParams(window.location.search).get("status")).toBe(
+      "connected",
+    );
+    expect(
+      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
+    ).toBe(result === "connected" ? `discord://-/channels/${guildId}` : null);
+  },
+);
+
+test("Only the original window's same-origin completion for this attempt can finish Discord consent", async () => {
+  const opener = context.mocks.browser.authWindow();
+  vi.stubGlobal("opener", opener);
+  const state = "s".repeat(43);
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status({ isConnected: true }));
+  });
+  context.mocks.api(discordOauthContract.approve, ({ respond }) => {
+    return respond(200, { approved: true });
+  });
+  await setupPage({
+    context,
+    path: `/settings/discord?status=pending#discord_oauth=approve&state=${state}&approval_proof=${"p".repeat(43)}`,
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
+  expect(
+    screen.getByRole("heading", { name: "Checking account status..." }),
+  ).toBeInTheDocument();
+  const completion = { type: "discord-oauth-completed", state };
+  const origin = window.location.origin;
+  await act(() => {
+    context.mocks.browser.message(completion, {
+      origin: "https://untrusted.example",
+      source: opener,
+    });
+    context.mocks.browser.message(completion, {
+      origin,
+      source: context.mocks.browser.authWindow(),
+    });
+    context.mocks.browser.message(
+      { ...completion, state: "another-attempt" },
+      { origin, source: opener },
+    );
+  });
+  expect(
+    screen.getByRole("heading", { name: "Checking account status..." }),
+  ).toBeInTheDocument();
+  expect(new URLSearchParams(window.location.search).get("status")).toBe(
+    "pending",
+  );
+  context.mocks.browser.message(completion, { origin, source: opener });
+  await expect(
+    screen.findByRole("heading", { name: "Connected to Discord" }),
+  ).resolves.toBeInTheDocument();
+});
 
 test.each([false, true])(
   "The Discord success URL uses verified connection data (connected: %s)",
