@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
@@ -103,6 +104,9 @@ interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownload
   readonly storage_batch_payload_size_bucket?: string;
   readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
+  readonly is_first_run?: boolean;
+  readonly reuse_key?: string;
+  readonly home_reuse_result?: HomeReuseResult;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
   readonly runner_resource_budget_vcpu_utilization_bucket?: RunnerResourceBudgetUtilizationBucket;
@@ -366,9 +370,7 @@ function sandboxOperationDimensions(
     ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
     ...storageBatchDimensions(op),
-    ...(op.runner_startup_path
-      ? { runner_startup_path: op.runner_startup_path }
-      : {}),
+    ...sandboxStartupContextDimensions(op),
     ...(op.sandbox_reuse_result
       ? { sandbox_reuse_result: op.sandbox_reuse_result }
       : {}),
@@ -432,6 +434,21 @@ function sandboxOperationDimensions(
       : {}),
     ...(op.session_history_download_source
       ? { session_history_download_source: op.session_history_download_source }
+      : {}),
+  };
+}
+
+function sandboxStartupContextDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | boolean> {
+  return {
+    ...(op.runner_startup_path
+      ? { runner_startup_path: op.runner_startup_path }
+      : {}),
+    ...(op.is_first_run !== undefined ? { is_first_run: op.is_first_run } : {}),
+    ...(op.reuse_key !== undefined ? { reuse_key: op.reuse_key } : {}),
+    ...(op.home_reuse_result
+      ? { home_reuse_result: op.home_reuse_result }
       : {}),
   };
 }

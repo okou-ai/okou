@@ -120,6 +120,9 @@ pub struct ExecutionContext {
     pub real_agent_in_preview: Option<bool>,
     #[serde(default)]
     pub api_start_time: Option<u64>,
+    /// API-authored observation label, never a runtime decision predicate.
+    #[serde(default)]
+    pub is_first_run: Option<bool>,
     #[serde(default)]
     pub user_timezone: Option<String>,
     #[serde(default)]
@@ -2022,6 +2025,8 @@ mod tests {
 
         let context: ExecutionContext = serde_json::from_value(json).unwrap();
 
+        assert_eq!(context.is_first_run, None);
+
         assert_eq!(
             context.pi_session_id.as_deref(),
             Some("22222222-2222-4222-8222-222222222222")
@@ -2045,6 +2050,25 @@ mod tests {
                 .and_then(|config| config["model"].as_str()),
             Some("openai/gpt-6-luna")
         );
+    }
+
+    #[test]
+    fn execution_context_preserves_optional_first_run_context() {
+        for label in [None, Some(false), Some(true)] {
+            let mut claim = json!({
+                "runId": "11111111-1111-4111-8111-111111111111",
+                "prompt": "hello",
+                "sandboxToken": "tok",
+                "cliAgentType": "claude-code",
+                "platformEnvironment": {},
+                "connectorRuntimeTargets": []
+            });
+            if let Some(label) = label {
+                claim["isFirstRun"] = json!(label);
+            }
+            let context: ExecutionContext = serde_json::from_value(claim).unwrap();
+            assert_eq!(context.is_first_run, label);
+        }
     }
 
     #[test]

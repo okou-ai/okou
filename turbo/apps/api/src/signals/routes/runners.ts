@@ -31,6 +31,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { blobs } from "@okouai/db/schema/blob";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { runnerState } from "@okouai/db/runtime/runner-state";
@@ -49,6 +50,8 @@ import {
   isNull,
   lt,
   lte,
+  ne,
+  notExists,
   notInArray,
   or,
   sql,
@@ -961,6 +964,7 @@ interface ClaimedRun {
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
   readonly vars: unknown;
+  readonly isFirstRun: boolean | null;
 }
 
 interface RunNetworkPolicyScope {
@@ -1047,6 +1051,23 @@ async function getClaimableJob(
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
+        // Claim's current input may already belong to this Run; only another
+        // run-attributed event is evidence of earlier thread activity.
+        isFirstRun: sql`
+          CASE WHEN ${agentRuns.chatThreadId} IS NULL THEN NULL
+          ELSE ${notExists(
+            db
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+                  isNotNull(chatEvents.runId),
+                  ne(chatEvents.runId, agentRuns.id),
+                ),
+              ),
+          )} END
+        `.mapWith(nullableDriverValueDecoder(pgBooleanDecoder)),
       },
     })
     .from(runnerJobQueue)
@@ -1902,6 +1923,9 @@ async function buildClaimResponseBody(
       } = args.storedContext;
       return {
         ...runnerStoredContext,
+        ...(args.run.isFirstRun === null
+          ? {}
+          : { isFirstRun: args.run.isFirstRun }),
         runId: args.run.id,
         reuseKey: args.reuseKey,
         prompt: args.run.prompt,

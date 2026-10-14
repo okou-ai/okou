@@ -3020,6 +3020,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 timing.shell_started_at,
                 timing.ready_at,
             );
+            telemetry.record_sandbox_startup(
+                start.sandbox_startup_path,
+                start.reuse_result,
+                start.home_reuse_result,
+                context.reuse_key(),
+            );
             info!(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,

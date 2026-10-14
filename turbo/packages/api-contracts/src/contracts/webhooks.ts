@@ -1153,6 +1153,9 @@ const sandboxOperationSchema = z.object({
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),
   runner_startup_path: runnerStartupPathSchema.optional(),
+  is_first_run: z.boolean().optional(),
+  reuse_key: z.string().optional(),
+  home_reuse_result: homeReuseResultSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:
     runnerPreSpawnConcurrencyBucketSchema.optional(),
