@@ -452,7 +452,7 @@ export function VncHosts() {
   }
   return (
     <div className="grid gap-5">
-      {hosts.data.length > 0 ? <VncAttention /> : null}
+      {hosts.data.length > 0 ? <VncAttention connections={hosts.data} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {t(

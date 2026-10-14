@@ -251,7 +251,10 @@ test("VNC settings show a current-generation failure and its observation time", 
 });
 
 test("VNC settings do not render a previous configuration's failure as current", async () => {
-  mockSettings();
+  mockSettings({
+    connections: [host, plainHost],
+    credentials: [credential, plainCredential],
+  });
   context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
     return respond(200, {
       observations: [
@@ -261,17 +264,26 @@ test("VNC settings do not render a previous configuration's failure as current",
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: "authentication_failed",
         },
+        {
+          connectionId: plainHost.id,
+          generation: plainHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: "network_failure",
+        },
       ],
     });
   });
   await page();
-  await screen.findByText(host.displayName);
-  expect(screen.getByText("Configured")).toBeInTheDocument();
+  await screen.findByText("The connection transport failed.");
+  expect(screen.getAllByText("Configured")).toHaveLength(2);
   expect(
     screen.queryByText(
       "Authentication or server identity verification failed.",
     ),
   ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
 });
 
 test("VNC settings refresh observations when their SSH carrier changes", async () => {

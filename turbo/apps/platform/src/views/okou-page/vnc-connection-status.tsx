@@ -37,13 +37,26 @@ function useVncObservations():
     : { kind: "available", observations: retained.data.observations };
 }
 
-export function VncAttention() {
+export function VncAttention({
+  connections,
+}: {
+  readonly connections: readonly {
+    readonly id: string;
+    readonly generation: number;
+  }[];
+}) {
   const { t } = useTranslation();
   const status = useVncObservations();
   const count =
     status.kind === "available"
-      ? status.observations.filter((observation) => {
-          return observation.failureReason !== null;
+      ? connections.filter((connection) => {
+          return status.observations.some((observation) => {
+            return (
+              observation.connectionId === connection.id &&
+              observation.generation === connection.generation &&
+              observation.failureReason !== null
+            );
+          });
         }).length
       : 0;
   const label =
