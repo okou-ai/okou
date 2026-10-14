@@ -198,6 +198,9 @@ jobs:
           fi
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Resolve artifact commit SHA
         id: artifact
         run: |

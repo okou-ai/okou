@@ -598,6 +598,9 @@ jobs:
           fi
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Download canonical Desktop app
         id: desktop-app
         env:
@@ -1677,6 +1680,9 @@ jobs:
           chmod +x /tmp/awscli/aws/install /tmp/awscli/aws/dist/aws
           /tmp/awscli/aws/install
           aws --version
+
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
 
       - name: Prepare standalone App Worker production deployment
         id: worker-production
