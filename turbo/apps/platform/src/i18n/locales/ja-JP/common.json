@@ -1519,12 +1519,13 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "existingThread": "既存の会話",
+      "continueChat": "チャットを続ける",
+      "dismiss": "非表示にする",
       "label": "提案",
-      "newThread": "Okou と新しい会話",
-      "origin": "モーニングブリーフから",
-      "showAll_other": "全 {{count}} 件を表示",
-      "showLess": "表示を減らす"
+      "newChat": "新しいチャット",
+      "next": "次の提案",
+      "position": "{{current}} / {{total}}",
+      "previous": "前の提案"
     },
     "attachments": {
       "attach": "添付する",

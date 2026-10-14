@@ -1519,12 +1519,13 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "existingThread": "Percakapan yang ada",
+      "continueChat": "Lanjutkan chat",
+      "dismiss": "Abaikan",
       "label": "Saran",
-      "newThread": "Percakapan baru dengan Okou",
-      "origin": "Dari ringkasan pagimu",
-      "showAll_other": "Lihat semua ({{count}})",
-      "showLess": "Tampilkan lebih sedikit"
+      "newChat": "Chat baru",
+      "next": "Saran berikutnya",
+      "position": "{{current}} dari {{total}}",
+      "previous": "Saran sebelumnya"
     },
     "attachments": {
       "attach": "Lampirkan",

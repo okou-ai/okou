@@ -1544,14 +1544,13 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "existingThread": "Conversation existante",
+      "continueChat": "Continuer la discussion",
+      "dismiss": "Ignorer",
       "label": "Suggestions",
-      "newThread": "Nouvelle conversation avec Okou",
-      "origin": "De votre briefing matinal",
-      "showAll_one": "Voir les {{count}}",
-      "showAll_many": "Voir les {{count}}",
-      "showAll_other": "Voir les {{count}}",
-      "showLess": "Voir moins"
+      "newChat": "Nouvelle discussion",
+      "next": "Suggestion suivante",
+      "position": "{{current}} sur {{total}}",
+      "previous": "Suggestion précédente"
     },
     "attachments": {
       "attach": "Joindre",

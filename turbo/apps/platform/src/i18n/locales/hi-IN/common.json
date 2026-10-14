@@ -1520,13 +1520,13 @@
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
-      "existingThread": "मौजूदा बातचीत",
+      "continueChat": "चैट जारी रखें",
+      "dismiss": "खारिज करें",
       "label": "सुझाव",
-      "newThread": "Okou के साथ नई बातचीत",
-      "origin": "आपकी सुबह की ब्रीफ़िंग से",
-      "showAll_one": "सभी {{count}} देखें",
-      "showAll_other": "सभी {{count}} देखें",
-      "showLess": "कम दिखाएँ"
+      "newChat": "नई चैट",
+      "next": "अगला सुझाव",
+      "position": "{{total}} में से {{current}}",
+      "previous": "पिछला सुझाव"
     },
     "attachments": {
       "attach": "अटैच करें",
