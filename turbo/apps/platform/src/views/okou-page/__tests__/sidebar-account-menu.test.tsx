@@ -589,51 +589,54 @@ test("Review personal subscription usage in the account menu", async () => {
     within(panel).queryByLabelText("Refresh subscriptions"),
   ).not.toBeInTheDocument();
   expect(
-    within(panel).getByRole("heading", { name: "Codex" }),
+    within(panel).getByRole("heading", { name: "Your ChatGPT plan" }),
   ).toBeInTheDocument();
   expect(
-    within(panel).getByRole("heading", { name: "Claude Code" }),
+    within(panel).getByRole("heading", { name: "Your Claude plan" }),
   ).toBeInTheDocument();
-  expect(within(panel).getAllByText("5H")).toHaveLength(2);
+  // Each plan shows only the window that limits it: both weeks are tighter here.
   expect(within(panel).getAllByText("Week")).toHaveLength(2);
-  expect(within(panel).getByText("82%")).toBeInTheDocument();
+  expect(within(panel).queryByText("5h")).not.toBeInTheDocument();
   expect(within(panel).getByText("55%")).toBeInTheDocument();
-  expect(within(panel).getByText("88%")).toBeInTheDocument();
   expect(within(panel).getByText("76%")).toBeInTheDocument();
+  expect(within(panel).queryByText("82%")).not.toBeInTheDocument();
+  expect(within(panel).queryByText("88%")).not.toBeInTheDocument();
   const resetCredits = within(panel).getByLabelText("2 resets left");
   expect(within(resetCredits).getByText("2 resets left")).toBeInTheDocument();
   expect(within(panel).queryByText("Reset")).not.toBeInTheDocument();
-  expect(within(panel).queryByText(/^resets /)).not.toBeInTheDocument();
+  expect(within(panel).queryByText(/^Resets in /)).not.toBeInTheDocument();
   expect(
     within(panel).queryByText(/codex\.user@example\.com/),
   ).not.toBeInTheDocument();
 
-  const codexFiveHour = within(panel).getByRole("progressbar", {
-    name: "Codex 5H remaining",
+  const codexWeek = within(panel).getByRole("meter", {
+    name: "Your ChatGPT plan Week remaining",
   });
-  expect(codexFiveHour).toHaveAttribute("aria-valuenow", "82");
-  fireEvent.focus(codexFiveHour);
+  expect(codexWeek).toHaveAttribute("aria-valuenow", "55");
+  fireEvent.focus(codexWeek);
 
   await waitFor(() => {
-    expectVisibleText("Resets in 4h 12m");
+    expectVisibleText("Resets in 5d 23h");
     expectVisibleText(
-      formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
+      formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  fireEvent.blur(codexFiveHour);
+  fireEvent.blur(codexWeek);
   await user.hover(resetCredits);
   await waitFor(() => {
     expectVisibleText("2 resets left · expires in 3d");
   });
 
   const credits = within(menu).getByText("12,500 credits");
-  const codex = within(panel).getByRole("heading", { name: "Codex" });
+  const codex = within(panel).getByRole("heading", {
+    name: "Your ChatGPT plan",
+  });
   expect(
     codex.compareDocumentPosition(resetCredits) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
-    resetCredits.compareDocumentPosition(codexFiveHour) &
+    resetCredits.compareDocumentPosition(codexWeek) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(
@@ -641,7 +644,60 @@ test("Review personal subscription usage in the account menu", async () => {
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
 });
 
-test("Cap 5H availability at an exhausted week and use its reset when 5H is invalid", async () => {
+test("Show the reset time of a plan that is running low", async () => {
+  mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
+  mockAdminAccountSidebar();
+  context.mocks.data.personalModelProviders([
+    connectedPersonalCodexProvider({
+      subscriptionUsage: {
+        fiveHour: {
+          usedPercent: 88,
+          remainingPercent: 12,
+          resetAt: "2030-01-01T05:00:00.000Z",
+          windowSeconds: 18_000,
+        },
+        weekly: {
+          usedPercent: 53,
+          remainingPercent: 47,
+          resetAt: "2030-01-07T00:00:00.000Z",
+          windowSeconds: 604_800,
+        },
+      },
+    }),
+    connectedPersonalClaudeCodeProvider(),
+  ]);
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    auth: {
+      user: {
+        id: "test-user-123",
+        fullName: "Alex Rivera",
+        email: "alex.rivera@example.test",
+      },
+    },
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+  });
+
+  const menu = await openAccountMenu();
+  const panel = await within(menu).findByTestId("account-menu-subscriptions");
+  const codex = within(panel).getByRole("region", {
+    name: "Your ChatGPT plan usage",
+  });
+  expect(
+    within(codex).getByRole("meter", {
+      name: "Your ChatGPT plan 5h remaining",
+    }),
+  ).toHaveAttribute("aria-valuenow", "12");
+  expect(within(codex).getByText("12%")).toBeInTheDocument();
+  expect(within(codex).getByText("Resets in 4h 12m")).toBeInTheDocument();
+  const claude = within(panel).getByRole("region", {
+    name: "Your Claude plan usage",
+  });
+  expect(within(claude).queryByText(/^Resets in /)).not.toBeInTheDocument();
+});
+
+test("Show an exhausted week with its own reset time", async () => {
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
   mockAdminAccountSidebar();
@@ -678,17 +734,19 @@ test("Cap 5H availability at an exhausted week and use its reset when 5H is inva
 
   const menu = await openAccountMenu();
   const panel = await within(menu).findByTestId("account-menu-subscriptions");
-  const fiveHour = within(panel).getByRole("progressbar", {
-    name: "Codex 5H remaining",
+  const week = within(panel).getByRole("meter", {
+    name: "Your ChatGPT plan Week remaining",
   });
-  expect(fiveHour).toHaveAttribute("aria-valuenow", "0");
+  expect(week).toHaveAttribute("aria-valuenow", "0");
   expect(
-    within(panel).getByRole("progressbar", { name: "Codex Week remaining" }),
-  ).toHaveAttribute("aria-valuenow", "0");
-  expect(within(panel).getAllByText("0%")).toHaveLength(2);
-  await userEvent.setup().hover(fiveHour);
+    within(panel).queryByRole("meter", {
+      name: "Your ChatGPT plan 5h remaining",
+    }),
+  ).not.toBeInTheDocument();
+  expect(within(panel).getAllByText("0%")).toHaveLength(1);
+  expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
+  await userEvent.setup().hover(week);
   await waitFor(() => {
-    expectVisibleText("Resets in 5d 23h");
     expectVisibleText(
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );

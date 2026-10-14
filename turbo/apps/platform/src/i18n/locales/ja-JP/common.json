@@ -4506,17 +4506,9 @@
       "settings": "設定",
       "signOut": "サインアウト",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
-        "usageRemaining": "{{provider}} {{window}} 残り",
-        "windows": {
-          "fiveHour": "5時間",
-          "week": "週"
-        }
+        "usageRemaining": "{{provider}} {{window}} 残り"
       },
       "switchAccount": "アカウントを切り替える",
       "userFallback": "ユーザー"

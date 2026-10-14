@@ -4,6 +4,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  cn,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
@@ -16,7 +17,8 @@ import {
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
-import { subscriptionUsageWindows } from "../../lib/subscription-usage-windows.ts";
+import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
+import { now } from "../../lib/time.ts";
 import {
   CodexResetCreditsButton,
   CodexResetCreditsMenuItem,
@@ -26,6 +28,11 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 type SubscriptionUsage = AccountMenuSubscriptionUsage;
 type SubscriptionUsageWindow = AccountMenuSubscriptionUsageWindow;
+
+/** Below this much left, a window turns amber, breathes and shows its reset. */
+const LOW_REMAINING_PERCENT = 20;
+/** At or below this much left, the breathing doubles its rate. */
+const CRITICAL_REMAINING_PERCENT = 5;
 
 export function useSubscriptionUsageRows({
   cacheKey,
@@ -60,27 +67,27 @@ export function AccountMenuSubscriptionsPanel({
 }) {
   const { t } = useTranslation();
   return (
-    <div data-testid="account-menu-subscriptions" className="px-3 pt-1 pb-2.5">
+    <div
+      data-testid="account-menu-subscriptions"
+      className="px-3 pt-1.5 pb-2.5"
+    >
       {loading && rows.length === 0 ? (
         <AccountMenuSubscriptionsSkeleton />
       ) : (
         <TooltipProvider delay={100}>
-          <div className="flex flex-col gap-4">
-            {rows.map((row, index) => {
+          <div className="flex flex-col gap-3">
+            {rows.map((row) => {
               const label =
                 row.type === "codex-oauth-token"
                   ? t(($) => {
-                      return $.settings.accountMenu.subscriptions.providers
-                        .codex;
+                      return $.settings.models.personal.codexGroup;
                     })
                   : t(($) => {
-                      return $.settings.accountMenu.subscriptions.providers
-                        .claudeCode;
+                      return $.settings.models.personal.claudeGroup;
                     });
               return (
                 <AccountMenuSubscriptionProviderSection
                   key={row.type}
-                  divided={index > 0}
                   type={row.type}
                   label={label}
                   usage={row.usage}
@@ -101,29 +108,17 @@ export function AccountMenuSubscriptionsPanel({
 
 function AccountMenuSubscriptionsSkeleton() {
   return (
-    <div className="flex flex-col gap-4" aria-hidden="true">
-      {ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.map((provider, index) => {
+    <div className="flex flex-col gap-3" aria-hidden="true">
+      {ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.map((provider) => {
         return (
-          <div key={provider.type} className="flex flex-col gap-1.5">
-            {index > 0 && (
-              <div className="-mx-4 h-0 border-t border-t-gray-400" />
-            )}
-            <div className="flex min-h-9 items-center">
-              <div className="h-3 w-20 animate-pulse rounded bg-muted/60" />
+          <div key={provider.type} className="flex flex-col gap-2">
+            <div className="flex h-5 items-center">
+              <div className="h-3 w-28 animate-skeleton-pulse rounded bg-skeleton" />
             </div>
-            <div className="flex flex-col gap-2.5">
-              {["fiveHour", "week"].map((kind) => {
-                return (
-                  <div
-                    key={kind}
-                    className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1.5"
-                  >
-                    <div className="h-2.5 animate-pulse rounded bg-muted/60" />
-                    <div className="h-1 animate-pulse rounded-full bg-muted/60" />
-                    <div className="h-2.5 animate-pulse rounded bg-muted/60" />
-                  </div>
-                );
-              })}
+            <div className="flex h-4 items-center gap-2">
+              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+              <div className="h-1 flex-1 animate-skeleton-pulse rounded-full bg-skeleton" />
+              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
             </div>
           </div>
         );
@@ -132,8 +127,12 @@ function AccountMenuSubscriptionsSkeleton() {
   );
 }
 
+/**
+ * One plan: its name with the Codex reset control top right, then the window
+ * that limits it right now. Every line is 12px; weight and colour carry the
+ * hierarchy, so the panel reads as one block inside the 14px menu.
+ */
 function AccountMenuSubscriptionProviderSection({
-  divided,
   type,
   label,
   usage,
@@ -143,7 +142,6 @@ function AccountMenuSubscriptionProviderSection({
   resetControl,
   onResetCodexUsage,
 }: {
-  readonly divided: boolean;
   readonly type: AccountMenuSubscriptionUsageRow["type"];
   readonly label: string;
   readonly usage: SubscriptionUsage;
@@ -154,15 +152,17 @@ function AccountMenuSubscriptionProviderSection({
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
 }) {
   const { t } = useTranslation();
-  const windows = subscriptionUsageWindows(usage);
-  const ResetControl =
-    resetControl === "menu"
-      ? CodexResetCreditsMenuItem
-      : CodexResetCreditsButton;
+  const limiting = limitingSubscriptionUsageWindow(usage);
+  const remaining = limiting?.remainingPercent ?? null;
+  const low = remaining !== null && remaining < LOW_REMAINING_PERCENT;
+  const reset =
+    low && limiting !== null
+      ? formatSubscriptionUsageReset(limiting.window.resetAt)
+      : null;
 
   return (
     <section
-      className="flex flex-col gap-1.5"
+      className="flex flex-col gap-2"
       aria-label={t(
         ($) => {
           return $.settings.accountMenu.subscriptions.usage;
@@ -170,48 +170,97 @@ function AccountMenuSubscriptionProviderSection({
         { provider: label },
       )}
     >
-      {divided && <div className="-mx-4 h-0 border-t border-t-gray-400" />}
-      <div className="flex min-h-9 min-w-0 items-center gap-2">
-        <h3 className="min-w-0 flex-1 truncate text-xs font-medium leading-4 tracking-tight text-foreground">
+      <div className="flex min-h-5 min-w-0 items-center gap-2">
+        <h3 className="min-w-0 flex-1 truncate text-xs leading-5 text-muted-foreground">
           {label}
         </h3>
         {type !== "codex-oauth-token" || resetCredits === undefined ? null : (
-          <ResetControl
-            className="ml-auto -me-1"
+          <AccountMenuCodexResetControl
+            resetControl={resetControl}
+            emphasized={low}
             resetCredits={resetCredits}
             resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
             resetPending={resetPending}
-            onReset={
-              onResetCodexUsage
-                ? () => {
-                    onResetCodexUsage(resetCredits);
-                  }
-                : undefined
-            }
+            onResetCodexUsage={onResetCodexUsage}
           />
         )}
       </div>
-      <div className="flex flex-col gap-2.5">
-        {windows.map(({ kind, window }) => {
-          const windowLabel =
-            kind === "fiveHour"
+      {limiting === null ? null : (
+        <AccountMenuSubscriptionUsageBar
+          providerLabel={label}
+          windowLabel={
+            limiting.kind === "fiveHour"
               ? t(($) => {
-                  return $.settings.accountMenu.subscriptions.windows.fiveHour;
+                  return $.settings.models.personal.status.fiveHour;
                 })
               : t(($) => {
-                  return $.settings.accountMenu.subscriptions.windows.week;
-                });
-          return (
-            <AccountMenuSubscriptionUsageBar
-              key={kind}
-              providerLabel={label}
-              windowLabel={windowLabel}
-              window={window}
-            />
-          );
-        })}
-      </div>
+                  return $.settings.models.personal.status.week;
+                })
+          }
+          window={limiting.window}
+          remainingPercent={limiting.remainingPercent}
+        />
+      )}
+      {reset === null ? null : (
+        <p className="pl-10 text-xs leading-4 tabular-nums text-muted-foreground">
+          {"fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle}
+        </p>
+      )}
     </section>
+  );
+}
+
+/**
+ * Muted at rest; it turns foreground once the plan runs low, when it matters.
+ * The menu item keeps the 36px row floor as its hit target and gives the
+ * heading back the height through its negative block margin; the section's
+ * 8px gap keeps that target clear of the meter row below.
+ */
+function AccountMenuCodexResetControl({
+  resetControl,
+  emphasized,
+  resetCredits,
+  resetCreditsNextExpiresAt,
+  resetPending,
+  onResetCodexUsage,
+}: {
+  readonly resetControl: "menu" | "button";
+  readonly emphasized: boolean;
+  readonly resetCredits: number | null;
+  readonly resetCreditsNextExpiresAt?: string | null;
+  readonly resetPending: boolean;
+  readonly onResetCodexUsage?: (resetCredits: number | null) => void;
+}) {
+  const onReset = onResetCodexUsage
+    ? () => {
+        onResetCodexUsage(resetCredits);
+      }
+    : undefined;
+  if (resetControl === "menu") {
+    return (
+      <CodexResetCreditsMenuItem
+        className={cn(
+          "-my-2 -me-1 ml-auto text-xs",
+          emphasized && "text-foreground",
+        )}
+        resetCredits={resetCredits}
+        resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
+        resetPending={resetPending}
+        onReset={onReset}
+      />
+    );
+  }
+  return (
+    <CodexResetCreditsButton
+      className={cn(
+        "-my-1 -me-1 ml-auto",
+        emphasized ? "text-foreground" : "text-muted-foreground",
+      )}
+      resetCredits={resetCredits}
+      resetCreditsNextExpiresAt={resetCreditsNextExpiresAt}
+      resetPending={resetPending}
+      onReset={onReset}
+    />
   );
 }
 
@@ -219,30 +268,21 @@ function AccountMenuSubscriptionUsageBar({
   providerLabel,
   windowLabel,
   window,
+  remainingPercent,
 }: {
   readonly providerLabel: string;
   readonly windowLabel: string;
   readonly window: SubscriptionUsageWindow;
+  readonly remainingPercent: number | null;
 }) {
   const { t } = useTranslation();
-  const rawRemainingPercent =
-    window.remainingPercent ??
-    (window.usedPercent === null ? null : 100 - window.usedPercent);
-  const remainingPercent =
-    rawRemainingPercent !== null && Number.isFinite(rawRemainingPercent)
-      ? rawRemainingPercent
-      : null;
   const displayPercent = formatUsagePercent(remainingPercent);
   const reset = formatSubscriptionUsageReset(window.resetAt);
   const tone = usageTone(remainingPercent);
-  const width =
-    remainingPercent === null
-      ? 0
-      : Math.min(100, Math.max(0, remainingPercent));
 
   return (
-    <div className="grid grid-cols-[34px_minmax(0,1fr)_34px] items-center gap-1.5">
-      <span className="truncate text-[10px] font-normal leading-none text-muted-foreground">
+    <div className="flex items-center gap-2">
+      <span className="w-8 shrink-0 truncate text-xs leading-4 text-muted-foreground">
         {windowLabel}
       </span>
       <Tooltip>
@@ -250,7 +290,7 @@ function AccountMenuSubscriptionUsageBar({
           render={
             <span
               tabIndex={0}
-              role="progressbar"
+              role="meter"
               aria-label={t(
                 ($) => {
                   return $.settings.accountMenu.subscriptions.usageRemaining;
@@ -260,11 +300,12 @@ function AccountMenuSubscriptionUsageBar({
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={remainingPercent ?? undefined}
-              className={`block h-1 min-w-0 overflow-hidden rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring ${tone.trackClassName}`}
+              className="flex h-1 min-w-0 flex-1 gap-0.5 rounded-full outline-none ring-offset-1 ring-offset-popover transition-shadow focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <span
-                className={`block h-full rounded-full transition-[width] ${tone.barClassName}`}
-                style={{ width: `${width}%` }}
+              <UsageMeterFill
+                remainingPercent={remainingPercent}
+                window={window}
+                fillClassName={tone.fillClassName}
               />
             </span>
           }
@@ -290,12 +331,64 @@ function AccountMenuSubscriptionUsageBar({
         </TooltipContent>
       </Tooltip>
       <span
-        className={`text-right text-[10px] font-medium leading-none ${tone.textClassName}`}
+        className={`w-8 shrink-0 text-right text-xs font-medium leading-4 tabular-nums ${tone.textClassName}`}
       >
         {displayPercent ?? "--"}
       </span>
     </div>
   );
+}
+
+/**
+ * The fill and what is left are two pieces with a 2px gap between them. An
+ * exhausted window keeps no fill; instead the time already waited drifts in as
+ * a stripe, so the meter shows the plan coming back rather than only that it
+ * ran out.
+ */
+function UsageMeterFill({
+  remainingPercent,
+  window,
+  fillClassName,
+}: {
+  readonly remainingPercent: number | null;
+  readonly window: SubscriptionUsageWindow;
+  readonly fillClassName: string;
+}) {
+  if (remainingPercent === null) {
+    return (
+      <span className="block h-full flex-1 rounded-full bg-segment-track" />
+    );
+  }
+  if (remainingPercent <= 0) {
+    return (
+      <span className="flex h-full flex-1 overflow-hidden rounded-full bg-segment-track">
+        <span
+          className="block h-full rounded-full bg-usage-meter-recharge bg-size-[8.485px_8.485px] motion-safe:animate-usage-meter-recharge"
+          style={{ width: `${String(elapsedWindowPercent(window))}%` }}
+        />
+      </span>
+    );
+  }
+  return (
+    <>
+      <span
+        className={cn("block h-full rounded-full", fillClassName)}
+        style={{ width: `${String(remainingPercent)}%` }}
+      />
+      {remainingPercent < 100 && (
+        <span className="block h-full min-w-1 flex-1 rounded-full bg-segment-track" />
+      )}
+    </>
+  );
+}
+
+function elapsedWindowPercent(window: SubscriptionUsageWindow): number {
+  const resetAt = window.resetAt ? Date.parse(window.resetAt) : Number.NaN;
+  if (!window.windowSeconds || Number.isNaN(resetAt)) {
+    return 0;
+  }
+  const left = (resetAt - now()) / (window.windowSeconds * 1000);
+  return Math.round(Math.min(1, Math.max(0, 1 - left)) * 100);
 }
 
 function formatUsagePercent(value: number | null): string | null {
@@ -309,28 +402,28 @@ function formatUsagePercent(value: number | null): string | null {
   });
 }
 
+/**
+ * A healthy window recedes in the neutral ramp; colour is reserved for the two
+ * moments that ask the user to act: running low, and running out.
+ */
 function usageTone(remainingPercent: number | null): {
-  readonly barClassName: string;
+  readonly fillClassName: string;
   readonly textClassName: string;
-  readonly trackClassName: string;
 } {
-  if (remainingPercent !== null && remainingPercent < 20) {
+  if (remainingPercent === null) {
+    return { fillClassName: "", textClassName: "text-muted-foreground" };
+  }
+  if (remainingPercent <= 0) {
+    return { fillClassName: "", textClassName: "text-destructive" };
+  }
+  if (remainingPercent < LOW_REMAINING_PERCENT) {
     return {
-      barClassName: "bg-red-500",
-      textClassName: "text-red-600 dark:text-red-400",
-      trackClassName: "bg-red-500/15",
+      fillClassName:
+        remainingPercent <= CRITICAL_REMAINING_PERCENT
+          ? "bg-primary motion-safe:animate-usage-meter-breathe-fast"
+          : "bg-primary motion-safe:animate-usage-meter-breathe",
+      textClassName: "text-brand-text",
     };
   }
-  if (remainingPercent !== null && remainingPercent < 50) {
-    return {
-      barClassName: "bg-amber-500",
-      textClassName: "text-amber-600 dark:text-amber-400",
-      trackClassName: "bg-amber-500/15",
-    };
-  }
-  return {
-    barClassName: "bg-emerald-600 dark:bg-emerald-500",
-    textClassName: "text-emerald-700 dark:text-emerald-400",
-    trackClassName: "bg-emerald-500/10 dark:bg-emerald-500/15",
-  };
+  return { fillClassName: "bg-gray-800", textClassName: "text-foreground" };
 }

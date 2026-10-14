@@ -4591,17 +4591,9 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
-        "usageRemaining": "{{provider}} {{window}} rimanente",
-        "windows": {
-          "fiveHour": "5 ore",
-          "week": "settimana"
-        }
+        "usageRemaining": "{{provider}} {{window}} rimanente"
       },
       "switchAccount": "Cambia account",
       "userFallback": "Utente"
