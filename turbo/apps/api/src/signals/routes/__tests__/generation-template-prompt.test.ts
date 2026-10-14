@@ -1,4 +1,3 @@
-import { DOCUMENT_TEMPLATE_PACKAGE } from "@okouai/core/document-template-items";
 import { describe, expect, it } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
@@ -476,24 +475,60 @@ describe("buildGenerationTemplatePrompt", () => {
 });
 
 describe("built-in document template context", () => {
-  it("pulls the pinned document package without confusing it with HTML docs-design", () => {
-    const result = buildGenerationTemplatePrompt({
-      type: "document",
-      selection: { documentTemplateId: "document-template:creative-brief" },
-    });
-    expect(result.status).toBe("resolved");
-    if (result.status !== "resolved") {
-      throw new Error("Expected document guidance");
-    }
-    expect(result.prompt).toContain(
-      `okou resource pull ${DOCUMENT_TEMPLATE_PACKAGE.resourceId}`,
-    );
-    expect(result.prompt).toContain(DOCUMENT_TEMPLATE_PACKAGE.sha256);
-    expect(result.prompt).toContain("document-creative-brief/SKILL.md");
-    expect(result.prompt).toContain("editable Word and PDF");
-    expect(result.prompt).not.toContain("docs-design");
-    expect(result.prompt).not.toContain("okou host");
-  });
+  it.each([
+    {
+      id: "document-template:creative-brief",
+      source:
+        "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/skills/creative-brief/references/creative-brief-template.md",
+      license:
+        "rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/LICENSE",
+    },
+    {
+      id: "document-template:fixed-price-contract",
+      source:
+        "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/Lump%20Sum%20Contract%20Template.docx",
+      license:
+        "Oak-Harbor-Kits/Contract-Templates/4e49c669fa1e856d583723f0a60175533645b680/LICENSE",
+    },
+    {
+      id: "document-template:design-services",
+      source:
+        "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/%E5%8D%8F%E8%AE%AE/%E8%AE%BE%E8%AE%A1%E6%9C%8D%E5%8A%A1%E6%A0%87%E5%87%86%E5%8D%8F%E8%AE%AE%E4%B9%A6.md",
+      license:
+        "studionaeo/design-services-standard-agreement/df71218eb1d5c5a59efb1ceb80de56a9935d6420/LICENSE",
+    },
+    {
+      id: "document-template:department-newsletter",
+      source:
+        "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/template/main.typ",
+      license:
+        "typst/templates/71b01c6b0a828649c7a0a38e8167cd82aab76efc/dashing-dept-news/LICENSE",
+    },
+  ])(
+    "resolves $id to its pinned public source and license",
+    ({ id, source, license }) => {
+      const result = buildGenerationTemplatePrompt({
+        type: "document",
+        selection: { documentTemplateId: id },
+      });
+      expect(result.status).toBe("resolved");
+      if (result.status !== "resolved") {
+        throw new Error("Expected document guidance");
+      }
+      expect(result.prompt).toContain(
+        `Template file: https://raw.githubusercontent.com/${source}`,
+      );
+      expect(result.prompt).toContain(
+        `License: https://raw.githubusercontent.com/${license}`,
+      );
+      expect(result.prompt).toContain("editable Word and PDF");
+      expect(result.prompt).toContain("at this exact commit");
+      expect(result.prompt).not.toContain("okou resource pull");
+      expect(result.prompt).not.toContain("Template-artifact");
+      expect(result.prompt).not.toContain("docs-design");
+      expect(result.prompt).not.toContain("okou host");
+    },
+  );
 
   it("rejects an unknown document instead of silently choosing another template", () => {
     expect(
@@ -524,8 +559,14 @@ describe("built-in document template context", () => {
     }
     expect(result.prompt).toContain("## Template #1 (document)");
     expect(result.prompt).toContain("## Template #2 (document)");
-    expect(
-      result.prompt.indexOf("document-creative-brief/SKILL.md"),
-    ).toBeLessThan(result.prompt.indexOf("document-simple-invoice/SKILL.md"));
+    const briefSource =
+      "https://raw.githubusercontent.com/rampstackco/claude-skills/482c9bf74697fc1e311bd4dca5ce301f046c4b76/skills/creative-brief/references/creative-brief-template.md";
+    const invoiceSource =
+      "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html";
+    expect(result.prompt).toContain(briefSource);
+    expect(result.prompt).toContain(invoiceSource);
+    expect(result.prompt.indexOf(briefSource)).toBeLessThan(
+      result.prompt.indexOf(invoiceSource),
+    );
   });
 });

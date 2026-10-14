@@ -1,4 +1,3 @@
-import { DOCUMENT_TEMPLATE_PACKAGE } from "@okouai/core/document-template-items";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -38,20 +37,6 @@ const EXPECTED_WEBSITE_TEMPLATE_V2_SHA256: Record<string, string> = {
 };
 
 describe("okou resource pull registry resolver", () => {
-  it("resolves the pinned built-in document bundle with or without its namespace", () => {
-    for (const id of [
-      DOCUMENT_TEMPLATE_PACKAGE.resourceId,
-      DOCUMENT_TEMPLATE_PACKAGE.slug,
-    ]) {
-      const resource = findRegistryResourceForPull(id);
-      expect(resource?.id).toBe(DOCUMENT_TEMPLATE_PACKAGE.resourceId);
-      expect(resource?.source.path).toBe(DOCUMENT_TEMPLATE_PACKAGE.slug);
-      expect(resource?.source.archive).toEqual({
-        type: "tar.gz",
-        sha256: DOCUMENT_TEMPLATE_PACKAGE.sha256,
-      });
-    }
-  });
   it("resolves a presentation color system archive", () => {
     expect(findRegistryResourceForPull("color-system:carnival")).toEqual(
       expect.objectContaining({

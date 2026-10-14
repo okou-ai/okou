@@ -1,9 +1,0 @@
-{
-  "resourceId": "template:document-builtins-v1",
-  "slug": "document-builtins-v1",
-  "storageId": "c192914c-af31-411d-8a17-77773e6866bf",
-  "versionId": "32956ab324f720a92d1ba4f574bd9e1bad8307bb3fe4538d4e0708b2c1a3bdcd",
-  "sourceRepository": "okou-ai/Template-artifact",
-  "sourceCommit": "8dd104c4b805c1fdcbacf75a9f896a2b0c1e2b4b",
-  "sha256": "4c45092bc4e4ad21feba51339f38ad4283e021ba2de7150ee7094d63e9f151a4"
-}

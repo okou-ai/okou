@@ -1,7 +1,4 @@
-import {
-  findDocumentTemplateItem,
-  DOCUMENT_TEMPLATE_PACKAGE,
-} from "@okouai/core/document-template-items";
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   buildPresentationRunbookInstructionLines,
@@ -481,8 +478,10 @@ function buildDocumentGenerationTemplatePrompt(
   if (!item) {
     return { status: "invalid", message: "Unknown document template" };
   }
-  const pkg = DOCUMENT_TEMPLATE_PACKAGE;
-  const root = `./generated/resources/${pkg.slug}`;
+  const { source } = item;
+  const sourceBaseUrl = `https://raw.githubusercontent.com/${source.repo}/${source.ref}`;
+  const sourceUrl = `${sourceBaseUrl}/${source.path.split("/").map(encodeURIComponent).join("/")}`;
+  const licenseUrl = `${sourceBaseUrl}/${source.licensePath.split("/").map(encodeURIComponent).join("/")}`;
   return {
     status: "resolved",
     prompt: [
@@ -490,12 +489,15 @@ function buildDocumentGenerationTemplatePrompt(
       "Selected built-in document template:",
       `- Template: ${item.title} (${item.id})`,
       `- Purpose: ${item.category}`,
-      `- Package resource: ${pkg.resourceId}`,
-      `- Archive SHA-256: ${pkg.sha256}`,
-      `- Pull: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
-      `- Read ${root}/${item.slug}/SKILL.md and the bundled provenance before authoring.`,
+      `- Public source: ${source.repo}@${source.ref}`,
+      `- Template file: ${sourceUrl}`,
+      `- License: ${licenseUrl}`,
+      `- Layout previews: ${item.previewPages.join(", ")}`,
+      "- Download and read the template file and license before authoring. Resolve referenced styles, imports, fonts, assets, and build instructions from the same repository at this exact commit; do not switch to a branch or newer version.",
+      "- These are public GitHub sources; no private template package or registry download is required. If a required source cannot be fetched, report that limitation rather than silently substituting another template.",
       "- Use the existing office-files skill to build editable Word and PDF from the same content; follow the user's requested delivery format.",
-      "- Render and inspect every page. The preview is an example, not user-provided content.",
+      "- The previews show adapted layouts, not pixel-identical upstream screenshots. Use them as visual references and the pinned source for document structure and clauses. Replace all illustrative content with the user's facts or explicit placeholders.",
+      "- Render and inspect every page before delivery.",
       "- Preserve this template's section structure and layout. Never invent parties, signatures, payment details, tax rates, or legal jurisdiction.",
       "- Keep unknown business and legal fields as explicit placeholders. Calculate invoice totals from the supplied line items.",
       "- Deliver files through okou web upload-file. This selection does not request Google Docs, Google Sheets, or Google Drive delivery.",

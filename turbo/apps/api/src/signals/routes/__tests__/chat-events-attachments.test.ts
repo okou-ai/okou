@@ -1501,10 +1501,10 @@ describe("CHAT-02: generation templates and attachments", () => {
     });
     const run = await api.readRun(actor, sent.runId);
     expect(run.appendSystemPrompt).toContain(
-      "okou resource pull template:document-builtins-v1",
+      "https://raw.githubusercontent.com/sparksuite/simple-html-invoice-template/7d74fe34c862b7712f1a23a3f12147a4a8bd53e1/invoice.html",
     );
-    expect(run.appendSystemPrompt).toContain(
-      "document-simple-invoice/SKILL.md",
+    expect(run.appendSystemPrompt).not.toContain(
+      "template:document-builtins-v1",
     );
     await cancelChatRun(actor, sent.runId);
   }, 60_000);

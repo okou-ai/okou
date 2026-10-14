@@ -1,4 +1,3 @@
-import { DOCUMENT_TEMPLATE_PACKAGE } from "./document-template-items";
 import {
   WEBSITE_TEMPLATE_ITEMS,
   findWebsiteTemplateItem,
@@ -3697,22 +3696,5 @@ export function selectResourceCandidates(
       templates: listTemplates(target),
       designSystems: filterByKind("design-system"),
     },
-  };
-}
-
-export function findDocumentTemplateResource(
-  id: string,
-): RegistryEntry | undefined {
-  const pkg = DOCUMENT_TEMPLATE_PACKAGE;
-  if (id !== pkg.resourceId) {
-    return undefined;
-  }
-  return {
-    id: pkg.resourceId,
-    kind: "template",
-    name: "Built-in document templates",
-    description:
-      "Editable document layouts, examples, source notices, and authoring instructions.",
-    source: privateR2ArchiveSource(pkg.slug, pkg.sha256),
   };
 }
