@@ -3830,6 +3830,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "raw-http-test-support"
+version = "0.1.0"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
 name = "rcgen"
 version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4178,6 +4185,7 @@ dependencies = [
  "httpmock",
  "libc",
  "nix",
+ "raw-http-test-support",
  "reqwest",
  "runner-host",
  "runner-lifecycle",
@@ -4308,6 +4316,7 @@ dependencies = [
  "hyper",
  "nix",
  "process-control-ipc",
+ "raw-http-test-support",
  "reqwest",
  "runner-host",
  "runner-types",
@@ -4355,6 +4364,7 @@ dependencies = [
  "pkcs5",
  "pkcs8",
  "png",
+ "raw-http-test-support",
  "rcgen",
  "reqwest",
  "rfb-client",
@@ -4447,6 +4457,7 @@ dependencies = [
  "hyper",
  "libc",
  "nix",
+ "raw-http-test-support",
  "rcgen",
  "reqwest",
  "runner-host",
