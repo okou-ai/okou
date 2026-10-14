@@ -14,9 +14,10 @@ import {
   type SessionHistoryDownloadAttribution,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
+import { sandboxStartupPathSchema } from "@okouai/api-contracts/contracts/runner-primitives";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { z } from "zod";
 
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
@@ -822,8 +823,51 @@ function telemetryOomEvents(
   ];
 }
 
+// The first canonical settled-ready receipt owns this immutable Run fact.
+const persistStartupPath$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly userId: string;
+      readonly operations: z.infer<
+        typeof webhookTelemetryContract.send.body
+      >["sandboxOperations"];
+    },
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    const settledReady = args.operations?.find((op) => {
+      return (
+        op.action_type === "runner_agent_start_to_ready" &&
+        op.success &&
+        op.runner_startup_path !== undefined
+      );
+    });
+    const startupPath = sandboxStartupPathSchema.safeParse(
+      settledReady?.runner_startup_path,
+    );
+    if (!startupPath.success) {
+      return [];
+    }
+    const rows = await set(writeDb$)
+      .update(agentRuns)
+      .set({ sandboxStartupPath: startupPath.data })
+      .where(
+        and(
+          eq(agentRuns.id, args.runId),
+          eq(agentRuns.userId, args.userId),
+          isNull(agentRuns.sandboxStartupPath),
+        ),
+      )
+      .returning({ id: agentRuns.id });
+    signal.throwIfAborted();
+    return rows;
+  },
+);
+
 const telemetryBody$ = bodyResultOf(webhookTelemetryContract.send);
-const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
+const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bodyResult = await get(telemetryBody$);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
@@ -840,8 +884,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
   }
   const { auth } = authResult;
 
-  const db = get(db$);
-  const [run] = await db
+  const [run] = await get(db$)
     .select({ id: agentRuns.id })
     .from(agentRuns)
     .where(and(eq(agentRuns.id, body.runId), eq(agentRuns.userId, auth.userId)))
@@ -851,6 +894,17 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
   if (!run) {
     return notFound("Agent run not found");
   }
+
+  await set(
+    persistStartupPath$,
+    {
+      runId: body.runId,
+      userId: auth.userId,
+      operations: body.sandboxOperations,
+    },
+    signal,
+  );
+  signal.throwIfAborted();
 
   const telemetryBatches: TelemetryBatch[] = [];
 
