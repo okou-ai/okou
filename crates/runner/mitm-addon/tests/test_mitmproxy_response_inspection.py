@@ -101,6 +101,8 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         return flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE].get("tokens.output", 0)
 
     pulse = asyncio.Event()
+    inspection_drained = asyncio.Event()
+    release_hook = asyncio.Event()
     loop = asyncio.get_running_loop()
     heartbeat = loop.create_future()
     provider_done = loop.create_future()
@@ -109,6 +111,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     received = bytearray()
     read_sizes: list[int] = []
     returned_sizes: list[int] = []
+    hook_tasks: list[asyncio.Task[None]] = []
 
     async def provider(_reader, writer):
         try:
@@ -196,8 +199,17 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                         assert task is not None
                         loop.call_soon(task.cancel)
                 await addon_context.master.addons.invoke_addon(mitm_addon, hook)
+                if isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
+                    inspection_drained.set()
+                    await release_hook.wait()
                 if isinstance(hook, HttpResponseHook):
                     terminal_done.set_result(None)
+
+            async def hook_task(self, hook):
+                task = asyncio.current_task()
+                assert task is not None
+                hook_tasks.append(task)
+                await super().hook_task(hook)
 
         handler = Handler(context)
         handler.layer = _ResponsePeerLayer(context, stream)
@@ -220,11 +232,50 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             handler.transports[context.client] = ConnectionIO(
                 reader=client_reader, writer=client_writer
             )
+            reader_task = asyncio.create_task(handler.handle_connection(context.server))
+            handler.transports[context.server].handler = reader_task
+
+            async def complete_reader():
+                if not cancel_inspection:
+                    await inspection_drained.wait()
+                    await asyncio.shield(provider_done)
+                    # Parsing has finished and the next member/EOF are available,
+                    # but the complete native hook is deliberately still pending.
+                    assert observed_work() == expected_first_work
+                    assert read_sizes == [65535] * len(first_chunks)
+                    assert not reader_task.done()
+                    release_hook.set()
+                await asyncio.shield(reader_task)
+
             try:
-                await asyncio.wait_for(handler.handle_connection(context.server), timeout=15)
+                try:
+                    await asyncio.wait_for(complete_reader(), timeout=15)
+                except TimeoutError as error:
+                    work = (
+                        flow.metadata.get(metadata_keys.X_NDJSON_STATE, {}).get("lines_parsed")
+                        if response_kind == "x"
+                        else observed_work()
+                    )
+                    raise AssertionError(
+                        "native inspection did not complete: "
+                        f"work={work}/{expected_first_work}, "
+                        f"pending={response_streaming.has_pending_response_inspection(flow)}, "
+                        f"parser_done={inspection_drained.is_set()}, "
+                        f"hook_released={release_hook.is_set()}, reads={returned_sizes}, "
+                        f"hooks={[(task.get_name(), task.done()) for task in hook_tasks]}"
+                    ) from error
                 await asyncio.wait_for(terminal_done, timeout=5)
+                for task in hook_tasks:
+                    if not task.cancelled():
+                        await task
                 usage.flush_usage_events(trigger="test")
             finally:
+                release_hook.set()
+                reader_task.cancel()
+                await asyncio.gather(reader_task, return_exceptions=True)
+                for task in hook_tasks:
+                    task.cancel()
+                await asyncio.gather(*hook_tasks, return_exceptions=True)
                 provider_writer.close()
                 client_writer.close()
                 await provider_writer.wait_closed()
