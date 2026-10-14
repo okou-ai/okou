@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { integrationsTeamsMessageContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -7,12 +7,17 @@ import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import {
-  loadInstallation,
+  teamsInstallation,
   resolveTeamsMessageTarget,
   routeError,
   teamsErrorResponse,
 } from "../services/teams-message-target.service";
 import type { RouteEntry } from "../route-entry";
+
+const installationOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+const installation$ = teamsInstallation(installationOrgId$);
 
 const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
@@ -26,7 +31,7 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   const body = bodyResult.data;
 
   const db = get(db$);
-  const installation = await loadInstallation(db, auth.orgId);
+  const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
     return routeError(
