@@ -1,4 +1,4 @@
-use std::{os::fd::AsRawFd, time::Duration};
+use std::os::fd::AsRawFd;
 
 use runner_rpc_proto::stream::{Frame, Writer};
 use serde_json::json;
@@ -192,7 +192,7 @@ async fn x509_plain_authenticates_exact_credentials_and_publishes_the_requested_
     );
     closed(&h).await;
     resolve.assert_calls_async(1).await;
-    check.assert_calls_async(2).await;
+    check.assert_calls_async(1).await;
     h.run.shutdown().await;
 }
 
@@ -230,7 +230,7 @@ async fn x509_none_verifies_tls_and_streams_without_a_vnc_client_credential() {
     );
     closed(&h).await;
     resolve.assert_calls_async(1).await;
-    check.assert_calls_async(2).await;
+    check.assert_calls_async(1).await;
     h.run.shutdown().await;
 }
 
@@ -286,7 +286,7 @@ async fn client_certificate_pairs_complete_runner_session_against_verifying_peer
         );
         closed(&h).await;
         resolve.assert_calls_async(1).await;
-        check.assert_calls_async(2).await;
+        check.assert_calls_async(1).await;
         h.run.shutdown().await;
     }
 }
@@ -386,42 +386,36 @@ async fn blocked_list_metadata_does_not_retain_a_closed_sessions_capacity() {
     let check = h.check("valid", 200).await;
     let first = h.start("shared").await.session();
     mode(&h, 1).await;
-    let second = h.start("shared").await.session();
+    h.start("shared").await.session();
     mode(&h, 1).await;
-    let to_close = first.max(second);
-    check.delete_async().await;
-    // Delay one external request; remove this mock after the API has accepted
-    // it so later checks are independently available while list still waits.
-    let blocked = h.check_delayed("valid", 200, Duration::from_secs(30)).await;
-    let mut guest = h.run.open().await;
+    // A one-byte output buffer holds the real metadata response, without an
+    // obsolete per-operation authority RPC or an arbitrary delay.
+    let mut guest = h.run.open_sized(1).await;
     send(
         &mut guest,
         &json!({"version":1,"method":"vnc.session.list","remaining_ms":60000,"params":{}})
             .to_string(),
     )
     .await;
-    bounded(async {
-        while blocked.calls_async().await == 0 {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await;
-    blocked.delete_async().await;
-    let _available = h.check("valid", 200).await;
+    let prefix = bounded(guest.read_u8()).await.unwrap();
     assert_eq!(
         h.run
-            .request("vnc.session.close", json!({"sessionId":to_close}))
+            .request("vnc.session.close", json!({"sessionId":first}))
             .await
             .result()["outcome"],
         "closed"
     );
     closed(&h).await;
-    // The list still owns its snapshot of both IDs. The freed socket's permit
-    // must nevertheless admit a replacement while the other check is pending.
     h.start("shared").await.session();
     mode(&h, 1).await;
-    h.run.cancel.cancel();
-    let mut bytes = Vec::new();
-    bounded(guest.read_to_end(&mut bytes)).await.unwrap();
+    assert_eq!(
+        h.start("shared").await.result()["reason"],
+        "resource_exhausted"
+    );
+    let listed = read(std::io::Cursor::new(vec![prefix]).chain(guest)).await;
+    assert_eq!(listed.result()["outcome"], "listed");
+    check.assert_calls_async(3).await;
     h.run.shutdown().await;
+    closed(&h).await;
+    closed(&h).await;
 }

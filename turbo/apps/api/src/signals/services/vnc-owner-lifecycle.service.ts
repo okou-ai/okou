@@ -7,6 +7,7 @@ import { isClerkResourceNotFound, type ClerkClient } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { loadCurrentMembershipId } from "./morning-brief-membership.service";
+import { publishVncLifecycleInvalidation$ } from "./remote-runtime-wakeup.service";
 
 export interface VncOwner {
   readonly orgId: string;
@@ -83,5 +84,6 @@ export const eraseVncOwnerData$ = command(
         ),
       );
     signal.throwIfAborted();
+    await set(publishVncLifecycleInvalidation$, scope, signal);
   },
 );
