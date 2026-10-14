@@ -3889,14 +3889,11 @@
       "resume": "Curriculum",
       "service-agreement": "Accordo di servizi"
     },
-    "empty": "Nessun modello corrispondente",
     "filter": "Categoria del documento",
     "imageError": "Anteprima non disponibile",
     "page": "Pagina {{page}}",
     "preview": "Anteprima di {{title}}",
-    "reset": "Cancella filtri",
     "retry": "Riprova",
-    "search": "Cerca documenti",
     "title": "Documento",
     "use": "Usa modello",
     "useNamed": "Usa {{title}}"

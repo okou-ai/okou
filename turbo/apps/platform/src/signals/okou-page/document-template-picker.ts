@@ -1,5 +1,3 @@
-import { i18n } from "../../i18n/index.ts";
-import { locale$ } from "../locale.ts";
 import { onRef } from "../utils.ts";
 import { command, computed, state } from "ccstate";
 import {
@@ -9,7 +7,6 @@ import {
 } from "@okouai/core/document-template-items";
 
 export function createDocumentTemplateSignals() {
-  const search$ = state("");
   const category$ = state<DocumentTemplateCategory | "all">("all");
   const previewId$ = state<string | null>(null);
   const scrollTop$ = state(0);
@@ -31,9 +28,6 @@ export function createDocumentTemplateSignals() {
       ),
     );
   });
-  const documentSearch$ = computed((get) => {
-    return get(search$);
-  });
   const documentCategory$ = computed((get) => {
     return get(category$);
   });
@@ -42,23 +36,10 @@ export function createDocumentTemplateSignals() {
     return id === null ? undefined : findDocumentTemplateItem(id);
   });
   const documentItems$ = computed((get) => {
-    get(locale$);
-    const query = get(search$).trim().toLocaleLowerCase();
     const category = get(category$);
     return DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-      return (
-        (category === "all" || item.category === category) &&
-        `${item.title} ${item.description} ${item.category} ${i18n.t(($) => {
-          return $.documentTemplates.categories[item.category];
-        })}`
-          .toLocaleLowerCase()
-          .includes(query)
-      );
+      return category === "all" || item.category === category;
     });
-  });
-  const setDocumentSearch$ = command(({ set }, value: string) => {
-    set(search$, value);
-    set(scrollTop$, 0);
   });
   const setDocumentCategory$ = command(
     ({ set }, value: DocumentTemplateCategory | "all") => {
@@ -91,14 +72,12 @@ export function createDocumentTemplateSignals() {
     }),
   );
   return {
-    documentSearch$,
     documentCategory$,
     documentPreview$,
     documentItems$,
     documentImageFailures$,
     failDocumentImage$,
     retryDocumentImage$,
-    setDocumentSearch$,
     setDocumentCategory$,
     openDocumentPreview$,
     closeDocumentPreview$,

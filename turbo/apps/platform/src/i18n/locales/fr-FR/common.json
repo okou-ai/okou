@@ -3889,14 +3889,11 @@
       "resume": "CV",
       "service-agreement": "Accord de services"
     },
-    "empty": "Aucun modèle correspondant",
     "filter": "Catégorie de document",
     "imageError": "Aperçu indisponible",
     "page": "Page {{page}}",
     "preview": "Aperçu de {{title}}",
-    "reset": "Effacer les filtres",
     "retry": "Réessayer",
-    "search": "Rechercher des documents",
     "title": "Document",
     "use": "Utiliser ce modèle",
     "useNamed": "Utiliser {{title}}"

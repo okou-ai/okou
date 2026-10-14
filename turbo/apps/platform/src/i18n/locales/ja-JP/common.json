@@ -3808,14 +3808,11 @@
       "resume": "履歴書",
       "service-agreement": "業務委託契約"
     },
-    "empty": "一致するテンプレートがありません",
     "filter": "文書の分類",
     "imageError": "プレビューを表示できません",
     "page": "{{page}} ページ",
     "preview": "{{title}} をプレビュー",
-    "reset": "絞り込みを解除",
     "retry": "再試行",
-    "search": "文書テンプレートを検索",
     "title": "ドキュメント",
     "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"

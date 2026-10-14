@@ -3889,14 +3889,11 @@
       "resume": "Currículums",
       "service-agreement": "Acuerdo de servicios"
     },
-    "empty": "No hay plantillas coincidentes",
     "filter": "Categoría de documento",
     "imageError": "Vista previa no disponible",
     "page": "Página {{page}}",
     "preview": "Vista previa de {{title}}",
-    "reset": "Borrar filtros",
     "retry": "Reintentar",
-    "search": "Buscar documentos",
     "title": "Documento",
     "use": "Usar plantilla",
     "useNamed": "Usar {{title}}"

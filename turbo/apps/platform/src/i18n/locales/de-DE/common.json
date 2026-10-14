@@ -3828,14 +3828,11 @@
       "resume": "Lebensläufe",
       "service-agreement": "Dienstleistungsvertrag"
     },
-    "empty": "Keine passenden Vorlagen",
     "filter": "Dokumentkategorie",
     "imageError": "Vorschau nicht verfügbar",
     "page": "Seite {{page}}",
     "preview": "Vorschau: {{title}}",
-    "reset": "Filter zurücksetzen",
     "retry": "Erneut versuchen",
-    "search": "Dokumentvorlagen suchen",
     "title": "Dokument",
     "use": "Vorlage verwenden",
     "useNamed": "{{title}} verwenden"

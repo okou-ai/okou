@@ -3808,14 +3808,11 @@
       "resume": "简历",
       "service-agreement": "服务协议"
     },
-    "empty": "没有匹配的模板",
     "filter": "文档分类",
     "imageError": "预览暂不可用",
     "page": "第 {{page}} 页",
     "preview": "预览 {{title}}",
-    "reset": "清除筛选",
     "retry": "重试",
-    "search": "搜索文档模板",
     "title": "文档",
     "use": "使用模板",
     "useNamed": "使用 {{title}}"

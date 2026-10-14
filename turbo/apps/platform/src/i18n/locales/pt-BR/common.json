@@ -3889,14 +3889,11 @@
       "resume": "Currículos",
       "service-agreement": "Acordo de serviços"
     },
-    "empty": "Nenhum modelo correspondente",
     "filter": "Categoria do documento",
     "imageError": "Prévia indisponível",
     "page": "Página {{page}}",
     "preview": "Visualizar {{title}}",
-    "reset": "Limpar filtros",
     "retry": "Tentar novamente",
-    "search": "Buscar documentos",
     "title": "Documento",
     "use": "Usar modelo",
     "useNamed": "Usar {{title}}"

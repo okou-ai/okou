@@ -2,9 +2,6 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { HttpResponse } from "msw";
-import zhHansCommon from "../../../i18n/locales/zh-Hans/common.json";
-import zhHansCommonUrl from "../../../i18n/locales/zh-Hans/common.json?url";
 import {
   click,
   setupPage,
@@ -62,7 +59,7 @@ test("Document remains hidden when its rollout switch is off", async () => {
   ).not.toContain("Document");
 });
 
-test("Document search and scroll survive preview; Use preserves the draft and does not send", async () => {
+test("Document category and scroll survive preview; Use preserves the draft and does not send", async () => {
   const { user, capture } = await setup();
   const editor = await findComposerEditor();
   await user.click(editor);
@@ -81,11 +78,10 @@ test("Document search and scroll survive preview; Use preserves the draft and do
     "Workflow",
   ]);
   click(control(dialog, "tab", "Document"));
+  expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(51);
   await user.click(control(dialog, "button", "Invoice"));
-  await user.type(
-    within(dialog).getByRole("textbox", { name: "Search documents" }),
-    "simple",
-  );
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(
     "[data-document-template-grid-scroll]",
   );
@@ -100,9 +96,11 @@ test("Document search and scroll survive preview; Use preserves the draft and do
     within(dialog).getByRole("heading", { name: "Simple invoice" }),
   ).toBeVisible();
   await user.keyboard("{Escape}");
-  expect(
-    within(dialog).getByRole("textbox", { name: "Search documents" }),
-  ).toHaveValue("simple");
+  expect(control(dialog, "button", "Invoice")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const restored = dialog.querySelector<HTMLElement>(
     "[data-document-template-grid-scroll]",
   );
@@ -134,46 +132,13 @@ test("Document search and scroll survive preview; Use preserves the draft and do
   });
 });
 
-test("Document empty results can be reset and failed preview pages can be retried", async () => {
+test("Document failed preview pages can be retried", async () => {
   const { user } = await setup();
   const dialog = await openTemplatePicker(user);
   click(control(dialog, "tab", "Document"));
-  await user.type(
-    within(dialog).getByRole("textbox", { name: "Search documents" }),
-    "no-such-document",
-  );
-  expect(within(dialog).getByText("No matching templates")).toBeVisible();
-  click(control(dialog, "button", "Clear filters"));
   click(control(dialog, "button", "Preview Simple invoice"));
   fireEvent.error(within(dialog).getByAltText("Page 1"));
   expect(within(dialog).getByText("Preview unavailable")).toBeVisible();
   click(control(dialog, "button", "Retry"));
   expect(within(dialog).getByAltText("Page 1")).toBeInTheDocument();
-});
-
-test("Document search matches the localized purpose category", async () => {
-  mockTemplateChat();
-  // The shared locale fixture serves placeholders; this test needs the real labels.
-  context.mocks.http.get(zhHansCommonUrl, () => {
-    return HttpResponse.json(zhHansCommon);
-  });
-  context.mocks.browser.languages(["zh-CN"]);
-  context.mocks.browser.cookie("");
-  const user = userEvent.setup({ delay: null });
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=document`,
-    locale: "zh-Hans",
-    featureSwitches: {
-      [FeatureSwitchKey.CustomTemplates]: false,
-      [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
-    },
-  });
-  const dialog = await screen.findByRole("dialog");
-  await user.type(
-    await within(dialog).findByRole("textbox", { name: "搜索文档模板" }),
-    "发票",
-  );
-  expect(within(dialog).getAllByLabelText(/^预览 /u)).toHaveLength(7);
-  expect(within(dialog).getByText("Simple invoice")).toBeVisible();
 });

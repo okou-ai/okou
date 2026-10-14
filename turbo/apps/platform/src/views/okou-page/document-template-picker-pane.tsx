@@ -2,7 +2,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, FileText } from "lucide-react";
-import { Button, DialogTitle, Input, cn } from "@okouai/ui";
+import { Button, DialogTitle, cn } from "@okouai/ui";
 import {
   DOCUMENT_TEMPLATE_CATEGORIES,
   type DocumentTemplateItem,
@@ -25,31 +25,15 @@ type Props = {
 
 export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
   const { t } = useTranslation();
-  const search = useGet(signals.template.documentSearch$);
   const category = useGet(signals.template.documentCategory$);
   const items = useGet(signals.template.documentItems$);
-  const setSearch = useSet(signals.template.setDocumentSearch$);
   const setCategory = useSet(signals.template.setDocumentCategory$);
   const saveScroll = useSet(signals.template.saveDocumentScroll$);
   const restoreScroll = useSet(signals.template.restoreDocumentScroll$);
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[68px] shrink-0 items-center px-6 pr-14">
-        <Input
-          aria-label={t(($) => {
-            return $.documentTemplates.search;
-          })}
-          placeholder={t(($) => {
-            return $.documentTemplates.search;
-          })}
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-        />
-      </div>
       <TemplateFilterPillRow
-        className="px-6 pb-4"
+        className="shrink-0 px-6 pb-4 pr-14 pt-6"
         active={category}
         label={t(($) => {
           return $.documentTemplates.filter;
@@ -72,7 +56,7 @@ export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
         }}
       />
       <div
-        key={`${category}:${search}`}
+        key={category}
         ref={restoreScroll}
         onScroll={(event) => {
           saveScroll(event.currentTarget.scrollTop);
@@ -80,40 +64,18 @@ export function DocumentTemplatePickerPane({ signals, onSelect }: Props) {
         className="min-h-0 flex-1 overflow-y-auto px-6 pb-6"
         data-document-template-grid-scroll=""
       >
-        {items.length === 0 ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-4 text-center text-muted-foreground">
-            <FileText className="size-8" />
-            <p>
-              {t(($) => {
-                return $.documentTemplates.empty;
-              })}
-            </p>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearch("");
-                setCategory("all");
-              }}
-            >
-              {t(($) => {
-                return $.documentTemplates.reset;
-              })}
-            </Button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((item) => {
-              return (
-                <DocumentTemplateCard
-                  key={item.id}
-                  signals={signals}
-                  item={item}
-                  onSelect={onSelect}
-                />
-              );
-            })}
-          </div>
-        )}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((item) => {
+            return (
+              <DocumentTemplateCard
+                key={item.id}
+                signals={signals}
+                item={item}
+                onSelect={onSelect}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );

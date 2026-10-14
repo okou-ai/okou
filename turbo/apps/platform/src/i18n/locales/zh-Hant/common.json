@@ -3808,14 +3808,11 @@
       "resume": "履歷",
       "service-agreement": "服務協議"
     },
-    "empty": "沒有符合的範本",
     "filter": "文件分類",
     "imageError": "預覽暫時無法使用",
     "page": "第 {{page}} 頁",
     "preview": "預覽 {{title}}",
-    "reset": "清除篩選",
     "retry": "重試",
-    "search": "搜尋文件範本",
     "title": "文件",
     "use": "使用範本",
     "useNamed": "使用 {{title}}"
