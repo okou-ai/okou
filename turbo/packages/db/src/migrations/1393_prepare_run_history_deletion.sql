@@ -1,0 +1,1 @@
+CREATE INDEX "idx_agent_runs_agent" ON "agent_runs" USING btree ("agent_id");

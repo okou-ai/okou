@@ -135,6 +135,7 @@ export const agentRuns = pgTable(
         table.createdAt.desc(),
       ),
       index("idx_agent_runs_session").on(table.sessionId),
+      index("idx_agent_runs_agent").on(table.agentId),
       index("idx_agent_runs_chat_thread_id")
         .on(table.chatThreadId)
         .where(sql`${table.chatThreadId} IS NOT NULL`),

@@ -1,9 +1,9 @@
 import { agentDeletionError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { conversations } from "@okouai/db/schema/conversation";
 import { blobs } from "@okouai/db/schema/blob";
 import { storages } from "@okouai/db/schema/storage";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -19,6 +19,7 @@ import { z } from "zod";
 
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { safeSqlStateCode } from "../../lib/pg-errors";
+import { deletedRunHistoryReferences } from "./conversation-history-deletion.service";
 
 export interface DeleteAgentArgs {
   readonly agentId: string;
@@ -36,7 +37,12 @@ const agentRows = z.array(
 const orgRows = z.array(z.object({ defaultAgentId: z.string().nullable() }));
 const sessionRows = z.array(z.object({ id: z.string(), orgId: z.string() }));
 const runRows = z.array(
-  z.object({ id: z.string(), orgId: z.string(), status: z.string() }),
+  z.object({
+    id: z.string(),
+    orgId: z.string(),
+    agentId: z.string().nullable(),
+    status: z.string(),
+  }),
 );
 interface AdmissionStatement {
   readonly sql: SQL;
@@ -195,32 +201,31 @@ export function* agentDeletionAdmissionPlan(
   ) {
     return { kind: "ownership-conflict" };
   }
-  const targetSessions = new QueryBuilder()
-    .select({ id: agentSessions.id })
-    .from(agentSessions)
-    .where(eq(agentSessions.agentId, args.agentId));
-  const runs =
-    sessions.length === 0
-      ? []
-      : runRows.parse(
-          yield statement(
-            new QueryBuilder()
-              .select({
-                id: agentRuns.id,
-                orgId: sql`${agentRuns.orgId}`.as("orgId"),
-                status: agentRuns.status,
-              })
-              .from(agentRuns)
-              .where(inArray(agentRuns.sessionId, targetSessions))
-              .orderBy(asc(agentRuns.id))
-              .for("update", { noWait: true })
-              .getSQL(),
-            runRows.element,
-          ),
-        );
+  // Both ownership shapes remain reachable during the runtime cutover (#37970).
+  // Drop Session membership after historical backfill and outgoing API drain.
+  const runs = runRows.parse(
+    yield statement(
+      new QueryBuilder()
+        .select({
+          id: agentRuns.id,
+          orgId: sql`${agentRuns.orgId}`.as("orgId"),
+          agentId: sql`${agentRuns.agentId}`.as("agentId"),
+          status: agentRuns.status,
+        })
+        .from(agentRuns)
+        .where(agentRunDeletionMembership([args.agentId]))
+        .orderBy(asc(agentRuns.id))
+        .for("update", { noWait: true })
+        .getSQL(),
+      runRows.element,
+    ),
+  );
   if (
     runs.some((run) => {
-      return run.orgId !== args.orgId;
+      return (
+        run.orgId !== args.orgId ||
+        (run.agentId !== null && run.agentId !== args.agentId)
+      );
     })
   ) {
     return { kind: "ownership-conflict" };
@@ -263,30 +268,8 @@ export function agentInstructionStoragesSql(orgId: string, agentName: string) {
     .for("update")
     .getSQL();
 }
-export function agentConversationDeletionCondition(runIds: readonly string[]) {
-  return eq(conversations.runId, sql`ANY(${sql.param(runIds)}::uuid[])`);
-}
-export function deletedConversationReferences(
-  groups: readonly {
-    readonly hash: string | null;
-    readonly references: number;
-  }[],
-) {
-  const references = new Map<string, number>();
-  let deletedConversations = 0;
-  for (const group of groups) {
-    deletedConversations += group.references;
-    if (group.hash !== null) {
-      references.set(
-        group.hash,
-        (references.get(group.hash) ?? 0) + group.references,
-      );
-    }
-  }
-  return { references, deletedConversations };
-}
 export function conversationReferenceBatches(
-  removed: ReturnType<typeof deletedConversationReferences>,
+  removed: ReturnType<typeof deletedRunHistoryReferences>,
 ) {
   const references = [...removed.references]
     .sort(([a], [b]) => {

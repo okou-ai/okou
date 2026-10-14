@@ -2,6 +2,7 @@ import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/runtime/agent-session";
+import { agentRunDeletionMembership } from "@okouai/db/operations/run-history-deletion";
 import { chatThreadDrafts } from "@okouai/db/schema/chat-thread-draft";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { artifacts } from "@okouai/db/schema/artifact";
@@ -22,10 +23,8 @@ import {
 } from "./artifact-catalog-deletion.service";
 import {
   clerkPublicationFenceCleanupSql,
-  conversationFreeRunDeleteSql,
-  deletedRunCountSchema,
   emptyConversationDeletionReceipt,
-  releaseRunConversationsSql,
+  releaseRunHistoriesSql,
   releasedConversationSweepSchema,
   requireReleasedConversationReferences,
   runFreeAgentDeleteSql,
@@ -107,8 +106,8 @@ const deleteClerkUserLifecycleData$ = command(
                 .where(inArray(agentRuns.sessionId, userSessions)),
             ),
         );
-        // Release this Run snapshot's references before deleting only its
-        // conversation-free Runs; a short count rolls the whole cleanup back.
+        // Delete this exact Run snapshot and release its held references.
+        // A missing Run or reference rolls back the whole cleanup.
         let receipt: ConversationDeletionReceipt;
         if (runIds.length === 0) {
           receipt = emptyConversationDeletionReceipt();
@@ -116,16 +115,10 @@ const deleteClerkUserLifecycleData$ = command(
           receipt = requireReleasedConversationReferences(
             parseRawRows(
               releasedConversationSweepSchema,
-              await tx.execute(releaseRunConversationsSql(runIds)),
+              await tx.execute(releaseRunHistoriesSql(runIds)),
             ),
+            runIds.length,
           );
-          const [deleted] = parseRawRows(
-            deletedRunCountSchema,
-            await tx.execute(conversationFreeRunDeleteSql(runIds)),
-          );
-          if (deleted?.deletedRuns !== runIds.length) {
-            throwLateRunConversation();
-          }
         }
         await tx.execute(runFreeUserSessionDeleteSql(userId));
         const [lateSession] = await tx
@@ -145,6 +138,16 @@ const deleteClerkUserLifecycleData$ = command(
           [],
         )) {
           await tx.execute(statement);
+        }
+        // A fresh statement also observes direct Runs committed while the
+        // Thread/publication cleanup waited; Session membership is insufficient.
+        const [lateRun] = await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(eq(agentRuns.userId, userId))
+          .limit(1);
+        if (lateRun) {
+          throwLateRunConversation();
         }
         return receipt;
       }),
@@ -213,13 +216,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
         const agentIds = idsOf(
           await tx.select({ id: agents.id }).from(agents).where(agentScope),
         );
-        const ownedSessions = tx
-          .select({ id: agentSessions.id })
-          .from(agentSessions)
-          .where(
-            eq(agentSessions.agentId, sql`ANY(${sql.param(agentIds)}::uuid[])`),
-          );
-        // UNION deduplicates direct and cross-org Agent -> Session -> Run ownership.
+        // UNION deduplicates organization, direct Agent and legacy Session ownership.
         const runIds = idsOf(
           await tx
             .select({ id: agentRuns.id })
@@ -229,11 +226,11 @@ const deleteClerkOrganizationLifecycleData$ = command(
               tx
                 .select({ id: agentRuns.id })
                 .from(agentRuns)
-                .where(inArray(agentRuns.sessionId, ownedSessions)),
+                .where(agentRunDeletionMembership(agentIds)),
             ),
         );
-        // Release this Run snapshot's references before deleting only its
-        // conversation-free Runs; a short count rolls the whole cleanup back.
+        // Delete this exact Run snapshot and release its held references.
+        // A missing Run or reference rolls back the whole cleanup.
         let receipt: ConversationDeletionReceipt;
         if (runIds.length === 0) {
           receipt = emptyConversationDeletionReceipt();
@@ -241,16 +238,10 @@ const deleteClerkOrganizationLifecycleData$ = command(
           receipt = requireReleasedConversationReferences(
             parseRawRows(
               releasedConversationSweepSchema,
-              await tx.execute(releaseRunConversationsSql(runIds)),
+              await tx.execute(releaseRunHistoriesSql(runIds)),
             ),
+            runIds.length,
           );
-          const [deleted] = parseRawRows(
-            deletedRunCountSchema,
-            await tx.execute(conversationFreeRunDeleteSql(runIds)),
-          );
-          if (deleted?.deletedRuns !== runIds.length) {
-            throwLateRunConversation();
-          }
         }
         const scope = { kind: "organization", orgId } as const;
         for (const statement of clerkPublicationFenceCleanupSql(
@@ -260,8 +251,7 @@ const deleteClerkOrganizationLifecycleData$ = command(
           await tx.execute(statement);
         }
         if (agentIds.length > 0) {
-          // Only Agents with no Run left under their Sessions; a late Run
-          // (and its conversation) is never removed by the Agent cascade.
+          // Guard both direct and legacy ownership before the Agent cascade.
           await tx.execute(runFreeAgentDeleteSql(orgId, agentIds));
           const [lateAgent] = await tx
             .select({ id: agents.id })
@@ -285,6 +275,17 @@ const deleteClerkOrganizationLifecycleData$ = command(
           )) {
             await tx.execute(statement);
           }
+        }
+        // Agent's SET NULL FK can clear a late Run's direct binding while its
+        // DELETE waits. Immutable org ownership still identifies that Run in
+        // this fresh snapshot, so retry instead of acknowledging partial erasure.
+        const [lateRun] = await tx
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(eq(agentRuns.orgId, orgId))
+          .limit(1);
+        if (lateRun) {
+          throwLateRunConversation();
         }
         return receipt;
       }),
