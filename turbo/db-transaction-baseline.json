@@ -970,11 +970,6 @@
       "id": "TX-0432",
       "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
       "owner": "<module>"
-    },
-    {
-      "id": "TX-0433",
-      "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
-      "owner": "<module>"
     }
   ]
 }
