@@ -33,7 +33,18 @@ function builtInTemplate(index = 0) {
 }
 
 function detailGroup(title: string): HTMLElement {
-  return screen.getByRole("group", { name: `${title} slide preview` });
+  const preview = Array.from(
+    document.querySelectorAll<HTMLElement>('[role="group"]'),
+  ).find((group) => {
+    return (
+      group.getAttribute("aria-label") === `${title} slide preview` &&
+      !group.closest('[aria-hidden="true"], [hidden], [inert]')
+    );
+  });
+  if (!preview) {
+    throw new Error(`Expected the ${title} slide preview`);
+  }
+  return preview;
 }
 
 async function openPresentationThemePreview() {
@@ -56,8 +67,10 @@ async function openPresentationThemePreview() {
     throw new Error("The saved presentation template has no edit control");
   }
   click(edit);
-  await screen.findByRole("dialog");
-  click(screen.getByLabelText(`Preview ${template.title} at current slide`));
+  const dialog = await screen.findByRole("dialog");
+  click(
+    within(dialog).getByLabelText(`Preview ${template.title} at current slide`),
+  );
   await waitFor(() => {
     expect(detailGroup(template.title)).toBeInTheDocument();
   });
@@ -66,18 +79,16 @@ async function openPresentationThemePreview() {
     template,
     user,
     drafts,
+    dialog,
     detail: detailGroup(template.title),
   };
 }
 
 test("Select a presentation theme from its preview", async () => {
-  const { capture, template, drafts } = await openPresentationThemePreview();
-  click(screen.getByLabelText("Select style Deep dive"));
-  click(
-    within(screen.getByRole("dialog")).getByLabelText(
-      `Select template ${template.title}`,
-    ),
-  );
+  const { capture, template, drafts, dialog } =
+    await openPresentationThemePreview();
+  click(within(dialog).getByLabelText("Select style Deep dive"));
+  click(within(dialog).getByLabelText(`Select template ${template.title}`));
   await expectInlineTemplate(template.title);
   await waitFor(() => {
     expect(drafts).toContainEqual(

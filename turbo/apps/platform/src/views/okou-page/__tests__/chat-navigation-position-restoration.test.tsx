@@ -368,17 +368,18 @@ async function waitForInteractiveThread(
   title: string,
   text: string,
 ): Promise<void> {
-  await waitFor(() => {
+  const { section, link } = await waitFor(() => {
     const section = threadSection(threadId);
     const link = sidebarThreadLink(threadId, title);
-    expect(section).toBeVisible();
     expect(section).toHaveTextContent(text);
     expect(section.querySelector('[role="textbox"]')).toHaveAccessibleName(
       "Message",
     );
-    expect(link).toBeVisible();
     expect(link).toHaveAttribute("aria-current", "page");
+    return { section, link };
   });
+  expect(section).toBeVisible();
+  expect(link).toBeVisible();
 }
 
 async function chooseReadingPosition(

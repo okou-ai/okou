@@ -244,9 +244,17 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       context: refreshedContext,
       path: RUN_PATH,
     });
-    const originalComposer = await screen.findByRole("textbox", {
-      name: "Message",
+    const originalComposer = await waitFor(() => {
+      const composer = document.querySelector<HTMLElement>(
+        '[role="textbox"][aria-label="Message"]',
+      );
+      expect(composer).toBeInTheDocument();
+      if (!composer) {
+        throw new Error("Expected the restored message composer");
+      }
+      return composer;
     });
+    expect(originalComposer).toHaveAccessibleName("Message");
     const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
     await findEnabledButton("Retry", dialog);
     return { dialog, originalComposer };

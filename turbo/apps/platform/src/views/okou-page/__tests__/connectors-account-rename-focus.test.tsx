@@ -538,8 +538,9 @@ test("Finish a saved rename after an intermediate account search is superseded",
   const user = userEvent.setup({ delay: null });
   await setupPage({ context, path: "/connectors?keywords=github" });
   const manager = await openManager(user);
-  await enterRename(user, manager, "keyboard");
-  await user.keyboard("{Control>}a{/Control}Research{Enter}");
+  const input = await enterRename(user, manager, "keyboard");
+  await fill(input, "Research");
+  await user.keyboard("{Enter}");
   await fixture.refreshStarted;
   const search = within(manager).getByPlaceholderText("Find accounts");
   await user.click(search);
