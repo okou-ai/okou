@@ -11,7 +11,7 @@ import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { safeSync } from "../utils";
 import { inspectVncRsaPublicKey } from "../services/vnc-rsa-key.utils";
-import { authRoute } from "../auth/auth-route";
+import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { clerk$ } from "../external/clerk";
@@ -46,12 +46,6 @@ const invalidInput = Object.freeze(
     "Invalid VNC configuration",
   ),
 );
-const ownerAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  accept: ["session"],
-} as const;
-
 const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
@@ -313,42 +307,42 @@ const inspectRsaKey$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const vncConnectionsRoutes: readonly RouteEntry[] = [
   {
     route: vncConnectionsContract.inspectRsaKey,
-    handler: authRoute(ownerAuth, inspectRsaKey$),
+    handler: remoteControlOwnerRoute("connector:read", inspectRsaKey$),
   },
   {
     route: vncCredentialsContract.list,
-    handler: authRoute(ownerAuth, listCredentials$),
+    handler: remoteControlOwnerRoute("connector:read", listCredentials$),
   },
   {
     route: vncCredentialsContract.create,
-    handler: authRoute(ownerAuth, createCredential$),
+    handler: remoteControlOwnerRoute("connector:write", createCredential$),
   },
   {
     route: vncCredentialsContract.update,
-    handler: authRoute(ownerAuth, updateCredential$),
+    handler: remoteControlOwnerRoute("connector:write", updateCredential$),
   },
   {
     route: vncCredentialsContract.delete,
-    handler: authRoute(ownerAuth, deleteCredential$),
+    handler: remoteControlOwnerRoute("connector:write", deleteCredential$),
   },
   {
     route: vncConnectionsContract.list,
-    handler: authRoute(ownerAuth, listConnections$),
+    handler: remoteControlOwnerRoute("connector:read", listConnections$),
   },
   {
     route: vncConnectionsContract.summary,
-    handler: authRoute(ownerAuth, summary$),
+    handler: remoteControlOwnerRoute("connector:read", summary$),
   },
   {
     route: vncConnectionsContract.create,
-    handler: authRoute(ownerAuth, createConnection$),
+    handler: remoteControlOwnerRoute("connector:write", createConnection$),
   },
   {
     route: vncConnectionsContract.update,
-    handler: authRoute(ownerAuth, updateConnection$),
+    handler: remoteControlOwnerRoute("connector:write", updateConnection$),
   },
   {
     route: vncConnectionsContract.delete,
-    handler: authRoute(ownerAuth, deleteConnection$),
+    handler: remoteControlOwnerRoute("connector:write", deleteConnection$),
   },
 ];

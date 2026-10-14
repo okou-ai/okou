@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  RemoteControlCliManagement = "remoteControlCliManagement",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",

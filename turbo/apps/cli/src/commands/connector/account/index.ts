@@ -2,9 +2,21 @@ import { Command } from "commander";
 
 import { listConnectorAccountsCommand } from "./list";
 import { switchConnectorAccountRequestCommand } from "./switch-request";
+import {
+  showConnectorAccountCommand,
+  updateConnectorAccountCommand,
+  setDefaultConnectorAccountCommand,
+  connectorAccountImpactCommand,
+  deleteConnectorAccountCommand,
+} from "./manage";
 
 export const connectorAccountCommand = new Command()
   .name("account")
-  .description("Inspect connector accounts")
+  .description("Inspect and manage member connector accounts")
+  .addCommand(showConnectorAccountCommand)
+  .addCommand(updateConnectorAccountCommand)
+  .addCommand(setDefaultConnectorAccountCommand)
+  .addCommand(connectorAccountImpactCommand)
+  .addCommand(deleteConnectorAccountCommand)
   .addCommand(listConnectorAccountsCommand)
   .addCommand(switchConnectorAccountRequestCommand);

@@ -71,6 +71,7 @@ const connectorReadAuth = {
 const connectorWriteAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
+  requiredCapability: "connector:write",
 } as const;
 
 function connectorUnavailable(connectorSlug: string) {

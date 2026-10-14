@@ -163,8 +163,8 @@ describe("registerCommands", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(["vnc:read", "vnc:write"])(
-    "shows VNC discovery with %s capability",
+  it.each(["vnc:read", "vnc:write", "connector:read", "connector:write"])(
+    "shows VNC execution or management with %s capability",
     (capability) => {
       vi.stubEnv(
         "OKOU_TOKEN",
@@ -178,18 +178,50 @@ describe("registerCommands", () => {
   );
 
   it.each([
-    undefined,
-    "personal-token",
     buildOkouToken({ scope: "okou", capabilities: [] }),
     buildOkouToken({ scope: "okou", capabilities: ["ssh:read", "ssh:write"] }),
-  ])("hides VNC discovery without its Run capability (%s)", (token) => {
-    vi.stubEnv("OKOU_TOKEN", token);
-    const prog = new Command();
-    registerCommands(prog, [new Command("vnc")]);
+  ])(
+    "hides VNC without execution or management Run capabilities (%s)",
+    (token) => {
+      vi.stubEnv("OKOU_TOKEN", token);
+      const prog = new Command();
+      registerCommands(prog, [new Command("vnc")]);
 
-    expect(registeredCommandNames(prog)).toContain("vnc");
-    expect(hiddenCommandNames(prog)).toContain("vnc");
-  });
+      expect(registeredCommandNames(prog)).toContain("vnc");
+      expect(hiddenCommandNames(prog)).toContain("vnc");
+    },
+  );
+
+  it.each([undefined, "personal-token"])(
+    "shows owned configuration commands outside a Run (%s)",
+    (token) => {
+      vi.stubEnv("OKOU_TOKEN", token);
+      const prog = new Command();
+      registerCommands(prog, [
+        new Command("ssh"),
+        new Command("vnc"),
+        new Command("remote-control"),
+      ]);
+      expect(visibleCommandNames(prog)).toEqual([
+        "ssh",
+        "vnc",
+        "remote-control",
+      ]);
+    },
+  );
+
+  it.each(["connector:read", "connector:write"])(
+    "shows private-network management with %s",
+    (capability) => {
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({ scope: "okou", capabilities: [capability] }),
+      );
+      const prog = new Command();
+      registerCommands(prog, [new Command("remote-control")]);
+      expect(visibleCommandNames(prog)).toEqual(["remote-control"]);
+    },
+  );
 
   it("should register globally enabled commands when OKOU_TOKEN is absent", () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
