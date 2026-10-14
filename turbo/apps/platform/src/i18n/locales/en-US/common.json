@@ -2058,8 +2058,10 @@
       "unavailableSsh": "unavailable SSH host"
     },
     "resources": {
+      "collapse": "Collapse",
       "copyLink": "Copy link",
       "empty": "No artifacts or links in this chat yet",
+      "expand": "Expand",
       "links": "Links",
       "loadFailed": "Could not load resources",
       "retry": "Try again",

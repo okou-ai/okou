@@ -2100,8 +2100,10 @@
       "unavailableSsh": "host SSH non disponibile"
     },
     "resources": {
+      "collapse": "Comprimi",
       "copyLink": "Copia link",
       "empty": "Questa chat non contiene ancora artefatti o link",
+      "expand": "Espandi",
       "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
       "retry": "Riprova",

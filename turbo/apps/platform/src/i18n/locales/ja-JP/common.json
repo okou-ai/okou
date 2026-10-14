@@ -2049,8 +2049,10 @@
       "unavailableSsh": "利用できない SSH ホスト"
     },
     "resources": {
+      "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "empty": "このチャットにはまだアーティファクトやリンクがありません",
+      "expand": "展開",
       "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
       "retry": "再試行",

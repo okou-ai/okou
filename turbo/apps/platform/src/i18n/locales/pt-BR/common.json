@@ -2100,8 +2100,10 @@
       "unavailableSsh": "host SSH indisponível"
     },
     "resources": {
+      "collapse": "Recolher",
       "copyLink": "Copiar link",
       "empty": "Esta conversa ainda não tem artefatos ou links",
+      "expand": "Expandir",
       "links": "Links",
       "loadFailed": "Não foi possível carregar os recursos",
       "retry": "Tentar novamente",

@@ -2058,8 +2058,10 @@
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
     "resources": {
+      "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
+      "expand": "Ausklappen",
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "retry": "Erneut versuchen",

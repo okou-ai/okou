@@ -2100,8 +2100,10 @@
       "unavailableSsh": "hôte SSH indisponible"
     },
     "resources": {
+      "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "empty": "Ce chat ne contient pas encore d’artéfacts ni de liens",
+      "expand": "Développer",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
       "retry": "Réessayer",
