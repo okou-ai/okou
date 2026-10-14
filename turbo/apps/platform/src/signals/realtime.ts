@@ -12,7 +12,16 @@ import type {
 } from "ably";
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import type { SharedDatabaseRealtimeScope } from "../shared-database/protocol.ts";
-import { createAblyRealtime, type AblyRealtime } from "../lib/ably-realtime.ts";
+import {
+  createAblyRealtime,
+  observeAblyChannel,
+  type AblyRealtime,
+} from "../lib/ably-realtime.ts";
+import {
+  createAuthDiagnosticId,
+  type AuthDiagnosticContext,
+} from "../lib/auth-diagnostics.ts";
+import { apiClientRuntime$ } from "./api-client-runtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { createAblyAuthCallback } from "../lib/ably-auth.ts";
@@ -666,9 +675,12 @@ function createRealtimeSubscriptionChannel(
 function createSessionOutputSubscriptionChannel(
   ably: AblyRealtime,
   identity: { userId: string; orgId: string },
+  diagnostic: AuthDiagnosticContext,
+  ownerSignal: AbortSignal,
 ): RealtimeSubscriptionChannel {
   interface Entry {
     channel: RealtimeChannel;
+    stopDiagnostics: () => void;
     callbacks: Map<ChannelCallback, (message: InboundMessage) => void>;
     detaching?: Promise<void>;
   }
@@ -685,7 +697,17 @@ function createSessionOutputSubscriptionChannel(
       );
       let entry = entries.get(name);
       if (!entry) {
-        entry = { channel: ably.channels.get(name), callbacks: new Map() };
+        const channel = ably.channels.get(name);
+        entry = {
+          channel,
+          callbacks: new Map(),
+          stopDiagnostics: observeAblyChannel(
+            channel,
+            "run-output",
+            diagnostic,
+            ownerSignal,
+          ),
+        };
         entries.set(name, entry);
       }
       const listener = (message: InboundMessage) => {
@@ -721,6 +743,7 @@ function createSessionOutputSubscriptionChannel(
         entry.detaching = undefined;
       });
       if (entry.callbacks.size === 0 && entries.get(name) === entry) {
+        entry.stopDiagnostics();
         ably.channels.release(name);
         entries.delete(name);
       }
@@ -824,6 +847,7 @@ function whenChannelAttached(
 }
 
 interface ConnectedRealtimeClient {
+  readonly diagnostic: AuthDiagnosticContext;
   readonly identity: { userId: string; orgId: string };
   readonly ably: AblyRealtime;
   readonly channels: ConnectedRealtimeChannels;
@@ -834,13 +858,28 @@ const connectRealtimeClient$ = command(
     const identity = await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
     const createClient = get(apiClient$);
-    const client = createClient(platformRealtimeTokenContract);
-    const ably = createAblyRealtime({
-      // See lib/ably-auth.ts for why every invocation must fetch a fresh
-      // token.
-      authCallback: createAblyAuthCallback(client, signal),
-      autoConnect: true,
-    });
+    const diagnostic: AuthDiagnosticContext = {
+      ...get(apiClientRuntime$).authDiagnosticContext,
+      realtimeInstanceId: createAuthDiagnosticId(),
+    };
+    const ably = createAblyRealtime(
+      {
+        // See lib/ably-auth.ts for why every invocation must fetch a fresh
+        // token.
+        authCallback: createAblyAuthCallback(
+          (authDiagnosticContext) => {
+            return createClient(platformRealtimeTokenContract, {
+              authDiagnosticContext,
+            });
+          },
+          diagnostic,
+          signal,
+        ),
+        autoConnect: true,
+      },
+      diagnostic,
+      signal,
+    );
 
     let closed = false;
     const closeConnection = (): void => {
@@ -880,9 +919,12 @@ const connectRealtimeClient$ = command(
       identity.userId,
       identity.orgId,
     );
+    observeAblyChannel(channels.credential, "credential", diagnostic, signal);
+    observeAblyChannel(channels.user, "user", diagnostic, signal);
+    observeAblyChannel(channels.org, "org", diagnostic, signal);
     await attachRealtimeChannels(channels);
     signal.throwIfAborted();
-    return { ably, channels, identity };
+    return { ably, channels, identity, diagnostic };
   },
 );
 
@@ -922,6 +964,8 @@ const initializeRealtime$ = command(
       "run-output": createSessionOutputSubscriptionChannel(
         connected.ably,
         connected.identity,
+        connected.diagnostic,
+        signal,
       ),
       credential: createRealtimeSubscriptionChannel(
         connected.channels.credential,

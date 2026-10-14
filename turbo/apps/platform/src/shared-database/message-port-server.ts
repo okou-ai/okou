@@ -1,4 +1,8 @@
 import type { Store } from "ccstate";
+import {
+  recordAuthDiagnostic,
+  type AuthDiagnosticContext,
+} from "../lib/auth-diagnostics.ts";
 
 import {
   clientTelemetryOutcomeForError,
@@ -61,6 +65,7 @@ type RealtimeUnsubscribeMessage = Extract<
 >;
 
 interface PendingTokenRequest {
+  readonly diagnostic: AuthDiagnosticContext;
   readonly reject: (reason: unknown) => void;
   readonly resolve: (token: string | null) => void;
 }
@@ -206,6 +211,7 @@ export class SharedDatabaseMessagePortServer {
   }
 
   private readonly requestToken: SharedDatabaseTokenProvider = (
+    diagnostic,
     callerSignal,
   ) => {
     const registeredSignal = this.registeredSignal;
@@ -220,6 +226,14 @@ export class SharedDatabaseMessagePortServer {
     signal.throwIfAborted();
     const deferred = createDeferredPromise<string | null>(signal);
     const requestId = crypto.randomUUID();
+    if (diagnostic) {
+      diagnostic.tokenAttemptId = requestId;
+    }
+    const attempt: AuthDiagnosticContext = {
+      ...diagnostic,
+      tokenAttemptId: requestId,
+      connectionId: this.connectionId,
+    };
     const abort = () => {
       this.pendingTokenRequests.delete(requestId);
     };
@@ -232,6 +246,7 @@ export class SharedDatabaseMessagePortServer {
       };
     };
     this.pendingTokenRequests.set(requestId, {
+      diagnostic: attempt,
       reject: finish(deferred.reject),
       resolve: finish(deferred.resolve),
     });
@@ -252,6 +267,11 @@ export class SharedDatabaseMessagePortServer {
     return onRejection(
       async () => {
         const started = report("started");
+        recordAuthDiagnostic({
+          stage: "tab_token_requested",
+          context: attempt,
+          outcome: "started",
+        });
         this.emit({ type: "get-token", requestId });
         await started;
         const token = await deferred.promise;
@@ -266,6 +286,17 @@ export class SharedDatabaseMessagePortServer {
 
   private finishTokenRequest(message: TokenResponseMessage): void {
     const pending = this.pendingTokenRequests.get(message.requestId);
+    recordAuthDiagnostic({
+      stage: "worker_token_received",
+      context: pending?.diagnostic ?? {
+        tokenAttemptId: message.requestId,
+        connectionId: this.connectionId,
+      },
+      accepted: pending !== undefined,
+      ...(message.type === "token-result"
+        ? { token: message.token }
+        : { outcome: "error" }),
+    });
     if (!pending) {
       return;
     }

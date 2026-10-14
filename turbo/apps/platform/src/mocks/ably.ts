@@ -324,6 +324,8 @@ export class Realtime {
   readonly connection: {
     state: MockConnectionState;
     once: (event: string, callback: ConnectionEventListener) => void;
+    on: (callback: ConnectionEventListener) => void;
+    off: (callback: ConnectionEventListener) => void;
   };
   readonly channels: {
     release: (name: string) => void;
@@ -336,12 +338,19 @@ export class Realtime {
   private readonly channelsByName = new Map<string, FakeChannel>();
   private readonly authController = new AbortController();
 
+  private readonly connectionListeners = new Set<ConnectionEventListener>();
   private readonly connectedOnceListeners = new Set<ConnectionEventListener>();
   private readonly failedOnceListeners = new Set<ConnectionEventListener>();
 
   constructor(config?: { authCallback?: AuthCallback }) {
     this.connection = {
       state: "connecting",
+      on: (callback) => {
+        this.connectionListeners.add(callback);
+      },
+      off: (callback) => {
+        this.connectionListeners.delete(callback);
+      },
       once: (event, callback) => {
         if (event === "connected") {
           if (this.connection.state === "connected") {
@@ -415,6 +424,7 @@ export class Realtime {
     this.transition("closed");
     this.connectedOnceListeners.clear();
     this.failedOnceListeners.clear();
+    this.connectionListeners.clear();
     realtimeInstances.delete(this);
   }
 
@@ -498,6 +508,9 @@ export class Realtime {
     const previous = this.connection.state;
     this.connection.state = state;
     const stateChange = { current: state, previous, reason, retryIn };
+    for (const listener of this.connectionListeners) {
+      listener(stateChange);
+    }
     if (state === "connected") {
       for (const listener of this.connectedOnceListeners) {
         listener(stateChange);
