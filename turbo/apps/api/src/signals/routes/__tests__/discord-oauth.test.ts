@@ -1094,7 +1094,7 @@ describe("Discord product OAuth", () => {
         `${API}/guilds/:guildId/members/${f.discordUserId}`,
         async ({ params }) => {
           guilds.add(String(params.guildId));
-          if (guilds.size === 2) {
+          if (guilds.size === 2 && !ready.settled()) {
             ready.resolve();
           }
           await ready.promise;
@@ -1110,7 +1110,23 @@ describe("Discord product OAuth", () => {
       { status: 200, body: { status: "connected" } },
       { status: 200, body: { status: "connected" } },
     ]);
-    expect((await status(owner)).dmBindings).toHaveLength(1);
+    const connected = await status(owner);
+    expect(connected.dmBindings).toHaveLength(1);
+    expect(f.messages).toHaveLength(1);
+    expect((await finish(f, await start(owner, "install"))).status).toBe(
+      "connected",
+    );
+    const reconnected = await status(owner);
+    expect(reconnected.guildId).toBe(f.guildId);
+    expect(
+      reconnected.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    ).toStrictEqual(
+      connected.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    );
     expect(f.messages).toHaveLength(1);
     expect((await complete(first)).status).toBe(400);
     expect((await complete(second)).status).toBe(400);
