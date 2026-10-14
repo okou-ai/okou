@@ -111,7 +111,7 @@ function AccountMenuSubscriptionsSkeleton() {
     <div className="flex flex-col gap-3" aria-hidden="true">
       {ACCOUNT_MENU_SUBSCRIPTION_PROVIDERS.map((provider) => {
         return (
-          <div key={provider.type} className="flex flex-col gap-1.5">
+          <div key={provider.type} className="flex flex-col gap-2">
             <div className="flex h-5 items-center">
               <div className="h-3 w-28 animate-skeleton-pulse rounded bg-skeleton" />
             </div>
@@ -162,7 +162,7 @@ function AccountMenuSubscriptionProviderSection({
 
   return (
     <section
-      className="flex flex-col gap-1.5"
+      className="flex flex-col gap-2"
       aria-label={t(
         ($) => {
           return $.settings.accountMenu.subscriptions.usage;
@@ -210,7 +210,12 @@ function AccountMenuSubscriptionProviderSection({
   );
 }
 
-/** Muted at rest; it turns foreground once the plan runs low, when it matters. */
+/**
+ * Muted at rest; it turns foreground once the plan runs low, when it matters.
+ * The menu item keeps the 36px row floor as its hit target and gives the
+ * heading back the height through its negative block margin; the section's
+ * 8px gap keeps that target clear of the meter row below.
+ */
 function AccountMenuCodexResetControl({
   resetControl,
   emphasized,
@@ -235,7 +240,7 @@ function AccountMenuCodexResetControl({
     return (
       <CodexResetCreditsMenuItem
         className={cn(
-          "-my-1 -me-1 ml-auto min-h-7 text-xs",
+          "-my-2 -me-1 ml-auto text-xs",
           emphasized && "text-foreground",
         )}
         resetCredits={resetCredits}
