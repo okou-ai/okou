@@ -152,14 +152,15 @@ async fn both_directions_order_and_half_close() {
     let _registration = fixture.register(&registry, run, "sandbox-a", &CancellationToken::new());
     let mut guest = fixture.guest("sandbox-a").await;
     let mut channel = registry.open(run).await.unwrap();
-    channel.send(b"one").await.unwrap();
+    let opaque = vec![0xA5; MAX_FRAME_BYTES];
+    channel.send(&opaque).await.unwrap();
     channel.send(b"two").await.unwrap();
     channel.finish_send().await.unwrap();
     assert_eq!(
         channel.send(b"late").await.err().unwrap().kind(),
         io::ErrorKind::BrokenPipe
     );
-    for expected in [b"one".as_slice(), b"two".as_slice()] {
+    for expected in [opaque.as_slice(), b"two".as_slice()] {
         let mut header = [0u8; 4];
         guest.read_exact(&mut header).await.unwrap();
         let mut body = vec![0; u32::from_be_bytes(header) as usize];
@@ -168,10 +169,13 @@ async fn both_directions_order_and_half_close() {
     }
     let mut end = [0u8; 1];
     assert_eq!(guest.read(&mut end).await.unwrap(), 0);
-    guest.write_all(&3u32.to_be_bytes()).await.unwrap();
-    guest.write_all(b"ack").await.unwrap();
+    guest
+        .write_all(&(opaque.len() as u32).to_be_bytes())
+        .await
+        .unwrap();
+    guest.write_all(&opaque).await.unwrap();
     guest.shutdown().await.unwrap();
-    assert_eq!(channel.recv().await.unwrap(), Some(b"ack".to_vec()));
+    assert_eq!(channel.recv().await.unwrap(), Some(opaque));
     assert_eq!(channel.recv().await.unwrap(), None);
 }
 

@@ -2,15 +2,13 @@
 //! Started by guest-init in its existing PID 2 child; no separate daemon.
 //! No exec, file, chat, SSH or VNC method is interpreted here.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use guest_contracts::private_duplex::{
-    ACTIVATE, ACTIVATED, MAX_FRAME_BYTES, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT,
-};
+use guest_contracts::private_duplex::{ACTIVATE, MAX_STREAMS_PER_RUN, READY, VSOCK_PORT};
 const RETRY: Duration = Duration::from_millis(100);
 // Bound a stalled ingress acknowledgement so the only pending Guest worker
 // can close this attempt and retry. Runner and Guest ship as one artifact.
@@ -40,10 +38,10 @@ pub(super) fn run() {
                 }
                 if start_worker(stream, &active, |stream, count| {
                     std::thread::Builder::new()
-                        .name("gdup-echo".into())
+                        .name("gdup-channel".into())
                         .spawn(move || {
                             let _count = count;
-                            let _ = serve_echo(stream);
+                            let _ = guest_channel_server::run(stream);
                         })
                 })
                 .is_err()
@@ -133,44 +131,59 @@ fn await_activation(stream: &mut UnixStream, ack_timeout: Duration) -> io::Resul
     Ok(())
 }
 
-/// Finite frame buffer and per-direction ordered, backpressured echo. EOF of
-/// the inbound direction sends EOF outward; malformed/oversized frames close the stream.
-fn serve_echo(mut stream: UnixStream) -> io::Result<()> {
-    let mut data = Vec::new();
-    data.try_reserve_exact(MAX_FRAME_BYTES)
-        .map_err(|error| io::Error::new(io::ErrorKind::OutOfMemory, error))?;
-    data.resize(MAX_FRAME_BYTES, 0);
-    // A successful ACTIVATE write on the host is not worker readiness. Confirm
-    // only from this running worker, after its bounded frame buffer is initialized.
-    stream.write_all(&[ACTIVATED])?;
-    loop {
-        let mut header = [0u8; 4];
-        if stream.read(&mut header[..1])? == 0 {
-            return stream.shutdown(std::net::Shutdown::Write);
-        }
-        stream.read_exact(&mut header[1..])?;
-        let size = u32::from_be_bytes(header) as usize;
-        if size > MAX_FRAME_BYTES {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "guest frame too large",
-            ));
-        }
-        let payload = data
-            .get_mut(..size)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "guest frame too large"))?;
-        stream.read_exact(payload)?;
-        stream.write_all(&header)?;
-        stream.write_all(payload)?;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use guest_contracts::{
+        private_duplex::{ACTIVATED, MAX_FRAME_BYTES},
+        sandbox_channel::{Message, decode_message},
+    };
+    use std::io::Write;
+
+    fn send(host: &mut UnixStream, frame: &str) {
+        host.write_all(&(frame.len() as u32).to_be_bytes()).unwrap();
+        host.write_all(frame.as_bytes()).unwrap();
+    }
+    fn receive(host: &mut UnixStream) -> Message {
+        let mut header = [0; 4];
+        host.read_exact(&mut header).unwrap();
+        let mut frame = vec![0; u32::from_be_bytes(header) as usize];
+        host.read_exact(&mut frame).unwrap();
+        decode_message(&frame).unwrap()
+    }
+    fn hello(host: &mut UnixStream) {
+        send(
+            host,
+            r#"{"schemaVersion":1,"type":"hello","id":"00000000-0000-4000-8000-000000000001","categories":{"diagnostics":1}}"#,
+        );
+        match receive(host) {
+            Message::Response {
+                request_id,
+                result: Some(result),
+                error: None,
+                ..
+            } => {
+                assert_eq!(request_id, "00000000-0000-4000-8000-000000000001");
+                assert_eq!(
+                    result
+                        .get("categories")
+                        .unwrap()
+                        .get("diagnostics")
+                        .unwrap()
+                        .as_u64(),
+                    Some(1)
+                );
+                assert!(result.get("categories").unwrap().get("fs").is_none());
+            }
+            other => panic!("invalid hello result: {other:?}"),
+        }
+        assert!(matches!(receive(host), Message::Event { event, .. } if event == "notice"));
+    }
+
     #[test]
     fn dedicated_ingress_acknowledges_before_assignment_activation() {
         let (mut guest, mut host) = UnixStream::pair().unwrap();
+        host.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         let active = Arc::new(AtomicUsize::new(0));
         let count = Arc::clone(&active);
         let worker = std::thread::spawn(move || {
@@ -178,23 +191,20 @@ mod tests {
             start_worker(guest, &count, |stream, count| {
                 Ok(std::thread::spawn(move || {
                     let _count = count;
-                    serve_echo(stream).unwrap();
+                    guest_channel_server::run(stream).unwrap();
                 }))
             })
             .unwrap()
             .join()
             .unwrap();
         });
-        host.write_all(&[READY]).unwrap();
-        host.write_all(&[ACTIVATE]).unwrap();
+        host.write_all(&[READY, ACTIVATE]).unwrap();
         let mut ready = [0];
         host.read_exact(&mut ready).unwrap();
         assert_eq!(ready, [ACTIVATED]);
-        host.write_all(b"\0\0\0\x03one").unwrap();
+        hello(&mut host);
         host.shutdown(std::net::Shutdown::Write).unwrap();
-        let mut echo = [0; 7];
-        host.read_exact(&mut echo).unwrap();
-        assert_eq!(&echo, b"\0\0\0\x03one");
+        assert_eq!(host.read(&mut [0]).unwrap(), 0);
         worker.join().unwrap();
         assert_eq!(active.load(Ordering::Acquire), 0);
     }
@@ -226,37 +236,55 @@ mod tests {
     }
 
     #[test]
-    fn echo_preserves_order_and_half_close() {
+    fn diagnostics_preserve_correlations_and_half_close() {
         let (mut host, guest) = UnixStream::pair().unwrap();
-        let worker = std::thread::spawn(move || serve_echo(guest));
+        host.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let worker = std::thread::spawn(move || guest_channel_server::run(guest));
         let mut ready = [0];
         host.read_exact(&mut ready).unwrap();
         assert_eq!(ready, [ACTIVATED]);
-        for frame in [b"first".as_slice(), b"second".as_slice()] {
-            host.write_all(&(frame.len() as u32).to_be_bytes()).unwrap();
-            host.write_all(frame).unwrap();
+        hello(&mut host);
+        for (index, payload) in [(2, "Zmlyc3Q="), (3, "c2Vjb25k")] {
+            send(
+                &mut host,
+                &format!(
+                    r#"{{"schemaVersion":1,"type":"request","id":"00000000-0000-4000-8000-{index:012x}","category":"diagnostics","categoryVersion":1,"operation":"echo","params":{{"payload":"{payload}"}}}}"#
+                ),
+            );
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..2 {
+            match receive(&mut host) {
+                Message::Response {
+                    request_id,
+                    result: Some(result),
+                    error: None,
+                    ..
+                } => {
+                    let expected = match request_id.as_str() {
+                        "00000000-0000-4000-8000-000000000002" => "Zmlyc3Q=",
+                        "00000000-0000-4000-8000-000000000003" => "c2Vjb25k",
+                        _ => panic!("unowned response"),
+                    };
+                    assert_eq!(result.get("payload").unwrap().as_str(), Some(expected));
+                    assert!(seen.insert(request_id));
+                }
+                other => panic!("invalid echo result: {other:?}"),
+            }
         }
         host.shutdown(std::net::Shutdown::Write).unwrap();
-        for frame in [b"first".as_slice(), b"second".as_slice()] {
-            let mut header = [0u8; 4];
-            host.read_exact(&mut header).unwrap();
-            let mut bytes = vec![0u8; u32::from_be_bytes(header) as usize];
-            host.read_exact(&mut bytes).unwrap();
-            assert_eq!(bytes, frame);
-        }
-        let mut end = [0u8];
-        assert_eq!(host.read(&mut end).unwrap(), 0);
+        assert_eq!(host.read(&mut [0]).unwrap(), 0);
         worker.join().unwrap().unwrap();
     }
 
     #[test]
-    fn truncated_frames_are_rejected_without_echoing_partial_data() {
+    fn truncated_frames_are_rejected_without_partial_output() {
         for truncated in [b"\0\0".as_slice(), b"\0\0\0\x03xy".as_slice()] {
             let (mut host, guest) = UnixStream::pair().unwrap();
             host.write_all(truncated).unwrap();
             host.shutdown(std::net::Shutdown::Write).unwrap();
             assert_eq!(
-                serve_echo(guest).unwrap_err().kind(),
+                guest_channel_server::run(guest).unwrap_err().kind(),
                 io::ErrorKind::UnexpectedEof
             );
             let mut ready = [0];
@@ -267,12 +295,12 @@ mod tests {
     }
 
     #[test]
-    fn oversized_frame_is_rejected() {
+    fn oversized_frame_is_rejected_before_payload_allocation() {
         let (mut host, guest) = UnixStream::pair().unwrap();
         host.write_all(&((MAX_FRAME_BYTES + 1) as u32).to_be_bytes())
             .unwrap();
         assert_eq!(
-            serve_echo(guest).unwrap_err().kind(),
+            guest_channel_server::run(guest).unwrap_err().kind(),
             io::ErrorKind::InvalidData
         );
     }

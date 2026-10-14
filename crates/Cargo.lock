@@ -2074,6 +2074,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "guest-channel-server"
+version = "0.1.0"
+dependencies = [
+ "api-contracts",
+ "base64 0.23.1",
+ "futures-util",
+ "getrandom 0.4.3",
+ "guest-contracts",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "uuid",
+]
+
+[[package]]
 name = "guest-contracts"
 version = "0.23.1"
 dependencies = [
@@ -2167,6 +2183,7 @@ dependencies = [
 name = "guest-init"
 version = "0.18.13"
 dependencies = [
+ "guest-channel-server",
  "guest-contracts",
  "guest-control-server",
  "guest-home-mount",
@@ -4806,6 +4823,7 @@ name = "sandbox-firecracker"
 version = "0.48.6"
 dependencies = [
  "async-trait",
+ "base64 0.23.1",
  "clap",
  "futures-util",
  "guest-contracts",

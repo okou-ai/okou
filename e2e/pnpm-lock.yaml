@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@okouai/api-contracts>@okouai/connectors': file:../turbo/packages/connectors
+
 importers:
 
   .:
@@ -18,6 +21,9 @@ importers:
         specifier: ^18.0.7
         version: 18.0.7
     devDependencies:
+      '@okouai/api-contracts':
+        specifier: file:../turbo/packages/api-contracts
+        version: file:../turbo/packages/api-contracts
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.2
@@ -189,6 +195,12 @@ packages:
     cpu: [x64]
     os: [win32]
 
+  '@okouai/api-contracts@file:../turbo/packages/api-contracts':
+    resolution: {directory: ../turbo/packages/api-contracts, type: directory}
+
+  '@okouai/connectors@file:../turbo/packages/connectors':
+    resolution: {directory: ../turbo/packages/connectors, type: directory}
+
   '@playwright/test@1.64.0':
     resolution: {integrity: sha512-oTN9FNYuN6bqQMwiho6jJKLCG2/QOYCixGXuCjRmzOq23eODeukuY2XiAVoVpAECbuezMt1MHQjAiQxK8F+Y+g==}
     engines: {node: '>=20'}
@@ -345,6 +357,14 @@ packages:
     engines: {node: '>=20'}
     hasBin: true
 
+  punycode@2.3.1:
+    resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
+    engines: {node: '>=6'}
+
+  tr46@5.1.1:
+    resolution: {integrity: sha512-hdF5ZgjTqgAntKkklYw0R03MG2x/bSzTtkxmIRw/sTNV8YXsCJ1tfLAX23lhxhHJlEf3CRCOCGGWw3vI3GaSPw==}
+    engines: {node: '>=18'}
+
   tsx@4.23.15:
     resolution: {integrity: sha512-Yiex1Ovn8z2xPpOWckIiysV1SSyRMY9BkLF++q0yKiDxCqRhosKfMg3janKkiLBwZ5c/YryloKwGZcrEmtwxKw==}
     engines: {node: '>=18.0.0'}
@@ -369,6 +389,9 @@ packages:
         optional: true
       utf-8-validate:
         optional: true
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -449,6 +472,16 @@ snapshots:
 
   '@esbuild/win32-x64@0.28.2':
     optional: true
+
+  '@okouai/api-contracts@file:../turbo/packages/api-contracts':
+    dependencies:
+      '@okouai/connectors': file:../turbo/packages/connectors
+      zod: 4.6.7
+
+  '@okouai/connectors@file:../turbo/packages/connectors':
+    dependencies:
+      tr46: 5.1.1
+      zod: 4.6.7
 
   '@playwright/test@1.64.0':
     dependencies:
@@ -562,6 +595,12 @@ snapshots:
     dependencies:
       playwright-core: 1.64.0
 
+  punycode@2.3.1: {}
+
+  tr46@5.1.1:
+    dependencies:
+      punycode: 2.3.1
+
   tsx@4.23.15:
     dependencies:
       esbuild: 0.28.2
@@ -594,3 +633,5 @@ snapshots:
   undici-types@8.9.0: {}
 
   ws@8.22.0: {}
+
+  zod@4.6.7: {}

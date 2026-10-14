@@ -7,11 +7,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { RunnerWssApi } from "./runner-wss-api";
 import { RunnerWssClient } from "./runner-wss-client";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import {
+  decodeSandboxChannelFrame,
+  encodeSandboxChannelFrame,
+  type SandboxChannelMessage,
+} from "@okouai/api-contracts/contracts/sandbox-channel";
+import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const RUNNER = "22222222-2222-4222-8222-222222222222";
@@ -58,6 +65,26 @@ async function peer(
       socket.on("close", () => sockets.delete(socket));
       let admitted = false;
       let echoes = 0;
+      let ready = false;
+      const reverse = new Map<
+        string,
+        Extract<SandboxChannelMessage, { type: "request" }>
+      >();
+      const emit = (message: SandboxChannelMessage) =>
+        socket.send(Buffer.from(encodeSandboxChannelFrame(message)), {
+          binary: true,
+        });
+      const result = (requestId: string, payload: unknown) => {
+        emit({
+          schemaVersion: 1,
+          type: "response",
+          id: randomUUID(),
+          requestId,
+          result: payload,
+        });
+        if (++echoes === 12 && options.extraFrame)
+          socket.send(Buffer.from([99]), { binary: true });
+      };
       socket.on("message", (data, binary) => {
         if (!admitted) {
           assert.equal(binary, false);
@@ -83,11 +110,69 @@ async function peer(
           return;
         }
         assert.equal(binary, true);
-        socket.send(options.corruptEcho ? Buffer.from([99]) : data, {
-          binary: true,
-        });
-        if (++echoes === 6 && options.extraFrame)
-          socket.send(Buffer.from([99]), { binary: true });
+        const frame = Buffer.isBuffer(data)
+          ? data
+          : Array.isArray(data)
+            ? Buffer.concat(data)
+            : Buffer.from(data);
+        const message = decodeSandboxChannelFrame(new Uint8Array(frame).buffer);
+        if (message.type === "hello" && !ready) {
+          ready = true;
+          emit({
+            schemaVersion: 1,
+            type: "response",
+            id: randomUUID(),
+            requestId: message.id,
+            result: { categories: { diagnostics: 1 } },
+          });
+          // Deliberately send the first business frame in the same callback.
+          emit({
+            schemaVersion: 1,
+            type: "event",
+            id: randomUUID(),
+            category: "diagnostics",
+            categoryVersion: 1,
+            event: "notice",
+            data: { message: "ready" },
+          });
+          return;
+        }
+        assert.ok(ready);
+        if (message.type === "event") return;
+        if (message.type === "response") {
+          const pending = reverse.get(message.requestId);
+          assert.ok(pending);
+          reverse.delete(message.requestId);
+          const parsed = sandboxDiagnosticsEchoSchema.parse(message.result);
+          result(
+            pending.id,
+            options.corruptEcho ? { payload: "invalid" } : parsed,
+          );
+          return;
+        }
+        assert.ok(message.type === "request");
+        assert.equal(message.category, "diagnostics");
+        assert.equal(message.categoryVersion, 1);
+        const params = sandboxDiagnosticsEchoSchema.parse(message.params);
+        if (message.operation === "echo")
+          result(
+            message.id,
+            options.corruptEcho ? { payload: "invalid" } : params,
+          );
+        else {
+          assert.equal(message.operation, "peer.echo");
+          const id = randomUUID();
+          reverse.set(id, message);
+          emit({
+            schemaVersion: 1,
+            type: "request",
+            id,
+            category: "diagnostics",
+            categoryVersion: 1,
+            operation: "echo",
+            params,
+          });
+        }
       });
     });
     await new Promise<void>((resolve) =>
@@ -117,8 +202,8 @@ async function peer(
   }
 }
 
-test("corrupt Guest echo fails the protocol verdict", async () => {
-  const fixture = await peer({ corruptEcho: true });
+test("current Guest schema supports reverse RPC, immediate notice and post-replay use", async () => {
+  const fixture = await peer();
   const client = new RunnerWssClient(
     RUN,
     fixture.ticket,
@@ -127,7 +212,10 @@ test("corrupt Guest echo fails the protocol verdict", async () => {
   );
   try {
     await client.connect();
-    await assert.rejects(client.echo(), /Opaque Guest echo mismatch/);
+    await client.diagnostics();
+    await client.rejectReplay();
+    await client.diagnostics();
+    assert.deepEqual(client.receipts, { reverseCalls: 12, noticesReceived: 1 });
   } finally {
     try {
       await client.close();
@@ -137,7 +225,27 @@ test("corrupt Guest echo fails the protocol verdict", async () => {
   }
 });
 
-test("extra Guest frames after the awaited echo remain a failure", async () => {
+test("corrupt Guest diagnostics fails the protocol verdict", async () => {
+  const fixture = await peer({ corruptEcho: true });
+  const client = new RunnerWssClient(
+    RUN,
+    fixture.ticket,
+    undefined,
+    fixture.ca,
+  );
+  try {
+    await client.connect();
+    await assert.rejects(client.diagnostics(), /Invalid sandbox channel/);
+  } finally {
+    try {
+      await client.close();
+    } finally {
+      await fixture.close();
+    }
+  }
+});
+
+test("extra invalid Guest frames after awaited diagnostics remain a failure", async () => {
   const fixture = await peer({ extraFrame: true });
   const client = new RunnerWssClient(
     RUN,
@@ -148,9 +256,9 @@ test("extra Guest frames after the awaited echo remain a failure", async () => {
   try {
     await client.connect();
     await assert.rejects(async () => {
-      await client.echo();
-      await client.echo();
-    }, /Opaque Guest echo mismatch/);
+      await client.diagnostics();
+      await client.diagnostics();
+    }, /Invalid sandbox channel/);
   } finally {
     try {
       await client.close();
@@ -170,7 +278,7 @@ test("acknowledged replay fails even if the peer immediately closes", async () =
   );
   try {
     await client.connect();
-    await client.echo();
+    await client.diagnostics();
     await assert.rejects(client.rejectReplay(), /Replayed ticket was admitted/);
   } finally {
     try {
