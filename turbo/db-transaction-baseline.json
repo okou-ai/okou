@@ -617,11 +617,6 @@
       "owner": "createThreadClaimRunObjects/commitQueueHeadRejection$"
     },
     {
-      "id": "TX-0262",
-      "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
-      "owner": "createThreadClaimRunObjects/activatePendingRun$"
-    },
-    {
       "id": "TX-0263",
       "file": "turbo/apps/api/src/signals/services/thread-claim-run.service.ts",
       "owner": "commitPreparedPendingLaunch$"
