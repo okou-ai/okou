@@ -166,12 +166,12 @@ describe("GET /api/connectors/:connectorSlug", () => {
 
   it("allows access with a sandbox JWT carrying connector:read capability", async () => {
     const fixture = await seedSandboxJwtFixture();
-    await connectOpenai(fixture);
 
     const token = await claimedToken({
       userId: fixture.userId,
       orgId: fixture.orgId,
     });
+    await connectOpenai(fixture);
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsBySlugContract,
