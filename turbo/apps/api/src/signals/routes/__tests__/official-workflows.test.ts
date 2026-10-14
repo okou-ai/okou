@@ -3462,6 +3462,9 @@ describe("Debug Morning Brief", () => {
   });
   it("scopes request receipts to their member and workspace", async () => {
     const { actor } = await enabledBrief();
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
     const requestId = randomUUID();
     await accept(
       debugClient().run({ headers: authHeaders(actor), body: { requestId } }),
