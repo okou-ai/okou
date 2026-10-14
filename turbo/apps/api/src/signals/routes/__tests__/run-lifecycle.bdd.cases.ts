@@ -2603,6 +2603,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: winningClaim.candidate.runnerHostname,
           runnerVersion: winningClaim.candidate.runnerVersion,
           runnerId: winningClaim.candidate.runnerIdentity.runnerId,
@@ -2651,6 +2652,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -2740,6 +2742,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: null,
@@ -12975,6 +12978,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: "poolMiss",
           homeReuseResult: "lockBusy",
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -13121,6 +13125,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             homeReuseResult: "cacheMiss",
+            sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,
@@ -13180,6 +13185,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             homeReuseResult: "diskPressure",
+            sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,

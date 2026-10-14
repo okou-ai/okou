@@ -2245,8 +2245,15 @@
     {
       "idx": 1398,
       "version": "7",
-      "when": 1791972616049,
-      "tag": "1398_retire_session_conversation_runtime",
+      "when": 1791971626628,
+      "tag": "1398_persist_sandbox_startup_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 1399,
+      "version": "7",
+      "when": 1791974038062,
+      "tag": "1399_retire_session_conversation_runtime",
       "breakpoints": true
     }
   ]

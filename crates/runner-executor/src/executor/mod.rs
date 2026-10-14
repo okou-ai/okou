@@ -43,6 +43,7 @@ mod session_history_download;
 mod session_history_restore_plan;
 mod session_id;
 mod session_restore;
+mod startup;
 mod storage;
 mod telemetry;
 
@@ -58,6 +59,7 @@ pub use session_history_restore_plan::{
     SessionHistoryRestoreFallback, SessionHistoryRestorePlan, SessionHistoryRestorePlanInput,
     build_session_history_restore_plan,
 };
+pub use startup::StartupReport;
 
 use agent_run::{PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart};
 use env::validate_execution_context_before_sandbox;
@@ -390,6 +392,8 @@ pub struct ExecuteOutcome {
     pub home_image: Option<HomeImageLease>,
     /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
+    /// Owned startup-fact delivery. Join after finalization and resource release.
+    pub startup_report: Option<StartupReport>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -407,6 +411,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -426,6 +431,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -683,6 +689,7 @@ pub async fn execute_job_with_prepared_notifier(
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         },
@@ -713,6 +720,7 @@ pub async fn execute_job_with_prepared_notifier(
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },

@@ -5,6 +5,7 @@
  * typing.
  */
 export { initContract } from "./base";
+export { runnersRunStartupContract } from "./runner-startup";
 export {
   ORG_OPENROUTER_PRESETS,
   orgOpenrouterPresetSchema,

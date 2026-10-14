@@ -2050,6 +2050,7 @@ describe("RUN-04: agent run telemetry families", () => {
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
         homeReuseResult: scenario.homeResult ?? null,
+        sandboxStartupPath: null,
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),
@@ -2720,6 +2721,7 @@ describe("RUN-04: agent run telemetry families", () => {
     expect(runner.body).toStrictEqual({
       sandboxReuseResult: "reused",
       homeReuseResult: "sandboxReused",
+      sandboxStartupPath: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: expect.any(String),
@@ -2729,6 +2731,7 @@ describe("RUN-04: agent run telemetry families", () => {
     expect(bareRunner.body).toStrictEqual({
       sandboxReuseResult: null,
       homeReuseResult: null,
+      sandboxStartupPath: null,
       runnerHostname: null,
       runnerVersion: null,
       runnerId: null,

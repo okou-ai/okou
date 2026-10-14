@@ -268,6 +268,39 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::startup`.
+            pub mod startup {
+                /// Persist the actual settled sandbox startup path for a Run.
+                /// Route contract: `PUT /api/runners/runs/:runId/startup`.
+                pub const SET_STARTUP: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Put,
+                    path: "/api/runners/runs/:runId/startup",
+                };
+
+                /// Path parameters for `PUT /api/runners/runs/:runId/startup`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:runId` path parameter.
+                    pub run_id: &'a str,
+                }
+
+                /// Build the concrete path for `PUT /api/runners/runs/:runId/startup`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/runs/{}/startup",
+                        crate::route::encode_path_segment(params.run_id),
+                    )
+                }
+
+                /// Build a resolved route for `PUT /api/runners/runs/:runId/startup`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(SET_STARTUP.method, path(params))
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs`.
             pub mod steerable_inputs {
                 /// Generated route bindings under `runners::runs::by_run_id::steerable_inputs::by_event_id`.

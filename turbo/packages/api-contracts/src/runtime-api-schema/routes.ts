@@ -1,4 +1,5 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
+import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
   runnersBuiltinFirewallsResolveContract,
   runnersConnectorRuntimeSyncContract,
@@ -47,6 +48,11 @@ export interface RuntimeApiRouteBinding {
 }
 
 const runtimeServiceRouteBindings = [
+  {
+    id: "runners.runs.startup",
+    owner: "runner",
+    route: runnersRunStartupContract.setStartup,
+  },
   {
     id: "runners.poll",
     owner: "runner",

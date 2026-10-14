@@ -1,5 +1,6 @@
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
+import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
   uuid,
   varchar,
@@ -74,6 +75,11 @@ export function agentRunColumns() {
     // Final home reuse outcome; retain the existing physical storage name.
     // Null means the runner did not reach a reliable decision.
     homeReuseResult: varchar("workspace_reuse_result", { length: 50 }),
+    // Actual settled resource reported through the dedicated Run startup API.
+    // Old producers and runs without an accepted report remain unknown.
+    sandboxStartupPath: varchar("sandbox_startup_path", {
+      length: 20,
+    }).$type<SandboxStartupPath>(),
     // Null identifies a historical claim without cancellation recovery.
     // Current claims initialize false; false/true records whether recovery
     // completion has been reported. The barrier is active only while the

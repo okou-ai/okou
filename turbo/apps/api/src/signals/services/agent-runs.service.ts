@@ -17,6 +17,8 @@ import {
   type SandboxReuseResult,
   homeReuseResultSchema,
   type HomeReuseResult,
+  sandboxStartupPathSchema,
+  type SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -326,6 +328,7 @@ export function agentRunRunner(args: {
   Promise<{
     readonly sandboxReuseResult: SandboxReuseResult | null;
     readonly homeReuseResult: HomeReuseResult | null;
+    readonly sandboxStartupPath: SandboxStartupPath | null;
     readonly runnerHostname: string | null;
     readonly runnerVersion: string | null;
     readonly runnerId: string | null;
@@ -337,6 +340,7 @@ export function agentRunRunner(args: {
       .select({
         sandboxReuseResult: agentRuns.sandboxReuseResult,
         homeReuseResult: agentRuns.homeReuseResult,
+        sandboxStartupPath: agentRuns.sandboxStartupPath,
         runnerHostname: agentRuns.runnerHostname,
         runnerVersion: agentRuns.runnerVersion,
         runnerId: agentRuns.runnerId,
@@ -363,6 +367,9 @@ export function agentRunRunner(args: {
     return {
       sandboxReuseResult: sandboxResult.success ? sandboxResult.data : null,
       homeReuseResult: homeResult.success ? homeResult.data : null,
+      sandboxStartupPath: sandboxStartupPathSchema
+        .nullable()
+        .parse(row.sandboxStartupPath),
       runnerHostname: row.runnerHostname,
       runnerVersion: row.runnerVersion,
       runnerId: row.runnerId,

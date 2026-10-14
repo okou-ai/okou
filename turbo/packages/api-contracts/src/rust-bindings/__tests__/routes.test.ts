@@ -3,6 +3,12 @@ import { type RustRouteBinding, rustRouteBindings } from "../routes";
 
 const expectedBindings = [
   {
+    method: "PUT",
+    path: "/api/runners/runs/:runId/startup",
+    rustModulePath: ["runners", "runs", "by_run_id", "startup"],
+    rustConstName: "SET_STARTUP",
+  },
+  {
     method: "POST",
     path: "/api/runners/wss/tickets/consume",
     rustModulePath: ["runners", "wss"],
