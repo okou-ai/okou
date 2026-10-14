@@ -5666,9 +5666,17 @@
     },
     "save": "Guardar",
     "saveRecovery": {
+      "deleteHelp": "Revisa estos datos guardados antes de eliminar. Esta acción solo selecciona la versión; confirma la eliminación por separado.",
+      "incompatible": "El método de autenticación ha cambiado. Cierra este diálogo y vuelve a abrir la credencial para editar el método actual.",
+      "keepChanges": "Conservar mis cambios con esta versión",
+      "keepDeletion": "Usar esta versión para eliminar",
+      "keepHelp": "Revisa estos datos, conserva tu borrador y guárdalo sobre esta versión. Se mantendrán tus opciones de autenticación y confianza.",
+      "latest": "Datos guardados actualmente",
       "resourceIdConflict": "No se pudo crear este recurso. Cierra este diálogo y vuelve a intentarlo.",
       "review": "La configuración se ha actualizado. Cierra este diálogo y revisa los datos actuales antes de volver a intentarlo.",
-      "uncertain": "Se desconoce el resultado del guardado. Tu borrador original está bloqueado. Reintenta la misma solicitud o cierra y actualiza para comprobar la configuración guardada."
+      "unavailable": "Este recurso ya no está disponible. Cierra este diálogo y actualiza la configuración antes de volver a intentarlo.",
+      "uncertain": "Se desconoce el resultado del guardado. Tu borrador original está bloqueado. Reintenta la misma solicitud o cierra y actualiza para comprobar la configuración guardada.",
+      "version": "Versión {{version}}"
     },
     "saving": "Guardando…",
     "security": {

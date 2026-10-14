@@ -5666,9 +5666,17 @@
     },
     "save": "Salvar",
     "saveRecovery": {
+      "deleteHelp": "Revise estes dados salvos antes de excluir. Esta ação apenas seleciona a versão; confirme a exclusão separadamente.",
+      "incompatible": "O método de autenticação mudou. Feche esta janela e reabra a credencial para editar o método atual.",
+      "keepChanges": "Manter minhas alterações com esta versão",
+      "keepDeletion": "Usar esta versão para excluir",
+      "keepHelp": "Confira estes dados, mantenha seu rascunho e salve-o com base nesta versão. Suas escolhas de autenticação e confiança serão mantidas.",
+      "latest": "Dados salvos atualmente",
       "resourceIdConflict": "Não foi possível criar este recurso. Feche esta janela e tente novamente.",
       "review": "A configuração foi atualizada. Feche esta janela e confira os detalhes atuais antes de tentar novamente.",
-      "uncertain": "O resultado é desconhecido. Seu rascunho original está bloqueado. Repita a mesma solicitação ou feche e atualize para conferir a configuração salva."
+      "unavailable": "Este recurso não está mais disponível. Feche esta janela e atualize a configuração antes de tentar novamente.",
+      "uncertain": "O resultado é desconhecido. Seu rascunho original está bloqueado. Repita a mesma solicitação ou feche e atualize para conferir a configuração salva.",
+      "version": "Versão {{version}}"
     },
     "saving": "Salvando…",
     "security": {

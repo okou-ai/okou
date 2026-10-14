@@ -5666,9 +5666,17 @@
     },
     "save": "Salva",
     "saveRecovery": {
+      "deleteHelp": "Controlla questi dettagli salvati prima di eliminare. Questa azione seleziona solo la versione; conferma l’eliminazione separatamente.",
+      "incompatible": "Il metodo di autenticazione è cambiato. Chiudi questa finestra e riapri la credenziale per modificare il metodo attuale.",
+      "keepChanges": "Mantieni le mie modifiche con questa versione",
+      "keepDeletion": "Usa questa versione per l’eliminazione",
+      "keepHelp": "Controlla questi dati, poi mantieni la bozza e salvala a partire da questa versione. Le scelte di autenticazione e attendibilità saranno mantenute.",
+      "latest": "Dati attualmente salvati",
       "resourceIdConflict": "Impossibile creare questa risorsa. Chiudi questa finestra e riprova.",
       "review": "La configurazione è stata aggiornata. Chiudi questa finestra e controlla i dati attuali prima di riprovare.",
-      "uncertain": "L’esito del salvataggio è sconosciuto. La bozza originale è bloccata. Riprova la stessa richiesta oppure chiudi e aggiorna per verificare la configurazione salvata."
+      "unavailable": "Questa risorsa non è più disponibile. Chiudi questa finestra e aggiorna la configurazione prima di riprovare.",
+      "uncertain": "L’esito del salvataggio è sconosciuto. La bozza originale è bloccata. Riprova la stessa richiesta oppure chiudi e aggiorna per verificare la configurazione salvata.",
+      "version": "Versione {{version}}"
     },
     "saving": "Salvataggio…",
     "security": {
