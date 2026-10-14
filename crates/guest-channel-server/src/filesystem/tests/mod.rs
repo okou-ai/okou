@@ -45,12 +45,11 @@ async fn list(
         .map_err(|_| Error::Unavailable)
 }
 
-async fn maintenance_barrier(filesystem: &Filesystem) {
+async fn maintenance_barrier(filesystem: &Filesystem, owner: &Arc<Owner>) {
     // The worker may already be waiting for a job after sweeping a live owner.
     // Wake it first, then await another job after the next maintenance pass.
-    let fresh = owner(filesystem);
-    list(filesystem, &fresh, json!({"path":[]})).await.unwrap();
-    list(filesystem, &fresh, json!({"path":[]})).await.unwrap();
+    list(filesystem, owner, json!({"path":[]})).await.unwrap();
+    list(filesystem, owner, json!({"path":[]})).await.unwrap();
 }
 
 fn tree(path: &Path, count: usize) {
@@ -240,6 +239,8 @@ async fn cursor_cap_foreign_close_expiry_and_connection_disposal_are_owned() {
     let weak = Arc::downgrade(&first);
     first.cancelled.cancel();
     drop(first);
+    // Reuse the surviving owner so the barrier cannot hold another owner permit.
+    maintenance_barrier(&filesystem, &foreign).await;
     assert!(weak.upgrade().is_none());
     assert_eq!(filesystem.owners.available_permits(), RETAINED_OWNERS - 1);
 }
@@ -476,7 +477,8 @@ async fn peer_closing_during_maintenance_releases_filesystem_state() {
         .unwrap();
     assert!(active.closed());
     release.send(()).unwrap();
-    maintenance_barrier(&filesystem).await;
+    let fresh = owner(&filesystem);
+    maintenance_barrier(&filesystem, &fresh).await;
     assert!(active.state.lock().unwrap().is_none());
 }
 
@@ -551,6 +553,7 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
     drop(extra);
     fixture.close().await;
     assert!(first.closed());
-    maintenance_barrier(&filesystem).await;
+    let fresh = owner(&filesystem);
+    maintenance_barrier(&filesystem, &fresh).await;
     assert!(first.state.lock().unwrap().is_none());
 }
