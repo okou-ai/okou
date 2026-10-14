@@ -1,6 +1,6 @@
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChevronUp, Copy, Ellipsis, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, ExternalLink } from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { copyChatResourceLink$ } from "../../signals/chat-page/chat-resources.ts";
@@ -38,7 +38,7 @@ export function ChatResourcePreviewToggle({
 }) {
   const { t } = useTranslation();
   const label = t(($) => {
-    return expanded ? $.chat.resources.showLess : $.chat.resources.viewAll;
+    return expanded ? $.chat.resources.collapse : $.chat.resources.expand;
   });
   return (
     <Button
@@ -50,14 +50,8 @@ export function ChatResourcePreviewToggle({
       aria-expanded={expanded}
       onClick={onToggle}
     >
-      {expanded ? (
-        <>
-          {label}
-          <ChevronUp aria-hidden />
-        </>
-      ) : (
-        <Ellipsis size={20} aria-hidden />
-      )}
+      {label}
+      {expanded ? <ChevronUp aria-hidden /> : <ChevronDown aria-hidden />}
     </Button>
   );
 }

@@ -2050,12 +2050,13 @@
       "unavailableSsh": "無法使用的 SSH 主機"
     },
     "resources": {
+      "collapse": "收合",
       "copyLink": "複製連結",
       "empty": "此聊天中還沒有成果或連結",
+      "expand": "展開",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
       "retry": "重試",
-      "showLess": "收合",
       "title": "聊天資源",
       "viewAll": "查看全部"
     },

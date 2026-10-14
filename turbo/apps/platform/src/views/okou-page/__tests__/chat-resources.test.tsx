@@ -206,7 +206,7 @@ test("Show all six resources without an overflow control at the limit", async ()
     expect(within(section).getAllByRole("listitem")).toHaveLength(6);
     expect(
       queryAllByRoleFast("button", section).find((button) => {
-        return button.getAttribute("aria-label") === "View all";
+        return button.getAttribute("aria-label") === "Expand";
       }),
     ).toBeUndefined();
   }
@@ -227,13 +227,13 @@ test.each(["Artifacts", "Links"] as const)(
     for (const sectionName of ["Artifacts", "Links"]) {
       const section = within(panel).getByRole("region", { name: sectionName });
       expect(within(section).getAllByRole("listitem")).toHaveLength(6);
-      expect(buttonNamed("View all", section)).toBeInTheDocument();
+      expect(buttonNamed("Expand", section)).toBeInTheDocument();
     }
     expect(within(panel).queryByText("report-7.pdf")).not.toBeInTheDocument();
     expect(within(panel).queryByText("Reference 7")).not.toBeInTheDocument();
 
     const section = within(panel).getByRole("region", { name });
-    const more = buttonNamed("View all", section);
+    const more = buttonNamed("Expand", section);
     more.focus();
     await userEvent.keyboard("{Enter}");
 
@@ -245,7 +245,7 @@ test.each(["Artifacts", "Links"] as const)(
     expect(
       screen.queryByTestId("thread-sidebar-artifacts"),
     ).not.toBeInTheDocument();
-    expect(buttonNamed("Show fewer", section)).toHaveAttribute(
+    expect(buttonNamed("Collapse", section)).toHaveAttribute(
       "aria-expanded",
       "true",
     );
@@ -253,7 +253,7 @@ test.each(["Artifacts", "Links"] as const)(
       name: name === "Artifacts" ? "Links" : "Artifacts",
     });
     expect(within(other).getAllByRole("listitem")).toHaveLength(6);
-    click(buttonNamed("View all", other));
+    click(buttonNamed("Expand", other));
     await within(other).findByText(
       name === "Artifacts" ? "Reference 7" : "report-7.pdf",
     );
@@ -279,7 +279,7 @@ test.each(["Artifacts", "Links"] as const)(
       }),
     );
 
-    buttonNamed("Show fewer", section).focus();
+    buttonNamed("Collapse", section).focus();
     await userEvent.keyboard("{Enter}");
     expect(within(section).getAllByRole("listitem")).toHaveLength(6);
     expect(
@@ -287,13 +287,13 @@ test.each(["Artifacts", "Links"] as const)(
         name === "Artifacts" ? "report-7.pdf" : "Reference 7",
       ),
     ).not.toBeInTheDocument();
-    expect(buttonNamed("View all", section)).toHaveAttribute(
+    expect(buttonNamed("Expand", section)).toHaveAttribute(
       "aria-expanded",
       "false",
     );
     expect(within(other).getAllByRole("listitem")).toHaveLength(7);
 
-    click(buttonNamed("Show fewer", other));
+    click(buttonNamed("Collapse", other));
     expect(within(other).getAllByRole("listitem")).toHaveLength(6);
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
     expect(

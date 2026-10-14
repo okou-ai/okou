@@ -2050,12 +2050,13 @@
       "unavailableSsh": "host SSH tidak tersedia"
     },
     "resources": {
+      "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "empty": "Chat ini belum memiliki artefak atau tautan",
+      "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
       "retry": "Coba lagi",
-      "showLess": "Tampilkan lebih sedikit",
       "title": "Sumber daya chat",
       "viewAll": "Lihat semua"
     },
