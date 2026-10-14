@@ -82,6 +82,7 @@ mod job_terminal_log;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
+mod soft_drain;
 mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
@@ -90,7 +91,7 @@ use crate::heartbeat::{
     HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
     refresh_initial_home_cache_snapshot,
 };
-use crate::idle_lifecycle::{IdleCleanupTask, IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
@@ -1297,9 +1298,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut home_cache_gc_handle = None;
     let mut status_retry_handle = None;
-    let mut draining_idle_pool_drained = false;
-    let mut idle_drain_task: Option<IdleCleanupTask<()>> = None;
-    let mut idle_drain_current = false;
+    let mut soft_drain = soft_drain::SoftDrain::new();
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut pending_finalizing_retry = false;
     let mut ready_direct_candidates_left = 0;
@@ -1345,31 +1344,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if !draining_idle_pool_drained
-                    && idle_drain_task.is_none()
-                    && claim_tasks.is_empty()
-                {
+                if claim_tasks.is_empty() {
                     // Settle admission before removing inventory that an
                     // in-flight claim may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
-                    idle_drain_task = Some(
-                        idle_destroy_tracker
-                            .start_drain(
-                                Arc::clone(&shared.idle_pool),
-                                Arc::clone(&shared.status),
-                                "draining",
-                            )
-                            .await,
-                    );
-                    idle_drain_current = true;
+                    soft_drain
+                        .start_if_needed(&idle_destroy_tracker, &shared.idle_pool, &shared.status)
+                        .await;
                 }
-                if draining_idle_pool_drained && jobs.is_empty() && claim_tasks.is_empty() {
+                if soft_drain.batch_completed() && jobs.is_empty() && claim_tasks.is_empty() {
                     // Watch updates can coalesce a resume and renewed drain.
                     // Recheck inventory under the same exclusive access that
                     // commits natural stop so a prior batch cannot skip it.
                     let pool = shared.idle_pool.lock().await;
                     if !pool.is_empty() {
-                        draining_idle_pool_drained = false;
+                        soft_drain.inventory_changed();
                         continue;
                     }
                     // Natural drain complete — commit to Stopping so teardown
@@ -1391,8 +1380,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             RunnerMode::Running => {
-                draining_idle_pool_drained = false;
-                idle_drain_current = false;
+                soft_drain.resume();
             }
         }
 
@@ -1438,29 +1426,18 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let heartbeat_sending = heartbeat.is_sending();
         let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
         tokio::select! {
-            result = async {
-                match idle_drain_task.as_mut() {
-                    Some(task) => task.join().await,
-                    None => std::future::pending().await,
-                }
-            }, if idle_drain_task.is_some() => {
-                idle_drain_task = None;
-                match result {
-                    Ok(()) => {
-                        draining_idle_pool_drained = idle_drain_current && lifecycle.current_mode() == RunnerMode::Draining;
-                    }
-                    Err(error) => {
-                        warn!(%error, "idle drain cleanup producer lost");
-                        handle_stopping_signal(
-                            "idle drain cleanup producer lost",
-                            &provider_state.cancel,
-                            &provider_state.cancel_tokens,
-                            &lifecycle,
-                        ).await;
-                        terminal_error.get_or_insert_with(|| {
-                            RunnerError::Internal("idle drain cleanup producer lost".to_owned())
-                        });
-                    }
+            result = soft_drain.join(), if soft_drain.is_in_flight() => {
+                if let Err(error) = soft_drain.complete(result, &lifecycle) {
+                    warn!(%error, "idle drain cleanup producer lost");
+                    handle_stopping_signal(
+                        "idle drain cleanup producer lost",
+                        &provider_state.cancel,
+                        &provider_state.cancel_tokens,
+                        &lifecycle,
+                    ).await;
+                    terminal_error.get_or_insert_with(|| {
+                        RunnerError::Internal("idle drain cleanup producer lost".to_owned())
+                    });
                 }
             }
             result = async {
