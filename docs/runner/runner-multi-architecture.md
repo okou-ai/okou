@@ -390,13 +390,21 @@ drives NBD COW and rootfs process tests. The Crates CI gate requires selected-ta
 image preparation when applicable, including on reruns. Turbo runner preparation
 validates all configured architecture manifests before starting the runner.
 
-Native CPU fairness and guest RPC tests compile as soon as `runner-host-groups`
-selects a target, in parallel with `runner-test-prepare` waiting for the image. The
-`host-cpu-fairness-build` and `guest-rpc-firecracker-build` jobs retain their
-existing `release` and `ci` profiles and separate Cargo cache keys. Compilation
-does not use a metal host, rootfs, or snapshot. Execution waits for both its
-compiled test and the selected image, then uses the same host and immutable image
-hashes supplied by `runner-test-prepare`.
+Native CPU fairness and guest RPC tests compile after `runner-host-groups`
+resolves the architecture inventory, in parallel with `runner-test-prepare`
+waiting for its selected image. The `host-cpu-fairness-build` and
+`guest-rpc-firecracker-build` jobs retain their `release` and `ci` profiles and
+separate target-specific Cargo cache keys. Compilation does not use a metal host,
+rootfs, or snapshot.
+
+CPU fairness compiles for the selected target and executes with the host and
+immutable image hashes supplied by `runner-test-prepare`. Guest RPC filesystem
+acceptance builds and executes the full configured architecture matrix, requiring
+both amd64 and ARM64. Each consumer selects a host from its matching architecture
+group and waits for that target's validated Runner Image manifest to supply its
+immutable rootfs and snapshot hashes. Its `runner-test-prepare` dependency remains
+an image-preparation gate; that job's selected-target outputs do not supply the
+other matrix legs. Execution requires both its compiled test and matching image.
 
 Each producer uploads its compressed test binary and provenance to R2 under
 `runner-binaries/<target>/<run_id>/<producer_attempt>/<test>.zst` and the matching
