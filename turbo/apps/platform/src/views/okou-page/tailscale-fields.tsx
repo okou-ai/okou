@@ -10,6 +10,7 @@ import {
   replaceTailscaleCredentials$,
   tailscaleReplaceCredentials$,
 } from "../../signals/tailscale.ts";
+import { TailscaleSetupGuide } from "./tailscale-setup-guide.tsx";
 
 function TailscaleCredentials() {
   const { t } = useTranslation();
@@ -60,6 +61,7 @@ export function TailscaleFields({
   const setReplace = useSet(replaceTailscaleCredentials$);
   return (
     <div className="grid min-w-0 gap-4">
+      <TailscaleSetupGuide showReplaceHint={config !== null && !replace} />
       <label className="grid gap-2">
         {t(($) => {
           return $.cloudflareAccess.name;
@@ -108,16 +110,6 @@ export function TailscaleFields({
         </label>
       )}
       {(!config || replace) && <TailscaleCredentials />}
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.tailscale.setupHelp;
-        })}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.tailscale.cleanupHelp;
-        })}
-      </p>
     </div>
   );
 }
