@@ -59,7 +59,7 @@ test("Explicit image creation shows the notice and stays blocked while image gen
     return respond(200, { disabledTools: ["image-generation"] });
   });
   const editor = await setupComposer();
-  await selectCreation();
+  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
   await screen.findByText("Image generation is off for you");
   expect(button("Open settings")).toBeInTheDocument();
   await fill(editor, "Create a launch scene");

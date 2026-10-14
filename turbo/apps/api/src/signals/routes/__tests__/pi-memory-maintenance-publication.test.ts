@@ -117,6 +117,26 @@ describe("Pi maintenance cleanup and active publication", () => {
     mockNow(now() + 2 * 60 * 1000 + 1000);
     await cleanupMaintenance();
     expect((await runs.readRun(run.actor, run.runId)).status).toBe("timeout");
+    const late = await completeMaintenance(run, first.versionId);
+    expect(late.response.body).toMatchObject({ status: "failed" });
+  });
+
+  it("preserves new maintenance output when a timed-out publisher completes late", async () => {
+    const run = await prepareMaintenance();
+    const first = await publish(run, "Accepted before heartbeat silence.\n");
+    await publishOrdinaryMemory(
+      run,
+      "Owned memory queued behind the silent Run.\n",
+      1,
+    );
+    await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      run.headers,
+      [200],
+    );
+    mockNow(now() + 2 * 60 * 1000 + 1000);
+    await cleanupMaintenance();
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("timeout");
     const dispatched = await accept(
       run.stage2.consolidate({ headers: cronHeaders() }),
       [200],
@@ -125,8 +145,28 @@ describe("Pi maintenance cleanup and active publication", () => {
     const next = await run.claimMaintenance();
     const latest = await publish(next, "Memory after authoritative timeout.\n");
     await completeMaintenance(next, latest.versionId);
-    const late = await completeMaintenance(run, first.versionId);
-    expect(late.response.body).toMatchObject({ status: "failed" });
+    const late = await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "pi",
+          cliAgentSessionId: run.runId,
+          cliAgentSessionHistoryDisposition: "native_only",
+          artifactSnapshots: [
+            {
+              name: run.memory.name,
+              mountPath: run.memory.mountPath,
+              version: first.versionId,
+            },
+          ],
+        },
+      },
+      run.headers,
+      [200],
+    );
+    expect(late.body).toMatchObject({ success: true, status: "failed" });
+    await flushWaitUntilForTest();
     expect(
       (await observeMemory(run, "Memory after authoritative timeout.\n")).memory
         .versionId,
