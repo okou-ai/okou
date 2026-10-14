@@ -35,12 +35,13 @@ from tests.upstream_connection_helpers import (
 )
 
 
+@pytest.mark.parametrize("capture_body", [False, True])
 async def test_firewall_allow_current_server_binding_address_mismatch_blocks(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, capture_body
 ):
     reg_path = _write_github_firewall_registry(
         tmp_path,
-        sandbox_fields={"captureNetworkBodies": True},
+        sandbox_fields={"captureNetworkBodies": capture_body},
     )
     flow = real_flow(
         with_response=False,
@@ -117,6 +118,7 @@ async def test_test_connector_bounded_requestheaders_uses_connector_binding(
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("x-okou-test-endpoint-bypass", "preview-secret"),
+            ("Content-Length", "0"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")
@@ -296,6 +298,7 @@ async def test_test_connector_bounded_requestheaders_without_bypass_blocks(
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("x-okou-test-endpoint-bypass", "wrong-secret"),
+            ("Content-Length", "0"),
         ),
     )
     monkeypatch.setenv("VERCEL_AUTOMATION_BYPASS_SECRET", "preview-secret")
@@ -502,12 +505,13 @@ async def test_firewall_allow_header_auth_revalidates_connection_after_auth_wait
         assert flow.server_conn.id in upstream_destination_binding.binding_snapshot_for_tests()
 
 
+@pytest.mark.parametrize("capture_body", [False, True])
 async def test_firewall_allow_header_auth_blocks_without_verified_connected_tls(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, capture_body
 ):
     reg_path = _write_github_firewall_registry(
         tmp_path,
-        sandbox_fields={"captureNetworkBodies": True},
+        sandbox_fields={"captureNetworkBodies": capture_body},
     )
     flow = real_flow(
         with_response=False,
@@ -987,10 +991,10 @@ async def test_firewall_allow_unknown_body_length_retargets_unconnected_upstream
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer resolved"}) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
-        _assert_no_request_stream(flow)
-        assert metadata_keys.SANDBOX_RUN_ID not in flow.metadata
-        assert metadata_keys.ORIGINAL_URL not in flow.metadata
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
+        assert callable(flow.request.stream)
+        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
+        assert flow.request.headers["Authorization"] == "Bearer resolved"
         assert flow.server_conn.address == ("api.github.com", 443)
 
         await mitm_addon.request(flow)

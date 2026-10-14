@@ -135,6 +135,22 @@ peers: correct CA/hostname succeeds, and wrong-host or untrusted certificates
 fail before credentials/body. HTTP/1.1 and HTTP/2 checks preserve wire authority,
 body and one send. These are not live-provider or production-recovery tests.
 
+Allowed-upload and deferred-destination changes also require the native body
+streaming, admission and early credential-failure suites:
+
+```bash
+uv run --no-sync python -m pytest \
+  tests/test_mitmproxy_allowed_upload_streaming.py \
+  tests/test_public_destination_body_admission.py \
+  tests/test_mitmproxy_header_auth_failure_framing.py \
+  tests/test_mitmproxy_request_body_admission_framing.py
+```
+
+These cases drive genuine addon hooks and mitmproxy HTTP streams, observe
+forwarded bytes before EOF and terminal network/usage records, and verify
+bounded retention and admission with capture on/off. They do not measure live
+production proxy RSS.
+
 Run the same static checks used by CI:
 
 ```bash
@@ -282,6 +298,8 @@ suites before committing the upgrade.
 | `test_mitmproxy_bodyless_response_framing.py`           | Bodyless local firewall and connector-diagnostic responses through the real mitmproxy state machine                  |
 | `test_mitmproxy_codex_catalog_framing.py`               | Codex model-catalog cache and response framing through the real mitmproxy state machine                              |
 | `test_mitmproxy_request_body_admission_framing.py`      | auth.base and AWS SigV4 request-body admission through the real mitmproxy state machine                              |
+| `test_mitmproxy_allowed_upload_streaming.py`            | Header-authorized upload forwarding, bounded body retention, byte accounting and capture privacy with capture on/off |
+| `test_public_destination_body_admission.py`             | Deferred destination body framing, count/byte admission and response/error/cancellation release                      |
 | `test_mitmproxy_websocket_framing.py`                   | Decoded WebSocket message bounds through mitmproxy's state machine and real addon hook dispatch                      |
 | `test_request_handler_usage_tracking.py`                | Request-hook billable usage tracking lifecycle                                                                       |
 | `test_response_headers_handler.py`                      | Response-header hook stream setup                                                                                    |

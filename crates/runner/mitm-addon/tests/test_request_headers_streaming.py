@@ -8,7 +8,6 @@ import request_classification
 from body_limits import STREAM_BUFFER_LIMIT
 from tests.request_handler_helpers import (
     _sandbox_without_firewalls,
-    _single_firewall_sandbox,
     _write_registry,
 )
 from tests.requestheaders_helpers import _assert_no_request_stream
@@ -425,48 +424,3 @@ def test_non_stream_requestheaders_probe_restores_request_metadata(
     assert metadata_keys.ORIGINAL_URL not in flow.metadata
     assert metadata_keys.NETWORK_LOG_TARGET not in flow.metadata
     assert metadata_keys.CAPTURE_BODY not in flow.metadata
-
-
-@pytest.mark.parametrize("request_kind", ["api", "browser", "policy", "credentials"])
-def test_capture_disabled_non_ordinary_requests_keep_existing_stream_eligibility(
-    tmp_path, real_flow, mitm_ctx, headers, request_kind
-):
-    if request_kind in ("policy", "credentials"):
-        sandbox_info = _single_firewall_sandbox(
-            tmp_path,
-            api_entry={
-                "base": "https://example.com",
-                "auth": {"headers": {"Authorization": "Bearer ${{ secrets.EXAMPLE_TOKEN }}"}},
-                "permissions": [
-                    {
-                        "name": "upload",
-                        "rules": ["POST /known" if request_kind == "policy" else "POST /upload"],
-                    }
-                ],
-            },
-            network_policy={"allow": ["upload"], "deny": [], "ask": [], "unknownPolicy": "allow"},
-        )
-    else:
-        sandbox_info = _sandbox_without_firewalls(tmp_path)
-    reg_path = _write_registry(tmp_path, sandbox_info=sandbox_info)
-    host = "api.okou.ai" if request_kind == "api" else "example.com"
-    user_agent = _BROWSER_USER_AGENT if request_kind == "browser" else "synthetic-client/1.0"
-    flow = real_flow(
-        with_response=False,
-        client_ip="10.200.0.5",
-        host=host,
-        path="/upload",
-        method="POST",
-        request_headers=headers(
-            ("Host", host),
-            ("User-Agent", user_agent),
-            ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
-        ),
-    )
-
-    with mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"):
-        assert mitm_addon.requestheaders(flow) is None
-
-    _assert_no_request_stream(flow)
-    assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
-    assert "Authorization" not in flow.request.headers
