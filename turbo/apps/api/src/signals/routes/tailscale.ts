@@ -5,7 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/tailscale";
 import { command, computed } from "ccstate";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
+import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { createClerkReadContext } from "../external/clerk";
@@ -23,11 +23,6 @@ import {
 import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 import type { tailscaleFailure } from "../services/tailscale-config-model";
 
-const ownerAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  accept: ["session"],
-} as const;
 const encryptionIdentity$ = computed((get) => {
   return Promise.resolve(get(organizationAuthContext$));
 });
@@ -210,20 +205,32 @@ const impactPreview$ = command(async ({ get, set }, signal: AbortSignal) => {
   };
 });
 export const tailscaleRoutes: readonly RouteEntry[] = [
-  { route: tailscaleContract.list, handler: authRoute(ownerAuth, list$) },
-  { route: tailscaleContract.create, handler: authRoute(ownerAuth, create$) },
-  { route: tailscaleContract.update, handler: authRoute(ownerAuth, update$) },
-  { route: tailscaleContract.delete, handler: authRoute(ownerAuth, delete$) },
+  {
+    route: tailscaleContract.list,
+    handler: remoteControlOwnerRoute("connector:read", list$),
+  },
+  {
+    route: tailscaleContract.create,
+    handler: remoteControlOwnerRoute("connector:write", create$),
+  },
+  {
+    route: tailscaleContract.update,
+    handler: remoteControlOwnerRoute("connector:write", update$),
+  },
+  {
+    route: tailscaleContract.delete,
+    handler: remoteControlOwnerRoute("connector:write", delete$),
+  },
   {
     route: tailscaleContract.convertToOrganization,
-    handler: authRoute(ownerAuth, promote$),
+    handler: remoteControlOwnerRoute("connector:write", promote$),
   },
   {
     route: tailscaleContract.impactPreview,
-    handler: authRoute(ownerAuth, impactPreview$),
+    handler: remoteControlOwnerRoute("connector:read", impactPreview$),
   },
   {
     route: tailscaleContract.convertToPersonal,
-    handler: authRoute(ownerAuth, convert$),
+    handler: remoteControlOwnerRoute("connector:write", convert$),
   },
 ];

@@ -14,7 +14,7 @@ import {
 import { command } from "ccstate";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
+import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
@@ -28,12 +28,6 @@ import {
   summarizeSshConnections$,
   updateSshConnection$,
 } from "../services/ssh-connection.service";
-
-const sshAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  accept: ["session"],
-} as const;
 
 function mapSshFailure(result: {
   readonly kind: "bad_request" | "not_found" | "conflict";
@@ -322,46 +316,79 @@ const deleteSshCredentialInner$ = command(
 export const sshConnectionsRoutes: readonly RouteEntry[] = [
   {
     route: sshCredentialsContract.list,
-    handler: authRoute(sshAuth, listSshCredentialsInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:read",
+      listSshCredentialsInner$,
+    ),
   },
   {
     route: sshCredentialsContract.create,
-    handler: authRoute(sshAuth, createSshCredentialInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      createSshCredentialInner$,
+    ),
   },
   {
     route: sshCredentialsContract.update,
-    handler: authRoute(sshAuth, updateSshCredentialInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      updateSshCredentialInner$,
+    ),
   },
   {
     route: sshCredentialsContract.delete,
-    handler: authRoute(sshAuth, deleteSshCredentialInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      deleteSshCredentialInner$,
+    ),
   },
   {
     route: sshConnectionsContract.observations,
-    handler: authRoute(sshAuth, listSshObservationsInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:read",
+      listSshObservationsInner$,
+    ),
   },
   {
     route: sshConnectionsContract.list,
-    handler: authRoute(sshAuth, listSshConnectionsInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:read",
+      listSshConnectionsInner$,
+    ),
   },
   {
     route: sshConnectionsContract.summary,
-    handler: authRoute(sshAuth, summarizeSshConnectionsInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:read",
+      summarizeSshConnectionsInner$,
+    ),
   },
   {
     route: sshConnectionsContract.create,
-    handler: authRoute(sshAuth, createSshConnectionInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      createSshConnectionInner$,
+    ),
   },
   {
     route: sshConnectionsContract.update,
-    handler: authRoute(sshAuth, updateSshConnectionInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      updateSshConnectionInner$,
+    ),
   },
   {
     route: sshConnectionsContract.delete,
-    handler: authRoute(sshAuth, deleteSshConnectionInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      deleteSshConnectionInner$,
+    ),
   },
   {
     route: sshConnectionsContract.resetHostKey,
-    handler: authRoute(sshAuth, resetSshConnectionHostKeyInner$),
+    handler: remoteControlOwnerRoute(
+      "connector:write",
+      resetSshConnectionHostKeyInner$,
+    ),
   },
 ];

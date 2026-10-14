@@ -63,7 +63,9 @@ describe("okou connector connect command", () => {
     connectCommand.setOptionValue("authMethod", undefined);
     connectCommand.setOptionValue("json", undefined);
     connectCommand.setOptionValue("reconnect", undefined);
-    connectCommand.setOptionValue("value", []);
+    connectCommand.setOptionValueWithSource("value", [], "default");
+    connectCommand.setOptionValue("input", undefined);
+    server.use(stubCustomConnectors([]));
   });
 
   afterEach(() => {
@@ -131,9 +133,20 @@ describe("okou connector connect command", () => {
     },
   );
 
-  it("rejects a custom slug from the builtin manual-connect flow", async () => {
+  it("rejects an unavailable custom definition without submitting credentials", async () => {
     const connector = customConnector();
-    server.use(stubCustomConnectors([connector]));
+    server.use(
+      stubCustomConnectors([connector]),
+      http.get(
+        `http://localhost:3000/api/custom-connectors/${connector.id}`,
+        () => {
+          return HttpResponse.json(
+            { error: { code: "NOT_FOUND", message: "Unavailable" } },
+            { status: 404 },
+          );
+        },
+      ),
+    );
 
     await expect(
       connectCommand.parseAsync([
@@ -147,7 +160,7 @@ describe("okou connector connect command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      `Unknown or unavailable connector: ${connector.slug}`,
+      "Custom connector is unavailable",
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
@@ -354,10 +367,7 @@ describe("okou connector connect command", () => {
 
     const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
     expect(errorOutput).toContain(
-      "At least one --value NAME=VALUE is required",
-    );
-    expect(errorOutput).toContain(
-      "okou connector connect openai --value apiKey=token",
+      "At least one --value NAME=VALUE or --input field is required",
     );
   });
 
@@ -599,7 +609,9 @@ describe("okou connector connect command", () => {
     ).rejects.toThrow("process.exit called");
 
     const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
-    expect(errorOutput).toContain("Missing required manual grant field");
+    expect(errorOutput).toContain(
+      "Failed to connect connector account (HTTP 400)",
+    );
     expect(errorOutput).not.toContain("secret-token");
   });
 
@@ -633,7 +645,9 @@ describe("okou connector connect command", () => {
     ).rejects.toThrow("process.exit called");
 
     const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
-    expect(errorOutput).toContain("Connector is not available");
+    expect(errorOutput).toContain(
+      "Failed to connect connector account (HTTP 403)",
+    );
     expect(errorOutput).not.toContain("secret-token");
   });
 
@@ -671,7 +685,7 @@ describe("okou connector connect command", () => {
     expect(requestCount).toBe(1);
     const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
     expect(errorOutput).toContain(
-      "409: Multiple connector accounts require an exact choice",
+      "Failed to connect connector account (HTTP 409)",
     );
     expect(errorOutput).not.toContain("secret-token");
   });
@@ -710,7 +724,9 @@ describe("okou connector connect command", () => {
 
     expect(requestCount).toBe(1);
     const errorOutput = mockConsoleError.mock.calls.flat().join("\n");
-    expect(errorOutput).toContain("404: Connector account not found");
+    expect(errorOutput).toContain(
+      "Failed to connect connector account (HTTP 404)",
+    );
     expect(errorOutput).not.toContain("secret-token");
   });
 });

@@ -44,6 +44,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.RemoteControlCliManagement]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Remote control CLI management",
+    description:
+      "Manage owned SSH, VNC and private-network configuration through the CLI.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatRelations]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat relationships",
