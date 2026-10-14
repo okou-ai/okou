@@ -411,6 +411,10 @@ test.each(COMPOSER_PATHS)(
         "Browse all templates",
       ]);
     });
+    // The composer-wide menu says what each workflow does after its name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
+      `/${WORKFLOW_NAME} Query Axiom for RED metrics`,
+    );
     expect(
       queryAllByRoleFast(
         "button",
@@ -691,5 +695,9 @@ test.each(COMPOSER_PATHS)(
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     expect(detailPane()).toHaveAttribute("data-category", "slides");
     expect(flyout()).toHaveAccessibleName("Presentation");
+    // The 260px menu has no room for a description beside the name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).not.toHaveTextContent(
+      "Query Axiom for RED metrics",
+    );
   },
 );

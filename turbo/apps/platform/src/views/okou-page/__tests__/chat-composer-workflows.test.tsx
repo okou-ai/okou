@@ -234,10 +234,6 @@ test("Insert an attached workflow with slash suggestions", async () => {
     expect(slashButton("/sales-research")).toBeVisible();
     expect(slashButton("/support-escalation")).toBeVisible();
   });
-  // Each row says what its workflow does, on the same line as its name.
-  expect(slashButton("/sales-research")).toHaveTextContent(
-    "/sales-research Research qualified leads",
-  );
 
   await user.keyboard("ReSeArCh");
   const prefix = await waitFor(() => {

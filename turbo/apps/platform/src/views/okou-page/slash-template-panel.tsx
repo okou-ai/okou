@@ -353,6 +353,7 @@ function SlashPanelWorkflowList({
   markedIndex,
   selectedIndex,
   reversed,
+  describe,
   onPreview,
   onSelect,
   workflowOptionId,
@@ -361,6 +362,8 @@ function SlashPanelWorkflowList({
   readonly loading: boolean;
   readonly selectedIndex: number;
   readonly reversed: boolean;
+  /** The composer-wide menu has room for a description after each name. */
+  readonly describe: boolean;
   /** Relative to this list; negative while no row carries the mark. */
   readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
@@ -429,7 +432,7 @@ function SlashPanelWorkflowList({
               */}
               <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
                 <SlashWorkflowName workflow={workflow} />
-                {workflow.description && (
+                {describe && workflow.description && (
                   <>
                     {" "}
                     <span className="ml-1">{workflow.description}</span>
@@ -674,6 +677,7 @@ export function SlashTemplatePanel({
       markedIndex={markedIndex - categories.length}
       selectedIndex={selectedIndex - categories.length}
       reversed={reverseWorkflows}
+      describe={anchored}
       onPreview={(index) => {
         onPreview(categories.length + index);
       }}
