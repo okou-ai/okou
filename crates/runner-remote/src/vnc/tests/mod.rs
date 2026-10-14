@@ -1,3 +1,4 @@
+mod authority_cache;
 mod boundaries;
 mod delivery;
 mod harness;
@@ -40,7 +41,7 @@ async fn closed(h: &Harness) {
 async fn dispatcher_streams_fresh_png_and_geometry_then_balanced_input_and_close() {
     let mut h = Harness::new().await;
     let resolve = h.resolve_for_run(h.run.id).await;
-    let check = h.check("valid", 200).await;
+    let check = h.snapshot("valid", 200).await;
     let started = h.start("shared").await;
     let session = started.session();
     assert_eq!(started.result()["session"]["connectionId"], CONNECTION);
@@ -107,7 +108,7 @@ async fn dispatcher_streams_fresh_png_and_geometry_then_balanced_input_and_close
         json!([])
     );
     resolve.assert_calls_async(1).await;
-    check.assert_calls_async(5).await;
+    check.assert_calls_async(1).await;
     h.run.shutdown().await;
 }
 
@@ -115,7 +116,7 @@ async fn dispatcher_streams_fresh_png_and_geometry_then_balanced_input_and_close
 async fn independent_runs_forward_both_modes_and_reject_cross_run_session_ids() {
     let mut h = Harness::new().await;
     let resolve = h.resolve_for_run(h.run.id).await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let mut second = TestRun::new(&h.runtime);
     let second_resolve = h.resolve_for_run(second.id).await;
     let first = h.start("shared").await.session();
@@ -312,7 +313,7 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
 }
 
 #[tokio::test]
-async fn denied_changed_and_failed_authority_close_before_any_input() {
+async fn denied_changed_and_failed_snapshot_admission_closes_before_any_input() {
     for (outcome, status, reason) in [
         ("unavailable", 200, "unavailable"),
         ("configuration_changed", 200, "configuration_changed"),
@@ -320,19 +321,10 @@ async fn denied_changed_and_failed_authority_close_before_any_input() {
     ] {
         let mut h = Harness::new().await;
         let resolve = h.resolve().await;
-        let allowed = h.check("valid", 200).await;
-        let session = h.start("shared").await.session();
+        let denied = h.snapshot(outcome, status).await;
+        let reply = h.start("shared").await;
         mode(&h, 1).await;
-        allowed.delete_async().await;
-        let denied = h.check(outcome, status).await;
-        let reply = h
-            .run
-            .request(
-                "vnc.input",
-                json!({"sessionId":session,"input":{"type":"text","text":"a"}}),
-            )
-            .await;
-        assert_eq!(reply.result()["outcome"], "not_started");
+        assert_eq!(reply.result()["outcome"], "failed");
         assert_eq!(reply.result()["reason"], reason);
         assert!(
             !serde_json::to_string(&reply.controls)
@@ -351,7 +343,7 @@ async fn denied_changed_and_failed_authority_close_before_any_input() {
 async fn unsafe_dns_answer_rejects_without_connecting() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     h.network
         .answers
         .lock()
@@ -369,7 +361,7 @@ async fn unsafe_dns_answer_rejects_without_connecting() {
 async fn session_limits_apply_per_run_and_host_and_close_returns_capacity() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let mut second = TestRun::new(&h.runtime);
     let mut third = TestRun::new(&h.runtime);
     let first = h.start("shared").await.session();
@@ -424,7 +416,7 @@ async fn run_and_sandbox_cancellation_close_idle_session_sockets() {
     for sandbox_cancel in [false, true] {
         let mut h = Harness::new().await;
         let _resolve = h.resolve().await;
-        let _check = h.check("valid", 200).await;
+        let _check = h.snapshot("valid", 200).await;
         h.start("shared").await.session();
         mode(&h, 1).await;
         if sandbox_cancel {
@@ -441,7 +433,7 @@ async fn run_and_sandbox_cancellation_close_idle_session_sockets() {
 async fn close_cancels_a_pending_capture_without_replaying_or_retaining_socket() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     *h.peer.capture_gate.lock().await = Some(Arc::new(Semaphore::new(0)));

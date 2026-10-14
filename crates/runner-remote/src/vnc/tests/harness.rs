@@ -203,11 +203,15 @@ impl TestRun {
     }
 
     pub(super) async fn open_stream(&self, cancel_after_data: bool) -> DuplexStream {
-        self.open_options(cancel_after_data, false).await
+        self.open_options(cancel_after_data, false, 64 * 1024).await
     }
 
     pub(super) async fn open_failing_output(&self) -> DuplexStream {
-        self.open_options(false, true).await
+        self.open_options(false, true, 64 * 1024).await
+    }
+
+    pub(super) async fn open_sized(&self, capacity: usize) -> DuplexStream {
+        self.open_options(false, false, capacity).await
     }
 
     pub(super) async fn accept_socket(&self, host: UnixStream) {
@@ -228,8 +232,13 @@ impl TestRun {
             .unwrap();
     }
 
-    async fn open_options(&self, cancel_after_data: bool, fail_output: bool) -> DuplexStream {
-        let (guest, host) = tokio::io::duplex(64 * 1024);
+    async fn open_options(
+        &self,
+        cancel_after_data: bool,
+        fail_output: bool,
+        capacity: usize,
+    ) -> DuplexStream {
+        let (guest, host) = tokio::io::duplex(capacity);
         self.incoming
             .send(sandbox::AcceptedGuestRpc {
                 sandbox_id: "vnc-assigned-sandbox".into(),
@@ -415,42 +424,26 @@ impl Harness {
         }).await
     }
 
-    pub(super) async fn check(&self, outcome: &str, status: u16) -> Mock<'_> {
-        self.check_delayed(outcome, status, Duration::ZERO).await
+    pub(super) async fn snapshot(&self, outcome: &str, status: u16) -> Mock<'_> {
+        self.snapshot_connection(CONNECTION, outcome, status).await
     }
 
-    pub(super) async fn check_connection(
+    pub(super) async fn snapshot_connection(
         &self,
         connection: &str,
         outcome: &str,
         status: u16,
-    ) -> Mock<'_> {
-        self.check_connection_delayed(connection, outcome, status, Duration::ZERO)
-            .await
-    }
-
-    pub(super) async fn check_delayed(
-        &self,
-        outcome: &str,
-        status: u16,
-        delay: Duration,
-    ) -> Mock<'_> {
-        self.check_connection_delayed(CONNECTION, outcome, status, delay)
-            .await
-    }
-
-    async fn check_connection_delayed(
-        &self,
-        connection: &str,
-        outcome: &str,
-        status: u16,
-        delay: Duration,
     ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
-            when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
+            when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/snapshot$")
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":{"type":"direct"}}));
-            then.status(status).delay(delay).json_body(json!({"outcome":outcome}));
+            let response = if outcome == "valid" {
+                json!({"outcome":outcome,"lifetimeSeconds":7200})
+            } else {
+                json!({"outcome":outcome})
+            };
+            then.status(status).json_body(response);
         }).await
     }
 

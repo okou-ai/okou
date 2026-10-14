@@ -41,8 +41,8 @@ async fn delivered_vnc_invalidation_is_connection_and_run_scoped_and_never_grant
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
     let _other_resolve = h.resolve_connection(OTHER).await;
-    let _check = h.check("valid", 200).await;
-    let _other_check = h.check_connection(OTHER, "valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
+    let _other_check = h.snapshot_connection(OTHER, "valid", 200).await;
     let mut other_run = TestRun::new(&h.runtime);
     let first = h.start("shared").await.session();
     mode(&h, 1).await;
@@ -204,7 +204,7 @@ async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_
 async fn dropping_replaced_run_owner_cannot_unregister_its_successor() {
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     h.start("shared").await.session();
     mode(&h, 1).await;
     let mut successor = TestRun::with_id(&h.runtime, h.run.id);

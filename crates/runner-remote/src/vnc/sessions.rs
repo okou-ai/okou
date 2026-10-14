@@ -104,7 +104,8 @@ impl Drop for NativeWork {
 
 pub(super) struct Session {
     pub(super) info: Info,
-    pub(super) generation: i64,
+    // Secret-free authority is cached only for this bounded, admitted session.
+    pub(super) expires: Instant,
     pub(super) transport: Transport,
     pub(super) kerberos: Option<super::kerberos::Binding>,
     pub(super) cancel: CancellationToken,
@@ -418,8 +419,8 @@ impl Run {
             .map_err(Failure::from)?;
         let engine = Engine::new(connection);
         let expires = engine.expires_at();
-        scope
-            .wait(self.runtime.authority.check_kerberos(
+        let authority_expires = scope
+            .wait(self.runtime.authority.snapshot(
                 self.id,
                 request.connection_id,
                 credential.generation,
@@ -427,6 +428,7 @@ impl Run {
                 kerberos,
             ))
             .await??;
+        let expires = expires.min(authority_expires);
         scope.check()?;
         if self.cancel.is_cancelled() {
             return Err(Failure::Cancelled);
@@ -437,7 +439,7 @@ impl Run {
                 connection_id: request.connection_id,
                 mode: request.mode,
             },
-            generation: credential.generation,
+            expires,
             transport,
             kerberos,
             cancel: session_cancel,
@@ -455,21 +457,19 @@ impl Run {
         Ok(session)
     }
 
-    pub(super) async fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
-        let result = scope
-            .wait(self.runtime.authority.check_kerberos(
-                self.id,
-                session.info.connection_id,
-                session.generation,
-                session.transport,
-                session.kerberos,
-            ))
-            .await
-            .and_then(|r| r);
-        if result.is_err() {
-            session.cancel.cancel();
+    pub(super) fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
+        scope.check()?;
+        if self.cancel.is_cancelled() || session.cancel.is_cancelled() {
+            return Err(Failure::Cancelled);
         }
-        result
+        if Instant::now() >= session.expires {
+            session.cancel.cancel();
+            return Err(Failure::TimedOut);
+        }
+        // Notifications only cancel this exact authority. Subscription outages
+        // neither restore it nor retire it; missed delivery can delay revocation
+        // until the original Run/session/credential lifetime ends, as with SSH.
+        Ok(())
     }
 }
 

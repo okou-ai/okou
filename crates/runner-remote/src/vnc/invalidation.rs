@@ -1,4 +1,4 @@
-//! Cancellation custody for pending and admitted VNC work, never cached authority.
+//! Cancellation custody for pending and admitted VNC work, never an authority grant.
 
 use std::{
     collections::HashMap,

@@ -40,7 +40,7 @@ export const rustRouteBindings = [
     rustModulePath: ["runners", "wss"],
     rustConstName: "CONSUME",
   },
-  ...(["resolve", "check"] as const).map((action) => {
+  ...(["resolve", "check", "snapshot"] as const).map((action) => {
     return {
       route: runnerVncContract[action],
       rustModulePath: ["runners", "runs", "by_run_id", "vnc", action],

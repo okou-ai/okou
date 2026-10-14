@@ -1,0 +1,413 @@
+import { randomUUID } from "node:crypto";
+import { webhookClerkContract } from "@okouai/api-contracts/contracts/webhooks";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Webhook } from "svix";
+
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockOptionalEnv } from "../../../lib/env";
+import { nowDate } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { webhooksClerkRoutes } from "../webhooks-clerk";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createClaimedVncApi } from "./helpers/claimed-vnc-runtime";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
+import {
+  updateFeatureSwitchesForUser,
+  deleteFeatureSwitchesForUser,
+} from "./helpers/feature-switches";
+import { requireVncCredentialId } from "./helpers/vnc-response";
+import {
+  createVncRuntimeApi,
+  initializeVncRuntimeTest,
+  vncConnectionBody,
+  vncRunnerHeaders,
+  vncSessionHeaders,
+  type VncRuntimeFixture,
+} from "./helpers/vnc-runtime";
+
+const context = testContext();
+const api = createVncRuntimeApi(context);
+const claimed = createClaimedVncApi(context);
+const bdd = createBddApi(context);
+const runs = createRunsApi(context);
+beforeEach(initializeVncRuntimeTest);
+afterEach(claimed.cleanup);
+
+function snapshot(
+  f: Pick<
+    VncRuntimeFixture,
+    "runId" | "connectionId" | "runnerIdentity" | "orgId" | "userId"
+  >,
+  generation = 1,
+) {
+  api.authenticate(f);
+  return accept(
+    api.runner().snapshot({
+      headers: vncRunnerHeaders,
+      params: { runId: f.runId },
+      body: {
+        connectionId: f.connectionId,
+        runnerIdentity: f.runnerIdentity,
+        expectedGeneration: generation,
+        expectedTransport: { type: "direct" },
+      },
+    }),
+    [200],
+  );
+}
+
+function notifications() {
+  return context.mocks.ably.publish.mock.calls.filter((call) => {
+    return call[0] === "vnc-authority-invalidated";
+  });
+}
+
+describe("bounded VNC authority snapshots", () => {
+  it.each(["user", "organization"] as const)(
+    "%s erasure notifies only matching VNC Runs and removes their authority",
+    async (kind) => {
+      const removed = await claimed.fixture();
+      const unrelated = await claimed.fixture();
+      const secret = `whsec_${Buffer.from("vnc-erasure-signing-key").toString("base64")}`;
+      mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", secret);
+      context.mocks.clerk.verifyWebhook.mockImplementation(async (request) => {
+        if (!(request instanceof Request)) {
+          throw new Error("Expected the Clerk webhook request");
+        }
+        const payload = await request.text();
+        new Webhook(secret).verify(
+          payload,
+          Object.fromEntries(request.headers),
+        );
+        const event: unknown = JSON.parse(payload);
+        return event;
+      });
+      const body = JSON.stringify({
+        type: kind === "user" ? "user.deleted" : "organization.deleted",
+        data: { id: kind === "user" ? removed.userId : removed.orgId },
+      });
+      const id = `msg_${randomUUID()}`;
+      const timestamp = nowDate();
+      context.mocks.ably.publish.mockClear();
+      await accept(
+        setupApp({ context, routes: webhooksClerkRoutes })(
+          webhookClerkContract,
+        ).post({
+          body,
+          extraHeaders: {
+            "svix-id": id,
+            "svix-timestamp": Math.floor(timestamp.getTime() / 1000).toString(),
+            "svix-signature": new Webhook(secret).sign(id, timestamp, body),
+          },
+        }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect(notifications()).toStrictEqual([
+        [
+          "vnc-authority-invalidated",
+          { runId: removed.runId, connectionId: null },
+        ],
+      ]);
+      expect((await snapshot(removed)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await snapshot(unrelated)).body).toStrictEqual({
+        outcome: "valid",
+        lifetimeSeconds: 7200,
+      });
+    },
+  );
+
+  it.each(["configuration", "metadata"] as const)(
+    "agent %s privacy changes revoke member Runs and preserve the owner's authority",
+    async (entry) => {
+      const owner = await claimed.paidOwner();
+      const actor = bdd.user(owner);
+      const agent = await bdd.createAgent(actor, {
+        displayName: "Shared VNC Agent",
+        visibility: "public",
+      });
+      const ownRun = await claimed.runtime({
+        ...owner,
+        agentId: agent.agentId,
+      });
+      const member = { orgId: owner.orgId, userId: `user-${randomUUID()}` };
+      await updateFeatureSwitchesForUser(context, member, {
+        [FeatureSwitchKey.VncAccess]: true,
+      });
+      await runs.ensurePersonalSubscriptionModel(bdd.user(member), {
+        model: "claude-fable-5-1",
+      });
+      await bdd.readOnboardingStatus(bdd.user(member));
+      await bdd.completeOnboarding(bdd.user(member));
+      const memberRun = await claimed.runtime({
+        ...member,
+        agentId: agent.agentId,
+      });
+      api.authenticate(member);
+      const desktop = await accept(
+        api
+          .connections()
+          .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
+        [201],
+      );
+      await api.enableDefault(member, "vnc", desktop.body.id);
+      expect(
+        (await snapshot({ ...memberRun, connectionId: desktop.body.id })).body,
+      ).toStrictEqual({ outcome: "valid", lifetimeSeconds: 7200 });
+      context.mocks.ably.publish.mockClear();
+      if (entry === "configuration") {
+        await bdd.updateAgent(actor, agent.agentId, { visibility: "private" });
+      } else {
+        await bdd.updateAgentMetadata(actor, agent.agentId, {
+          visibility: "private",
+        });
+      }
+      expect(notifications()).toStrictEqual([
+        [
+          "vnc-authority-invalidated",
+          { runId: memberRun.runId, connectionId: null },
+        ],
+      ]);
+      expect(
+        (await snapshot({ ...memberRun, connectionId: desktop.body.id })).body,
+      ).toStrictEqual({ outcome: "unavailable" });
+      await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
+        visibility: "private",
+      });
+      for (const value of [ownRun, memberRun]) {
+        await expect(
+          runs.readRun(bdd.user(value), value.runId),
+        ).resolves.toMatchObject({ status: "running" });
+      }
+      expect(
+        channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
+      ).toStrictEqual([]);
+    },
+  );
+
+  it("requires exact current Run/Runner/configuration and retains the old check response", async () => {
+    const f = await claimed.fixture();
+    expect((await snapshot(f)).body).toStrictEqual({
+      outcome: "valid",
+      lifetimeSeconds: 7200,
+    });
+    const old = await accept(
+      api.runner().check({
+        headers: vncRunnerHeaders,
+        params: { runId: f.runId },
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          expectedGeneration: 1,
+          expectedTransport: { type: "direct" },
+        },
+      }),
+      [200],
+    );
+    expect(old.body).toStrictEqual({ outcome: "valid" });
+    expect((await snapshot(f, 2)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    for (const runnerIdentity of [
+      { ...f.runnerIdentity, runnerId: randomUUID() },
+      {
+        ...f.runnerIdentity,
+        heartbeatGeneration: f.runnerIdentity.heartbeatGeneration + 1,
+      },
+    ]) {
+      expect((await snapshot({ ...f, runnerIdentity })).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+    }
+    expect((await snapshot({ ...f, runId: randomUUID() })).body).toStrictEqual({
+      outcome: "unavailable",
+    });
+    const another = await claimed.fixture();
+    expect(
+      (await snapshot({ ...another, connectionId: f.connectionId })).body,
+    ).toStrictEqual({ outcome: "unavailable" });
+  });
+
+  it("delivers host changes only to the exact owner/connection and refuses stale generations", async () => {
+    const f = await claimed.fixture();
+    const another = await claimed.fixture();
+    api.authenticate(f);
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 1, displayName: "Changed desktop" },
+      }),
+      [200],
+    );
+    expect(notifications()).toStrictEqual([
+      [
+        "vnc-authority-invalidated",
+        { runId: f.runId, connectionId: f.connectionId },
+      ],
+    ]);
+    expect(
+      channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
+    ).toStrictEqual([]);
+    expect((await snapshot(f)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 1, displayName: "Stale write" },
+      }),
+      [409],
+    );
+    expect(notifications()).toStrictEqual([]);
+    await accept(
+      api.connections().delete({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 2 },
+      }),
+      [204],
+    );
+    expect(notifications()).toStrictEqual([
+      [
+        "vnc-authority-invalidated",
+        { runId: f.runId, connectionId: f.connectionId },
+      ],
+    ]);
+    expect((await snapshot(f, 2)).body).toStrictEqual({
+      outcome: "unavailable",
+    });
+    for (const value of [f, another]) {
+      await expect(
+        runs.readRun(bdd.user(value), value.runId),
+      ).resolves.toMatchObject({ status: "running" });
+    }
+  });
+
+  it("revokes current credential references and preserves unrelated connections", async () => {
+    const f = await claimed.fixture();
+    api.authenticate(f);
+    const linked = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: { ...vncConnectionBody(), credential: { id: f.credentialId } },
+      }),
+      [201],
+    );
+    const unrelated = await accept(
+      api
+        .connections()
+        .create({ headers: vncSessionHeaders, body: vncConnectionBody() }),
+      [201],
+    );
+    context.mocks.ably.publish.mockClear();
+    await accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params: { credentialId: f.credentialId },
+        body: {
+          expectedRevision: 1,
+          authentication: {
+            method: "vnc_password",
+            password: "rotated",
+          },
+        },
+      }),
+      [200],
+    );
+    expect(notifications()).toHaveLength(2);
+    expect(notifications()).toStrictEqual(
+      expect.arrayContaining([
+        [
+          "vnc-authority-invalidated",
+          { runId: f.runId, connectionId: f.connectionId },
+        ],
+        [
+          "vnc-authority-invalidated",
+          { runId: f.runId, connectionId: linked.body.id },
+        ],
+      ]),
+    );
+    expect(notifications()).not.toContainEqual([
+      "vnc-authority-invalidated",
+      { runId: f.runId, connectionId: unrelated.body.id },
+    ]);
+    expect(requireVncCredentialId(unrelated.body)).not.toBe(f.credentialId);
+    expect((await snapshot(f)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    expect((await snapshot(f, 2)).body).toStrictEqual({
+      outcome: "valid",
+      lifetimeSeconds: 7200,
+    });
+  });
+
+  it("feature changes and reset revoke only that owner's VNC snapshots without cancelling Runs", async () => {
+    const f = await claimed.fixture();
+    const another = await claimed.fixture();
+    for (const change of [
+      () => {
+        return updateFeatureSwitchesForUser(context, f, {
+          [FeatureSwitchKey.VncAccess]: false,
+        });
+      },
+      () => {
+        return deleteFeatureSwitchesForUser(context, f);
+      },
+    ]) {
+      context.mocks.ably.publish.mockClear();
+      await change();
+      expect(notifications()).toStrictEqual([
+        ["vnc-authority-invalidated", { runId: f.runId, connectionId: null }],
+      ]);
+      expect((await snapshot(f)).body).toStrictEqual({
+        outcome: "unavailable",
+      });
+      expect((await snapshot(another)).body).toStrictEqual({
+        outcome: "valid",
+        lifetimeSeconds: 7200,
+      });
+      expect(
+        channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
+      ).toStrictEqual([]);
+      await expect(runs.readRun(bdd.user(f), f.runId)).resolves.toMatchObject({
+        status: "running",
+      });
+    }
+  });
+
+  it("a publication failure preserves the committed host change and current admission refusal", async () => {
+    const f = await claimed.fixture();
+    api.authenticate(f);
+    context.mocks.ably.publish.mockRejectedValue(
+      new Error("notification unavailable"),
+    );
+    await accept(
+      api.connections().update({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: {
+          expectedGeneration: 1,
+          displayName: "Committed during outage",
+        },
+      }),
+      [200],
+    );
+    expect((await snapshot(f)).body).toStrictEqual({
+      outcome: "configuration_changed",
+    });
+    expect((await snapshot(f, 2)).body).toStrictEqual({
+      outcome: "valid",
+      lifetimeSeconds: 7200,
+    });
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+  });
+});

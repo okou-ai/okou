@@ -32,7 +32,7 @@ fn key(down: bool, code: u32) -> Vec<u8> {
 async fn unicode_chord_drag_and_scroll_reach_server_once_with_balanced_releases() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     for (input, expected) in [
@@ -103,7 +103,7 @@ async fn unicode_chord_drag_and_scroll_reach_server_once_with_balanced_releases(
 async fn stale_geometry_is_not_started_and_preserves_untouched_session() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let reply = h.run.request("vnc.input", json!({"sessionId":session,"input":{
@@ -133,7 +133,7 @@ async fn server_refusal_and_disconnect_fail_without_reconnect_or_mode_retry() {
     for refusal in [true, false] {
         let mut h = Harness::new().await;
         let resolve = h.resolve().await;
-        let _check = h.check("valid", 200).await;
+        let _check = h.snapshot("valid", 200).await;
         h.peer.refuse.store(refusal, Ordering::SeqCst);
         let started = h.start("exclusive").await;
         if refusal {
@@ -162,7 +162,7 @@ async fn server_refusal_and_disconnect_fail_without_reconnect_or_mode_retry() {
 async fn timed_out_dns_retains_session_capacity_until_resolution_completes() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let gate = Arc::new(Semaphore::new(0));
     *h.network.resolve_gate.lock().unwrap() = Some(Arc::clone(&gate));
     for _ in 0..2 {
@@ -207,7 +207,7 @@ async fn timed_out_dns_retains_session_capacity_until_resolution_completes() {
 async fn idle_session_expires_without_waiting_for_a_followup_operation() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let check = h.check("valid", 200).await;
+    let check = h.snapshot("valid", 200).await;
     h.start("shared").await.session();
     mode(&h, 1).await;
     // Advance only the two-hour lifetime; do not pause while driving HTTP/TLS.
@@ -228,7 +228,7 @@ async fn idle_session_expires_without_waiting_for_a_followup_operation() {
 async fn cancellation_between_data_and_end_reports_unknown_error_and_eof() {
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let _check = h.check("valid", 200).await;
+    let _check = h.snapshot("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let mut guest = h.run.open_stream(true).await;
