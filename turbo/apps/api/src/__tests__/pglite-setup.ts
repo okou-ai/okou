@@ -1,6 +1,7 @@
 import { inject, vi } from "vitest";
 import { API_DATABASE_SNAPSHOT } from "./database-snapshot";
 import { configureCaseDatabase } from "../test-fixtures/case-database";
+import { preloadPgliteSnapshot } from "../test-fixtures/pglite-database";
 
 // One transport binding for the entire API project. Production SQL and services
 // are unchanged; setupApp selects the database owned by the current case.
@@ -21,4 +22,6 @@ vi.mock("../lib/db", async (importOriginal) => {
   };
 });
 
-configureCaseDatabase(inject(API_DATABASE_SNAPSHOT));
+const snapshotPath = inject(API_DATABASE_SNAPSHOT);
+await preloadPgliteSnapshot(snapshotPath);
+configureCaseDatabase(snapshotPath);

@@ -218,6 +218,11 @@ function snapshotFiles(path: string): Promise<SnapshotFiles> {
   return files;
 }
 
+/** Decode the immutable baseline during worker setup, before case deadlines. */
+export async function preloadPgliteSnapshot(path: string): Promise<void> {
+  await snapshotFiles(path);
+}
+
 class SnapshotMemoryFS extends MemoryFS {
   constructor(private readonly snapshot: SnapshotFiles) {
     super();
