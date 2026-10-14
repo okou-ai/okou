@@ -3883,6 +3883,65 @@
       "connected": "{{connector}} conectado"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "Un punto de partida para tu acuerdo. Revisa las condiciones de tu proyecto y jurisdicción antes de firmar.",
+    "back": "Volver a las plantillas",
+    "categories": {
+      "all": "Todas",
+      "business-record": "Registros comerciales",
+      "contract": "Contrato",
+      "creative-brief": "Brief creativo",
+      "guide": "Guías",
+      "invoice": "Factura",
+      "letter": "Cartas",
+      "report": "Informes",
+      "resume": "Currículums",
+      "service-agreement": "Acuerdo de servicios"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Condiciones y responsabilidades",
+        "delivery": "Revisión y firmas",
+        "details": "Duración y rescisión",
+        "overview": "Partes y alcance"
+      },
+      "brief": {
+        "content": "Público y mensaje principal",
+        "delivery": "Calendario y proceso de revisión",
+        "details": "Entregables y formatos",
+        "overview": "Descripción y objetivos del proyecto"
+      },
+      "general": {
+        "content": "Secciones para tu contenido",
+        "delivery": "Word editable o PDF",
+        "details": "Diseño de página uniforme",
+        "overview": "Estructura clara del documento"
+      },
+      "invoice": {
+        "content": "Servicios y tarifas detallados",
+        "delivery": "Datos de pago",
+        "details": "Impuestos, totales y vencimiento",
+        "overview": "Datos del proveedor y del cliente"
+      }
+    },
+    "filter": "Categoría de documento",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Documento de Word"
+    },
+    "imageError": "Vista previa no disponible",
+    "included": "Qué incluye",
+    "nextPage": "Página de ejemplo siguiente",
+    "openLarger": "Abrir vista previa ampliada",
+    "page": "Página {{page}}",
+    "preview": "Vista previa de {{title}}",
+    "previousPage": "Página de ejemplo anterior",
+    "retry": "Reintentar",
+    "samplePages": "Páginas de ejemplo: {{total}}",
+    "title": "Documento",
+    "use": "Usar plantilla",
+    "useNamed": "Usar {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Reintentar"

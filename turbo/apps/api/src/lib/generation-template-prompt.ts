@@ -1,3 +1,4 @@
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   buildPresentationRunbookInstructionLines,
@@ -79,7 +80,13 @@ interface CustomGenerationTemplateInput {
   readonly selection: { readonly userTemplateId: string };
 }
 
+interface DocumentGenerationTemplateInput {
+  readonly type: "document";
+  readonly selection: { readonly documentTemplateId: string };
+}
+
 type GenerationTemplateInput =
+  | DocumentGenerationTemplateInput
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | IllustrationGenerationTemplateInput
@@ -131,6 +138,9 @@ export function buildGenerationTemplatePrompt(
   }
   if (generationTemplate.type === "workflow") {
     return buildWorkflowGenerationTemplatePrompt(generationTemplate);
+  }
+  if (generationTemplate.type === "document") {
+    return buildDocumentGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "website") {
     return buildWebsiteGenerationTemplatePrompt(generationTemplate);
@@ -457,6 +467,32 @@ function buildIllustrationGenerationTemplatePrompt(
       `- ${sourceInstruction}`,
       '- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.',
       "- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.",
+    ].join("\n"),
+  };
+}
+
+function buildDocumentGenerationTemplatePrompt(
+  selection: DocumentGenerationTemplateInput,
+): GenerationTemplatePromptResult {
+  const item = findDocumentTemplateItem(selection.selection.documentTemplateId);
+  if (!item) {
+    return { status: "invalid", message: "Unknown document template" };
+  }
+  const { source } = item;
+  const sourceBaseUrl = `https://raw.githubusercontent.com/${source.repo}/${source.ref}`;
+  const sourceUrl = `${sourceBaseUrl}/${source.path.split("/").map(encodeURIComponent).join("/")}`;
+  const licenseUrl = `${sourceBaseUrl}/${source.licensePath.split("/").map(encodeURIComponent).join("/")}`;
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming("a document"),
+      `Selected document template: ${item.title}`,
+      `- Template file: ${sourceUrl}`,
+      `- License: ${licenseUrl}`,
+      `- Layout previews: ${item.previewPages.join(", ")}`,
+      "- Read the template, license, and referenced files at the linked commit. Use the source for structure and clauses, and the previews for layout.",
+      "- Use the office-files skill for the user's requested Word or PDF output.",
+      "- Replace sample content with the user's facts; leave missing business details as placeholders.",
     ].join("\n"),
   };
 }

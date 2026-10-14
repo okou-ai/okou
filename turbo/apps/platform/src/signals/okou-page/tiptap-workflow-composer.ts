@@ -282,7 +282,12 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
-  "custom" | "presentation" | "illustration" | "workflow" | "website";
+  | "custom"
+  | "document"
+  | "presentation"
+  | "illustration"
+  | "workflow"
+  | "website";
 
 export interface ComposerTemplateAttachment {
   readonly type: ComposerTemplateAttachmentType;
@@ -844,6 +849,7 @@ function templateAttachmentNodeAttributes(
   if (
     (type !== "presentation" &&
       type !== "custom" &&
+      type !== "document" &&
       type !== "illustration" &&
       type !== "workflow" &&
       type !== "website") ||
@@ -930,6 +936,11 @@ function templateAttachmentRemoveLabel(
 function templateAttachmentTypeLabel(
   type: ComposerTemplateAttachmentType,
 ): string {
+  if (type === "document") {
+    return i18n.t(($) => {
+      return $.documentTemplates.title;
+    });
+  }
   if (type === "presentation") {
     return i18n.t(($) => {
       return $.chat.templates.categories.presentation;

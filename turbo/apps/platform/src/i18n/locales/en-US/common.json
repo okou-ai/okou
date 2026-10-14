@@ -3815,6 +3815,65 @@
       "connected": "{{connector}} connected"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
+    "back": "Back to templates",
+    "categories": {
+      "all": "All",
+      "business-record": "Business records",
+      "contract": "Contract",
+      "creative-brief": "Creative brief",
+      "guide": "Guides",
+      "invoice": "Invoice",
+      "letter": "Letters",
+      "report": "Reports",
+      "resume": "Resumes",
+      "service-agreement": "Service agreement"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Terms and responsibilities",
+        "delivery": "Review and signatures",
+        "details": "Duration and termination",
+        "overview": "Parties and scope"
+      },
+      "brief": {
+        "content": "Audience and key message",
+        "delivery": "Timeline and review process",
+        "details": "Deliverables and formats",
+        "overview": "Project overview and goals"
+      },
+      "general": {
+        "content": "Sections for your content",
+        "delivery": "Editable Word or PDF output",
+        "details": "Consistent page layout",
+        "overview": "Clear document structure"
+      },
+      "invoice": {
+        "content": "Itemized services and rates",
+        "delivery": "Payment details",
+        "details": "Tax, totals, and due date",
+        "overview": "Seller and client details"
+      }
+    },
+    "filter": "Document category",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word document"
+    },
+    "imageError": "Preview unavailable",
+    "included": "What's included",
+    "nextPage": "Next sample page",
+    "openLarger": "Open larger preview",
+    "page": "Page {{page}}",
+    "preview": "Preview {{title}}",
+    "previousPage": "Previous sample page",
+    "retry": "Retry",
+    "samplePages": "Sample pages: {{total}}",
+    "title": "Document",
+    "use": "Use template",
+    "useNamed": "Use {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Try again"
