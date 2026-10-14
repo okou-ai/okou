@@ -113,9 +113,11 @@ export function orgPlanCapabilitiesFromRow(
 }
 
 export function orgPlanCapabilities(
-  orgId: string,
+  orgIdSource: string | Computed<string>,
 ): Computed<Promise<OrgPlanCapabilities | null>> {
   return computed(async (get): Promise<OrgPlanCapabilities | null> => {
+    const orgId =
+      typeof orgIdSource === "string" ? orgIdSource : get(orgIdSource);
     const db = get(db$);
     const [capabilities] = await db
       .select(ORG_PLAN_CAPABILITY_SELECTION)

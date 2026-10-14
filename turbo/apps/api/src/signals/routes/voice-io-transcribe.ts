@@ -33,6 +33,8 @@ const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
   "audio/x-wav",
 ] as const;
 
+const lifetimeQuota$ = audioInputLifetimeQuota(organizationAuthContext$);
+
 const voiceIoFeatureContext$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   return await get(userFeatureSwitchContext(auth.orgId, auth.userId));
@@ -179,7 +181,7 @@ const voiceIoTranscribeHandler$ = command(
     signal.throwIfAborted();
 
     const auth = get(organizationAuthContext$);
-    const quota = await get(audioInputLifetimeQuota(auth.orgId, auth.userId));
+    const quota = await get(lifetimeQuota$);
     signal.throwIfAborted();
     if (!quota.allowed) {
       return {

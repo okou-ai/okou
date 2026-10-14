@@ -12,6 +12,7 @@ import type { RouteEntry } from "../route-entry";
 import { polishVoiceTranscript$ } from "../services/voice-io-polish.service";
 
 const voiceIoPolishBody$ = bodyResultOf(voiceIoPolishSegmentsContract.post);
+const lifetimeQuota$ = audioInputLifetimeQuota(organizationAuthContext$);
 
 const postVoiceIoPolish$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -22,7 +23,7 @@ const postVoiceIoPolish$ = command(
       return bodyResult.response;
     }
     const auth = get(organizationAuthContext$);
-    const quota = await get(audioInputLifetimeQuota(auth.orgId, auth.userId));
+    const quota = await get(lifetimeQuota$);
     signal.throwIfAborted();
     if (!quota.allowed) {
       return {
