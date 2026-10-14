@@ -8,16 +8,8 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { searchParams$ } from "../route.ts";
-import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
-
-export const discordAuthorizationFailed$ = computed((get) => {
-  return get(searchParams$).get("discord") === "error";
-});
-
-export const discordAuthorizationPending$ = computed((get) => {
-  return get(searchParams$).get("discord") === "pending";
-});
+import { ROUTES } from "../route-paths.ts";
+import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
 
 const reloadVersion$ = state(0);
 
@@ -70,20 +62,15 @@ export const startDiscordAuthorization$ = command(
       return;
     }
     const flowSignal = set(resetDiscordAuthorization$, signal);
-    const standalone =
-      window.matchMedia?.("(display-mode: standalone)").matches ?? false;
     // Preserve the click's browser activation before awaiting authenticated HTTP.
-    const popup = window.open(
-      "about:blank",
-      "_blank",
-      standalone ? undefined : "width=600,height=700",
-    );
+    const popup = window.open("about:blank", "_blank");
     if (!popup) {
       throw new DiscordPopupBlockedError();
     }
     const closePopup = () => {
       popup.close();
     };
+    let showingResult = false;
     flowSignal.addEventListener("abort", closePopup, { once: true });
     return await withCleanup(
       (async () => {
@@ -109,30 +96,64 @@ export const startDiscordAuthorization$ = command(
           );
         }
         popup.location.href = result.body.authorizationUrl;
-        await waitLoopUntil(
-          () => {
-            return popup.closed;
-          },
-          250,
-          flowSignal,
-          { retryTransientErrors: false, testIntervalMs: 10 },
-        );
-        flowSignal.throwIfAborted();
         // Callback verification alone cannot bind an account. Complete under
         // the current authenticated owner with the original browser's proof.
-        await accept(
-          client.complete({
-            body: { state: attemptState, completionToken },
-            fetchOptions: { signal: flowSignal, credentials: "include" },
-          }),
-          [200],
+        // Approval-required is the API's pending state, not a failed attempt.
+        const completed = await settle(
+          waitLoopUntil(
+            async () => {
+              const completion = await accept(
+                client.complete({
+                  body: { state: attemptState, completionToken },
+                  fetchOptions: { signal: flowSignal, credentials: "include" },
+                }),
+                [200, 409],
+                flowSignal,
+              );
+              flowSignal.throwIfAborted();
+              if (
+                completion.status === 409 &&
+                completion.body.error.code ===
+                  "DISCORD_OAUTH_APPROVAL_REQUIRED" &&
+                !popup.closed
+              ) {
+                return false;
+              }
+              await accept(Promise.resolve(completion), [200], flowSignal);
+              return true;
+            },
+            1000,
+            flowSignal,
+            { retryTransientErrors: false, testIntervalMs: 10 },
+          ),
           flowSignal,
         );
+        flowSignal.throwIfAborted();
+        // The original tab stays on Works; only the authorization tab moves
+        // to the result page, after the authenticated completion has settled.
+        const destination = new URL(
+          ROUTES.settingsDiscord,
+          window.location.origin,
+        );
+        destination.searchParams.set(
+          "status",
+          completed.ok ? "connected" : "error",
+        );
+        if (!popup.closed) {
+          popup.location.href = destination.toString();
+        }
+        showingResult = true;
+        flowSignal.removeEventListener("abort", closePopup);
+        if (!completed.ok) {
+          throw completed.error;
+        }
         await set(refreshDiscordOrg$, flowSignal);
       })(),
       () => {
         flowSignal.removeEventListener("abort", closePopup);
-        closePopup();
+        if (!showingResult) {
+          closePopup();
+        }
       },
     );
   },

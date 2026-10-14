@@ -92,9 +92,8 @@ const verifyDiscordAuthorization$ = command(
     signal.throwIfAborted();
     set(approvalProof$, null);
     set(approvalSucceeded$, true);
-    // Approval is not a connection. Only the original tab may complete with its
-    // separately retained token; if close() is blocked, the UI explains this.
-    window.close();
+    // Keep the authorization tab open while the original tab completes with
+    // its separately retained proof and navigates this tab to the result page.
   },
 );
 
