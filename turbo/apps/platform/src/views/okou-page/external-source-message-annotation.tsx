@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { ArrowUpRight } from "lucide-react";
-import { BrandSlack } from "@okouai/ui";
+import { BrandSlack, cn } from "@okouai/ui";
 import type { UserMessageRenderPart } from "../../signals/chat-page/chat-event.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -115,12 +115,14 @@ function sourceMessageLabel(
 export function ExternalSourceMessageAnnotation({
   part,
   className,
+  compact = false,
 }: {
   readonly part: Extract<
     UserMessageRenderPart,
     { type: "source"; kind: "external" }
   >["part"];
   readonly className: string;
+  readonly compact?: boolean;
 }) {
   const { t } = useTranslation();
   // Historical messages used "feishu" for both platforms; their link can
@@ -181,11 +183,22 @@ export function ExternalSourceMessageAnnotation({
           className="size-[15px] shrink-0 object-contain"
         />
       )}
-      <span className="shrink-0">{sourceLabel}</span>
+      <span
+        className={cn("min-w-0 truncate", {
+          "flex-1": compact,
+          "shrink-0": !compact,
+        })}
+      >
+        {sourceLabel}
+      </span>
       {href ? (
         <>
-          <span className="shrink-0">·</span>
-          <span className="min-w-0 truncate">{openLabel}</span>
+          {!compact && (
+            <>
+              <span className="shrink-0">·</span>
+              <span className="min-w-0 truncate">{openLabel}</span>
+            </>
+          )}
           <ArrowUpRight size={12} className="shrink-0" />
         </>
       ) : null}
