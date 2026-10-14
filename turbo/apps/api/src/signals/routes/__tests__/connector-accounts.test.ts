@@ -675,24 +675,34 @@ describe("connector account lifecycle routes", () => {
     );
     expect(selectedDefault.body.isDefault).toBeTruthy();
 
-    const [currentFirst, currentSecond] = await Promise.all([
-      accept(
-        accountClient().connection({
-          headers: authHeaders(),
-          params: { connectionId: first.body.id },
-          query: { kind: "builtin", connectorSlug: "openai" },
-        }),
-        [200],
-      ),
-      accept(
-        accountClient().connection({
-          headers: authHeaders(),
-          params: { connectionId: second.body.id },
-          query: { kind: "builtin", connectorSlug: "openai" },
-        }),
-        [200],
-      ),
-    ]);
+    const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
+      [
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: second.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().deletionImpact({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+      ],
+    );
     expect(currentFirst.body).toMatchObject({
       id: first.body.id,
       displayName: "Work",
@@ -702,6 +712,11 @@ describe("connector account lifecycle routes", () => {
       id: second.body.id,
       displayName: "Personal renamed",
       isDefault: true,
+    });
+    expect(currentFirstImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: true,
     });
 
     const legacyProjection = await accept(
