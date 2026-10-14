@@ -575,6 +575,7 @@
       "markdown": "Markdown",
       "presentation": "Presentazione",
       "sharedConversation": "Conversazione condivisa",
+      "spreadsheet": "Foglio di calcolo",
       "text": "Testo",
       "video": "Video"
     },
@@ -1783,7 +1784,7 @@
       "useForFutureChats": "Usa questo modello per le chat future",
       "workflows": {
         "loading": "Caricamento flussi di lavoro...",
-        "showAll": "Mostra tutti i flussi di lavoro",
+        "showAllCount": "Mostra tutti e {{total}}",
         "title": "Flussi di lavoro"
       }
     },
@@ -2109,9 +2110,11 @@
       "collapse": "Comprimi",
       "copyLink": "Copia link",
       "empty": "Questa chat non contiene ancora artefatti o link",
+      "emptyLinks": "Non ci sono ancora link in questa chat",
       "expand": "Espandi",
       "links": "Link",
       "loadFailed": "Impossibile caricare le risorse",
+      "loadingLinks": "Caricamento dei link",
       "retry": "Riprova",
       "title": "Risorse della chat",
       "viewAll": "Mostra tutto"
@@ -3880,6 +3883,65 @@
       "connected": "{{connector}} connesso"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
+    "back": "Torna ai modelli",
+    "categories": {
+      "all": "Tutti",
+      "business-record": "Documenti commerciali",
+      "contract": "Contratto",
+      "creative-brief": "Brief creativo",
+      "guide": "Guide",
+      "invoice": "Fattura",
+      "letter": "Lettere",
+      "report": "Rapporti",
+      "resume": "Curriculum",
+      "service-agreement": "Accordo di servizi"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Termini e responsabilità",
+        "delivery": "Revisione e firme",
+        "details": "Durata e risoluzione",
+        "overview": "Parti e ambito"
+      },
+      "brief": {
+        "content": "Pubblico e messaggio principale",
+        "delivery": "Tempistiche e processo di revisione",
+        "details": "Risultati da consegnare e formati",
+        "overview": "Panoramica e obiettivi del progetto"
+      },
+      "general": {
+        "content": "Sezioni per i tuoi contenuti",
+        "delivery": "Word modificabile o PDF",
+        "details": "Impaginazione coerente",
+        "overview": "Struttura chiara del documento"
+      },
+      "invoice": {
+        "content": "Servizi e tariffe dettagliati",
+        "delivery": "Dati di pagamento",
+        "details": "Imposte, totali e scadenza",
+        "overview": "Dati del fornitore e del cliente"
+      }
+    },
+    "filter": "Categoria del documento",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Documento Word"
+    },
+    "imageError": "Anteprima non disponibile",
+    "included": "Contenuti inclusi",
+    "nextPage": "Pagina di esempio successiva",
+    "openLarger": "Apri anteprima ingrandita",
+    "page": "Pagina {{page}}",
+    "preview": "Anteprima di {{title}}",
+    "previousPage": "Pagina di esempio precedente",
+    "retry": "Riprova",
+    "samplePages": "Pagine di esempio: {{total}}",
+    "title": "Documento",
+    "use": "Usa modello",
+    "useNamed": "Usa {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Riprova"
@@ -4591,17 +4653,9 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
-        "usageRemaining": "{{provider}} {{window}} rimanente",
-        "windows": {
-          "fiveHour": "5 ore",
-          "week": "settimana"
-        }
+        "usageRemaining": "{{provider}} {{window}} rimanente"
       },
       "switchAccount": "Cambia account",
       "userFallback": "Utente"

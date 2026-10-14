@@ -540,6 +540,11 @@ const workflowGenerationTemplateRequestSchema = z.object({
   }),
 });
 
+const documentGenerationTemplateRequestSchema = z.object({
+  type: z.literal("document"),
+  selection: z.object({ documentTemplateId: z.string().min(1) }).strict(),
+});
+
 const websiteGenerationTemplateRequestSchema = z.object({
   type: z.literal("website"),
   selection: z
@@ -575,6 +580,7 @@ const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
+  documentGenerationTemplateRequestSchema,
 ]);
 
 const userMessageTextPartSchema = z

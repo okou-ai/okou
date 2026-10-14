@@ -1,10 +1,8 @@
-import type {
-  ModelProviderResponse,
-  PersonalSubscriptionProviderType,
-} from "@okouai/api-contracts/contracts/model-providers";
+import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
+import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { personalModelProviders$ } from "../external/personal-model-providers.ts";
 import { setSidebarExpanded$ } from "./nav.ts";
@@ -24,6 +22,8 @@ export interface SubscriptionPlanStatus {
   readonly linked: boolean;
   /** The tighter usage window of the active account, when it is reported. */
   readonly remainingPercent: number | null;
+  /** Which window `remainingPercent` belongs to, so the caption can name it. */
+  readonly limitingWindow: "fiveHour" | "week" | null;
 }
 
 export const subscriptionLinkingEnabled$ = computed((get) => {
@@ -37,18 +37,6 @@ export const subscriptionLinkingUnlinked$ = computed(async (get) => {
   const { modelProviders } = await get(personalModelProviders$);
   return modelProviders.length === 0;
 });
-
-function remainingPercent(
-  account: ModelProviderResponse | undefined,
-): number | null {
-  const windows = [
-    account?.subscriptionUsage?.fiveHour?.remainingPercent,
-    account?.subscriptionUsage?.weekly?.remainingPercent,
-  ].filter((value): value is number => {
-    return typeof value === "number";
-  });
-  return windows.length === 0 ? null : Math.min(...windows);
-}
 
 /**
  * Each subscription, linked or not, so the model panel can keep an entry for
@@ -66,10 +54,14 @@ export const subscriptionPlanStatuses$ = computed(async (get) => {
     const active = accounts.find((account) => {
       return account.isActive !== false;
     });
+    const limiting = limitingSubscriptionUsageWindow(active?.subscriptionUsage);
+    const remainingPercent = limiting?.remainingPercent ?? null;
     return {
       type,
       linked: accounts.length > 0,
-      remainingPercent: remainingPercent(active),
+      remainingPercent,
+      limitingWindow:
+        limiting !== null && remainingPercent !== null ? limiting.kind : null,
     };
   });
 });

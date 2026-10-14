@@ -556,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "演示文稿",
       "sharedConversation": "分享的对话",
+      "spreadsheet": "电子表格",
       "text": "文本",
       "video": "视频"
     },
@@ -1751,7 +1752,7 @@
       "useForFutureChats": "以后的对话都用这个",
       "workflows": {
         "loading": "正在加载工作流…",
-        "showAll": "显示全部工作流",
+        "showAllCount": "显示全部 {{total}} 个",
         "title": "工作流"
       }
     },
@@ -2060,9 +2061,11 @@
       "collapse": "收起",
       "copyLink": "复制链接",
       "empty": "此聊天中还没有成果或链接",
+      "emptyLinks": "此聊天中暂无链接",
       "expand": "展开",
       "links": "链接",
       "loadFailed": "无法加载聊天资源",
+      "loadingLinks": "正在加载链接",
       "retry": "重试",
       "title": "聊天资源",
       "viewAll": "查看全部"
@@ -3801,6 +3804,65 @@
       "connected": "{{connector}}已连接"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
+    "back": "返回模板列表",
+    "categories": {
+      "all": "全部",
+      "business-record": "收据与报价",
+      "contract": "合同",
+      "creative-brief": "创意简报",
+      "guide": "手册与讲义",
+      "invoice": "发票",
+      "letter": "商务信函",
+      "report": "报告",
+      "resume": "简历",
+      "service-agreement": "服务协议"
+    },
+    "contents": {
+      "agreement": {
+        "content": "条款与责任",
+        "delivery": "审阅与签署",
+        "details": "期限与终止",
+        "overview": "签约主体与范围"
+      },
+      "brief": {
+        "content": "目标受众与核心信息",
+        "delivery": "时间安排与审核流程",
+        "details": "交付物与格式",
+        "overview": "项目概况与目标"
+      },
+      "general": {
+        "content": "适合填写内容的章节",
+        "delivery": "可编辑 Word 或 PDF 输出",
+        "details": "统一的页面版式",
+        "overview": "清晰的文档结构"
+      },
+      "invoice": {
+        "content": "服务明细与单价",
+        "delivery": "付款信息",
+        "details": "税额、合计与到期日",
+        "overview": "供应方与客户信息"
+      }
+    },
+    "filter": "文档分类",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文档"
+    },
+    "imageError": "预览暂不可用",
+    "included": "包含内容",
+    "nextPage": "下一页样张",
+    "openLarger": "查看大图",
+    "page": "第 {{page}} 页",
+    "preview": "预览 {{title}}",
+    "previousPage": "上一页样张",
+    "retry": "重试",
+    "samplePages": "样张页数：{{total}}",
+    "title": "文档",
+    "use": "使用模板",
+    "useNamed": "使用 {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "重试"
@@ -4506,17 +4568,9 @@
       "settings": "设置",
       "signOut": "退出登录",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩余用量",
-        "windows": {
-          "fiveHour": "5 小时",
-          "week": "周"
-        }
+        "usageRemaining": "{{provider}}{{window}}剩余用量"
       },
       "switchAccount": "切换账号",
       "userFallback": "用户"

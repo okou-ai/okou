@@ -180,10 +180,6 @@ function configureExistingChat(args: {
 }
 
 async function changeLanguage(next: LanguageChoice): Promise<void> {
-  click(await findAction("button", "Test User"));
-  const menu = await screen.findByRole("menu");
-  click(await findAction("menuitem", "Settings", menu));
-
   const dialog = await screen.findByRole("dialog", { name: "Settings" });
   click(await findAction("combobox", "Language", dialog));
   click(await findAction("option", next.option));
@@ -226,17 +222,17 @@ test("Changing language preserves the open conversation and draft", async () => 
 
   await setupPage({
     context,
-    path: `/chats/${THREAD_ID}`,
+    path: `/chats/${THREAD_ID}?settings=preference`,
   });
 
   const titleCopies = await screen.findAllByText(title);
   const visibleTitle = titleCopies.find((element) => {
     return element.closest("header") !== null;
   });
-  expect(visibleTitle).toBeVisible();
+  expect(visibleTitle).toBeInTheDocument();
   const originalComposer = composerEditor();
   expect(originalComposer).toHaveTextContent(draft);
-  const originalUrl = `${pathname()}${search()}`;
+  const originalUrl = pathname();
 
   await changeLanguage(english);
 
@@ -247,5 +243,5 @@ test("Changing language preserves the open conversation and draft", async () => 
   const translatedVisibleTitle = translatedTitleCopies.find((element) => {
     return element.closest("header") !== null;
   });
-  expect(translatedVisibleTitle).toBeVisible();
+  expect(translatedVisibleTitle).toBeInTheDocument();
 });

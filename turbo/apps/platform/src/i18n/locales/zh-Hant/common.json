@@ -556,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "簡報",
       "sharedConversation": "分享的對話",
+      "spreadsheet": "試算表",
       "text": "文字",
       "video": "影片"
     },
@@ -1751,7 +1752,7 @@
       "useForFutureChats": "以後的對話都用這個",
       "workflows": {
         "loading": "正在載入工作流…",
-        "showAll": "顯示全部工作流程",
+        "showAllCount": "顯示全部 {{total}} 個",
         "title": "工作流"
       }
     },
@@ -2060,9 +2061,11 @@
       "collapse": "收合",
       "copyLink": "複製連結",
       "empty": "此聊天中還沒有成果或連結",
+      "emptyLinks": "此聊天中暫無連結",
       "expand": "展開",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
+      "loadingLinks": "正在載入連結",
       "retry": "重試",
       "title": "聊天資源",
       "viewAll": "查看全部"
@@ -3801,6 +3804,65 @@
       "connected": "{{connector}}已連線"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",
+    "back": "返回範本清單",
+    "categories": {
+      "all": "全部",
+      "business-record": "收據與報價",
+      "contract": "合約",
+      "creative-brief": "創意簡報",
+      "guide": "手冊與講義",
+      "invoice": "發票",
+      "letter": "商務信函",
+      "report": "報告",
+      "resume": "履歷",
+      "service-agreement": "服務協議"
+    },
+    "contents": {
+      "agreement": {
+        "content": "條款與責任",
+        "delivery": "審閱與簽署",
+        "details": "期限與終止",
+        "overview": "簽約主體與範圍"
+      },
+      "brief": {
+        "content": "目標受眾與核心訊息",
+        "delivery": "時程與審核流程",
+        "details": "交付項目與格式",
+        "overview": "專案概況與目標"
+      },
+      "general": {
+        "content": "適合填寫內容的章節",
+        "delivery": "可編輯 Word 或 PDF 輸出",
+        "details": "一致的頁面版式",
+        "overview": "清晰的文件結構"
+      },
+      "invoice": {
+        "content": "服務明細與單價",
+        "delivery": "付款資訊",
+        "details": "稅額、合計與到期日",
+        "overview": "供應方與客戶資訊"
+      }
+    },
+    "filter": "文件分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文件"
+    },
+    "imageError": "預覽暫時無法使用",
+    "included": "包含內容",
+    "nextPage": "下一頁樣張",
+    "openLarger": "查看大圖",
+    "page": "第 {{page}} 頁",
+    "preview": "預覽 {{title}}",
+    "previousPage": "上一頁樣張",
+    "retry": "重試",
+    "samplePages": "樣張頁數：{{total}}",
+    "title": "文件",
+    "use": "使用範本",
+    "useNamed": "使用 {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "重試"
@@ -4506,17 +4568,9 @@
       "settings": "設定",
       "signOut": "退出登入",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩餘用量",
-        "windows": {
-          "fiveHour": "5 小時",
-          "week": "周"
-        }
+        "usageRemaining": "{{provider}}{{window}}剩餘用量"
       },
       "switchAccount": "切換帳號",
       "userFallback": "使用者"

@@ -557,6 +557,7 @@
       "markdown": "Markdown",
       "presentation": "प्रस्तुति",
       "sharedConversation": "साझा बातचीत",
+      "spreadsheet": "स्प्रेडशीट",
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
@@ -1754,7 +1755,7 @@
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
       "workflows": {
         "loading": "वर्कफ़्लो लोड हो रहा है...",
-        "showAll": "सभी वर्कफ़्लो दिखाएँ",
+        "showAllCount": "सभी {{total}} दिखाएँ",
         "title": "वर्कफ़्लो"
       }
     },
@@ -2068,9 +2069,11 @@
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
       "empty": "इस चैट में अभी कोई आर्टिफ़ैक्ट या लिंक नहीं है",
+      "emptyLinks": "इस चैट में अभी कोई लिंक नहीं है",
       "expand": "विस्तार करें",
       "links": "लिंक",
       "loadFailed": "संसाधन लोड नहीं हो सके",
+      "loadingLinks": "लिंक लोड हो रहे हैं",
       "retry": "फिर कोशिश करें",
       "title": "चैट संसाधन",
       "viewAll": "सभी देखें"
@@ -3820,6 +3823,65 @@
       "connected": "{{connector}} कनेक्ट हुआ"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "आपके समझौते के लिए एक शुरुआती मसौदा। हस्ताक्षर करने से पहले अपने प्रोजेक्ट और लागू क्षेत्राधिकार के अनुसार शर्तों की समीक्षा करें।",
+    "back": "टेम्पलेट पर वापस जाएँ",
+    "categories": {
+      "all": "सभी",
+      "business-record": "व्यावसायिक रिकॉर्ड",
+      "contract": "अनुबंध",
+      "creative-brief": "क्रिएटिव ब्रीफ़",
+      "guide": "गाइड",
+      "invoice": "इनवॉइस",
+      "letter": "पत्र",
+      "report": "रिपोर्ट",
+      "resume": "रिज़्यूमे",
+      "service-agreement": "सेवा समझौता"
+    },
+    "contents": {
+      "agreement": {
+        "content": "शर्तें और ज़िम्मेदारियाँ",
+        "delivery": "समीक्षा और हस्ताक्षर",
+        "details": "अवधि और समाप्ति",
+        "overview": "पक्ष और कार्यक्षेत्र"
+      },
+      "brief": {
+        "content": "लक्षित दर्शक और मुख्य संदेश",
+        "delivery": "समयरेखा और समीक्षा प्रक्रिया",
+        "details": "डिलिवरेबल और प्रारूप",
+        "overview": "प्रोजेक्ट का परिचय और लक्ष्य"
+      },
+      "general": {
+        "content": "आपकी सामग्री के लिए अनुभाग",
+        "delivery": "संपादन योग्य Word या PDF",
+        "details": "एकसमान पृष्ठ लेआउट",
+        "overview": "स्पष्ट दस्तावेज़ संरचना"
+      },
+      "invoice": {
+        "content": "सेवाओं और दरों का विवरण",
+        "delivery": "भुगतान विवरण",
+        "details": "कर, कुल राशि और देय तिथि",
+        "overview": "विक्रेता और ग्राहक का विवरण"
+      }
+    },
+    "filter": "दस्तावेज़ श्रेणी",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word दस्तावेज़"
+    },
+    "imageError": "पूर्वावलोकन उपलब्ध नहीं है",
+    "included": "शामिल सामग्री",
+    "nextPage": "अगला नमूना पृष्ठ",
+    "openLarger": "बड़ा पूर्वावलोकन खोलें",
+    "page": "पृष्ठ {{page}}",
+    "preview": "{{title}} का पूर्वावलोकन",
+    "previousPage": "पिछला नमूना पृष्ठ",
+    "retry": "फिर से कोशिश करें",
+    "samplePages": "नमूना पृष्ठ: {{total}}",
+    "title": "दस्तावेज़",
+    "use": "टेम्पलेट इस्तेमाल करें",
+    "useNamed": "{{title}} इस्तेमाल करें"
+  },
   "global": {
     "actions": {
       "tryAgain": "पुनः प्रयास करें"
@@ -4526,17 +4588,9 @@
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
-        "usageRemaining": "{{provider}} {{window}} शेष",
-        "windows": {
-          "fiveHour": "5 घंटे",
-          "week": "सप्ताह"
-        }
+        "usageRemaining": "{{provider}} {{window}} शेष"
       },
       "switchAccount": "खाता स्थानांतरित करें",
       "userFallback": "उपयोगकर्ता"

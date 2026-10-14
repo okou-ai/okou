@@ -152,12 +152,35 @@ const deleteSshConnectionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
 
-    const params = await get(pathParamsOf(sshConnectionsContract.delete));
+    const [params, bodyResult] = await Promise.all([
+      get(pathParamsOf(sshConnectionsContract.delete)),
+      get(bodyResultOf(sshConnectionsContract.delete)),
+    ]);
     signal.throwIfAborted();
+    if (!bodyResult.ok) {
+      return sshErrorResponse(
+        400,
+        SSH_ERROR_CODES.INVALID_INPUT,
+        "Invalid SSH configuration",
+      );
+    }
+    // Old session/App -> prepared API bridge, retired by #40074 once #40073's
+    // supporting App is live and the API enforces its published client floor.
+    if (
+      bodyResult.data.expectedGeneration === undefined &&
+      auth.tokenType !== "session"
+    ) {
+      return sshErrorResponse(
+        400,
+        SSH_ERROR_CODES.INVALID_INPUT,
+        "SSH host deletion requires an expected generation",
+      );
+    }
     const result = await set(deleteSshConnection$, {
       orgId: auth.orgId,
       userId: auth.userId,
       connectionId: params.connectionId,
+      expectedGeneration: bodyResult.data.expectedGeneration,
     });
     signal.throwIfAborted();
     if (!result.ok) {

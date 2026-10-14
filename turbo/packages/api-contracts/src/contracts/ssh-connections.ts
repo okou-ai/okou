@@ -94,6 +94,12 @@ export const resetSshConnectionHostKeyRequestSchema = z
   .object({ expectedGeneration: z.int().positive() })
   .strict();
 
+export const deleteSshConnectionRequestSchema = z
+  .object({
+    expectedGeneration: z.int().positive().max(2_147_483_647).optional(),
+  })
+  .strict();
+
 export const sshConnectionPathParamsSchema = z
   .object({ connectionId: z.uuid() })
   .strict();
@@ -232,8 +238,10 @@ export const sshConnectionsContract = c.router({
     path: "/api/ssh/connections/:connectionId",
     headers: authHeadersSchema,
     pathParams: sshConnectionPathParamsSchema,
+    body: deleteSshConnectionRequestSchema,
     responses: {
       204: c.noBody(),
+      400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,

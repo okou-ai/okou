@@ -556,6 +556,7 @@
       "markdown": "マークダウン",
       "presentation": "プレゼンテーション",
       "sharedConversation": "共有された会話",
+      "spreadsheet": "スプレッドシート",
       "text": "テキスト",
       "video": "ビデオ"
     },
@@ -1751,7 +1752,7 @@
       "useForFutureChats": "今後のチャットでも使用",
       "workflows": {
         "loading": "ワークフローを読み込んでいます...",
-        "showAll": "すべてのワークフローを表示",
+        "showAllCount": "すべて表示（{{total}}）",
         "title": "ワークフロー"
       }
     },
@@ -2060,9 +2061,11 @@
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "empty": "このチャットにはまだアーティファクトやリンクがありません",
+      "emptyLinks": "このチャットにはまだリンクがありません",
       "expand": "展開",
       "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
+      "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース",
       "viewAll": "すべて表示"
@@ -3801,6 +3804,65 @@
       "connected": "{{connector}} が接続されました"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
+    "back": "テンプレートに戻る",
+    "categories": {
+      "all": "すべて",
+      "business-record": "業務記録",
+      "contract": "契約書",
+      "creative-brief": "制作ブリーフ",
+      "guide": "ガイド",
+      "invoice": "請求書",
+      "letter": "書簡",
+      "report": "レポート",
+      "resume": "履歴書",
+      "service-agreement": "業務委託契約"
+    },
+    "contents": {
+      "agreement": {
+        "content": "条件と責任",
+        "delivery": "確認と署名",
+        "details": "期間と解約",
+        "overview": "当事者と範囲"
+      },
+      "brief": {
+        "content": "対象者と主要メッセージ",
+        "delivery": "スケジュールと確認手順",
+        "details": "成果物と形式",
+        "overview": "プロジェクト概要と目標"
+      },
+      "general": {
+        "content": "内容を記入するセクション",
+        "delivery": "編集可能な Word または PDF",
+        "details": "統一されたページレイアウト",
+        "overview": "明確な文書構成"
+      },
+      "invoice": {
+        "content": "サービスと単価の明細",
+        "delivery": "支払情報",
+        "details": "税額、合計、支払期限",
+        "overview": "提供者と顧客の情報"
+      }
+    },
+    "filter": "文書の分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文書"
+    },
+    "imageError": "プレビューを表示できません",
+    "included": "含まれる内容",
+    "nextPage": "次のサンプルページ",
+    "openLarger": "大きいプレビューを開く",
+    "page": "{{page}} ページ",
+    "preview": "{{title}} をプレビュー",
+    "previousPage": "前のサンプルページ",
+    "retry": "再試行",
+    "samplePages": "サンプルページ数：{{total}}",
+    "title": "ドキュメント",
+    "use": "テンプレートを使用",
+    "useNamed": "{{title}} を使用"
+  },
   "global": {
     "actions": {
       "tryAgain": "再試行"
@@ -4506,17 +4568,9 @@
       "settings": "設定",
       "signOut": "サインアウト",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
-        "usageRemaining": "{{provider}} {{window}} 残り",
-        "windows": {
-          "fiveHour": "5時間",
-          "week": "週"
-        }
+        "usageRemaining": "{{provider}} {{window}} 残り"
       },
       "switchAccount": "アカウントを切り替える",
       "userFallback": "ユーザー"

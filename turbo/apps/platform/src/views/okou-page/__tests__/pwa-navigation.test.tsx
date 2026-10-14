@@ -687,7 +687,7 @@ test("Remove a disconnected subscription from Me without reopening the page", as
     ...workspace.pageOptions,
   });
 
-  await screen.findByRole("heading", { name: "Codex" });
+  await screen.findByRole("heading", { name: "Your ChatGPT plan" });
   expect(screen.getByLabelText("2 resets left")).toBeInTheDocument();
 
   click(fastButton("Settings"));
@@ -728,7 +728,7 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   });
   expect(screen.getByRole("heading", { name: "Me" })).toBeInTheDocument();
   expect(
-    screen.queryByRole("heading", { name: "Codex" }),
+    screen.queryByRole("heading", { name: "Your ChatGPT plan" }),
   ).not.toBeInTheDocument();
   expect(screen.queryByLabelText("2 resets left")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");

@@ -557,6 +557,7 @@
       "markdown": "Markdown",
       "presentation": "Präsentation",
       "sharedConversation": "Geteilte Unterhaltung",
+      "spreadsheet": "Tabelle",
       "text": "Text",
       "video": "Video"
     },
@@ -1754,7 +1755,7 @@
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
       "workflows": {
         "loading": "Workflows werden geladen...",
-        "showAll": "Alle Workflows anzeigen",
+        "showAllCount": "Alle {{total}} anzeigen",
         "title": "Workflows"
       }
     },
@@ -2068,9 +2069,11 @@
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
+      "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
+      "loadingLinks": "Links werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen",
       "viewAll": "Alle anzeigen"
@@ -3820,6 +3823,65 @@
       "connected": "{{connector}} verbunden"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
+    "back": "Zurück zu Vorlagen",
+    "categories": {
+      "all": "Alle",
+      "business-record": "Geschäftsunterlagen",
+      "contract": "Vertrag",
+      "creative-brief": "Kreativbriefing",
+      "guide": "Handbücher",
+      "invoice": "Rechnung",
+      "letter": "Briefe",
+      "report": "Berichte",
+      "resume": "Lebensläufe",
+      "service-agreement": "Dienstleistungsvertrag"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Bedingungen und Verantwortlichkeiten",
+        "delivery": "Prüfung und Unterschriften",
+        "details": "Laufzeit und Kündigung",
+        "overview": "Vertragsparteien und Umfang"
+      },
+      "brief": {
+        "content": "Zielgruppe und Kernbotschaft",
+        "delivery": "Zeitplan und Prüfprozess",
+        "details": "Ergebnisse und Formate",
+        "overview": "Projektübersicht und Ziele"
+      },
+      "general": {
+        "content": "Abschnitte für Ihre Inhalte",
+        "delivery": "Bearbeitbare Word-Datei oder PDF",
+        "details": "Einheitliches Seitenlayout",
+        "overview": "Klare Dokumentstruktur"
+      },
+      "invoice": {
+        "content": "Leistungen und Preise",
+        "delivery": "Zahlungsangaben",
+        "details": "Steuern, Summen und Fälligkeit",
+        "overview": "Angaben zu Anbieter und Kunde"
+      }
+    },
+    "filter": "Dokumentkategorie",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word-Dokument"
+    },
+    "imageError": "Vorschau nicht verfügbar",
+    "included": "Enthaltene Inhalte",
+    "nextPage": "Nächste Beispielseite",
+    "openLarger": "Größere Vorschau öffnen",
+    "page": "Seite {{page}}",
+    "preview": "Vorschau: {{title}}",
+    "previousPage": "Vorherige Beispielseite",
+    "retry": "Erneut versuchen",
+    "samplePages": "Beispielseiten: {{total}}",
+    "title": "Dokument",
+    "use": "Vorlage verwenden",
+    "useNamed": "{{title}} verwenden"
+  },
   "global": {
     "actions": {
       "tryAgain": "Erneut versuchen"
@@ -4526,17 +4588,9 @@
       "settings": "Einstellungen",
       "signOut": "Abmelden",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",
-        "usageRemaining": "{{provider}} {{window}} übrig",
-        "windows": {
-          "fiveHour": "5h",
-          "week": "Woche"
-        }
+        "usageRemaining": "{{provider}} {{window}} übrig"
       },
       "switchAccount": "Konto wechseln",
       "userFallback": "Benutzer"

@@ -19,6 +19,11 @@ import {
   type SandboxChannelMessage,
 } from "@okouai/api-contracts/contracts/sandbox-channel";
 import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
+import {
+  sandboxFsListParamsSchema,
+  sandboxFsListCloseParamsSchema,
+} from "@okouai/api-contracts/contracts/sandbox-channel-fs";
+import { probeHomeFiles } from "./runner-wss-files";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const RUNNER = "22222222-2222-4222-8222-222222222222";
@@ -31,6 +36,8 @@ async function peer(
     corruptEcho?: boolean;
     acceptReplay?: boolean;
     extraFrame?: boolean;
+    filesystem?: boolean;
+    corruptListing?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "wss-node-peer-"));
@@ -66,6 +73,7 @@ async function peer(
       let admitted = false;
       let echoes = 0;
       let ready = false;
+      const cursors = new Map<string, { listingId: string; offset: number }>();
       const reverse = new Map<
         string,
         Extract<SandboxChannelMessage, { type: "request" }>
@@ -123,7 +131,12 @@ async function peer(
             type: "response",
             id: randomUUID(),
             requestId: message.id,
-            result: { categories: { diagnostics: 1 } },
+            result: {
+              categories: {
+                diagnostics: 1,
+                ...(options.filesystem ? { fs: 1 } : {}),
+              },
+            },
           });
           // Deliberately send the first business frame in the same callback.
           emit({
@@ -151,6 +164,88 @@ async function peer(
           return;
         }
         assert.ok(message.type === "request");
+        if (message.category === "fs") {
+          const fail = (code: string) =>
+            emit({
+              schemaVersion: 1,
+              type: "response",
+              id: randomUUID(),
+              requestId: message.id,
+              error: { code },
+            });
+          const token = (name: string) =>
+            Buffer.from(name).toString("base64url");
+          const entry = (
+            name: string,
+            kind: "directory" | "file" | "symlink",
+          ) => ({ nameToken: token(name), displayName: name, kind });
+          if (message.operation === "list.close") {
+            const params = sandboxFsListCloseParamsSchema.parse(message.params);
+            if (!cursors.delete(params.cursor)) fail("cursor_expired");
+            else result(message.id, {});
+            return;
+          }
+          if (message.operation !== "list") {
+            fail("unknown_operation");
+            return;
+          }
+          const parsed = sandboxFsListParamsSchema.safeParse(message.params);
+          if (!parsed.success) {
+            fail("invalid_params");
+            return;
+          }
+          const params = parsed.data;
+          if (params.path?.length === 0) {
+            result(message.id, {
+              listingId: randomUUID(),
+              entries: [entry("wss-home-fixture", "directory")],
+              nextCursor: null,
+            });
+            return;
+          }
+          if (params.path?.[1] === token("nested")) {
+            result(message.id, {
+              listingId: randomUUID(),
+              entries: [entry("leaf", "file")],
+              nextCursor: null,
+            });
+            return;
+          }
+          if (params.path?.[1] === token("outside")) {
+            fail("link_not_expandable");
+            return;
+          }
+          const cursor = params.cursor ?? randomUUID();
+          const state = params.cursor
+            ? cursors.get(cursor)
+            : { listingId: randomUUID(), offset: 0 };
+          if (!state) {
+            fail("cursor_expired");
+            return;
+          }
+          const entries = [
+            entry("nested", "directory"),
+            entry(".hidden", "file"),
+            entry("outside", "symlink"),
+            ...Array.from({ length: 270 }, (_, index) =>
+              entry(`file-${index}`, "file"),
+            ),
+          ];
+          const rows = entries.slice(state.offset, state.offset + 128);
+          state.offset += rows.length;
+          const next = state.offset < entries.length ? cursor : null;
+          if (next) cursors.set(cursor, state);
+          else cursors.delete(cursor);
+          result(message.id, {
+            listingId:
+              options.corruptListing && params.cursor
+                ? randomUUID()
+                : state.listingId,
+            entries: rows,
+            nextCursor: next,
+          });
+          return;
+        }
         assert.equal(message.category, "diagnostics");
         assert.equal(message.categoryVersion, 1);
         const params = sandboxDiagnosticsEchoSchema.parse(message.params);
@@ -212,6 +307,10 @@ test("current Guest schema supports reverse RPC, immediate notice and post-repla
   );
   try {
     await client.connect();
+    await assert.rejects(
+      client.list({ path: [] }),
+      /Filesystem role unavailable/,
+    );
     await client.diagnostics();
     await client.rejectReplay();
     await client.diagnostics();
@@ -221,6 +320,38 @@ test("current Guest schema supports reverse RPC, immediate notice and post-repla
       await client.close();
     } finally {
       await fixture.close();
+    }
+  }
+});
+
+test("filesystem probe preserves page ownership, closes cursors and rejects stale listing identity", async () => {
+  for (const corruptListing of [false, true]) {
+    const fixture = await peer({ filesystem: true, corruptListing });
+    const client = new RunnerWssClient(
+      RUN,
+      fixture.ticket,
+      undefined,
+      fixture.ca,
+    );
+    try {
+      await client.connect();
+      if (corruptListing)
+        await assert.rejects(
+          probeHomeFiles(client, "wss-home-fixture"),
+          /Continuation must keep listing identity/,
+        );
+      else {
+        const receipt = await probeHomeFiles(client, "wss-home-fixture");
+        assert.equal(receipt.directoryPages, 3);
+        assert.equal(receipt.cursorRelease, true);
+        await client.diagnostics();
+      }
+    } finally {
+      try {
+        await client.close();
+      } finally {
+        await fixture.close();
+      }
     }
   }
 });

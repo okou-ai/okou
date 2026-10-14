@@ -1090,10 +1090,30 @@ describe("Discord product OAuth", () => {
     const owner = await f.actor();
     const first = await start(owner, "install");
     const second = await start(owner, "install");
-    const results = await Promise.all([
-      finish(f, first),
-      finish(f, second, { guildId: snowflake() }),
-    ]);
+    const firstLanding = await verified(f, first);
+    const secondLanding = await verified(f, second, { guildId: snowflake() });
+    expect((await approve(first, firstLanding)).status).toBe(200);
+    expect((await approve(second, secondLanding)).status).toBe(200);
+
+    const ready = createDeferredPromise<void>(context.signal);
+    const guilds = new Set<string>();
+    server.use(
+      http.get(
+        `${API}/guilds/:guildId/members/${f.discordUserId}`,
+        async ({ params }) => {
+          guilds.add(String(params.guildId));
+          if (guilds.size === 2 && !ready.settled()) {
+            ready.resolve();
+          }
+          await ready.promise;
+          return HttpResponse.json({
+            user: { id: f.discordUserId, username: "member" },
+            roles: [],
+          });
+        },
+      ),
+    );
+    const results = await Promise.all([complete(first), complete(second)]);
     const knownErrors = new Set([
       "cancelled",
       "unavailable",
@@ -1112,24 +1132,45 @@ describe("Discord product OAuth", () => {
       "bad_request",
     ]);
     expect(
-      results.map((result) => {
-        return result.status;
-      }),
+      results,
       JSON.stringify({
         orgId: owner.orgId,
         userId: owner.userId,
         attempts: results.map((result, index) => {
+          const error =
+            result.status === 200 ? null : result.body.error.code.toLowerCase();
           return {
             label: index === 0 ? "first" : "second",
-            stage: result.stage,
-            httpStatus: result.httpStatus,
-            error: knownErrors.has(result.error ?? "") ? result.error : null,
+            stage: "completion",
+            httpStatus: result.status,
+            error: knownErrors.has(error ?? "") ? error : null,
           };
         }),
       }),
-    ).toStrictEqual(["connected", "connected"]);
-    expect((await status(owner)).dmBindings).toHaveLength(1);
+    ).toMatchObject([
+      { status: 200, body: { status: "connected" } },
+      { status: 200, body: { status: "connected" } },
+    ]);
+    const connected = await status(owner);
+    expect(connected.dmBindings).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
+    expect((await finish(f, await start(owner, "install"))).status).toBe(
+      "connected",
+    );
+    const reconnected = await status(owner);
+    expect(reconnected.guildId).toBe(f.guildId);
+    expect(
+      reconnected.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    ).toStrictEqual(
+      connected.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    );
+    expect(f.messages).toHaveLength(1);
+    expect((await complete(first)).status).toBe(400);
+    expect((await complete(second)).status).toBe(400);
   });
   it("installs into an invite's server while preserving the existing account connection", async () => {
     const f = fixture();

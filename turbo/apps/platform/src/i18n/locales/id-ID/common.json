@@ -556,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "Presentasi",
       "sharedConversation": "Percakapan yang dibagikan",
+      "spreadsheet": "Lembar kerja",
       "text": "Teks",
       "video": "Video"
     },
@@ -1751,7 +1752,7 @@
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
       "workflows": {
         "loading": "Memuat alur kerja...",
-        "showAll": "Tampilkan semua alur kerja",
+        "showAllCount": "Tampilkan semua {{total}}",
         "title": "Alur kerja"
       }
     },
@@ -2060,9 +2061,11 @@
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "empty": "Chat ini belum memiliki artefak atau tautan",
+      "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
+      "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
       "title": "Sumber daya chat",
       "viewAll": "Lihat semua"
@@ -3801,6 +3804,65 @@
       "connected": "{{connector}} terhubung"
     }
   },
+  "documentTemplates": {
+    "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
+    "back": "Kembali ke templat",
+    "categories": {
+      "all": "Semua",
+      "business-record": "Catatan bisnis",
+      "contract": "Kontrak",
+      "creative-brief": "Brief kreatif",
+      "guide": "Panduan",
+      "invoice": "Faktur",
+      "letter": "Surat",
+      "report": "Laporan",
+      "resume": "CV",
+      "service-agreement": "Perjanjian layanan"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Ketentuan dan tanggung jawab",
+        "delivery": "Peninjauan dan tanda tangan",
+        "details": "Jangka waktu dan pengakhiran",
+        "overview": "Para pihak dan ruang lingkup"
+      },
+      "brief": {
+        "content": "Audiens dan pesan utama",
+        "delivery": "Jadwal dan proses peninjauan",
+        "details": "Hasil kerja dan format",
+        "overview": "Gambaran dan tujuan proyek"
+      },
+      "general": {
+        "content": "Bagian untuk konten Anda",
+        "delivery": "Word yang dapat diedit atau PDF",
+        "details": "Tata letak halaman yang konsisten",
+        "overview": "Struktur dokumen yang jelas"
+      },
+      "invoice": {
+        "content": "Rincian layanan dan tarif",
+        "delivery": "Detail pembayaran",
+        "details": "Pajak, total, dan jatuh tempo",
+        "overview": "Detail penyedia dan klien"
+      }
+    },
+    "filter": "Kategori dokumen",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Dokumen Word"
+    },
+    "imageError": "Pratinjau tidak tersedia",
+    "included": "Isi yang disertakan",
+    "nextPage": "Halaman contoh berikutnya",
+    "openLarger": "Buka pratinjau lebih besar",
+    "page": "Halaman {{page}}",
+    "preview": "Pratinjau {{title}}",
+    "previousPage": "Halaman contoh sebelumnya",
+    "retry": "Coba lagi",
+    "samplePages": "Halaman contoh: {{total}}",
+    "title": "Dokumen",
+    "use": "Gunakan templat",
+    "useNamed": "Gunakan {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Coba lagi"
@@ -4506,17 +4568,9 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
-        "usageRemaining": "Sisa {{provider}} {{window}}",
-        "windows": {
-          "fiveHour": "5 jam",
-          "week": "minggu"
-        }
+        "usageRemaining": "Sisa {{provider}} {{window}}"
       },
       "switchAccount": "Ganti akun",
       "userFallback": "Pengguna"

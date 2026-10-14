@@ -120,18 +120,27 @@ export function createRunTemplates(
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
-    const [selection, presentations, mounted] = await Promise.all([
+    const [selection, presentations, mounted, features] = await Promise.all([
       get(selection$),
       get(presentations$),
       get(mounted$),
+      get(features$),
     ]);
-    const guidance = buildGenerationTemplatesPrompt(
-      selection?.templates ?? [],
-      {
-        mountedUserPresentationTemplateIds: presentations,
-        mountedUserTemplates: mounted,
-      },
-    );
+    const templates = selection?.templates ?? [];
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features) &&
+      templates.some((template) => {
+        return template.type === "document";
+      })
+    ) {
+      return {
+        error: { code: "FORBIDDEN", message: "Document templates disabled" },
+      };
+    }
+    const guidance = buildGenerationTemplatesPrompt(templates, {
+      mountedUserPresentationTemplateIds: presentations,
+      mountedUserTemplates: mounted,
+    });
     if (guidance.status === "invalid") {
       return { error: { code: "BAD_REQUEST", message: guidance.message } };
     }
