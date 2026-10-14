@@ -6477,7 +6477,6 @@
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
       "accountSetup": "Conecta tu cuenta de Discord mediante el consentimiento oficial en el navegador.",
-      "approvalConfirmed": "Cierra esta pestaña para completar la conexión en la pestaña original.",
       "approvalFailed": "La confirmación falló. Inicia sesión con la cuenta y organización originales de Okou o reinicia la autorización.",
       "authorizationError": "No se pudo completar la autorización de Discord. Inténtalo de nuevo.",
       "authorizing": "Autorizando…",

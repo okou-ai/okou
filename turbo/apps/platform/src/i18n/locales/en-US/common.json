@@ -6384,7 +6384,6 @@
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
       "accountSetup": "Connect your Discord account through official browser consent.",
-      "approvalConfirmed": "Close this tab to finish connecting in the original tab.",
       "approvalFailed": "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
       "authorizationError": "Discord authorization could not be completed. Try again.",
       "authorizing": "Authorizing…",

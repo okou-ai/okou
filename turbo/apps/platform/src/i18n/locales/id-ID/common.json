@@ -6365,7 +6365,6 @@
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
       "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
-      "approvalConfirmed": "Tutup tab ini untuk menyelesaikan koneksi di tab awal.",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
       "authorizing": "Mengotorisasi…",

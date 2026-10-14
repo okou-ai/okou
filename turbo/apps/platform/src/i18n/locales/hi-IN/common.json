@@ -6392,7 +6392,6 @@
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
       "accountSetup": "आधिकारिक ब्राउज़र सहमति से अपना Discord खाता कनेक्ट करें।",
-      "approvalConfirmed": "मूल टैब में कनेक्शन पूरा करने के लिए इस टैब को बंद करें।",
       "approvalFailed": "पुष्टि नहीं हो सकी। मूल Okou खाते और संगठन से लॉग इन करें या अनुमति फिर शुरू करें।",
       "authorizationError": "Discord प्राधिकरण पूरा नहीं हो सका। फिर से प्रयास करें।",
       "authorizing": "अनुमति ली जा रही है…",

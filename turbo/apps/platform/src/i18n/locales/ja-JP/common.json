@@ -6365,7 +6365,6 @@
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
       "accountSetup": "Discord の公式ブラウザー認証でアカウントを接続してください。",
-      "approvalConfirmed": "このタブを閉じると、元のタブで接続が完了します。",
       "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
       "authorizationError": "Discord の認証を完了できませんでした。もう一度お試しください。",
       "authorizing": "認証中…",

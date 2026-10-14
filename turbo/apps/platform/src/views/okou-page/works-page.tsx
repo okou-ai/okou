@@ -565,7 +565,7 @@ function DiscordApprovalPanel() {
         <p role="status" className="text-sm text-muted-foreground">
           {approved
             ? t(($) => {
-                return $.works.discord.approvalConfirmed;
+                return $.connectors.providerConnect.common.verifying;
               })
             : t(($) => {
                 return $.works.discord.authorizing;

@@ -6392,7 +6392,6 @@
     "connectedWithDetail": "Verbunden ({{detail}})",
     "discord": {
       "accountSetup": "Verbinden Sie Ihr Discord-Konto über die offizielle Zustimmung im Browser.",
-      "approvalConfirmed": "Schließe diesen Tab, um die Verbindung im ursprünglichen Tab abzuschließen.",
       "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
       "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuche es erneut.",
       "authorizing": "Autorisierung läuft…",

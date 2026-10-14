@@ -75,7 +75,6 @@ function PageContent() {
 
 function DiscordApprovalState() {
   const { t } = useTranslation();
-  const approved = useGet(discordApprovalSucceeded$);
   const request = useLoadable(discordApprovalRequest$);
   const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
@@ -114,15 +113,9 @@ function DiscordApprovalState() {
         title={t(($) => {
           return $.works.discord.connectingTitle;
         })}
-        body={
-          approved
-            ? t(($) => {
-                return $.works.discord.approvalConfirmed;
-              })
-            : t(($) => {
-                return $.connectors.providerConnect.common.verifying;
-              })
-        }
+        body={t(($) => {
+          return $.connectors.providerConnect.common.verifying;
+        })}
       />
       <SettingsBackLink />
     </>

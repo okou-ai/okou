@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { createElement } from "react";
 import { toast } from "@okouai/ui/components/ui/sonner";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WorksPage } from "../../views/okou-page/works-page.tsx";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
@@ -21,7 +22,14 @@ import {
   watchAgentPhoneConnection$,
 } from "../okou-page/agentphone.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
-import { replaceSearchParams$, searchParams$ } from "../route.ts";
+import {
+  replacePathSilently$,
+  replaceSearchParams$,
+  searchParams$,
+} from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { setupDiscordConnectPage$ } from "../okou-page/discord-connect-page.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const initWorksRedirect$ = command(({ get, set }) => {
@@ -47,30 +55,50 @@ const initWorksRedirect$ = command(({ get, set }) => {
   set(replaceSearchParams$, params);
 });
 
-export const setupWorksPage$ = command(async ({ set }, signal: AbortSignal) => {
-  set(ownDiscordApprovalRoute$, signal);
-  set(setAgentPhoneConnectDialogOpen$, false);
-  set(reloadTelegramBots$);
-  set(updatePage$, createElement(WorksPage), "sidebar");
-  set(
-    updateDocumentTitle$,
-    i18n.t(($) => {
-      return $.works.documentTitle;
-    }),
-  );
-  set(initWorksRedirect$);
-  set(initSlackOrg$);
+export const setupWorksPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const discordStatus = get(searchParams$).get("discord");
+    if (
+      get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration] &&
+      (discordStatus === "pending" ||
+        discordStatus === "error" ||
+        discordStatus === "connected")
+    ) {
+      // OAuth callbacks land in the separate authorization tab. The original
+      // Works tab has no callback marker and keeps its card in place.
+      set(
+        replacePathSilently$,
+        ROUTES.settingsDiscord,
+        undefined,
+        new URLSearchParams({ status: discordStatus }),
+      );
+      await set(setupDiscordConnectPage$, signal);
+      return;
+    }
+    set(ownDiscordApprovalRoute$, signal);
+    set(setAgentPhoneConnectDialogOpen$, false);
+    set(reloadTelegramBots$);
+    set(updatePage$, createElement(WorksPage), "sidebar");
+    set(
+      updateDocumentTitle$,
+      i18n.t(($) => {
+        return $.works.documentTitle;
+      }),
+    );
+    set(initWorksRedirect$);
+    set(initSlackOrg$);
 
-  await Promise.all([
-    set(watchSlackConnection$, signal),
-    set(watchTeamsConnection$, signal),
-    set(watchDiscordConnection$, signal),
-    set(watchGithubIntegration$, signal),
-    set(watchTelegramConnection$, signal),
-    set(watchAgentPhoneConnection$, signal),
-  ]);
-  signal.throwIfAborted();
+    await Promise.all([
+      set(watchSlackConnection$, signal),
+      set(watchTeamsConnection$, signal),
+      set(watchDiscordConnection$, signal),
+      set(watchGithubIntegration$, signal),
+      set(watchTelegramConnection$, signal),
+      set(watchAgentPhoneConnection$, signal),
+    ]);
+    signal.throwIfAborted();
 
-  await set(hideAppSkeleton$, signal);
-  await set(approveDiscordAuthorization$, signal);
-});
+    await set(hideAppSkeleton$, signal);
+    await set(approveDiscordAuthorization$, signal);
+  },
+);

@@ -6365,7 +6365,6 @@
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
       "accountSetup": "Discord 공식 브라우저 인증을 통해 계정을 연결하세요.",
-      "approvalConfirmed": "이 탭을 닫으면 원래 탭에서 연결이 완료됩니다.",
       "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
       "authorizationError": "Discord 인증을 완료하지 못했습니다. 다시 시도하세요.",
       "authorizing": "인증 중…",

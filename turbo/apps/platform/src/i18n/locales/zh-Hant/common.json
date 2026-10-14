@@ -6365,7 +6365,6 @@
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
       "accountSetup": "透過 Discord 官方瀏覽器授權連接你的帳號。",
-      "approvalConfirmed": "關閉此分頁，即可在原分頁中完成連接。",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
       "authorizationError": "無法完成 Discord 授權，請重試。",
       "authorizing": "正在授權…",
