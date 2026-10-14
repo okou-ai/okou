@@ -629,22 +629,25 @@ export const createWalletSpend$ = command(
     }
     const remote = await linkSpendRequest(
       access.token,
-      "",
-      "POST",
       {
-        idempotency_key: `okou_wallet_${existing.id}`,
-        amount: existing.amount,
-        currency: existing.currency,
-        merchant_name: existing.merchantName,
-        merchant_url: existing.merchantUrl,
-        context: existing.context,
-        credential_type: "card",
-        request_approval: true,
-        test: existing.test,
-        expires_at: Math.floor(existing.expiresAt.getTime() / 1000),
-        totals: [
-          { type: "total", display_text: "Total", amount: existing.amount },
-        ],
+        path: "",
+        method: "POST",
+        intentId: existing.intentId,
+        body: {
+          idempotency_key: `okou_wallet_${existing.id}`,
+          amount: existing.amount,
+          currency: existing.currency,
+          merchant_name: existing.merchantName,
+          merchant_url: existing.merchantUrl,
+          context: existing.context,
+          credential_type: "card",
+          request_approval: true,
+          test: existing.test,
+          expires_at: Math.floor(existing.expiresAt.getTime() / 1000),
+          totals: [
+            { type: "total", display_text: "Total", amount: existing.amount },
+          ],
+        },
       },
       signal,
     );
@@ -657,6 +660,7 @@ export const createWalletSpend$ = command(
       const approvalUrl = await requestLinkApproval(
         access.token,
         remote.id,
+        existing.intentId,
         signal,
       );
       saved = await set(saveProviderSpend$, saved, {
@@ -725,9 +729,11 @@ const readProviderSpend$ = command(
     // Never request include=card or any payment token. Approval is not payment.
     let remote = await linkSpendRequest(
       access.token,
-      `/${encodeURIComponent(row.providerSpendId)}`,
-      "GET",
-      undefined,
+      {
+        path: `/${encodeURIComponent(row.providerSpendId)}`,
+        method: "GET",
+        intentId: row.intentId,
+      },
       signal,
     );
     validateSpend(row, remote);
@@ -743,9 +749,11 @@ const readProviderSpend$ = command(
       }
       remote = await linkSpendRequest(
         access.token,
-        `/${encodeURIComponent(row.providerSpendId)}/cancel`,
-        "POST",
-        undefined,
+        {
+          path: `/${encodeURIComponent(row.providerSpendId)}/cancel`,
+          method: "POST",
+          intentId: row.intentId,
+        },
         signal,
       );
     }
@@ -759,6 +767,7 @@ const readProviderSpend$ = command(
       const approvalUrl = await requestLinkApproval(
         access.token,
         remote.id,
+        row.intentId,
         signal,
       );
       saved = await set(saveProviderSpend$, saved, {
