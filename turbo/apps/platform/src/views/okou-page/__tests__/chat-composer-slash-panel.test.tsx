@@ -393,7 +393,7 @@ function slashMenuButtonNames(): (string | undefined)[] {
 }
 
 test.each(COMPOSER_PATHS)(
-  "Composer-anchored slash suggestions at %s open without selecting a candidate and navigate visually",
+  "Mobile slash suggestions at %s show Make before Workflows and navigate in visual order",
   async (path) => {
     // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
@@ -402,12 +402,12 @@ test.each(COMPOSER_PATHS)(
     const editor = await findComposerEditor();
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
+        "Presentation",
+        "Illustration",
+        "Website",
         `/${WORKFLOW_NAME}`,
         `/${SECOND_WORKFLOW_NAME}`,
         `/${THIRD_WORKFLOW_NAME}`,
-        "Website",
-        "Illustration",
-        "Presentation",
         "Browse all templates",
       ]);
     });
@@ -427,15 +427,18 @@ test.each(COMPOSER_PATHS)(
     expect(editor).toHaveFocus();
 
     await user.keyboard("{ArrowDown}");
-    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    await user.keyboard("{ArrowDown>5/}");
+    expect(slashButton(`/${THIRD_WORKFLOW_NAME}`)).toHaveAttribute(
       "data-active",
       "true",
     );
-    await user.keyboard("{ArrowDown>5/}");
-    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.keyboard("{ArrowUp}");
-    expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
-    await user.keyboard("{ArrowDown}{Enter}");
+    expect(slashButton(`/${SECOND_WORKFLOW_NAME}`)).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await user.keyboard("{ArrowUp>4/}{Enter}");
     await screen.findByRole("dialog");
     expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
@@ -472,10 +475,13 @@ test.each([
     awayFromComposer: "{ArrowUp}",
   },
 ])(
-  "Composer-anchored slash suggestions at $path open on the $side side from the centred start page breakpoint",
+  "Desktop slash suggestions at $path open on the $side side and retain their visual order",
   async ({ path, side, names, awayFromComposer }) => {
     context.mocks.browser.matchMedia((query) => {
-      return query === START_PAGE_CENTRED_MEDIA_QUERY;
+      return (
+        query === START_PAGE_CENTRED_MEDIA_QUERY ||
+        query === SIDEBAR_DESKTOP_MEDIA_QUERY
+      );
     });
     const user = userEvent.setup();
     await openSlashMenu("", true, path);
@@ -493,22 +499,26 @@ test.each([
   },
 );
 
-test("Composer-anchored keyboard navigation crosses from categories into workflows", async () => {
-  await openSlashMenu("", true);
-  await waitFor(() => {
-    return slashButton(`/${WORKFLOW_NAME}`);
-  });
-  const user = userEvent.setup();
-  await user.keyboard("{ArrowUp>4/}");
-  expect(slashButton(`/${THIRD_WORKFLOW_NAME}`)).toHaveAttribute(
-    "data-active",
-    "true",
-  );
-  await user.keyboard("{Tab}");
-  const editor = await findComposerEditor();
-  expect(editor).toHaveTextContent(`Draft /${THIRD_WORKFLOW_NAME}`);
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-});
+test.each([
+  { desktop: true, keys: "{ArrowUp>4/}", workflow: THIRD_WORKFLOW_NAME },
+  { desktop: false, keys: "{ArrowDown>4/}", workflow: WORKFLOW_NAME },
+])(
+  "Keyboard navigation crosses from categories into workflows with desktop=$desktop",
+  async ({ desktop, keys, workflow }) => {
+    context.mocks.browser.matchMedia(desktop);
+    await openSlashMenu("", true);
+    await waitFor(() => {
+      return slashButton(`/${WORKFLOW_NAME}`);
+    });
+    const user = userEvent.setup();
+    await user.keyboard(keys);
+    expect(slashButton(`/${workflow}`)).toHaveAttribute("data-active", "true");
+    await user.keyboard("{Tab}");
+    const editor = await findComposerEditor();
+    expect(editor).toHaveTextContent(`Draft /${workflow}`);
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
 
 async function openManyWorkflows(): Promise<HTMLElement> {
   setupModels();
@@ -534,22 +544,26 @@ async function openManyWorkflows(): Promise<HTMLElement> {
   return editor;
 }
 
-test("The workflow overview expands without losing the token or its selectable workflows", async () => {
-  const user = userEvent.setup();
-  const editor = await openManyWorkflows();
-  expect(querySlashButton("/daily-9")).toBeNull();
-  expect(slashButton("Website")).toBeInTheDocument();
-  expect(slashButton("Browse all templates")).toBeInTheDocument();
+test.each([true, false])(
+  "The workflow overview expands without losing its selectable workflows with desktop=%s",
+  async (desktop) => {
+    context.mocks.browser.matchMedia(desktop);
+    const user = userEvent.setup();
+    const editor = await openManyWorkflows();
+    expect(querySlashButton("/daily-9")).toBeNull();
+    expect(slashButton("Website")).toBeInTheDocument();
+    expect(slashButton("Browse all templates")).toBeInTheDocument();
 
-  await user.click(slashButton("Show all workflows"));
+    await user.click(slashButton("Show all workflows"));
 
-  expect(editor).toHaveFocus();
-  expect(editor).toHaveTextContent("Draft /");
-  expect(querySlashButton("Show all workflows")).toBeNull();
-  await user.click(slashButton("/daily-12"));
-  expect(editor).toHaveTextContent("Draft /daily-12");
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-});
+    expect(editor).toHaveFocus();
+    expect(editor).toHaveTextContent("Draft /");
+    expect(querySlashButton("Show all workflows")).toBeNull();
+    await user.click(slashButton("/daily-12"));
+    expect(editor).toHaveTextContent("Draft /daily-12");
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  },
+);
 
 test("Keyboard navigation keeps workflows collapsed until the ellipsis is activated", async () => {
   const user = userEvent.setup();
