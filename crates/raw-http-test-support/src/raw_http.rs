@@ -1,3 +1,15 @@
+// This test-only module is also exposed by explicitly opt-in builds, matching
+// the former executor fixture boundary. Keep assertion allowances in that scope.
+#![cfg_attr(
+    any(test, feature = "test-support"),
+    allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::indexing_slicing
+    )
+)]
+
 use std::future::pending;
 use std::io;
 use std::net::SocketAddr;
@@ -12,25 +24,40 @@ const RAW_HTTP_FIXTURE_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REQUEST_HEADER_BYTES: usize = 64 * 1024;
 const MAX_REQUEST_BODY_BYTES: usize = 1024 * 1024;
 
-pub(crate) enum RawHttpAction {
+/// A transport action performed after capturing one complete request.
+pub enum RawHttpAction {
+    /// Write the supplied response bytes and close the connection.
     Respond(Vec<u8>),
+    /// Close the connection without sending a response.
     Disconnect,
+    /// Reset the connection by closing it with zero linger.
+    ResetConnection,
+    /// Wait for the client to close its request without sending more bytes.
     WaitForDisconnect,
+    /// Hold the response until the test releases it.
     WaitThenRespond {
+        /// The test-owned response release gate.
         release: oneshot::Receiver<()>,
+        /// The exact bytes to send after release.
         response: Vec<u8>,
     },
+    /// Keep the connection open until the fixture is cancelled.
     Stall,
 }
 
-pub(crate) struct RawHttpTestServer {
+/// An owned loopback server with ordered request capture and scripted actions.
+///
+/// Use an explicit finish or cancellation method to await task cleanup. Dropping
+/// an unfinished server aborts its task as a safety net.
+pub struct RawHttpTestServer {
     address: SocketAddr,
     requests: mpsc::Receiver<String>,
     task: Option<JoinHandle<io::Result<()>>>,
 }
 
 impl RawHttpTestServer {
-    pub(crate) async fn spawn(actions: Vec<RawHttpAction>) -> Self {
+    /// Bind an ephemeral loopback listener and serve one connection per action.
+    pub async fn spawn(actions: Vec<RawHttpAction>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let (request_tx, requests) = mpsc::channel(actions.len().max(1));
@@ -43,18 +70,26 @@ impl RawHttpTestServer {
         }
     }
 
-    pub(crate) fn url(&self) -> String {
+    /// Return the server's HTTP origin.
+    pub fn url(&self) -> String {
         format!("http://{}", self.address)
     }
 
-    pub(crate) async fn next_request(&mut self, description: &str) -> String {
+    /// Capture the next complete request within the five-second fixture deadline.
+    pub async fn next_request(&mut self, description: &str) -> String {
         let deadline = tokio::time::Instant::now() + RAW_HTTP_FIXTURE_TIMEOUT;
         self.next_request_before(deadline, description)
             .await
             .unwrap_or_else(|error| panic!("{error}"))
     }
 
-    pub(crate) async fn next_request_before(
+    /// Poll captured requests without waiting.
+    pub fn try_next_request(&mut self) -> Result<String, mpsc::error::TryRecvError> {
+        self.requests.try_recv()
+    }
+
+    /// Capture a complete request before the caller's absolute deadline.
+    pub async fn next_request_before(
         &mut self,
         deadline: tokio::time::Instant,
         description: &str,
@@ -68,13 +103,27 @@ impl RawHttpTestServer {
         }
     }
 
-    pub(crate) async fn assert_finished(mut self) {
+    /// Await successful completion, aborting and reaping on timeout.
+    pub async fn assert_finished(mut self) {
         if let Err(error) = self.finish_with_timeout(RAW_HTTP_FIXTURE_TIMEOUT).await {
             panic!("raw HTTP fixture should finish: {error}");
         }
     }
 
-    pub(crate) async fn cancel_and_reap(mut self) {
+    /// Await completion and return all requests that have not yet been consumed.
+    pub async fn assert_finished_with_requests(mut self) -> Vec<String> {
+        if let Err(error) = self.finish_with_timeout(RAW_HTTP_FIXTURE_TIMEOUT).await {
+            panic!("raw HTTP fixture should finish: {error}");
+        }
+        let mut requests = Vec::new();
+        while let Some(request) = self.requests.recv().await {
+            requests.push(request);
+        }
+        requests
+    }
+
+    /// Abort the owned server task and await its cancellation or completion.
+    pub async fn cancel_and_reap(mut self) {
         let task = self
             .task
             .take()
@@ -108,8 +157,16 @@ impl Drop for RawHttpTestServer {
     }
 }
 
-pub(crate) async fn read_http_request(socket: &mut TcpStream) -> io::Result<String> {
+/// Read one complete UTF-8 HTTP request with bounded headers, body and deadline.
+pub async fn read_http_request(socket: &mut TcpStream) -> io::Result<String> {
     read_http_request_with_timeout(socket, RAW_HTTP_FIXTURE_TIMEOUT).await
+}
+
+/// Await a custom fixture task, aborting and reaping it if it exceeds the deadline.
+pub async fn join_raw_http_task<T>(task: JoinHandle<T>, description: &str) -> T {
+    finish_task_with_timeout(task, RAW_HTTP_FIXTURE_TIMEOUT)
+        .await
+        .unwrap_or_else(|error| panic!("{description} should finish: {error}"))
 }
 
 async fn finish_task_with_timeout<T>(
@@ -225,11 +282,13 @@ async fn read_http_request_inner(socket: &mut TcpStream) -> io::Result<String> {
     })
 }
 
-pub(crate) fn http_response(status: &str, body: &[u8]) -> Vec<u8> {
+/// Build a closing HTTP/1.1 response with the supplied status and exact body bytes.
+pub fn http_response(status: &str, body: &[u8]) -> Vec<u8> {
     response(status, None, body)
 }
 
-pub(crate) fn json_response(status: &str, body: &str) -> Vec<u8> {
+/// Build a closing HTTP/1.1 response with an application/json content type.
+pub fn json_response(status: &str, body: &str) -> Vec<u8> {
     response(status, Some("application/json"), body.as_bytes())
 }
 
@@ -303,6 +362,7 @@ async fn serve(
                 write_response(index, &mut socket, &response).await?;
             }
             RawHttpAction::Disconnect => {}
+            RawHttpAction::ResetConnection => socket.set_zero_linger()?,
             RawHttpAction::WaitForDisconnect => {
                 let mut byte = [0];
                 let read = tokio::time::timeout(RAW_HTTP_FIXTURE_TIMEOUT, socket.read(&mut byte))
@@ -542,5 +602,94 @@ mod tests {
         );
 
         server.cancel_and_reap().await;
+    }
+
+    #[tokio::test]
+    async fn sends_exact_json_and_binary_response_bytes() {
+        let server = RawHttpTestServer::spawn(vec![
+            RawHttpAction::Respond(json_response("200 OK", r#"{"ok":true}"#)),
+            RawHttpAction::Respond(http_response("206 Partial Content", &[0, 255, 13, 10])),
+        ])
+        .await;
+        let expected: [&[u8]; 2] = [
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 11\r\nConnection: close\r\n\r\n{\"ok\":true}",
+            b"HTTP/1.1 206 Partial Content\r\nContent-Length: 4\r\nConnection: close\r\n\r\n\x00\xff\r\n",
+        ];
+
+        for response in expected {
+            let mut socket = connect(&server).await;
+            socket.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
+            let mut actual = Vec::new();
+            socket.read_to_end(&mut actual).await.unwrap();
+            assert_eq!(actual, response);
+        }
+
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests, vec!["GET / HTTP/1.1\r\n\r\n"; 2]);
+    }
+
+    #[tokio::test]
+    async fn rejects_duplicate_content_length_headers() {
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Disconnect]).await;
+        let mut socket = connect(&server).await;
+        socket
+            .write_all(b"POST / HTTP/1.1\r\nContent-Length: 0\r\ncontent-length: 0\r\n\r\n")
+            .await
+            .unwrap();
+        drop(socket);
+
+        let error = server
+            .finish_with_timeout(RAW_HTTP_FIXTURE_TIMEOUT)
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("duplicate HTTP Content-Length header"));
+    }
+
+    #[tokio::test]
+    async fn rejects_headers_over_fixture_limit() {
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Disconnect]).await;
+        let mut socket = connect(&server).await;
+        let request = format!(
+            "GET / HTTP/1.1\r\nX-Padding: {}\r\n\r\n",
+            "a".repeat(MAX_REQUEST_HEADER_BYTES)
+        );
+        socket.write_all(request.as_bytes()).await.unwrap();
+        drop(socket);
+
+        let error = server
+            .finish_with_timeout(RAW_HTTP_FIXTURE_TIMEOUT)
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("HTTP request headers exceed fixture limit"));
+    }
+
+    #[tokio::test]
+    async fn observes_client_disconnect_after_capturing_request() {
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitForDisconnect]).await;
+        let mut socket = connect(&server).await;
+        socket.write_all(b"GET / HTTP/1.1\r\n\r\n").await.unwrap();
+
+        assert_eq!(
+            server
+                .next_request("request before client disconnect")
+                .await,
+            "GET / HTTP/1.1\r\n\r\n"
+        );
+        socket.shutdown().await.unwrap();
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn custom_task_join_preserves_its_output() {
+        let task = tokio::spawn(async { Ok::<_, io::Error>("custom fixture output") });
+
+        assert_eq!(
+            join_raw_http_task(task, "custom raw HTTP fixture")
+                .await
+                .unwrap(),
+            "custom fixture output"
+        );
     }
 }

@@ -1,0 +1,18 @@
+[package]
+name = "raw-http-test-support"
+version = "0.1.0"
+edition.workspace = true
+description = "Domain-neutral raw HTTP transport fixtures for Rust tests"
+publish = false
+
+[features]
+test-support = ["dep:tokio"]
+
+[dependencies]
+tokio = { workspace = true, optional = true, features = ["io-util", "net", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+
+[lints]
+workspace = true

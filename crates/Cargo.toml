@@ -11,6 +11,7 @@ members = [
     "guest-task-exec",
     "process-control-ipc",
     "process-launch",
+    "raw-http-test-support",
     "guest-telemetry",
     "guest-storage-apply",
     "guest-init",
@@ -62,6 +63,7 @@ guest-tool-exec = { path = "guest-tool-exec" }
 guest-task-exec = { path = "guest-task-exec" }
 process-control-ipc = { path = "process-control-ipc" }
 process-launch = { path = "process-launch" }
+raw-http-test-support = { path = "raw-http-test-support" }
 guest-telemetry = { path = "guest-telemetry" }
 guest-storage-apply = { path = "guest-storage-apply" }
 guest-init = { path = "guest-init" }
