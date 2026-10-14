@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
+import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 
@@ -1442,28 +1443,53 @@ describe("POST /api/image-io/generate", () => {
         }
         await flushWaitUntilForTest();
       }
-      const completions = await Promise.allSettled(
-        [...generationIds].map(async (generationId) => {
-          const completed = await app.request(
-            `/api/built-in-generations/${generationId}`,
-            { headers: request.headers },
-          );
-          expect(completed.status).toBe(200);
-          const statusBody: unknown = await completed.json();
-          expect(statusBody).toMatchObject({
-            generationId,
-            status: "completed",
-          });
-          expect(readGenerationResult(statusBody)).toMatchObject({
-            creditsCharged: 50,
-          });
-        }),
-      );
-      for (const result of completions) {
-        if (result.status === "rejected") {
-          throw result.reason;
+      // Clients receive these same public result snapshots through realtime.
+      // Validate every completion and charge without fifty repeated auth reads.
+      const completedIds = new Set<string>();
+      for (const [eventName, payload] of context.mocks.ably.publish.mock
+        .calls) {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
+        ) {
+          continue;
         }
+        const generationId = eventName.slice("built-in-generation:".length);
+        if (!generationIds.has(generationId)) {
+          continue;
+        }
+        const completed = builtInGenerationResponseSchema.parse(payload);
+        expect(completed).toMatchObject({
+          generationId,
+          type: "image",
+          status: "completed",
+        });
+        expect(readGenerationResult(completed)).toMatchObject({
+          creditsCharged: 50,
+        });
+        expect(completedIds.has(generationId)).toBeFalsy();
+        completedIds.add(generationId);
       }
+      expect(completedIds).toStrictEqual(generationIds);
+      const finalId = [...generationIds].at(-1);
+      if (!finalId) {
+        throw new Error("Expected a completed generation to read");
+      }
+      const completed = await app.request(
+        `/api/built-in-generations/${finalId}`,
+        { headers: request.headers },
+      );
+      expect(completed.status).toBe(200);
+      const finalResult = builtInGenerationResponseSchema.parse(
+        await completed.json(),
+      );
+      expect(finalResult).toMatchObject({
+        generationId: finalId,
+        status: "completed",
+      });
+      expect(readGenerationResult(finalResult)).toMatchObject({
+        creditsCharged: 50,
+      });
       expect(generationIds.size).toBe(50);
       expect(requestUrls).toHaveLength(50);
       await expect(orgCredits(fixture)).resolves.toBe(

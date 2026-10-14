@@ -97,7 +97,7 @@ describe("Discord Gateway relay", () => {
       .toMatchObject({ pending: 0, resumable: true, connected: true });
   });
 
-  it("relays only DMs and bot mentions while checkpointing past other guild chatter", async ({
+  it("relays DMs, bot mentions and unparseable routing without forwarding other guild chatter", async ({
     onTestFailed,
     signal,
   }) => {
@@ -215,20 +215,48 @@ describe("Discord Gateway relay", () => {
         .toMatchObject({ pending: 0, connected: true });
     });
 
-    gateway.socket.close(4000, "Unknown error");
-    const resumed = await wait("reconnection after close 4000", () => {
-      return relay.connections.next();
-    });
-    resumed.hello();
-    expect(
-      await wait("Resume (op 6)", () => {
-        return resumed.next(6);
-      }),
-    ).toEqual({
-      op: 6,
-      d: { token: BOT_TOKEN, session_id: "filter-session", seq: 6 },
-    });
     expect(relay.forwarded).toHaveLength(3);
+  });
+
+  it("resumes past ignored guild chatter without forwarding it", async () => {
+    const relay = await createRelay();
+    const gateway = await relay.start();
+    gateway.hello();
+    await gateway.next(2);
+    gateway.ready("ignored-guild-session");
+    for (const sequence of [2, 3]) {
+      gateway.send({
+        op: 0,
+        t: "MESSAGE_CREATE",
+        s: sequence,
+        d: {
+          id: `10000000000000001${sequence}`,
+          channel_id: CHANNEL_ID,
+          guild_id: GUILD_ID,
+          author: { id: "100000000000000005", username: "member", bot: false },
+          content: "ordinary guild chatter",
+          mentions: [],
+          attachments: [],
+          type: 0,
+        },
+      });
+    }
+    // A genuine server-requested heartbeat observes the last consumed sequence
+    // before closing; ignored dispatches have no delivery to use as a barrier.
+    await expect
+      .poll(async () => {
+        gateway.send({ op: 1, d: null });
+        return (await gateway.next(1)).d;
+      })
+      .toBe(3);
+    gateway.socket.close(4000, "Unknown error");
+    const resumed = await relay.connections.next();
+    resumed.hello();
+    expect(await resumed.next(6)).toEqual({
+      op: 6,
+      d: { token: BOT_TOKEN, session_id: "ignored-guild-session", seq: 3 },
+    });
+    expect(relay.forwarded).toStrictEqual([]);
   });
 
   it("reports head-of-queue delivery failures and the oldest pending age", async () => {

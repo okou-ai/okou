@@ -237,13 +237,21 @@ function snapshotFiles(path: string): Promise<SnapshotFiles> {
   return files;
 }
 
-/** Decode the immutable baseline during worker setup, before case deadlines. */
-export async function preloadPgliteSnapshot(path: string): Promise<void> {
+/** Prepare one private baseline during worker setup, before case deadlines. */
+export async function preloadPgliteSnapshot(
+  path: string,
+): Promise<PgliteTestDatabase> {
   await Promise.all([snapshotFiles(path), postgresModule()]);
-  // Initialize the shared immutable program before case deadlines. Dispose the
-  // baseline engine here; case engines keep separate memory and writable files.
+  // The first isolated case takes ownership of this untouched baseline. Later
+  // cases receive new engines; worker teardown closes an unused baseline.
   const baseline = await createPgliteDatabase(path);
-  await releaseAfter(baseline.database.execute(sql`SELECT 1`), baseline.close);
+  const ready = await settleIncludingAbort(() => {
+    return baseline.database.execute(sql`SELECT 1`);
+  });
+  if (!ready.ok) {
+    return await releaseAfter(Promise.reject(ready.error), baseline.close);
+  }
+  return baseline;
 }
 
 class SnapshotMemoryFS extends MemoryFS {
