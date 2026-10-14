@@ -205,19 +205,24 @@ const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
   return { status: 200 as const, body: connector };
 });
 
-const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
+const builtinConnectorScopeDiffScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(
     pathParamsOf(builtinConnectorScopeDiffContract.getScopeDiff),
   );
-  const diff = await get(
-    builtinConnectorScopeDiff({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: params.connectorSlug,
-      selection: { kind: "default" },
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: params.connectorSlug,
+    selection: { kind: "default" as const },
+  };
+});
+const builtinConnectorScopeDiff$ = builtinConnectorScopeDiff(
+  builtinConnectorScopeDiffScope$,
+);
+
+const getBuiltinConnectorScopeDiffInner$ = computed(async (get) => {
+  const diff = await get(builtinConnectorScopeDiff$);
   if (!diff) {
     return notFound("Connector not found");
   }

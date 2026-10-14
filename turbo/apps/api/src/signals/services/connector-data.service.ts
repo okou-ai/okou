@@ -32,6 +32,10 @@ import {
 } from "@okouai/core/feature-switch";
 import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-canonical-write";
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { secrets } from "@okouai/db/schema/secret";
@@ -75,7 +79,12 @@ import {
   type ConnectorRuntimeLookup,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionFromRows,
+  connectorRuntimeSlugSelectionReadPlan,
+  loadConnectorRuntimeSlugSelection,
+} from "./connector-catalog-slug-source.service";
 import { publishBuiltinConnectorInvalidationAfterCommit } from "./connector-client-invalidation.service";
 import {
   replaceConnectorConnectionOutcome,
@@ -775,6 +784,27 @@ type StoredBuiltinConnectorSelection =
       readonly connectorId: string;
     };
 
+function storedBuiltinConnectorColumns() {
+  return {
+    id: connectors.id,
+    authMethod: connectors.authMethod,
+    automaticAuthType: connectors.automaticAuthType,
+    displayName: connectors.displayName,
+    isDefault: connectors.isDefault,
+    externalId: connectors.externalId,
+    externalUsername: connectors.externalUsername,
+    externalEmail: connectors.externalEmail,
+    oauthScopes: connectors.oauthScopes,
+    oauthGrantedScopes: connectors.oauthGrantedScopes,
+    needsReconnect: connectors.needsReconnect,
+    reconnectReason: connectors.reconnectReason,
+    storageVersion: connectors.storageVersion,
+    tokenExpiresAt: connectors.tokenExpiresAt,
+    createdAt: connectors.createdAt,
+    updatedAt: connectors.updatedAt,
+  };
+}
+
 function storedBuiltinConnector(args: {
   readonly orgId: string;
   readonly userId: string;
@@ -786,24 +816,7 @@ function storedBuiltinConnector(args: {
     async (get): Promise<BuiltinConnectorWithRuntimeMethod | null> => {
       const db = get(db$);
       const oauthRows = await db
-        .select({
-          id: connectors.id,
-          authMethod: connectors.authMethod,
-          automaticAuthType: connectors.automaticAuthType,
-          displayName: connectors.displayName,
-          isDefault: connectors.isDefault,
-          externalId: connectors.externalId,
-          externalUsername: connectors.externalUsername,
-          externalEmail: connectors.externalEmail,
-          oauthScopes: connectors.oauthScopes,
-          oauthGrantedScopes: connectors.oauthGrantedScopes,
-          needsReconnect: connectors.needsReconnect,
-          reconnectReason: connectors.reconnectReason,
-          storageVersion: connectors.storageVersion,
-          tokenExpiresAt: connectors.tokenExpiresAt,
-          createdAt: connectors.createdAt,
-          updatedAt: connectors.updatedAt,
-        })
+        .select(storedBuiltinConnectorColumns())
         .from(connectors)
         .where(
           and(
@@ -2779,31 +2792,84 @@ export const upsertBuiltinConnectorTokenConnection$ = command(
   },
 );
 
-export function builtinConnectorScopeDiff(args: {
+interface BuiltinConnectorScopeDiffScope {
   readonly orgId: string;
   readonly userId: string;
   readonly connectorSlug: string;
   readonly selection: StoredBuiltinConnectorSelection;
-  readonly snapshot?: ConnectorRuntimeSelection;
-}): Computed<Promise<ScopeDiffResponse | null>> {
-  return computed(async (get): Promise<ScopeDiffResponse | null> => {
-    const snapshot =
-      args.snapshot ??
-      (await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$), [
-        args.connectorSlug,
-      ]));
-    if (snapshot === null) {
-      return null;
+}
+
+export function builtinConnectorScopeDiff(
+  scope$: Computed<BuiltinConnectorScopeDiffScope>,
+): Computed<Promise<ScopeDiffResponse | null>> {
+  const catalog$ = computed(async (get) => {
+    const args = get(scope$);
+    const plan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: [args.connectorSlug],
+    });
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    return connectorRuntimeSlugSelectionFromRows(plan.selection, rows);
+  });
+
+  const snapshot$ = computed(async (get) => {
+    const result = await settle(get(catalog$));
+    if (result.ok) {
+      return result.value;
     }
-    const connector = await get(
-      storedBuiltinConnector({
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorSlug: args.connectorSlug,
-        snapshot,
-        selection: args.selection,
-      }),
+    if (!isConnectorCatalogUnavailableError(result.error)) {
+      throw result.error;
+    }
+    log.warn(
+      "Connector catalog unavailable while resolving stored connectors",
+      {
+        error: result.error,
+      },
     );
+    return null;
+  });
+
+  const connector$ = computed(
+    async (get): Promise<BuiltinConnectorWithRuntimeMethod | null> => {
+      const args = get(scope$);
+      const snapshot = await get(snapshot$);
+      if (snapshot === null) {
+        return null;
+      }
+      const oauthRows = await get(db$)
+        .select(storedBuiltinConnectorColumns())
+        .from(connectors)
+        .where(
+          and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.connectorSlug, args.connectorSlug),
+            args.selection.kind === "exact"
+              ? eq(connectors.id, args.selection.connectorId)
+              : eq(connectors.isDefault, true),
+          ),
+        )
+        .limit(1);
+
+      const oauthRow = oauthRows[0];
+      if (oauthRow) {
+        return storedBuiltinConnectorRowWithRuntimeMethod({
+          connectorSlug: args.connectorSlug,
+          now: nowDate(),
+          row: oauthRow,
+          snapshot,
+        });
+      }
+
+      return null;
+    },
+  );
+
+  return computed(async (get): Promise<ScopeDiffResponse | null> => {
+    const connector = await get(connector$);
     return connector === null
       ? null
       : connectorAuthMethodScopeDiff(
