@@ -1,4 +1,4 @@
-import { command, computed, type Command, type Computed } from "ccstate";
+import { command, computed, state, type Command, type Computed } from "ccstate";
 import { pathParams$, searchParams$ } from "../route.ts";
 import { setSidebarExpanded$ } from "../okou-page/nav.ts";
 import { setPendingDeleteThreadId$ } from "../okou-page/sidebar-state.ts";
@@ -6,6 +6,7 @@ import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
 import {
   pinChatThread$,
+  renameChatThread$,
   setChatThreadMuted$,
   unpinChatThread$,
 } from "./chat-event.ts";
@@ -22,6 +23,7 @@ import { markChatThreadUnread$ } from "./chat-thread-mark-unread.ts";
 import { setChatThreadArchivedWithFeedback$ } from "./chat-thread-archive.ts";
 import { sidebarDraftThreadIds$ } from "./sidebar-draft-threads.ts";
 import { sidebarUnreadThreadIds$ } from "./sidebar-unread-threads.ts";
+import { onRef } from "../utils.ts";
 
 export type SidebarChatThreadIndicatorState =
   "running" | "muted" | "unread" | "draft";
@@ -48,7 +50,71 @@ export interface SidebarChatThreadItemSignals {
   readonly toggleMuted$: Command<Promise<void>, [AbortSignal]>;
   readonly markUnread$: Command<Promise<void>, [AbortSignal]>;
   readonly openRename$: Command<void, [AbortSignal]>;
+  readonly inlineRenaming$: Computed<boolean>;
+  readonly startInlineRename$: Command<void, []>;
+  readonly commitInlineRename$: Command<Promise<void>, [string, AbortSignal]>;
+  readonly cancelInlineRename$: Command<void, []>;
   readonly requestDelete$: Command<void, []>;
+}
+
+// One sidebar title is edited in place at a time: the blur that leaves one
+// field commits it before a double-click can open the next.
+const inlineRenameThreadId$ = state<string | null>(null);
+
+/**
+ * Focuses the in-place title field with its text selected, so typing replaces
+ * the title and the arrow keys keep it.
+ */
+export const sidebarThreadRenameInputRef$ = onRef(
+  command((_context, input: HTMLInputElement, _signal: AbortSignal) => {
+    input.focus();
+    input.select();
+  }),
+);
+
+type InlineRenameSignals = Pick<
+  SidebarChatThreadItemSignals,
+  | "inlineRenaming$"
+  | "startInlineRename$"
+  | "commitInlineRename$"
+  | "cancelInlineRename$"
+>;
+
+function createInlineRenameSignals(
+  threadId: string,
+  meta$: ReturnType<typeof threadMeta>,
+): InlineRenameSignals {
+  return {
+    inlineRenaming$: computed((get): boolean => {
+      return get(inlineRenameThreadId$) === threadId;
+    }),
+    startInlineRename$: command(({ set }) => {
+      set(inlineRenameThreadId$, threadId);
+    }),
+    commitInlineRename$: command(
+      async ({ get, set }, value: string, signal: AbortSignal) => {
+        // Escape ends the edit before focus leaves the field, so the blur
+        // that follows has nothing left to commit.
+        if (get(inlineRenameThreadId$) !== threadId) {
+          return;
+        }
+        set(inlineRenameThreadId$, null);
+        const meta = get(meta$);
+        const title = value.trim();
+        if (!title || title === meta?.title?.trim()) {
+          return;
+        }
+        await set(
+          renameChatThread$,
+          { threadId, title, agentId: meta?.agentId },
+          signal,
+        );
+      },
+    ),
+    cancelInlineRename$: command(({ set }) => {
+      set(inlineRenameThreadId$, null);
+    }),
+  };
 }
 
 interface SidebarChatThreadItemSignalsRegistry {
@@ -177,6 +243,7 @@ function createSidebarChatThreadItemSignals(
     openRename$: command(({ set }, signal: AbortSignal) => {
       set(openRenameChatThreadDialogForThreadId$, threadId, signal);
     }),
+    ...createInlineRenameSignals(threadId, meta$),
     requestDelete$: command(({ set }) => {
       set(setPendingDeleteThreadId$, threadId);
     }),
