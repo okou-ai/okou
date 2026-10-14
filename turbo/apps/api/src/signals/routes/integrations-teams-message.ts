@@ -8,7 +8,7 @@ import { db$ } from "../external/db";
 import { sendTeamsMessage } from "../external/teams-bot-client";
 import {
   teamsInstallation,
-  resolveTeamsMessageTarget,
+  resolveTeamsMessageTarget$,
   routeError,
   teamsErrorResponse,
 } from "../services/teams-message-target.service";
@@ -19,7 +19,7 @@ const installationOrgId$ = computed((get) => {
 });
 const installation$ = teamsInstallation(installationOrgId$);
 
-const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
+const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const bodyResult = await get(
     bodyResultOf(integrationsTeamsMessageContract.sendMessage),
@@ -30,7 +30,7 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const db = get(db$);
+  get(db$);
   const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
@@ -48,9 +48,9 @@ const sendMessageInner$ = command(async ({ get }, signal: AbortSignal) => {
     );
   }
 
-  const target = await resolveTeamsMessageTarget(
+  const target = await set(
+    resolveTeamsMessageTarget$,
     {
-      db,
       installation,
       userId: auth.userId,
       body,

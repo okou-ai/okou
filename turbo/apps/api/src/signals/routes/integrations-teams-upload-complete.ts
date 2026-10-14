@@ -17,7 +17,7 @@ import {
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
   teamsInstallation,
-  resolveTeamsMessageTarget,
+  resolveTeamsMessageTarget$,
   routeError,
   teamsErrorResponse,
 } from "../services/teams-message-target.service";
@@ -80,7 +80,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const db = set(writeDb$);
+  set(writeDb$);
   const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
@@ -107,9 +107,9 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "Uploaded file not found", "NOT_FOUND");
   }
 
-  const target = await resolveTeamsMessageTarget(
+  const target = await set(
+    resolveTeamsMessageTarget$,
     {
-      db,
       installation,
       userId: auth.userId,
       body,
