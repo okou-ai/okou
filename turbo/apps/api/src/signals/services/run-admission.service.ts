@@ -5,6 +5,7 @@ import {
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { command } from "ccstate";
 import { and, eq, gt, lte, sql, sum } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
@@ -16,12 +17,12 @@ import {
   paidPlanRequired,
 } from "../../lib/error";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import {
-  loadOrgPlanCapabilities,
+  loadOrgPlanCapabilities$,
   type OrgPlanCapabilities,
 } from "./org-plan-entitlement-read.service";
-import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
+import { getSpendableUsagePackCredits$ } from "./usage-pack-credit.service";
 import {
   catalogModelForSelectedId,
   catalogRunModelRouteAccess,
@@ -36,7 +37,6 @@ type RunAdmissionFailure =
   | ReturnType<typeof insufficientCredits>
   | ReturnType<typeof paidPlanRequired>
   | ReturnType<typeof badRequestMessage>;
-type CreditDb = Pick<Db, "$with" | "select" | "with">;
 
 export interface OrgCreditAvailability {
   readonly status: OrgPlanCapabilities["status"];
@@ -118,62 +118,102 @@ export async function resolveActiveRunCreditAdmission(params: {
   return run !== undefined && runHasActiveCreditAdmission(run);
 }
 
-export async function resolveOrgCreditAvailability(params: {
-  readonly db: CreditDb;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<OrgCreditAvailability | null> {
-  const at = nowDate();
-  const expired = params.db.$with("expired").as(
-    params.db
+/** Root reads finish as one phase before the caller checks cancellation.
+ * Social financial snapshots keep the Db-aware helper above on their transaction. */
+export const resolveActiveRunCreditAdmission$ = command(
+  async (
+    { get },
+    params: {
+      readonly runId: string | undefined;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ): Promise<boolean> => {
+    if (!params.runId) {
+      return false;
+    }
+    const db = get(db$);
+    const [run] = await db
       .select({
-        total: sql`COALESCE(${sum(creditExpiresRecord.remaining)}, 0)::bigint`
-          .mapWith(pgInt8ToSafeIntegerDecoder)
-          .as("total"),
+        orgId: agentRuns.orgId,
+        status: agentRuns.status,
+        creditAdmitted: agentRuns.creditAdmitted,
       })
-      .from(creditExpiresRecord)
+      .from(agentRuns)
       .where(
         and(
-          eq(creditExpiresRecord.orgId, params.orgId),
-          lte(creditExpiresRecord.expiresAt, at),
-          gt(creditExpiresRecord.remaining, sql`0`),
+          eq(agentRuns.id, params.runId),
+          eq(agentRuns.orgId, params.orgId),
+          eq(agentRuns.userId, params.userId),
         ),
-      ),
-  );
-  const rows = await params.db
-    .with(expired)
-    .select({
-      credits: sql`${orgMetadata.credits}`.mapWith(
-        nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
-      ),
-      unsettledExpired: expired.total,
-    })
-    .from(expired)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, params.orgId));
+      )
+      .limit(1);
+    return run !== undefined && runHasActiveCreditAdmission(run);
+  },
+);
 
-  const row = rows[0];
-  if (!row || row.credits === null) {
-    return null;
-  }
+/** Preserve the unsignalled availability phase and its single expiry sample. */
+export const resolveOrgCreditAvailability$ = command(
+  async (
+    { get, set },
+    params: {
+      readonly orgId: string;
+      readonly userId: string;
+    },
+  ): Promise<OrgCreditAvailability | null> => {
+    const db = get(db$);
+    const at = nowDate();
+    const expired = db.$with("expired").as(
+      db
+        .select({
+          total: sql`COALESCE(${sum(creditExpiresRecord.remaining)}, 0)::bigint`
+            .mapWith(pgInt8ToSafeIntegerDecoder)
+            .as("total"),
+        })
+        .from(creditExpiresRecord)
+        .where(
+          and(
+            eq(creditExpiresRecord.orgId, params.orgId),
+            lte(creditExpiresRecord.expiresAt, at),
+            gt(creditExpiresRecord.remaining, sql`0`),
+          ),
+        ),
+    );
+    const rows = await db
+      .with(expired)
+      .select({
+        credits: sql`${orgMetadata.credits}`.mapWith(
+          nullableDriverValueDecoder(pgInt8ToSafeIntegerDecoder),
+        ),
+        unsettledExpired: expired.total,
+      })
+      .from(expired)
+      .leftJoin(orgMetadata, eq(orgMetadata.orgId, params.orgId));
 
-  const credits = row.credits;
-  const spendableCredits = credits - row.unsettledExpired;
-  const capabilities = await loadOrgPlanCapabilities(params.db, params.orgId);
-  if (!capabilities) {
-    return null;
-  }
-  const usagePackCredits = await getSpendableUsagePackCredits(params.db, {
-    orgId: params.orgId,
-    userId: params.userId,
-    at,
-  });
-  return {
-    status: capabilities.status,
-    restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
-    spendableCredits,
-    usagePackCredits,
-  };
-}
+    const row = rows[0];
+    if (!row || row.credits === null) {
+      return null;
+    }
+
+    const credits = row.credits;
+    const spendableCredits = credits - row.unsettledExpired;
+    const capabilities = await set(loadOrgPlanCapabilities$, params.orgId);
+    if (!capabilities) {
+      return null;
+    }
+    const usagePackCredits = await set(getSpendableUsagePackCredits$, {
+      orgId: params.orgId,
+      userId: params.userId,
+      at,
+    });
+    return {
+      status: capabilities.status,
+      restrictedBuiltInModels: capabilities.restrictedBuiltInModels,
+      spendableCredits,
+      usagePackCredits,
+    };
+  },
+);
 
 /**
  * Runtime guard from the run's catalog snapshot: the selected model must be
