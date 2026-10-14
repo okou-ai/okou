@@ -398,6 +398,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 
