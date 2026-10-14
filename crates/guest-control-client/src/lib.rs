@@ -100,7 +100,9 @@ use connection::{
 use connection::{request_on_shared, write_request_frame_with_builder};
 use operation_tracker::NormalOperationFenceRejection as TrackerNormalOperationFenceRejection;
 
-pub use connection::GuestConnectionTiming;
+pub use connection::{
+    ConnectionCloseInfo, ConnectionCloseReason, ConnectionClosedAtAdmission, GuestConnectionTiming,
+};
 pub use exec_operation::{
     CodexSessionCleanupRequest, ExecCaptureRequest, ExecControlAck, ExecControlGuestStatus,
     ExecControlHandle, ExecControlOutcome, ExecOperationHandle, ExecOperationRequest,
@@ -395,6 +397,11 @@ pub struct GuestControlClient {
 }
 
 impl GuestControlClient {
+    /// Stable identity of this transport, including across sandbox assignments.
+    pub fn connection_id(&self) -> uuid::Uuid {
+        self.shared.connection_id
+    }
+
     /// Reserve the same operation lifetime used by the normal-operation fence.
     pub fn reserve_external_operation(&self) -> io::Result<ExternalOperationReservation> {
         Ok(ExternalOperationReservation {

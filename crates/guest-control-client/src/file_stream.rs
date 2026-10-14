@@ -6,12 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
+use crate::ConnectionCloseReason;
 use crate::connection::FrameWriteDecision;
 use crate::{FrameWriteObserver, Shared};
 use guest_control_proto::{
     BorrowedRawMessage, MSG_WRITE_FILE_STREAM_BEGIN, MSG_WRITE_FILE_STREAM_CREDIT,
     MSG_WRITE_FILE_STREAM_DATA, MSG_WRITE_FILE_STREAM_END, RawMessage,
 };
+use sandbox::OperationCancellationContext;
 use tokio::sync::{mpsc, oneshot};
 
 const BLOCK: usize = 64 * 1024;
@@ -66,9 +68,16 @@ pub(crate) struct Transfer<'a> {
     raw: Option<Vec<u8>>,
     source: Option<&'a [u8]>,
     started: Arc<AtomicBool>,
-    terminal: bool,
+    completion: TransferCompletion,
+    owner: Option<OperationCancellationContext>,
     pub(crate) wire_payload_bytes: u64,
     pub(crate) encoder_pipeline_elapsed: Duration,
+}
+
+enum TransferCompletion {
+    Pending,
+    ResponseReceived,
+    Failed(io::ErrorKind),
 }
 
 impl<'a> Transfer<'a> {
@@ -95,7 +104,8 @@ impl<'a> Transfer<'a> {
             raw: Some(raw.to_vec()),
             source: None,
             started: Arc::new(AtomicBool::new(false)),
-            terminal: false,
+            completion: TransferCompletion::Pending,
+            owner: OperationCancellationContext::current(),
             wire_payload_bytes: 0,
             encoder_pipeline_elapsed: Duration::ZERO,
         })
@@ -135,7 +145,8 @@ impl<'a> Transfer<'a> {
             raw: None,
             source: Some(source),
             started: Arc::new(AtomicBool::new(false)),
-            terminal: false,
+            completion: TransferCompletion::Pending,
+            owner: OperationCancellationContext::current(),
             wire_payload_bytes: 0,
             encoder_pipeline_elapsed: Duration::ZERO,
         }
@@ -181,11 +192,16 @@ impl<'a> Transfer<'a> {
         let result = tokio::select! {
             result = &mut terminal => result,
             sent = self.send() => {
-                sent?;
-                terminal.await
+                match sent {
+                    Ok(()) => terminal.await,
+                    Err(error) => Err(error),
+                }
             }
         };
-        self.terminal = result.is_ok();
+        self.completion = match &result {
+            Ok(_) => TransferCompletion::ResponseReceived,
+            Err(error) => TransferCompletion::Failed(error.kind()),
+        };
         result
     }
 
@@ -254,9 +270,15 @@ impl Drop for Transfer<'_> {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
-        if !self.terminal && self.started.load(Ordering::Acquire) {
-            self.shared.poison_connection();
+        if !self.started.load(Ordering::Acquire) {
+            return;
         }
+        let reason = match self.completion {
+            TransferCompletion::ResponseReceived => return,
+            TransferCompletion::Pending => ConnectionCloseReason::FileTransferAbandoned,
+            TransferCompletion::Failed(kind) => ConnectionCloseReason::FileTransferError(kind),
+        };
+        self.shared.poison_connection(reason, self.owner.as_ref());
     }
 }
 

@@ -799,6 +799,8 @@ fn shared_with_logged_operation(
     let fd = write_stream.as_raw_fd();
     let (_read_half, write_half) = write_stream.into_split();
     let shared = Arc::new(Shared {
+        connection_id: uuid::Uuid::new_v4(),
+        sandbox_id: None,
         file_stream: crate::file_stream::State::default(),
         writer: tokio::sync::Mutex::new(write_half),
         frame_builder: tokio::sync::Mutex::new(()),

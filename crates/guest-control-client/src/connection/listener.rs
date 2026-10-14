@@ -44,7 +44,17 @@ impl GuestControlClient {
     /// Returns [`io::ErrorKind::InvalidInput`] if `timeout` cannot be
     /// represented as a Tokio deadline.
     pub async fn wait_for_connection(vsock_path: &str, timeout: Duration) -> io::Result<Self> {
-        Self::wait_for_connection_inner(vsock_path, timeout, None).await
+        Self::wait_for_connection_inner(vsock_path, timeout, None, None).await
+    }
+
+    /// Supply immutable sandbox attribution before the connection reader starts.
+    pub async fn wait_for_connection_for_sandbox(
+        vsock_path: &str,
+        timeout: Duration,
+        sandbox_id: &str,
+    ) -> io::Result<Self> {
+        Self::wait_for_connection_inner(vsock_path, timeout, None, Some(sandbox_id.to_owned()))
+            .await
     }
 
     /// Observe one connection attempt without changing its deadline or handshake.
@@ -56,7 +66,26 @@ impl GuestControlClient {
         timeout: Duration,
     ) -> (io::Result<Self>, GuestConnectionTiming) {
         let mut timing = GuestConnectionTiming::new();
-        let result = Self::wait_for_connection_inner(vsock_path, timeout, Some(&mut timing)).await;
+        let result =
+            Self::wait_for_connection_inner(vsock_path, timeout, Some(&mut timing), None).await;
+        timing.completed = std::time::Instant::now();
+        (result, timing)
+    }
+
+    /// Observe connection timing with immutable sandbox attribution.
+    pub async fn wait_for_connection_with_timing_for_sandbox(
+        vsock_path: &str,
+        timeout: Duration,
+        sandbox_id: &str,
+    ) -> (io::Result<Self>, GuestConnectionTiming) {
+        let mut timing = GuestConnectionTiming::new();
+        let result = Self::wait_for_connection_inner(
+            vsock_path,
+            timeout,
+            Some(&mut timing),
+            Some(sandbox_id.to_owned()),
+        )
+        .await;
         timing.completed = std::time::Instant::now();
         (result, timing)
     }
@@ -65,6 +94,7 @@ impl GuestControlClient {
         vsock_path: &str,
         timeout: Duration,
         mut timing: Option<&mut GuestConnectionTiming>,
+        sandbox_id: Option<String>,
     ) -> io::Result<Self> {
         let deadline = deadline_after(timeout, "guest connection timeout overflowed")?;
         let listener_path = format!("{vsock_path}_{}", guest_control_proto::VSOCK_PORT);
@@ -100,24 +130,32 @@ impl GuestControlClient {
             )
         })??;
 
-        match timing {
-            Some(timing) => Self::from_stream_with_timing(stream, deadline, Some(timing)).await,
-            None => Self::from_stream(stream, deadline).await,
-        }
+        Self::from_stream_with_timing(stream, deadline, timing, sandbox_id).await
     }
 
     /// Build a `GuestControlClient` from an already-connected stream.
     ///
     /// Performs the handshake on the unsplit stream, then splits it and
     /// spawns the background reader task.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) async fn from_stream(stream: UnixStream, deadline: Instant) -> io::Result<Self> {
-        Self::from_stream_with_timing(stream, deadline, None).await
+        Self::from_stream_with_timing(stream, deadline, None, None).await
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) async fn from_stream_for_sandbox(
+        stream: UnixStream,
+        deadline: Instant,
+        sandbox_id: &str,
+    ) -> io::Result<Self> {
+        Self::from_stream_with_timing(stream, deadline, None, Some(sandbox_id.to_owned())).await
     }
 
     async fn from_stream_with_timing(
         stream: UnixStream,
         deadline: Instant,
         timing: Option<&mut GuestConnectionTiming>,
+        sandbox_id: Option<String>,
     ) -> io::Result<Self> {
         // Handshake on the unsplit stream (reader task not running yet).
         let (stream, handshake_decoder) = Self::handshake(stream, deadline, timing).await?;
@@ -134,6 +172,8 @@ impl GuestControlClient {
         let (read_half, write_half) = stream.into_split();
 
         let shared = Arc::new(Shared {
+            connection_id: uuid::Uuid::new_v4(),
+            sandbox_id,
             file_stream: crate::file_stream::State::default(),
             writer: tokio::sync::Mutex::new(write_half),
             frame_builder: tokio::sync::Mutex::new(()),

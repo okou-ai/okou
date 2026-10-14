@@ -335,7 +335,7 @@ fn process_control_outcome(
     }
 }
 
-async fn send_frame(stream: &mut UnixStream, kind: u8, seq: u32, payload: &[u8]) {
+pub(crate) async fn send_frame(stream: &mut UnixStream, kind: u8, seq: u32, payload: &[u8]) {
     let frame = guest_control_proto::encode(kind, seq, payload).unwrap();
     tokio::time::timeout(IO_TIMEOUT, stream.write_all(&frame))
         .await
@@ -343,7 +343,7 @@ async fn send_frame(stream: &mut UnixStream, kind: u8, seq: u32, payload: &[u8])
         .unwrap();
 }
 
-async fn read_frame(stream: &mut UnixStream) -> RawMessage {
+pub(crate) async fn read_frame(stream: &mut UnixStream) -> RawMessage {
     let mut header = [0u8; HEADER_SIZE];
     tokio::time::timeout(IO_TIMEOUT, stream.read_exact(&mut header))
         .await
