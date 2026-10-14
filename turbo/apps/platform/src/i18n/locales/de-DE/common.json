@@ -2826,10 +2826,18 @@
     "walletAction": {
       "approveButton": "Prüfen",
       "approveTitle": "Kauf prüfen",
+      "authorized": "Autorisiert",
+      "callbackFailed": "Autorisiert. Wähle Weiter, um die Nachricht erneut zu senden.",
+      "callbackPrompt": "Die Link-Wallet wurde autorisiert. Setze die vorherige Aufgabe fort.",
+      "checkFailed": "Die Autorisierung konnte nicht geprüft werden. Versuche es erneut.",
       "connectButton": "Autorisieren",
       "connectTitle": "Link-Wallet autorisieren",
       "continueButton": "Weiter",
-      "continueTitle": "Weiter in Link"
+      "continueTitle": "Weiter in Link",
+      "expired": "Autorisierung abgelaufen",
+      "failed": "Autorisierung nicht abgeschlossen",
+      "unavailable": "Autorisierung nicht verfügbar",
+      "waiting": "Warten auf Autorisierung"
     },
     "workflows": {
       "named": "Workflow {{title}}",

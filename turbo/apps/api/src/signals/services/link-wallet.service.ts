@@ -1,7 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
 import {
   type WalletCreateSpend,
+  type WalletConnectStatus,
   type WalletSpend,
   walletSpendSchema,
 } from "@okouai/api-contracts/contracts/wallet";
@@ -20,6 +22,8 @@ import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
+import { onRejection } from "../utils";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -124,6 +128,55 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
+export const walletConnectStatus$ = command(
+  async (
+    { get },
+    owner: WalletOwner,
+    state: string,
+  ): Promise<WalletConnectStatus> => {
+    const db = get(db$);
+    const [attempt] = await db
+      .select({
+        id: linkWalletOAuthAttempts.id,
+        status: linkWalletOAuthAttempts.status,
+        expiresAt: linkWalletOAuthAttempts.expiresAt,
+        authorizationId: linkWalletConnections.authorizationId,
+        revokedAt: linkWalletConnections.revokedAt,
+      })
+      .from(linkWalletOAuthAttempts)
+      .leftJoin(
+        linkWalletConnections,
+        and(
+          connectionOwner(owner),
+          isNotNull(linkWalletConnections.encryptedCredentials),
+        ),
+      )
+      .where(
+        and(
+          eq(linkWalletOAuthAttempts.stateHash, hash(state)),
+          eq(linkWalletOAuthAttempts.orgId, owner.orgId),
+          eq(linkWalletOAuthAttempts.userId, owner.userId),
+          eq(linkWalletOAuthAttempts.agentId, owner.agentId),
+        ),
+      )
+      .limit(1);
+    if (!attempt) {
+      return { status: "unavailable" };
+    }
+    if (attempt.status === "completed") {
+      return attempt.authorizationId === attempt.id && !attempt.revokedAt
+        ? { status: "authorized", authorizationId: attempt.id }
+        : { status: "unavailable" };
+    }
+    if (attempt.status === "failed") {
+      return { status: "failed" };
+    }
+    return {
+      status: attempt.expiresAt.getTime() <= now() ? "expired" : "pending",
+    };
+  },
+);
+
 export const startWalletOAuth$ = command(
   async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
     const config = linkWalletConfig();
@@ -192,25 +245,61 @@ export const completeWalletOAuth$ = command(
       );
     }
     if (input.error || !input.code) {
+      await set(failWalletOAuth$, attempt);
+      signal.throwIfAborted();
       return {
         status: "error" as const,
         message: "Link wallet authorization was not completed",
       };
     }
-    const verifier = await decryptStoredSecretValue(attempt.encryptedVerifier);
-    signal.throwIfAborted();
-    const token = await linkTokenRequest(
-      {
-        grant_type: "authorization_code",
-        code: input.code,
-        code_verifier: verifier,
-        redirect_uri: linkWalletRedirectUri(),
+    const code = input.code;
+    const result = await onRejection(
+      (async () => {
+        const verifier = await decryptStoredSecretValue(
+          attempt.encryptedVerifier,
+        );
+        signal.throwIfAborted();
+        const token = await linkTokenRequest(
+          {
+            grant_type: "authorization_code",
+            code,
+            code_verifier: verifier,
+            redirect_uri: linkWalletRedirectUri(),
+          },
+          signal,
+        );
+        return await set(publishWalletOAuth$, { attempt, token });
+      })(),
+      async () => {
+        await set(failWalletOAuth$, attempt);
       },
-      signal,
     );
-    const result = await set(publishWalletOAuth$, { attempt, token });
     signal.throwIfAborted();
     return result;
+  },
+);
+
+async function publishWalletChanged(owner: WalletOwner): Promise<void> {
+  await publishUserSignal([owner.userId], "wallet:changed", {
+    agentId: owner.agentId,
+  } satisfies WalletChangedPayload);
+}
+
+const failWalletOAuth$ = command(
+  async ({ set }, attempt: typeof linkWalletOAuthAttempts.$inferSelect) => {
+    const [failed] = await set(writeDb$)
+      .update(linkWalletOAuthAttempts)
+      .set({ status: "failed", encryptedVerifier: "" })
+      .where(
+        and(
+          eq(linkWalletOAuthAttempts.id, attempt.id),
+          eq(linkWalletOAuthAttempts.status, "exchanging"),
+        ),
+      )
+      .returning({ id: linkWalletOAuthAttempts.id });
+    if (failed) {
+      await publishWalletChanged(attempt);
+    }
   },
 );
 
@@ -243,7 +332,8 @@ const publishWalletOAuth$ = command(
       z.object({ id: z.uuid() }),
       await db.execute(sql`
       WITH authorized AS (
-        DELETE FROM ${linkWalletOAuthAttempts}
+        UPDATE ${linkWalletOAuthAttempts}
+        SET status = 'completed', encrypted_verifier = ''
         WHERE id = ${attempt.id} AND status = 'exchanging'
           AND expires_at > ${nowDate()}
         RETURNING org_id, user_id, agent_id, id
@@ -266,6 +356,7 @@ const publishWalletOAuth$ = command(
         "Wallet authorization was canceled or expired; connect again",
       );
     }
+    await publishWalletChanged(attempt);
     return { status: "success" as const, username: null };
   },
 );
@@ -442,10 +533,9 @@ const revokeWalletConnection$ = command(
   },
 );
 
-export const disconnectWallet$ = command(
-  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    await db
+const cancelWalletOAuthAttempts$ = command(
+  async ({ set }, owner: WalletOwner) => {
+    await set(writeDb$)
       .delete(linkWalletOAuthAttempts)
       .where(
         and(
@@ -454,6 +544,14 @@ export const disconnectWallet$ = command(
           eq(linkWalletOAuthAttempts.agentId, owner.agentId),
         ),
       );
+    await publishWalletChanged(owner);
+  },
+);
+
+export const disconnectWallet$ = command(
+  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    await set(cancelWalletOAuthAttempts$, owner);
     signal.throwIfAborted();
     // Disable locally before provider I/O, retaining encrypted material solely so
     // a failed provider revocation can be retried through this same endpoint.

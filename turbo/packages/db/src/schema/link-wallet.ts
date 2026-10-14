@@ -54,7 +54,7 @@ export const linkWalletOAuthAttempts = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     stateHash: text("state_hash").notNull(),
     status: varchar("status", { length: 16 })
-      .$type<"pending" | "exchanging">()
+      .$type<"pending" | "exchanging" | "completed" | "failed">()
       .notNull()
       .default("pending"),
     orgId: text("org_id").notNull(),

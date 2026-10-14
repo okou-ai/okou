@@ -2814,10 +2814,18 @@
     "walletAction": {
       "approveButton": "確認",
       "approveTitle": "購入内容を確認",
+      "authorized": "認証済み",
+      "callbackFailed": "認証済みです。「続ける」でメッセージの送信を再試行してください。",
+      "callbackPrompt": "Link ウォレットの認証が完了しました。前のタスクを続けてください。",
+      "checkFailed": "認証状態を確認できません。もう一度お試しください。",
       "connectButton": "認証",
       "connectTitle": "Link ウォレットを認証",
       "continueButton": "続ける",
-      "continueTitle": "Link で続ける"
+      "continueTitle": "Link で続ける",
+      "expired": "認証の有効期限切れ",
+      "failed": "認証が未完了",
+      "unavailable": "認証を利用できません",
+      "waiting": "認証を待機中"
     },
     "workflows": {
       "named": "ワークフロー {{title}}",

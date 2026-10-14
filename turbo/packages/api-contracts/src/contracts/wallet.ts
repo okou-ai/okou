@@ -6,6 +6,29 @@ import { connectorOauthCallbackResultSchema } from "./connectors-slug-callback";
 
 const c = initContract();
 
+export const walletConnectStatusSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("authorized"), authorizationId: z.uuid() }),
+  z.object({
+    status: z.enum(["pending", "expired", "failed", "unavailable"]),
+  }),
+]);
+export type WalletConnectStatus = z.infer<typeof walletConnectStatusSchema>;
+
+export const walletUserContract = c.router({
+  connectStatus: {
+    method: "POST",
+    path: "/api/wallet/connect/status",
+    headers: authHeadersSchema,
+    body: z.object({ agentId: z.uuid(), state: z.string().min(43).max(128) }),
+    responses: {
+      200: walletConnectStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+  },
+});
+
 export const walletSpendStatusSchema = z.enum([
   "creating",
   "created",

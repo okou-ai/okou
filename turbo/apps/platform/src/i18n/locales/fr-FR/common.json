@@ -2875,10 +2875,18 @@
     "walletAction": {
       "approveButton": "Vérifier",
       "approveTitle": "Vérifier l’achat",
+      "authorized": "Autorisé",
+      "callbackFailed": "Autorisé. Sélectionnez Continuer pour réessayer d’envoyer votre message.",
+      "callbackPrompt": "Le portefeuille Link a été autorisé. Poursuivez la tâche précédente.",
+      "checkFailed": "Impossible de vérifier l’autorisation. Réessayez.",
       "connectButton": "Autoriser",
       "connectTitle": "Autoriser le portefeuille Link",
       "continueButton": "Continuer",
-      "continueTitle": "Continuer dans Link"
+      "continueTitle": "Continuer dans Link",
+      "expired": "Autorisation expirée",
+      "failed": "Autorisation non terminée",
+      "unavailable": "Autorisation indisponible",
+      "waiting": "En attente d’autorisation"
     },
     "workflows": {
       "named": "Workflow {{title}}",

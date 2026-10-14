@@ -1,6 +1,7 @@
 import {
   walletCallbackContract,
   walletContract,
+  walletUserContract,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -20,6 +21,7 @@ import {
   startWalletOAuth$,
   walletRunOwner$,
   walletStatus$,
+  walletConnectStatus$,
 } from "../services/link-wallet.service";
 import { settle } from "../utils";
 
@@ -67,6 +69,28 @@ const createBody$ = bodyResultOf(walletContract.createSpend);
 const getParams$ = pathParamsOf(walletContract.getSpend);
 const cancelParams$ = pathParamsOf(walletContract.cancelSpend);
 const callbackQuery$ = queryOf(walletCallbackContract.callback);
+const connectStatusBody$ = bodyResultOf(walletUserContract.connectStatus);
+
+const connectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const input = await get(connectStatusBody$);
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const auth = get(organizationAuthContext$);
+  const body = await set(
+    walletConnectStatus$,
+    { orgId: auth.orgId, userId: auth.userId, agentId: input.data.agentId },
+    input.data.state,
+  );
+  signal.throwIfAborted();
+  return { status: 200 as const, body };
+});
 
 const status$ = command(async ({ get }, signal: AbortSignal) => {
   const owner = await settle(get(agentOwner$), signal);
@@ -180,6 +204,10 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.connectStatus,
+    handler: authRoute(userAuth, connectStatus$),
+  },
   { route: walletContract.status, handler: authRoute(agentAuth, status$) },
   { route: walletContract.connect, handler: authRoute(agentAuth, connect$) },
   {
