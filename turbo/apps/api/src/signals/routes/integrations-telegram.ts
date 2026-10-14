@@ -4,6 +4,7 @@ import {
   integrationsTelegramDownloadFileContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
+import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 
 import { allowedCorsOrigin } from "../../lib/cors";
 import { env } from "../../lib/env";
@@ -14,6 +15,7 @@ import {
 } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
+import { request$ } from "../context/hono";
 import { integrationsTelegramLinkRoutes } from "./integrations-telegram-link";
 import {
   buildFileDownloadUrl,
@@ -160,6 +162,8 @@ const getIntegrationTelegramLinkStatusInner$ = computed(async (get) => {
       userId: auth.userId,
       botId: query.botId,
       origin: query.origin,
+      source: query.source,
+      clientRequestId: get(request$).header(CLIENT_REQUEST_ID_HEADER),
     }),
   );
 });

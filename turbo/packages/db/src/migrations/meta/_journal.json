@@ -2224,8 +2224,15 @@
     {
       "idx": 1395,
       "version": "7",
-      "when": 1791961113231,
-      "tag": "1395_remote_connection_observation_instances",
+      "when": 1791959568300,
+      "tag": "1395_chat_relations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1396,
+      "version": "7",
+      "when": 1791964464267,
+      "tag": "1396_remote_connection_observation_instances",
       "breakpoints": true
     }
   ]

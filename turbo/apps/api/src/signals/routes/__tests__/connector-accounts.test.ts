@@ -576,6 +576,19 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
+    const initialImpact = await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: first.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [200],
+    );
+    expect(initialImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
     const second = await accept(
       connectorClient().connect({
         headers: authHeaders(),
@@ -662,6 +675,50 @@ describe("connector account lifecycle routes", () => {
     );
     expect(selectedDefault.body.isDefault).toBeTruthy();
 
+    const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
+      [
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: second.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().deletionImpact({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+      ],
+    );
+    expect(currentFirst.body).toMatchObject({
+      id: first.body.id,
+      displayName: "Work",
+      isDefault: false,
+    });
+    expect(currentSecond.body).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
+    expect(currentFirstImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: true,
+    });
+
     const legacyProjection = await accept(
       connectorProjectionClient().get({
         headers: authHeaders(),
@@ -713,6 +770,23 @@ describe("connector account lifecycle routes", () => {
       resolvedSelectionCount: 0,
       promotedDefaultConnectionId: first.body.id,
     });
+
+    await accept(
+      accountClient().connection({
+        headers: authHeaders(),
+        params: { connectionId: second.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [404],
+    );
+    await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: second.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [404],
+    );
 
     const remaining = await accept(
       accountClient().connections({

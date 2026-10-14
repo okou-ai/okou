@@ -22,6 +22,7 @@ import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
 import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
+import * as chatRelationSchema from "./schema/chat-relation";
 import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
 import * as chatAgentphoneContextSchema from "./schema/chat-agentphone-context";
 import * as chatAutomationContextSchema from "./schema/chat-automation-context";
@@ -186,6 +187,7 @@ export const schema = {
   ...runnerStateSchema,
   ...runnerWssTicketSchema,
   ...chatAgentRunContextSchema,
+  ...chatRelationSchema,
   ...chatNetworkBodyCaptureSchema,
   ...chatAgentphoneContextSchema,
   ...chatAutomationContextSchema,

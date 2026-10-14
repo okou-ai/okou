@@ -55,6 +55,7 @@ import { validatePermanentPiMemoryJobs } from "./test-pi-memory-job-permanent";
 import { validateSessionMountRetirementPreparation } from "./test-session-mount-retirement-preparation";
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validateChatRelations } from "./test-chat-relations-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 
@@ -2847,6 +2848,7 @@ async function main(): Promise<void> {
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
+    await validateChatRelations(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
@@ -2887,6 +2889,7 @@ async function main(): Promise<void> {
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
+    await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);

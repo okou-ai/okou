@@ -1,5 +1,5 @@
 {
-  "id": "d2162b8e-e872-45a0-8a3c-763901c06f51",
+  "id": "8d097dea-d2e6-41c0-8b75-b6c9cc7bf535",
   "prevId": "fe8a9adf-9659-4a7d-81be-dd3d032af68a",
   "version": "7",
   "dialect": "postgresql",
@@ -7375,6 +7375,213 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_relations": {
+      "name": "chat_relations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_chat_thread_id": {
+          "name": "source_chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_chat_thread_id": {
+          "name": "target_chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_run_id": {
+          "name": "source_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_run_id": {
+          "name": "target_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_event_id": {
+          "name": "message_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_relations_created_target_unique": {
+          "name": "chat_relations_created_target_unique",
+          "columns": [
+            {
+              "expression": "target_chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"chat_relations\".\"type\" = 'created'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_relations_message_event_unique": {
+          "name": "chat_relations_message_event_unique",
+          "columns": [
+            {
+              "expression": "message_event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"chat_relations\".\"type\" = 'message'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_relations_source_idx": {
+          "name": "chat_relations_source_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "chat_relations_target_idx": {
+          "name": "chat_relations_target_idx",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "target_chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chat_relations_different_threads": {
+          "name": "chat_relations_different_threads",
+          "value": "\"chat_relations\".\"source_chat_thread_id\" <> \"chat_relations\".\"target_chat_thread_id\""
+        },
+        "chat_relations_shape": {
+          "name": "chat_relations_shape",
+          "value": "(\"chat_relations\".\"type\" = 'created' AND \"chat_relations\".\"message_event_id\" IS NULL AND \"chat_relations\".\"target_run_id\" IS NULL) OR (\"chat_relations\".\"type\" = 'message' AND \"chat_relations\".\"message_event_id\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.chat_slack_context": {
@@ -26513,12 +26720,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "connection_created_at": {
-          "name": "connection_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
         "observed_at": {
           "name": "observed_at",
           "type": "timestamp with time zone",
@@ -33530,92 +33731,6 @@
         "chk_variables_connector_owner_type": {
           "name": "chk_variables_connector_owner_type",
           "value": "(\"variables\".\"type\" = 'connector') = (\"variables\".\"connector_id\" IS NOT NULL)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.vnc_connection_observations": {
-      "name": "vnc_connection_observations",
-      "schema": "",
-      "columns": {
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connection_created_at": {
-          "name": "connection_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "observed_at": {
-          "name": "observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "failure_reason": {
-          "name": "failure_reason",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ssh_generation": {
-          "name": "ssh_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kdc_ssh_generation": {
-          "name": "kdc_ssh_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "vnc_connection_observations_connection_id_vnc_connections_id_fk": {
-          "name": "vnc_connection_observations_connection_id_vnc_connections_id_fk",
-          "tableFrom": "vnc_connection_observations",
-          "tableTo": "vnc_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_vnc_observation_ssh_generation": {
-          "name": "chk_vnc_observation_ssh_generation",
-          "value": "\"vnc_connection_observations\".\"ssh_generation\" IS NULL OR \"vnc_connection_observations\".\"ssh_generation\" > 0"
-        },
-        "chk_vnc_observation_kdc_ssh_generation": {
-          "name": "chk_vnc_observation_kdc_ssh_generation",
-          "value": "\"vnc_connection_observations\".\"kdc_ssh_generation\" IS NULL OR \"vnc_connection_observations\".\"kdc_ssh_generation\" > 0"
-        },
-        "chk_vnc_connection_observation_generation": {
-          "name": "chk_vnc_connection_observation_generation",
-          "value": "\"vnc_connection_observations\".\"generation\" > 0"
-        },
-        "chk_vnc_connection_observation_failure": {
-          "name": "chk_vnc_connection_observation_failure",
-          "value": "\"vnc_connection_observations\".\"failure_reason\" IS NULL OR \"vnc_connection_observations\".\"failure_reason\" IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted')"
         }
       },
       "isRLSEnabled": false

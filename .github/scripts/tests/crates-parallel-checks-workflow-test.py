@@ -32,14 +32,22 @@ expected = {
     "check-docs": ("cargo doc --workspace --all-features --no-deps",),
     "check-guest-production": (
         "cargo clippy -p guest-control-server --release --no-default-features --all-targets",
-        "cargo test -p guest-control-server --release --no-default-features --lib "
-        "exec_operation::tests::stdout_drain_spawn_failure_returns_wait_failed_and_cleans_registry -- --exact",
-        "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-        "--no-default-features --test production_identity -- --ignored --exact production_write_file_identity_matches_sudo_policy",
-        "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-        "--no-default-features --test production_identity -- --ignored --exact production_exec_identity_matches_sandbox_user",
-        "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
-        "--no-default-features --test production_identity -- --ignored --exact production_env_script_remains_until_operation_cleanup",
+        (
+            "cargo test -p guest-control-server --release --no-default-features --lib "
+            "exec_operation::tests::stdout_drain_spawn_failure_returns_wait_failed_and_cleans_registry -- --exact"
+        ),
+        (
+            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
+            "--no-default-features --test production_identity -- --ignored --exact production_write_file_identity_matches_sudo_policy"
+        ),
+        (
+            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
+            "--no-default-features --test production_identity -- --ignored --exact production_exec_identity_matches_sandbox_user"
+        ),
+        (
+            "HOME=/root USER=root LOGNAME=root cargo test -p guest-control-server --release "
+            "--no-default-features --test production_identity -- --ignored --exact production_env_script_remains_until_operation_cleanup"
+        ),
     ),
     "check-ably-smoke": ("cargo run -p ably-subscriber --example smoke_test",),
 }
@@ -121,7 +129,7 @@ def assert_gate(values, expected, label):
     assert expression(gate["if"], values), "gate must run after failed/skipped dependencies"
     env = os.environ | {name: render(value, values) for name, value in gate_step["env"].items()}
     result = subprocess.run(["bash", "-euo", "pipefail", "-c", render(gate_step["run"], values)],
-                            env=env, text=True, capture_output=True)
+                            check=False, env=env, text=True, capture_output=True)
     assert (result.returncode == 0) == expected, f"{label}: {result.stdout}{result.stderr}"
     cases += 1
 
@@ -136,8 +144,17 @@ for event in ("pull_request", "push", "merge_group"):
             assert selected(name, values) == wanted[name], (event, name, changed, ci, guest, ably)
             values[f"needs.{name}.result"] = "success" if wanted[name] else "skipped"
         assert_gate(values, True, f"{event}: valid selection")
+
+    # Selection combinations are covered above. Failure handling needs each lane
+    # selected and unselected, rather than every combination of unrelated flags.
+    for selected_context in (True, False):
+        values = context(event, selected_context, selected_context, selected_context, selected_context)
+        values.update({
+            f"needs.{name}.result": "success" if selected_context else "skipped"
+            for name in lanes
+        })
         for name in lanes:
-            for result in ("failure", "cancelled", "") + (("skipped",) if wanted[name] else ()):
+            for result in ("failure", "cancelled", "") + (("skipped",) if selected_context else ()):
                 assert_gate(values | {f"needs.{name}.result": result}, False, f"{event}: {name}={result!r}")
     values = context(event, True, True, True, True)
     for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed"):

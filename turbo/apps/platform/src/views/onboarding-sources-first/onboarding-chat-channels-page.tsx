@@ -215,7 +215,7 @@ function TelegramButton({ connected }: { readonly connected: boolean }) {
       onClick={() => {
         captureChannelClicked("telegram", true);
         detach(
-          connect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+          connect(OFFICIAL_TELEGRAM_BOT_ID, "onboarding", pageSignal),
           Reason.DomCallback,
         );
       }}

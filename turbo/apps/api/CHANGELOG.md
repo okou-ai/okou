@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.733.4](https://github.com/okou-ai/okou/compare/api-v1.733.3...api-v1.733.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** use official link wallet sdk ([#39977](https://github.com/okou-ai/okou/issues/39977)) ([e75340c](https://github.com/okou-ai/okou/commit/e75340c2ae508d32045e2decd02ba9b4ecade8ff))
+
+## [1.733.3](https://github.com/okou-ai/okou/compare/api-v1.733.2...api-v1.733.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **host:** accept legacy cross-member deployments in delivery authority ([#39973](https://github.com/okou-ai/okou/issues/39973)) ([bc45d1c](https://github.com/okou-ai/okou/commit/bc45d1c12945a3023034b824c2989ea0e8628f5e)) [#39885](https://github.com/okou-ai/okou/issues/39885)
+* move morning brief suggestions into a gated official workflow ([#39960](https://github.com/okou-ai/okou/issues/39960)) ([c4fdbb2](https://github.com/okou-ai/okou/commit/c4fdbb29f25ee35fe2d8adc3b2c27133aa297477))
+* refresh runner platform api and cli release markers ([#39966](https://github.com/okou-ai/okou/issues/39966)) ([1d331fc](https://github.com/okou-ai/okou/commit/1d331fcf527832ed096e9016bdb21588542dd642))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.2
+    * @okouai/core bumped to 8.753.1
+    * @okouai/db bumped to 1.336.3
+    * @okouai/pi-agent-runtime bumped to 1.49.31
+
 ## [1.733.2](https://github.com/okou-ai/okou/compare/api-v1.733.1...api-v1.733.2) (2026-10-14)
 
 

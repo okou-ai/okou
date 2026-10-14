@@ -45,13 +45,14 @@ export function SshAttention({
   const count =
     status.kind === "available"
       ? connections.filter((connection) => {
-          return status.observations.some(
-            (observation) =>
+          return status.observations.some((observation) => {
+            return (
               observation.connectionId === connection.id &&
               observation.generation === connection.generation &&
               observation.connectionCreatedAt === connection.createdAt &&
-              observation.failureReason !== null,
-          );
+              observation.failureReason !== null
+            );
+          });
         }).length
       : 0;
   const label =
