@@ -6,9 +6,9 @@ import {
   CircleCheck,
   EllipsisVertical,
   Download,
-  Settings,
 } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -50,9 +50,12 @@ import {
   connectGithubInstallation$,
   githubIntegrationData$,
 } from "../../signals/okou-page/github.ts";
+import {
+  disconnectTelegramAccount$,
+  telegramBots$,
+} from "../../signals/okou-page/telegram.ts";
+import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -897,16 +900,33 @@ function GithubCard() {
 
 function TelegramCard() {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const botsLoadable = useLastLoadable(telegramBots$);
+  const bot =
+    botsLoadable.state === "hasData"
+      ? botsLoadable.data.find((entry) => {
+          return entry.id === OFFICIAL_TELEGRAM_BOT_ID;
+        })
+      : undefined;
+  const [connectLoadable, connect] = useLoadableSet(authorizeTelegramBot$);
+  const [disconnectLoadable, disconnect] = useLoadableSet(
+    disconnectTelegramAccount$,
+  );
+  const connecting = connectLoadable.state === "loading";
+  const disconnecting = disconnectLoadable.state === "loading";
+  const loading = botsLoadable.state === "loading";
+  const configured = bot && bot.official?.configured !== false;
+  const connectedUser = bot?.connectedUser;
+  const username = connectedUser?.telegramUsername?.trim().replace(/^@+/, "");
+  const connectedDetail = username
+    ? `@${username}`
+    : connectedUser?.telegramDisplayName?.trim() ||
+      connectedUser?.telegramUserId;
+
   return (
-    <Link
-      pathname={ROUTES.settingsTelegram}
+    <div
       data-slot="integration-card"
-      className={surfaceVariants({
-        className: "flex flex-col text-inherit no-underline",
-      })}
-      aria-label={t(($) => {
-        return $.works.telegram.openSettings;
-      })}
+      className={surfaceVariants({ className: "flex flex-col" })}
     >
       <div className="flex items-center gap-4 p-4">
         <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
@@ -920,20 +940,91 @@ function TelegramCard() {
               })}
             </div>
           </div>
-          <div className="truncate text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.telegram.description;
-            })}
+          <div className="text-sm text-muted-foreground">
+            {botsLoadable.state === "hasError"
+              ? t(($) => {
+                  return $.connectors.providerSettings.telegram.loadError;
+                })
+              : !loading && !configured
+                ? t(($) => {
+                    return $.connectors.providerSettings.telegram
+                      .officialMissing;
+                  })
+                : t(($) => {
+                    return $.works.telegram.description;
+                  })}
           </div>
         </div>
-        <span className="shrink-0 inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
-          <Settings size={14} />
-          {t(($) => {
-            return $.works.actions.manage;
-          })}
-        </span>
+        {bot?.isConnected ? (
+          <>
+            <ConnectedIndicator
+              testId="telegram-connected-indicator"
+              connectedDetail={connectedDetail}
+            />
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    showTooltip
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    className="shrink-0"
+                    aria-label={t(($) => {
+                      return $.works.actions.moreOptions;
+                    })}
+                  >
+                    <EllipsisVertical size={16} />
+                  </Button>
+                }
+              />
+              <PopoverContent
+                align="end"
+                className="flex w-40 flex-col gap-0.5 p-2"
+              >
+                <button
+                  type="button"
+                  disabled={disconnecting}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                  onClick={() => {
+                    detach(
+                      disconnect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  {disconnecting
+                    ? t(($) => {
+                        return $.works.actions.disconnecting;
+                      })
+                    : t(($) => {
+                        return $.works.actions.disconnect;
+                      })}
+                </button>
+              </PopoverContent>
+            </Popover>
+          </>
+        ) : (
+          <Button
+            data-testid="telegram-connect-button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 rounded-lg"
+            disabled={loading || !configured || connecting}
+            onClick={() => {
+              detach(
+                connect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {t(($) => {
+              return $.works.actions.connect;
+            })}
+          </Button>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

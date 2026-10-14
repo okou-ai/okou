@@ -3434,7 +3434,6 @@
         "alreadyDescription": "すでに接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyDescriptionNamed": "すでに {{bot}} に接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyTitle": "すでに Telegram に接続されています",
-        "back": "Telegram 設定に戻る",
         "checkingConnectionDescription": "Telegram 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
@@ -3755,16 +3754,8 @@
       },
       "telegram": {
         "backToIntegrations": "統合に戻る",
-        "botFallback": "Telegram ボット",
-        "disconnectAria": "{{bot}} を切断します",
-        "documentTitle": "Telegram",
         "loadError": "Telegram 設定を読み込めませんでした。",
-        "moreOptions": "{{bot}} のその他のオプション",
-        "notConnected": "接続されていません",
-        "officialBot": "Telegram 公式ボット",
-        "officialDescription": "{{brandName}} が提供する公式 bot。",
-        "officialMissing": "公式ボット設定がありません。",
-        "pageDescription": "このワークスペースのボット ルーティングを管理する"
+        "officialMissing": "公式ボット設定がありません。"
       },
       "toasts": {
         "agentphoneConnected": "電話番号が接続されました",
@@ -6366,7 +6357,6 @@
       "connect": "接続する",
       "disconnect": "切断する",
       "disconnecting": "切断中…",
-      "manage": "管理",
       "moreOptions": "その他のオプション",
       "uninstall": "アンインストール",
       "uninstalling": "アンインストール中…",
@@ -6437,7 +6427,6 @@
     },
     "telegram": {
       "description": "Telegram メッセージをエージェントにルーティングする",
-      "openSettings": "Telegram 設定を開く",
       "title": "Telegram"
     }
   }

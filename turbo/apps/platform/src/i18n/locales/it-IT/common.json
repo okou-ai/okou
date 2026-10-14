@@ -3515,7 +3515,6 @@
         "alreadyDescription": "Sei già connesso. Invia un messaggio in Telegram per iniziare a chattare.",
         "alreadyDescriptionNamed": "Sei già connesso a {{bot}}. Invia un messaggio in Telegram per iniziare a chattare.",
         "alreadyTitle": "Già connesso a Telegram",
-        "back": "Torna alle impostazioni Telegram",
         "checkingConnectionDescription": "Attendi mentre controlliamo la tua connessione Telegram.",
         "checkingConnectionTitle": "Verifica della connessione...",
         "checkingSession": "Attendi mentre verifichiamo la tua sessione {{brandName}}.",
@@ -3836,16 +3835,8 @@
       },
       "telegram": {
         "backToIntegrations": "Torniamo alle integrazioni",
-        "botFallback": "Telegram bot",
-        "disconnectAria": "Disconnetti {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Impossibile caricare le impostazioni Telegram.",
-        "moreOptions": "Altre opzioni per {{bot}}",
-        "notConnected": "Non connesso",
-        "officialBot": "Bot ufficiale di Telegram",
-        "officialDescription": "Bot ufficiale fornito da {{brandName}}.",
-        "officialMissing": "Manca la configurazione ufficiale del bot.",
-        "pageDescription": "Gestisci il routing dei bot per questa area di lavoro"
+        "officialMissing": "Manca la configurazione ufficiale del bot."
       },
       "toasts": {
         "agentphoneConnected": "Numero di telefono collegato",
@@ -6478,7 +6469,6 @@
       "connect": "Connettiti",
       "disconnect": "Disconnetti",
       "disconnecting": "Disconnessione…",
-      "manage": "Gestisci",
       "moreOptions": "Più opzioni",
       "uninstall": "Disinstallare",
       "uninstalling": "Disinstallazione…",
@@ -6549,7 +6539,6 @@
     },
     "telegram": {
       "description": "Instrada i messaggi Telegram agli agenti",
-      "openSettings": "Apri le impostazioni Telegram",
       "title": "Telegram"
     }
   }

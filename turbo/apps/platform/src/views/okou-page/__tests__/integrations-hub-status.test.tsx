@@ -181,16 +181,11 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   await setupIntegrationsPage(context);
 
   await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
-  click(getAction("link", "Open Telegram settings"));
-
-  await expect(
-    waitFor(() => {
-      return getAction("link", "Back to integrations");
-    }),
-  ).resolves.toBeInTheDocument();
-
+  const telegramCard = getIntegrationCard("Telegram");
   const connect = await waitFor(() => {
-    return getAction("button", "Connect");
+    const button = getAction("button", "Connect", telegramCard);
+    expect(button).toBeEnabled();
+    return button;
   });
   expect(connect).toBeEnabled();
   click(connect);
@@ -224,8 +219,9 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   await expect(
     screen.findByText("Connected (@alice)"),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/settings/telegram");
-  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
+  expect(pathname()).toBe("/works");
+  expect(queryAction("button", "Connect", telegramCard)).toBeNull();
+  expect(queryAction("link", "Open Telegram settings")).toBeNull();
 });
 
 test("The shared phone card and connect dialog display digits instead of a vanity number", async () => {
