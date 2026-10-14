@@ -33,6 +33,7 @@ import {
 } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
+import { ChatRelationships } from "./chat-relations.tsx";
 
 const RESOURCE_PREVIEW_LIMIT = 3;
 
@@ -233,6 +234,7 @@ function ChatResourcesBody({
   return (
     <>
       <div className="min-h-0 overflow-y-auto p-3">
+        <ChatRelationships thread={thread} />
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
             <p>
