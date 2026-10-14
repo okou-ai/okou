@@ -8,6 +8,7 @@ import {
   MessageSquarePlus,
   X,
 } from "lucide-react";
+import type { Suggestion } from "@okouai/api-contracts/contracts/suggestions";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import {
@@ -47,12 +48,94 @@ const PAGER = "data-disabled:pointer-events-none data-disabled:opacity-50";
 const DECK_EDGE =
   "pointer-events-none absolute h-10 rounded-xl border border-border bg-card";
 
+/**
+ * The band over the top of the card: where the card sits in the pool, the
+ * pager, and the dismiss control. Pointer events pass through the band to the
+ * card, so the whole surface outside the three controls still starts the
+ * suggestion.
+ */
+function AgentSuggestionHeader({
+  item,
+  index,
+  total,
+}: {
+  readonly item: Suggestion;
+  readonly index: number;
+  readonly total: number;
+}) {
+  const { t } = useTranslation();
+  const consume = useSet(consumeAgentSuggestion$);
+  const show = useSet(showAgentSuggestion$);
+  const signal = useGet(pageSignal$);
+  return (
+    <div className="pointer-events-none absolute inset-x-5 top-4 flex h-7 items-center justify-between gap-3">
+      <p aria-live="polite" className="text-xs text-muted-foreground">
+        {t(
+          ($) => {
+            return $.chat.agentSuggestions.position;
+          },
+          { current: index + 1, total },
+        )}
+      </p>
+      <div className="pointer-events-auto flex items-center gap-0.5">
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          focusableWhenDisabled
+          disabled={index === 0}
+          className={PAGER}
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.previous;
+          })}
+          onClick={() => {
+            show(index - 1);
+          }}
+        >
+          <ChevronLeft />
+        </Button>
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          focusableWhenDisabled
+          disabled={index === total - 1}
+          className={PAGER}
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.next;
+          })}
+          onClick={() => {
+            show(index + 1);
+          }}
+        >
+          <ChevronRight />
+        </Button>
+        <span aria-hidden className="mx-1 h-4 w-px bg-border" />
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-xs"
+          showTooltip
+          aria-label={t(($) => {
+            return $.chat.agentSuggestions.dismiss;
+          })}
+          onClick={() => {
+            detach(consume(item, signal), Reason.DomCallback);
+          }}
+        >
+          <X />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
-  const consume = useSet(consumeAgentSuggestion$);
-  const show = useSet(showAgentSuggestion$);
   const signal = useGet(pageSignal$);
   const requested = useGet(agentSuggestionIndex$);
   // The tab exists only for a resolved, non-empty pool, so a read that is
@@ -113,69 +196,7 @@ export function AgentSuggestions() {
             />
           </span>
         </Button>
-        {/* Pointer events pass through the band to the card, so the whole
-            surface outside the three controls still starts the suggestion. */}
-        <div className="pointer-events-none absolute inset-x-5 top-4 flex h-7 items-center justify-between gap-3">
-          <p aria-live="polite" className="text-xs text-muted-foreground">
-            {t(
-              ($) => {
-                return $.chat.agentSuggestions.position;
-              },
-              { current: index + 1, total: items.length },
-            )}
-          </p>
-          <div className="pointer-events-auto flex items-center gap-0.5">
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              showTooltip
-              focusableWhenDisabled
-              disabled={index === 0}
-              className={PAGER}
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.previous;
-              })}
-              onClick={() => {
-                show(index - 1);
-              }}
-            >
-              <ChevronLeft />
-            </Button>
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              showTooltip
-              focusableWhenDisabled
-              disabled={index === items.length - 1}
-              className={PAGER}
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.next;
-              })}
-              onClick={() => {
-                show(index + 1);
-              }}
-            >
-              <ChevronRight />
-            </Button>
-            <span aria-hidden className="mx-1 h-4 w-px bg-border" />
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-xs"
-              showTooltip
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.dismiss;
-              })}
-              onClick={() => {
-                detach(consume(item, signal), Reason.DomCallback);
-              }}
-            >
-              <X />
-            </Button>
-          </div>
-        </div>
+        <AgentSuggestionHeader item={item} index={index} total={items.length} />
       </div>
     </section>
   );
