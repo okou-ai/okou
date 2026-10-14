@@ -55,6 +55,40 @@ export function subscriptionUsageWindows(
   );
 }
 
+interface LimitingSubscriptionUsageWindow {
+  readonly kind: "fiveHour" | "week";
+  readonly window: SubscriptionUsageWindow;
+  /** Clamped to 0-100; null while the provider reports no percentage. */
+  readonly remainingPercent: number | null;
+}
+
+/**
+ * The window that limits the account right now: the one with the least left.
+ * A tie goes to the week, because it takes longer to come back. The account
+ * menu draws only this window, and the composer names it beside its percent.
+ */
+export function limitingSubscriptionUsageWindow(
+  usage: SubscriptionUsage | null | undefined,
+): LimitingSubscriptionUsageWindow | null {
+  let limiting: LimitingSubscriptionUsageWindow | null = null;
+  for (const { kind, window } of subscriptionUsageWindows(usage)) {
+    const raw = remainingPercent(window);
+    const remaining =
+      raw !== null && Number.isFinite(raw)
+        ? Math.min(100, Math.max(0, raw))
+        : null;
+    if (
+      limiting === null ||
+      (remaining !== null &&
+        (limiting.remainingPercent === null ||
+          remaining <= limiting.remainingPercent))
+    ) {
+      limiting = { kind, window, remainingPercent: remaining };
+    }
+  }
+  return limiting;
+}
+
 function remainingPercent(window: SubscriptionUsageWindow | null | undefined) {
   if (!window) {
     return null;

@@ -4506,17 +4506,9 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
-        "usageRemaining": "Sisa {{provider}} {{window}}",
-        "windows": {
-          "fiveHour": "5 jam",
-          "week": "minggu"
-        }
+        "usageRemaining": "Sisa {{provider}} {{window}}"
       },
       "switchAccount": "Ganti akun",
       "userFallback": "Pengguna"

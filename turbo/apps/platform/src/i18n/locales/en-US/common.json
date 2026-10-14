@@ -4518,17 +4518,9 @@
       "settings": "Settings",
       "signOut": "Sign out",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
-        "usageRemaining": "{{provider}} {{window}} remaining",
-        "windows": {
-          "fiveHour": "5H",
-          "week": "Week"
-        }
+        "usageRemaining": "{{provider}} {{window}} remaining"
       },
       "switchAccount": "Switch account",
       "userFallback": "User"

@@ -4506,17 +4506,9 @@
       "settings": "설정",
       "signOut": "로그아웃",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "재설정 시간 사용 불가",
         "usage": "{{provider}} 사용량",
-        "usageRemaining": "{{provider}} {{window}} 남음",
-        "windows": {
-          "fiveHour": "5시간",
-          "week": "주간"
-        }
+        "usageRemaining": "{{provider}} {{window}} 남음"
       },
       "switchAccount": "계정 전환",
       "userFallback": "사용자"

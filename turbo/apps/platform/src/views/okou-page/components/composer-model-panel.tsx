@@ -339,14 +339,26 @@ function ComposerModelPlanCaption({
       <span className="truncate">{groupTitle(status.type)}</span>
       {status.linked && status.remainingPercent !== null && (
         <span className="shrink-0 tabular-nums">
-          {t(
-            ($) => {
-              return $.settings.models.personal.status.left;
-            },
-            {
-              percent: `${String(Math.round(status.remainingPercent))}%`,
-            },
-          )}
+          {status.limitingWindow !== null &&
+            `${
+              status.limitingWindow === "week"
+                ? t(($) => {
+                    return $.settings.models.personal.status.week;
+                  })
+                : t(($) => {
+                    return $.settings.models.personal.status.fiveHour;
+                  })
+            } · `}
+          <span className="text-foreground">
+            {t(
+              ($) => {
+                return $.settings.models.personal.status.left;
+              },
+              {
+                percent: `${String(Math.round(status.remainingPercent))}%`,
+              },
+            )}
+          </span>
         </span>
       )}
     </p>

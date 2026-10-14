@@ -4591,17 +4591,9 @@
       "settings": "Configurações",
       "signOut": "Sair",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Horário de redefinição indisponível",
         "usage": "Uso de {{provider}}",
-        "usageRemaining": "{{provider}}: {{window}} restante",
-        "windows": {
-          "fiveHour": "5h",
-          "week": "Semana"
-        }
+        "usageRemaining": "{{provider}}: {{window}} restante"
       },
       "switchAccount": "Trocar de conta",
       "userFallback": "Usuário"

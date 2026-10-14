@@ -221,7 +221,7 @@ test("Linking one subscription keeps the other one connectable from the model pa
   await findComposerEditor();
   const panel = await openModelPanel("Auto");
   expect(panel).toHaveTextContent("Your ChatGPT plan");
-  expect(panel).toHaveTextContent("0% left");
+  expect(panel).toHaveTextContent("5h · 0% left");
   expect(panel).toHaveTextContent("Your Claude plan");
   expect(action("Claude", "button", panel)).toHaveAccessibleDescription(
     "Pro or Max",
@@ -294,7 +294,9 @@ test.each([false, true])(
     });
     expect(findAction("Use more models")).toBeUndefined();
     const menu = await openAccountMenu();
-    await within(menu).findByRole("region", { name: "Codex usage" });
+    await within(menu).findByRole("region", {
+      name: "Your ChatGPT plan usage",
+    });
     expect(menu).not.toHaveTextContent("Use more models");
   },
 );
@@ -355,7 +357,7 @@ test("The mobile Me entry leaves once a subscription is linked", async () => {
     accounts: [connectedCodex()],
     usagePanel: true,
   });
-  await screen.findByRole("region", { name: "Codex usage" });
+  await screen.findByRole("region", { name: "Your ChatGPT plan usage" });
   expect(screen.queryByText("Use more models")).not.toBeInTheDocument();
 });
 

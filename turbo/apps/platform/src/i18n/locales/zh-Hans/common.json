@@ -4506,17 +4506,9 @@
       "settings": "设置",
       "signOut": "退出登录",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩余用量",
-        "windows": {
-          "fiveHour": "5 小时",
-          "week": "周"
-        }
+        "usageRemaining": "{{provider}}{{window}}剩余用量"
       },
       "switchAccount": "切换账号",
       "userFallback": "用户"

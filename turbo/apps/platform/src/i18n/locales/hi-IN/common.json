@@ -4526,17 +4526,9 @@
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
-        "usageRemaining": "{{provider}} {{window}} शेष",
-        "windows": {
-          "fiveHour": "5 घंटे",
-          "week": "सप्ताह"
-        }
+        "usageRemaining": "{{provider}} {{window}} शेष"
       },
       "switchAccount": "खाता स्थानांतरित करें",
       "userFallback": "उपयोगकर्ता"

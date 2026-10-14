@@ -4591,17 +4591,9 @@
       "settings": "Paramètres",
       "signOut": "Se déconnecter",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Réinitialisation du temps indisponible",
         "usage": "Utilisation de {{provider}}",
-        "usageRemaining": "Il reste {{provider}} {{window}}",
-        "windows": {
-          "fiveHour": "5h",
-          "week": "semaine"
-        }
+        "usageRemaining": "Il reste {{provider}} {{window}}"
       },
       "switchAccount": "Changer de compte",
       "userFallback": "Utilisateur"

@@ -332,7 +332,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Show Codex and Claude Code personal subscription usage in the sidebar footer.",
+      "Show Codex and Claude Code personal subscription usage in the account menu and on the Me page.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
