@@ -17,11 +17,25 @@ if [[ -n ${NATIVE_TEST_OWNER:-} ]]; then
     mkdir -p "$directory"
     chown --no-dereference "$native_uid:$native_gid" "$directory"
   done
+  if [[ -n ${KERBEROS_NATIVE_CACHE_DIR:-} ]]; then
+    native_cache=$KERBEROS_NATIVE_CACHE_DIR
+    [[ -n ${RUNNER_TEMP:-} && $native_cache == "$RUNNER_TEMP/kerberos-native-cache" &&
+      ! -L "$native_cache" && $(realpath -m "$native_cache") == "$native_cache" ]] || exit 1
+    mkdir -p "$native_cache"
+    # Restore runs as root. Refuse links/special files before handing all cache
+    # products and lock files to the capability-free compiler owner.
+    native_cache_unsafe=$(find "$native_cache" \( ! -type d ! -type f -o -type f -links +1 \) -print -quit) || exit 1
+    [[ -z "$native_cache_unsafe" ]] || { echo 'unsafe native dependency cache entry' >&2; exit 1; }
+    chown --recursive --no-dereference "$native_uid:$native_gid" "$native_cache"
+  fi
   native_build_command=(setpriv --reuid "$native_uid" --regid "$native_gid" --clear-groups
     --bounding-set=-all --no-new-privs env
     HOME="$target/native-ci-home" CARGO_HOME="$target/native-ci-cargo"
     GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0="$PWD")
   native_privileged_command=()
+  if [[ -n ${KERBEROS_NATIVE_CACHE_DIR:-} ]]; then
+    "${native_build_command[@]}" test -w "$native_cache" || exit 1
+  fi
 fi
 native_build() {
   "${native_build_command[@]}" "$@"

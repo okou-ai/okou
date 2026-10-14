@@ -834,6 +834,8 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.native-kerberos-needed == 'true'
     strategy:
@@ -844,12 +846,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
       - name: Compile sealed package and run real native containment/lifecycle conformance
         shell: bash
         env:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
+      # The host key's X64 writer remains check; this matrix owns ARM64 only.
+      - name: Save pinned ARM64 Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && runner.arch == 'ARM64' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
       - name: Preserve exact-head native receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -866,6 +883,8 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       # Allow namespace bootstrap; retain Docker's seccomp and worker isolation.
       options: --cap-add=SYS_ADMIN --security-opt apparmor=unconfined
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
     if: needs.detect.outputs.native-gssapi-peer-needed == 'true'
     strategy:
@@ -876,6 +895,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
       - name: Verify native mutual GSS and RFB controls against signed independent MIT
         shell: bash
         env:
