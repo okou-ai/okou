@@ -11,7 +11,6 @@ import type {
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import {
   checkPaidToolForCreation$,
   templatePaidTool,
@@ -444,7 +443,6 @@ function composerDraftSignals(
 function createComposerVoiceInput(
   options: Pick<CreateComposerSignalsOptions, "draft" | "voiceDraftTarget">,
   workflowComposer: WorkflowComposerSignals,
-  lastAssistantMessage$: Computed<string | undefined>,
 ) {
   const deliverText$ = command(
     async ({ set }, text: string, signal: AbortSignal) => {
@@ -456,7 +454,6 @@ function createComposerVoiceInput(
   return createComposerVoiceInputSignals(
     deliverText$,
     workflowComposer.readVoiceContext$,
-    lastAssistantMessage$,
     options.voiceDraftTarget,
   );
 }
@@ -523,11 +520,7 @@ export function createComposerSignals(
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
-  const voice = createComposerVoiceInput(
-    options,
-    workflowComposer,
-    eventSignals.lastAssistantMessage$,
-  );
+  const voice = createComposerVoiceInput(options, workflowComposer);
   const submission = createComposerSubmissionSignals(
     options,
     eventSignals,
@@ -639,20 +632,6 @@ function pendingAutomationEventText(
 }
 
 function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
-  const lastAssistantMessage$ = computed((get): string | undefined => {
-    const events = get(chatEvents$);
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.eventType !== "output.message") {
-        continue;
-      }
-      const content = event.content.trim();
-      if (content.length > 0) {
-        return content.slice(-VOICE_IO_POLISH_MAX_TEXT_CHARS);
-      }
-    }
-    return undefined;
-  });
   const semanticEvents$ = computed((get) => {
     return semanticChatEventsFromChatEvents(get(chatEvents$));
   });
@@ -712,7 +691,6 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
     },
   );
   return {
-    lastAssistantMessage$,
     actionsLoading$,
     sending$,
     runningModelSelection$,

@@ -1,8 +1,5 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
-import {
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
-  type VoiceIoEditorContext,
-} from "@okouai/api-contracts/contracts/voice-io-transcribe";
+import { command, computed, state, type Command } from "ccstate";
+import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { authenticatedIdentity$ } from "../auth.ts";
@@ -152,20 +149,13 @@ function createVoiceDraftTranscription(
   data: VoiceDraftData,
   deliverText$: DeliverVoiceTextCommand,
   readEditorContext$: Command<VoiceIoEditorContext, []>,
-  lastAssistantMessage$: Computed<string | undefined>,
 ) {
   const { recording$, storageKey$, ownedRecording$, providerUnavailable$ } =
     data;
   const incremental = createVoiceDraftTranscriptionSignals({
     storageKey$,
-    readContext$: command(({ get, set }) => {
-      const reference = get(lastAssistantMessage$)
-        ?.trim()
-        .slice(0, VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS);
-      return {
-        ...(reference ? { lastAssistantMessage: reference } : {}),
-        editorContext: set(readEditorContext$),
-      };
+    readContext$: command(({ set }) => {
+      return { editorContext: set(readEditorContext$) };
     }),
   });
   const transcribe$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -459,7 +449,6 @@ function createVoiceActionBindings(
 export function createComposerVoiceInputSignals(
   deliverText$: DeliverVoiceTextCommand,
   readEditorContext$: Command<VoiceIoEditorContext, []>,
-  lastAssistantMessage$: Computed<string | undefined>,
   draftTarget: string,
 ) {
   const data = createVoiceDraftData(draftTarget);
@@ -467,7 +456,6 @@ export function createComposerVoiceInputSignals(
     data,
     deliverText$,
     readEditorContext$,
-    lastAssistantMessage$,
   );
   const actions = createVoiceActionBindings(
     data,

@@ -104,6 +104,7 @@ function parseVoiceDraftForm(formData: FormData) {
   if (files.length > 1) {
     return badRequest("Voice segments must contain at most one audio file");
   }
+  // Validate the legacy field for older clients, but never forward it.
   const reference = lastAssistantReference(formData);
   if (reference === null) {
     return badRequest("Invalid last assistant message");
@@ -125,7 +126,7 @@ function parseVoiceDraftForm(formData: FormData) {
     }
   }
 
-  return { files, segment, reference, editorContext };
+  return { files, segment, editorContext };
 }
 
 async function validateVoiceDraftDuration(
@@ -203,7 +204,7 @@ const voiceIoTranscribeHandler$ = command(
     if ("status" in parsed) {
       return parsed;
     }
-    const { files, segment, reference, editorContext } = parsed;
+    const { files, segment, editorContext } = parsed;
     const duration = await validateVoiceDraftDuration(files, segment, signal);
     signal.throwIfAborted();
     if ("status" in duration) {
@@ -226,7 +227,6 @@ const voiceIoTranscribeHandler$ = command(
       files,
       audioDurationSeconds,
       debug: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext),
-      ...(reference === undefined ? {} : { lastAssistantMessage: reference }),
       ...(editorContext === undefined ? {} : { editorContext }),
     };
     const result = await set(

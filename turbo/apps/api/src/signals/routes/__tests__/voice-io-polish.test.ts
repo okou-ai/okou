@@ -342,7 +342,7 @@ describe("POST /api/voice-io/polish", () => {
     await aborted.promise;
   });
 
-  it("merges ordered segments without answering speech or translating it", async () => {
+  it("merges ordered segments without forwarding legacy assistant history", async () => {
     await setupVoicePolish();
     let requestBody: unknown;
     server.use(
@@ -398,8 +398,6 @@ describe("POST /api/voice-io/polish", () => {
             {
               text: JSON.stringify({
                 segments: ["um ship the nebula release Friday", "no Monday"],
-                lastAssistantMessage:
-                  "The Project Nebula release is scheduled for Friday.",
               }),
             },
           ],

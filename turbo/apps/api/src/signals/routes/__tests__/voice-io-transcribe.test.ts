@@ -720,10 +720,9 @@ describe("voice input routing and reference context", () => {
             return part.inlineData ? "audio" : "text";
           }),
         ).toStrictEqual(["audio", "text"]);
-        expect(parts[1]?.text).toContain(reference);
-        expect(parts[1]?.text).toContain(
-          JSON.stringify({ lastAssistantMessage: reference, editorContext }),
-        );
+        expect(parts[1]?.text).not.toContain(reference);
+        expect(parts[1]?.text).not.toContain("lastAssistantMessage");
+        expect(parts[1]?.text).toContain(JSON.stringify({ editorContext }));
         expect(providerRequest.systemInstruction.parts[0]?.text).not.toContain(
           editorContext.before,
         );
