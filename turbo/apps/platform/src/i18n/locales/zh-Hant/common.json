@@ -2047,6 +2047,7 @@
       "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重試",
       "sshDisabled": "需開啟 SSH：{{name}}",
+      "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
     },

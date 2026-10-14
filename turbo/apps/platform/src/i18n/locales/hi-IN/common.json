@@ -2055,6 +2055,7 @@
       "requiresSsh": "SSH आवश्यक: {{name}}",
       "retry": "फिर से कोशिश करें",
       "sshDisabled": "SSH चालू करें: {{name}}",
+      "sshEnabled": "SSH चालू: {{name}}",
       "title": "रिमोट एक्सेस",
       "unavailableSsh": "अनुपलब्ध SSH होस्ट"
     },

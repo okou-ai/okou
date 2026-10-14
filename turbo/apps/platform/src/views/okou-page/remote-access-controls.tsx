@@ -430,12 +430,19 @@ function VncHostChoiceRow({
                     },
                     { name },
                   )
-                : t(
-                    ($) => {
-                      return $.chat.remoteAccess.requiresSsh;
-                    },
-                    { name },
-                  )}
+                : sshHost?.enabled === true
+                  ? t(
+                      ($) => {
+                        return $.chat.remoteAccess.sshEnabled;
+                      },
+                      { name },
+                    )
+                  : t(
+                      ($) => {
+                        return $.chat.remoteAccess.requiresSsh;
+                      },
+                      { name },
+                    )}
             </span>
           </p>
         );

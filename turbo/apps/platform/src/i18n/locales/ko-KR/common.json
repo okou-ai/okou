@@ -2047,6 +2047,7 @@
       "requiresSsh": "SSH 필요: {{name}}",
       "retry": "다시 시도",
       "sshDisabled": "SSH 켜기: {{name}}",
+      "sshEnabled": "SSH 켜짐: {{name}}",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
     },

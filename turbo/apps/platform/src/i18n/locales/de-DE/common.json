@@ -2055,6 +2055,7 @@
       "requiresSsh": "Benötigt SSH: {{name}}",
       "retry": "Erneut versuchen",
       "sshDisabled": "SSH aktivieren: {{name}}",
+      "sshEnabled": "SSH aktiviert: {{name}}",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },

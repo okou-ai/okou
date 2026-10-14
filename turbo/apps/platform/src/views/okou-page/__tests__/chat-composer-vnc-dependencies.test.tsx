@@ -29,6 +29,7 @@ const VNC_ID = "b0000000-0000-4000-8000-000000000034";
 const SSH_WARNING = "Enable SSH: MacinCloud";
 const KDC_WARNING = "Enable SSH: Directory tunnel";
 const SSH_NOTE = "Requires SSH: MacinCloud";
+const SSH_ENABLED_NOTE = "SSH enabled: MacinCloud";
 
 function installDependencyFixture({
   newChat = false,
@@ -220,7 +221,9 @@ test("An enabled VNC host warns until its exact SSH dependency is enabled", asyn
     expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
   });
   await chooseHost("SSH MacinCloud", "On");
-  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_ENABLED_NOTE),
+  ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 
   await chooseHost("SSH MacinCloud", "Off");
@@ -244,7 +247,7 @@ test.each([
     });
     const menu = await openRemoteAccess();
     await expect(
-      within(menu).findByText(warningExpected ? SSH_WARNING : SSH_NOTE),
+      within(menu).findByText(warningExpected ? SSH_WARNING : SSH_ENABLED_NOTE),
     ).resolves.toBeInTheDocument();
     expect(within(menu).queryAllByText(SSH_WARNING)).toHaveLength(
       Number(warningExpected),
@@ -254,7 +257,7 @@ test.each([
       defaultEnabled ? "Default (On)" : "Default (Off)",
     );
     await expect(
-      within(menu).findByText(warningExpected ? SSH_NOTE : SSH_WARNING),
+      within(menu).findByText(warningExpected ? SSH_ENABLED_NOTE : SSH_WARNING),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -266,14 +269,20 @@ test("A new chat updates VNC warnings from unsent host choices", async () => {
     sshDefaultEnabled: true,
   });
   const menu = await openRemoteAccess(true);
-  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_ENABLED_NOTE),
+  ).resolves.toBeInTheDocument();
   await chooseHost("SSH MacinCloud", "Off");
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText(SSH_ENABLED_NOTE)).toBeNull();
   await chooseHost("VNC MacinCloud", "On");
   await expect(
     within(menu).findByText(SSH_WARNING),
   ).resolves.toBeInTheDocument();
   await chooseHost("SSH MacinCloud", "Default (On)");
-  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_ENABLED_NOTE),
+  ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 });
 
@@ -292,11 +301,13 @@ test("VNC reports its transport and KDC SSH dependencies independently", async (
   ).resolves.toBeInTheDocument();
   expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
   await chooseHost("SSH MacinCloud", "On");
-  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_ENABLED_NOTE),
+  ).resolves.toBeInTheDocument();
   expect(within(menu).getByText(KDC_WARNING)).toBeInTheDocument();
   await chooseHost("SSH Directory tunnel", "On");
   await expect(
-    within(menu).findByText("Requires SSH: Directory tunnel"),
+    within(menu).findByText("SSH enabled: Directory tunnel"),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
 });
@@ -310,7 +321,7 @@ test("Direct VNC transport still explains an SSH-backed KDC dependency", async (
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
   await chooseHost("SSH Directory tunnel", "On");
   await expect(
-    within(menu).findByText("Requires SSH: Directory tunnel"),
+    within(menu).findByText("SSH enabled: Directory tunnel"),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
 });

@@ -2047,6 +2047,7 @@
       "requiresSsh": "SSH が必要：{{name}}",
       "retry": "再試行",
       "sshDisabled": "SSH をオンに：{{name}}",
+      "sshEnabled": "SSH 有効：{{name}}",
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト"
     },

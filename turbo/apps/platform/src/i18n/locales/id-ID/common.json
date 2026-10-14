@@ -2047,6 +2047,7 @@
       "requiresSsh": "Memerlukan SSH: {{name}}",
       "retry": "Coba lagi",
       "sshDisabled": "Aktifkan SSH: {{name}}",
+      "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
     },

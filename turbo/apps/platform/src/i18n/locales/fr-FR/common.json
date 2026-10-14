@@ -2096,6 +2096,7 @@
       "requiresSsh": "SSH requis : {{name}}",
       "retry": "Réessayer",
       "sshDisabled": "Activez SSH : {{name}}",
+      "sshEnabled": "SSH activé : {{name}}",
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible"
     },
