@@ -8,7 +8,7 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { searchParams$ } from "../route.ts";
+import { replaceSearchParams$, searchParams$ } from "../route.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
 
 export const discordAuthorizationFailed$ = computed((get) => {
@@ -68,6 +68,11 @@ export const startDiscordAuthorization$ = command(
     signal.throwIfAborted();
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
+    }
+    const params = new URLSearchParams(get(searchParams$));
+    if (params.has("discord")) {
+      params.delete("discord");
+      set(replaceSearchParams$, params);
     }
     const flowSignal = set(resetDiscordAuthorization$, signal);
     const standalone =

@@ -9,8 +9,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import {
   discordAuthorizationFailed$,
   DiscordPopupBlockedError,
+  startDiscordAuthorization$,
 } from "../../signals/okou-page/discord.ts";
-import { connectDiscordAccount$ } from "../../signals/okou-page/discord-connect-signals.ts";
 import {
   discordApprovalAvailable$,
   discordApprovalSucceeded$,
@@ -50,7 +50,7 @@ export function DiscordAuthorizationActions({
 }) {
   const { t } = useTranslation();
   const [authorizationState, authorize] = useLoadableSet(
-    connectDiscordAccount$,
+    startDiscordAuthorization$,
   );
   const authorizationFailed = useGet(discordAuthorizationFailed$);
   const approvalAvailable = useGet(discordApprovalAvailable$);

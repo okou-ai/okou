@@ -118,6 +118,73 @@ function ConnectedIndicator({
   );
 }
 
+function ProviderCardMenu({
+  moreOptionsLabel,
+  disconnectLabel,
+  uninstallLabel,
+  onDisconnect,
+  onUninstall,
+  disconnecting,
+}: {
+  moreOptionsLabel: string;
+  disconnectLabel: string;
+  uninstallLabel?: string;
+  onDisconnect?: () => void;
+  onUninstall?: () => void;
+  disconnecting: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            className="shrink-0"
+            aria-label={moreOptionsLabel}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
+      <PopoverContent align="end" className="flex flex-col gap-0.5 w-40 p-2">
+        {onDisconnect && (
+          <button
+            type="button"
+            aria-label={disconnectLabel}
+            disabled={disconnecting}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            onClick={onDisconnect}
+          >
+            {disconnecting
+              ? t(($) => {
+                  return $.works.actions.disconnecting;
+                })
+              : t(($) => {
+                  return $.works.actions.disconnect;
+                })}
+          </button>
+        )}
+        {onUninstall && (
+          <button
+            type="button"
+            aria-label={uninstallLabel}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
+            onClick={onUninstall}
+          >
+            {t(($) => {
+              return $.works.actions.uninstall;
+            })}
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function ProviderCardActions({
   isConnected,
   isInstalled,
@@ -192,56 +259,14 @@ function ProviderCardActions({
         </Button>
       )}
       {isInstalled && (isConnected || isAdmin) && (
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button
-                showTooltip
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0"
-                aria-label={moreOptionsLabel}
-              >
-                <EllipsisVertical size={16} />
-              </Button>
-            }
-          />
-          <PopoverContent
-            align="end"
-            className="flex flex-col gap-0.5 w-40 p-2"
-          >
-            {isConnected && (
-              <button
-                type="button"
-                aria-label={disconnectLabel}
-                disabled={disconnecting}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                onClick={onDisconnect}
-              >
-                {disconnecting
-                  ? t(($) => {
-                      return $.works.actions.disconnecting;
-                    })
-                  : t(($) => {
-                      return $.works.actions.disconnect;
-                    })}
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                aria-label={uninstallLabel}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
-                onClick={onUninstall}
-              >
-                {t(($) => {
-                  return $.works.actions.uninstall;
-                })}
-              </button>
-            )}
-          </PopoverContent>
-        </Popover>
+        <ProviderCardMenu
+          moreOptionsLabel={moreOptionsLabel}
+          disconnectLabel={disconnectLabel}
+          uninstallLabel={uninstallLabel}
+          disconnecting={disconnecting}
+          onDisconnect={isConnected ? onDisconnect : undefined}
+          onUninstall={isAdmin ? onUninstall : undefined}
+        />
       )}
     </>
   );
@@ -632,21 +657,21 @@ function DiscordCard() {
             disabled={disconnectState.state === "loading"}
           />
           {data?.isConnected ? (
-            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            <>
               <ConnectedIndicator testId="discord-connected-indicator" />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={disconnectState.state === "loading"}
-                onClick={() => {
-                  detach(disconnect(pageSignal), Reason.DomCallback);
-                }}
-              >
-                {t(($) => {
+              <ProviderCardMenu
+                moreOptionsLabel={t(($) => {
+                  return $.works.actions.moreOptions;
+                })}
+                disconnectLabel={t(($) => {
                   return $.works.discord.disconnect;
                 })}
-              </Button>
-            </div>
+                disconnecting={disconnectState.state === "loading"}
+                onDisconnect={() => {
+                  detach(disconnect(pageSignal), Reason.DomCallback);
+                }}
+              />
+            </>
           ) : null}
         </div>
         <DiscordApprovalPanel />

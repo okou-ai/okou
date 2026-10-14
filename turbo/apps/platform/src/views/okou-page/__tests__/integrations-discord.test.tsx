@@ -5,6 +5,7 @@ import {
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import {
   click,
@@ -41,10 +42,10 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   };
 }
 
-function setupDiscordPage(enabled = true) {
+function setupDiscordPage(enabled = true, path = "/works") {
   return setupPage({
     context,
-    path: "/works",
+    path,
     featureSwitches: {
       [FeatureSwitchKey.DiscordIntegration]: enabled,
       [FeatureSwitchKey.FeishuIntegration]: false,
@@ -115,7 +116,7 @@ test.each([
   for (const name of visibleActions) {
     expect(getAction("button", name, card)).toBeEnabled();
   }
-  expect(queryAction("button", "More Discord options", card)).toBeNull();
+  expect(queryAction("button", "More options", card)).toBeNull();
 });
 
 function authorizationWindow() {
@@ -150,14 +151,19 @@ test("A disabled Discord integration cannot automatically approve a callback pro
   expect(approvals).toStrictEqual([]);
 });
 
-test.each(["install", "connect"] as const)(
-  "Discord completes authenticated %s with retained opener proof before refreshing public status",
-  async (flow) => {
+test.each([
+  { isAdmin: true, callbackStatus: null },
+  { isAdmin: false, callbackStatus: null },
+  { isAdmin: false, callbackStatus: "error" },
+  { isAdmin: false, callbackStatus: "pending" },
+])(
+  "Discord completes authorization and updates Works in place (admin: $isAdmin, callback: $callbackStatus)",
+  async ({ isAdmin, callbackStatus }) => {
     let current = status({
-      isAdmin: flow === "install",
+      isAdmin,
       isConnected: false,
       discordUserId: null,
-      ...(flow === "install" ? { guildId: null, guildName: null } : {}),
+      ...(isAdmin ? { guildId: null, guildName: null } : {}),
     });
     const { popup, opened } = authorizationWindow();
     let requestBody: unknown;
@@ -198,7 +204,10 @@ test.each(["install", "connect"] as const)(
         });
       },
     );
-    await setupDiscordPage();
+    await setupDiscordPage(
+      true,
+      callbackStatus ? `/works?discord=${callbackStatus}` : "/works",
+    );
     await expect(
       screen.findByText(
         "Connect your Discord account through official browser consent.",
@@ -215,13 +224,19 @@ test.each(["install", "connect"] as const)(
     expect(query).toBe("");
     expect(credentials).toBe("include");
     expect(getAction("button", "Authorizing…", card)).toBeDisabled();
+    expect(within(card).queryByRole("alert")).toBeNull();
+    expect(
+      within(card).queryByText(
+        "Close this tab and restart the connection from the original tab.",
+      ),
+    ).toBeNull();
     expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
     expect(completeBody).toBeUndefined();
     expect(window.location.href).not.toContain(completionToken);
     expect(popup.location.href).not.toContain(completionToken);
     popup.close();
     await expect(
-      screen.findByText("Connected to Discord"),
+      within(card).findByText("Connected"),
     ).resolves.toBeInTheDocument();
     expect(completeBody).toStrictEqual({
       state: attemptState,
@@ -229,18 +244,12 @@ test.each(["install", "connect"] as const)(
     });
     expect(completeAuthorization).toMatch(/^Bearer /u);
     expect(completeCredentials).toBe("include");
-    await waitFor(() => {
-      const outcome = getAction("link", "Open Discord");
-      expect(outcome).toBeInTheDocument();
-      expect(outcome).not.toBeDisabled();
-    });
-    expect(window.location.pathname).toBe("/settings/discord");
-    const params = new URLSearchParams(window.location.search);
-    expect(params.get("status")).toBe("connected");
-    expect(params.get("workspace")).toBe("Verified team");
-    expect(
-      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe("discord://-/channels/123456789012345678");
+    expect(window.location.pathname).toBe("/works");
+    expect(window.location.search).toBe("");
+    expect(getAction("button", "More options", card)).toBeEnabled();
+    expect(queryAction("button", "Connect", card)).toBeNull();
+    expect(queryAction("button", "Disconnect Discord")).toBeNull();
+    expect(queryAction("link", "Open Discord")).toBeNull();
   },
 );
 
@@ -507,25 +516,13 @@ test.each(["connected", "pending", "error"])(
       path: `/works?discord=${indicator}&discord_error=private-provider-detail&state=${attemptState}&completionToken=${completionToken}`,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    expect(window.location.pathname).toBe("/settings/discord");
-    expect(new URLSearchParams(window.location.search).get("status")).toBe(
+    expect(window.location.pathname).toBe("/works");
+    expect(new URLSearchParams(window.location.search).get("discord")).toBe(
       indicator,
     );
-    expect(
-      screen.getByRole("heading", {
-        name:
-          indicator === "connected"
-            ? "Connect to Discord"
-            : "Connection failed",
-      }),
-    ).toBeInTheDocument();
-    expect(queryAction("button", "Connect") !== null).toBe(
-      indicator === "connected",
-    );
-    expect(getAction("link", "Back to settings")).toHaveAttribute(
-      "href",
-      "/works",
-    );
+    const card = getIntegrationCard("Discord");
+    expect(getAction("button", "Connect", card)).toBeEnabled();
+    expect(within(card).queryByText("Connected")).toBeNull();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(screen.queryByText("private-provider-detail")).toBeNull();
     expect(completionRequests).toStrictEqual([]);
@@ -564,10 +561,10 @@ test.each(["/works?discord=pending", "/settings/discord?status=pending"])(
       path: `${callbackPath}#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
       featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
     });
-    await expect(
-      screen.findByRole("heading", { name: "Connecting to Discord" }),
-    ).resolves.toBeInTheDocument();
-    expect(window.location.pathname).toBe("/settings/discord");
+    const dedicatedPage = callbackPath.startsWith("/settings/discord");
+    expect(window.location.pathname).toBe(
+      dedicatedPage ? "/settings/discord" : "/works",
+    );
     expect(window.location.hash).toBe("");
     expect(window.location.href).not.toContain(approvalProof);
     await expect(
@@ -575,6 +572,14 @@ test.each(["/works?discord=pending", "/settings/discord?status=pending"])(
         "Close this tab to finish connecting in the original tab.",
       ),
     ).resolves.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Connecting to Discord" }) !== null,
+    ).toBe(dedicatedPage);
+    const surface = dedicatedPage
+      ? document.body
+      : getIntegrationCard("Discord");
+    expect(within(surface).queryByText("Connected")).toBeNull();
+    expect(queryAction("button", "Connect", surface)).toBeNull();
     expect(approvalBody).toStrictEqual({ state: attemptState, approvalProof });
     expect(authorization).toMatch(/^Bearer /u);
     expect(approvalUrl).toBe(
@@ -635,10 +640,9 @@ test("A rejected consent-browser owner or proof shows restart guidance without c
     path: `/works?discord=pending#discord_oauth=approve&state=${attemptState}&approval_proof=${approvalProof}`,
     featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
-  await expect(
-    screen.findByRole("heading", { name: "Connection failed" }),
-  ).resolves.toBeInTheDocument();
-  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
+  const card = getIntegrationCard("Discord");
+  expect(window.location.pathname).toBe("/works");
+  await expect(within(card).findByRole("alert")).resolves.toHaveTextContent(
     "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
   );
   expect(queryAction("link", "Open Discord")).toBeNull();
@@ -679,17 +683,21 @@ test("Leaving the consent route cancels automatic verification and destroys its 
   });
   await page.content;
   await approving.promise;
-  await expect(
-    screen.findByRole("heading", { name: "Connecting to Discord" }),
-  ).resolves.toBeInTheDocument();
+  const card = getIntegrationCard("Discord");
+  expect(within(card).getByRole("status")).toHaveTextContent("Authorizing…");
   expect(queryAction("link", "Open Discord")).toBeNull();
-  click(getAction("link", "Back to settings"));
+  click(
+    getAction(
+      "link",
+      "Chat",
+      screen.getByRole("navigation", { name: "Sidebar" }),
+    ),
+  );
   await waitFor(() => {
-    expect(
-      screen.queryByRole("heading", { name: "Connecting to Discord" }),
-    ).toBeNull();
+    expect(screen.queryByText("Discord")).toBeNull();
     expect(approvalSignal?.aborted).toBeTruthy();
   });
+  click(getAction("link", "Where Okou works"));
   await expect(
     screen.findByText(
       "Connect your Discord account through official browser consent.",
@@ -734,7 +742,7 @@ test("Popup closure without approved evidence fails completion instead of manufa
   expect(getAction("button", "Retry", card)).toBeEnabled();
 });
 
-test("A connected member sees server and context limits and can disconnect", async () => {
+test("A connected member disconnects from the overflow menu on Works", async () => {
   let current = status();
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, current);
@@ -751,6 +759,8 @@ test("A connected member sees server and context limits and can disconnect", asy
     within(card).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
   expect(within(card).getByText(/Limited context:/u)).toBeInTheDocument();
+  expect(queryAction("button", "Disconnect Discord")).toBeNull();
+  click(getAction("button", "More options", card));
   expect(queryAction("button", "Remove Discord")).toBeNull();
   click(getAction("button", "Disconnect Discord"));
 
@@ -762,6 +772,8 @@ test("A connected member sees server and context limits and can disconnect", asy
   expect(
     within(card).queryByText(/^Connected(?: \(.+\))?$/u),
   ).not.toBeInTheDocument();
+  expect(queryAction("button", "More options", card)).toBeNull();
+  expect(queryAction("button", "Disconnect Discord")).toBeNull();
 });
 
 test("A failed disconnect preserves the connection and allows retry", async () => {
@@ -781,6 +793,7 @@ test("A failed disconnect preserves the connection and allows retry", async () =
   });
   await setupDiscordPage();
   await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  click(getAction("button", "More options", getIntegrationCard("Discord")));
   click(getAction("button", "Disconnect Discord"));
 
   await expect(
@@ -799,15 +812,27 @@ test("A failed disconnect preserves the connection and allows retry", async () =
   ).resolves.toBeInTheDocument();
 });
 
-test("A connected admin has only their account disconnect action", async () => {
+test("A connected admin can open and dismiss their account menu with the keyboard", async () => {
+  const user = userEvent.setup();
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
     return respond(200, status({ isAdmin: true }));
   });
   await setupDiscordPage();
   const card = getIntegrationCard("Discord");
-  expect(getAction("button", "Disconnect Discord", card)).toBeEnabled();
-  expect(queryAction("button", "Remove Discord", card)).toBeNull();
+  const more = getAction("button", "More options", card);
+  expect(queryAction("button", "Disconnect Discord")).toBeNull();
+  await user.click(more);
+  expect(getAction("button", "Disconnect Discord")).toBeEnabled();
+  expect(queryAction("button", "Remove Discord")).toBeNull();
+  expect(queryAction("button", "Uninstall")).toBeNull();
   expect(queryAction("button", "Install to Discord", card)).toBeNull();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(more).toHaveFocus();
+    expect(queryAction("button", "Disconnect Discord")).toBeNull();
+  });
+  await user.keyboard("{Enter}");
+  expect(getAction("button", "Disconnect Discord")).toBeEnabled();
 });
 
 test("Discord status converges after a connection change from another surface", async () => {
@@ -848,11 +873,7 @@ test("Discord status converges after a connection change from another surface", 
     screen.findByText(/Connect your Discord account/u),
   ).resolves.toBeInTheDocument();
   expect(
-    queryAction(
-      "button",
-      "More Discord options",
-      getIntegrationCard("Discord"),
-    ),
+    queryAction("button", "More options", getIntegrationCard("Discord")),
   ).toBeNull();
 });
 
@@ -1252,8 +1273,9 @@ test.each([
     expect(
       within(card).queryAllByText(/^Connected(?: \(.+\))?$/u),
     ).toHaveLength(connected ? 1 : 0);
-    const menu = queryAction("button", "More Discord options", card);
-    expect(menu).toBeNull();
+    expect(queryAction("button", "Disconnect Discord")).toBeNull();
+    const menu = queryAction("button", "More options", card);
+    expect(menu !== null).toBe(connected);
     if (menu) {
       click(menu);
     }
@@ -1353,10 +1375,14 @@ test("Disconnecting stays pending until the refreshed status arrives", async () 
   });
   await setupDiscordPage();
   await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  click(getAction("button", "More options", getIntegrationCard("Discord")));
   click(getAction("button", "Disconnect Discord"));
 
   await refreshStarted.promise;
   expect(getAction("button", "Disconnect Discord")).toBeDisabled();
+  expect(getAction("button", "Disconnect Discord")).toHaveTextContent(
+    "Disconnecting…",
+  );
   refreshReady.resolve();
   await expect(
     screen.findByText(/Connect your Discord account/u),

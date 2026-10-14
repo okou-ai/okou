@@ -1,6 +1,5 @@
 import { command } from "ccstate";
-import { navigateTo$, pathname$, replaceSearchParams$ } from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
+import { replaceSearchParams$ } from "../route.ts";
 import { discordOrgData$, startDiscordAuthorization$ } from "./discord.ts";
 
 export const connectDiscordAccount$ = command(
@@ -19,15 +18,6 @@ export const connectDiscordAccount$ = command(
     if (data.guildId) {
       params.set("guild_id", data.guildId);
     }
-    if (get(pathname$) === ROUTES.settingsDiscord) {
-      set(replaceSearchParams$, params);
-    } else {
-      await set(
-        navigateTo$,
-        ROUTES.settingsDiscord,
-        { searchParams: params },
-        signal,
-      );
-    }
+    set(replaceSearchParams$, params);
   },
 );
