@@ -28,6 +28,46 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["sandbox_channel"],
+    rustTypeName: "Message",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel"],
+    rustTypeName: "HelloResult",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListParams",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListResult",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListCloseParams",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustTypeName: "ListCloseResult",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "diagnostics"],
+    rustTypeName: "Echo",
+    direction: "request",
+  },
+  {
+    rustModulePath: ["sandbox_channel", "diagnostics"],
+    rustTypeName: "Notice",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners", "wss"],
     rustTypeName: "ConsumeResponse",
     direction: "response",

@@ -13,6 +13,7 @@ import {
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
+import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
@@ -54,6 +55,18 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["sandbox_channel"],
+    rustDoc: ["Shared sandbox application schema and role contracts."],
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustDoc: ["Readonly home-directory category contracts."],
+  },
+  {
+    rustModulePath: ["sandbox_channel", "diagnostics"],
+    rustDoc: ["Bidirectional diagnostic category contracts."],
+  },
   {
     rustModulePath: ["runners", "wss"],
     rustDoc: ["Official Runner one-use WSS ticket redemption."],
@@ -1089,4 +1102,5 @@ export const rustTypeBindings = [
       },
     ],
   },
+  ...sandboxChannelTypeBindings,
 ] as const satisfies readonly RustTypeBinding[];
