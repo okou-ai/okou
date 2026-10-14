@@ -235,11 +235,11 @@ async fn native_continuation_records_complete_session_history_and_required_savin
 {
     measured_selected_corpus(
         &[
+            NativeScope::Batch(IdleRetirementBatchScope::Exact),
             NativeScope::Logical,
             NativeScope::Replacement,
             NativeScope::Restore,
             NativeScope::Aged,
-            NativeScope::Batch(IdleRetirementBatchScope::Exact),
         ],
         Corpus::Continuation,
     )

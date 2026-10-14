@@ -534,9 +534,9 @@ impl Fixture {
             }
         ) {
             self.case.retain(task);
-            return Err(io::Error::other(
-                "continued native saving did not preserve its verified cache identity",
-            )
+            return Err(io::Error::other(format!(
+                "continued native saving did not preserve its verified cache identity: {outcome:?}"
+            ))
             .into());
         }
         let snapshot = pool.lock().await.status_snapshot();
