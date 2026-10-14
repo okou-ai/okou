@@ -375,10 +375,6 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
   },
   {
-    path: ROUTES.settingsTelegram,
-    setup: redirectTo(ROUTES.works),
-  },
-  {
     path: ROUTES.githubConnect,
     setup: setupAuthPageWrapper(setupGithubConnectPage$),
   },

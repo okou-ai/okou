@@ -126,20 +126,6 @@ function authorize(popup: Window): void {
   });
 }
 
-test("The former Telegram settings URL opens its connection card in Works", async () => {
-  mockBot();
-
-  await setupPage({ context, path: "/settings/telegram" });
-
-  await waitFor(() => {
-    expect(
-      getAction("button", "Connect", getIntegrationCard("Telegram")),
-    ).toBeEnabled();
-  });
-  expect(pathname()).toBe("/works");
-  expect(queryAction("link", "Open Telegram settings")).toBeNull();
-});
-
 test("Works refreshes Telegram connections in realtime and disconnects the displayed account", async () => {
   mockBot();
   await openWorks();
