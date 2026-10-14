@@ -2060,9 +2060,11 @@
       "collapse": "Collapse",
       "copyLink": "Copy link",
       "empty": "No artifacts or links in this chat yet",
+      "emptyLinks": "No links in this chat yet",
       "expand": "Expand",
       "links": "Links",
       "loadFailed": "Could not load resources",
+      "loadingLinks": "Loading links",
       "retry": "Try again",
       "title": "Resources",
       "viewAll": "View all"

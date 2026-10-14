@@ -2101,9 +2101,11 @@
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "empty": "Ce chat ne contient pas encore d’artéfacts ni de liens",
+      "emptyLinks": "Aucun lien dans ce chat pour le moment",
       "expand": "Développer",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
+      "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
       "title": "Ressources du chat",
       "viewAll": "Tout voir"

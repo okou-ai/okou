@@ -282,7 +282,7 @@ function getStructuredFilePreviewIconMeta(
   return null;
 }
 
-function getFilePreviewIconMeta(
+export function getFilePreviewIconMeta(
   filename: string,
   contentType?: string,
 ): FilePreviewIconMeta {

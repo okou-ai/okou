@@ -42,6 +42,7 @@ import { emptyArtifactImg } from "../okou-page/platform-assets.ts";
 import {
   FilePreviewIcon,
   getFilePreviewAccentClass,
+  getFilePreviewIconMeta,
 } from "../okou-page/file-preview-icon.tsx";
 
 // Distance from the bottom of the scroll container at which the next page is
@@ -49,6 +50,10 @@ import {
 const ARTIFACT_AUTO_LOAD_VIEWPORT_COUNT = 2;
 const ARTIFACT_GRID_CLASS_NAME =
   "grid grid-cols-[repeat(auto-fit,minmax(min(100%,292px),1fr))] gap-3";
+const ARTIFACT_GALLERY_CLASS_NAME =
+  "grid grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))] gap-x-6 gap-y-8";
+
+type ArtifactCatalogAppearance = "card" | "gallery";
 
 const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "presentation",
@@ -78,12 +83,7 @@ function artifactKindIcon(kind: ArtifactCatalogKind, size: number): ReactNode {
   );
 }
 
-/**
- * The accessible name of whichever element carries a card's kind mark. Exactly
- * one element carries it: the corner badge, or the fallback cover when that
- * cover is the kind's own icon.
- */
-function useArtifactKindIconLabel(kind: ArtifactCatalogKind): string {
+function useArtifactKindLabel(kind: ArtifactCatalogKind): string {
   const { t } = useTranslation();
   const kindLabel =
     kind === "presentation"
@@ -114,6 +114,13 @@ function useArtifactKindIconLabel(kind: ArtifactCatalogKind): string {
                     return $.artifacts.kinds.file;
                   });
 
+  return kindLabel;
+}
+
+/** Name the corner badge or fallback cover that carries the card's kind mark. */
+function useArtifactKindIconLabel(kind: ArtifactCatalogKind): string {
+  const { t } = useTranslation();
+  const kindLabel = useArtifactKindLabel(kind);
   return t(
     ($) => {
       return $.artifacts.catalog.kindIcon;
@@ -144,20 +151,28 @@ function ArtifactKindIcon({ kind }: { readonly kind: ArtifactCatalogKind }) {
  */
 function ArtifactCatalogFallbackPreview({
   artifact,
+  appearance,
 }: {
   readonly artifact: CatalogArtifact;
+  readonly appearance: ArtifactCatalogAppearance;
 }) {
   const kindIconLabel = useArtifactKindIconLabel(artifact.kind);
   const showsFileFormat = artifact.kind === "file";
   return (
     <span
       className={cn(
-        "relative flex h-full w-full items-center justify-center overflow-hidden bg-gradient-to-br p-6",
-        getFilePreviewAccentClass(artifact.title),
+        "relative flex h-full w-full items-center justify-center overflow-hidden p-6",
+        appearance === "gallery"
+          ? "bg-gray-50"
+          : cn("bg-gradient-to-br", getFilePreviewAccentClass(artifact.title)),
       )}
     >
-      <span className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
-      <span className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
+      {appearance === "card" && (
+        <>
+          <span className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.45),transparent_55%)] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_55%)]" />
+          <span className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-black/10 to-transparent" />
+        </>
+      )}
       <span
         role={showsFileFormat ? undefined : "img"}
         aria-label={showsFileFormat ? undefined : kindIconLabel}
@@ -204,12 +219,16 @@ function ArtifactCatalogCard({
   artifact,
   onOpen,
   scrollIntoView,
+  appearance,
 }: {
   readonly artifact: CatalogArtifact;
   readonly onOpen: (artifactId: string) => void;
   readonly scrollIntoView: boolean;
+  readonly appearance: ArtifactCatalogAppearance;
 }) {
   const { t } = useTranslation();
+  const kindLabel = useArtifactKindLabel(artifact.kind);
+  const gallery = appearance === "gallery";
   const scrollArtifactCardIntoViewRef = useSet(scrollArtifactCardIntoViewRef$);
   const thumbnailLoadable = useLastLoadable(artifact.thumbnailUrl$);
   const thumbnailUrl =
@@ -221,7 +240,10 @@ function ArtifactCatalogCard({
       <ArtifactCatalogVideoPreview artifact={artifact} />
     ) : null;
   const fallbackPreview = sourceVideo ?? (
-    <ArtifactCatalogFallbackPreview artifact={artifact} />
+    <ArtifactCatalogFallbackPreview
+      artifact={artifact}
+      appearance={appearance}
+    />
   );
   // A broken thumbnail hands the cover back to the fallback, so the badge
   // follows the same state the image component renders from.
@@ -248,32 +270,65 @@ function ArtifactCatalogCard({
       onClick={() => {
         onOpen(artifact.id);
       }}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-lg border border-border bg-card text-left outline-none transition-colors hover:border-foreground/20 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      className={cn(
+        "group flex min-w-0 cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        gallery
+          ? "rounded-surface"
+          : "overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-foreground/20",
+      )}
     >
       <span
         data-testid="artifact-catalog-card-preview"
-        className="relative aspect-[16/10] w-full shrink-0 overflow-hidden bg-background"
+        className={cn(
+          "relative aspect-[16/10] w-full shrink-0 overflow-hidden",
+          gallery
+            ? "rounded-surface border border-border bg-gray-50 transition-colors group-hover:border-foreground/20"
+            : "bg-background",
+        )}
       >
         {thumbnailUrl ? (
           <ArtifactThumbnailImage
             src={thumbnailUrl}
             load={artifact.thumbnailLoad}
-            className="h-full w-full object-cover"
+            className={cn(
+              "h-full w-full",
+              gallery ? "object-contain" : "object-cover",
+            )}
             fallback={fallbackPreview}
             testId="artifact-catalog-thumbnail"
           />
         ) : (
           fallbackPreview
         )}
-        {kindCoverShown ? null : <ArtifactKindIcon kind={artifact.kind} />}
+        {gallery || kindCoverShown ? null : (
+          <ArtifactKindIcon kind={artifact.kind} />
+        )}
       </span>
-      <span className="flex min-w-0 shrink-0 items-center border-t border-border p-3">
+      <span
+        className={cn(
+          "flex min-w-0 shrink-0",
+          gallery
+            ? "w-full flex-col gap-1 px-1 pt-3"
+            : "items-center border-t border-border p-3",
+        )}
+      >
         <span
           title={artifact.title}
-          className="min-w-0 truncate text-sm font-semibold leading-5 text-foreground"
+          className={cn(
+            "min-w-0 truncate text-sm leading-5 text-foreground",
+            gallery ? "font-medium" : "font-semibold",
+          )}
         >
           {artifact.title}
         </span>
+        {gallery && (
+          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span aria-hidden>{artifactKindIcon(artifact.kind, 14)}</span>
+            {artifact.kind === "file"
+              ? getFilePreviewIconMeta(artifact.title).label
+              : kindLabel}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -344,15 +399,21 @@ export function ArtifactCatalogGrid({
   artifacts,
   onOpen,
   scrollToArtifactId = null,
+  appearance = "card",
 }: {
   readonly artifacts: readonly CatalogArtifact[];
   readonly onOpen: (artifactId: string) => void;
   readonly scrollToArtifactId?: string | null;
+  readonly appearance?: ArtifactCatalogAppearance;
 }) {
   return (
     <div
       data-testid="artifact-catalog-grid"
-      className={ARTIFACT_GRID_CLASS_NAME}
+      className={
+        appearance === "gallery"
+          ? ARTIFACT_GALLERY_CLASS_NAME
+          : ARTIFACT_GRID_CLASS_NAME
+      }
     >
       {artifacts.map((artifact) => {
         return (
@@ -361,6 +422,7 @@ export function ArtifactCatalogGrid({
             artifact={artifact}
             onOpen={onOpen}
             scrollIntoView={artifact.id === scrollToArtifactId}
+            appearance={appearance}
           />
         );
       })}
@@ -370,8 +432,10 @@ export function ArtifactCatalogGrid({
 
 export function ArtifactCatalogSkeleton({
   layout = "grid",
+  appearance = "card",
 }: {
   readonly layout?: "grid" | "list";
+  readonly appearance?: ArtifactCatalogAppearance;
 } = {}) {
   const { t } = useTranslation();
   const loadingLabel = t(($) => {
@@ -390,6 +454,21 @@ export function ArtifactCatalogSkeleton({
             <div key={index} className="flex items-center gap-3 px-4 py-3">
               <div className="size-8 shrink-0 rounded-lg bg-gray-50" />
               <div className="h-4 w-2/3 rounded bg-muted/60" />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  if (appearance === "gallery") {
+    return (
+      <div className={ARTIFACT_GALLERY_CLASS_NAME} aria-label={loadingLabel}>
+        {Array.from({ length: 8 }, (_, index) => {
+          return (
+            <div key={index} className="flex flex-col gap-3">
+              <div className="aspect-[16/10] rounded-surface bg-gray-50" />
+              <div className="h-5 w-3/4 rounded bg-muted/60" />
+              <div className="h-3 w-1/3 rounded bg-muted/30" />
             </div>
           );
         })}

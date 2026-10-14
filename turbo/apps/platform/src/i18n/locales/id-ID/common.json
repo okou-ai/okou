@@ -2052,9 +2052,11 @@
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "empty": "Chat ini belum memiliki artefak atau tautan",
+      "emptyLinks": "Belum ada tautan di chat ini",
       "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
+      "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
       "title": "Sumber daya chat",
       "viewAll": "Lihat semua"

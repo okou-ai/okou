@@ -9,6 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
+import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import {
   chatThreadArtifactsContract,
   chatThreadEventsContract,
@@ -152,7 +153,10 @@ function resourceState() {
   };
 }
 
-async function setupOverflowResources(count: number) {
+async function setupOverflowResources(
+  count: number,
+  options: { readonly paginated?: boolean; readonly withLinks?: boolean } = {},
+) {
   installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
   const catalog = Array.from({ length: count }, (_, index) => {
@@ -179,23 +183,36 @@ async function setupOverflowResources(count: number) {
       {
         id: "resources-overflow",
         role: "assistant",
-        content: catalog
-          .map((_, index) => {
-            return `[Reference ${index + 1}](https://example.test/reference-${index + 1})`;
-          })
-          .join(" "),
+        content:
+          options.withLinks === false
+            ? "The report is ready."
+            : catalog
+                .map((_, index) => {
+                  return `[Reference ${index + 1}](https://example.test/reference-${index + 1})`;
+                })
+                .join(" "),
         runId: "resources-run",
         createdAt: "2026-09-01T10:00:01Z",
       },
     ],
   });
+  if (options.paginated) {
+    context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+      return respond(200, {
+        artifacts: query.cursor ? catalog.slice(1) : catalog.slice(0, 1),
+        nextCursor: query.cursor ? null : "resources-next-page",
+      });
+    });
+  }
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
   });
   const panel = await screen.findByRole("region", { name: "Resources" });
-  await within(panel).findByText("Reference 1");
+  await within(panel).findByText(
+    options.withLinks === false ? "report-1.pdf" : "Reference 1",
+  );
   return panel;
 }
 
@@ -302,12 +319,77 @@ test.each(["Artifacts", "Links"] as const)(
   },
 );
 
-test("Keep the footer View all showing complete artifacts and links", async () => {
+test("Browse complete artifacts and links in separate tabs from View all", async () => {
   const panel = await setupOverflowResources(7);
   click(within(panel).getByText("View all"));
   const all = await screen.findByRole("complementary", { name: "Resources" });
   await within(all).findByText("report-7.pdf");
-  expect(within(all).getByText("Reference 7")).toBeInTheDocument();
+  expect(within(all).queryByText("Reference 7")).not.toBeInTheDocument();
+  const tabs = queryAllByRoleFast("tab", all);
+  expect(tabs).toHaveLength(2);
+  expect(tabs[0]).toHaveTextContent("Artifacts7");
+  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  expect(tabs[1]).toHaveTextContent("Links7");
+  expect(within(all).queryByRole("searchbox")).not.toBeInTheDocument();
+  click(tabs[1]!);
+  await within(all).findByText("Reference 7");
+  expect(within(all).queryByText("report-7.pdf")).not.toBeInTheDocument();
+  expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+  tabs[1]!.focus();
+  await userEvent.keyboard("{ArrowLeft}{Enter}");
+  expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  await within(all).findByText("report-7.pdf");
+});
+
+test("Keep loaded gallery pages and fullscreen when switching resource tabs", async () => {
+  const panel = await setupOverflowResources(2, { paginated: true });
+  click(buttonNamed("View all", panel));
+  const all = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(all).findByText("report-1.pdf");
+  expect(queryAllByRoleFast("tab", all)[0]).toHaveTextContent("Artifacts1+");
+  const viewport = within(all).getByRole("tabpanel");
+  Object.defineProperties(viewport, {
+    scrollHeight: { configurable: true, value: 2000 },
+    clientHeight: { configurable: true, value: 1000 },
+    scrollTop: { configurable: true, value: 900 },
+  });
+  fireEvent.scroll(viewport);
+  await within(all).findByText("report-2.pdf");
+  expect(queryAllByRoleFast("tab", all)[0]).toHaveTextContent("Artifacts2");
+  expect(queryAllByRoleFast("tab", all)[0]).not.toHaveTextContent("+");
+
+  click(buttonNamed("Enter fullscreen", all));
+  const fullscreen = await screen.findByTestId("thread-sidebar-artifacts");
+  click(queryAllByRoleFast("tab", fullscreen)[1]!);
+  await within(fullscreen).findByText("Reference 2");
+  expect(buttonNamed("Exit fullscreen", fullscreen)).toBeInTheDocument();
+  click(queryAllByRoleFast("tab", fullscreen)[0]!);
+  await within(fullscreen).findByText("report-2.pdf");
+  expect(within(fullscreen).getByText("report-1.pdf")).toBeInTheDocument();
+  expect(buttonNamed("Exit fullscreen", fullscreen)).toBeInTheDocument();
+});
+
+test("Explain an empty Links tab and return from an unavailable gallery preview", async () => {
+  const panel = await setupOverflowResources(1, { withLinks: false });
+  click(buttonNamed("View all", panel));
+  const all = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(all).findByText("report-1.pdf");
+  click(queryAllByRoleFast("tab", all)[1]!);
+  expect(queryAllByRoleFast("tab", all)[1]).toHaveTextContent("Links0");
+  await within(all).findByText("No links in this chat yet");
+  click(queryAllByRoleFast("tab", all)[0]!);
+  click(buttonNamed("Preview report-1.pdf", all));
+  const unavailable = await screen.findByTestId(
+    "thread-sidebar-artifact-unavailable",
+  );
+  click(buttonNamed("Back to artifacts", unavailable));
+  const gallery = await screen.findByTestId("thread-sidebar-artifacts");
+  await within(gallery).findByText("report-1.pdf");
+  expect(gallery).toHaveAccessibleName("Resources");
+  expect(queryAllByRoleFast("tab", gallery)[0]).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
 });
 
 test("Open in the actual right gutter and preserve links while removing duplicates and output URLs", async () => {
@@ -511,7 +593,9 @@ test("Keep the existing artifact entry when the rollout switch is off", async ()
     screen.queryByRole("switch", { name: "Show resources" }),
   ).not.toBeInTheDocument();
   click(buttonNamed("Open artifacts"));
-  await screen.findByTestId("thread-sidebar-artifacts");
+  const all = await screen.findByTestId("thread-sidebar-artifacts");
+  expect(all).toHaveAccessibleName("Artifacts");
+  expect(queryAllByRoleFast("tab", all)).toHaveLength(0);
 });
 
 test("Roll back the visible state and explain a failed preference save", async () => {
@@ -571,6 +655,7 @@ test("Copy the original link and open the complete artifact panel", async () => 
   });
   click(buttonNamed("View all", panel));
   const all = await screen.findByTestId("thread-sidebar-artifacts");
+  click(queryAllByRoleFast("tab", all)[1]!);
   await within(all).findByText("Current guide");
   expect(all).toHaveAccessibleName("Resources");
   expect(buttonNamed("Close resources", all)).toBeInTheDocument();
