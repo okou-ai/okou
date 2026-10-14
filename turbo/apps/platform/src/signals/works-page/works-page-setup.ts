@@ -7,10 +7,7 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchDiscordConnection$ } from "../okou-page/discord.ts";
-import {
-  approveDiscordAuthorization$,
-  ownDiscordApprovalRoute$,
-} from "../okou-page/discord-oauth-approval.ts";
+import { ownDiscordApprovalRoute$ } from "../okou-page/discord-oauth-approval.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { watchGithubIntegration$ } from "../okou-page/github.ts";
 import {
@@ -99,6 +96,5 @@ export const setupWorksPage$ = command(
     signal.throwIfAborted();
 
     await set(hideAppSkeleton$, signal);
-    await set(approveDiscordAuthorization$, signal);
   },
 );

@@ -8,17 +8,8 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
-
-export const discordAuthorizationFailed$ = computed((get) => {
-  return get(searchParams$).get("discord") === "error";
-});
-
-export const discordAuthorizationPending$ = computed((get) => {
-  return get(searchParams$).get("discord") === "pending";
-});
 
 const reloadVersion$ = state(0);
 

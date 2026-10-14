@@ -90,9 +90,9 @@ test.each(["install", "connect"] as const)(
       expect(popup.location.href).toBe(authorizationUrl);
     });
     expect(getAction("button", "Connecting...")).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Complete authorization in the Discord window",
-    );
+    expect(
+      screen.getByText("Connect your Discord account to chat with your agent."),
+    ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
     expect(requestBody).toStrictEqual({ guildId });
     approved = true;

@@ -69,16 +69,9 @@ import {
 } from "./discord-authorization-actions.tsx";
 import {
   discordOrgData$,
-  discordAuthorizationPending$,
   disconnectDiscordOrg$,
   selectDiscordDmBinding$,
 } from "../../signals/okou-page/discord.ts";
-import {
-  approveDiscordAuthorization$,
-  discordApprovalAvailable$,
-  discordApprovalRequest$,
-  discordApprovalSucceeded$,
-} from "../../signals/okou-page/discord-oauth-approval.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 
@@ -549,68 +542,6 @@ function DiscordDmSelection({
   );
 }
 
-function DiscordApprovalPanel() {
-  const { t } = useTranslation();
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  const loadable = useLoadable(discordApprovalRequest$);
-  const approve = useSet(approveDiscordAuthorization$);
-  const pageSignal = useGet(pageSignal$);
-  if (!available && !approved) {
-    return null;
-  }
-  return (
-    <div className="space-y-2 px-4 pb-3">
-      {loadable.state !== "hasError" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {approved
-            ? t(($) => {
-                return $.connectors.providerConnect.common.verifying;
-              })
-            : t(($) => {
-                return $.works.discord.authorizing;
-              })}
-        </p>
-      ) : null}
-      {available && loadable.state === "hasError" ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            detach(approve(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.works.discord.retry;
-          })}
-        </Button>
-      ) : null}
-      {loadable.state === "hasError" ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(($) => {
-            return $.works.discord.approvalFailed;
-          })}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function DiscordAuthorizationPendingNotice() {
-  const { t } = useTranslation();
-  const pending = useGet(discordAuthorizationPending$);
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  return pending && !available && !approved ? (
-    <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
-      {t(($) => {
-        return $.works.discord.pendingConsent;
-      })}
-    </p>
-  ) : null;
-}
-
 function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
@@ -674,15 +605,6 @@ function DiscordCard() {
             </>
           ) : null}
         </div>
-        <DiscordApprovalPanel />
-        <DiscordAuthorizationPendingNotice />
-        {data?.isConnected && data.contextMode === "mentions_only" ? (
-          <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.discord.limitedContext;
-            })}
-          </p>
-        ) : null}
         {data?.isConnected && data.dmBindings.length > 1 ? (
           <DiscordDmSelection
             data={data}

@@ -108,15 +108,7 @@ function DiscordApprovalState() {
   }
   return (
     <>
-      <ConnectStatusMark state="loading" idle={<DiscordMark size={40} />} />
-      <CenterText
-        title={t(($) => {
-          return $.works.discord.connectingTitle;
-        })}
-        body={t(($) => {
-          return $.connectors.providerConnect.common.verifying;
-        })}
-      />
+      <ConnectCheckingState />
       <SettingsBackLink />
     </>
   );
@@ -170,7 +162,7 @@ function DiscordConnectionState() {
   }
   return (
     <>
-      <DiscordConnectIntro data={data} connecting={connecting} />
+      <DiscordConnectIntro data={data} />
       <ConnectErrorAlert error={error} />
       {data && canAuthorizeDiscord(data) ? (
         <ConnectSubmitButton
@@ -195,13 +187,7 @@ function DiscordConnectionState() {
   );
 }
 
-function DiscordConnectIntro({
-  data,
-  connecting,
-}: {
-  data: DiscordOrgStatus | null;
-  connecting: boolean;
-}) {
+function DiscordConnectIntro({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
     <>
@@ -211,23 +197,15 @@ function DiscordConnectIntro({
           return $.works.discord.connectTitle;
         })}
         body={
-          connecting ? (
-            <span role="status">
-              {t(($) => {
-                return $.works.discord.browserConsent;
-              })}
-            </span>
-          ) : data?.isAvailable ? (
-            t(($) => {
-              return $.works.discord.connectDescription;
-            })
-          ) : data ? (
-            discordDescription(data)
-          ) : (
-            t(($) => {
-              return $.works.discord.unconfigured;
-            })
-          )
+          data?.isAvailable
+            ? t(($) => {
+                return $.works.discord.connectDescription;
+              })
+            : data
+              ? discordDescription(data)
+              : t(($) => {
+                  return $.works.discord.unconfigured;
+                })
         }
       />
     </>
