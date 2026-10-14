@@ -194,17 +194,16 @@ describe("connecting a custom connector for the active agent", () => {
   }
 
   it("cancel a custom connector for only the active agent", async () => {
-    let { catalog, secret } = await prepareCustomConnection();
+    const { secret } = await prepareCustomConnection();
     await fill(secret, "discarded-secret");
     click(await findFastControl("button", "Cancel"));
     await ensureConnectorsOpen(user);
-    catalog = await openCustomConnectors(user);
+    const catalog = await openCustomConnectors(user);
     click(await findFastControl("button", "Connect Acme Search", catalog));
-    secret = await screen.findByLabelText("Secret");
-    expect(secret).toHaveValue("");
+    const reopenedSecret = await screen.findByLabelText("Secret");
+    expect(reopenedSecret).toHaveValue("");
     expect(fixture.customValueRequests).toStrictEqual([]);
     expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
-    return;
   });
 
   it("connect a custom connector for only the active agent", async () => {
