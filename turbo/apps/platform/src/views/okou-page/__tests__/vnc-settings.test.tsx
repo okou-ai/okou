@@ -413,9 +413,14 @@ test("A local SSH carrier reset invalidates retained VNC diagnostics before real
   expect(screen.getByText(tunneledHost.displayName)).toBeInTheDocument();
 });
 
-test("VNC settings keep successful and unobserved hosts configured without attention", async () => {
+test("VNC settings distinguish successful and unobserved hosts from failed hosts", async () => {
+  const failedHost = {
+    ...host,
+    id: "b0000000-0000-4000-8000-000000000005",
+    displayName: "Failed workstation",
+  };
   mockSettings({
-    connections: [host, plainHost],
+    connections: [host, plainHost, failedHost],
     credentials: [credential, plainCredential],
   });
   context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
@@ -427,18 +432,36 @@ test("VNC settings keep successful and unobserved hosts configured without atten
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: null,
         },
+        {
+          connectionId: failedHost.id,
+          generation: failedHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: "network_failure",
+        },
       ],
     });
   });
   await page();
-  await screen.findByText(plainHost.displayName);
-  expect(screen.getAllByText("Configured")).toHaveLength(2);
-  expect(screen.queryByRole("status", { name: /VNC.*attention/ })).toBeNull();
+  const failure = await screen.findByText("The connection transport failed.");
   expect(
-    screen.queryByText(
-      "Authentication or server identity verification failed.",
-    ),
-  ).not.toBeInTheDocument();
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("Configured")).toHaveLength(3);
+  const failedCard = failure.closest("article");
+  if (!failedCard) {
+    throw new Error("Expected a VNC host card");
+  }
+  expect(
+    within(failedCard).getByText(failedHost.displayName),
+  ).toBeInTheDocument();
+  for (const connection of [host, plainHost]) {
+    const card = screen.getByText(connection.displayName).closest("article");
+    if (!card) {
+      throw new Error("Expected a VNC host card");
+    }
+    expect(within(card).queryByRole("status")).toBeNull();
+    expect(within(card).getByText("Configured")).toBeInTheDocument();
+  }
 });
 
 test.each([404, 500] as const)(
