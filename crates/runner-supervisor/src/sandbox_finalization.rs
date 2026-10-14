@@ -1089,7 +1089,7 @@ async fn finalize_sandbox_for_completion_inner(
                     );
                     break 'finalization destroy_result.budget;
                 }
-                break match pool.park(candidate) {
+                let replacement_cleanup = match pool.park(candidate) {
                     ParkResult::Parked => {
                         info!(
                             run_id = %run_id,
@@ -1102,59 +1102,18 @@ async fn finalize_sandbox_for_completion_inner(
                             run_id,
                             reuse_key: reuse_key.clone(),
                         });
-                        cleanup_state.mark_idle_pool_owned();
-                        #[cfg(any(test, feature = "test-support"))]
-                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
-                        // Push fresh idle state to status.json BEFORE
-                        // conditional active-run removal (below) clears the run_id
-                        // from active_runs. Without this, doctor would
-                        // briefly see the FC as unknown (neither active
-                        // nor idle), producing transient false-positive
-                        // FirecrackerNotInStatus warnings.
-                        let snapshot = pool.status_snapshot();
-                        drop(transfer_guard);
-                        drop(pool);
-                        if publishes_exact_sandbox {
-                            active_run_reuse.publish_exact_sandbox();
-                        }
-                        let ownership = OwnershipTransitions::new(status.as_ref());
-                        ownership
-                            .publish_idle_status_after_pool_transfer(snapshot)
-                            .await;
-                        reuse_state_changed = true;
-                        telemetry.record_idle_publication(true, None);
-                        reuse_state_notify.notify_one();
-                        BudgetOwnership::idle_owned()
+                        None
                     }
                     ParkResult::Replaced(evicted) => {
-                        let mut destroy_task =
-                            idle_destroy_tracker.spawn_job(evicted, "park_replaced");
+                        // Adopt evicted ownership before status publication can await.
+                        let destroy_task = idle_destroy_tracker.spawn_job(evicted, "park_replaced");
                         info!(
                             run_id = %run_id,
                             reuse_key_fingerprint = %reuse_key_fingerprint,
                             reuse_key_kind = reuse_kind,
                             "sandbox parked, evicting previous"
                         );
-                        cleanup_state.mark_idle_pool_owned();
-                        #[cfg(any(test, feature = "test-support"))]
-                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
-                        let snapshot = pool.status_snapshot();
-                        drop(transfer_guard);
-                        drop(pool);
-                        if publishes_exact_sandbox {
-                            active_run_reuse.publish_exact_sandbox();
-                        }
-                        let ownership = OwnershipTransitions::new(status.as_ref());
-                        ownership
-                            .publish_idle_status_after_pool_transfer(snapshot)
-                            .await;
-                        reuse_state_changed = true;
-                        telemetry.record_idle_publication(true, None);
-                        reuse_state_notify.notify_one();
-                        if let Err(error) = destroy_task.join().await {
-                            warn!(%error, "replaced idle cleanup producer lost");
-                        }
-                        BudgetOwnership::idle_owned()
+                        Some(destroy_task)
                     }
                     ParkResult::Rejected(rejected) => {
                         telemetry.record_idle_publication(false, Some("idle_pool_rejected"));
@@ -1166,10 +1125,8 @@ async fn finalize_sandbox_for_completion_inner(
                         );
                         drop(transfer_guard);
                         drop(pool);
-                        // Pool unchanged (park rejected) — no status
-                        // update needed. The rejected sandbox was just
-                        // park()ed above; destroying a parked sandbox is
-                        // safe — see Replaced arm for rationale.
+                        // Pool unchanged: the parked candidate remains active-owned
+                        // until destruction completes, without idle publication.
                         let (payload, lease) = rejected.into_active_destroy_parts();
                         let destroy_result = destroy_active_owned_idle_payload(
                             payload,
@@ -1185,9 +1142,33 @@ async fn finalize_sandbox_for_completion_inner(
                             &completed_at,
                             destroy_result.home_cache_promoted,
                         );
-                        destroy_result.budget
+                        break destroy_result.budget;
                     }
                 };
+                cleanup_state.mark_idle_pool_owned();
+                #[cfg(any(test, feature = "test-support"))]
+                test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
+                // Publish idle status before later settlement removes active visibility,
+                // so doctor cannot briefly see the sandbox as neither active nor idle.
+                let snapshot = pool.status_snapshot();
+                drop(transfer_guard);
+                drop(pool);
+                if publishes_exact_sandbox {
+                    active_run_reuse.publish_exact_sandbox();
+                }
+                let ownership = OwnershipTransitions::new(status.as_ref());
+                ownership
+                    .publish_idle_status_after_pool_transfer(snapshot)
+                    .await;
+                reuse_state_changed = true;
+                telemetry.record_idle_publication(true, None);
+                reuse_state_notify.notify_one();
+                if let Some(mut destroy_task) = replacement_cleanup
+                    && let Err(error) = destroy_task.join().await
+                {
+                    warn!(%error, "replaced idle cleanup producer lost");
+                }
+                break BudgetOwnership::idle_owned();
             }
         }
     };
