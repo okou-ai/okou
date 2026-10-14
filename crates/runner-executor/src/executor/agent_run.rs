@@ -83,9 +83,6 @@ use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
 use runner_types::types::{ExecutionContext, HomeReuseResult};
 
-#[cfg(test)]
-mod cancellation_tests;
-
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR: &str = "session history download failed";
 const SESSION_HISTORY_DOWNLOAD_PHASE_TELEMETRY_ERROR: &str =
@@ -3518,6 +3515,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 
 #[cfg(test)]
 mod tests {
+    mod cancellation;
+
     use super::*;
     use guest_contracts::diagnostics::{
         AgentFramework, CliTerminationDiagnostic, FailureClass, PromptMetadata,
