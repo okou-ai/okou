@@ -6,7 +6,7 @@ import {
   artifactSharesContract,
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
@@ -209,6 +209,94 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
     expect(image).toBeVisible();
   });
   expect(within(sidebar).getByRole("group")).toHaveFocus();
+});
+
+test("A failed sidebar image can be skipped to a usable image preview", async () => {
+  mockGallery();
+  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
+    1200,
+  );
+  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
+    700,
+  );
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    if (this.src === publicArtifactUrl("second.png")) {
+      return Promise.reject(
+        new DOMException("The image cannot be decoded", "EncodingError"),
+      );
+    }
+    return Promise.resolve();
+  });
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const sidebar = await openGallerySidebar(user);
+
+  click(getNamedButton("Next image artifact", sidebar));
+  await expect(within(sidebar).findByRole("alert")).resolves.toHaveTextContent(
+    "Preview unavailable.",
+  );
+  expect(queryNamedButton("Zoom in", sidebar)).toBeNull();
+
+  click(getNamedButton("Next image artifact", sidebar));
+  await waitFor(() => {
+    expect(within(sidebar).getByAltText("third.png")).toBeVisible();
+  });
+  expect(within(sidebar).queryByRole("alert")).not.toBeInTheDocument();
+  expect(
+    within(sidebar).getByTestId("artifact-sidebar-image-zoom-level"),
+  ).toHaveTextContent("100%");
+
+  click(getNamedButton("Zoom in", sidebar));
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-image-zoom-level"),
+    ).toHaveTextContent("115%");
+  });
+});
+
+test("A late decode failure does not replace the image the user navigated to", async () => {
+  mockGallery();
+  const finishOldDecode = context.mocks.deferred<void>();
+  vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(
+    1200,
+  );
+  vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(
+    700,
+  );
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(
+    async function (this: HTMLImageElement) {
+      if (this.src === publicArtifactUrl("second.png")) {
+        await finishOldDecode.promise;
+        throw new DOMException("The image cannot be decoded", "EncodingError");
+      }
+    },
+  );
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+  const sidebar = await openGallerySidebar(user);
+
+  click(getNamedButton("Next image artifact", sidebar));
+  await expectImage("sidebar", "second.png");
+  expect(within(sidebar).getByAltText("second.png")).not.toBeVisible();
+
+  click(getNamedButton("Next image artifact", sidebar));
+  await waitFor(() => {
+    expect(within(sidebar).getByAltText("third.png")).toBeVisible();
+  });
+  await act(() => {
+    finishOldDecode.resolve();
+  });
+
+  expect(within(sidebar).getByAltText("third.png")).toBeVisible();
+  expect(within(sidebar).queryByRole("alert")).not.toBeInTheDocument();
+  click(getNamedButton("Zoom in", sidebar));
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByTestId("artifact-sidebar-image-zoom-level"),
+    ).toHaveTextContent("115%");
+  });
 });
 
 test("Image shortcuts yield to modifiers and toolbar menus in both fullscreen modes", async () => {

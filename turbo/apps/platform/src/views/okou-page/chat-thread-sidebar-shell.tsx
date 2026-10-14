@@ -6,7 +6,7 @@ import type {
   TransitionEvent as ReactTransitionEvent,
 } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { cn } from "@okouai/ui";
+import { cn, LayoutPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -32,7 +32,7 @@ function chatThreadSidebarLayout(
     transition:
       resizing || !animateEntry
         ? ""
-        : "transition-[flex-basis,width] duration-[240ms]",
+        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none",
   };
 }
 
@@ -62,6 +62,7 @@ export function ChatThreadSidebarShell({
   children,
   layout,
   animateEntry,
+  onSidebarLayoutCommit,
   open,
   sidebar,
   workspace,
@@ -69,6 +70,7 @@ export function ChatThreadSidebarShell({
   readonly children: ReactNode;
   readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
+  readonly onSidebarLayoutCommit?: () => void;
   readonly open: boolean;
   readonly sidebar: ReactNode;
   readonly workspace?: {
@@ -81,11 +83,22 @@ export function ChatThreadSidebarShell({
 }) {
   const transitionRef = useSet(layout.transitionOnRef$);
   const syncActiveBrowserFitAction = useSet(syncActiveBrowserFitAction$);
+  const width = useGet(chatThreadSidebarWidth$);
+  const resizing = useGet(chatThreadSidebarResizing$);
   const { style, transition } = chatThreadSidebarLayout(
-    useGet(chatThreadSidebarWidth$),
-    useGet(chatThreadSidebarResizing$),
+    width,
+    resizing,
     animateEntry,
   );
+
+  const sidebarLayoutKey = [
+    width,
+    resizing,
+    animateEntry,
+    workspace?.beside,
+    workspace?.pwaNavigation,
+    workspace?.fullscreen,
+  ].join(":");
 
   function handleSidebarTransitionEnd(
     event: ReactTransitionEvent<HTMLDivElement>,
@@ -111,7 +124,10 @@ export function ChatThreadSidebarShell({
         {children}
       </div>
       {open && <ChatThreadSidebarResizeHandle />}
-      <div
+      <LayoutPanel
+        active={open}
+        layoutKey={sidebarLayoutKey}
+        onLayoutCommit={onSidebarLayoutCommit}
         data-testid="chat-thread-sidebar-pane"
         onTransitionEnd={handleSidebarTransitionEnd}
         className={cn(
@@ -129,7 +145,7 @@ export function ChatThreadSidebarShell({
         aria-hidden={!open}
       >
         {sidebar}
-      </div>
+      </LayoutPanel>
     </>
   );
 

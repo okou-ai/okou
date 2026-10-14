@@ -62,6 +62,14 @@ export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
   set(active.thread.browserSessionSignals.syncFitActionVisibility$);
 });
 
+/** The sidebar shell acknowledges its committed image viewport layout. */
+export const syncActiveImageLayout$ = command(({ get, set }) => {
+  const active = get(activeThreadSidebar$);
+  if (active?.target.type === "artifact") {
+    set(active.thread.sidebar.imageCanvas.syncLayout$);
+  }
+});
+
 const closeOtherThreadSidebars$ = command(
   ({ get, set }, thread: ChatPanelSignals): void => {
     for (const other of [get(currentLeftThread$), get(currentRightThread$)]) {

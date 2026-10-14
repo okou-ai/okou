@@ -576,6 +576,9 @@ export function ArtifactCatalogPage({
 }) {
   const { t } = useTranslation();
   const sidebarOpen = useGet(artifactCatalogSidebar.open$);
+  const syncImageLayout = useSet(
+    artifactCatalogSidebar.imageCanvas.syncLayout$,
+  );
   const selectedKind = useGet(selectedArtifactCatalogKind$);
   const setKind = useSet(setArtifactCatalogKind$);
   const openArtifact = useSet(openArtifact$);
@@ -608,6 +611,7 @@ export function ArtifactCatalogPage({
       layout={chatLayout}
       animateEntry
       open={sidebarOpen}
+      onSidebarLayoutCommit={syncImageLayout}
       sidebar={<ArtifactCatalogSidebar />}
     >
       <div className="flex min-h-0 flex-1 flex-col">

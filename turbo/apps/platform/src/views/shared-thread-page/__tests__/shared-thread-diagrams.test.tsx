@@ -89,6 +89,9 @@ test("a diagram in a shared conversation expands in the conversation", async () 
 
   const dialog = await findDiagramDialog();
   const image = within(dialog).getByTestId("attachment-lightbox-image");
+  await waitFor(() => {
+    expect(image).toBeVisible();
+  });
   const source = image.getAttribute("src");
   if (!source) {
     throw new Error("Expected the expanded diagram to have a source");
@@ -97,7 +100,16 @@ test("a diagram in a shared conversation expands in the conversation", async () 
   expect(within(dialog).getByText("diagram.svg")).toBeInTheDocument();
   // The diagram was drawn in this browser, so its address is dead anywhere
   // else and the dialog offers the copy that is worth something instead.
-  expect(actionNames(dialog)).toStrictEqual(["Close", "Download", "Fill view"]);
+  const actions = actionNames(dialog);
+  expect(actions).toStrictEqual(
+    expect.arrayContaining(["Close", "Download", "Fill view"]),
+  );
+  expect(actions).not.toContain("Share");
+  expect(actions).not.toContain("Copy link");
+  expect(actions).not.toContain("Open in split view");
+  expect(getButtonByName("Zoom in", dialog)).toBeEnabled();
+  expect(getButtonByName("Zoom out", dialog)).toBeEnabled();
+  expect(getButtonByName("Reset zoom", dialog)).toBeEnabled();
 
   click(getButtonByName("Download", dialog));
 
