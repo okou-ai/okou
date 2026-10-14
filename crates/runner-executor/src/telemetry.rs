@@ -109,7 +109,7 @@ impl OomEvidenceUploadFailure {
     }
 }
 
-/// Effective resource path once the guest process has spawned.
+/// Actual startup resource after preparation settles.
 pub(crate) use runner_types::types::SandboxStartupPath as RunnerStartupPath;
 
 /// Inclusive number of Runner jobs in post-claim work before guest process spawn.

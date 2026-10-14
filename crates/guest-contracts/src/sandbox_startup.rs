@@ -1,4 +1,4 @@
-//! The settled resource path shared by Runner, Guest completion and telemetry.
+//! The settled resource path shared by Runner and Guest telemetry.
 
 pub use api_contracts::generated::types::runners::SandboxStartupPath;
 
