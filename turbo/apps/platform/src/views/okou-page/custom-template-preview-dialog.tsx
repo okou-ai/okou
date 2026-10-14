@@ -1,5 +1,6 @@
 import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -14,15 +15,29 @@ import type {
   UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
 
-import { CustomTemplateDetailSidebar } from "./custom-template-detail-sidebar.tsx";
+import {
+  CustomTemplateDeleteButton,
+  CustomTemplateDetailSidebar,
+} from "./custom-template-detail-sidebar.tsx";
+import {
+  TEMPLATE_DETAIL_BODY,
+  TEMPLATE_DETAIL_FOOTER,
+  TEMPLATE_DETAIL_GRID,
+  TEMPLATE_DETAIL_STAGE,
+  TemplateDetailFilmstrip,
+  TemplateDetailSideColumn,
+  TemplateDetailStageControls,
+} from "./template-detail-layout.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
 import { isOfficeFilePreview } from "./office-file-preview.ts";
 import {
   closeCustomTemplate$,
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
+  openCustomTemplatePageIndex$,
   projectCustomTemplate$,
   reloadCustomTemplates$,
+  selectCustomTemplatePage$,
 } from "../../signals/okou-page/custom-template-library.ts";
 
 /**
@@ -52,7 +67,8 @@ export function CustomTemplatesLoadError() {
 }
 
 /**
- * A deck, as the pages the reverse run rendered from it.
+ * A deck, as the pages the reverse run rendered from it, read the way every
+ * other deck detail reads: one page on the stage, the rest in a filmstrip.
  *
  * Its own images rather than its source file through a viewer: the pages are
  * already rendered, already ours to serve, and are the same slides a viewer
@@ -65,25 +81,73 @@ function CustomTemplatePages({
   readonly detail: UserTemplateDetail;
 }) {
   const { t } = useTranslation();
+  const requestedIndex = useGet(openCustomTemplatePageIndex$);
+  const selectPage = useSet(selectCustomTemplatePage$);
+  const pageCount = detail.pageUrls.length;
+  const activeIndex = Math.max(0, Math.min(requestedIndex, pageCount - 1));
+  const changePage = (index: number) => {
+    selectPage(Math.max(0, Math.min(pageCount - 1, index)));
+  };
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+    if (event.key === "ArrowLeft" && activeIndex > 0) {
+      event.preventDefault();
+      changePage(activeIndex - 1);
+    }
+    if (event.key === "ArrowRight" && activeIndex < pageCount - 1) {
+      event.preventDefault();
+      changePage(activeIndex + 1);
+    }
+  };
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-3 lg:overflow-y-auto">
-      {detail.pageUrls.map((pageUrl, index) => {
-        return (
-          <img
-            key={pageUrl}
-            src={pageUrl}
-            alt={t(
-              ($) => {
-                return $.templates.detail.page;
-              },
-              { number: index + 1 },
-            )}
-            loading={index === 0 ? "eager" : "lazy"}
-            className="w-full rounded-xl border border-border bg-muted object-cover"
-          />
-        );
-      })}
-    </div>
+    <>
+      <div
+        role="group"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.slidePreview;
+          },
+          { title: detail.title },
+        )}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className={TEMPLATE_DETAIL_STAGE}
+      >
+        <img
+          src={detail.pageUrls[activeIndex]}
+          alt={t(
+            ($) => {
+              return $.templates.detail.page;
+            },
+            { number: activeIndex + 1 },
+          )}
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+        <TemplateDetailStageControls
+          activeSlideIndex={activeIndex}
+          slideCount={pageCount}
+          onChange={changePage}
+        />
+      </div>
+      <TemplateDetailFilmstrip
+        slideCount={pageCount}
+        activeSlideIndex={activeIndex}
+        onChange={changePage}
+        onKeyDown={handleKeyDown}
+        renderThumbnail={(index) => {
+          return (
+            <img
+              src={detail.pageUrls[index]}
+              alt=""
+              loading="lazy"
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            />
+          );
+        }}
+      />
+    </>
   );
 }
 
@@ -109,7 +173,7 @@ function CustomTemplateSourcePreview({
     { filename: detail.sourceFilename },
   );
   return (
-    <div className="relative min-h-80 flex-1 overflow-hidden rounded-xl border border-border bg-background">
+    <div className="relative min-h-80 min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-background">
       {isOfficeFilePreview(detail.sourceFilename) ? (
         <OfficeDocumentPreview
           resourceUrl={detail.sourceUrl}
@@ -161,7 +225,7 @@ function CustomTemplateIllustration({
     // is — and cropping to fill the dialog would take exactly those away. The
     // muted ground behind each is what gives a picture on white paper, or one
     // with a transparent corner, an edge to be seen against.
-    <div className="flex min-h-80 flex-1 flex-col items-center gap-4 overflow-auto rounded-xl border border-border bg-muted p-6">
+    <div className="flex min-h-80 min-w-0 flex-1 flex-col items-center gap-4 overflow-auto rounded-xl border border-border bg-muted p-6">
       {detail.previewAssets.map((asset) => {
         return (
           <img
@@ -273,25 +337,38 @@ export function CustomTemplatePreviewDialog({
             </span>
           </DialogTitle>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-0.5 lg:flex-row lg:overflow-hidden">
+        <div className={TEMPLATE_DETAIL_BODY}>
           {detailLoadable.state === "hasError" ? (
             <CustomTemplatesLoadError />
           ) : detail === null ? (
-            <div className="flex flex-1 items-center justify-center text-muted-foreground">
+            <div className="flex h-full items-center justify-center text-muted-foreground">
               <Loader2 size={20} className="animate-spin" />
             </div>
+          ) : detail.kind === "presentation" ? (
+            <div className={TEMPLATE_DETAIL_GRID}>
+              <CustomTemplatePages detail={detail} />
+              <TemplateDetailSideColumn>
+                {/* Keyed by the template, not by anything that changes while
+                    one is open: a save re-renders this subtree, and only
+                    arriving at a different template may hand the editor a
+                    fresh field. */}
+                <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
+              </TemplateDetailSideColumn>
+            </div>
           ) : (
-            <>
+            <div className="flex flex-col gap-6 lg:h-full lg:flex-row lg:pb-6">
               <CustomTemplatePreviewBody detail={detail} />
-              {/* Keyed by the template, not by anything that changes while one
-                  is open: a save re-renders this subtree, and only arriving at
-                  a different template may hand the editor a fresh field. */}
-              <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
-            </>
+              <div className="lg:w-[220px] lg:shrink-0">
+                <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
+              </div>
+            </div>
           )}
         </div>
         {detail === null ? null : (
-          <div className="flex shrink-0 items-center justify-end px-6 py-4">
+          <div className={TEMPLATE_DETAIL_FOOTER}>
+            {detail.canManage ? (
+              <CustomTemplateDeleteButton detail={detail} />
+            ) : null}
             <Button
               type="button"
               size="lg"

@@ -686,7 +686,6 @@
       "use": "使用",
       "useThisTemplate": "使用这个模板",
       "visibility": {
-        "change": "修改",
         "changeLabel": "修改模板可见范围",
         "privateState": "只有你能看到和使用",
         "workspaceState": "这个工作区里的所有人都能使用"

@@ -244,9 +244,21 @@ export const openCustomTemplateKind$ = computed((get) => {
   return get(internalOpenTemplate$)?.kind ?? null;
 });
 
+const internalOpenPageIndex$ = state(0);
+
+/** The page an open deck shows on its stage; every opening starts at page 1. */
+export const openCustomTemplatePageIndex$ = computed((get) => {
+  return get(internalOpenPageIndex$);
+});
+
+export const selectCustomTemplatePage$ = command(({ set }, index: number) => {
+  set(internalOpenPageIndex$, index);
+});
+
 export const openCustomTemplate$ = command(
   ({ set }, template: OpenCustomTemplate) => {
     set(internalOpenTemplate$, template);
+    set(internalOpenPageIndex$, 0);
   },
 );
 
