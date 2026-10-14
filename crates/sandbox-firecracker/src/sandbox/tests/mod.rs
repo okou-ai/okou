@@ -25,6 +25,7 @@ mod process_exit;
 mod process_timeout_logging;
 mod process_write;
 mod running_handoff;
+mod shutdown_closed;
 
 struct TestNormalOperationFence;
 
@@ -262,10 +263,15 @@ async fn attach_mock_shutdown_guest(sandbox: &FirecrackerSandbox) -> UnixStream 
         .to_string_lossy()
         .into_owned();
     let wait_vsock_path = vsock_path.clone();
+    let sandbox_id = sandbox.id.clone();
     let host_task = tokio::spawn(async move {
-        GuestControlClient::wait_for_connection(&wait_vsock_path, Duration::from_secs(5))
-            .await
-            .unwrap()
+        GuestControlClient::wait_for_connection_for_sandbox(
+            &wait_vsock_path,
+            Duration::from_secs(5),
+            &sandbox_id,
+        )
+        .await
+        .unwrap()
     });
     let mut guest = connect_mock_guest(&vsock_path).await;
     let mut decoder = Decoder::new();

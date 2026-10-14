@@ -13,12 +13,13 @@
 use std::io;
 use std::time::Duration;
 
+use sandbox::OperationCancellationContext;
 use tokio::io::AsyncWriteExt;
 use tokio::time::Instant;
 
 use crate::{RequestWriteError, RequestWriteStage};
 
-use super::Shared;
+use super::{ConnectionCloseReason, Shared};
 
 /// `Skip` is a successful no-frame outcome, decided under the writer lock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,14 +36,24 @@ pub(crate) struct FrameWriteTiming {
 /// Exists only inside the possible partial-write window, while holding the writer.
 struct FrameWriteGuard<'a> {
     shared: &'a Shared,
-    completed: bool,
+    progress: FrameWriteProgress,
+    owner: Option<OperationCancellationContext>,
+}
+
+enum FrameWriteProgress {
+    Pending,
+    Complete,
+    Failed(io::ErrorKind),
 }
 
 impl Drop for FrameWriteGuard<'_> {
     fn drop(&mut self) {
-        if !self.completed {
-            self.shared.poison_connection();
-        }
+        let reason = match self.progress {
+            FrameWriteProgress::Complete => return,
+            FrameWriteProgress::Pending => ConnectionCloseReason::FrameWriteAbandoned,
+            FrameWriteProgress::Failed(kind) => ConnectionCloseReason::FrameWriteError(kind),
+        };
+        self.shared.poison_connection(reason, self.owner.as_ref());
     }
 }
 
@@ -71,12 +82,16 @@ impl Shared {
         // Declared after the writer so cancellation poisons before unlocking.
         let mut guard = FrameWriteGuard {
             shared: self,
-            completed: false,
+            progress: FrameWriteProgress::Pending,
+            owner: OperationCancellationContext::current(),
         };
         let write_started_at = Instant::now();
         let result = writer.write_all(data).await;
         let write = write_started_at.elapsed();
-        guard.completed = result.is_ok();
+        guard.progress = match &result {
+            Ok(()) => FrameWriteProgress::Complete,
+            Err(error) => FrameWriteProgress::Failed(error.kind()),
+        };
         drop(guard);
         drop(writer);
 

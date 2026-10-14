@@ -27,6 +27,7 @@ mod factory;
 mod guest_duplex;
 mod guest_rpc;
 pub mod helper_exec;
+mod operation_cancellation;
 mod runtime;
 mod sandbox;
 mod snapshot;
@@ -55,6 +56,7 @@ pub use factory::{
 };
 pub use guest_duplex::{AcceptedGuestDuplex, GuestDuplexAcceptor, GuestDuplexStream};
 pub use guest_rpc::{AcceptedGuestRpc, GuestRpcAcceptor, GuestRpcStream};
+pub use operation_cancellation::{CancelledOperationOwner, OperationCancellationContext};
 pub use runtime::{RuntimeProvider, SandboxRuntime};
 pub use sandbox::{
     FileCompression, FileWriteMeasurements, GuestMemorySnapshot, Sandbox,

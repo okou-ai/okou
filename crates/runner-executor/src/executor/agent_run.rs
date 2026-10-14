@@ -18,9 +18,10 @@ use guest_contracts::session_history_identity::{
 };
 use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
-    ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome, ProcessOutputMode,
-    Sandbox, SessionHistoryIdentityVerifyRequest, StagedFileDisposition, StagedFileFinalizeOutcome,
-    StagedFileFinalizeRequest, StagedFileNotPublishedReason, StartAgentProcessRequest,
+    OperationCancellationContext, ProcessControlFailureKind, ProcessControlGuestStatus,
+    ProcessControlOutcome, ProcessOutputMode, Sandbox, SessionHistoryIdentityVerifyRequest,
+    StagedFileDisposition, StagedFileFinalizeOutcome, StagedFileFinalizeRequest,
+    StagedFileNotPublishedReason, StartAgentProcessRequest,
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -81,6 +82,9 @@ use crate::telemetry::{
 use guest_contracts::guest_binary::AGENT_PATH;
 use runner_provider::ActiveInputSource;
 use runner_types::types::{ExecutionContext, HomeReuseResult};
+
+#[cfg(test)]
+mod cancellation_tests;
 
 const AGENT_START_STDERR_CAPTURE_LIMIT_BYTES: u32 = 64 * 1024;
 const SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR: &str = "session history download failed";
@@ -1445,16 +1449,24 @@ struct PreparedAgentProcess {
 
 async fn run_pre_spawn_phase<T>(
     cancel: &CancellationToken,
+    owner: &OperationCancellationContext,
     phase: impl Future<Output = T>,
 ) -> Option<T> {
     if cancel.is_cancelled() {
         return None;
     }
 
+    // Select on a borrow: the owned future must outlive branch selection so
+    // its guards see the selected cancellation before they are destroyed.
+    let phase = owner.scope(phase);
+    tokio::pin!(phase);
     tokio::select! {
         biased;
-        result = phase => Some(result),
-        () = cancel.cancelled() => None,
+        result = &mut phase => Some(result),
+        () = cancel.cancelled() => {
+            owner.mark_cancelled();
+            None
+        },
     }
 }
 
@@ -1859,6 +1871,11 @@ async fn prepare_guest_runtime_state_phase(
 ) -> GuestRuntimeStatePreparation {
     match run_pre_spawn_phase(
         cancel,
+        &OperationCancellationContext::new(
+            &context.run_id.to_string(),
+            sandbox.id(),
+            "guest_runtime_state",
+        ),
         prepare_guest_runtime_state(sandbox, context, restore_guest_state_required, telemetry),
     )
     .await
@@ -2533,6 +2550,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let storage_result = model_catalog_prefetch
                 .race(run_pre_spawn_phase(
                     &cancel,
+                    &OperationCancellationContext::new(
+                        &context.run_id.to_string(),
+                        sandbox.id(),
+                        "guest_storage",
+                    ),
                     prepare_guest_storage(
                         sandbox,
                         context,
@@ -2590,8 +2612,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
+    let pre_spawn_owner = OperationCancellationContext::new(
+        &context.run_id.to_string(),
+        sandbox.id(),
+        "guest_agent_preparation",
+    );
     let prepared_agent = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, async move {
+        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
             let cancel = pre_spawn_cancel;
             let start = pre_spawn_start;
             let telemetry = pre_spawn_telemetry;

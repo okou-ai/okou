@@ -466,8 +466,12 @@ pub(in crate::exec_operation) fn exec_operation_captured_output_truncated(
     )
 }
 
-pub(crate) fn log_operations_closed(reason: &'static str, snapshot: &ExecOperationCloseSnapshot) {
-    if snapshot.active_count == 0 {
+pub(crate) fn log_operations_closed(
+    close: &crate::ConnectionCloseInfo,
+    poisoned: bool,
+    snapshot: &ExecOperationCloseSnapshot,
+) {
+    if snapshot.active_count == 0 && close.cancelled_owner().is_none() {
         return;
     }
 
@@ -489,8 +493,32 @@ pub(crate) fn log_operations_closed(reason: &'static str, snapshot: &ExecOperati
     let active_omitted = snapshot
         .active_count
         .saturating_sub(snapshot.operations.len());
+    let reason = if poisoned {
+        "connection poisoned"
+    } else {
+        "connection closed"
+    };
+    if let Some(owner) = close.cancelled_owner() {
+        tracing::info!(
+            reason,
+            close_origin = close.reason().as_str(),
+            connection_id = %close.connection_id(),
+            sandbox_id = owner.sandbox_id(),
+            run_id = owner.run_id(),
+            owner_phase = owner.phase(),
+            active_count = snapshot.active_count,
+            active_omitted,
+            active_operations = %active_operations,
+            "closing guest-control connection after owner cancellation"
+        );
+        return;
+    }
     tracing::warn!(
         reason = reason,
+        close_origin = close.reason().as_str(),
+        close_error_kind = ?close.reason().error_kind(),
+        connection_id = %close.connection_id(),
+        sandbox_id = close.sandbox_id(),
         active_count = snapshot.active_count,
         active_omitted,
         active_operations = %active_operations,

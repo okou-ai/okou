@@ -777,6 +777,9 @@ pub trait Sandbox: Send + Sync + Any {
     /// (vCPUs are paused and cannot process the message) and the
     /// sandbox goes straight to force-kill — no user workload is lost
     /// because a parked sandbox is idle by definition.
+    /// An already-closed control transport also cannot receive the IPC step.
+    /// Providers must still terminate the backing process; transport closure
+    /// alone is not proof that the guest or its backing process exited.
     ///
     /// Idempotent: calling `stop` on an already-stopped (or concurrently
     /// stopping) sandbox returns `Ok(())` without side effects.
