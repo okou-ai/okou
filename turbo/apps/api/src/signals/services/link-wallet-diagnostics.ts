@@ -11,6 +11,7 @@ export type LinkOperation =
   | "oauth_revoke"
   | "spend_create"
   | "spend_read"
+  | "spend_credentials"
   | "spend_cancel"
   | "spend_approval";
 
@@ -239,6 +240,21 @@ const providerParameters: readonly string[] = Object.freeze([
   "action_url",
   "error",
   "duplicate_spend_request",
+  "card",
+  "brand",
+  "number",
+  "cvc",
+  "exp_month",
+  "exp_year",
+  "billing_address",
+  "name",
+  "line1",
+  "line2",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+  "valid_until",
 ]);
 
 function safeParameter(value: unknown): string | null {

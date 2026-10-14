@@ -19,7 +19,10 @@ import {
   linkDiagnosticMessage,
   type LinkRequestDiagnostic,
 } from "./link-wallet-diagnostics";
-import { walletSpendStatusSchema } from "@okouai/api-contracts/contracts/wallet";
+import {
+  walletCardSchema,
+  walletSpendStatusSchema,
+} from "@okouai/api-contracts/contracts/wallet";
 
 export class LinkWalletError extends Error {
   constructor(
@@ -462,6 +465,81 @@ export async function linkSpendRequest(
     );
   }
   return validateSpend(link, sdkResponseValue(link, read, result));
+}
+
+const linkCardSchema = z
+  .object({
+    brand: walletCardSchema.shape.brand,
+    number: walletCardSchema.shape.number,
+    cvc: walletCardSchema.shape.cvc,
+    exp_month: walletCardSchema.shape.expMonth,
+    exp_year: walletCardSchema.shape.expYear,
+    billing_address: z
+      .object({
+        name: z.string(),
+        line1: z.string(),
+        line2: z.string().optional(),
+        city: z.string().optional(),
+        state: z.string().optional(),
+        postal_code: z.string().optional(),
+        country: z.string().regex(/^[A-Z]{2}$/),
+      })
+      .optional(),
+    valid_until: walletCardSchema.shape.validUntil,
+  })
+  .transform((card) => {
+    const address = card.billing_address;
+    return {
+      brand: card.brand,
+      number: card.number,
+      cvc: card.cvc,
+      expMonth: card.exp_month,
+      expYear: card.exp_year,
+      billingAddress: address
+        ? {
+            name: address.name,
+            line1: address.line1,
+            line2: address.line2,
+            city: address.city,
+            state: address.state,
+            postalCode: address.postal_code,
+            country: address.country,
+          }
+        : undefined,
+      validUntil: card.valid_until,
+    };
+  });
+
+export async function retrieveLinkSpendCredentials(
+  token: string,
+  id: string,
+  intentId: string,
+  signal: AbortSignal,
+) {
+  const diagnostic = linkRequestDiagnostic(
+    "spend_credentials",
+    [token],
+    intentId,
+  );
+  const { link, read, result } = await linkSdkRequest(
+    token,
+    { operation: "spend_credentials", id },
+    diagnostic,
+    signal,
+  );
+  const value = sdkResponseValue(link, read, result);
+  const spend = validateSpend(link, value);
+  if (spend.status !== "approved") {
+    return { spend, card: undefined };
+  }
+  const parsed = z.object({ card: linkCardSchema.optional() }).safeParse(value);
+  if (!parsed.success) {
+    throw invalidResponse(link, "Link returned invalid payment credentials", {
+      stage: "response_schema",
+      issues: parsed.error.issues,
+    });
+  }
+  return { spend, card: parsed.data.card };
 }
 
 async function linkSdkRequest(

@@ -5,7 +5,9 @@ import {
   type WalletCreateSpend,
   type WalletConnectStatus,
   type WalletSpend,
+  type WalletSpendCredentials,
   walletSpendSchema,
+  walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/runtime/agent-session";
@@ -37,6 +39,7 @@ import {
   linkWalletConfig,
   linkWalletRedirectUri,
   requestLinkApproval,
+  retrieveLinkSpendCredentials,
   revokeLinkToken,
   type LinkSpend,
 } from "./link-wallet-provider.service";
@@ -607,7 +610,7 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
     : null;
   const nextAction =
     state === "approved"
-      ? "secure_checkout_unavailable"
+      ? "retrieve_credentials"
       : state === "succeeded"
         ? "verify_order"
         : state === "submitted"
@@ -776,14 +779,8 @@ export const createWalletSpend$ = command(
   },
 );
 
-export const getWalletSpend$ = command(
-  async (
-    { set },
-    owner: WalletOwner,
-    id: string,
-    cancel: boolean,
-    signal: AbortSignal,
-  ): Promise<WalletSpend> => {
+const walletSpendAccess$ = command(
+  async ({ set }, owner: WalletOwner, id: string, signal: AbortSignal) => {
     const db = set(writeDb$);
     const [row] = await db
       .select()
@@ -807,9 +804,112 @@ export const getWalletSpend$ = command(
         "This purchase belongs to an earlier wallet authorization; do not retry payment",
       );
     }
+    return { row, access };
+  },
+);
+
+export const getWalletSpend$ = command(
+  async (
+    { set },
+    owner: WalletOwner,
+    id: string,
+    cancel: boolean,
+    signal: AbortSignal,
+  ): Promise<WalletSpend> => {
+    const { row, access } = await set(walletSpendAccess$, owner, id, signal);
     return await set(readProviderSpend$, row, access, cancel, signal);
   },
 );
+
+export const getWalletSpendCredentials$ = command(
+  async (
+    { set },
+    owner: WalletOwner,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<WalletSpendCredentials> => {
+    const { row, access } = await set(walletSpendAccess$, owner, id, signal);
+    if (!row.providerSpendId) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_SPEND_NOT_APPROVED",
+        "The purchase is still being created; check its existing status before retrieving credentials",
+      );
+    }
+    const approved = await linkSpendRequest(
+      access.token,
+      {
+        operation: "spend_read",
+        id: row.providerSpendId,
+        intentId: row.intentId,
+      },
+      signal,
+    );
+    await set(saveProviderSpend$, row, approved);
+    signal.throwIfAborted();
+    requireApproved(approved);
+
+    const result = await retrieveLinkSpendCredentials(
+      access.token,
+      row.providerSpendId,
+      row.intentId,
+      signal,
+    );
+    const saved = await set(saveProviderSpend$, row, result.spend);
+    signal.throwIfAborted();
+    requireApproved(result.spend);
+    if (!result.card) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_CREDENTIALS_UNAVAILABLE",
+        "Link has not made card credentials available for this approved purchase; check the same request before retrying",
+      );
+    }
+    if (result.card.validUntil && Date.parse(result.card.validUntil) <= now()) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_CREDENTIALS_EXPIRED",
+        "The payment credentials have expired; obtain a new purchase approval",
+      );
+    }
+    // A disconnect or replacement consent during provider I/O must not release
+    // credentials from the old grant. Card data is never stored in our database.
+    const [current] = await set(writeDb$)
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          connectionOwner(owner),
+          eq(linkWalletConnections.authorizationId, row.authorizationId),
+          isNull(linkWalletConnections.revokedAt),
+          isNotNull(linkWalletConnections.encryptedCredentials),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_AUTHORIZATION_CHANGED",
+        "Wallet authorization changed while retrieving credentials; check wallet status before continuing",
+      );
+    }
+    return walletSpendCredentialsSchema.parse({
+      spend: publicSpend(saved, result.spend),
+      card: result.card,
+    });
+  },
+);
+
+function requireApproved(spend: LinkSpend): void {
+  if (spend.status !== "approved") {
+    throw new LinkWalletError(
+      409,
+      "WALLET_SPEND_NOT_APPROVED",
+      `Payment credentials require an approved purchase; current Link status: ${spend.status}. Check the existing request before continuing`,
+    );
+  }
+}
 
 const readProviderSpend$ = command(
   async (
