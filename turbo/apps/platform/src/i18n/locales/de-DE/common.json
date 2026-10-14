@@ -6438,7 +6438,7 @@
     "connected": "Verbunden",
     "connectedWithDetail": "Verbunden ({{detail}})",
     "discord": {
-      "addNewServer": "Neuen Server hinzufügen",
+      "addNewServer": "Neuem Server beitreten",
       "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
       "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuche es erneut.",
       "chooseWorkspace": "Workspace auswählen",

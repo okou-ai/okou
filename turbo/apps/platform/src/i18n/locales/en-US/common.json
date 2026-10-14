@@ -6430,7 +6430,7 @@
     "connected": "Connected",
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
-      "addNewServer": "Add new server",
+      "addNewServer": "Join new server",
       "approvalFailed": "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
       "authorizationError": "Discord authorization could not be completed. Try again.",
       "chooseWorkspace": "Choose a workspace",

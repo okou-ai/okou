@@ -6523,7 +6523,7 @@
     "connected": "Conectado",
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
-      "addNewServer": "Añadir nuevo servidor",
+      "addNewServer": "Unirse a un nuevo servidor",
       "approvalFailed": "La confirmación falló. Inicia sesión con la cuenta y organización originales de Okou o reinicia la autorización.",
       "authorizationError": "No se pudo completar la autorización de Discord. Inténtalo de nuevo.",
       "chooseWorkspace": "Elige un espacio de trabajo",

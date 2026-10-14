@@ -910,7 +910,7 @@ test("A connected admin can open and dismiss their account menu with the keyboar
   const more = getAction("button", "More options", card);
   expect(queryAction("button", "Disconnect Discord")).toBeNull();
   await user.click(more);
-  expect(getAction("button", "Add new server")).toBeEnabled();
+  expect(getAction("button", "Join new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
   expect(queryAction("button", "Remove Discord")).toBeNull();
   expect(queryAction("button", "Uninstall")).toBeNull();
@@ -921,12 +921,12 @@ test("A connected admin can open and dismiss their account menu with the keyboar
     expect(queryAction("button", "Disconnect Discord")).toBeNull();
   });
   await user.keyboard("{Enter}");
-  expect(getAction("button", "Add new server")).toBeEnabled();
+  expect(getAction("button", "Join new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
 });
 
 test.each([true, false])(
-  "Adding a server from the shared Works menu retains the connection (approved: %s)",
+  "Joining a server from the shared Works menu retains the connection (approved: %s)",
   async (approved) => {
     let finished = false;
     let current = status();
@@ -958,15 +958,15 @@ test.each([true, false])(
     await setupDiscordPage();
     const card = getIntegrationCard("Discord");
     const more = getAction("button", "More options", card);
-    expect(queryAction("button", "Add new server")).toBeNull();
+    expect(queryAction("button", "Join new server")).toBeNull();
     click(more);
     expect(getAction("button", "Disconnect Discord")).toBeEnabled();
-    click(getAction("button", "Add new server"));
+    click(getAction("button", "Join new server"));
     await waitFor(() => {
       expect(popup.location.href).toBe(authorizationUrl);
     });
     expect(requestBody).toStrictEqual({ flow: "install" });
-    expect(getAction("button", "Add new server")).toBeDisabled();
+    expect(getAction("button", "Join new server")).toBeDisabled();
     expect(getAction("button", "Disconnect Discord")).toBeDisabled();
     expect(within(card).getByText("Connected")).toBeInTheDocument();
     expect(window.location.pathname).toBe("/works");
@@ -978,7 +978,7 @@ test.each([true, false])(
           window.location.origin,
         ).toString(),
       );
-      expect(getAction("button", "Add new server")).toBeEnabled();
+      expect(getAction("button", "Join new server")).toBeEnabled();
     });
     expect(getAction("button", "Disconnect Discord")).toBeEnabled();
     expect(within(card).getByText("Connected")).toBeInTheDocument();
@@ -1441,7 +1441,7 @@ test.each([
     for (const action of [
       "Disconnect Discord",
       "Remove Discord",
-      "Add new server",
+      "Join new server",
     ]) {
       expect(queryAction("button", action) !== null).toBe(
         actions.includes(action),
