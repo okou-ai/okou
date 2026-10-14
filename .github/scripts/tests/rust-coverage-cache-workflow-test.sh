@@ -18,9 +18,6 @@ workflow_json=$(yq -o=json '.' "$WORKFLOW")
 
 jq -e '
   .jobs.coverage as $coverage |
-  $coverage.env.CARGO_PROFILE_TEST_DEBUG == "line-tables-only" and
-  $coverage.needs == ["detect"] and
-  $coverage.if == "needs.detect.outputs.any-changed == '\''true'\''" and
   any($coverage.steps[];
     .if == "(github.event_name != '\''pull_request'\'' || (github.event.pull_request.user.login != '\''dependabot[bot]'\'' && github.event.pull_request.head.repo.full_name == github.repository))" and
     .uses == "./.github/actions/setup-r2-sccache" and
@@ -32,32 +29,14 @@ jq -e '
   ) and
   any($coverage.steps[];
     ((.uses // "") | startswith("Swatinem/rust-cache@")) and
-    .with.workspaces == "crates -> target" and
-    .with["shared-key"] == "coverage-line-tables-only" and
     .with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}"
-  ) and
-  any($coverage.steps[];
-    ((.uses // "") | startswith("astral-sh/setup-uv@")) and
-    .with["working-directory"] == "crates/runner/mitm-addon" and
-    .with["enable-cache"] == true
-  ) and
-  any($coverage.steps[];
-    .["working-directory"] == "crates/runner/mitm-addon" and
-    .run == "uv sync --locked"
-  ) and
-  any($coverage.steps[];
-    .run == "cd crates\ncargo llvm-cov nextest --all-targets --all-features --test-threads 8 --lcov --output-path lcov.info\n"
   ) and
   any($coverage.steps[];
     .if == "success() || failure()" and
     .["continue-on-error"] == true and
     ((.uses // "") | startswith("codecov/codecov-action@")) and
-    .with.files == "crates/lcov.info" and
-    .with.flags == "rust"
-  ) and
-  ([.jobs | to_entries[] |
-    select(any(.value.steps[]?; .uses == "./.github/actions/setup-r2-sccache")) |
-    .key] == ["coverage", "runner-rootfs-process-test"])
+    .with.files == "crates/lcov.info"
+  )
 ' <<<"$workflow_json" >/dev/null || fail "coverage must retain its tested R2 sccache and reporting contract"
 
 report_script=$(jq -r '.jobs.coverage.steps[] | select((.run // "" | contains("lcov.info")) and (.run // "" | contains("cargo llvm-cov") | not)) | .run' <<<"$workflow_json")

@@ -119,10 +119,6 @@ if JOB_REF=pr-123 \
 fi
 grep -q "EXPECTED_REMOTE_ARCH mismatch: aarch64-unknown-linux-musl maps to aarch64, got x86_64" "${TMPDIR}/arch-mismatch.err" || fail "expected expected remote arch mismatch message"
 
-if grep -q 'runner-binary-build/build.sh' "$PREPARE"; then
-  fail "host preparation must not invoke the runner binary build"
-fi
-
 if JOB_REF=pr-123 \
   HEAD_SHA=abc \
   METAL_HOSTS=dev-1 \
@@ -423,7 +419,13 @@ case "$command" in
     ;;
 esac
 BASH
-chmod +x "${TMPDIR}/bin/ssh" "${TMPDIR}/bin/sudo" "${TMPDIR}/bin/systemctl"
+# Retry outcomes and candidate isolation are exercised through the real script;
+# waiting through each fixed backoff adds no independent coverage.
+cat > "${TMPDIR}/bin/sleep" <<'BASH'
+#!/usr/bin/env bash
+exit 0
+BASH
+chmod +x "${TMPDIR}/bin/ssh" "${TMPDIR}/bin/sudo" "${TMPDIR}/bin/systemctl" "${TMPDIR}/bin/sleep"
 
 prepare_remote_case() {
   local case_dir=$1

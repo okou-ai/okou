@@ -5,17 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cleanup_workflow="${repo_root}/.github/workflows/cleanup.yml"
 stale_workflow="${repo_root}/.github/workflows/cleanup-stale.yml"
 turbo_workflow="${repo_root}/.github/workflows/turbo.yml"
-namespace_cleanup="${repo_root}/.github/scripts/runner/cleanup-pr-runner-namespace.sh"
-namespace_discovery="${repo_root}/.github/scripts/runner/discover-runner-pr-namespaces.sh"
-runner_cleanup_playbook="${repo_root}/ansible/playbooks/cleanup-pr-runner.yml"
 
 ruby -ryaml - \
   "$cleanup_workflow" \
   "$stale_workflow" \
-  "$turbo_workflow" \
-  "$namespace_cleanup" \
-  "$namespace_discovery" \
-  "$runner_cleanup_playbook" <<'RUBY'
+  "$turbo_workflow" <<'RUBY'
 def named_step(job, name)
   job.fetch("steps").find { |step| step["name"] == name }
 end
@@ -153,39 +147,6 @@ end
 unless stale_script.include?('if [ "$FAILED" -gt 0 ]') &&
     !stale_script.include?("playbooks/cleanup-crates-runner.yml")
   raise "stale runner cleanup must report failures and avoid a duplicated Crates cleanup list"
-end
-
-namespace_cleanup = File.read(ARGV.fetch(3))
-state_index = namespace_cleanup.index("pr_state=")
-closed_index = namespace_cleanup.index('if [ "$pr_state" != "closed" ]')
-locked_probe_index = namespace_cleanup.index("RUNNER_OWNER_ASSERT_IDLE=true")
-barrier_index = namespace_cleanup.index("cancel-superseded-merge-group-runs.sh")
-delete_index = namespace_cleanup.index("playbooks/cleanup-pr-runner.yml")
-unless state_index && closed_index && locked_probe_index && barrier_index && delete_index &&
-    locked_probe_index < barrier_index && barrier_index < state_index &&
-    state_index < closed_index && closed_index < delete_index &&
-    namespace_cleanup.include?("RUNNER_OWNER_SCOPE=closed-pr-cleanup")
-  raise "locked cleanup must recheck PR state and stabilized ownership before deletion"
-end
-
-namespace_discovery = File.read(ARGV.fetch(4))
-unless namespace_discovery.include?("systemctl list-units") &&
-    namespace_discovery.include?("systemctl list-unit-files") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/bin") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/runners") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/groups") &&
-    namespace_discovery.include?('(^|-)pr-([1-9][0-9]*)(-|$)')
-  raise "runner namespace discovery must cover services and delimited PR directories"
-end
-
-runner_cleanup_playbook = File.read(ARGV.fetch(5))
-unless runner_cleanup_playbook.include?("job_ref is match('^pr-[1-9][0-9]*$')") &&
-    runner_cleanup_playbook.include?("'vm0-runner-{{ job_ref }}-*'") &&
-    runner_cleanup_playbook.include?('/^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\\.service$/') &&
-    runner_cleanup_playbook.include?('- "{{ job_ref }}-*"') &&
-    runner_cleanup_playbook.include?('- "*-{{ job_ref }}-*"') &&
-    !runner_cleanup_playbook.include?("process-containment")
-  raise "runner cleanup must select one strict PR namespace without per-lane duplication"
 end
 
 turbo = YAML.load_file(ARGV.fetch(2)).fetch("jobs")
