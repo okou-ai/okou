@@ -24,7 +24,13 @@ function nextTierInfo(
   return null;
 }
 
-export function SidebarUpgradeCard() {
+export function SidebarUpgradeCard({
+  placement = "sidebar",
+}: {
+  // On a page the card stands beside full-size surfaces, so it takes their
+  // radius, their 16px inset and their hover state.
+  readonly placement?: "sidebar" | "page";
+}) {
   const refreshLayoutRef = useSet(refreshSidebarChatThreadLayoutOnRef$);
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
@@ -67,10 +73,17 @@ export function SidebarUpgradeCard() {
       ref={refreshLayoutRef}
       type="button"
       onClick={handleClick}
-      className={surfaceVariants({
-        radius: "compact",
-        className: "flex w-full items-center gap-3 p-2.5 text-left",
-      })}
+      className={
+        placement === "page"
+          ? surfaceVariants({
+              interactive: true,
+              className: "flex w-full items-center gap-3 px-4 py-3 text-left",
+            })
+          : surfaceVariants({
+              radius: "compact",
+              className: "flex w-full items-center gap-3 p-2.5 text-left",
+            })
+      }
     >
       <div className="min-w-0 flex-1">
         <p className="text-sm font-medium text-[color:var(--nav-copy,var(--color-foreground))]">

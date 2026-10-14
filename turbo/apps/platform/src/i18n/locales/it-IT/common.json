@@ -385,6 +385,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "Impossibile caricare gli agenti",
+      "back": "Indietro",
       "backToChats": "Torna alle chat",
       "chatListUnavailable": "Impossibile caricare le chat",
       "chats": "Chat",

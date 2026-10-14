@@ -18,14 +18,18 @@ import {
 } from "../../signals/agent-chat.ts";
 import { reloadAgents$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
+import { unreadAgentIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import {
   pwaAgentOptions$,
+  pwaOtherAgentsHaveUnreadChats$,
   pwaAgentQuery$,
   pwaAgentSwitcherOpen$,
   selectPwaAgent$,
   setPwaAgentQuery$,
   setPwaAgentSwitcherOpen$,
 } from "../../signals/okou-page/pwa-chat-list.ts";
+import { equalSets } from "../../lib/equality.ts";
+import { AgentUnreadIndicator } from "./sidebar-agent-row-actions.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
 
 function AgentOptions() {
@@ -35,6 +39,9 @@ function AgentOptions() {
   const currentAgentId = useLastResolved(currentChatAgentId$);
   const selectAgent = useSet(selectPwaAgent$);
   const reloadAgents = useSet(reloadAgents$);
+  const unreadAgentIds = useLastResolved(unreadAgentIds$, {
+    equalityFn: equalSets,
+  });
 
   if (options.state === "loading") {
     return <Skeleton className="m-2 h-11" />;
@@ -78,11 +85,18 @@ function AgentOptions() {
         }}
         className="min-h-11 gap-3 px-3 py-2 hover:bg-state-hover"
       >
-        <AgentAvatarImg
-          name={agent.agentId}
-          alt=""
-          className="size-8 shrink-0 rounded-lg object-cover object-top"
-        />
+        <span className="relative flex shrink-0">
+          <AgentAvatarImg
+            name={agent.agentId}
+            alt=""
+            className="size-8 rounded-lg object-cover object-top"
+          />
+          {unreadAgentIds?.has(agent.agentId) && (
+            <span className="absolute -right-0.5 -top-0.5 flex">
+              <AgentUnreadIndicator />
+            </span>
+          )}
+        </span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
         {selected ? <Check size={16} aria-hidden="true" /> : null}
       </CommandItem>
@@ -99,6 +113,7 @@ export function PwaAgentSwitcher() {
   const agentId = useLastResolved(currentChatAgentId$);
   const agentDisplayName = useLastResolved(currentChatAgentDisplayName$);
   const assistantName = useGet(assistantName$);
+  const otherAgentsUnread = useLastResolved(pwaOtherAgentsHaveUnreadChats$);
   const switchLabel = t(($) => {
     return $.appShell.pwaNavigation.switchAgent;
   });
@@ -118,7 +133,14 @@ export function PwaAgentSwitcher() {
         <span className="min-w-0 truncate text-base font-semibold">
           {agentDisplayName ?? assistantName}
         </span>
-        <ChevronDown size={16} aria-hidden="true" className="shrink-0" />
+        <span className="relative flex shrink-0">
+          <ChevronDown size={16} aria-hidden="true" />
+          {otherAgentsUnread && (
+            <span className="absolute -right-1 -top-1.5 flex">
+              <AgentUnreadIndicator />
+            </span>
+          )}
+        </span>
       </PopoverTrigger>
       <PopoverContent
         align="start"

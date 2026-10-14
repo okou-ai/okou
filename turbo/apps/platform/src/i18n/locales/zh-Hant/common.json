@@ -371,6 +371,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "無法載入智慧體",
+      "back": "返回",
       "backToChats": "返回聊天列表",
       "chatListUnavailable": "無法載入聊天",
       "chats": "聊天",

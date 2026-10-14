@@ -74,7 +74,11 @@ import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
 } from "../../signals/okou-page/pwa-navigation.ts";
-import { PwaBackToChats, PwaBottomNavigation } from "./pwa-navigation.tsx";
+import {
+  PwaBackToChats,
+  PwaBackToParent,
+  PwaBottomNavigation,
+} from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
 
@@ -335,7 +339,9 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
       {pwaNavigation ? (
         isChatRoute(activeId) ? (
           <PwaBackToChats />
-        ) : null
+        ) : (
+          <PwaBackToParent />
+        )
       ) : (
         <SheetTrigger
           render={

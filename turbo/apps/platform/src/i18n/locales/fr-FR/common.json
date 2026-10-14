@@ -385,6 +385,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "Impossible de charger les agents",
+      "back": "Retour",
       "backToChats": "Retour aux discussions",
       "chatListUnavailable": "Impossible de charger les discussions",
       "chats": "Discussions",

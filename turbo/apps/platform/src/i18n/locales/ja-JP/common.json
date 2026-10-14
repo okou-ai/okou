@@ -371,6 +371,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "エージェントを読み込めませんでした",
+      "back": "戻る",
       "backToChats": "チャット一覧に戻る",
       "chatListUnavailable": "チャットを読み込めませんでした",
       "chats": "チャット",

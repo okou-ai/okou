@@ -7,10 +7,6 @@ import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
-import {
-  createNewChatThread$,
-  newChatThreadDisabled$,
-} from "../../signals/chat-page/optimistic-chat-thread-page.ts";
 import type {
   SidebarChatThreadListSignals,
   SidebarChatThreadScrollSignals,
@@ -23,10 +19,11 @@ import {
   PWA_CHAT_THREAD_ROW_HEIGHT,
   pwaChatThreadScrollSignals$,
 } from "../../signals/okou-page/pwa-chat-list.ts";
+import { navigateToNewChat$ } from "../../signals/okou-page/nav.ts";
 import { openThreeColumnSearchDialog$ } from "../../signals/okou-page/sidebar-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { PwaAgentSwitcher } from "./pwa-agent-switcher.tsx";
 import { OverlayScrollArea } from "./sidebar-scroll.tsx";
 import { ChatThreadItem, ChatThreadsListMenu } from "./sidebar-threads.tsx";
@@ -42,9 +39,8 @@ function useSelectFilter() {
 function PwaChatListHeader() {
   const { t } = useTranslation();
   const currentAgentId = useLastResolved(currentChatAgentId$);
-  const createNewChat = useSet(createNewChatThread$);
-  const rootSignal = useGet(rootSignal$);
-  const newChatDisabled = useGet(newChatThreadDisabled$);
+  const openNewChat = useSet(navigateToNewChat$);
+  const pageSignal = useGet(pageSignal$);
   const openSearch = useSet(openThreeColumnSearchDialog$);
 
   return (
@@ -71,17 +67,12 @@ function PwaChatListHeader() {
           size="icon"
           iconSize="lg"
           className="min-h-11 min-w-11 shrink-0"
-          disabled={!currentAgentId || newChatDisabled}
+          disabled={!currentAgentId}
           aria-label={t(($) => {
             return $.chat.newChat;
           })}
           onClick={() => {
-            if (currentAgentId) {
-              detach(
-                createNewChat(currentAgentId, "main", rootSignal),
-                Reason.DomCallback,
-              );
-            }
+            detach(openNewChat(pageSignal), Reason.DomCallback);
           }}
         >
           <SquarePen aria-hidden="true" />
@@ -262,6 +253,7 @@ export function PwaChatListPage() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <PwaChatListHeader />
+      <InstatusStatusNotice placement="list" />
       <PwaChatListContent />
     </div>
   );
