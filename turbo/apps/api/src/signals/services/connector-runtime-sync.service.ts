@@ -48,7 +48,7 @@ import {
   customRuntimeSnapshotSectionsFromRows,
 } from "./custom-runtime-snapshot-query";
 
-import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
+import { readActiveNetworkPolicyRefreshes$ } from "./user-permission-grants.service";
 
 const L = logger("connector-runtime-sync");
 
@@ -510,7 +510,7 @@ function resolveBuiltinTarget(args: {
   readonly accounts: Awaited<ReturnType<typeof resolveConnectorAccounts>>;
   readonly refreshes: ReadonlyMap<
     string,
-    Awaited<ReturnType<typeof resolveActiveNetworkPolicyRefreshes>>[number]
+    Awaited<ReturnType<typeof readActiveNetworkPolicyRefreshes$.write>>[number]
   >;
 }): ResolvedConnectorRuntimeTarget {
   const { registration, scope, snapshot } = args;
@@ -627,12 +627,13 @@ const resolveConnectorRuntimeTargetStates$ = command(
     }
     const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
       await Promise.all([
-        resolveActiveNetworkPolicyRefreshes(
-          db,
-          args.scope,
-          catalogBuiltinConnectorSlugs,
-          builtinCatalogSelection,
-        ),
+        builtinCatalogSelection
+          ? set(readActiveNetworkPolicyRefreshes$, {
+              scope: args.scope,
+              connectorSlugs: catalogBuiltinConnectorSlugs,
+              snapshot: builtinCatalogSelection,
+            })
+          : [],
         resolveConnectorAccounts(db, {
           orgId: args.scope.orgId,
           userId: args.scope.userId,

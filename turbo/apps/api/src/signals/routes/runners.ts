@@ -29,6 +29,10 @@ import {
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
@@ -111,7 +115,11 @@ import {
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
 import { notifyRunningChatRunOfPendingInput$ } from "../services/chat-thread-queue-drain.service";
-import { loadConnectorRuntimeSlugSelection } from "../services/connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "../services/connector-catalog-slug-source.service";
 import { loadConnectorRunnerFirewallCatalog } from "../services/connector-runner-firewall-catalog.service";
 import { resolveConnectorRuntimeTargets$ } from "../services/connector-runtime-sync.service";
 import { decryptPersistentSecretsMap } from "../services/crypto.utils";
@@ -136,7 +144,7 @@ import {
 import {
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
-  resolveActiveNetworkPolicyRefreshes,
+  readActiveNetworkPolicyRefreshes$,
 } from "../services/user-permission-grants.service";
 import { safeSync, settle, tapError } from "../utils";
 
@@ -388,26 +396,18 @@ class ClaimRouteTimingCollector {
     });
   }
 
-  async measureNetworkPolicyRefresh<T>(
-    operation: () => Promise<{
-      readonly value: T;
-      readonly path: ClaimNetworkPolicyRefreshPath;
-    }>,
-  ): Promise<T> {
-    const startedAt = now();
-    const result = await settle(operation());
-    const finishedAt = now();
+  recordNetworkPolicyRefresh(
+    startedAt: number,
+    finishedAt: number,
+    path: ClaimNetworkPolicyRefreshPath | undefined,
+  ): void {
     this.records.push({
       actionType: "claim_route_response_network_policy_refresh",
       spanKind: "nested",
       durationMs: Math.max(0, finishedAt - startedAt),
       timestamp: new Date(finishedAt).toISOString(),
-      ...(result.ok ? { policyRefreshPath: result.value.path } : {}),
+      ...(path === undefined ? {} : { policyRefreshPath: path }),
     });
-    if (!result.ok) {
-      throw result.error;
-    }
-    return result.value.value;
   }
 
   flush(args: {
@@ -1459,75 +1459,107 @@ async function secretValuesForRunner(
   });
 }
 
-async function refreshClaimNetworkPolicies(args: {
-  readonly db: Db;
-  readonly run: ClaimedRun;
-  readonly storedContext: StoredExecutionContext;
-  readonly timing: ClaimRouteTimingCollector;
-}): Promise<
-  Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
-> {
-  const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
-  assertClaimConnectorIdentity(args.run, args.storedContext);
-  if (Object.keys(storedNetworkPolicies).length === 0) {
-    return {
-      networkPolicies: args.storedContext.networkPolicies,
-      networkPolicyRefreshes: undefined,
-    };
-  }
-
-  const builtinConnectorSlugs = [
-    ...new Set(
-      args.storedContext.connectorRuntimeTargets.flatMap((target) => {
-        return target.kind === "builtin" ? [target.connectorSlug] : [];
-      }),
-    ),
-  ];
-
-  return await args.timing.measureNetworkPolicyRefresh(async () => {
-    if (builtinConnectorSlugs.length === 0) {
+const readClaimNetworkPolicyRefreshes$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly run: ClaimedRun;
+      readonly storedContext: StoredExecutionContext;
+      readonly timing: ClaimRouteTimingCollector;
+    },
+  ): Promise<
+    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+  > => {
+    const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
+    assertClaimConnectorIdentity(args.run, args.storedContext);
+    if (Object.keys(storedNetworkPolicies).length === 0) {
       return {
-        value: {
-          networkPolicies: args.storedContext.networkPolicies,
-          networkPolicyRefreshes: undefined,
-        },
-        path: "no_builtin_targets",
+        networkPolicies: args.storedContext.networkPolicies,
+        networkPolicyRefreshes: undefined,
       };
     }
-    if (args.run.agentId === null) {
-      throw new Error(
-        "Connector network policy refresh requires an Agent identity",
-      );
+
+    const builtinConnectorSlugs = [
+      ...new Set(
+        args.storedContext.connectorRuntimeTargets.flatMap((target) => {
+          return target.kind === "builtin" ? [target.connectorSlug] : [];
+        }),
+      ),
+    ];
+
+    const startedAt = now();
+    // Keep the whole finite read in the response owner's allSettled group.
+    // Recording accepts captured timing facts, never a database/accessor closure.
+    const result = await settle(
+      (async (): Promise<{
+        readonly value: Pick<
+          StoredExecutionContext,
+          "networkPolicies" | "networkPolicyRefreshes"
+        >;
+        readonly path: ClaimNetworkPolicyRefreshPath;
+      }> => {
+        if (builtinConnectorSlugs.length === 0) {
+          return {
+            value: {
+              networkPolicies: args.storedContext.networkPolicies,
+              networkPolicyRefreshes: undefined,
+            },
+            path: "no_builtin_targets",
+          };
+        }
+        if (args.run.agentId === null) {
+          throw new Error(
+            "Connector network policy refresh requires an Agent identity",
+          );
+        }
+
+        const scope = {
+          orgId: args.run.orgId,
+          userId: args.run.userId,
+          agentId: args.run.agentId,
+        };
+        const plan = connectorRuntimeSlugSelectionReadPlan({
+          connectorSlugs: builtinConnectorSlugs,
+        });
+        const rows = await get(db$)
+          .select(plan.columns)
+          .from(connectorCatalog)
+          .leftJoin(connectorCatalogEntries, plan.join)
+          .where(connectorCatalogCurrentWhere());
+        const snapshot = connectorRuntimeSlugSelectionFromRows(
+          plan.selection,
+          rows,
+        );
+        const refreshes = await set(readActiveNetworkPolicyRefreshes$, {
+          scope,
+          connectorSlugs: builtinConnectorSlugs,
+          snapshot,
+        });
+
+        return {
+          value: {
+            networkPolicies: mergeNetworkPolicyRefreshes(
+              storedNetworkPolicies,
+              refreshes,
+            ),
+            networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
+          },
+          path: "current_catalog",
+        };
+      })(),
+    );
+    const finishedAt = now();
+    args.timing.recordNetworkPolicyRefresh(
+      startedAt,
+      finishedAt,
+      result.ok ? result.value.path : undefined,
+    );
+    if (!result.ok) {
+      throw result.error;
     }
-
-    const scope = {
-      orgId: args.run.orgId,
-      userId: args.run.userId,
-      agentId: args.run.agentId,
-    };
-    const connectorCatalogSnapshot = await loadConnectorRuntimeSlugSelection(
-      args.db,
-      { connectorSlugs: builtinConnectorSlugs },
-    );
-    const refreshes = await resolveActiveNetworkPolicyRefreshes(
-      args.db,
-      scope,
-      builtinConnectorSlugs,
-      connectorCatalogSnapshot,
-    );
-
-    return {
-      value: {
-        networkPolicies: mergeNetworkPolicyRefreshes(
-          storedNetworkPolicies,
-          refreshes,
-        ),
-        networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
-      },
-      path: "current_catalog",
-    };
-  });
-}
+    return result.value.value;
+  },
+);
 
 function assertClaimConnectorIdentity(
   run: ClaimedRun,
@@ -1843,112 +1875,49 @@ async function resolveResumeSessionForClaim(args: {
   );
 }
 
-async function buildClaimResponseBody(
-  args: {
-    readonly db: Db;
-    readonly run: ClaimedRun;
-    readonly reuseKey: string | null;
-    readonly storedContext: StoredExecutionContext;
-    readonly timing: ClaimRouteTimingCollector;
-    readonly loadIdentityRepresentation: (
-      hash: string,
-    ) => Promise<IdentityResumeSessionHistoryRepresentation | undefined>;
-    readonly loadCompressedRepresentation: (
-      hash: string,
-      encoding: CompressedSessionHistoryBlobEncoding,
-    ) => Promise<CompressedResumeSessionHistoryRepresentation | undefined>;
-    readonly generateResumeSessionHistoryUrl: (hash: string) => Promise<string>;
-    readonly generateResumeSessionHistoryObjectUrl: (
-      objectKey: string,
-    ) => Promise<string>;
-  },
-  signal: AbortSignal,
-): Promise<ExecutionContext> {
-  const secretValues = await secretValuesForRunner(
-    args.storedContext,
-    args.timing,
-  );
-  signal.throwIfAborted();
-  return await args.timing.measure(
-    "claim_route_response_assembly",
-    "top_level",
-    async () => {
-      const [resumeSessionResult, refreshedPoliciesResult] =
-        await Promise.allSettled([
-          resolveResumeSessionForClaim({
-            resumeSession: args.storedContext.resumeSession,
-            timing: args.timing,
-            loadIdentityRepresentation(hash: string) {
-              return args.loadIdentityRepresentation(hash);
-            },
-            loadCompressedRepresentation(
-              hash: string,
-              encoding: CompressedSessionHistoryBlobEncoding,
-            ) {
-              return args.loadCompressedRepresentation(hash, encoding);
-            },
-            generateResumeSessionHistoryUrl:
-              args.generateResumeSessionHistoryUrl,
-            generateResumeSessionHistoryObjectUrl:
-              args.generateResumeSessionHistoryObjectUrl,
-          }),
-          refreshClaimNetworkPolicies({
-            db: args.db,
-            run: args.run,
-            storedContext: args.storedContext,
-            timing: args.timing,
-          }),
-        ]);
-      if (resumeSessionResult.status === "rejected") {
-        const error: unknown = resumeSessionResult.reason;
-        throw error;
-      }
-      const resumeSession = resumeSessionResult.value;
-      signal.throwIfAborted();
-      const sandboxToken = generateSandboxToken(
-        args.run.userId,
-        args.run.id,
-        args.run.orgId,
-      );
-      if (refreshedPoliciesResult.status === "rejected") {
-        const error: unknown = refreshedPoliciesResult.reason;
-        throw error;
-      }
-      const refreshedPolicies = refreshedPoliciesResult.value;
-      signal.throwIfAborted();
-      const {
-        secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
-        storageMounts: _storedStorageMounts,
-        ...runnerStoredContext
-      } = args.storedContext;
-      return {
-        ...runnerStoredContext,
-        ...(args.run.isFirstRun === null
-          ? {}
-          : { isFirstRun: args.run.isFirstRun }),
-        runId: args.run.id,
-        reuseKey: args.reuseKey,
-        prompt: args.run.prompt,
-        appendSystemPrompt: args.run.appendSystemPrompt,
-        vars: mergeClaimVars({
-          runVars: (args.run.vars as Record<string, string> | null) ?? null,
-          connectorVars: args.storedContext.vars,
-        }),
-        storageManifest: {
-          storageMounts: args.storedContext.storageMounts.map((storedMount) => {
-            const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
-            return mount;
-          }),
-        },
-        resumeSession,
-        sandboxToken,
-        secretValues,
-        connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
-        networkPolicies: refreshedPolicies.networkPolicies,
-        networkPolicyRefreshes: refreshedPolicies.networkPolicyRefreshes,
-      };
+function claimResponseBody(args: {
+  readonly run: ClaimedRun;
+  readonly reuseKey: string | null;
+  readonly storedContext: StoredExecutionContext;
+  readonly resumeSession: ExecutionContext["resumeSession"];
+  readonly sandboxToken: string;
+  readonly secretValues: ExecutionContext["secretValues"];
+  readonly refreshedPolicies: Pick<
+    StoredExecutionContext,
+    "networkPolicies" | "networkPolicyRefreshes"
+  >;
+}): ExecutionContext {
+  const {
+    secretValueEnvironmentKeys: _secretValueEnvironmentKeys,
+    storageMounts: _storedStorageMounts,
+    ...runnerStoredContext
+  } = args.storedContext;
+  return {
+    ...runnerStoredContext,
+    ...(args.run.isFirstRun === null
+      ? {}
+      : { isFirstRun: args.run.isFirstRun }),
+    runId: args.run.id,
+    reuseKey: args.reuseKey,
+    prompt: args.run.prompt,
+    appendSystemPrompt: args.run.appendSystemPrompt,
+    vars: mergeClaimVars({
+      runVars: (args.run.vars as Record<string, string> | null) ?? null,
+      connectorVars: args.storedContext.vars,
+    }),
+    storageManifest: {
+      storageMounts: args.storedContext.storageMounts.map((storedMount) => {
+        const { orgId: _orgId, userId: _userId, ...mount } = storedMount;
+        return mount;
+      }),
     },
-  );
+    resumeSession: args.resumeSession,
+    sandboxToken: args.sandboxToken,
+    secretValues: args.secretValues,
+    connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
+    networkPolicies: args.refreshedPolicies.networkPolicies,
+    networkPolicyRefreshes: args.refreshedPolicies.networkPolicyRefreshes,
+  };
 }
 
 const buildClaimResponseBodyForClaim$ = command(
@@ -1963,37 +1932,76 @@ const buildClaimResponseBodyForClaim$ = command(
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
-    return await buildClaimResponseBody(
-      {
-        db: args.db,
-        run: args.run,
-        reuseKey: args.reuseKey,
-        storedContext: args.storedContext,
-        timing: args.timing,
-        loadIdentityRepresentation(hash: string) {
-          return set(loadIdentityResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            hash,
-          });
-        },
-        loadCompressedRepresentation(
-          hash: string,
-          encoding: CompressedSessionHistoryBlobEncoding,
-        ) {
-          return set(loadCompressedResumeSessionHistoryRepresentation$, {
-            db: args.db,
-            encoding,
-            hash,
-          });
-        },
-        generateResumeSessionHistoryUrl(hash: string) {
-          return set(generateResumeSessionHistoryUrl$, hash);
-        },
-        generateResumeSessionHistoryObjectUrl(objectKey: string) {
-          return set(generateResumeSessionHistoryObjectUrl$, objectKey);
-        },
+    const secretValues = await secretValuesForRunner(
+      args.storedContext,
+      args.timing,
+    );
+    signal.throwIfAborted();
+    return await args.timing.measure(
+      "claim_route_response_assembly",
+      "top_level",
+      async () => {
+        const [resumeSessionResult, refreshedPoliciesResult] =
+          await Promise.allSettled([
+            resolveResumeSessionForClaim({
+              resumeSession: args.storedContext.resumeSession,
+              timing: args.timing,
+              loadIdentityRepresentation(hash: string) {
+                return set(loadIdentityResumeSessionHistoryRepresentation$, {
+                  db: args.db,
+                  hash,
+                });
+              },
+              loadCompressedRepresentation(
+                hash: string,
+                encoding: CompressedSessionHistoryBlobEncoding,
+              ) {
+                return set(loadCompressedResumeSessionHistoryRepresentation$, {
+                  db: args.db,
+                  encoding,
+                  hash,
+                });
+              },
+              generateResumeSessionHistoryUrl(hash: string) {
+                return set(generateResumeSessionHistoryUrl$, hash);
+              },
+              generateResumeSessionHistoryObjectUrl(objectKey: string) {
+                return set(generateResumeSessionHistoryObjectUrl$, objectKey);
+              },
+            }),
+            set(readClaimNetworkPolicyRefreshes$, {
+              run: args.run,
+              storedContext: args.storedContext,
+              timing: args.timing,
+            }),
+          ]);
+        if (resumeSessionResult.status === "rejected") {
+          const error: unknown = resumeSessionResult.reason;
+          throw error;
+        }
+        const resumeSession = resumeSessionResult.value;
+        signal.throwIfAborted();
+        const sandboxToken = generateSandboxToken(
+          args.run.userId,
+          args.run.id,
+          args.run.orgId,
+        );
+        if (refreshedPoliciesResult.status === "rejected") {
+          const error: unknown = refreshedPoliciesResult.reason;
+          throw error;
+        }
+        const refreshedPolicies = refreshedPoliciesResult.value;
+        signal.throwIfAborted();
+        return claimResponseBody({
+          run: args.run,
+          reuseKey: args.reuseKey,
+          storedContext: args.storedContext,
+          resumeSession,
+          sandboxToken,
+          secretValues,
+          refreshedPolicies,
+        });
       },
-      signal,
     );
   },
 );
