@@ -11,6 +11,7 @@ producer_restore = next(s for s in producer["steps"] if s.get("id") == "kerberos
 consumers = (
     ("check", "cargo clippy"),
     ("check-docs", "cargo doc"),
+    ("coverage", "cargo llvm-cov nextest"),
     ("host-cpu-fairness-build", "runner-native-test-artifact.sh build"),
     ("guest-rpc-firecracker-build", "runner-native-test-artifact.sh build"),
 )
@@ -50,7 +51,7 @@ def kerberos_writer(step):
 writers = [(name, s) for name, job in jobs.items() for s in job.get("steps", [])
            if kerberos_writer(s)]
 assert len(writers) == 2 and {name for name, _ in writers} == {"check", "guest-rpc-firecracker-build"}
-for name in ("check-docs", "host-cpu-fairness-build"):
+for name in ("check-docs", "coverage", "host-cpu-fairness-build"):
     assert not any(kerberos_writer(s) for s in jobs[name]["steps"])
 for name, save in writers:
     steps = jobs[name]["steps"]
