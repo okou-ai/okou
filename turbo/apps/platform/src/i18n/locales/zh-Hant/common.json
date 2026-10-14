@@ -5392,6 +5392,11 @@
     },
     "importHint": "可以匯入文件、簡報或圖片。",
     "loadFailed": "無法載入模板。",
+    "rename": {
+      "action": "重新命名",
+      "cancel": "取消",
+      "save": "儲存"
+    },
     "renameFailed": "無法重新命名該模板。",
     "retry": "重試",
     "sharedBy": "由{{owner}}分享",

@@ -5417,6 +5417,11 @@
     },
     "importHint": "Importiere ein Dokument, eine Präsentation oder ein Bild.",
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
+    "rename": {
+      "action": "Umbenennen",
+      "cancel": "Abbrechen",
+      "save": "Speichern"
+    },
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "retry": "Erneut versuchen",
     "sharedBy": "Geteilt von {{owner}}",

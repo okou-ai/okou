@@ -5490,6 +5490,11 @@
     },
     "importHint": "Importa un documento, una presentación o una imagen.",
     "loadFailed": "No se pudieron cargar las plantillas.",
+    "rename": {
+      "action": "Renombrar",
+      "cancel": "Cancelar",
+      "save": "Guardar"
+    },
     "renameFailed": "No se pudo cambiar el nombre de la plantilla.",
     "retry": "Reintentar",
     "sharedBy": "Compartida por {{owner}}",
