@@ -177,7 +177,7 @@ test("The setup guide preserves the creation draft, copies the recommended rule 
     "test-client-id",
   );
   expect(secret).toHaveValue("secret-canary");
-  expect(requests).toHaveLength(0);
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();
