@@ -171,7 +171,7 @@ test("Transcribe a voice draft without sending assistant history", async () => {
   context.mocks.http.post(
     "*/api/voice-io/polish/segments",
     async ({ request }) => {
-      expect(await request.json()).toStrictEqual({
+      await expect(request.json()).resolves.toStrictEqual({
         segments: ["um send the launch update tomorrow"],
       });
       return HttpResponse.json({ text: "Send the launch update tomorrow." });
