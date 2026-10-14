@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { integrationsTeamsDownloadFileContract } from "@okouai/api-contracts/contracts/integrations";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { and, eq } from "drizzle-orm";
@@ -10,7 +10,7 @@ import type { AuthContext } from "../../types/auth";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { queryOf } from "../context/request";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { fetchTeamsFile } from "../external/teams-bot-client";
 import {
   decodeTeamsFileToken,
@@ -92,17 +92,30 @@ function sanitizeDownloadFilename(filename: string): string {
   return filename.trim().replace(/[/\\]/gu, "_").slice(0, 255) || "teams-file";
 }
 
-async function teamsFilePayloadForRun(args: {
-  readonly db: ReadonlyDb;
-  readonly runId: string;
-  readonly fileId: string;
-}): Promise<TeamsFileTokenPayload | null> {
-  const [callback] = await args.db
+const downloadQuery$ = queryOf(integrationsTeamsDownloadFileContract.download);
+const downloadInput$ = computed((get) => {
+  const query = get(downloadQuery$);
+  if (!query.file_id) {
+    return null;
+  }
+  get(db$);
+  return {
+    fileId: query.file_id,
+    runId: runIdFromAuth(get(authContext$)),
+  } as const;
+});
+
+const teamsFilePayloadForRun$ = computed(async (get) => {
+  const input = get(downloadInput$);
+  if (!input?.runId) {
+    return null;
+  }
+  const [callback] = await get(db$)
     .select({ payload: agentRunCallbacks.payload })
     .from(agentRunCallbacks)
     .where(
       and(
-        eq(agentRunCallbacks.runId, args.runId),
+        eq(agentRunCallbacks.runId, input.runId),
         eq(agentRunCallbacks.internalKind, "chat"),
       ),
     )
@@ -113,29 +126,23 @@ async function teamsFilePayloadForRun(args: {
   const parsed = teamsChatCallbackPayloadSchema.safeParse(callback.payload);
   const file = parsed.success
     ? parsed.data.teamsDelivery?.files?.find((candidate) => {
-        return candidate.fileId === args.fileId;
+        return candidate.fileId === input.fileId;
       })
     : undefined;
   return file ? teamsFileTokenPayloadSchema.parse(file) : null;
-}
+});
 
-async function resolveTeamsFilePayload(args: {
-  readonly db: ReadonlyDb;
-  readonly fileId: string;
-  readonly runId: string | undefined;
-}): Promise<TeamsFileTokenPayload | null> {
-  const signedPayload = decodeTeamsFileToken(args.fileId);
+const resolvedTeamsFilePayload$ = computed(async (get) => {
+  const input = get(downloadInput$);
+  if (!input) {
+    return null;
+  }
+  const signedPayload = decodeTeamsFileToken(input.fileId);
   if (signedPayload) {
     return signedPayload;
   }
-  return args.runId
-    ? await teamsFilePayloadForRun({
-        db: args.db,
-        runId: args.runId,
-        fileId: args.fileId,
-      })
-    : null;
-}
+  return input.runId ? await get(teamsFilePayloadForRun$) : null;
+});
 
 function runIdFromAuth(auth: AuthContext): string | undefined {
   return "runId" in auth ? auth.runId : undefined;
@@ -157,16 +164,12 @@ function resolveFilename(args: {
 }
 
 const download$ = command(async ({ get }, signal: AbortSignal) => {
-  const query = get(queryOf(integrationsTeamsDownloadFileContract.download));
-  if (!query.file_id) {
+  const input = get(downloadInput$);
+  if (!input) {
     return jsonResponse(400, "file_id is required", "BAD_REQUEST");
   }
 
-  const payload = await resolveTeamsFilePayload({
-    db: get(db$),
-    fileId: query.file_id,
-    runId: runIdFromAuth(get(authContext$)),
-  });
+  const payload = await get(resolvedTeamsFilePayload$);
   signal.throwIfAborted();
   if (!payload) {
     return jsonResponse(400, "Invalid Microsoft Teams file id", "BAD_REQUEST");

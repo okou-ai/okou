@@ -1,6 +1,10 @@
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
-import { publicRunOwner } from "./helpers/public-run-owner";
+import {
+  publicRunOwner,
+  type RunCleanupReceiptEntry,
+} from "./helpers/public-run-owner";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
   createHmac,
@@ -22,6 +26,7 @@ import { z } from "zod";
 import { createAppWithRoutes } from "../../../app-factory-core";
 import { signSandboxJwtForTests, verifyOkouToken } from "../../auth/tokens";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { settleIncludingAbort } from "../../utils";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
@@ -44,10 +49,12 @@ import {
 import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 import {
   installTeamsForTest,
+  postTeamsActivityForTest,
   removeTeamsForTest,
   setupTeamsConnectTestEnv,
   teamsConnectFixture,
   teamsFixtureExternalId,
+  teamsMessageActivityForTest,
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
@@ -1027,6 +1034,306 @@ async function setupConnectedTeamsBotActor(
   };
 }
 
+interface TeamsDownloadClaimAttempt {
+  readonly runId: string;
+  state: "pending" | "returned" | "rejected";
+  error?: unknown;
+}
+
+function captureTeamsDownloadEnvironment() {
+  const appId = env("MICROSOFT_TEAMS_BOT_APP_ID");
+  const tenantId = env("MICROSOFT_TEAMS_APP_TENANT_ID");
+  const password = env("MICROSOFT_TEAMS_BOT_APP_PASSWORD");
+  const encryptionKey = env("SECRETS_ENCRYPTION_KEY");
+  const restore = captureConnectorExternalState(context, [
+    "MICROSOFT_TEAMS_BOT_TOKEN_URL",
+    "MICROSOFT_TEAMS_GRAPH_TOKEN_URL",
+  ]);
+  return () => {
+    restore();
+    mockEnv("MICROSOFT_TEAMS_BOT_APP_ID", appId);
+    mockEnv("MICROSOFT_TEAMS_APP_TENANT_ID", tenantId);
+    mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", password);
+    mockEnv("SECRETS_ENCRYPTION_KEY", encryptionKey);
+  };
+}
+
+function verifyTeamsDownloadClaims(
+  attempts: readonly TeamsDownloadClaimAttempt[],
+) {
+  const errors = attempts.flatMap((attempt) => {
+    if (attempt.state === "returned") {
+      return [];
+    }
+    return [
+      attempt.state === "rejected"
+        ? attempt.error
+        : new Error(`Unacknowledged claim for ${attempt.runId}`),
+    ];
+  });
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(errors, "Teams download claims remain uncertain");
+  }
+}
+
+async function verifyTeamsDownloadRunsTerminal(
+  actor: ApiTestUser,
+  receipt: readonly RunCleanupReceiptEntry[],
+  attempts: readonly TeamsDownloadClaimAttempt[],
+) {
+  const enumerated = new Map(
+    receipt.map((run) => {
+      return [run.id, run];
+    }),
+  );
+  const claimed = new Set(
+    attempts.map((attempt) => {
+      return attempt.runId;
+    }),
+  );
+  const currentIds: string[] = [];
+  const cursors = new Set<string>();
+  let page = await runReadsApi.requestListLogs(actor, { limit: 100 }, [200]);
+  for (;;) {
+    for (const run of page.body.data) {
+      currentIds.push(run.id);
+      expect(["completed", "failed", "timeout", "cancelled"]).toContain(
+        run.status,
+      );
+      const original = enumerated.get(run.id);
+      if (!original) {
+        throw new Error(`Run missing from cleanup receipt: ${run.id}`);
+      }
+      if (
+        (run.status === "cancelled" && run.startedAt !== null) ||
+        (claimed.has(run.id) &&
+          !["completed", "failed", "timeout"].includes(original.status))
+      ) {
+        expect(original.completionAcknowledged).toBeTruthy();
+      }
+    }
+    if (!page.body.pagination.hasMore) {
+      break;
+    }
+    const cursor = page.body.pagination.nextCursor;
+    if (!cursor || cursors.has(cursor)) {
+      throw new Error("Expected a new public Run-list continuation cursor");
+    }
+    cursors.add(cursor);
+    page = await runReadsApi.requestListLogs(
+      actor,
+      { limit: 100, cursor },
+      [200],
+    );
+  }
+  expect([...currentIds].sort()).toStrictEqual([...enumerated.keys()].sort());
+  for (const runId of claimed) {
+    expect(currentIds).toContain(runId);
+  }
+}
+
+function claimedTeamsDownloadFixture() {
+  const fixture = teamsConnectFixture();
+  const actor = authOrgApi.user({
+    userId: fixture.userId,
+    orgId: fixture.orgId,
+    orgRole: "org:admin",
+  });
+  const attempts: TeamsDownloadClaimAttempt[] = [];
+  let accepted = captureTeamsDownloadEnvironment();
+  let restoreWebhook: (() => void) | undefined;
+  const ownedRuns = publicRunOwner(context, actor, {
+    captureBaseline: captureTeamsDownloadEnvironment,
+    restoreEnvironment: () => {
+      accepted();
+      restoreWebhook?.();
+    },
+    beforeRuns: () => {
+      verifyTeamsDownloadClaims(attempts);
+      return Promise.resolve();
+    },
+    afterSuccessfulCleanup: async (receipt) => {
+      await verifyTeamsDownloadRunsTerminal(actor, receipt, attempts);
+      context.signal.throwIfAborted();
+      await removeTeamsForTest(context.signal, fixture);
+      await flushWaitUntilForTest();
+      context.signal.throwIfAborted();
+      await deletePublicWorkspace(context, actor);
+      context.signal.throwIfAborted();
+    },
+  });
+  async function captured<T>(operation: () => Promise<T>) {
+    const pending = settleIncludingAbort(operation);
+    const snapshot = settleIncludingAbort(() => {
+      accepted = captureTeamsDownloadEnvironment();
+    });
+    const [result, captureResult] = await Promise.all([pending, snapshot]);
+    if (!captureResult.ok) {
+      throw captureResult.error;
+    }
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
+  }
+  return {
+    fixture,
+    actor,
+    claim(runId: string) {
+      return ownedRuns.run(async () => {
+        const attempt: TeamsDownloadClaimAttempt = { runId, state: "pending" };
+        attempts.push(attempt);
+        const result = await settleIncludingAbort(() => {
+          return captured(() => {
+            return ownedRuns.claim(runId);
+          });
+        });
+        if (!result.ok) {
+          attempt.state = "rejected";
+          attempt.error = result.error;
+          throw result.error;
+        }
+        attempt.state = "returned";
+        return result.value;
+      });
+    },
+    retainWebhook(restore: () => void) {
+      restoreWebhook = restore;
+    },
+    run<T>(operation: () => Promise<T>) {
+      return ownedRuns.run(() => {
+        return captured(operation);
+      });
+    },
+  };
+}
+
+function historicalTeamsDownloadProvider(fixture: TeamsConnectFixture) {
+  const rootId = teamsFixtureExternalId(fixture, "download-root");
+  const attachmentId = teamsFixtureExternalId(fixture, "historical-attachment");
+  const name = "historical note.txt";
+  const contents = "Historical Teams attachment bytes.\n";
+  const url = `https://contoso.sharepoint.com/sites/test/${fixture.fixtureId}.txt`;
+  const requests: string[] = [];
+  teamsGraphHistoryHandlers({
+    fixture,
+    channelMessages: [],
+    threadRoots: {
+      [rootId]: {
+        id: rootId,
+        text: "An ordinary thread with a historical file",
+        createdDateTime: "2026-06-30T09:08:00.000Z",
+        graphUserPrincipalName: fixture.teamsUserPrincipalName,
+      },
+    },
+    threadReplies: {
+      [rootId]: [
+        {
+          id: teamsFixtureExternalId(fixture, "historical-reply"),
+          text: "The file from the earlier reply",
+          createdDateTime: "2026-06-30T09:09:00.000Z",
+          attachments: [
+            {
+              id: attachmentId,
+              name,
+              contentType: "application/vnd.microsoft.teams.file.download.info",
+              content: { downloadUrl: url, fileType: "txt" },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  server.use(
+    http.get(url, ({ request }) => {
+      requests.push(request.url);
+      return new HttpResponse(contents, {
+        headers: {
+          "Content-Type": "text/plain",
+          "Content-Length": String(Buffer.byteLength(contents)),
+        },
+      });
+    }),
+  );
+  return { rootId, attachmentId, name, contents, url, requests };
+}
+
+async function claimHistoricalTeamsDownload(
+  owned: ReturnType<typeof claimedTeamsDownloadFixture>,
+  provider: ReturnType<typeof historicalTeamsDownloadProvider>,
+) {
+  const { actor, fixture } = owned;
+  const runnerGroup = runsApi.configureRunnerGroup();
+  context.mocks.ably.publish.mockResolvedValue(undefined);
+  authOrgApi.acceptAgentStorageWrites();
+  authOrgApi.mockClerkUsers([actor]);
+  runsApi.acceptStorageDownloads();
+  runsApi.acceptTelemetryIngest();
+  await owned.run(() => {
+    return authOrgApi.completeOnboarding(actor);
+  });
+  const { defaultAgentId } = await owned.run(() => {
+    return authOrgApi.readOnboardingStatus(actor);
+  });
+  if (!defaultAgentId) {
+    throw new Error("Expected the normal onboarding Agent");
+  }
+  await owned.run(() => {
+    return authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
+      visibility: "public",
+    });
+  });
+  await owned.run(() => {
+    return runsApi.grantProEntitlement(actor, {
+      run: owned.run,
+      onExternalStateReady: owned.retainWebhook,
+    });
+  });
+  await owned.run(() => {
+    return runsApi.ensurePersonalSubscriptionModel(actor, {
+      model: "claude-fable-5-1",
+    });
+  });
+  await owned.run(() => {
+    return installTeamsForTest(context.signal, fixture);
+  });
+  await owned.run(flushWaitUntilForTest);
+  await owned.run(() => {
+    return connectTeamsFixture(fixture);
+  });
+  const prompt = `download historical attachment ${fixture.fixtureId}`;
+  await owned.run(async () => {
+    const response = await postTeamsActivityForTest({
+      signal: context.signal,
+      activity: teamsMessageActivityForTest(fixture, {
+        replyToId: provider.rootId,
+        text: `<at>Nova</at> ${prompt}`,
+        attachments: [],
+      }),
+    });
+    await readTeamsBotResponseAndFlush(response);
+  });
+  const listed = await owned.run(() => {
+    return runReadsApi.requestListLogs(actor, { limit: 100 }, [200]);
+  });
+  expect(listed.body.pagination).toMatchObject({ hasMore: false });
+  const matchingRuns = listed.body.data.filter((run) => {
+    return run.prompt.includes(prompt);
+  });
+  expect(matchingRuns).toHaveLength(1);
+  const run = matchingRuns[0];
+  if (!run) {
+    throw new Error("Expected the publicly dispatched Teams Run");
+  }
+  await owned.run(() => {
+    return runsApi.heartbeatRunner(runnerGroup);
+  });
+  return await owned.claim(run.id);
+}
+
 describe("POST /api/webhooks/teams/bot", () => {
   beforeEach(() => {
     setupTeamsConnectTestEnv(APP_ORIGIN);
@@ -1037,6 +1344,79 @@ describe("POST /api/webhooks/teams/bot", () => {
     mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/test");
     context.mocks.axiom.query.mockResolvedValue([]);
     teamsOutboundHandlers(SERVICE_URL);
+  });
+
+  it("downloads an unsigned historical Teams attachment through its claimed Run", async () => {
+    const owned = claimedTeamsDownloadFixture();
+    const provider = historicalTeamsDownloadProvider(owned.fixture);
+    const claim = await claimHistoricalTeamsDownload(owned, provider);
+    const history = promptSection(
+      claim.appendSystemPrompt ?? "",
+      "# Microsoft Teams Thread Context",
+    );
+    expect(history).toContain(`[Teams file] ${provider.name} (text/plain)`);
+    expect(history).toContain(`[Teams attachment ID] ${provider.attachmentId}`);
+    const fileId = history.match(/\[ID\] (\S+)/u)?.[1];
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!fileId || !token) {
+      throw new Error(
+        "Expected a historical file ID and claim-issued Okou token",
+      );
+    }
+    expect(fileId).not.toContain(".");
+    const app = createAppWithRoutes({
+      signal: context.signal,
+      routes: integrationsTeamsDownloadFileRoutes,
+    });
+    const headers = { authorization: `Bearer ${token}` };
+    const path = "/api/integrations/teams/download-file";
+    const fetchBaseline = provider.requests.length;
+    await owned.run(async () => {
+      const response = await app.request(path, { headers });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toStrictEqual({
+        error: { message: "file_id is required", code: "BAD_REQUEST" },
+      });
+      expect(provider.requests).toHaveLength(fetchBaseline);
+    });
+    await owned.run(async () => {
+      const response = await app.request(
+        `${path}?file_id=${encodeURIComponent(fileId)}`,
+        { headers },
+      );
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("text/plain");
+      expect(response.headers.get("X-File-Mimetype")).toBe("text/plain");
+      expect(response.headers.get("X-File-Name")).toBe(
+        encodeURIComponent(provider.name),
+      );
+      expect(response.headers.get("X-Teams-Attachment-ID")).toBe(
+        encodeURIComponent(provider.attachmentId),
+      );
+      expect(response.headers.get("Content-Length")).toBe(
+        String(Buffer.byteLength(provider.contents)),
+      );
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(
+        Buffer.from(provider.contents),
+      );
+      expect(provider.requests.slice(fetchBaseline)).toStrictEqual([
+        provider.url,
+      ]);
+    });
+    await owned.run(async () => {
+      const unknown = `teams_file_unknown_${owned.fixture.fixtureId}`;
+      const response = await app.request(`${path}?file_id=${unknown}`, {
+        headers,
+      });
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toStrictEqual({
+        error: {
+          message: "Invalid Microsoft Teams file id",
+          code: "BAD_REQUEST",
+        },
+      });
+      expect(provider.requests).toHaveLength(fetchBaseline + 1);
+    });
   });
 
   it("rejects missing Teams authorization", async () => {
