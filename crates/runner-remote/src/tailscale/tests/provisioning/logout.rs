@@ -95,6 +95,9 @@ async fn logout_replies_are_bounded_private_and_never_replayed_or_allowed_to_blo
             .unwrap(),
         ),
         (hyper::StatusCode::OK, CANARY.as_bytes().to_vec()),
+        (hyper::StatusCode::OK, b"[]".to_vec()),
+        (hyper::StatusCode::OK, br#"["", ""]"#.to_vec()),
+        (hyper::StatusCode::OK, b"{} {}".to_vec()),
         (hyper::StatusCode::OK, vec![b' '; 64 * 1024 + 1]),
     ];
     for (status, body) in errors {

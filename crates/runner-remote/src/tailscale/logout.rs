@@ -3,7 +3,10 @@
 use std::time::Duration;
 
 use bytes::Bytes;
-use serde::Deserialize;
+use serde::{
+    Deserialize,
+    de::{MapAccess, Visitor, value::MapAccessDeserializer},
+};
 use ts_control_serde::RegisterRequest;
 use ts_http_util::{BytesBody, ClientExt, HeaderName, HeaderValue, Http2, ResponseExt};
 
@@ -70,7 +73,24 @@ impl Logout {
             #[serde(default, borrow, rename = "AuthURL")]
             auth_url: &'a str,
         }
-        let reply: Reply<'_> = serde_json::from_slice(&body).map_err(|_| Failure::DomainFailed)?;
+        // Serde's struct visitor also accepts arrays. Require the provider's
+        // object envelope before applying its optional outcome-field defaults.
+        struct ReplyObject;
+        impl<'de> Visitor<'de> for ReplyObject {
+            type Value = Reply<'de>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a Tailscale logout reply object")
+            }
+
+            fn visit_map<M: MapAccess<'de>>(self, map: M) -> Result<Self::Value, M::Error> {
+                Reply::deserialize(MapAccessDeserializer::new(map))
+            }
+        }
+        let mut parser = serde_json::Deserializer::from_slice(&body);
+        let reply = serde::Deserializer::deserialize_map(&mut parser, ReplyObject)
+            .map_err(|_| Failure::DomainFailed)?;
+        parser.end().map_err(|_| Failure::DomainFailed)?;
         if !reply.error.is_empty() || !reply.auth_url.is_empty() {
             return Err(Failure::DomainFailed);
         }
