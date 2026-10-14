@@ -636,10 +636,16 @@ TLS verification remains covered by the native auth-wait suites.
 If firewall policy already rejects an upload at headers, the addon terminates
 the flow before body consumption unless a valid Content-Length without
 Transfer-Encoding bounds it to the shared 64 KiB buffer cap or the transport
-marks the request end-stream. This applies
-with body capture both enabled and disabled. Bounded small bodies and finished
+marks the request end-stream. This applies with body capture both enabled and
+disabled. Bounded small bodies and finished
 bodyless requests retain their structured JSON 403; the request hook still
 revalidates their current policy before returning that denial.
+
+Only final body-independent firewall blocks terminate at headers. AWS form
+Action selectors mark a blocked match as requiring body input when that input
+is still unavailable, preserving normal buffered authorization. A declared
+body above the form-selector cap cannot become inspectable at EOF and remains
+eligible for early rejection.
 
 For unbounded denied uploads, the native transport closes the HTTP/1 connection
 or resets only the affected HTTP/2 stream before sending `100 Continue`. No

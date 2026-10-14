@@ -20,6 +20,7 @@ import aws_sigv4
 import connector_intent
 import connector_runtime_metadata
 import connector_template_syntax
+import content_length
 from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
 from firewall_matching import base_url as _firewall_base_url
 from firewall_matching import patterns as _firewall_patterns
@@ -183,6 +184,7 @@ _AwsPathSegmentIdentity = tuple[str, ...]
 class _AwsFormActionResult(NamedTuple):
     values: list[str]
     inspectable: bool
+    requires_body: bool = False
 
 
 class _CompiledPrefixTrieNode[T](NamedTuple):
@@ -1449,7 +1451,7 @@ FirewallBlockReason = Literal[
 
 
 class FirewallBlock(NamedTuple):
-    """Base URL matched but the request should return 403."""
+    """Base matched but permission failed; pending body input may change it."""
 
     base: str
     name: str
@@ -1457,6 +1459,7 @@ class FirewallBlock(NamedTuple):
     path: str
     permissions: tuple[str, ...]  # denied/asked permission names only
     reason: FirewallBlockReason
+    requires_body: bool = False  # unavailable form selectors may change the decision
 
 
 ConnectorRouteAmbiguityReason = Literal[
@@ -1755,9 +1758,25 @@ def _form_action_values(
     body: bytes | None,
 ) -> _AwsFormActionResult:
     if body is None:
-        if _has_header(headers, "transfer-encoding") or _content_length_may_have_body(headers):
+        transfer_encoded = _has_header(headers, "transfer-encoding")
+        parsed_length = content_length.parse(
+            [value for name, value in headers or () if name.lower() == "content-length"],
+            max_value=_AWS_FORM_BODY_MAX_BYTES,
+        )
+        if not transfer_encoded and parsed_length.kind == "over_limit":
+            # This selector rejects oversized forms after EOF too, so a
+            # declared over-cap body cannot change a header-time denial.
             return _AwsFormActionResult([], False)
-        return _AwsFormActionResult([], True)
+        content_type = _unique_header_value(headers, "content-type")
+        requires_body = (
+            content_type is not None
+            and content_type.split(";", maxsplit=1)[0].strip().lower()
+            == "application/x-www-form-urlencoded"
+            and (transfer_encoded or parsed_length.kind != "valid" or parsed_length.value > 0)
+        )
+        if transfer_encoded or _content_length_may_have_body(headers):
+            return _AwsFormActionResult([], False, requires_body=requires_body)
+        return _AwsFormActionResult([], True, requires_body=requires_body)
     if not body:
         if _content_length_may_have_body(headers):
             return _AwsFormActionResult([], False)
@@ -1790,9 +1809,12 @@ def _aws_query_action_matches(
     action: str,
     *,
     query_pairs: list[tuple[str, str]],
-    form_action_result: _AwsFormActionResult,
+    get_form_action_result: Callable[[], _AwsFormActionResult],
 ) -> bool:
     query_actions = _query_values(query_pairs, "Action")
+    if len(query_actions) > 1 or (query_actions and query_actions[0] != action):
+        return False
+    form_action_result = get_form_action_result()
     if not form_action_result.inspectable:
         return False
     form_actions = form_action_result.values
@@ -1800,7 +1822,7 @@ def _aws_query_action_matches(
         if form_actions and form_actions != query_actions:
             return False
         return query_actions[0] == action
-    if len(query_actions) > 1 or len(form_actions) != 1:
+    if len(form_actions) != 1:
         return False
     return form_actions[0] == action
 
@@ -1897,14 +1919,6 @@ def _aws_predicates_match(
         return False
 
     headers = context.headers if context is not None else None
-    action = predicates.get("action")
-    if action is not None and not _aws_query_action_matches(
-        action,
-        query_pairs=query_pairs,
-        form_action_result=get_form_action_result(),
-    ):
-        return False
-
     target = predicates.get("target")
     if target is not None and not _aws_target_matches(target, headers=headers):
         return False
@@ -1915,11 +1929,19 @@ def _aws_predicates_match(
     if is_s3 and _has_ambiguous_s3_permission_header(headers, rule.query_requirements):
         return False
 
-    return _aws_query_requirements_match(
+    if not _aws_query_requirements_match(
         rule.query_requirements,
         query_pairs=query_pairs,
         selector_keys=rule.aws_query_selector_keys,
         strict_extra_keys=is_s3,
+    ):
+        return False
+
+    action = predicates.get("action")
+    return action is None or _aws_query_action_matches(
+        action,
+        query_pairs=query_pairs,
+        get_form_action_result=get_form_action_result,
     )
 
 
@@ -2472,6 +2494,12 @@ def _match_compiled_firewall_request_with_api_candidates(
     )
     if is_asterisk_form and isinstance(result, FirewallAllow):
         return FirewallPolicyAllow(result)
+    if (
+        isinstance(result, FirewallBlock)
+        and isinstance(form_action_result, _AwsFormActionResult)
+        and form_action_result.requires_body
+    ):
+        return result._replace(requires_body=True)
     return result
 
 

@@ -783,6 +783,142 @@ async def test_aws_action_rule_uses_buffered_body_for_request_classification(
     assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
 
 
+@pytest.mark.parametrize("capture_body", [False, True])
+async def test_aws_action_rule_defers_header_denial_until_body_is_available(
+    tmp_path,
+    real_flow,
+    headers,
+    mitm_ctx,
+    capture_body: bool,
+) -> None:
+    registry_path = _write_aws_registry(
+        tmp_path,
+        capture_body=capture_body,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+    )
+    flow = _header_auth_flow(
+        real_flow,
+        headers,
+        body=None,
+        content_length=None,
+        content_type="application/x-www-form-urlencoded",
+        transfer_encoding="chunked",
+    )
+    get_headers = AsyncMock(return_value=_resolved_token_meta())
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+        assert flow.error is None
+        assert flow.response is None
+        get_headers.assert_not_called()
+
+        flow.request.raw_content = STS_FORM_BODY
+        await mitm_addon.request(flow)
+        assert flow.error is None
+        assert flow.response is None
+        assert flow.metadata[metadata_keys.FIREWALL_PERMISSION] == _AWS_PERMISSION
+        assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "ALLOW"
+        assert f"Credential={RESOLVED_AWS_ACCESS_KEY_ID}/" in flow.request.headers["authorization"]
+        assert flow.request.raw_content == STS_FORM_BODY
+
+        flow.response = http.Response.make(200, b"ok")
+        mitm_addon.response(flow)
+
+    get_headers.assert_awaited_once()
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+
+
+@pytest.mark.parametrize("capture_body", [False, True])
+def test_aws_action_rule_rejects_declared_over_cap_body_at_headers(
+    tmp_path,
+    real_flow,
+    headers,
+    mitm_ctx,
+    capture_body: bool,
+) -> None:
+    registry_path = _write_aws_registry(
+        tmp_path,
+        capture_body=capture_body,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+    )
+    flow = _header_auth_flow(
+        real_flow,
+        headers,
+        body=None,
+        content_length=str(STREAM_BUFFER_LIMIT + 1),
+        content_type="application/x-www-form-urlencoded",
+    )
+    get_headers = AsyncMock()
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+
+    assert flow.error is not None
+    assert flow.live is False
+    assert flow.request.raw_content is None
+    assert flow.response is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+    get_headers.assert_not_called()
+    assert aws_sigv4_body_admission.state_for_tests() == (0, 0)
+
+
+@pytest.mark.parametrize(
+    ("path", "content_type"),
+    [
+        ("/?Action=DescribeInstances", "application/x-www-form-urlencoded"),
+        (
+            "/?Action=GetCallerIdentity&Action=GetCallerIdentity",
+            "application/x-www-form-urlencoded",
+        ),
+        ("/", "text/plain"),
+    ],
+    ids=["different-query-action", "duplicate-query-action", "unsupported-form-type"],
+)
+@pytest.mark.parametrize("capture_body", [False, True])
+def test_aws_action_rule_independent_denial_terminates_without_body(
+    tmp_path,
+    real_flow,
+    headers,
+    mitm_ctx,
+    path: str,
+    content_type: str,
+    capture_body: bool,
+) -> None:
+    registry_path = _write_aws_registry(
+        tmp_path,
+        capture_body=capture_body,
+        rules=["POST / AWS sigv4=sts action=GetCallerIdentity"],
+    )
+    flow = _header_auth_flow(
+        real_flow,
+        headers,
+        body=None,
+        content_type=content_type,
+        transfer_encoding="chunked",
+    )
+    flow.request.path = path
+    get_headers = AsyncMock()
+
+    with (
+        mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
+        patch.object(auth, "get_firewall_headers", get_headers),
+    ):
+        assert mitm_addon.requestheaders(flow) is None
+
+    assert flow.error is not None
+    assert flow.live is False
+    assert flow.response is None
+    assert flow.request.raw_content is None
+    assert flow.metadata[metadata_keys.FIREWALL_ACTION] == "DENY"
+    get_headers.assert_not_called()
+
+
 async def test_aws_rule_rejects_unsupported_streaming_payload_before_auth(
     tmp_path,
     real_flow,

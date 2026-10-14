@@ -889,7 +889,11 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         flow.kill()
         return None
 
-    if classification.kind == "firewall_block" and request_end_stream is not True:
+    if (
+        classification.kind == "firewall_block"
+        and not classification.firewall_block.requires_body
+        and request_end_stream is not True
+    ):
         _start_request_timing(flow)
         _set_firewall_block_response(flow, classification.firewall_block, send_response=False)
         # A local response still waits for body EOF. Terminate before mitmproxy
