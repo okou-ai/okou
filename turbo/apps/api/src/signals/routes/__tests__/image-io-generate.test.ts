@@ -455,16 +455,40 @@ async function createClaimedImageRun(
       // The mock provider owns any unfinished accepted image. Settle it through
       // the exact callback URL emitted by the real submission, including on failure.
       const pendingWork = await settleIncludingAbort(flushWaitUntilForTest);
+      const terminalIds = new Set<string>();
+      for (const [eventName, payload] of context.mocks.ably.publish.mock
+        .calls) {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
+        ) {
+          continue;
+        }
+        const snapshot = builtInGenerationResponseSchema.safeParse(payload);
+        if (
+          snapshot.success &&
+          eventName === `built-in-generation:${snapshot.data.generationId}` &&
+          ["completed", "failed"].includes(snapshot.data.status)
+        ) {
+          terminalIds.add(snapshot.data.generationId);
+        }
+      }
       const results = await Promise.all(
-        [...providerRequests].map((requestUrl) => {
-          return settleIncludingAbort(() => {
-            return postFalWebhookEnvelope(
-              createImageIoTestApp(),
-              requestUrl,
-              providerCleanupBody,
-            );
-          });
-        }),
+        [...providerRequests]
+          .filter((requestUrl) => {
+            const callback = new URL(readWebhookUrl(requestUrl));
+            const generationId = callback.pathname.split("/").at(-1);
+            return !generationId || !terminalIds.has(generationId);
+          })
+          .map((requestUrl) => {
+            return settleIncludingAbort(() => {
+              return postFalWebhookEnvelope(
+                createImageIoTestApp(),
+                requestUrl,
+                providerCleanupBody,
+              );
+            });
+          }),
       );
       const flushed = await settleIncludingAbort(flushWaitUntilForTest);
       const errors = [pendingWork, ...results, flushed].flatMap((result) => {
@@ -1416,11 +1440,44 @@ describe("POST /api/image-io/generate", () => {
       };
       // The Pro fixture already verifies its sufficient starting balance.
       const generationIds = new Set<string>();
-      // Finish each three-request wave before the next, respecting the genuine
-      // concurrency limit. Drain callback work once for the whole owned wave.
-      for (let offset = 0; offset < 50; offset += 3) {
-        const results = await Promise.allSettled(
-          Array.from({ length: Math.min(3, 50 - offset) }, async () => {
+      const completionScope = new AbortController();
+      const completions = new Map<
+        string,
+        ReturnType<typeof createDeferredPromise<void>>
+      >();
+      // Release observers before the fixture owner drains timed-out work.
+      onTestFinished(() => {
+        completionScope.abort(new DOMException("Case finished", "AbortError"));
+      });
+      context.mocks.ably.publish.mockImplementation((eventName, payload) => {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
+        ) {
+          return Promise.resolve(undefined);
+        }
+        const completion = completions.get(
+          eventName.slice("built-in-generation:".length),
+        );
+        if (!completion || completion.settled()) {
+          return Promise.resolve(undefined);
+        }
+        const snapshot = builtInGenerationResponseSchema.parse(payload);
+        if (snapshot.status === "completed") {
+          completion.resolve();
+        } else if (snapshot.status === "failed") {
+          completion.reject(
+            new Error("Expected a successful image completion"),
+          );
+        }
+        return Promise.resolve(undefined);
+      });
+      // Three owned streams keep each released quota slot busy without waiting
+      // for the slowest sibling. Start its next request only after the actual
+      // public completion snapshot; at most three generations remain active.
+      const results = await Promise.allSettled(
+        Array.from({ length: 3 }, async (_, stream) => {
+          for (let index = stream; index < 50; index += 3) {
             const response = await app.request(path, request);
             expect(response.status).toBe(202);
             const generationId = readAcceptedGenerationId(
@@ -1430,20 +1487,29 @@ describe("POST /api/image-io/generate", () => {
             );
             expect(generationIds.has(generationId)).toBeFalsy();
             generationIds.add(generationId);
+            const completion = createDeferredPromise<void>(
+              completionScope.signal,
+            );
+            completions.set(generationId, completion);
+            const observed = settleIncludingAbort(completion.promise);
             await postFalWebhook(
               app,
               requestUrlsByGenerationId.get(generationId) ?? null,
               completionPayload,
             );
-          }),
-        );
-        for (const result of results) {
-          if (result.status === "rejected") {
-            throw result.reason;
+            const completed = await observed;
+            if (!completed.ok) {
+              throw completed.error;
+            }
           }
+        }),
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
         }
-        await flushWaitUntilForTest();
       }
+      await flushWaitUntilForTest();
       // Clients receive these same public result snapshots through realtime.
       // Validate every completion and charge without fifty repeated auth reads.
       const completedIds = new Set<string>();
