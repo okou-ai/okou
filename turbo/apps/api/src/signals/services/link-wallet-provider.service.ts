@@ -2,6 +2,12 @@ import { z } from "zod";
 
 import { env } from "../../lib/env";
 import {
+  callLinkWalletSdk,
+  LinkWalletSdkResponseError,
+  type LinkWalletSdkRequest,
+  type LinkWalletSpendRequest,
+} from "../external/link-wallet-client";
+import {
   readBoundedResponseText,
   safeJsonParse,
   settleIncludingAbort,
@@ -11,7 +17,6 @@ import {
   linkFailureDiagnostic,
   linkSuccessDiagnostic,
   linkDiagnosticMessage,
-  type LinkOperation,
   type LinkRequestDiagnostic,
 } from "./link-wallet-diagnostics";
 import { walletSpendStatusSchema } from "@okouai/api-contracts/contracts/wallet";
@@ -122,7 +127,7 @@ interface LinkResponse {
 }
 
 async function linkFetch(
-  url: string,
+  url: Parameters<typeof globalThis.fetch>[0],
   options: RequestInit,
   diagnostic: LinkRequestDiagnostic,
   signal: AbortSignal,
@@ -170,6 +175,7 @@ async function readLinkResponse(link: LinkResponse, signal: AbortSignal) {
       : undefined;
   return {
     body,
+    text: read.ok && read.value.kind === "text" ? read.value.text : undefined,
     providerText:
       !link.response.ok &&
       link.response.headers.get("content-type")?.split(";")[0]?.trim() ===
@@ -195,7 +201,10 @@ function invalidResponse(
   details: {
     stage: "response_body" | "response_schema" | "scope" | "action_url";
     responseBodyRead?: string;
-    issues?: readonly z.core.$ZodIssue[];
+    issues?: readonly {
+      readonly path: readonly PropertyKey[];
+      readonly code: string;
+    }[];
     transportError?: unknown;
   },
 ) {
@@ -216,6 +225,13 @@ async function responseJson(
   signal: AbortSignal,
 ): Promise<unknown> {
   const read = await readLinkResponse(link, signal);
+  return validateLinkResponse(link, read);
+}
+
+function validateLinkResponse(
+  link: LinkResponse,
+  read: Awaited<ReturnType<typeof readLinkResponse>>,
+): unknown {
   if (!link.response.ok) {
     const diagnostic = linkFailureDiagnostic(link.diagnostic, {
       stage: "http",
@@ -387,21 +403,11 @@ function validateSpend(link: LinkResponse, value: unknown): LinkSpend {
 
 export async function linkSpendRequest(
   token: string,
-  request: {
-    readonly path: string;
-    readonly method: "GET" | "POST";
-    readonly body?: Record<string, unknown>;
-    readonly intentId: string;
-  },
+  request: LinkWalletSpendRequest & { readonly intentId: string },
   signal: AbortSignal,
 ): Promise<LinkSpend> {
-  const { path, method, body, intentId } = request;
-  const operation: LinkOperation =
-    path === ""
-      ? "spend_create"
-      : method === "GET"
-        ? "spend_read"
-        : "spend_cancel";
+  const { operation, intentId } = request;
+  const body = operation === "spend_create" ? request.body : undefined;
   const diagnostic = linkRequestDiagnostic(
     operation,
     [
@@ -426,26 +432,17 @@ export async function linkSpendRequest(
           currency: z.literal("usd").parse(body.currency),
           test: z.boolean().parse(body.test),
           contextLength: z.string().parse(body.context).length,
-          expiresAt: z.number().parse(body.expires_at),
         }
       : undefined,
   );
-  const link = await linkFetch(
-    `https://api.link.com/spend_requests${path}`,
-    {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    },
+  const { link, read, result } = await linkSdkRequest(
+    token,
+    request,
     diagnostic,
     signal,
   );
-  if (link.response.status === 409 && method === "POST" && path === "") {
+  if (link.response.status === 409 && operation === "spend_create") {
     // Recover only the same provider intent; never silently create another.
-    const read = await readLinkResponse(link, signal);
     const duplicate = z
       .object({ error: z.object({ duplicate_spend_request: linkSpendSchema }) })
       .safeParse(read.body);
@@ -464,7 +461,61 @@ export async function linkSpendRequest(
       `The existing purchase intent could not be recovered; do not create a replacement purchase ${linkDiagnosticMessage(failure)}`,
     );
   }
-  return validateSpend(link, await responseJson(link, signal));
+  return validateSpend(link, sdkResponseValue(link, read, result));
+}
+
+async function linkSdkRequest(
+  token: string,
+  request: LinkWalletSdkRequest,
+  diagnostic: LinkRequestDiagnostic,
+  signal: AbortSignal,
+) {
+  const captured: {
+    response?: {
+      link: LinkResponse;
+      read: Awaited<ReturnType<typeof readLinkResponse>>;
+    };
+  } = {};
+  const result = await settleIncludingAbort(
+    callLinkWalletSdk(token, request, async (input, options) => {
+      const link = await linkFetch(input, options ?? {}, diagnostic, signal);
+      const read = await readLinkResponse(link, signal);
+      captured.response = { link, read };
+      // Bound the body before the SDK consumes it, retaining the original
+      // headers and parsing outcome for the existing redacted diagnostics.
+      return new Response(read.text || null, {
+        status: link.response.status,
+        statusText: link.response.statusText,
+        headers: link.response.headers,
+      });
+    }),
+  );
+  signal.throwIfAborted();
+  if (!captured.response) {
+    if (!result.ok) {
+      throw result.error;
+    }
+    throw new Error("Link SDK completed without a provider response");
+  }
+  return { ...captured.response, result };
+}
+
+function sdkResponseValue(
+  link: LinkResponse,
+  read: Awaited<ReturnType<typeof readLinkResponse>>,
+  result: Awaited<ReturnType<typeof linkSdkRequest>>["result"],
+): unknown {
+  validateLinkResponse(link, read);
+  if (!result.ok) {
+    if (result.error instanceof LinkWalletSdkResponseError) {
+      throw invalidResponse(link, "Link returned an invalid SDK response", {
+        stage: "response_schema",
+        issues: result.error.issues,
+      });
+    }
+    throw result.error;
+  }
+  return result.value;
 }
 
 export async function requestLinkApproval(
@@ -478,29 +529,26 @@ export async function requestLinkApproval(
     [token, id],
     intentId,
   );
-  const link = await linkFetch(
-    `https://api.link.com/spend_requests/${encodeURIComponent(id)}/request_approval`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-    },
+  const { link, read, result } = await linkSdkRequest(
+    token,
+    { operation: "spend_approval", id },
     diagnostic,
     signal,
   );
   const parsed = z
-    .object({ id: z.literal(id), approval_link: z.string() })
-    .safeParse(await responseJson(link, signal));
+    .object({ id: z.literal(id), approval_url: z.string() })
+    .safeParse(sdkResponseValue(link, read, result));
   if (!parsed.success) {
     throw invalidResponse(link, "Link returned an invalid approval response", {
       stage: "response_schema",
       issues: parsed.error.issues,
     });
   }
-  if (!isLinkActionUrl(parsed.data.approval_link)) {
+  if (!isLinkActionUrl(parsed.data.approval_url)) {
     throw invalidResponse(link, "Link returned an invalid action URL", {
       stage: "action_url",
     });
   }
   linkSuccessDiagnostic(diagnostic, link.response);
-  return parsed.data.approval_link;
+  return parsed.data.approval_url;
 }
