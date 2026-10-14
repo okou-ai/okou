@@ -1,11 +1,19 @@
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { HttpResponse } from "msw";
+import {
+  walletUserContract,
+  type WalletConnectStatus,
+} from "@okouai/api-contracts/contracts/wallet";
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
@@ -13,6 +21,11 @@ const CONNECT_URL =
   "https://login.link.com/auth?key=pk_test_fixture&client_id=fixture&redirect_uri=https%3A%2F%2Fapp.okou.ai%2Fconnectors%2Flink%2Fcallback&response_type=code&scope=payment_methods.agentic&state=exact%2Bstate&code_challenge=challenge&code_challenge_method=S256";
 const APPROVAL_URL =
   "https://app.link.com/activity/approve/lsrq_fixture?key=exact%2Fkey&token=one+two&token=three#review";
+const OAUTH_STATE = "wallet-authorization-state-fixture-01234567890123456789";
+const TRACKED_CONNECT_URL = CONNECT_URL.replace("exact%2Bstate", OAUTH_STATE);
+const AUTHORIZATION_ID = "10000000-0000-4000-a000-000000000001";
+const CONTINUATION_PROMPT =
+  "Link wallet authorization is complete. Continue the previous task.";
 
 function actionLinks() {
   return queryAllByRoleFast("link").filter((link) => {
@@ -21,6 +34,21 @@ function actionLinks() {
       "Review purchase",
       "Continue in Link",
     ].includes(link.getAttribute("aria-label") ?? "");
+  });
+}
+
+async function findControl(role: "button" | "link", name: string) {
+  return await waitFor(() => {
+    const control = queryAllByRoleFast(role).find((element) => {
+      return (
+        (element.getAttribute("aria-label") ?? element.textContent?.trim()) ===
+        name
+      );
+    });
+    if (!control) {
+      throw new Error(`Expected ${role}: ${name}`);
+    }
+    return control;
   });
 }
 
@@ -36,6 +64,135 @@ async function openChat(content: string) {
   });
   await setupPage({ context, path: chat.path, host: "app.okou.ai" });
 }
+
+function mockAuthorization(
+  initial: WalletConnectStatus = { status: "pending" },
+) {
+  context.mocks.http.get("https://login.link.com/auth", () => {
+    return HttpResponse.html("<p>Link authorization</p>");
+  });
+  let status = initial;
+  const read = createDeferredPromise<void>(context.signal);
+  context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
+    expect(body).toStrictEqual({
+      agentId: "c0000000-0000-4000-a000-000000000071",
+      state: OAUTH_STATE,
+    });
+    if (!read.settled()) {
+      read.resolve();
+    }
+    return respond(200, status);
+  });
+  return {
+    read: read.promise,
+    complete: () => {
+      status = { status: "authorized", authorizationId: AUTHORIZATION_ID };
+    },
+  };
+}
+
+test("a wallet consent updates its card and automatically continues the owning chat once", async () => {
+  const authorization = mockAuthorization();
+  const prompts: string[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000071");
+    expect(body.threadId).toBe(context.resourceId);
+    expect(body.clientEventId).toBe(AUTHORIZATION_ID);
+    expect(body.userMessage).toStrictEqual({
+      version: 1,
+      parts: [{ type: "text", text: CONTINUATION_PROMPT }],
+    });
+    prompts.push(body.prompt ?? "");
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: context.resourceId,
+    });
+  });
+  await openChat(TRACKED_CONNECT_URL);
+  await authorization.read;
+  const link = await findControl("link", "Authorize Link wallet");
+  expect(link).toHaveAttribute("href", TRACKED_CONNECT_URL);
+  expect(prompts).toStrictEqual([]);
+  click(link);
+  await screen.findByText("Waiting for authorization");
+  authorization.complete();
+  const completed = await findControl("button", "Authorized");
+  expect(completed).toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
+
+test("retrying a wallet continuation preserves the accepted event identity", async () => {
+  const authorization = mockAuthorization();
+  const sentIds: (string | undefined)[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    sentIds.push(body.clientEventId);
+    if (sentIds.length === 1) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Response lost" },
+      });
+    }
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: context.resourceId,
+    });
+  });
+  await openChat(TRACKED_CONNECT_URL);
+  await authorization.read;
+  const link = await findControl("link", "Authorize Link wallet");
+  click(link);
+  authorization.complete();
+  await screen.findByText(
+    "Authorized. Continue to retry sending your message.",
+  );
+  const retry = await findControl("button", "Continue");
+  click(retry);
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(sentIds).toStrictEqual([AUTHORIZATION_ID, AUTHORIZATION_ID]);
+});
+
+test("an already authorized wallet card waits for an explicit continuation", async () => {
+  mockAuthorization({
+    status: "authorized",
+    authorizationId: AUTHORIZATION_ID,
+  });
+  const prompts: string[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    prompts.push(body.prompt ?? "");
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: context.resourceId,
+    });
+  });
+  await openChat(TRACKED_CONNECT_URL);
+  const next = await findControl("button", "Continue");
+  expect(prompts).toStrictEqual([]);
+  click(next);
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
+
+test.each([
+  ["expired", "Authorization expired"],
+  ["failed", "Authorization not completed"],
+  ["unavailable", "Authorization unavailable"],
+] as const)(
+  "a %s authorization cannot continue the chat",
+  async (status, label) => {
+    mockAuthorization({ status });
+    const prompts: string[] = [];
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      prompts.push(body.prompt ?? "");
+      return respond(201, {
+        runId: crypto.randomUUID(),
+        threadId: context.resourceId,
+      });
+    });
+    await openChat(TRACKED_CONNECT_URL);
+    await expect(findControl("button", label)).resolves.toBeDisabled();
+    expect(actionLinks()).toHaveLength(0);
+    expect(prompts).toStrictEqual([]);
+  },
+);
 
 test("wallet authorization and purchase links show cards with the exact provider destinations", async () => {
   await openChat(

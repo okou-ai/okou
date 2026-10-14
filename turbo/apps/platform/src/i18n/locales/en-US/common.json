@@ -2835,10 +2835,18 @@
     "walletAction": {
       "approveButton": "Review",
       "approveTitle": "Review purchase",
+      "authorized": "Authorized",
+      "callbackFailed": "Authorized. Continue to retry sending your message.",
+      "callbackPrompt": "Link wallet authorization is complete. Continue the previous task.",
+      "checkFailed": "Unable to check authorization. Try again.",
       "connectButton": "Authorize",
       "connectTitle": "Authorize Link wallet",
       "continueButton": "Continue",
-      "continueTitle": "Continue in Link"
+      "continueTitle": "Continue in Link",
+      "expired": "Authorization expired",
+      "failed": "Authorization not completed",
+      "unavailable": "Authorization unavailable",
+      "waiting": "Waiting for authorization"
     },
     "workflows": {
       "named": "Workflow {{title}}",

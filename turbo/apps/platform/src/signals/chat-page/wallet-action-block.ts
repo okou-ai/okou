@@ -1,3 +1,14 @@
+import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
+import { command, computed, state } from "ccstate";
+
+import { i18n } from "../../i18n/index.ts";
+import { accept } from "../../lib/accept.ts";
+import { apiClient$ } from "../api-client.ts";
+import { onRejection, waitLoopUntil, withCleanup } from "../utils.ts";
+import { runChatActionCallback$ } from "./action-callback.ts";
+import { createCardSignalsRegistry } from "./card-signal-map.ts";
+import type { ChatActionContext } from "./chat-action-context.ts";
+
 export interface WalletActionDescriptor {
   readonly action: "connect" | "approve" | "continue";
   readonly hostname: string;
@@ -42,4 +53,112 @@ export function parseWalletActionUrl(
   }
 
   return { action, hostname: url.hostname, originalUrl };
+}
+
+function createWalletConnectSignals(
+  oauthState: string,
+  context: ChatActionContext,
+) {
+  const reload$ = state(0);
+  const busy$ = state(false);
+  const continued$ = state(false);
+  const callbackFailed$ = state(false);
+  const status$ = computed(async (get) => {
+    get(reload$);
+    const result = await accept(
+      get(apiClient$)(walletUserContract).connectStatus({
+        body: { agentId: context.agentId, state: oauthState },
+      }),
+      [200, 403],
+    );
+    return result.status === 200
+      ? result.body
+      : { status: "unavailable" as const };
+  });
+  const start$ = command(async ({ get, set }, signal: AbortSignal) => {
+    if (get(busy$) || get(continued$)) {
+      return;
+    }
+    set(busy$, true);
+    set(callbackFailed$, false);
+    await withCleanup(
+      (async () => {
+        await waitLoopUntil(
+          async () => {
+            set(reload$, (version) => {
+              return version + 1;
+            });
+            const status = await get(status$);
+            signal.throwIfAborted();
+            return status.status !== "pending";
+          },
+          2000,
+          signal,
+          { retryTransientErrors: true, logTransientErrors: false },
+        );
+        const status = await get(status$);
+        signal.throwIfAborted();
+        if (status.status !== "authorized") {
+          return;
+        }
+        await onRejection(
+          set(
+            runChatActionCallback$,
+            {
+              ...context,
+              callbackPrompt: i18n.t(($) => {
+                return $.chat.walletAction.callbackPrompt;
+              }),
+              // The authorization identifies this continuation in both event
+              // tables, so retries and other tabs cannot create another run.
+              callbackIds: {
+                clientEventId: status.authorizationId,
+                chatThreadSortEventId: status.authorizationId,
+              },
+            },
+            signal,
+          ),
+          () => {
+            set(callbackFailed$, true);
+          },
+        );
+        signal.throwIfAborted();
+        set(continued$, true);
+      })(),
+      () => {
+        set(busy$, false);
+      },
+    );
+  });
+  return { status$, busy$, continued$, callbackFailed$, start$ };
+}
+
+export type WalletConnectSignals = ReturnType<
+  typeof createWalletConnectSignals
+>;
+export type WalletActionSignals = WalletActionDescriptor & {
+  readonly connect: WalletConnectSignals | null;
+};
+
+export function createWalletCardSignalsRegistry(context: ChatActionContext) {
+  return createCardSignalsRegistry(
+    (descriptor: WalletActionDescriptor) => {
+      return descriptor.originalUrl;
+    },
+    (descriptor): WalletActionSignals => {
+      const oauthState = new URL(descriptor.originalUrl).searchParams.get(
+        "state",
+      );
+      return {
+        ...descriptor,
+        connect:
+          descriptor.action === "connect" &&
+          oauthState &&
+          oauthState.length >= 43 &&
+          oauthState.length <= 128
+            ? createWalletConnectSignals(oauthState, context)
+            : null,
+      };
+    },
+  );
 }

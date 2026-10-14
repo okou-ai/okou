@@ -2823,10 +2823,18 @@
     "walletAction": {
       "approveButton": "審核",
       "approveTitle": "審核購買",
+      "authorized": "已授權",
+      "callbackFailed": "已授權，點擊「繼續」重試傳送訊息。",
+      "callbackPrompt": "Link 錢包授權已完成，請繼續先前的任務。",
+      "checkFailed": "無法檢查授權狀態，請重試。",
       "connectButton": "授權",
       "connectTitle": "授權 Link 錢包",
       "continueButton": "繼續",
-      "continueTitle": "繼續 Link 錢包操作"
+      "continueTitle": "繼續 Link 錢包操作",
+      "expired": "授權已過期",
+      "failed": "授權未完成",
+      "unavailable": "授權無法使用",
+      "waiting": "等待授權"
     },
     "workflows": {
       "named": "工作流 {{title}}",

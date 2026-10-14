@@ -2884,10 +2884,18 @@
     "walletAction": {
       "approveButton": "Verifica",
       "approveTitle": "Verifica acquisto",
+      "authorized": "Autorizzato",
+      "callbackFailed": "Autorizzato. Seleziona Continua per riprovare a inviare il messaggio.",
+      "callbackPrompt": "Il wallet Link è stato autorizzato. Continua l’attività precedente.",
+      "checkFailed": "Impossibile verificare l’autorizzazione. Riprova.",
       "connectButton": "Autorizza",
       "connectTitle": "Autorizza il wallet Link",
       "continueButton": "Continua",
-      "continueTitle": "Continua su Link"
+      "continueTitle": "Continua su Link",
+      "expired": "Autorizzazione scaduta",
+      "failed": "Autorizzazione non completata",
+      "unavailable": "Autorizzazione non disponibile",
+      "waiting": "In attesa di autorizzazione"
     },
     "workflows": {
       "named": "Flusso di lavoro {{title}}",

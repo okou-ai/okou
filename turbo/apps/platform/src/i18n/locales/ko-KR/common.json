@@ -2823,10 +2823,18 @@
     "walletAction": {
       "approveButton": "검토",
       "approveTitle": "구매 검토",
+      "authorized": "승인됨",
+      "callbackFailed": "승인되었습니다. 계속을 눌러 메시지 전송을 다시 시도하세요.",
+      "callbackPrompt": "Link 지갑 승인이 완료되었습니다. 이전 작업을 계속하세요.",
+      "checkFailed": "승인 상태를 확인할 수 없습니다. 다시 시도하세요.",
       "connectButton": "승인",
       "connectTitle": "Link 지갑 승인",
       "continueButton": "계속",
-      "continueTitle": "Link에서 계속"
+      "continueTitle": "Link에서 계속",
+      "expired": "승인 만료",
+      "failed": "승인 미완료",
+      "unavailable": "승인 사용 불가",
+      "waiting": "승인 대기 중"
     },
     "workflows": {
       "named": "워크플로 {{title}}",

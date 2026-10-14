@@ -2823,10 +2823,18 @@
     "walletAction": {
       "approveButton": "Tinjau",
       "approveTitle": "Tinjau pembelian",
+      "authorized": "Diizinkan",
+      "callbackFailed": "Sudah diizinkan. Pilih Lanjutkan untuk mencoba mengirim pesan lagi.",
+      "callbackPrompt": "Otorisasi dompet Link selesai. Lanjutkan tugas sebelumnya.",
+      "checkFailed": "Tidak dapat memeriksa otorisasi. Coba lagi.",
       "connectButton": "Izinkan",
       "connectTitle": "Izinkan dompet Link",
       "continueButton": "Lanjutkan",
-      "continueTitle": "Lanjutkan di Link"
+      "continueTitle": "Lanjutkan di Link",
+      "expired": "Otorisasi kedaluwarsa",
+      "failed": "Otorisasi belum selesai",
+      "unavailable": "Otorisasi tidak tersedia",
+      "waiting": "Menunggu otorisasi"
     },
     "workflows": {
       "named": "Alur kerja {{title}}",

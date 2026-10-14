@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   walletCallbackContract,
   walletContract,
+  walletUserContract,
   type WalletCreateSpend,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -29,6 +30,9 @@ const mocks = createRouteMocks(context);
 const sessionHeaders = Object.freeze({ authorization: "Bearer clerk-session" });
 const client = () => {
   return setupApp({ context, routes: walletRoutes })(walletContract);
+};
+const userClient = () => {
+  return setupApp({ context, routes: walletRoutes })(walletUserContract);
 };
 const callbackClient = () => {
   return setupApp({
@@ -209,6 +213,13 @@ test("is unavailable with a flag-off token and rejects a previously issued token
     }),
   ).toStrictEqual([]);
   await accept(client().status({ headers: off.headers }), [403]);
+  await accept(
+    userClient().connectStatus({
+      headers: sessionHeaders,
+      body: { agentId: off.agentId, state: "unknown-wallet-state".repeat(3) },
+    }),
+    [403],
+  );
   const active = await carrier();
   expect(active.prompt).toContain("okou wallet guide");
   expect(active.prompt).toContain(
@@ -245,6 +256,31 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   );
   expect(started.body.url).not.toContain("wallet-secret-fixture");
   const state = url.searchParams.get("state") ?? "";
+  const statusRequest = {
+    headers: sessionHeaders,
+    body: { agentId: fixture.agentId, state },
+  };
+  expect(
+    (await accept(userClient().connectStatus(statusRequest), [200])).body,
+  ).toStrictEqual({ status: "pending" });
+  expect(
+    (
+      await accept(
+        userClient().connectStatus({
+          ...statusRequest,
+          body: { ...statusRequest.body, agentId: randomUUID() },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ status: "unavailable" });
+  await accept(
+    userClient().connectStatus({
+      ...statusRequest,
+      headers: fixture.headers,
+    }),
+    [403],
+  );
   server.use(
     http.post("https://login.link.com/auth/token", async ({ request }) => {
       const body = new URLSearchParams(await request.text());
@@ -270,6 +306,9 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
     { userId: other.userId, orgId: other.orgId },
     { [FeatureSwitchKey.LinkWallet]: true },
   );
+  expect(
+    (await accept(userClient().connectStatus(statusRequest), [200])).body,
+  ).toStrictEqual({ status: "unavailable" });
   await accept(
     callbackClient().callback({
       headers: sessionHeaders,
@@ -288,6 +327,17 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   );
   expect(callback.body).toStrictEqual({ status: "success", username: null });
   expect(verifierMatches).toBeTruthy();
+  const authorized = await accept(
+    userClient().connectStatus(statusRequest),
+    [200],
+  );
+  expect(authorized.body).toStrictEqual({
+    status: "authorized",
+    authorizationId: expect.any(String),
+  });
+  expect(
+    (await accept(userClient().connectStatus(statusRequest), [200])).body,
+  ).toStrictEqual(authorized.body);
   await accept(
     callbackClient().callback({
       headers: sessionHeaders,
@@ -321,6 +371,17 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
     }),
     [403],
   );
+  expect(
+    (
+      await accept(
+        userClient().connectStatus({
+          headers: sessionHeaders,
+          body: { agentId: fixture.agentId, state },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ status: "failed" });
   const declined = await accept(
     client().connect({ headers: fixture.headers, body: {} }),
     [200],
@@ -335,11 +396,36 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
     [200],
   );
   expect(denial.body.status).toBe("error");
+  expect(
+    (
+      await accept(
+        userClient().connectStatus({
+          headers: sessionHeaders,
+          body: { agentId: fixture.agentId, state: declinedState },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ status: "failed" });
   const expired = await accept(
     client().connect({ headers: fixture.headers, body: {} }),
     [200],
   );
   mockNow(new Date(expired.body.expiresAt).getTime());
+  expect(
+    (
+      await accept(
+        userClient().connectStatus({
+          headers: sessionHeaders,
+          body: {
+            agentId: fixture.agentId,
+            state: new URL(expired.body.url).searchParams.get("state") ?? "",
+          },
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual({ status: "expired" });
   await accept(
     callbackClient().callback({
       headers: sessionHeaders,
@@ -350,6 +436,61 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
     }),
     [400],
   );
+});
+
+test("tracks the exact wallet consent instead of an older grant, including replacement and revocation", async () => {
+  const fixture = await carrier();
+  server.use(
+    tokenHandler(),
+    http.post("https://login.link.com/auth/revoke", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  const first = await connect(fixture);
+  const readStatus = async (state: string) => {
+    return (
+      await accept(
+        userClient().connectStatus({
+          headers: sessionHeaders,
+          body: { agentId: fixture.agentId, state },
+        }),
+        [200],
+      )
+    ).body;
+  };
+  await expect(readStatus(first.state)).resolves.toStrictEqual({
+    status: "authorized",
+    authorizationId: expect.any(String),
+  });
+  const second = await accept(
+    client().connect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  const secondState = new URL(second.body.url).searchParams.get("state") ?? "";
+  await expect(readStatus(secondState)).resolves.toStrictEqual({
+    status: "pending",
+  });
+  await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: { state: secondState, code: "new-wallet-code" },
+    }),
+    [200],
+  );
+  await expect(readStatus(first.state)).resolves.toStrictEqual({
+    status: "unavailable",
+  });
+  await expect(readStatus(secondState)).resolves.toStrictEqual({
+    status: "authorized",
+    authorizationId: expect.any(String),
+  });
+  await accept(
+    client().disconnect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  await expect(readStatus(secondState)).resolves.toStrictEqual({
+    status: "unavailable",
+  });
 });
 
 test("deduplicates immutable intent details, returns the exact approval URL, and never exposes credentials", async () => {

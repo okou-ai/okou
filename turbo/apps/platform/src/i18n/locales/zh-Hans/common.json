@@ -2823,10 +2823,18 @@
     "walletAction": {
       "approveButton": "审核",
       "approveTitle": "审核购买",
+      "authorized": "已授权",
+      "callbackFailed": "已授权，点击“继续”重试发送消息。",
+      "callbackPrompt": "Link 钱包授权已完成，请继续之前的任务。",
+      "checkFailed": "无法检查授权状态，请重试。",
       "connectButton": "授权",
       "connectTitle": "授权 Link 钱包",
       "continueButton": "继续",
-      "continueTitle": "继续 Link 钱包操作"
+      "continueTitle": "继续 Link 钱包操作",
+      "expired": "授权已过期",
+      "failed": "授权未完成",
+      "unavailable": "授权不可用",
+      "waiting": "等待授权"
     },
     "workflows": {
       "named": "工作流 {{title}}",

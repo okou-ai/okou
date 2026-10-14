@@ -2884,10 +2884,18 @@
     "walletAction": {
       "approveButton": "Revisar",
       "approveTitle": "Revisar compra",
+      "authorized": "Autorizado",
+      "callbackFailed": "Autorizado. Selecione Continuar para tentar enviar sua mensagem novamente.",
+      "callbackPrompt": "A autorização da carteira Link foi concluída. Continue a tarefa anterior.",
+      "checkFailed": "Não foi possível verificar a autorização. Tente novamente.",
       "connectButton": "Autorizar",
       "connectTitle": "Autorizar carteira Link",
       "continueButton": "Continuar",
-      "continueTitle": "Continuar no Link"
+      "continueTitle": "Continuar no Link",
+      "expired": "Autorização expirada",
+      "failed": "Autorização não concluída",
+      "unavailable": "Autorização indisponível",
+      "waiting": "Aguardando autorização"
     },
     "workflows": {
       "named": "Fluxo de trabalho {{title}}",

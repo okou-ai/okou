@@ -12,9 +12,11 @@ successful payment or order.
 
 1. Run okou wallet status --json. If disconnected, run okou wallet connect
    --json, share the exact returned Link URL, and end the turn. The user must
-   personally authorize on Link and return to the chat. A registered client ID
-   is not the user's permission. OAuth consent authorizes this user's wallet
-   for this agent only; it does not approve purchases.
+   personally authorize on Link. When opened from the chat's authorization
+   card, successful consent updates the card and automatically continues the
+   conversation; do not ask the user to send a completion message. A registered
+   client ID is not the user's permission. OAuth consent authorizes this user's
+   wallet for this agent only; it does not approve purchases.
 2. Establish the specific item, merchant, final total including tax/shipping,
    USD currency, and the user's budget. Do not assume a budget or approve on the
    user's behalf. Generate one UUID purchase intent and retain it across retries.

@@ -2835,10 +2835,18 @@
     "walletAction": {
       "approveButton": "समीक्षा करें",
       "approveTitle": "खरीद की समीक्षा करें",
+      "authorized": "अधिकृत",
+      "callbackFailed": "अधिकृत हो गया। संदेश फिर से भेजने के लिए जारी रखें चुनें।",
+      "callbackPrompt": "Link वॉलेट का प्राधिकरण पूरा हो गया है। पिछला कार्य जारी रखें।",
+      "checkFailed": "प्राधिकरण की जाँच नहीं हो सकी। फिर से प्रयास करें।",
       "connectButton": "अधिकृत करें",
       "connectTitle": "Link वॉलेट अधिकृत करें",
       "continueButton": "जारी रखें",
-      "continueTitle": "Link में जारी रखें"
+      "continueTitle": "Link में जारी रखें",
+      "expired": "प्राधिकरण की समय-सीमा समाप्त",
+      "failed": "प्राधिकरण अधूरा है",
+      "unavailable": "प्राधिकरण उपलब्ध नहीं है",
+      "waiting": "प्राधिकरण की प्रतीक्षा है"
     },
     "workflows": {
       "named": "वर्कफ़्लो {{title}}",
