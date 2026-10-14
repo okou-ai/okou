@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.391.0](https://github.com/okou-ai/okou/compare/cli-v9.390.0...cli-v9.391.0) (2026-10-14)
+
+
+### Features
+
+* **discord:** add server installation links ([#40009](https://github.com/okou-ai/okou/issues/40009)) ([6102c18](https://github.com/okou-ai/okou/commit/6102c18ebee5885a15cad8cc0a48b48371223249))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.560.0
+    * @okouai/core bumped to 8.755.0
+    * @okouai/pi-agent-runtime bumped to 1.49.34
+
 ## [9.390.0](https://github.com/okou-ai/okou/compare/cli-v9.389.4...cli-v9.390.0) (2026-10-14)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.231.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.9...runner-rs-v0.231.10) (2026-10-14)
+
+
+### Performance Improvements
+
+* **runner:** bound permitted upload body buffering ([#40023](https://github.com/okou-ai/okou/issues/40023)) ([16bded4](https://github.com/okou-ai/okou/commit/16bded4879ba82f2e4e66730b6f31bcdde370395))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.8...runner-rs-v0.231.9) (2026-10-14)
 
 

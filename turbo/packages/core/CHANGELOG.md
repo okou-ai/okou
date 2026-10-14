@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.755.0](https://github.com/okou-ai/okou/compare/core-v8.754.0...core-v8.755.0) (2026-10-14)
+
+
+### Features
+
+* **core:** enable agent suggestions for staff organizations ([#40020](https://github.com/okou-ai/okou/issues/40020)) ([8f9c3da](https://github.com/okou-ai/okou/commit/8f9c3da31b7745ebf99d2285963bed426220edae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.0
+
 ## [8.754.0](https://github.com/okou-ai/okou/compare/core-v8.753.2...core-v8.754.0) (2026-10-14)
 
 

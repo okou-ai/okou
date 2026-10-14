@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.15.0...runner-remote-v0.16.0) (2026-10-14)
+
+
+### Features
+
+* show vnc failures and fence ssh and vnc diagnostics ([#39851](https://github.com/okou-ai/okou/issues/39851)) ([928d548](https://github.com/okou-ai/okou/commit/928d5485ce17f1fae3727a6dfb6b6432c2f5e46d))
+
 ## [0.15.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.14...runner-remote-v0.15.0) (2026-10-14)
 
 
