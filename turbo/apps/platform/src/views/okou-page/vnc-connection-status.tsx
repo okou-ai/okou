@@ -1,9 +1,13 @@
-import { useLoadable, useLastLoadable } from "ccstate-react";
+import { useGet, useLoadable, useLastLoadable } from "ccstate-react";
 import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { VncConnectionObservation } from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import { currentLocale } from "../../i18n/index.ts";
-import { vncIdentity$, vncObservationsSnapshot$ } from "../../signals/vnc.ts";
+import {
+  vncIdentity$,
+  vncObservationConfigurationRevision$,
+  vncObservationsSnapshot$,
+} from "../../signals/vnc.ts";
 
 function useVncObservations():
   | {
@@ -14,6 +18,7 @@ function useVncObservations():
   const identity = useLoadable(vncIdentity$);
   const current = useLoadable(vncObservationsSnapshot$);
   const retained = useLastLoadable(vncObservationsSnapshot$);
+  const configurationRevision = useGet(vncObservationConfigurationRevision$);
   if (identity.state !== "hasData" || identity.data === null) {
     return { kind: "loading" };
   }
@@ -22,7 +27,8 @@ function useVncObservations():
   }
   if (
     retained.state !== "hasData" ||
-    retained.data.identity !== identity.data
+    retained.data.identity !== identity.data ||
+    retained.data.configurationRevision !== configurationRevision
   ) {
     return { kind: "loading" };
   }

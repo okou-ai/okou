@@ -14,7 +14,7 @@ import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/c
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
-import { invalidateVncObservations$ } from "./vnc.ts";
+import { invalidateVncObservationConfiguration$ } from "./vnc.ts";
 import {
   invalidateRemoteAccess$,
   remoteHostDefaultsReload$,
@@ -486,6 +486,7 @@ export const invalidateSsh$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateVncObservationConfiguration$);
   set(invalidateRemoteAccess$);
 });
 
@@ -565,7 +566,6 @@ export const retrySsh$ = command(async ({ set }, signal: AbortSignal) => {
 
 const catchUpSsh$ = command(({ set }) => {
   set(invalidateSsh$);
-  set(invalidateVncObservations$);
   return false;
 });
 const onSshChanged$ = command(
@@ -578,7 +578,6 @@ const onSshChanged$ = command(
     signal.throwIfAborted();
     if (org?.id === parsed.data.orgId) {
       set(invalidateSsh$);
-      set(invalidateVncObservations$);
       set(invalidateCloudflareAccess$);
       set(invalidateTailscale$);
     }
@@ -904,6 +903,7 @@ const invalidateAfterSshSave$ = command(
     set(reload$, (value) => {
       return value + 1;
     });
+    set(invalidateVncObservationConfiguration$);
     if (kind === "create" || kind === "edit" || kind === "delete") {
       set(invalidateCloudflareAccess$);
       set(invalidateTailscale$);

@@ -280,20 +280,29 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
     sshConnections: [sshHost],
   });
   let currentCarrier = true;
-  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
-    return respond(200, {
-      observations: currentCarrier
-        ? [
-            {
-              connectionId: tunneledHost.id,
-              generation: tunneledHost.generation,
-              observedAt: "2026-10-14T00:00:00.000Z",
-              failureReason: "authentication_failed",
-            },
-          ]
-        : [],
-    });
-  });
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
   await page();
   await expect(
     screen.findByText("Authentication or server identity verification failed."),
@@ -303,6 +312,16 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
   context.mocks.ably.trigger("ssh:changed", {
     orgId: auth.organization.activeOrg.id,
   });
+  await started.promise;
+  try {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  } finally {
+    release.resolve();
+  }
   await waitFor(() => {
     expect(
       screen.queryByText(
@@ -311,6 +330,75 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
     ).not.toBeInTheDocument();
   });
   expect(screen.getByText("Configured")).toBeInTheDocument();
+});
+
+test("A local SSH carrier reset invalidates retained VNC diagnostics before realtime delivery", async () => {
+  const data = mockSettings({
+    connections: [tunneledHost],
+    sshConnections: [
+      {
+        ...sshHost,
+        learnedHostKey: {
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:fixture",
+        },
+      },
+    ],
+  });
+  let currentCarrier = true;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
+  context.mocks.api(sshConnectionsContract.resetHostKey, ({ respond }) => {
+    currentCarrier = false;
+    const updated = { ...sshHost, generation: sshHost.generation + 1 };
+    data.sshConnections = [updated];
+    return respond(200, updated);
+  });
+  await page("/connectors?scope=remote-control");
+  await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  click(getAction("button", "Reset host key"));
+  const dialog = await screen.findByRole("dialog", { name: "Reset host key" });
+  click(getAction("button", "Reset host key", dialog));
+  try {
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    await started.promise;
+  } finally {
+    release.resolve();
+  }
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeNull();
+  expect(screen.getByText(tunneledHost.displayName)).toBeInTheDocument();
 });
 
 test("VNC settings keep successful and unobserved hosts configured without attention", async () => {

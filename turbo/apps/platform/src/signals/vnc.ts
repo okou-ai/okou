@@ -106,10 +106,23 @@ export const vncClients$ = computed(async (get) => {
 
 const reload$ = state(0);
 const observationsReload$ = state(0);
+// SSH carrier rotations do not change the VNC generation. Fence retained
+// diagnostics whenever either protocol's configuration is refreshed.
+const observationConfigurationRevision$ = state(0);
+export const vncObservationConfigurationRevision$ = computed((get) => {
+  return get(observationConfigurationRevision$);
+});
+export const invalidateVncObservationConfiguration$ = command(({ set }) => {
+  set(observationConfigurationRevision$, (value) => {
+    return value + 1;
+  });
+  return false;
+});
 export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateVncObservationConfiguration$);
   set(invalidateRemoteAccess$);
 });
 
@@ -132,11 +145,11 @@ export const vncConnections$ = computed(async (get) => {
 });
 
 export const vncObservationsSnapshot$ = computed(async (get) => {
-  get(reload$);
   get(observationsReload$);
+  const configurationRevision = get(vncObservationConfigurationRevision$);
   const identity = await get(vncIdentity$);
   if (!identity) {
-    return { identity, observations: null };
+    return { identity, configurationRevision, observations: null };
   }
   const result = await accept(
     (await get(vncClients$)).connections.observations(),
@@ -146,6 +159,7 @@ export const vncObservationsSnapshot$ = computed(async (get) => {
   );
   return {
     identity,
+    configurationRevision,
     observations: result.status === 200 ? result.body.observations : null,
   };
 });
