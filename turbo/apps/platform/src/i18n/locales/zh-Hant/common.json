@@ -6390,6 +6390,7 @@
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
+      "addNewServer": "新增伺服器",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
       "authorizationError": "無法完成 Discord 授權，請重試。",
       "chooseWorkspace": "選擇工作區",
@@ -6399,6 +6400,8 @@
       "defaultWorkspace": "Discord 預設工作區",
       "description": "在伺服器中提及 Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷 Discord 連線",
+      "installDescription": "使用具有伺服器管理權限的帳號，在 Discord 中授權 Okou。",
+      "installTitle": "將 Okou 新增至伺服器",
       "invalidLink": "此 Discord 連接連結無效，請從 Discord 取得新連結。",
       "open": "開啟 Discord",
       "openInBrowser": "在瀏覽器中開啟",

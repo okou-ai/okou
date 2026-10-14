@@ -26,6 +26,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
 const track = createFixtureTracker((fixture: DiscordFixture) => {
@@ -35,6 +36,7 @@ const track = createFixtureTracker((fixture: DiscordFixture) => {
 beforeEach(() => {
   mockEnv("ENV", "development");
   configureDiscordApp();
+  mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
 });
 
 function createActors() {
@@ -149,6 +151,151 @@ async function registerMemberCache(value: DiscordActor): Promise<void> {
   );
   await api.requestReadMeWithBearer(token, profile, [200]);
 }
+
+describe("Discord server installation links", () => {
+  const invite = "https://discord.gg/example";
+  const guild = { id: "1559819014036000790", name: "New server" };
+
+  async function resolve(invitation: string) {
+    const owner = createActors().actor();
+    await enable(owner);
+    return client().installLink({
+      headers: authenticate(owner),
+      body: { invite: invitation },
+    });
+  }
+
+  it.each([
+    invite,
+    "https://discord.com/invite/example?utm_source=share",
+    "https://discordapp.com/invite/example/",
+  ])(
+    "resolves %s without an existing binding or provider credentials",
+    async (invitation) => {
+      mockEnv("APP_URL", "https://preview-app.example");
+      const lookups: string[] = [];
+      server.use(
+        http.get(
+          "https://discord.com/api/v10/invites/example",
+          ({ request }) => {
+            lookups.push(request.method);
+            expect(request.headers.get("authorization")).toBeNull();
+            expect(
+              new URL(request.url).searchParams.get("with_expiration"),
+            ).toBe("true");
+            return HttpResponse.json({ type: 0, guild, expires_at: null });
+          },
+        ),
+      );
+      const result = await accept(resolve(invitation), [200]);
+      expect(result.body).toStrictEqual({
+        url: `https://preview-app.example/settings/discord/install?guild_id=${guild.id}`,
+        guildId: guild.id,
+        guildName: guild.name,
+      });
+      expect(lookups).toStrictEqual(["GET"]);
+      await expectDiscordChanges([]);
+    },
+  );
+
+  it.each([
+    "https://attacker.example/invite/example",
+    "https://discord.gg.attacker.example/example",
+    "https://discord.gg@attacker.example/example",
+    "http://discord.gg/example",
+    "https://discord.gg:444/example",
+    "https://discord.gg/example/another",
+    "https://discord.com/channels/123",
+  ])(
+    "rejects an unsupported URL without fetching it: %s",
+    async (invitation) => {
+      const response = await accept(resolve(invitation), [400]);
+      expect(response.body.error.code).toBe("BAD_REQUEST");
+    },
+  );
+
+  it.each([
+    { providerStatus: 404, body: {}, expected: 404 },
+    { providerStatus: 200, body: { type: 1 }, expected: 400 },
+    {
+      providerStatus: 200,
+      body: { type: 0, guild, expires_at: "2020-01-01T00:00:00Z" },
+      expected: 404,
+    },
+    {
+      providerStatus: 429,
+      body: { retry_after: 5, global: false },
+      expected: 429,
+    },
+    { providerStatus: 500, body: {}, expected: 502 },
+  ] as const)(
+    "handles provider status $providerStatus as $expected",
+    async ({ providerStatus, body, expected }) => {
+      server.use(
+        http.get("https://discord.com/api/v10/invites/example", () => {
+          return HttpResponse.json(body, { status: providerStatus });
+        }),
+      );
+      expect((await resolve(invite)).status).toBe(expected);
+    },
+  );
+
+  it("requires authentication and the Discord feature switch", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    await accept(
+      client().installLink({ headers: {}, body: { invite } }),
+      [401],
+    );
+    const owner = createActors().actor();
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    const response = await accept(
+      client().installLink({ headers: authenticate(owner), body: { invite } }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+});
+
+describe("Discord installation link run access", () => {
+  it.each([true, false])(
+    "honors the run's captured Discord read capability without requiring a server binding (enabled: %s)",
+    async (enabled) => {
+      const { actor, restore } = createActors();
+      const owner = actor();
+      await updateFeatureSwitchesForUser(context, owner, {
+        [FeatureSwitchKey.DiscordIntegration]: enabled,
+      });
+      const profile = createAuthOrgAgentsBddApi(context).user(owner);
+      const run = await claimPublicDiscordTestRun(context, profile);
+      // Web runs can use the CLI, but must not receive Discord-only invite guidance.
+      expect(run.claim.appendSystemPrompt).not.toContain(
+        "okou discord install-link",
+      );
+      await enable(owner);
+      restore();
+      server.use(
+        http.get("https://discord.com/api/v10/invites/example", () => {
+          return HttpResponse.json({
+            type: 0,
+            guild: { id: "1559819014036000790", name: "New server" },
+          });
+        }),
+      );
+      const result = await client().installLink({
+        headers: run.headers,
+        body: { invite: "https://discord.gg/example" },
+      });
+      expect(result.status).toBe(enabled ? 200 : 403);
+      if (result.status === 403) {
+        expect(result.body.error.message).toContain("discord:read");
+      }
+    },
+  );
+});
 
 describe("verified Discord integration settings", () => {
   it("requires authenticated organization membership", async () => {

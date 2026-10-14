@@ -6390,6 +6390,7 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
+      "addNewServer": "Tambahkan server baru",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
       "chooseWorkspace": "Pilih ruang kerja",
@@ -6399,6 +6400,8 @@
       "defaultWorkspace": "Ruang kerja default untuk Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
+      "installDescription": "Izinkan Okou di Discord menggunakan akun yang dapat mengelola server.",
+      "installTitle": "Tambahkan Okou ke server",
       "invalidLink": "Tautan koneksi Discord ini tidak valid. Buka tautan baru dari Discord.",
       "open": "Buka Discord",
       "openInBrowser": "Buka di browser",

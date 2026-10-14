@@ -52,7 +52,7 @@ export function DiscordAuthorizationActions({
       className="h-8 shrink-0 gap-1.5 rounded-lg"
       disabled={disabled || authorizationState.state === "loading"}
       onClick={() => {
-        detach(authorize(pageSignal), Reason.DomCallback);
+        detach(authorize({}, pageSignal), Reason.DomCallback);
       }}
     >
       {t(($) => {

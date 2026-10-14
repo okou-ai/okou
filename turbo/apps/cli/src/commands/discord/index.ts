@@ -4,6 +4,7 @@ import { discordMessageCommand } from "./message";
 import { uploadFileCommand } from "./upload-file";
 import { downloadFileCommand } from "./download-file";
 import { connectCommand } from "./connect";
+import { installLinkCommand } from "./install-link";
 
 export const discordCommand = new Command()
   .name("discord")
@@ -11,6 +12,7 @@ export const discordCommand = new Command()
     "Connect Discord, read conversations, and transfer messages or files",
   )
   .addCommand(connectCommand)
+  .addCommand(installLinkCommand)
   .addCommand(discordChannelCommand)
   .addCommand(discordMessageCommand)
   .addCommand(uploadFileCommand)
@@ -21,6 +23,7 @@ export const discordCommand = new Command()
 Examples:
   Connect account:  okou discord connect
   Connect in server: okou discord connect --guild-id <id>
+  Add a new server: okou discord install-link --invite "https://discord.gg/example" --json
   List channels:    okou discord channel list --json
   Read history:     okou discord message history --channel-id <id> --json
   Read a thread:    okou discord message replies --channel-id <parent-channel-id> --message-id <root-message-id> --json

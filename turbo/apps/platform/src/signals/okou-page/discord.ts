@@ -55,8 +55,17 @@ export class DiscordPopupBlockedError extends Error {
 
 const resetDiscordAuthorization$ = resetSignal();
 
+export interface DiscordAuthorizationOptions {
+  readonly guildId?: string;
+  readonly flow?: "install" | "connect";
+}
+
 export const startDiscordAuthorization$ = command(
-  async ({ get, set }, guildId: string | null, signal: AbortSignal) => {
+  async (
+    { get, set },
+    options: DiscordAuthorizationOptions,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
@@ -77,7 +86,7 @@ export const startDiscordAuthorization$ = command(
         const client = get(apiClient$)(discordOauthContract);
         const result = await accept(
           client.start({
-            body: guildId ? { guildId } : {},
+            body: options,
             fetchOptions: { signal: flowSignal, credentials: "include" },
           }),
           [200],

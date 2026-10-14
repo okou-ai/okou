@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { discordSnowflakeSchema } from "./integrations-discord-read";
 
 const c = initContract();
 
@@ -34,6 +35,28 @@ export const discordOrgStatusSchema = z.object({
 });
 
 export const integrationsDiscordContract = c.router({
+  installLink: {
+    method: "POST",
+    path: "/api/integrations/discord/install-link",
+    headers: authHeadersSchema,
+    body: z.strictObject({ invite: z.url().max(2048) }),
+    responses: {
+      200: z.object({
+        url: z.url(),
+        guildId: discordSnowflakeSchema,
+        guildName: z.string(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      429: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+    },
+    summary:
+      "Resolve a server invite into an App installation link without joining",
+  },
   getStatus: {
     method: "GET",
     path: "/api/integrations/discord",
