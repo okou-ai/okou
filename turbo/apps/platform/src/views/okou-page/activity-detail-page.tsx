@@ -28,10 +28,7 @@ import {
   type ModelProviderType,
 } from "@okouai/api-contracts/contracts/model-providers";
 import { RUN_ERROR_GUIDANCE } from "@okouai/api-contracts/contracts/errors";
-import type {
-  SandboxReuseResult,
-  HomeReuseResult,
-} from "@okouai/api-contracts/contracts/runner-primitives";
+import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   getFrameworkDisplayName,
@@ -669,90 +666,15 @@ function ActivityContextTab({ detail }: { detail: LogDetail }) {
   );
 }
 
-type RunnerStartupPath = "sandbox" | "home" | "cold" | "unknown";
+type RunnerStartupPath = SandboxStartupPath | "unknown";
 
-interface ReuseOutcomeInfo {
+interface RunnerStartupInfo {
   readonly label: string;
   readonly description: string;
 }
 
-function isCurrentSandboxMiss(result: SandboxReuseResult | null): boolean {
-  return (
-    result === "noReuseKey" ||
-    result === "poolMiss" ||
-    result === "profileMismatch" ||
-    result === "deviceLimitMismatch" ||
-    result === "unparkFailed"
-  );
-}
-
-function isHomeMiss(result: HomeReuseResult | null): boolean {
-  return result !== null && result !== "reused" && result !== "sandboxReused";
-}
-
-function runnerStartupPath(
-  sandbox: SandboxReuseResult | null,
-  home: HomeReuseResult | null,
-): RunnerStartupPath {
-  if (sandbox === "reused" && home === "sandboxReused") {
-    return "sandbox";
-  }
-  if (isCurrentSandboxMiss(sandbox) && home === "reused") {
-    return "home";
-  }
-  if (isCurrentSandboxMiss(sandbox) && isHomeMiss(home)) {
-    return "cold";
-  }
-  return "unknown";
-}
-
 function isActiveRunStatus(status: LogStatus | undefined): boolean {
   return status === "queued" || status === "pending" || status === "running";
-}
-
-function sandboxOutcomeInfo(
-  result: SandboxReuseResult | null,
-  descriptions: Record<SandboxReuseResult, string>,
-  labels: {
-    readonly missing: string;
-    readonly missingDescription: string;
-    readonly notReused: string;
-    readonly reused: string;
-  },
-): ReuseOutcomeInfo {
-  if (result === null) {
-    return {
-      label: labels.missing,
-      description: labels.missingDescription,
-    };
-  }
-  return {
-    label: result === "reused" ? labels.reused : labels.notReused,
-    description: descriptions[result],
-  };
-}
-
-function homeOutcomeInfo(
-  result: HomeReuseResult | null,
-  descriptions: Record<HomeReuseResult, string>,
-  labels: {
-    readonly missing: string;
-    readonly missingDescription: string;
-    readonly notReused: string;
-    readonly reused: string;
-  },
-): ReuseOutcomeInfo {
-  if (result === null) {
-    return {
-      label: labels.missing,
-      description: labels.missingDescription,
-    };
-  }
-  const wasReused = result === "reused" || result === "sandboxReused";
-  return {
-    label: wasReused ? labels.reused : labels.notReused,
-    description: descriptions[result],
-  };
 }
 
 function RunnerEnvironmentCard({
@@ -760,7 +682,7 @@ function RunnerEnvironmentCard({
   info,
 }: {
   readonly title: string;
-  readonly info: ReuseOutcomeInfo;
+  readonly info: RunnerStartupInfo;
 }) {
   return (
     <article className="rounded-lg border bg-card p-3.5">
@@ -869,10 +791,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
   const runnerLoadable = useLastLoadable(activityRunner$);
 
   if (
-    runnerLoadable.state === "loading" ||
-    runnerLoadable.state === "hasError" ||
-    (runnerLoadable.state === "hasData" &&
-      runnerLoadable.data?.runId !== detail.id)
+    runnerLoadable.state !== "hasData" ||
+    runnerLoadable.data === null ||
+    runnerLoadable.data.runId !== detail.id
   ) {
     return (
       <div className="flex flex-col gap-2 py-4">
@@ -882,90 +803,14 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     );
   }
 
-  const runner = runnerLoadable.data?.runner ?? null;
-  const sandboxReuse = runner?.sandboxReuseResult ?? null;
-  const homeReuse = runner?.homeReuseResult ?? null;
-  const missing = isActiveRunStatus(runnerLoadable.data?.status)
+  const { runner, status } = runnerLoadable.data;
+  const missing = isActiveRunStatus(status)
     ? t(($) => {
         return $.activity.detail.runner.provisioning;
       })
     : t(($) => {
         return $.activity.detail.runner.unavailable;
       });
-  const notReused = t(($) => {
-    return $.activity.detail.runner.notReused;
-  });
-  const reused = t(($) => {
-    return $.activity.detail.runner.reused;
-  });
-  const missingDescription = t(($) => {
-    return $.activity.detail.runner.outcomeUnavailableDescription;
-  });
-  const sandboxDescriptions = {
-    reused: t(($) => {
-      return $.activity.detail.runner.reusedDescription;
-    }),
-    featureDisabled: t(($) => {
-      return $.activity.detail.runner.featureDisabled;
-    }),
-    noSessionId: t(($) => {
-      return $.activity.detail.runner.noSessionId;
-    }),
-    noReuseKey: t(($) => {
-      return $.activity.detail.runner.noReuseKey;
-    }),
-    poolMiss: t(($) => {
-      return $.activity.detail.runner.poolMiss;
-    }),
-    profileMismatch: t(($) => {
-      return $.activity.detail.runner.profileMismatch;
-    }),
-    deviceLimitMismatch: t(($) => {
-      return $.activity.detail.runner.deviceLimitMismatch;
-    }),
-    unparkFailed: t(($) => {
-      return $.activity.detail.runner.unparkFailed;
-    }),
-  } satisfies Record<SandboxReuseResult, string>;
-  const homeDescriptions = {
-    reused: t(($) => {
-      return $.activity.detail.runner.homeReusedDescription;
-    }),
-    sandboxReused: t(($) => {
-      return $.activity.detail.runner.sandboxReusedDescription;
-    }),
-    cacheMiss: t(($) => {
-      return $.activity.detail.runner.cacheMiss;
-    }),
-    noReuseKey: t(($) => {
-      return $.activity.detail.runner.homeNoReuseKey;
-    }),
-    invalidWorkingDir: t(($) => {
-      return $.activity.detail.runner.invalidWorkingDir;
-    }),
-    lockBusy: t(($) => {
-      return $.activity.detail.runner.lockBusy;
-    }),
-    invalidMetadata: t(($) => {
-      return $.activity.detail.runner.invalidMetadata;
-    }),
-    diskPressure: t(($) => {
-      return $.activity.detail.runner.diskPressure;
-    }),
-    notConfigured: t(($) => {
-      return $.activity.detail.runner.notConfigured;
-    }),
-    sandboxPrepareFallback: t(($) => {
-      return $.activity.detail.runner.sandboxPrepareFallback;
-    }),
-  } satisfies Record<HomeReuseResult, string>;
-  const labels = { missing, missingDescription, notReused, reused };
-  const sandboxInfo = sandboxOutcomeInfo(
-    sandboxReuse,
-    sandboxDescriptions,
-    labels,
-  );
-  const homeInfo = homeOutcomeInfo(homeReuse, homeDescriptions, labels);
   const startupLabels = {
     sandbox: t(($) => {
       return $.activity.detail.runner.startupSandbox;
@@ -975,6 +820,9 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     }),
     cold: t(($) => {
       return $.activity.detail.runner.startupCold;
+    }),
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlank;
     }),
     unknown: t(($) => {
       return $.activity.detail.runner.startupUnknown;
@@ -990,11 +838,15 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
     cold: t(($) => {
       return $.activity.detail.runner.startupColdDescription;
     }),
+    blank: t(($) => {
+      return $.activity.detail.runner.startupBlankDescription;
+    }),
     unknown: t(($) => {
       return $.activity.detail.runner.startupUnknownDescription;
     }),
   } satisfies Record<RunnerStartupPath, string>;
-  const startupPath = runnerStartupPath(sandboxReuse, homeReuse);
+  const startupPath =
+    runner.sandboxStartupPath === null ? "unknown" : runner.sandboxStartupPath;
   const startupInfo = {
     label: startupLabels[startupPath],
     description: startupDescriptions[startupPath],
@@ -1019,18 +871,6 @@ function ActivityRunnerTab({ detail }: { detail: LogDetail }) {
               return $.activity.detail.runner.startup;
             })}
             info={startupInfo}
-          />
-          <RunnerEnvironmentCard
-            title={t(($) => {
-              return $.activity.detail.runner.sandbox;
-            })}
-            info={sandboxInfo}
-          />
-          <RunnerEnvironmentCard
-            title={t(($) => {
-              return $.activity.detail.runner.home;
-            })}
-            info={homeInfo}
           />
         </div>
       </section>
