@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.732.6](https://github.com/okou-ai/okou/compare/api-v1.732.5...api-v1.732.6) (2026-10-14)
+
+
+### Refactoring
+
+* **api:** own non-financial plan capability reads ([#39850](https://github.com/okou-ai/okou/issues/39850)) ([378c4de](https://github.com/okou-ai/okou/commit/378c4deada2b6790fb248c2812440aa84f04b296))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.557.0
+    * @okouai/core bumped to 8.752.0
+    * @okouai/db bumped to 1.335.6
+    * @okouai/pi-agent-runtime bumped to 1.49.27
+
 ## [1.732.5](https://github.com/okou-ai/okou/compare/api-v1.732.4...api-v1.732.5) (2026-10-13)
 
 
