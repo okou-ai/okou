@@ -15,8 +15,9 @@ successful payment or order.
    personally authorize on Link. When opened from the chat's authorization
    card, successful consent updates the card and automatically continues the
    conversation; do not ask the user to send a completion message. A registered
-   client ID is not the user's permission. OAuth consent authorizes this user's
-   wallet for this agent only; it does not approve purchases.
+   client ID is not the user's permission.
+   OAuth consent authorizes this user's wallet for this agent only; it does not
+   approve purchases.
 2. Establish the specific item, merchant, final total including tax/shipping,
    USD currency, and the user's budget. Do not assume a budget or approve on the
    user's behalf. Generate one UUID purchase intent and retain it across retries.

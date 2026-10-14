@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
 import {
   type WalletCreateSpend,
@@ -21,6 +22,7 @@ import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import { onRejection } from "../utils";
 import {
   decryptStoredSecretValue,
@@ -243,10 +245,7 @@ export const completeWalletOAuth$ = command(
       );
     }
     if (input.error || !input.code) {
-      await db
-        .update(linkWalletOAuthAttempts)
-        .set({ status: "failed", encryptedVerifier: "" })
-        .where(eq(linkWalletOAuthAttempts.id, attempt.id));
+      await set(failWalletOAuth$, attempt);
       signal.throwIfAborted();
       return {
         status: "error" as const,
@@ -254,10 +253,12 @@ export const completeWalletOAuth$ = command(
       };
     }
     const code = input.code;
-    const verifier = await decryptStoredSecretValue(attempt.encryptedVerifier);
-    signal.throwIfAborted();
     const result = await onRejection(
       (async () => {
+        const verifier = await decryptStoredSecretValue(
+          attempt.encryptedVerifier,
+        );
+        signal.throwIfAborted();
         const token = await linkTokenRequest(
           {
             grant_type: "authorization_code",
@@ -270,19 +271,35 @@ export const completeWalletOAuth$ = command(
         return await set(publishWalletOAuth$, { attempt, token });
       })(),
       async () => {
-        await db
-          .update(linkWalletOAuthAttempts)
-          .set({ status: "failed", encryptedVerifier: "" })
-          .where(
-            and(
-              eq(linkWalletOAuthAttempts.id, attempt.id),
-              eq(linkWalletOAuthAttempts.status, "exchanging"),
-            ),
-          );
+        await set(failWalletOAuth$, attempt);
       },
     );
     signal.throwIfAborted();
     return result;
+  },
+);
+
+async function publishWalletChanged(owner: WalletOwner): Promise<void> {
+  await publishUserSignal([owner.userId], "wallet:changed", {
+    agentId: owner.agentId,
+  } satisfies WalletChangedPayload);
+}
+
+const failWalletOAuth$ = command(
+  async ({ set }, attempt: typeof linkWalletOAuthAttempts.$inferSelect) => {
+    const [failed] = await set(writeDb$)
+      .update(linkWalletOAuthAttempts)
+      .set({ status: "failed", encryptedVerifier: "" })
+      .where(
+        and(
+          eq(linkWalletOAuthAttempts.id, attempt.id),
+          eq(linkWalletOAuthAttempts.status, "exchanging"),
+        ),
+      )
+      .returning({ id: linkWalletOAuthAttempts.id });
+    if (failed) {
+      await publishWalletChanged(attempt);
+    }
   },
 );
 
@@ -339,6 +356,7 @@ const publishWalletOAuth$ = command(
         "Wallet authorization was canceled or expired; connect again",
       );
     }
+    await publishWalletChanged(attempt);
     return { status: "success" as const, username: null };
   },
 );
@@ -515,10 +533,9 @@ const revokeWalletConnection$ = command(
   },
 );
 
-export const disconnectWallet$ = command(
-  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    await db
+const cancelWalletOAuthAttempts$ = command(
+  async ({ set }, owner: WalletOwner) => {
+    await set(writeDb$)
       .delete(linkWalletOAuthAttempts)
       .where(
         and(
@@ -527,6 +544,14 @@ export const disconnectWallet$ = command(
           eq(linkWalletOAuthAttempts.agentId, owner.agentId),
         ),
       );
+    await publishWalletChanged(owner);
+  },
+);
+
+export const disconnectWallet$ = command(
+  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    await set(cancelWalletOAuthAttempts$, owner);
     signal.throwIfAborted();
     // Disable locally before provider I/O, retaining encrypted material solely so
     // a failed provider revocation can be retried through this same endpoint.

@@ -24,6 +24,7 @@ const APPROVAL_URL =
 const OAUTH_STATE = "wallet-authorization-state-fixture-01234567890123456789";
 const TRACKED_CONNECT_URL = CONNECT_URL.replace("exact%2Bstate", OAUTH_STATE);
 const AUTHORIZATION_ID = "10000000-0000-4000-a000-000000000001";
+const AGENT_ID = "c0000000-0000-4000-a000-000000000071";
 const CONTINUATION_PROMPT =
   "Link wallet authorization is complete. Continue the previous task.";
 
@@ -52,7 +53,10 @@ async function findControl(role: "button" | "link", name: string) {
   });
 }
 
-async function openChat(content: string) {
+async function openChat(
+  content: string,
+  sharedWorkerTestTransport: "direct" | "message-port" = "direct",
+) {
   const chat = createMarkdownChatFixture(context);
   chat.install({
     rows: () => {
@@ -62,7 +66,12 @@ async function openChat(content: string) {
       ];
     },
   });
-  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+  await setupPage({
+    context,
+    path: chat.path,
+    host: "app.okou.ai",
+    sharedWorkerTestTransport,
+  });
 }
 
 function mockAuthorization(
@@ -72,21 +81,38 @@ function mockAuthorization(
     return HttpResponse.html("<p>Link authorization</p>");
   });
   let status = initial;
+  let reads = 0;
   const read = createDeferredPromise<void>(context.signal);
+  const subscribedRead = createDeferredPromise<void>(context.signal);
   context.mocks.api(walletUserContract.connectStatus, ({ body, respond }) => {
     expect(body).toStrictEqual({
-      agentId: "c0000000-0000-4000-a000-000000000071",
+      agentId: AGENT_ID,
       state: OAUTH_STATE,
     });
+    reads++;
     if (!read.settled()) {
       read.resolve();
+    }
+    if (reads > 1 && !subscribedRead.settled()) {
+      subscribedRead.resolve();
     }
     return respond(200, status);
   });
   return {
     read: read.promise,
-    complete: () => {
+    subscribedRead: subscribedRead.promise,
+    readCount: () => {
+      return reads;
+    },
+    complete: (notify = true) => {
       status = { status: "authorized", authorizationId: AUTHORIZATION_ID };
+      if (notify) {
+        context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
+      }
+    },
+    fail: (next: "failed" | "unavailable") => {
+      status = { status: next };
+      context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
     },
   };
 }
@@ -115,11 +141,91 @@ test("a wallet consent updates its card and automatically continues the owning c
   expect(prompts).toStrictEqual([]);
   click(link);
   await screen.findByText("Waiting for authorization");
+  await authorization.subscribedRead;
+  const readsBeforeNotification = authorization.readCount();
+  context.mocks.ably.trigger("wallet:changed", {
+    agentId: crypto.randomUUID(),
+  });
+  context.mocks.ably.trigger("wallet:changed", { agentId: "invalid" });
+  context.mocks.ably.trigger("wallet:changed", {
+    agentId: AGENT_ID,
+    authorized: true,
+  });
+  await waitFor(() => {
+    expect(authorization.readCount()).toBe(readsBeforeNotification + 1);
+  });
+  expect(prompts).toStrictEqual([]);
   authorization.complete();
+  context.mocks.ably.trigger("wallet:changed", { agentId: AGENT_ID });
   const completed = await findControl("button", "Authorized");
   expect(completed).toBeDisabled();
   expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+  expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
 });
+
+function captureContinuation() {
+  const prompts: string[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    prompts.push(body.prompt ?? "");
+    return respond(201, {
+      runId: crypto.randomUUID(),
+      threadId: context.resourceId,
+    });
+  });
+  return prompts;
+}
+
+test("wallet consent completed before subscription attachment is recovered by the initial read", async () => {
+  const authorization = mockAuthorization();
+  const prompts = captureContinuation();
+  const subscription = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "wallet:changed",
+  );
+  await openChat(TRACKED_CONNECT_URL, "message-port");
+  await authorization.read;
+  click(await findControl("link", "Authorize Link wallet"));
+  await subscription.started;
+  authorization.complete(false);
+  subscription.attach();
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
+
+test("wallet consent missed during a connection gap is recovered after reattachment", async () => {
+  const authorization = mockAuthorization();
+  const prompts = captureContinuation();
+  await openChat(TRACKED_CONNECT_URL, "message-port");
+  await authorization.read;
+  click(await findControl("link", "Authorize Link wallet"));
+  await authorization.subscribedRead;
+  context.mocks.ably.triggerConnectionState("suspended");
+  authorization.complete(false);
+  context.mocks.ably.triggerConnectionState("connected");
+  await expect(findControl("button", "Authorized")).resolves.toBeDisabled();
+  expect(prompts).toStrictEqual([CONTINUATION_PROMPT]);
+});
+
+test.each([
+  ["failed", "Authorization not completed"],
+  ["unavailable", "Authorization unavailable"],
+] as const)(
+  "a %s consent notification stops waiting without sending a message",
+  async (status, label) => {
+    const authorization = mockAuthorization();
+    const prompts = captureContinuation();
+    await openChat(TRACKED_CONNECT_URL);
+    await authorization.read;
+    click(await findControl("link", "Authorize Link wallet"));
+    await authorization.subscribedRead;
+    authorization.fail(status);
+    await expect(findControl("button", label)).resolves.toBeDisabled();
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSubscription("wallet:changed")).toBeFalsy();
+    });
+    expect(prompts).toStrictEqual([]);
+  },
+);
 
 test("retrying a wallet continuation preserves the accepted event identity", async () => {
   const authorization = mockAuthorization();

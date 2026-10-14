@@ -1,10 +1,12 @@
 import { walletUserContract } from "@okouai/api-contracts/contracts/wallet";
+import { walletChangedPayloadSchema } from "@okouai/api-contracts/contracts/realtime";
 import { command, computed, state } from "ccstate";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { onRejection, waitLoopUntil, withCleanup } from "../utils.ts";
+import { waitAblyPayloadLoopUntil$ } from "../realtime.ts";
+import { onRejection, withCleanup } from "../utils.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
@@ -75,6 +77,25 @@ function createWalletConnectSignals(
       ? result.body
       : { status: "unavailable" as const };
   });
+  const refreshCompletion$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      set(reload$, (version) => {
+        return version + 1;
+      });
+      const status = await get(status$);
+      signal.throwIfAborted();
+      return status.status !== "pending";
+    },
+  );
+  const onWalletChanged$ = command(
+    async ({ set }, payload: unknown, signal: AbortSignal) => {
+      const parsed = walletChangedPayloadSchema.safeParse(payload);
+      if (!parsed.success || parsed.data.agentId !== context.agentId) {
+        return false;
+      }
+      return await set(refreshCompletion$, signal);
+    },
+  );
   const start$ = command(async ({ get, set }, signal: AbortSignal) => {
     if (get(busy$) || get(continued$)) {
       return;
@@ -83,18 +104,14 @@ function createWalletConnectSignals(
     set(callbackFailed$, false);
     await withCleanup(
       (async () => {
-        await waitLoopUntil(
-          async () => {
-            set(reload$, (version) => {
-              return version + 1;
-            });
-            const status = await get(status$);
-            signal.throwIfAborted();
-            return status.status !== "pending";
+        await set(
+          waitAblyPayloadLoopUntil$,
+          {
+            topic: "wallet:changed",
+            loopCommand$: onWalletChanged$,
+            initializeCommand$: refreshCompletion$,
           },
-          2000,
           signal,
-          { retryTransientErrors: true, logTransientErrors: false },
         );
         const status = await get(status$);
         signal.throwIfAborted();

@@ -24,6 +24,7 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createRouteMocks } from "./helpers/route-test";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
+import { channelsPublishedTo } from "./helpers/realtime-publications";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -316,6 +317,10 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
     }),
     [400],
   );
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "wallet:changed")).toStrictEqual(
+    [],
+  );
   mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
   mockNow(now() + 20 * 60_000);
   const callback = await accept(
@@ -327,6 +332,13 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
   );
   expect(callback.body).toStrictEqual({ status: "success", username: null });
   expect(verifierMatches).toBeTruthy();
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "wallet:changed")).toStrictEqual([
+    `user:${fixture.actor.userId}`,
+  ]);
+  expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    agentId: fixture.agentId,
+  });
   const authorized = await accept(
     userClient().connectStatus(statusRequest),
     [200],
@@ -382,6 +394,10 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
       )
     ).body,
   ).toStrictEqual({ status: "failed" });
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "wallet:changed")).toStrictEqual([
+    `user:${fixture.actor.userId}`,
+  ]);
   const declined = await accept(
     client().connect({ headers: fixture.headers, body: {} }),
     [200],
@@ -396,6 +412,11 @@ test("denies declined and expired OAuth requests and missing payment scopes", as
     [200],
   );
   expect(denial.body.status).toBe("error");
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "wallet:changed")).toStrictEqual([
+    `user:${fixture.actor.userId}`,
+    `user:${fixture.actor.userId}`,
+  ]);
   expect(
     (
       await accept(
@@ -491,6 +512,12 @@ test("tracks the exact wallet consent instead of an older grant, including repla
   await expect(readStatus(secondState)).resolves.toStrictEqual({
     status: "unavailable",
   });
+  await flushWaitUntilForTest();
+  expect(channelsPublishedTo(context.mocks, "wallet:changed")).toStrictEqual([
+    `user:${fixture.actor.userId}`,
+    `user:${fixture.actor.userId}`,
+    `user:${fixture.actor.userId}`,
+  ]);
 });
 
 test("deduplicates immutable intent details, returns the exact approval URL, and never exposes credentials", async () => {
