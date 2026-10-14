@@ -669,6 +669,7 @@ pub async fn execute_job_with_prepared_notifier(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     record_reuse_result(&mut telemetry, dispatch.reuse_result);
@@ -793,6 +794,7 @@ pub async fn execute_job_reuse_with_hooks(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     let idle_kind = idle_sandbox.kind();
