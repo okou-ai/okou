@@ -197,6 +197,38 @@ test("Keep the panel open while changing effort, Fast and model", async () => {
   expect(within(panel).queryByRole("switch", { name: "Fast mode" })).toBeNull();
 });
 
+test("Keep the model panel usable as the temporary model notice appears and clears", async () => {
+  const user = userEvent.setup({ delay: null });
+  await setupPanel(["gpt-6-astra", "gpt-6.1-sol"]);
+  const panel = await openModelPanel("GPT 6 Astra, Max");
+  expect(
+    screen.queryByRole("group", { name: "Model for this chat" }),
+  ).not.toBeInTheDocument();
+
+  await user.click(modelOption(/^GPT 6\.1 Sol/u, panel));
+  await expect(findButton("GPT 6.1 Sol, Max")).resolves.toBeInTheDocument();
+  const notice = await screen.findByRole("group", {
+    name: "Model for this chat",
+  });
+  expect(notice).toHaveTextContent("Temporarily switch to GPT 6.1 Sol");
+  expect(panel).toBeVisible();
+  expect(within(panel).getByRole("slider", { name: "Effort" })).toBeEnabled();
+  expect(
+    within(panel).getByRole("switch", { name: "Fast mode" }),
+  ).toBeEnabled();
+
+  await user.click(modelOption(/^GPT 6 Astra/u, panel));
+  await expect(findButton("GPT 6 Astra, Max")).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("group", { name: "Model for this chat" }),
+  ).not.toBeInTheDocument();
+  expect(panel).toBeVisible();
+  expect(modelOption(/^GPT 6 Astra/u, panel)).toBeChecked();
+
+  await closeModelPanel();
+  await expect(findButton("GPT 6 Astra, Max")).resolves.toHaveFocus();
+});
+
 test("Send with the model and effort chosen in the panel", async () => {
   const user = userEvent.setup({ delay: null });
   const creates: {
