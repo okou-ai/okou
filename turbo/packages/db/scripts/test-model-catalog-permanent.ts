@@ -6,9 +6,10 @@ import { Client } from "pg";
 /**
  * Permanent run_model_catalog/model_routes invariants on an exclusively owned,
  * disposable test database with the real replayed or freshly generated schema.
- * Negative probes use autocommit and exact finally cleanup; the positive fixture
- * retains its rolled-back transaction. Forced termination may leave committed
- * negative fixtures until the disposable database is discarded.
+ * All probes use autocommit and exact finally cleanup. Positive fixture insert
+ * timestamps follow each statement's native defaults; no cross-statement clock
+ * equality is part of these constraints. Forced termination may leave committed
+ * fixture rows until the disposable database is discarded.
  */
 export async function validatePermanentModelCatalogConstraints(
   databaseUrl: string,
@@ -106,6 +107,10 @@ export async function validatePermanentModelCatalogConstraints(
   };
 
   const errors: unknown[] = [];
+  // Observe connection failures before connect and through final client close.
+  client.on("error", (error: unknown) => {
+    errors.push(error);
+  });
   try {
     await client.connect();
     // Do not adopt or clean pre-existing rows, even on a fixture-ID collision.
@@ -306,8 +311,6 @@ export async function validatePermanentModelCatalogConstraints(
 
     if (errors.length === 0) {
       try {
-        // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0403; new non-billing transactions are prohibited.
-        await client.query("BEGIN");
         await insertModel("a");
         await insertModel("c");
         await insertModel("d");
@@ -373,17 +376,47 @@ export async function validatePermanentModelCatalogConstraints(
       } catch (error) {
         errors.push(error);
       } finally {
+        // This phase may have committed only part of its positive fixture.
+        // Include positive-only a and every negative attempted identity.
+        // Continue all dependency-ordered cleanup and absence checks on failure.
         try {
-          await client.query("ROLLBACK");
+          await client.query(
+            "DELETE FROM model_routes WHERE model = ANY($1::varchar[])",
+            [allIds],
+          );
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          await client.query(
+            "UPDATE run_model_catalog SET replaced_by = NULL, replaced_by_lineage_rank = NULL WHERE model = ANY($1::varchar[])",
+            [allIds],
+          );
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
+          await client.query(
+            "DELETE FROM run_model_catalog WHERE model = ANY($1::varchar[])",
+            [allIds],
+          );
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
           const remainingModels = await client.query(
             "SELECT * FROM run_model_catalog WHERE model = ANY($1::varchar[]) ORDER BY model",
             [allIds],
           );
+          assert.deepEqual(remainingModels.rows, []);
+        } catch (error) {
+          errors.push(error);
+        }
+        try {
           const remainingRoutes = await client.query(
             "SELECT * FROM model_routes WHERE model = ANY($1::varchar[]) ORDER BY id",
             [allIds],
           );
-          assert.deepEqual(remainingModels.rows, []);
           assert.deepEqual(remainingRoutes.rows, []);
         } catch (error) {
           errors.push(error);
@@ -406,6 +439,7 @@ export async function validatePermanentModelCatalogConstraints(
     throw new AggregateError(
       errors,
       "Model catalog validation and cleanup failed",
+      { cause: errors[0] },
     );
   }
   console.log("   ✅ Model catalog replacement and route constraints hold");
