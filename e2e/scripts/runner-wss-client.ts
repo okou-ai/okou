@@ -7,11 +7,11 @@ import {
   sandboxChannelHelloResultSchema,
   type SandboxChannelMessage,
   type SandboxChannelPayloadSchema,
-} from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel";
+} from "@okouai/api-contracts/contracts/sandbox-channel";
 import {
   sandboxDiagnosticsEchoSchema,
   sandboxDiagnosticsNoticeSchema,
-} from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel-diagnostics";
+} from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
 import type { WssTicket } from "./runner-wss-api";
 
 export const ECHO_SIZES = [0, 1, 17, 1024, 16384, 37] as const;

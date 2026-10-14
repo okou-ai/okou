@@ -1888,11 +1888,6 @@ jobs:
         run: corepack enable pnpm
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
-      - name: Install sandbox-channel contract dependencies
-        # The WSS probe imports the canonical Zod contracts from captured source.
-        # Install their owning workspace instead of maintaining another schema.
-        working-directory: turbo
-        run: pnpm install --frozen-lockfile --filter @okouai/api-contracts... --ignore-scripts
       - name: Check Playwright E2E types
         working-directory: e2e
         run: pnpm check-types
@@ -2642,10 +2637,6 @@ jobs:
           echo "::add-mask::$token"
           echo "E2E_API_TOKEN=$token" >> "$GITHUB_ENV"
           echo "E2E_API_URL=$api_url" >> "$GITHUB_ENV"
-      - name: Install WSS contract dependencies
-        if: contains(matrix.files, 'tests/03-runner/run-t25-run-wss.bats')
-        working-directory: turbo
-        run: pnpm install --frozen-lockfile --filter @okouai/api-contracts... --ignore-scripts
       - name: Initialize runner E2E shard
         shell: bash
         run: |

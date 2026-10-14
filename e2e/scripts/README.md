@@ -15,10 +15,10 @@ owned live Run and cancel/delete only its Run/thread/agent resources. Every
 socket and deadline is owned; output excludes credentials, payloads and raw
 request errors.
 
-From `e2e`, after a locked install:
+From `e2e`:
 
 ```bash
-pnpm --dir ../turbo install --frozen-lockfile --filter @okouai/api-contracts... --ignore-scripts
+pnpm install --frozen-lockfile
 pnpm check-types
 pnpm exec tsx --test scripts/runner-wss.test.ts
 ```
@@ -26,6 +26,9 @@ pnpm exec tsx --test scripts/runner-wss.test.ts
 Controlled peers cover protocol failures and cleanup. The deployed case supplies
 public certificate and actual Guest evidence. Browser/CORS/Web adapter behavior,
 completion/revocation, renewal, HTTP/2/3 and load/latency remain separate coverage.
-The probe uses the canonical Zod operation/envelope contracts. Echo inputs span
-zero through 16 KiB of decoded bytes; 64 KiB opaque transport framing remains
+The probe imports the canonical Zod operation/envelope contracts through the
+declared `@okouai/api-contracts` package dependency and its public exports.
+The E2E lockfile owns the captured local packages and their runtime dependencies.
+This script directory uses ESM to consume the contracts' public imports.
+Echo inputs span zero through 16 KiB of decoded bytes; 64 KiB opaque transport framing remains
 covered by the transport owner tests, independently of application JSON.

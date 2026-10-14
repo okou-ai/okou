@@ -12,13 +12,13 @@ import { WebSocketServer, type WebSocket } from "ws";
 
 import { RunnerWssApi } from "./runner-wss-api";
 import { RunnerWssClient } from "./runner-wss-client";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   decodeSandboxChannelFrame,
   encodeSandboxChannelFrame,
   type SandboxChannelMessage,
-} from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel";
-import { sandboxDiagnosticsEchoSchema } from "../../turbo/packages/api-contracts/src/contracts/sandbox-channel-diagnostics";
+} from "@okouai/api-contracts/contracts/sandbox-channel";
+import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const RUNNER = "22222222-2222-4222-8222-222222222222";
