@@ -18,12 +18,14 @@ export const artifactGoogleDriveContract = c.router({
     body: z.object({
       agentId: z.uuid(),
       connectionId: z.uuid().optional(),
+      conversionTarget: z.enum(["document", "spreadsheet"]).optional(),
     }),
     responses: {
       200: z.object({
         id: z.string(),
         name: z.string(),
         webViewLink: z.string().nullable(),
+        mimeType: z.string().optional(),
       }),
       400: apiErrorSchema,
       401: apiErrorSchema,

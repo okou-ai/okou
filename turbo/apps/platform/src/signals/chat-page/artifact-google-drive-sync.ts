@@ -1,3 +1,8 @@
+import { command, computed, state } from "ccstate";
+import {
+  GOOGLE_WORKSPACE_MIME_TYPES,
+  type GoogleWorkspaceTarget,
+} from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
@@ -14,6 +19,7 @@ type ArtifactGoogleDriveSyncParams = {
 type ArtifactGoogleDriveSyncFile = {
   readonly artifactId: string;
   readonly filename?: string | undefined;
+  readonly conversionTarget?: GoogleWorkspaceTarget;
 };
 
 type ArtifactGoogleDriveSyncFilesParams = {
@@ -104,6 +110,9 @@ async function syncArtifactFilesToGoogleDrive(
             params: { artifactId: file.artifactId },
             body: {
               agentId: params.agentId,
+              ...(file.conversionTarget
+                ? { conversionTarget: file.conversionTarget }
+                : {}),
               ...(params.connectionId
                 ? { connectionId: params.connectionId }
                 : {}),
@@ -116,7 +125,16 @@ async function syncArtifactFilesToGoogleDrive(
       );
       const result: ArtifactGoogleDriveSyncResult = settled.ok
         ? settled.value.status === 200
-          ? { ok: true }
+          ? file.conversionTarget &&
+            settled.value.body.mimeType !==
+              GOOGLE_WORKSPACE_MIME_TYPES[file.conversionTarget]
+            ? {
+                ok: false,
+                message: i18n.t(($) => {
+                  return $.artifacts.googleDrive.conversionUnconfirmed;
+                }),
+              }
+            : { ok: true }
           : { ok: false, message: settled.value.body.error.message }
         : {
             ok: false,
@@ -132,6 +150,15 @@ async function syncArtifactFilesToGoogleDrive(
     if (syncedCount === params.files.length) {
       toast.success(googleDriveSyncSuccessMessage(params.files.length), {
         id: toastId,
+        ...(params.files.some((file) => {
+          return file.conversionTarget !== undefined;
+        })
+          ? {
+              description: i18n.t(($) => {
+                return $.artifacts.googleDrive.conversionNotice;
+              }),
+            }
+          : {}),
       });
       return true;
     }
@@ -164,7 +191,7 @@ async function syncArtifactFilesToGoogleDrive(
   });
 }
 
-export async function syncArtifactFileToGoogleDrive(
+async function syncArtifactFileToGoogleDrive(
   params: ArtifactGoogleDriveSyncParams & {
     readonly createClient: ApiClientFactory;
   },
@@ -179,12 +206,47 @@ export async function syncArtifactFileToGoogleDrive(
         {
           artifactId: params.artifactId,
           filename: params.filename,
+          ...(params.conversionTarget
+            ? { conversionTarget: params.conversionTarget }
+            : {}),
         },
       ],
     },
     signal,
   );
 }
+
+const internalGoogleDriveSyncPending$ = state<ReadonlySet<string>>(new Set());
+export const googleDriveSyncPending$ = computed((get) => {
+  return get(internalGoogleDriveSyncPending$);
+});
+
+export const syncArtifactFileToGoogleDrive$ = command(
+  async (
+    { get, set },
+    params: ArtifactGoogleDriveSyncParams & {
+      readonly createClient: ApiClientFactory;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    if (get(internalGoogleDriveSyncPending$).has(params.artifactId)) {
+      return false;
+    }
+    set(
+      internalGoogleDriveSyncPending$,
+      new Set([...get(internalGoogleDriveSyncPending$), params.artifactId]),
+    );
+    return await withCleanup(
+      syncArtifactFileToGoogleDrive(params, signal),
+      () => {
+        const pending = new Set(get(internalGoogleDriveSyncPending$));
+        pending.delete(params.artifactId);
+        set(internalGoogleDriveSyncPending$, pending);
+      },
+    );
+  },
+);
 
 export async function authorizeGoogleDriveForAgent(
   params: {

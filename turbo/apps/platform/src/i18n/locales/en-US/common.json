@@ -543,7 +543,11 @@
       "agentLoading": "Agent is still loading",
       "connect": "Connect Google Drive",
       "connectTooltip": "Connect Google Drive to upload artifacts",
+      "conversionNotice": "Creates an editable copy. Formatting may change; the original file is preserved.",
+      "conversionUnconfirmed": "Google conversion could not be confirmed. Check Drive before retrying.",
       "noArtifacts": "No artifacts to sync",
+      "openDocs": "Open in Google Docs",
+      "openSheets": "Open in Google Sheets",
       "partial_one": "Synced {{synced}} of {{count}} file to Google Drive",
       "partial_other": "Synced {{synced}} of {{count}} files to Google Drive",
       "synced": "Synced to Google Drive",
@@ -556,6 +560,9 @@
       "syncingFiles_other": "Syncing {{count}} files...",
       "syncingNamed": "Syncing {{filename}}...",
       "upload": "Upload to Google Drive",
+      "uploadDocs": "Upload to Google Docs",
+      "uploadOriginal": "Upload original to Google Drive",
+      "uploadSheets": "Upload to Google Sheets",
       "uploadSlides": "Upload to Google Slides"
     },
     "kinds": {

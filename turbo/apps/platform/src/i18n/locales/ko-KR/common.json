@@ -542,7 +542,11 @@
       "agentLoading": "에이전트가 아직 로딩 중입니다",
       "connect": "Google Drive 연결",
       "connectTooltip": "아티팩트 업로드를 위해 Google Drive를 연결하세요",
+      "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 변경될 수 있으며 원본 파일은 유지됩니다.",
+      "conversionUnconfirmed": "Google 변환 결과를 확인할 수 없습니다. 다시 시도하기 전에 Drive를 확인하세요.",
       "noArtifacts": "동기화할 아티팩트가 없습니다",
+      "openDocs": "Google Docs에서 열기",
+      "openSheets": "Google Sheets에서 열기",
       "partial_one": "{{count}}개 중 {{synced}}개 파일을 Google Drive에 동기화했습니다",
       "partial_other": "{{count}}개 중 {{synced}}개 파일을 Google Drive에 동기화했습니다",
       "synced": "Google Drive에 동기화됨",
@@ -555,6 +559,9 @@
       "syncingFiles_other": "{{count}}개 파일 동기화 중...",
       "syncingNamed": "{{filename}} 동기화 중...",
       "upload": "Google Drive에 업로드",
+      "uploadDocs": "Google Docs에 업로드",
+      "uploadOriginal": "원본 파일을 Google Drive에 업로드",
+      "uploadSheets": "Google Sheets에 업로드",
       "uploadSlides": "Google Slides에 업로드"
     },
     "kinds": {

@@ -558,7 +558,11 @@
       "agentLoading": "O agente ainda está carregando",
       "connect": "Conectar o Google Drive",
       "connectTooltip": "Conecte o Google Drive para enviar artefatos",
+      "conversionNotice": "Cria uma cópia editável. A formatação pode mudar; o arquivo original é preservado.",
+      "conversionUnconfirmed": "Não foi possível confirmar a conversão do Google. Verifique o Drive antes de tentar novamente.",
       "noArtifacts": "Nenhum artefato para sincronizar",
+      "openDocs": "Abrir no Google Docs",
+      "openSheets": "Abrir no Google Sheets",
       "partial_one": "{{synced}} de {{count}} arquivo sincronizado com o Google Drive",
       "partial_many": "{{synced}} de {{count}} arquivos sincronizados com o Google Drive",
       "partial_other": "{{synced}} de {{count}} arquivos sincronizados com o Google Drive",
@@ -574,6 +578,9 @@
       "syncingFiles_other": "Sincronizando {{count}} arquivos...",
       "syncingNamed": "Sincronizando {{filename}}...",
       "upload": "Enviar para o Google Drive",
+      "uploadDocs": "Enviar para o Google Docs",
+      "uploadOriginal": "Enviar o arquivo original para o Google Drive",
+      "uploadSheets": "Enviar para o Google Sheets",
       "uploadSlides": "Enviar para o Google Slides"
     },
     "kinds": {

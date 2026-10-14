@@ -393,6 +393,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
+    enabled: false,
+  },
 };
 
 interface ResolvedHashes {

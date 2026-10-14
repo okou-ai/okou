@@ -543,7 +543,11 @@
       "agentLoading": "Der Agent wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
       "connectTooltip": "Verbinden Sie Google Drive, um Artefakte hochzuladen",
+      "conversionNotice": "Erstellt eine bearbeitbare Kopie. Die Formatierung kann sich ändern; die Originaldatei bleibt erhalten.",
+      "conversionUnconfirmed": "Die Google-Konvertierung konnte nicht bestätigt werden. Prüfe Drive vor einem erneuten Versuch.",
       "noArtifacts": "Keine zu synchronisierenden Artefakte",
+      "openDocs": "In Google Docs öffnen",
+      "openSheets": "In Google Sheets öffnen",
       "partial_one": "{{synced}} von {{count}} Datei mit Google Drive synchronisiert",
       "partial_other": "{{synced}} von {{count}} Dateien mit Google Drive synchronisiert",
       "synced": "Mit Google Drive synchronisiert",
@@ -556,6 +560,9 @@
       "syncingFiles_other": "{{count}} Dateien werden synchronisiert...",
       "syncingNamed": "{{filename}} wird synchronisiert...",
       "upload": "Auf Google Drive hochladen",
+      "uploadDocs": "In Google Docs hochladen",
+      "uploadOriginal": "Original in Google Drive hochladen",
+      "uploadSheets": "In Google Sheets hochladen",
       "uploadSlides": "Auf Google Slides hochladen"
     },
     "kinds": {

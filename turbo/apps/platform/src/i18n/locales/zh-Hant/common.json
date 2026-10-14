@@ -542,7 +542,11 @@
       "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
       "connectTooltip": "連線 Google Drive 後即可上傳成果",
+      "conversionNotice": "建立可編輯的副本。格式可能有所變更，原始檔案會保留。",
+      "conversionUnconfirmed": "無法確認 Google 轉換結果，請檢查雲端硬碟後再重試。",
       "noArtifacts": "沒有可同步的成果",
+      "openDocs": "在 Google 文件中開啟",
+      "openSheets": "在 Google 試算表中開啟",
       "partial_one": "已將 {{count}} 個檔案中的 {{synced}} 個同步到 Google Drive",
       "partial_other": "已將 {{count}} 個檔案中的 {{synced}} 個同步到 Google Drive",
       "synced": "已同步到 Google Drive",
@@ -555,6 +559,9 @@
       "syncingFiles_other": "正在同步 {{count}} 個檔案…",
       "syncingNamed": "正在同步 {{filename}}…",
       "upload": "上傳到 Google Drive",
+      "uploadDocs": "上傳至 Google 文件",
+      "uploadOriginal": "將原始檔案上傳至 Google 雲端硬碟",
+      "uploadSheets": "上傳至 Google 試算表",
       "uploadSlides": "上傳到 Google Slides"
     },
     "kinds": {

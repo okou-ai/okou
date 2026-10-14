@@ -543,7 +543,11 @@
       "agentLoading": "एजेंट अभी भी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
       "connectTooltip": "आर्टिफ़ैक्ट अपलोड करने के लिए Google Drive कनेक्ट करें",
+      "conversionNotice": "संपादन योग्य कॉपी बनाता है। फ़ॉर्मैट बदल सकता है; मूल फ़ाइल सुरक्षित रहती है।",
+      "conversionUnconfirmed": "Google रूपांतरण की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Drive देखें।",
       "noArtifacts": "सिंक करने के लिए कोई आर्टिफ़ैक्ट नहीं",
+      "openDocs": "Google Docs में खोलें",
+      "openSheets": "Google Sheets में खोलें",
       "partial_one": "{{count}} फ़ाइल में से {{synced}} को Google Drive में समन्वयित किया गया",
       "partial_other": "{{count}} फ़ाइलों में से {{synced}} को Google Drive में समन्वयित किया गया",
       "synced": "Google Drive से समन्वयित",
@@ -556,6 +560,9 @@
       "syncingFiles_other": "{{count}} फ़ाइलें सिंक हो रही हैं...",
       "syncingNamed": "{{filename}} सिंक हो रहा है...",
       "upload": "Google Drive पर अपलोड करें",
+      "uploadDocs": "Google Docs पर अपलोड करें",
+      "uploadOriginal": "मूल फ़ाइल Google Drive पर अपलोड करें",
+      "uploadSheets": "Google Sheets पर अपलोड करें",
       "uploadSlides": "Google Slides पर अपलोड करें"
     },
     "kinds": {

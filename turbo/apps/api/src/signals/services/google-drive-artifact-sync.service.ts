@@ -1,3 +1,8 @@
+import {
+  GOOGLE_WORKSPACE_MIME_TYPES,
+  type GoogleWorkspaceTarget,
+} from "@okouai/core/google-workspace-conversion";
+import { prepareGoogleWorkspaceImport } from "./google-workspace-import.service";
 import type {
   ChatThreadArtifactGoogleDriveRecovery,
   ChatThreadArtifactGoogleDriveSync,
@@ -32,7 +37,11 @@ import { and, eq, exists, isNotNull, isNull, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
-import { badRequestMessage, notFound } from "../../lib/error";
+import {
+  badRequestMessage,
+  isBadRequestResponse,
+  notFound,
+} from "../../lib/error";
 import {
   artifactKeyFromShortOkouUrl,
   isArtifactKeyV2,
@@ -86,6 +95,7 @@ const driveFileSchema = z.object({
   name: z.string(),
   webViewLink: z.string().nullable().optional(),
   appProperties: z.record(z.string(), z.string()).optional(),
+  mimeType: z.string().optional(),
 });
 const driveFileListSchema = z.object({ files: z.array(driveFileSchema) });
 
@@ -93,6 +103,7 @@ interface DriveSyncResult {
   readonly id: string;
   readonly name: string;
   readonly webViewLink: string | null;
+  readonly mimeType?: string;
 }
 
 type DriveStatusLookup =
@@ -365,7 +376,10 @@ async function listArtifactFiles(
       "trashed = false",
     ].join(" and "),
   );
-  url.searchParams.set("fields", "files(id,name,webViewLink,appProperties)");
+  url.searchParams.set(
+    "fields",
+    "files(id,name,mimeType,webViewLink,appProperties)",
+  );
   url.searchParams.set("pageSize", "1000");
 
   const response = await fetch(url, {
@@ -448,10 +462,28 @@ function buildStatusMap(
     if (!runId || !fileId) {
       continue;
     }
-    map.set(artifactKey(runId, fileId), {
+    const key = artifactKey(runId, fileId);
+    const existing = map.get(key);
+    // Prefer a native result over its historical Office attachment.
+    if (
+      existing?.mimeType &&
+      Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
+        return mime === existing.mimeType;
+      })
+    ) {
+      continue;
+    }
+    map.set(key, {
       id: file.id,
       name: file.name,
-      webViewLink: file.webViewLink ?? null,
+      webViewLink:
+        file.webViewLink ??
+        (file.mimeType === GOOGLE_WORKSPACE_MIME_TYPES.document
+          ? `https://docs.google.com/document/d/${encodeURIComponent(file.id)}/edit`
+          : file.mimeType === GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet
+            ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(file.id)}/edit`
+            : null),
+      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
     });
   }
   return map;
@@ -615,6 +647,7 @@ const driveUploadResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
   webViewLink: z.string().nullable().optional(),
+  mimeType: z.string().optional(),
 });
 
 const EXT_MIMETYPE_MAP: Readonly<Record<string, string>> = {
@@ -1183,7 +1216,7 @@ async function uploadDriveFile(args: {
 
   const sessionUrl = new URL(GOOGLE_DRIVE_UPLOAD_URL);
   sessionUrl.searchParams.set("uploadType", "resumable");
-  sessionUrl.searchParams.set("fields", "id,name,webViewLink");
+  sessionUrl.searchParams.set("fields", "id,name,mimeType,webViewLink");
   const session = await fetch(sessionUrl, {
     method: "POST",
     headers: {
@@ -1292,6 +1325,7 @@ async function parseUploadResponse(
     id: parsed.id,
     name: parsed.name,
     webViewLink: parsed.webViewLink ?? null,
+    ...(parsed.mimeType ? { mimeType: parsed.mimeType } : {}),
   };
 }
 
@@ -1383,6 +1417,101 @@ type SlidesTargetResolution =
   | { readonly kind: "target"; readonly mimeType: string | undefined }
   | { readonly kind: "rejected"; readonly response: BadRequestResponse };
 
+/** Reuse an existing editable copy after a retry or a stale preview refresh. */
+async function findWorkspaceImport(
+  args: {
+    readonly accessToken: string;
+    readonly fileId: string;
+    readonly target: GoogleWorkspaceTarget;
+  },
+  signal: AbortSignal,
+): Promise<
+  | DriveTokenResult<z.infer<typeof driveFileSchema> | null>
+  | { readonly type: "unavailable" }
+> {
+  const url = new URL(GOOGLE_DRIVE_FILES_URL);
+  url.searchParams.set(
+    "q",
+    [
+      `appProperties has { key='${GOOGLE_DRIVE_FILE_APP_PROPERTY}' and value='${escapeQuery(args.fileId)}' }`,
+      `mimeType = '${GOOGLE_WORKSPACE_MIME_TYPES[args.target]}'`,
+      "trashed = false",
+    ].join(" and "),
+  );
+  url.searchParams.set("fields", "files(id,name,mimeType,webViewLink)");
+  url.searchParams.set("pageSize", "1");
+  url.searchParams.set("orderBy", "createdTime desc");
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${args.accessToken}` },
+    signal,
+  });
+  if (response.status === 401) {
+    return { type: "unauthorized" };
+  }
+  if (!response.ok) {
+    return { type: "unavailable" };
+  }
+  const files = driveFileListSchema.parse(await response.json()).files;
+  const existing = files.find((file) => {
+    return file.mimeType === GOOGLE_WORKSPACE_MIME_TYPES[args.target];
+  });
+  return { type: "ok", value: existing ?? null };
+}
+
+/** Read the created resource back; an Office attachment is not a native import. */
+async function verifyWorkspaceImport(
+  args: {
+    readonly accessToken: string;
+    readonly fileId: string;
+    readonly target: GoogleWorkspaceTarget;
+    readonly discardInvalid: boolean;
+  },
+  signal: AbortSignal,
+): Promise<DriveSyncResult | string> {
+  const url = new URL(
+    `${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(args.fileId)}`,
+  );
+  url.searchParams.set("fields", "id,name,mimeType,webViewLink,trashed");
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${args.accessToken}` },
+    signal,
+  });
+  if (!response.ok) {
+    return "Google created the file, but its conversion result could not be confirmed. Check Drive before retrying.";
+  }
+  const parsed = driveUploadResponseSchema
+    .extend({ trashed: z.boolean().optional() })
+    .safeParse(await response.json());
+  if (!parsed.success || parsed.data.id !== args.fileId) {
+    return "Google created the file, but its conversion result could not be confirmed. Check Drive before retrying.";
+  }
+  const result = parsed.data;
+  if (
+    result.mimeType !== GOOGLE_WORKSPACE_MIME_TYPES[args.target] ||
+    result.trashed
+  ) {
+    if (!args.discardInvalid) {
+      return "The previously converted file is unavailable. Refresh and try again.";
+    }
+    const removed = await trashDriveFile(
+      { accessToken: args.accessToken, fileId: args.fileId },
+      signal,
+    );
+    return removed
+      ? "Google did not produce the requested editable format; the unsuccessful copy was removed"
+      : "Google did not produce the requested editable format; an unsuccessful copy remains in Drive";
+  }
+  const editor = args.target === "document" ? "document" : "spreadsheets";
+  return {
+    id: result.id,
+    name: result.name,
+    mimeType: result.mimeType,
+    webViewLink:
+      result.webViewLink ??
+      `https://docs.google.com/${editor}/d/${encodeURIComponent(result.id)}/edit`,
+  };
+}
+
 /** Decide whether this sync asks Drive for a Slides deck, and whether it can. */
 function resolveSlidesTarget(
   content: ResolvedArtifactContent,
@@ -1422,6 +1551,7 @@ interface CatalogSyncArtifactArgs {
   readonly agentId: string;
   readonly connectionId?: string;
   readonly authorizedRunId?: string;
+  readonly conversionTarget?: GoogleWorkspaceTarget;
 }
 
 type SyncArtifactArgs = LegacySyncArtifactArgs | CatalogSyncArtifactArgs;
@@ -1533,6 +1663,18 @@ export const syncArtifactToGoogleDrive$ = command(
     if ("artifactId" in args && !catalogArtifact) {
       return notFound("Artifact file not found");
     }
+    if (
+      "artifactId" in args &&
+      args.conversionTarget &&
+      !isFeatureEnabled(
+        FeatureSwitchKey.GoogleDocsSheetsConversion,
+        featureSwitchContext,
+      )
+    ) {
+      return badRequestMessage(
+        "Google Docs and Sheets conversion is not enabled",
+      );
+    }
     const connectorId =
       "artifactId" in args
         ? await set(artifactGoogleDriveAccount$, args, signal)
@@ -1601,6 +1743,177 @@ export const syncArtifactToGoogleDrive$ = command(
   },
 );
 
+function prepareDriveUpload(
+  content: ResolvedArtifactContent,
+  featureSwitchContext: FeatureSwitchContext,
+  conversionTarget: GoogleWorkspaceTarget | undefined,
+):
+  | BadRequestResponse
+  | {
+      readonly content: ResolvedArtifactContent;
+      readonly targetMimeType: string | undefined;
+    } {
+  const prepared = conversionTarget
+    ? prepareGoogleWorkspaceImport(content, conversionTarget)
+    : null;
+  if (prepared && !prepared.ok) {
+    return badRequestMessage(prepared.message);
+  }
+  const uploadContent = prepared?.ok ? prepared : content;
+  const slidesTarget = resolveSlidesTarget(content, featureSwitchContext);
+  if (slidesTarget.kind === "rejected") {
+    return slidesTarget.response;
+  }
+  const targetMimeType = conversionTarget
+    ? GOOGLE_WORKSPACE_MIME_TYPES[conversionTarget]
+    : slidesTarget.mimeType;
+
+  return { content: uploadContent, targetMimeType };
+}
+
+const reuseWorkspaceImport$ = command(
+  async (
+    { set },
+    params: {
+      readonly tokens: ConnectorTokens;
+      readonly featureSwitchContext: FeatureSwitchContext;
+      readonly target: GoogleWorkspaceTarget;
+      readonly fileId: string;
+      readonly orgId: string;
+      readonly userId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<
+    | BadRequestResponse
+    | {
+        readonly tokens: ConnectorTokens;
+        readonly existing: DriveSyncResult | null;
+      }
+  > => {
+    const {
+      tokens,
+      featureSwitchContext,
+      target: conversionTarget,
+      fileId,
+      orgId,
+      userId,
+    } = params;
+    let uploadTokens = tokens;
+    const lookupArgs = {
+      fileId,
+      target: conversionTarget,
+    };
+    let previous = await findWorkspaceImport(
+      { ...lookupArgs, accessToken: uploadTokens.accessToken },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (previous.type === "unauthorized") {
+      const refreshed = await set(
+        refreshDriveAccessToken$,
+        {
+          connection: tokens.connection,
+          featureSwitchContext,
+          orgId,
+          userId,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (refreshed.type !== "ok") {
+        return badRequestMessage(
+          "Reconnect Google Drive before converting this file",
+        );
+      }
+      uploadTokens = { ...tokens, accessToken: refreshed.accessToken };
+      previous = await findWorkspaceImport(
+        { ...lookupArgs, accessToken: uploadTokens.accessToken },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    if (previous.type !== "ok") {
+      return badRequestMessage(
+        previous.type === "unauthorized"
+          ? "Reconnect Google Drive before converting this file"
+          : "Google Drive could not check previous conversions. Try again.",
+      );
+    }
+    if (previous.value) {
+      const verified = await verifyWorkspaceImport(
+        {
+          accessToken: uploadTokens.accessToken,
+          fileId: previous.value.id,
+          target: conversionTarget,
+          discardInvalid: false,
+        },
+        signal,
+      );
+      signal.throwIfAborted();
+      return typeof verified === "string"
+        ? badRequestMessage(verified)
+        : { tokens: uploadTokens, existing: verified };
+    }
+
+    return { tokens: uploadTokens, existing: null };
+  },
+);
+
+async function finishDriveUpload(
+  args: {
+    readonly response: Response;
+    readonly accessToken: string;
+    readonly targetMimeType: string | undefined;
+    readonly conversionTarget: GoogleWorkspaceTarget | undefined;
+  },
+  signal: AbortSignal,
+): Promise<
+  BadRequestResponse | { readonly status: 200; readonly body: DriveSyncResult }
+> {
+  const { response, accessToken, targetMimeType, conversionTarget } = args;
+  if (
+    targetMimeType !== undefined &&
+    !response.ok &&
+    (await isUnsupportedConversion(response))
+  ) {
+    return badRequestMessage(
+      conversionTarget
+        ? "Google could not convert this document or spreadsheet"
+        : "Google Slides could not read this presentation",
+    );
+  }
+  const body = await parseUploadResponse(response);
+  signal.throwIfAborted();
+  if (conversionTarget) {
+    const verified = await verifyWorkspaceImport(
+      {
+        accessToken,
+        fileId: body.id,
+        target: conversionTarget,
+        discardInvalid: true,
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (typeof verified === "string") {
+      return badRequestMessage(verified);
+    }
+    return { status: 200 as const, body: verified };
+  }
+  if (targetMimeType !== undefined) {
+    const rejected = await rejectEmptyConvertedDeck(
+      { accessToken, presentationId: body.id },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (rejected) {
+      return rejected;
+    }
+  }
+
+  return { status: 200 as const, body };
+}
+
 const uploadResolvedArtifact$ = command(
   async (
     { get, set },
@@ -1640,11 +1953,38 @@ const uploadResolvedArtifact$ = command(
       );
     }
 
-    const target = resolveSlidesTarget(content, featureSwitchContext);
-    if (target.kind === "rejected") {
-      return target.response;
+    const conversionTarget =
+      "artifactId" in args ? args.conversionTarget : undefined;
+    const plan = prepareDriveUpload(
+      content,
+      featureSwitchContext,
+      conversionTarget,
+    );
+    if (isBadRequestResponse(plan)) {
+      return plan;
     }
-    const targetMimeType = target.mimeType;
+    const { targetMimeType } = plan;
+    const previous = conversionTarget
+      ? await set(
+          reuseWorkspaceImport$,
+          {
+            tokens,
+            featureSwitchContext,
+            target: conversionTarget,
+            fileId: artifact.externalId,
+            orgId: args.orgId,
+            userId: args.userId,
+          },
+          signal,
+        )
+      : null;
+    signal.throwIfAborted();
+    if (previous && isBadRequestResponse(previous)) {
+      return previous;
+    }
+    if (previous?.existing) {
+      return { status: 200, body: previous.existing };
+    }
 
     const upload = await set(
       uploadArtifactRefreshingToken$,
@@ -1659,10 +1999,10 @@ const uploadResolvedArtifact$ = command(
                 fileId: artifact.externalId,
               }
             : args,
-        content,
+        content: plan.content,
         featureSwitchContext,
         targetMimeType,
-        tokens,
+        tokens: previous?.tokens ?? tokens,
       },
       signal,
     );
@@ -1673,28 +2013,9 @@ const uploadResolvedArtifact$ = command(
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
 
-    if (
-      targetMimeType !== undefined &&
-      !result.value.ok &&
-      (await isUnsupportedConversion(result.value))
-    ) {
-      return badRequestMessage(
-        "Google Slides could not read this presentation",
-      );
-    }
-    const body = await parseUploadResponse(result.value);
-    signal.throwIfAborted();
-    if (targetMimeType !== undefined) {
-      const rejected = await rejectEmptyConvertedDeck(
-        { accessToken, presentationId: body.id },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (rejected) {
-        return rejected;
-      }
-    }
-
-    return { status: 200 as const, body };
+    return await finishDriveUpload(
+      { response: result.value, accessToken, targetMimeType, conversionTarget },
+      signal,
+    );
   },
 );

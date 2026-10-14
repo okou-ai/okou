@@ -51,6 +51,8 @@ export type AttachmentArtifactMetadata = {
   readonly googleDriveRecovery:
     ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly googleDriveSynced: boolean;
+  readonly googleDriveMimeType?: string | undefined;
+  readonly googleDriveWebViewLink?: string | null | undefined;
   readonly onSyncSuccess?: () => void;
   readonly runId: string;
   readonly size: number;

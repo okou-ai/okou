@@ -542,7 +542,11 @@
       "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
+      "conversionNotice": "Membuat salinan yang dapat diedit. Format dapat berubah; file asli tetap disimpan.",
+      "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "noArtifacts": "Tidak ada artefak untuk disinkronkan",
+      "openDocs": "Buka di Google Docs",
+      "openSheets": "Buka di Google Sheets",
       "partial_one": "Tersinkron {{synced}} dari {{count}} file ke Google Drive",
       "partial_other": "Tersinkron {{synced}} dari {{count}} file ke Google Drive",
       "synced": "Tersinkron ke Google Drive",
@@ -555,6 +559,9 @@
       "syncingFiles_other": "Menyinkronkan {{count}} file...",
       "syncingNamed": "Menyinkronkan {{filename}}...",
       "upload": "Unggah ke Google Drive",
+      "uploadDocs": "Unggah ke Google Docs",
+      "uploadOriginal": "Unggah file asli ke Google Drive",
+      "uploadSheets": "Unggah ke Google Sheets",
       "uploadSlides": "Unggah ke Google Slides"
     },
     "kinds": {

@@ -1217,6 +1217,7 @@ export function mockGoogleFormsConnectorOAuth(
 }
 
 interface GoogleDriveFileFixture {
+  readonly mimeType?: string;
   readonly id: string;
   readonly name: string;
   readonly webViewLink?: string | null;
@@ -1283,6 +1284,7 @@ const GOOGLE_DRIVE_UPLOAD_SESSION_URL =
  */
 export function mockGoogleDriveArtifactUpload(
   file: GoogleDriveFileFixture,
+  options: { readonly reuseUploadedFile?: boolean } = {},
 ): GoogleDriveArtifactUploadRecorder {
   const recorded: GoogleDriveArtifactUploadRecorder = {
     bodies: [],
@@ -1303,6 +1305,14 @@ export function mockGoogleDriveArtifactUpload(
         request.headers.get("authorization"),
       );
       recorded.folderQueries.push(query);
+      if (query.includes("key='vm0FileId'")) {
+        return HttpResponse.json({
+          files:
+            options.reuseUploadedFile && recorded.bodies.length > 0
+              ? [file]
+              : [],
+        });
+      }
       const rootFolder = query.includes("'root' in parents");
       return HttpResponse.json({
         files: [
@@ -1338,6 +1348,25 @@ export function mockGoogleDriveArtifactUpload(
   );
 
   return recorded;
+}
+
+export function mockGoogleWorkspaceReadback(
+  file: GoogleDriveFileFixture,
+  status = 200,
+) {
+  const readFileIds: string[] = [];
+  const trashedFileIds: string[] = [];
+  server.use(
+    http.get(`${GOOGLE_DRIVE_FILES_URL}/:fileId`, ({ params }) => {
+      readFileIds.push(String(params["fileId"]));
+      return HttpResponse.json(file, { status });
+    }),
+    http.patch(`${GOOGLE_DRIVE_FILES_URL}/:fileId`, ({ params }) => {
+      trashedFileIds.push(String(params["fileId"]));
+      return HttpResponse.json({ id: params["fileId"] });
+    }),
+  );
+  return { readFileIds, trashedFileIds };
 }
 
 interface GoogleSlidesReadbackRecorder {

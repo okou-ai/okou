@@ -1,3 +1,10 @@
+import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
+import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import {
+  GOOGLE_WORKSPACE_MIME_TYPES,
+  type GoogleWorkspaceTarget,
+} from "@okouai/core/google-workspace-conversion";
+import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import {
   chatThreadConnectorSelectionContract,
   chatThreadsContract,
@@ -36,6 +43,7 @@ import {
   mockGoogleDriveConnectorOAuth,
   mockGoogleDriveFilesList,
   mockGoogleSlidesReadback,
+  mockGoogleWorkspaceReadback,
 } from "./helpers/api-bdd-connectors";
 import {
   hostedTextFile,
@@ -2650,6 +2658,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   async function setupSlidesConversionSync(params: {
     readonly agentLabel: string;
     readonly conversionEnabled: boolean;
+    readonly workspaceConversionEnabled?: boolean;
+    readonly source?: { readonly filename: string; readonly body: Buffer };
   }) {
     const { actor, agentId, runnerGroup } = await entitledChatActor(
       params.agentLabel,
@@ -2659,12 +2669,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         [FeatureSwitchKey.GoogleSlidesConversion]: true,
       });
     }
+    if (params.workspaceConversionEnabled !== undefined) {
+      await createBillingMediaApi(context).updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.GoogleDocsSheetsConversion]:
+          params.workspaceConversionEnabled,
+      });
+    }
     chatCallbacks.failIfChatCallbackRouteIsFetched();
     const objectStore = chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
       agentId,
-      prompt: "produce a presentation artifact",
+      prompt: "produce an artifact",
     });
     const { claim, sandboxHeaders } = await claimChatRun(
       runnerGroup,
@@ -2673,8 +2689,9 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const deckId = randomUUID();
     objectStore.addObject({
       bucket: "test-user-artifacts",
-      key: `artifacts/${actor.userId}/${deckId}/deck.pptx`,
-      size: 4096,
+      key: `artifacts/${actor.userId}/${deckId}/${params.source?.filename ?? "deck.pptx"}`,
+      size: params.source?.body.byteLength ?? 4096,
+      ...(params.source ? { body: params.source.body } : {}),
     });
     await chat.completeUploadWithBearer(
       `Bearer ${okouTokenFromClaim(claim)}`,
@@ -2694,8 +2711,434 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     await api.enableAgentConnectors(actor, agentId, ["google-drive"]);
 
-    return { actor, deckId, run, sandboxHeaders };
+    return { actor, agentId, deckId, run, sandboxHeaders };
   }
+
+  async function workspaceSource(
+    filename: string,
+    body: Buffer,
+    enabled = true,
+  ) {
+    const prepared = await setupSlidesConversionSync({
+      agentLabel: "Workspace conversion agent",
+      conversionEnabled: false,
+      workspaceConversionEnabled: enabled,
+      source: { filename, body },
+    });
+    mockGoogleDriveFilesList(() => {
+      return { status: 200, files: [] };
+    });
+    const artifacts = await chat.listThreadArtifacts(
+      prepared.actor,
+      prepared.run.threadId,
+    );
+    const artifactId = artifacts.runs[0]?.files[0]?.artifactId;
+    if (!artifactId) {
+      throw new Error("Expected a canonical artifact from public upload");
+    }
+    const client = setupApp({
+      context,
+      routes: chatThreadsArtifactsSyncRoutes,
+    })(artifactGoogleDriveContract);
+    return {
+      ...prepared,
+      upload: (target?: GoogleWorkspaceTarget) => {
+        return accept(
+          client.upload({
+            headers: authHeaders(prepared.actor),
+            params: { artifactId },
+            body: {
+              agentId: prepared.agentId,
+              ...(target ? { conversionTarget: target } : {}),
+            },
+          }),
+          [200, 400],
+        );
+      },
+      finish: async () => {
+        chatCallbacks.mockChatOutputEvents([]);
+        await completeChatRunOk(prepared.run.runId, prepared.sandboxHeaders);
+      },
+    };
+  }
+
+  function officeSource(kind: "docx" | "xlsx"): Buffer {
+    const zip = new AdmZip();
+    const word = kind === "docx";
+    const main = word ? "word/document.xml" : "xl/workbook.xml";
+    const mime = word
+      ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+      : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+    zip.addFile(
+      "[Content_Types].xml",
+      Buffer.from(
+        `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/${main}" ContentType="${mime}"/></Types>`,
+      ),
+    );
+    zip.addFile(
+      main,
+      Buffer.from(
+        word
+          ? '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello</w:t></w:r></w:p></w:body></w:document>'
+          : '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheets><sheet name="Data" sheetId="1"/></sheets></workbook>',
+      ),
+    );
+    return zip.toBuffer();
+  }
+
+  function legacyOfficeSource(extension: "doc" | "xls"): Buffer {
+    const container = compoundUtils.cfb_new();
+    compoundUtils.cfb_add(
+      container,
+      extension === "doc" ? "WordDocument" : "Workbook",
+      Buffer.alloc(32),
+    );
+    const bytes: unknown = writeCompoundFile(container, { type: "buffer" });
+    if (!Buffer.isBuffer(bytes)) {
+      throw new Error("Expected binary Office fixture");
+    }
+    return Buffer.from(bytes);
+  }
+
+  function openDocumentSource(extension: "odt" | "ods"): Buffer {
+    const zip = new AdmZip();
+    zip.addFile(
+      "mimetype",
+      Buffer.from(
+        `application/vnd.oasis.opendocument.${extension === "odt" ? "text" : "spreadsheet"}`,
+      ),
+    );
+    zip.addFile(
+      "content.xml",
+      Buffer.from(
+        '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"><office:body/></office:document-content>',
+      ),
+    );
+    return zip.toBuffer();
+  }
+
+  it.each([
+    {
+      filename: "report.doc",
+      source: () => {
+        return legacyOfficeSource("doc");
+      },
+      target: "document",
+      sourceMime: "application/msword",
+    },
+    {
+      filename: "table.xls",
+      source: () => {
+        return legacyOfficeSource("xls");
+      },
+      target: "spreadsheet",
+      sourceMime: "application/vnd.ms-excel",
+    },
+    {
+      filename: "report.odt",
+      source: () => {
+        return openDocumentSource("odt");
+      },
+      target: "document",
+      sourceMime: "application/vnd.oasis.opendocument.text",
+    },
+    {
+      filename: "table.ods",
+      source: () => {
+        return openDocumentSource("ods");
+      },
+      target: "spreadsheet",
+      sourceMime: "application/vnd.oasis.opendocument.spreadsheet",
+    },
+    {
+      filename: "report.docx",
+      source: () => {
+        return officeSource("docx");
+      },
+      target: "document",
+      sourceMime:
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+    {
+      filename: "report.md",
+      source: () => {
+        return Buffer.from(
+          "# Heading\n\n**Bold** and [a link](https://example.com)\n",
+        );
+      },
+      target: "document",
+      sourceMime: "text/markdown",
+    },
+    {
+      filename: "report.txt",
+      source: () => {
+        return Buffer.from("Hello document");
+      },
+      target: "document",
+      sourceMime: "text/plain",
+    },
+    {
+      filename: "report.rtf",
+      source: () => {
+        return Buffer.from(String.raw`{\rtf1 Hello}`);
+      },
+      target: "document",
+      sourceMime: "application/rtf",
+    },
+    {
+      filename: "table.xlsx",
+      source: () => {
+        return officeSource("xlsx");
+      },
+      target: "spreadsheet",
+      sourceMime:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    },
+  ] as const)(
+    "workspace conversion preserves the $filename source and verifies the native result",
+    async ({ filename, source, target, sourceMime }) => {
+      const bytes = source();
+      const fixture = await workspaceSource(filename, bytes);
+      const native = {
+        id: "native-file",
+        name: filename.replace(/\.[^.]+$/u, ""),
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES[target],
+        webViewLink: `https://docs.google.com/${target === "document" ? "document" : "spreadsheets"}/d/native-file/edit`,
+      };
+      const upload = mockGoogleDriveArtifactUpload(native);
+      const readback = mockGoogleWorkspaceReadback(native);
+      const response = await fixture.upload(target);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject(native);
+      expect(upload.metadata[0]).toContain(`"mimeType":"${native.mimeType}"`);
+      expect(upload.uploadContentTypeHeaders).toStrictEqual([sourceMime]);
+      expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
+      expect(readback.readFileIds).toStrictEqual(["native-file"]);
+      expect(readback.trashedFileIds).toStrictEqual([]);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it.each([
+    { extension: "csv", delimiter: "," },
+    { extension: "tsv", delimiter: "\t" },
+  ])(
+    "workspace conversion preserves $extension fields as literal text",
+    async ({ extension, delimiter }) => {
+      const bytes = Buffer.from(
+        `\ufeff00123${delimiter}12345678901234567890${delimiter}=SUM(A1:A2)${delimiter}2026-01-02${delimiter}"line 1\nline 2"${delimiter}"a""b"\r\n`,
+      );
+      const fixture = await workspaceSource(`table.${extension}`, bytes);
+      const native = {
+        id: "native-sheet",
+        name: "table",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet,
+      };
+      const upload = mockGoogleDriveArtifactUpload(native);
+      mockGoogleWorkspaceReadback(native);
+      const response = await fixture.upload("spreadsheet");
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        mimeType: native.mimeType,
+        webViewLink: "https://docs.google.com/spreadsheets/d/native-sheet/edit",
+      });
+      expect(upload.uploadContentTypeHeaders).toStrictEqual([
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ]);
+      const workbook = new AdmZip(Buffer.from(upload.bodies[0]!));
+      const sheet = workbook.readAsText("xl/worksheets/sheet1.xml");
+      for (const value of [
+        "00123",
+        "12345678901234567890",
+        "=SUM(A1:A2)",
+        "2026-01-02",
+        "line 1\nline 2",
+        'a"b',
+      ]) {
+        expect(sheet).toContain(`<t xml:space="preserve">${value}</t>`);
+      }
+      expect(sheet.match(/t="inlineStr"/gu)).toHaveLength(6);
+      expect(sheet).not.toContain("<f>");
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it.each([
+    {
+      filename: "renamed.docx",
+      bytes: () => {
+        return officeSource("xlsx");
+      },
+      target: "document",
+      message: "does not match",
+    },
+    {
+      filename: "script.py",
+      bytes: () => {
+        return Buffer.from("print('hello')");
+      },
+      target: "document",
+      message: "cannot be converted",
+    },
+    {
+      filename: "table.csv",
+      bytes: () => {
+        return Buffer.from('"unfinished');
+      },
+      target: "spreadsheet",
+      message: "unclosed quoted field",
+    },
+    {
+      filename: "table.tsv",
+      bytes: () => {
+        return Buffer.from([0xff, 0xfe, 0x00, 0xd8]);
+      },
+      target: "spreadsheet",
+      message: "UTF-8 text file",
+    },
+    {
+      filename: "table.csv",
+      bytes: () => {
+        return Buffer.from("x".repeat(50_001));
+      },
+      target: "spreadsheet",
+      message: "50,000",
+    },
+  ] as const)(
+    "workspace conversion rejects invalid $filename before creating a Drive file",
+    async ({ filename, bytes, target, message }) => {
+      const fixture = await workspaceSource(filename, bytes());
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: filename,
+      });
+      const response = await fixture.upload(target);
+      expect(response.status).toBe(400);
+      expectApiError(response.body);
+      expect(response.body.error.message).toContain(message);
+      expect(upload.bodies).toHaveLength(0);
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("workspace conversion is enforced server-side while original uploads remain available", async () => {
+    const bytes = Buffer.from("Hello");
+    const fixture = await workspaceSource("report.txt", bytes, false);
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "raw-file",
+      name: "report.txt",
+      mimeType: "text/plain",
+    });
+    const blocked = await fixture.upload("document");
+    expect(blocked.status).toBe(400);
+    expect(upload.bodies).toHaveLength(0);
+    const original = await fixture.upload();
+    expect(original.status).toBe(200);
+    expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
+    expect(upload.metadata[0]).toContain('"mimeType":"text/plain"');
+    await fixture.finish();
+  }, 120_000);
+
+  it("workspace conversion does not create another file when checking previous results fails", async () => {
+    const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
+    const upload = mockGoogleDriveArtifactUpload({
+      id: "unexpected",
+      name: "report",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+    });
+    mockGoogleDriveFilesList(() => {
+      return { status: 500 };
+    });
+    const response = await fixture.upload("document");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain(
+      "could not check previous conversions",
+    );
+    expect(upload.bodies).toHaveLength(0);
+    await fixture.finish();
+  }, 120_000);
+
+  it("workspace conversion reuses a completed editable copy when the caller retries", async () => {
+    const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
+    const native = {
+      id: "native-file",
+      name: "report",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+    };
+    const upload = mockGoogleDriveArtifactUpload(native, {
+      reuseUploadedFile: true,
+    });
+    mockGoogleWorkspaceReadback(native);
+    expect((await fixture.upload("document")).status).toBe(200);
+    expect((await fixture.upload("document")).body).toMatchObject({
+      id: "native-file",
+      mimeType: native.mimeType,
+    });
+    expect(upload.bodies).toHaveLength(1);
+    await fixture.finish();
+  }, 120_000);
+
+  it.each([true, false])(
+    "workspace conversion status keeps a native result alongside an original (native first: %s)",
+    async (nativeFirst) => {
+      const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
+      const properties = {
+        vm0Artifact: "true",
+        vm0ThreadId: fixture.run.threadId,
+        vm0RunId: fixture.run.runId,
+        vm0FileId: fixture.deckId,
+      };
+      const native = {
+        id: "native-file",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+        appProperties: properties,
+      };
+      const original = {
+        id: "original-file",
+        name: "report.txt",
+        mimeType: "text/plain",
+        appProperties: properties,
+      };
+      mockGoogleDriveFilesList(() => {
+        return {
+          status: 200,
+          files: nativeFirst ? [native, original] : [original, native],
+        };
+      });
+      const artifacts = await chat.listThreadArtifacts(
+        fixture.actor,
+        fixture.run.threadId,
+      );
+      expect(artifacts.runs[0]?.files[0]?.googleDriveSync).toMatchObject({
+        status: "synced",
+        id: "native-file",
+        mimeType: native.mimeType,
+        webViewLink: "https://docs.google.com/document/d/native-file/edit",
+      });
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("workspace conversion rejects and removes a provider result in the wrong format", async () => {
+    const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
+    const raw = { id: "raw-file", name: "report.txt", mimeType: "text/plain" };
+    mockGoogleDriveArtifactUpload(raw);
+    const readback = mockGoogleWorkspaceReadback(raw);
+    const response = await fixture.upload("document");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain(
+      "unsuccessful copy was removed",
+    );
+    expect(readback.trashedFileIds).toStrictEqual(["raw-file"]);
+    await fixture.finish();
+  }, 120_000);
 
   it.each([
     {
