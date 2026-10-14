@@ -5485,6 +5485,25 @@
     "cancel": "Cancel",
     "close": "Close",
     "configured": "Configured",
+    "connectionStatus": {
+      "attention_one": "{{count}} VNC host needs attention",
+      "attention_other": "{{count}} VNC hosts need attention",
+      "observedAt": "Observed {{time}}",
+      "reasons": {
+        "authentication_failed": "Authentication or server identity verification failed.",
+        "disconnected": "The server disconnected during the connection attempt.",
+        "invalid_credential": "The saved credential could not be used.",
+        "kerberos_expired": "The Kerberos credential expired.",
+        "kerberos_non_renewable": "The Kerberos credential cannot be renewed.",
+        "kerberos_renewal_exhausted": "The Kerberos credential renewal limit was reached.",
+        "network_failure": "The connection transport failed.",
+        "protocol": "The server did not complete the selected connection protocol.",
+        "timed_out": "The connection attempt timed out.",
+        "unsafe_destination": "The destination was rejected by network policy.",
+        "unsupported_profile": "The server does not support the selected security profile."
+      },
+      "unavailable": "VNC connection status is unavailable"
+    },
     "credential": {
       "add": "Add credential",
       "appleDhFieldHelp": "1–63 UTF-8 bytes per field. NUL is not allowed.",

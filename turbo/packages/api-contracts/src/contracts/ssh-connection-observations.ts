@@ -20,6 +20,7 @@ export const sshConnectionFailureReasonSchema = z.enum([
 export const sshConnectionObservationSchema = z
   .object({
     connectionId: z.uuid(),
+    connectionCreatedAt: z.string().datetime(),
     generation: z.int().positive().max(2_147_483_647),
     observedAt: z.string().datetime(),
     failureReason: sshConnectionFailureReasonSchema.nullable(),

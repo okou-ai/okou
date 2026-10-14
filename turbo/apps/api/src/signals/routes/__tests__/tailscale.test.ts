@@ -592,6 +592,7 @@ describe("Tailscale configuration and saved-host authority", () => {
     const obs = {
       ...body,
       expectedGeneration: h.generation + 1,
+      expectedCreatedAt: h.createdAt,
       observedAt: nowDate().toISOString(),
       failureReason: null,
     };

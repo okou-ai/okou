@@ -5569,6 +5569,26 @@
     "cancel": "Cancelar",
     "close": "Cerrar",
     "configured": "Configurado",
+    "connectionStatus": {
+      "attention_one": "{{count}} host VNC requiere atención",
+      "attention_many": "{{count}} hosts VNC requieren atención",
+      "attention_other": "{{count}} hosts VNC requieren atención",
+      "observedAt": "Observado {{time}}",
+      "reasons": {
+        "authentication_failed": "Falló la autenticación o la verificación de identidad del servidor.",
+        "disconnected": "El servidor se desconectó durante el intento de conexión.",
+        "invalid_credential": "No se pudo utilizar la credencial guardada.",
+        "kerberos_expired": "La credencial de Kerberos ha caducado.",
+        "kerberos_non_renewable": "La credencial de Kerberos no se puede renovar.",
+        "kerberos_renewal_exhausted": "Se alcanzó el límite de renovación de la credencial de Kerberos.",
+        "network_failure": "Falló el transporte de la conexión.",
+        "protocol": "El servidor no completó el protocolo de conexión seleccionado.",
+        "timed_out": "El intento de conexión agotó el tiempo de espera.",
+        "unsafe_destination": "La política de red rechazó el destino.",
+        "unsupported_profile": "El servidor no admite el perfil de seguridad seleccionado."
+      },
+      "unavailable": "El estado de la conexión VNC no está disponible"
+    },
     "credential": {
       "add": "Añadir credenciales",
       "appleDhFieldHelp": "Cada campo admite de 1 a 63 bytes UTF-8. No se permite NUL.",

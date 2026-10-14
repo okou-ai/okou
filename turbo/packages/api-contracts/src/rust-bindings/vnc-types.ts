@@ -65,6 +65,80 @@ export const vncTypeBindings = [
     ],
   },
   {
+    schema: runnerVncContract.observe.body,
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "ObservationRequest",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "ObservationRequest",
+        rustDoc: [
+          "Bounded evidence from one authorized connection attempt; never raw errors.",
+        ],
+        fields: {
+          connectionId: ["Exact saved VNC UUID."],
+          runnerIdentity: ["Winning official process identity."],
+          expectedGeneration: ["Resolved VNC configuration generation."],
+          expectedCreatedAt: [
+            "Exact PostgreSQL creation instance, including microsecond precision.",
+          ],
+          expectedTransport: ["Resolved RFB transport authority."],
+          expectedKdcTransport: [
+            "Independent online KDC transport, when applicable.",
+          ],
+          expectedCredentialRevision: [
+            "Kerberos source revision, when applicable.",
+          ],
+          observedAt: ["UTC connection-result time, not report delivery time."],
+          failureReason: [
+            "Allow-listed connection failure, or null for recovery.",
+          ],
+        },
+      },
+      identityDocs("ObservationRequestRunnerIdentity"),
+      {
+        rustTypeName: "ObservationRequestExpectedTransport",
+        rustDoc: [
+          "Exact RFB transport snapshot returned by credential resolution.",
+        ],
+        fields: {
+          connectionId: ["Exact saved SSH UUID for the RFB route."],
+          generation: ["Resolved SSH configuration generation."],
+        },
+        variants: {
+          direct: ["Expected direct RFB route."],
+          ssh: ["Expected verified saved SSH carrier for RFB."],
+        },
+      },
+      kdcTransportDocs("ObservationRequestExpectedKdcTransport"),
+      {
+        rustTypeName: "ObservationRequestFailureReason",
+        rustDoc: ["Secret-free connection evidence only."],
+        variants: {
+          invalid_credential: ["Resolved credentials could not be used."],
+          unsafe_destination: ["Destination rejected by network policy."],
+          network_failure: ["Connection transport failed."],
+          protocol: ["Peer did not complete the selected protocol."],
+          timed_out: ["Connection setup deadline expired."],
+          disconnected: ["Peer disconnected during connection setup."],
+          authentication_failed: [
+            "Client authentication or server identity verification failed.",
+          ],
+          unsupported_profile: [
+            "Peer does not support the selected security profile.",
+          ],
+          kerberos_expired: ["Selected Kerberos credentials expired."],
+          kerberos_non_renewable: [
+            "Selected Kerberos credentials cannot be renewed.",
+          ],
+          kerberos_renewal_exhausted: [
+            "Selected Kerberos renewal limit was reached.",
+          ],
+        },
+      },
+    ],
+  },
+  {
     schema: runnerVncContract.resolve.body,
     rustModulePath: ["runners", "vnc"],
     rustTypeName: "ResolveRequest",

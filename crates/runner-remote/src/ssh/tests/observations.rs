@@ -1,6 +1,35 @@
-use super::harness::{CONNECTION, Harness, Reply, TOKEN, params};
+use super::harness::{CONNECTION, CREATED_AT, Harness, Reply, TOKEN, params};
 use serde_json::json;
 use std::{sync::atomic::Ordering, time::Duration};
+
+#[tokio::test]
+async fn missing_or_invalid_creation_metadata_rejects_authority_before_connect() {
+    for created_at in [None, Some("invalid")] {
+        let mut h = Harness::new(Reply::default()).await;
+        let dispatcher = h.take_dispatcher();
+        let resolve = h
+            .resolve_for_run_with_created_at(h.run, h.credential(true), created_at)
+            .await;
+        let report = h
+            .api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path(format!("/api/runners/runs/{}/ssh/observations", h.run));
+                then.status(200).json_body(json!({"outcome":"recorded"}));
+            })
+            .await;
+        assert_eq!(
+            super::terminal(&h.request(params()).await)["failure_reason"],
+            "authority_failure"
+        );
+        dispatcher.shutdown().await.unwrap();
+        resolve.assert_calls_async(1).await;
+        assert!(h.observed.attempts.lock().unwrap().is_empty());
+        assert!(h.observed.queries.lock().unwrap().is_empty());
+        assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+        report.assert_calls_async(0).await;
+    }
+}
 
 #[tokio::test]
 async fn connection_evidence_reports_actual_authentication_and_skips_reused_transports() {
@@ -16,7 +45,7 @@ async fn connection_evidence_reports_actual_authentication_and_skips_reused_tran
         let report = h.api.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/runs/{}/ssh/observations", h.run))
                 .header("authorization", format!("Bearer {TOKEN}"))
-                .json_body_includes(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":h.identity.runner_id(),"heartbeatGeneration":h.identity.heartbeat_generation()},"expectedGeneration":7,"failureReason":null}).to_string());
+                .json_body_includes(json!({"connectionId":CONNECTION,"expectedCreatedAt":CREATED_AT,"runnerIdentity":{"runnerId":h.identity.runner_id(),"heartbeatGeneration":h.identity.heartbeat_generation()},"expectedGeneration":7,"failureReason":null}).to_string());
             then.status(200).json_body(json!({"outcome":"recorded"}));
         }).await;
         for _ in 0..2 {
@@ -84,7 +113,7 @@ async fn credential_and_host_identity_failures_report_only_structured_codes() {
                 when.method("POST")
                     .path(format!("/api/runners/runs/{}/ssh/observations", h.run))
                     .json_body_includes(
-                        json!({"expectedGeneration":7,"failureReason":reason}).to_string(),
+                        json!({"expectedCreatedAt":CREATED_AT,"expectedGeneration":7,"failureReason":reason}).to_string(),
                     )
                     .body_excludes("privateKey")
                     .body_excludes("passphrase")

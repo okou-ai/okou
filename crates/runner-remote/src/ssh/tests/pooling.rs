@@ -263,7 +263,9 @@ async fn idle_cache_evicts_the_oldest_connection_and_never_matches_only_an_endpo
         .mock_async(|when, then| {
             when.method("POST")
                 .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
-            then.status(200).json_body(h.credential(true));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(h.credential(true));
         })
         .await;
     let ids: Vec<_> = (0..9).map(|_| uuid::Uuid::new_v4()).collect();
@@ -365,7 +367,9 @@ async fn eight_idle_transports_do_not_reduce_active_session_or_exec_admission() 
         .mock_async(|when, then| {
             when.method("POST")
                 .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
-            then.status(200).json_body(h.credential(true));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(h.credential(true));
         })
         .await;
     for _ in 0..8 {

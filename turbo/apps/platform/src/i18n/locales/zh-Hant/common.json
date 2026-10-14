@@ -5467,6 +5467,24 @@
     "cancel": "取消",
     "close": "關閉",
     "configured": "已配置",
+    "connectionStatus": {
+      "attention_other": "{{count}} 臺 VNC 主機需要處理",
+      "observedAt": "記錄於 {{time}}",
+      "reasons": {
+        "authentication_failed": "身分驗證或伺服器身分校驗失敗。",
+        "disconnected": "伺服器在連線嘗試期間中斷。",
+        "invalid_credential": "無法使用已儲存的憑證。",
+        "kerberos_expired": "Kerberos 憑證已過期。",
+        "kerberos_non_renewable": "Kerberos 憑證無法續期。",
+        "kerberos_renewal_exhausted": "Kerberos 憑證已達續期上限。",
+        "network_failure": "連線傳輸失敗。",
+        "protocol": "伺服器未完成所選連線協定。",
+        "timed_out": "連線嘗試逾時。",
+        "unsafe_destination": "網路原則拒絕了目標位址。",
+        "unsupported_profile": "伺服器不支援所選安全設定。"
+      },
+      "unavailable": "無法獲取 VNC 連線狀態"
+    },
     "credential": {
       "add": "新增憑據",
       "appleDhFieldHelp": "每項 1–63 個 UTF-8 位元組，不允許 NUL 字元。",

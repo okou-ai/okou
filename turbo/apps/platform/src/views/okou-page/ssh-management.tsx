@@ -1099,6 +1099,7 @@ function HostCard({
         <SshHostWarning
           connectionId={connection.id}
           generation={connection.generation}
+          createdAt={connection.createdAt}
         />
       )}
       <p className="text-sm text-muted-foreground">
@@ -1205,7 +1206,7 @@ export function SshHosts() {
   }
   return (
     <div className="grid gap-5">
-      {hosts.data.length > 0 ? <SshAttention /> : null}
+      {hosts.data.length > 0 ? <SshAttention connections={hosts.data} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {t(

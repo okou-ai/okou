@@ -33,6 +33,7 @@ use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 
 pub(crate) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
+pub(crate) const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
 pub(crate) const TOKEN: &str = "vm0_official_test-only";
 
 pub(crate) fn native_registration(
@@ -406,7 +407,7 @@ impl Harness {
             when.method("POST").path(format!("/api/runners/runs/{}/ssh/resolve", self.run))
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId": connection, "runnerIdentity": {"runnerId": self.identity.runner_id(), "heartbeatGeneration": self.identity.heartbeat_generation()}}));
-            then.status(200).json_body(body);
+            then.status(200).header("X-SSH-Connection-Created-At", CREATED_AT).json_body(body);
         }).await
     }
 
@@ -426,10 +427,25 @@ impl Harness {
     }
 
     pub(crate) async fn resolve_for_run(&self, run: RunId, body: Value) -> Mock<'_> {
+        self.resolve_for_run_with_created_at(run, body, Some(CREATED_AT))
+            .await
+    }
+
+    pub(crate) async fn resolve_for_run_with_created_at(
+        &self,
+        run: RunId,
+        body: Value,
+        created_at: Option<&str>,
+    ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST").path(format!("/api/runners/runs/{run}/ssh/resolve"))
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId": CONNECTION, "runnerIdentity": {"runnerId": self.identity.runner_id(), "heartbeatGeneration": self.identity.heartbeat_generation()}}));
+            let then = if let Some(created_at) = created_at {
+                then.header("X-SSH-Connection-Created-At", created_at)
+            } else {
+                then
+            };
             then.status(200).json_body(body);
         }).await
     }
@@ -646,7 +662,7 @@ pub(super) async fn read_http_request(socket: &mut TcpStream) {
 
 pub(super) async fn respond(socket: &mut TcpStream, body: Value) -> io::Result<()> {
     let body = body.to_string();
-    socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
+    socket.write_all(format!("HTTP/1.1 200 OK\r\nX-SSH-Connection-Created-At: {CREATED_AT}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
     socket.shutdown().await
 }
 pub(crate) fn params() -> Value {

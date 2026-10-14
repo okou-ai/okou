@@ -22,6 +22,9 @@ export const sshConnectionObservations = pgTable(
         { onDelete: "cascade" },
       ),
     generation: integer("generation").notNull(),
+    connectionCreatedAt: timestamp("connection_created_at", {
+      mode: "string",
+    }).notNull(),
     observedAt: timestamp("observed_at", { withTimezone: true }).notNull(),
     failureReason: varchar("failure_reason", { length: 64 }),
   },

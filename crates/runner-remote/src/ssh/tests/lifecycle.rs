@@ -118,7 +118,9 @@ async fn redirecting_authority_is_not_followed_and_no_private_body_is_forwarded(
         .api
         .mock_async(|when, then| {
             when.path("/redirected");
-            then.status(200).json_body(h.credential(true));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(h.credential(true));
         })
         .await;
     let _resolve = h

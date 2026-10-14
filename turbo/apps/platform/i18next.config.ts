@@ -28,6 +28,8 @@ export default defineConfig({
     defaultNS: "common",
     functions: ["i18n.t"],
     preservePatterns: [
+      // VNC settings select one allow-listed connection failure at runtime.
+      "vnc.connectionStatus.reasons.*",
       "activity.network.details.*",
       "artifacts.templates.workflowCatalog.*",
       "artifacts.templates.workflowCategories.*",

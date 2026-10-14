@@ -103,6 +103,7 @@ fn material(encoded: api_contracts::SecretUtf8Text<87384>) -> Result<Vec<u8>, Fa
 }
 #[allow(clippy::too_many_arguments)]
 pub(super) fn credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -247,6 +248,7 @@ pub(super) fn credential(
     let credentials =
         Credentials::new(initiator, target, source).map_err(|_| Failure::InvalidCredential)?;
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,

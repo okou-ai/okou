@@ -5493,6 +5493,25 @@
     "cancel": "Abbrechen",
     "close": "Schließen",
     "configured": "Konfiguriert",
+    "connectionStatus": {
+      "attention_one": "{{count}} VNC-Host benötigt Aufmerksamkeit",
+      "attention_other": "{{count}} VNC-Hosts benötigen Aufmerksamkeit",
+      "observedAt": "Beobachtet {{time}}",
+      "reasons": {
+        "authentication_failed": "Authentifizierung oder Überprüfung der Serveridentität fehlgeschlagen.",
+        "disconnected": "Der Server hat die Verbindung während des Verbindungsversuchs getrennt.",
+        "invalid_credential": "Die gespeicherten Zugangsdaten konnten nicht verwendet werden.",
+        "kerberos_expired": "Die Kerberos-Zugangsdaten sind abgelaufen.",
+        "kerberos_non_renewable": "Die Kerberos-Zugangsdaten können nicht erneuert werden.",
+        "kerberos_renewal_exhausted": "Das Erneuerungslimit der Kerberos-Zugangsdaten wurde erreicht.",
+        "network_failure": "Der Verbindungstransport ist fehlgeschlagen.",
+        "protocol": "Der Server hat das gewählte Verbindungsprotokoll nicht abgeschlossen.",
+        "timed_out": "Der Verbindungsversuch hat das Zeitlimit überschritten.",
+        "unsafe_destination": "Das Ziel wurde durch die Netzwerkrichtlinie abgelehnt.",
+        "unsupported_profile": "Der Server unterstützt das gewählte Sicherheitsprofil nicht."
+      },
+      "unavailable": "VNC-Verbindungsstatus nicht verfügbar"
+    },
     "credential": {
       "add": "Zugangsdaten hinzufügen",
       "appleDhFieldHelp": "Je Feld 1–63 UTF-8-Bytes. NUL ist nicht zulässig.",

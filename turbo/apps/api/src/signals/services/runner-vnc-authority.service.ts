@@ -19,6 +19,7 @@ import {
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
+import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   runThreadSshAccess,
   runThreadVncAccess,
@@ -29,6 +30,11 @@ type RunnerVncInput = Pick<
   "connectionId" | "runnerIdentity"
 > & { readonly runId: string };
 const kdcSsh = alias(sshConnections, "vnc_kdc_ssh");
+const kdcSshNeedsRebind =
+  sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
+          (${kdcSsh.transport} = 'tailscale' AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
+    nullableDriverValueDecoder(pgBooleanDecoder),
+  );
 
 /** Always read current authorization from the primary database. */
 export const currentRunnerVncAuthority$ = command(
@@ -37,6 +43,7 @@ export const currentRunnerVncAuthority$ = command(
     const [row] = await db
       .select({
         generation: vncConnections.generation,
+        createdAt: vncCreationTimestamp,
         orgId: agentRuns.orgId,
         userId: agentRuns.userId,
         host: vncConnections.host,
@@ -75,11 +82,7 @@ export const currentRunnerVncAuthority$ = command(
           vncConnections.kerberosRenewableLifetimeSeconds,
         kdcSshGeneration: kdcSsh.generation,
         kdcSshAllowed: runThreadSshAccess(kdcSsh),
-        kdcSshNeedsRebind:
-          sql`(${kdcSsh.transport} = 'cloudflare_access' AND ${kdcSsh.cloudflareAccessId} IS NULL) OR
-          (${kdcSsh.transport} = 'tailscale' AND ${kdcSsh.tailscaleId} IS NULL)`.mapWith(
-            nullableDriverValueDecoder(pgBooleanDecoder),
-          ),
+        kdcSshNeedsRebind,
       })
       .from(agentRuns)
       .innerJoin(

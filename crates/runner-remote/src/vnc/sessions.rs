@@ -241,224 +241,262 @@ impl Run {
                 _ => None,
             },
         )?;
-        let mut transport = credential.transport;
-        let stream = match transport {
-            Transport::Direct => {
-                let resolver_capacity = Arc::clone(&capacity);
-                let network = Arc::clone(&self.runtime.network);
-                let host = credential.host.clone();
-                let port = credential.port;
-                // OS DNS may keep running after its waiter is cancelled. Own its permits
-                // in a tracked task until the actual resolver returns.
-                let resolve = self.tasks.spawn(async move {
-                    let _capacity = resolver_capacity;
-                    let _operation = operation;
-                    network::destination(network, &host, port).await
-                });
-                let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
-                let socket = scope
-                    .wait(self.runtime.network.connect(address))
-                    .await?
-                    .map_err(|_| Failure::Network)?;
-                DirectOrSshStream::Direct(socket)
-            }
-            Transport::Ssh {
-                connection,
-                generation,
-            } => {
-                let ssh = self.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
-                let stream = scope
-                    .wait(ssh.open_direct_tcpip(
-                        connection,
-                        generation,
-                        &credential.host,
-                        credential.port,
-                        session_cancel.clone(),
-                        scope.deadline,
-                    ))
-                    .await?
-                    .map_err(Failure::from)?;
-                transport = Transport::Ssh {
+        let mut observation = super::observation::Attempt {
+            created_at: credential.created_at,
+            generation: credential.generation,
+            transport: credential.transport,
+            kerberos: match &credential.authentication {
+                Authentication::Kerberos { binding, .. } => Some(*binding),
+                _ => None,
+            },
+            authenticated_at: None,
+        };
+        let connection_id = request.connection_id;
+        let result = async {
+            let mut transport = credential.transport;
+            let stream = match transport {
+                Transport::Direct => {
+                    let resolver_capacity = Arc::clone(&capacity);
+                    let network = Arc::clone(&self.runtime.network);
+                    let host = credential.host.clone();
+                    let port = credential.port;
+                    // OS DNS may keep running after its waiter is cancelled. Own its permits
+                    // in a tracked task until the actual resolver returns.
+                    let resolve = self.tasks.spawn(async move {
+                        let _capacity = resolver_capacity;
+                        let _operation = operation;
+                        network::destination(network, &host, port).await
+                    });
+                    let address = scope.wait(resolve).await?.map_err(|_| Failure::Network)??;
+                    let socket = scope
+                        .wait(self.runtime.network.connect(address))
+                        .await?
+                        .map_err(|_| Failure::Network)?;
+                    DirectOrSshStream::Direct(socket)
+                }
+                Transport::Ssh {
                     connection,
-                    generation: stream.generation(),
-                };
-                DirectOrSshStream::Ssh(Box::new(stream))
-            }
-        };
-        if let Authentication::Kerberos { binding, kdc, .. } = &mut credential.authentication {
-            binding.record_ssh_generation(kdc, credential.transport, transport);
-        }
-        let mut kerberos = match &credential.authentication {
-            Authentication::Kerberos { binding, .. } => Some(*binding),
-            _ => None,
-        };
-        let authenticated = scope
-            .wait_deadline_aware(async {
-                match credential.authentication {
-                    Authentication::Kerberos {
-                        server_name,
-                        roots,
-                        credentials,
-                        policy,
-                        binding,
-                        kdc,
-                    } => {
-                        let realm = credentials.realm().to_owned();
-                        let mut caller = super::kerberos::Caller {
-                            runtime: Arc::clone(&self.runtime),
-                            run: self.id,
-                            connection: request.connection_id,
-                            generation: credential.generation,
-                            rfb: transport,
-                            binding,
-                            kdc,
-                            realm,
-                            scope: scope.clone(),
-                            ssh: self.ssh.clone(),
-                            tasks: self.tasks.clone(),
-                            owner: Arc::clone(&native_owner),
-                            exchanges: 0,
-                            total: 0,
-                            awaiting_kdc_reply: false,
-                        };
-                        let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
-                            stream,
-                            &server_name,
-                            roots,
-                            rfb_client::QemuGssapiAuthentication {
-                                credentials,
-                                ticket_policy: policy,
-                                private_root: private_root.clone(),
-                                expires_at: Instant::now() + std::time::Duration::from_secs(7200),
-                            },
-                            &mut caller,
+                    generation,
+                } => {
+                    let ssh = self.ssh.as_ref().ok_or(Failure::UnsupportedProfile)?;
+                    let stream = scope
+                        .wait(ssh.open_direct_tcpip(
+                            connection,
+                            generation,
+                            &credential.host,
+                            credential.port,
+                            session_cancel.clone(),
                             scope.deadline,
                         ))
-                        .await;
-                        kerberos = Some(caller.binding);
-                        caller.authentication_result(result)
-                    }
-                    Authentication::X509 {
-                        server_name,
-                        authentication,
-                        roots,
-                    } => {
-                        rfb_client::authenticate(
-                            stream,
-                            &server_name,
+                        .await?
+                        .map_err(Failure::from)?;
+                    transport = Transport::Ssh {
+                        connection,
+                        generation: stream.generation(),
+                    };
+                    DirectOrSshStream::Ssh(Box::new(stream))
+                }
+            };
+            observation.transport = transport;
+            if let Authentication::Kerberos { binding, kdc, .. } = &mut credential.authentication {
+                binding.record_ssh_generation(kdc, credential.transport, transport);
+                observation.kerberos = Some(*binding);
+            }
+            let mut kerberos = match &credential.authentication {
+                Authentication::Kerberos { binding, .. } => Some(*binding),
+                _ => None,
+            };
+            let authenticated = scope
+                .wait_deadline_aware(async {
+                    match credential.authentication {
+                        Authentication::Kerberos {
+                            server_name,
+                            roots,
+                            credentials,
+                            policy,
+                            binding,
+                            kdc,
+                        } => {
+                            let realm = credentials.realm().to_owned();
+                            let mut caller = super::kerberos::Caller {
+                                runtime: Arc::clone(&self.runtime),
+                                run: self.id,
+                                connection: request.connection_id,
+                                generation: credential.generation,
+                                rfb: transport,
+                                binding,
+                                kdc,
+                                realm,
+                                scope: scope.clone(),
+                                ssh: self.ssh.clone(),
+                                tasks: self.tasks.clone(),
+                                owner: Arc::clone(&native_owner),
+                                exchanges: 0,
+                                total: 0,
+                                awaiting_kdc_reply: false,
+                            };
+                            let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
+                                stream,
+                                &server_name,
+                                roots,
+                                rfb_client::QemuGssapiAuthentication {
+                                    credentials,
+                                    ticket_policy: policy,
+                                    private_root: private_root.clone(),
+                                    expires_at: Instant::now()
+                                        + std::time::Duration::from_secs(7200),
+                                },
+                                &mut caller,
+                                scope.deadline,
+                            ))
+                            .await;
+                            kerberos = Some(caller.binding);
+                            observation.kerberos = kerberos;
+                            caller.authentication_result(result)
+                        }
+                        Authentication::X509 {
+                            server_name,
                             authentication,
                             roots,
-                            scope.deadline,
-                        )
-                        .await
-                    }
-                    Authentication::ClientCertificate {
-                        server_name,
-                        authentication,
-                        roots,
-                        identity,
-                    } => {
-                        rfb_client::authenticate_with_client_certificate(
-                            stream,
-                            &server_name,
+                        } => {
+                            rfb_client::authenticate(
+                                stream,
+                                &server_name,
+                                authentication,
+                                roots,
+                                scope.deadline,
+                            )
+                            .await
+                        }
+                        Authentication::ClientCertificate {
+                            server_name,
                             authentication,
                             roots,
                             identity,
-                            scope.deadline,
-                        )
-                        .await
-                    }
-                    Authentication::AppleVncPassword(password) => {
-                        rfb_client::authenticate_apple_vnc_password(
-                            stream,
-                            password,
-                            scope.deadline,
-                        )
-                        .await
-                    }
-                    Authentication::AppleDh(credentials) => {
-                        rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline).await
-                    }
-                    Authentication::AppleSrp(credentials) => {
-                        rfb_client::authenticate_apple_srp(stream, credentials, scope.deadline)
+                        } => {
+                            rfb_client::authenticate_with_client_certificate(
+                                stream,
+                                &server_name,
+                                authentication,
+                                roots,
+                                identity,
+                                scope.deadline,
+                            )
                             .await
-                    }
-                    Authentication::RsaAes {
-                        security,
-                        pin,
-                        credentials,
-                    } => {
-                        rfb_client::authenticate_rsa_aes(
-                            stream,
+                        }
+                        Authentication::AppleVncPassword(password) => {
+                            rfb_client::authenticate_apple_vnc_password(
+                                stream,
+                                password,
+                                scope.deadline,
+                            )
+                            .await
+                        }
+                        Authentication::AppleDh(credentials) => {
+                            rfb_client::authenticate_apple_dh(stream, credentials, scope.deadline)
+                                .await
+                        }
+                        Authentication::AppleSrp(credentials) => {
+                            rfb_client::authenticate_apple_srp(stream, credentials, scope.deadline)
+                                .await
+                        }
+                        Authentication::RsaAes {
                             security,
-                            credentials,
                             pin,
-                            scope.deadline,
-                        )
-                        .await
-                    }
-                    Authentication::AppleRsaSrp(credentials) => {
-                        rfb_client::authenticate_apple_rsa_srp(stream, credentials, scope.deadline)
+                            credentials,
+                        } => {
+                            rfb_client::authenticate_rsa_aes(
+                                stream,
+                                security,
+                                credentials,
+                                pin,
+                                scope.deadline,
+                            )
                             .await
+                        }
+                        Authentication::AppleRsaSrp(credentials) => {
+                            rfb_client::authenticate_apple_rsa_srp(
+                                stream,
+                                credentials,
+                                scope.deadline,
+                            )
+                            .await
+                        }
                     }
-                }
-            })
-            .await?
-            .map_err(|error| {
-                if let rfb_client::Error::AuthenticationDeadlineExceeded { stage } = &error {
-                    tracing::info!(
-                        vnc_authentication_stage = stage.as_str(),
-                        "VNC authentication deadline exceeded"
-                    );
-                }
-                Failure::from(error)
-            })?;
-        let connection = scope
-            .wait(authenticated.initialize(request.mode.into(), scope.deadline))
-            .await?
-            .map_err(Failure::from)?;
-        let engine = Engine::new(connection);
-        let expires = engine.expires_at();
-        // Admission must not hold a transport past its native authentication expiry.
-        let authority_scope = Scope {
-            deadline: scope.deadline.min(expires),
-            ..scope.clone()
-        };
-        authority_scope
-            .wait(self.runtime.authority.check(
-                self.id,
-                request.connection_id,
-                credential.generation,
+                })
+                .await?
+                .map_err(|error| {
+                    if let rfb_client::Error::AuthenticationDeadlineExceeded { stage } = &error {
+                        tracing::info!(
+                            vnc_authentication_stage = stage.as_str(),
+                            "VNC authentication deadline exceeded"
+                        );
+                    }
+                    Failure::from(error)
+                })?;
+            let connection = scope
+                .wait(authenticated.initialize(request.mode.into(), scope.deadline))
+                .await?
+                .map_err(Failure::from)?;
+            observation.authenticated_at = Some(chrono::Utc::now());
+            let engine = Engine::new(connection);
+            let expires = engine.expires_at();
+            // Retain main's native-expiry bound while recording connection evidence.
+            let authority_scope = Scope {
+                deadline: scope.deadline.min(expires),
+                ..scope.clone()
+            };
+            authority_scope
+                .wait(self.runtime.authority.check(
+                    self.id,
+                    request.connection_id,
+                    credential.generation,
+                    transport,
+                    kerberos,
+                ))
+                .await??;
+            authority_scope.check()?;
+            if self.cancel.is_cancelled() {
+                return Err(Failure::Cancelled);
+            }
+            let session = Arc::new(Session {
+                info: Info {
+                    session_id: Uuid::new_v4(),
+                    connection_id: request.connection_id,
+                    mode: request.mode,
+                },
+                expires,
                 transport,
                 kerberos,
-            ))
-            .await??;
-        authority_scope.check()?;
-        if self.cancel.is_cancelled() {
-            return Err(Failure::Cancelled);
+                cancel: session_cancel,
+                closed: CancellationToken::new(),
+                engine: tokio::sync::Mutex::new(engine),
+            });
+            admission.admit(Arc::clone(&session))?;
+            self.tasks.spawn(cleanup(
+                Arc::clone(&session),
+                Arc::clone(&self.sessions),
+                scope.sandbox.clone(),
+                expires,
+                capacity,
+            ));
+            Ok(session)
         }
-        let session = Arc::new(Session {
-            info: Info {
-                session_id: Uuid::new_v4(),
-                connection_id: request.connection_id,
-                mode: request.mode,
-            },
-            expires,
-            transport,
-            kerberos,
-            cancel: session_cancel,
-            closed: CancellationToken::new(),
-            engine: tokio::sync::Mutex::new(engine),
-        });
-        admission.admit(Arc::clone(&session))?;
-        self.tasks.spawn(cleanup(
-            Arc::clone(&session),
-            Arc::clone(&self.sessions),
-            scope.sandbox.clone(),
-            expires,
-            capacity,
-        ));
-        Ok(session)
+        .await;
+        if let Some(report) = observation.finish(result.as_ref().err().copied()) {
+            if let Ok(permit) = Arc::clone(&self.runtime.reports).try_acquire_owned() {
+                let runtime = Arc::clone(&self.runtime);
+                let run = self.id;
+                // Reporting owns no session capacity, operation lease or guest output.
+                self.tasks.spawn(async move {
+                    let _permit = permit;
+                    runtime.authority.observe(run, connection_id, report).await;
+                });
+            } else {
+                tracing::info!(run_id = %self.id, connection_id = %connection_id, "VNC observation report capacity exhausted");
+            }
+        }
+        result
     }
 
     pub(super) fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {

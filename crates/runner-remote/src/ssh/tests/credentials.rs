@@ -262,7 +262,9 @@ async fn malformed_sensitive_handoffs_never_reach_credentials_or_network() {
             .mock_async(|when, then| {
                 when.method("POST")
                     .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
-                then.status(200).body(body);
+                then.status(200)
+                    .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                    .body(body);
             })
             .await;
         let frames = h.request(params()).await;
