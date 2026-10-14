@@ -31,6 +31,7 @@ enum Profile {
     None,
     Vnc,
     Plain,
+    InvalidFramebuffer,
 }
 
 pub(crate) const PLAIN_USERNAME: &str = " operator界 ";
@@ -58,6 +59,10 @@ impl Peer {
 
     pub(crate) async fn plain() -> Self {
         Self::with_profile(Profile::Plain, false).await
+    }
+
+    pub(crate) async fn invalid_framebuffer() -> Self {
+        Self::with_profile(Profile::InvalidFramebuffer, false).await
     }
 
     pub(crate) async fn certificate_none() -> Self {
@@ -200,7 +205,7 @@ async fn serve(
     assert_eq!(socket.read_u16().await?, 2);
     socket.write_all(&[0, 1]).await?;
     let subtype = match profile {
-        Profile::None => 260,
+        Profile::None | Profile::InvalidFramebuffer => 260,
         Profile::Vnc => 261,
         Profile::Plain => 262,
     };
@@ -209,7 +214,7 @@ async fn serve(
     socket.write_u8(1).await?;
     let mut socket = TlsAcceptor::from(config).accept(socket).await?;
     match profile {
-        Profile::None => {}
+        Profile::None | Profile::InvalidFramebuffer => {}
         Profile::Vnc => {
             socket.write_all(b"0123456789abcdef").await?;
             socket.flush().await?;
@@ -247,7 +252,13 @@ async fn serve(
     socket.flush().await?;
     let mode = socket.read_u8().await?;
     events.send(Event::Mode(mode)).unwrap();
-    socket.write_u16(2).await?;
+    socket
+        .write_u16(if matches!(profile, Profile::InvalidFramebuffer) {
+            0
+        } else {
+            2
+        })
+        .await?;
     socket.write_u16(1).await?;
     socket
         .write_all(&[32, 24, 0, 1, 0, 255, 0, 255, 0, 255, 0, 8, 16, 0, 0, 0])

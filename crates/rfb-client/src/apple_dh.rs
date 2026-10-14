@@ -18,7 +18,8 @@ use tokio::{
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    AppleDhCredentials, Authenticated, AuthenticatedStream, AuthenticationStage, Error,
+    AppleDhCredentials, AppleDhParameterCheck, Authenticated, AuthenticatedStream,
+    AuthenticationStage, Error,
     authentication::{discard_reason, phase, read_security_result},
 };
 
@@ -83,7 +84,11 @@ async fn select_apple_dh<S: AsyncRead + AsyncWrite + Unpin>(stream: &mut S) -> R
     let mut types = [0u8; u8::MAX as usize];
     let offered = types
         .get_mut(..usize::from(count))
-        .ok_or(Error::InvalidAppleDhParameters)?;
+        .ok_or(Error::InvalidAppleDhParameters {
+            check: AppleDhParameterCheck::SecurityTypes,
+            generator: None,
+            key_bytes: None,
+        })?;
     stream.read_exact(offered).await?;
     if !offered.contains(&APPLE_DH) {
         return Err(Error::UnsupportedSecurity);
@@ -99,48 +104,58 @@ async fn exchange_credentials<S: AsyncRead + AsyncWrite + Unpin>(
     deadline: Instant,
 ) -> Result<(), Error> {
     let generator = stream.read_u16().await?;
-    let key_bytes = usize::from(stream.read_u16().await?);
-    if !(2..=255).contains(&generator)
-        || !(MIN_KEY_BYTES..=MAX_KEY_BYTES).contains(&key_bytes)
-        || key_bytes % 16 != 0
-    {
-        return Err(Error::InvalidAppleDhParameters);
+    let declared_key_bytes = stream.read_u16().await?;
+    let key_bytes = usize::from(declared_key_bytes);
+    let invalid = |check| Error::InvalidAppleDhParameters {
+        check,
+        generator: Some(generator),
+        key_bytes: Some(declared_key_bytes),
+    };
+    if !(2..=255).contains(&generator) {
+        return Err(invalid(AppleDhParameterCheck::Generator));
+    }
+    if !(MIN_KEY_BYTES..=MAX_KEY_BYTES).contains(&key_bytes) || key_bytes % 16 != 0 {
+        return Err(invalid(AppleDhParameterCheck::KeyLength));
     }
 
     let mut modulus_bytes = [0u8; MAX_KEY_BYTES];
     let mut server_public_bytes = [0u8; MAX_KEY_BYTES];
     let modulus_slice = modulus_bytes
         .get_mut(..key_bytes)
-        .ok_or(Error::InvalidAppleDhParameters)?;
+        .ok_or_else(|| invalid(AppleDhParameterCheck::Encoding))?;
     stream.read_exact(modulus_slice).await?;
     let server_public_slice = server_public_bytes
         .get_mut(..key_bytes)
-        .ok_or(Error::InvalidAppleDhParameters)?;
+        .ok_or_else(|| invalid(AppleDhParameterCheck::Encoding))?;
     stream.read_exact(server_public_slice).await?;
-    if modulus_slice.first().is_none_or(|byte| byte & 0x80 == 0)
-        || modulus_slice.last().is_none_or(|byte| byte & 1 == 0)
-    {
-        return Err(Error::InvalidAppleDhParameters);
+    if modulus_slice.first().is_none_or(|byte| byte & 0x80 == 0) {
+        return Err(invalid(AppleDhParameterCheck::ModulusWidth));
+    }
+    if modulus_slice.last().is_none_or(|byte| byte & 1 == 0) {
+        return Err(invalid(AppleDhParameterCheck::ModulusParity));
     }
 
-    let bits = u32::try_from(key_bytes * 8).map_err(|_| Error::InvalidAppleDhParameters)?;
+    let bits =
+        u32::try_from(key_bytes * 8).map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
     let modulus = BoxedUint::from_be_slice(modulus_slice, bits)
-        .map_err(|_| Error::InvalidAppleDhParameters)?;
-    let one = BoxedUint::from_be_slice(&[1], bits).map_err(|_| Error::InvalidAppleDhParameters)?;
-    let two = BoxedUint::from_be_slice(&[2], bits).map_err(|_| Error::InvalidAppleDhParameters)?;
+        .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
+    let one = BoxedUint::from_be_slice(&[1], bits)
+        .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
+    let two = BoxedUint::from_be_slice(&[2], bits)
+        .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
     let modulus_minus_one = modulus.wrapping_sub(&one);
     let server_public = BoxedUint::from_be_slice(server_public_slice, bits)
-        .map_err(|_| Error::InvalidAppleDhParameters)?;
+        .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
     if server_public < two || server_public >= modulus_minus_one {
-        return Err(Error::InvalidAppleDhParameters);
+        return Err(invalid(AppleDhParameterCheck::ServerPublicRange));
     }
     let generator = BoxedUint::from_be_slice(&generator.to_be_bytes(), bits)
-        .map_err(|_| Error::InvalidAppleDhParameters)?;
+        .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?;
     if generator >= modulus_minus_one {
-        return Err(Error::InvalidAppleDhParameters);
+        return Err(invalid(AppleDhParameterCheck::Generator));
     }
-    let odd =
-        Option::<Odd<BoxedUint>>::from(Odd::new(modulus)).ok_or(Error::InvalidAppleDhParameters)?;
+    let odd = Option::<Odd<BoxedUint>>::from(Odd::new(modulus))
+        .ok_or_else(|| invalid(AppleDhParameterCheck::ModulusParity))?;
     let params = BoxedMontyParams::new_vartime(odd);
 
     let mut private_bytes = Zeroizing::new([0u8; PRIVATE_BYTES]);
@@ -151,7 +166,7 @@ async fn exchange_credentials<S: AsyncRead + AsyncWrite + Unpin>(
     *private_bytes.last_mut().ok_or(Error::Randomness)? |= 1;
     let private = Zeroizing::new(
         BoxedUint::from_be_slice(&*private_bytes, bits)
-            .map_err(|_| Error::InvalidAppleDhParameters)?,
+            .map_err(|_| invalid(AppleDhParameterCheck::Encoding))?,
     );
     drop(private_bytes);
 
