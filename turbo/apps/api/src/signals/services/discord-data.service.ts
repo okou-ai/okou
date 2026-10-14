@@ -6,9 +6,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { agents } from "@okouai/db/schema/agent";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
 import { discordUserDmPreferences } from "@okouai/db/schema/discord-user-dm-preference";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { zodDriverValueDecoder } from "../../lib/db-structured-result";
+import { discordSnowflakeSchema } from "../external/discord-client";
 import type { ApiOrgRole } from "../../types/auth";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { nowDate } from "../../lib/time";
@@ -32,21 +33,29 @@ import {
 
 export interface DiscordVerifiedBinding {
   readonly connectionId: string;
+  // OAuth origin for account lookups; live conversation access resolves its actual guild.
   readonly guildId: string;
   readonly guildName: string | null;
   readonly discordUserId: string;
   readonly botUserId: string;
   readonly orgId: string;
+  readonly orgName: string;
   readonly userId: string;
 }
 
+const discordSnowflakeDecoder = zodDriverValueDecoder(discordSnowflakeSchema);
+
 const bindingColumns = Object.freeze({
   connectionId: discordOrgConnections.id,
-  guildId: discordOrgInstallations.guildId,
-  guildName: discordOrgInstallations.guildName,
+  guildId: sql`${discordOauthStates.verifiedGuildId}`.mapWith(
+    discordSnowflakeDecoder,
+  ),
+  guildName: discordOauthStates.verifiedGuildName,
   discordUserId: discordOrgConnections.discordUserId,
-  botUserId: discordOrgInstallations.botUserId,
-  orgId: discordOrgInstallations.orgId,
+  botUserId: sql`${discordOauthStates.verifiedBotUserId}`.mapWith(
+    discordSnowflakeDecoder,
+  ),
+  orgId: discordOauthStates.orgId,
   userId: discordOrgConnections.userId,
 });
 
@@ -113,8 +122,8 @@ function createVerifiedBindings(
       .select(bindingColumns)
       .from(discordOrgConnections)
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
       .where(where);
     const result: DiscordVerifiedBinding[] = [];
@@ -147,12 +156,11 @@ function createVerifiedBindings(
         }
         throw membership.error;
       }
-      if (
-        membership.value.data.some((member) => {
-          return member.publicUserData?.userId === row.userId;
-        })
-      ) {
-        result.push(row);
+      const member = membership.value.data.find((candidate) => {
+        return candidate.publicUserData?.userId === row.userId;
+      });
+      if (member) {
+        result.push({ ...row, orgName: member.organization.name });
       }
     }
     return result;
@@ -165,32 +173,17 @@ export function createDiscordUserBinding(
     Promise<{ readonly orgId: string; readonly userId: string } | null>
   >,
 ): Computed<Promise<DiscordVerifiedBinding | null>> {
-  const guildUserWhere$ = computed(async (get) => {
+  const accountWhere$ = computed(async (get) => {
     const identity = await get(identity$);
     if (!identity) {
       return null;
     }
-    const [row] = await get(db$)
-      .select(bindingColumns)
-      .from(discordOrgConnections)
-      .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
-      )
-      .where(
-        and(
-          eq(discordOrgInstallations.orgId, identity.orgId),
-          eq(discordOrgConnections.userId, identity.userId),
-        ),
-      );
-    return row
-      ? and(
-          eq(discordOrgConnections.guildId, row.guildId),
-          eq(discordOrgConnections.discordUserId, row.discordUserId),
-        )!
-      : null;
+    return and(
+      eq(discordOauthStates.orgId, identity.orgId),
+      eq(discordOrgConnections.userId, identity.userId),
+    )!;
   });
-  const bindings$ = createVerifiedBindings(guildUserWhere$);
+  const bindings$ = createVerifiedBindings(accountWhere$);
   return computed(async (get) => {
     const identity = await get(identity$);
     if (!identity) {
@@ -201,22 +194,6 @@ export function createDiscordUserBinding(
       binding.orgId === identity.orgId
       ? binding
       : null;
-  });
-}
-
-export function discordGuildUserBinding(args: {
-  readonly guildId: string;
-  readonly discordUserId: string;
-}): Computed<Promise<DiscordVerifiedBinding | null>> {
-  const bindings$ = verifiedBindings(
-    and(
-      eq(discordOrgConnections.guildId, args.guildId),
-      eq(discordOrgConnections.discordUserId, args.discordUserId),
-    )!,
-  );
-  return computed(async (get) => {
-    const rows = await get(bindings$);
-    return rows[0] ?? null;
   });
 }
 
@@ -314,16 +291,15 @@ const commitDiscordDmSelection$ = command(
           })
           .from(discordOrgConnections)
           .innerJoin(
-            discordOrgInstallations,
-            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+            discordOauthStates,
+            eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
           )
           .where(
             and(
               eq(discordOrgConnections.id, binding.connectionId),
-              eq(discordOrgConnections.guildId, binding.guildId),
               eq(discordOrgConnections.discordUserId, binding.discordUserId),
               eq(discordOrgConnections.userId, binding.userId),
-              eq(discordOrgInstallations.orgId, binding.orgId),
+              eq(discordOauthStates.orgId, binding.orgId),
             ),
           ),
       )
@@ -397,22 +373,20 @@ const commitDiscordBindingDisconnect$ = command(
     const candidate = db.$with("disconnect_discord_candidate").as(
       db
         .select({
-          guildId: discordOrgConnections.guildId,
+          connectionId: discordOrgConnections.id,
           userId: discordOrgConnections.userId,
-          orgId: discordOrgInstallations.orgId,
+          orgId: discordOauthStates.orgId,
         })
         .from(discordOrgConnections)
         .innerJoin(
-          discordOrgInstallations,
-          eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+          discordOauthStates,
+          eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
         )
         .where(
           and(
             eq(discordOrgConnections.id, args.connectionId),
             eq(discordOrgConnections.discordUserId, args.discordUserId),
-            args.orgId
-              ? eq(discordOrgInstallations.orgId, args.orgId)
-              : undefined,
+            args.orgId ? eq(discordOauthStates.orgId, args.orgId) : undefined,
           ),
         ),
     );
@@ -448,8 +422,8 @@ const commitDiscordBindingDisconnect$ = command(
             db.select({ userId: candidate.userId }).from(candidate),
           ),
           eq(
-            discordOrgConnections.guildId,
-            db.select({ guildId: candidate.guildId }).from(candidate),
+            discordOrgConnections.id,
+            db.select({ connectionId: candidate.connectionId }).from(candidate),
           ),
           gte(db.select({ count: count() }).from(revoked), 0),
         ),
@@ -520,29 +494,23 @@ function discordStatusAgentFields(
 }
 
 function discordStatusConnection(
-  identity$: Computed<{ readonly userId: string }>,
-  installation$: Computed<
-    Promise<typeof discordOrgInstallations.$inferSelect | undefined>
-  >,
+  identity$: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
   return computed(async (get) => {
-    const installation = await get(installation$);
-    if (!installation) {
-      return undefined;
-    }
     const args = get(identity$);
-    const connectionWhere = and(
-      eq(discordOrgConnections.guildId, installation.guildId),
-      eq(discordOrgConnections.userId, args.userId),
-    )!;
     const [connection] = await get(db$)
       .select(bindingColumns)
       .from(discordOrgConnections)
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
-      .where(connectionWhere);
+      .where(
+        and(
+          eq(discordOauthStates.orgId, args.orgId),
+          eq(discordOrgConnections.userId, args.userId),
+        ),
+      );
     return connection;
   });
 }
@@ -558,15 +526,7 @@ export function discordOrgStatus(
   const role$ = discordMemberRole(identity$);
   const agent$ = discordEffectiveAgent(identity$);
   const enabled$ = discordIntegrationEnabledForOwner(identity$);
-  const installation$ = computed(async (get) => {
-    const args = get(identity$);
-    const [installation] = await get(db$)
-      .select()
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.orgId, args.orgId));
-    return installation;
-  });
-  const connection$ = discordStatusConnection(identity$, installation$);
+  const connection$ = discordStatusConnection(identity$);
   const discordUserId$ = computed(async (get) => {
     const connection = await get(connection$);
     return connection?.discordUserId ?? null;
@@ -579,7 +539,6 @@ export function discordOrgStatus(
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {
       isAvailable: enabled && config !== null,
-      isInstalled: false,
       isConnected: false,
       isAdmin: args.orgRole === "admin",
       guildId: null,
@@ -614,20 +573,21 @@ export function discordOrgStatus(
             : "mentions_only"
           : "unavailable",
     };
-    const installation = await get(installation$);
-    if (!installation) {
-      return { ...currentStatus, isAdmin: role === "admin" };
-    }
     const connection = await get(connection$);
     const agent = await get(agent$);
-    const bindings = connection
-      ? (await get(statusBindings$)).filter((binding) => {
-          return binding.userId === args.userId;
-        })
-      : [];
-    const resolution = connection ? await get(dmBinding$) : null;
+    if (!connection) {
+      return {
+        ...currentStatus,
+        isAdmin: role === "admin",
+        ...discordStatusAgentFields(agent),
+      };
+    }
+    const bindings = (await get(statusBindings$)).filter((binding) => {
+      return binding.userId === args.userId;
+    });
+    const resolution = await get(dmBinding$);
     const [savedChoice] =
-      connection && resolution?.kind === "connected"
+      resolution.kind === "connected"
         ? await get(db$)
             .select({ connectionId: discordUserDmPreferences.connectionId })
             .from(discordUserDmPreferences)
@@ -639,28 +599,30 @@ export function discordOrgStatus(
             )
         : [];
     const choice =
-      resolution?.kind === "connected" &&
+      resolution.kind === "connected" &&
       savedChoice?.connectionId === resolution.binding.connectionId
         ? resolution.binding
         : null;
     return {
       ...currentStatus,
       isAdmin: role === "admin",
-      isInstalled: true,
-      isConnected: connection !== undefined,
-      guildId: installation.guildId,
-      guildName: installation.guildName,
-      discordUserId: connection?.discordUserId ?? null,
+      isConnected: true,
+      guildId: connection.guildId,
+      guildName: connection.guildName,
+      discordUserId: connection.discordUserId,
       ...discordStatusAgentFields(agent),
       dmSelectionConnectionId:
         choice?.userId === args.userId ? choice.connectionId : null,
-      dmBindings: bindings.map(({ connectionId, guildId, guildName }) => {
-        return {
-          connectionId,
-          guildId,
-          guildName,
-        };
-      }),
+      dmBindings: bindings.map(
+        ({ connectionId, guildId, guildName, orgName }) => {
+          return {
+            connectionId,
+            guildId,
+            guildName,
+            workspaceName: orgName,
+          };
+        },
+      ),
     };
   });
 }

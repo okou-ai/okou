@@ -27,7 +27,7 @@ const loadCurrentConversationAccess$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        guildId: args.target.guildId,
+        guildId: args.target.guildId ?? undefined,
         channelId,
         mode,
       },

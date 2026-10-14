@@ -421,7 +421,7 @@ async function disconnect(owner: Actor): Promise<void> {
       integrationsDiscordContract,
     ).disconnect({
       headers: accountApi.authenticate(owner),
-      query: { action: "disconnect" },
+      query: {},
     }),
     [200],
   );
@@ -471,10 +471,15 @@ describe("Discord account preferences through private controls", () => {
     );
     mockDiscordMemberships(context, [first.owner, second.owner]);
     const discord = discordHttp([first, second]);
-
-    const message = await discord.send(
-      commandPayload(guildSender(first), "disconnect"),
+    const sender = guildSender(first);
+    const menu = selectMenu(
+      await discord.send(commandPayload(sender, "connect")),
     );
+    await discord.send(
+      selectPayload(sender, menu.custom_id, first.binding.connectionId),
+    );
+
+    const message = await discord.send(commandPayload(sender, "disconnect"));
 
     expect(message.content).toContain("disconnected from this workspace");
     expect((await readStatus(first.owner)).isConnected).toBeFalsy();
@@ -501,45 +506,56 @@ describe("Discord account preferences through private controls", () => {
     },
   );
 
-  it("requires and saves an explicit workspace choice for a sender with multiple DM bindings", async () => {
-    const first = await fixture();
-    const second = await fixture(
-      actor(undefined, first.owner.userId),
-      first.binding.discordUserId,
-    );
-    mockDiscordMemberships(context, [first.owner, second.owner]);
-    const sender = {
-      discordUserId: first.binding.discordUserId,
-      channelId: uniqueDiscordSnowflake(),
-    };
-    const discord = discordHttp([first, second], sender);
+  it.each(["DM", "guild"] as const)(
+    "requires and saves an explicit workspace choice in a %s",
+    async (surface) => {
+      const first = await fixture();
+      const second = await fixture(
+        actor(undefined, first.owner.userId),
+        first.binding.discordUserId,
+      );
+      mockDiscordMemberships(context, [first.owner, second.owner]);
+      const sender =
+        surface === "guild"
+          ? guildSender(first)
+          : {
+              discordUserId: first.binding.discordUserId,
+              channelId: uniqueDiscordSnowflake(),
+            };
+      const discord = discordHttp(
+        [first, second],
+        surface === "DM" ? sender : undefined,
+      );
 
-    const undecided = await discord.send(commandPayload(sender, "connect"));
-    const choice = selectMenu(undecided);
-    expect(undecided.content).toContain("Choose your workspace for bot DMs");
-    expect(
-      new Set(
-        choice.options.map((option) => {
-          return option.value;
-        }),
-      ),
-    ).toStrictEqual(
-      new Set([first.binding.connectionId, second.binding.connectionId]),
-    );
-    expect((await readStatus(first.owner)).dmSelectionConnectionId).toBeNull();
+      const undecided = await discord.send(commandPayload(sender, "connect"));
+      const choice = selectMenu(undecided);
+      expect(undecided.content).toContain("Choose your workspace for Discord");
+      expect(
+        new Set(
+          choice.options.map((option) => {
+            return option.value;
+          }),
+        ),
+      ).toStrictEqual(
+        new Set([first.binding.connectionId, second.binding.connectionId]),
+      );
+      expect(
+        (await readStatus(first.owner)).dmSelectionConnectionId,
+      ).toBeNull();
 
-    const selected = await discord.send(
-      selectPayload(sender, choice.custom_id, second.binding.connectionId),
-    );
+      const selected = await discord.send(
+        selectPayload(sender, choice.custom_id, second.binding.connectionId),
+      );
 
-    expect(selected.content).toContain("Workspace selected for bot DMs");
-    expect((await readStatus(second.owner)).dmSelectionConnectionId).toBe(
-      second.binding.connectionId,
-    );
-    expect(
-      preselected(await discord.send(commandPayload(sender, "connect"))),
-    ).toStrictEqual([second.binding.connectionId]);
-  });
+      expect(selected.content).toContain("Workspace selected for Discord");
+      expect((await readStatus(second.owner)).dmSelectionConnectionId).toBe(
+        second.binding.connectionId,
+      );
+      expect(
+        preselected(await discord.send(commandPayload(sender, "connect"))),
+      ).toStrictEqual([second.binding.connectionId]);
+    },
+  );
 
   it.each([
     "sender",

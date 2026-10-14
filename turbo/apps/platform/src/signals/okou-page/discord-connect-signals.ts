@@ -4,13 +4,8 @@ import { ROUTES } from "../route-paths.ts";
 import { discordOrgData$, startDiscordAuthorization$ } from "./discord.ts";
 
 export const connectDiscordAccount$ = command(
-  async (
-    { get, set },
-    flow: "install" | "connect",
-    guildId: string | null,
-    signal: AbortSignal,
-  ) => {
-    await set(startDiscordAuthorization$, flow, guildId, signal);
+  async ({ get, set }, guildId: string | null, signal: AbortSignal) => {
+    await set(startDiscordAuthorization$, guildId, signal);
     signal.throwIfAborted();
     const data = await get(discordOrgData$);
     signal.throwIfAborted();

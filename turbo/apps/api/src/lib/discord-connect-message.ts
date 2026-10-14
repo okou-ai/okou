@@ -10,7 +10,7 @@ export function discordConnectMessage(
     url.searchParams.set("guild_id", guildId);
   }
   return {
-    content: `Please connect your account to use ${BRAND_PRESENTATION.assistantName} in this workspace.`,
+    content: `Please connect your account to use ${BRAND_PRESENTATION.assistantName} from Discord.`,
     components: [
       {
         type: 1,

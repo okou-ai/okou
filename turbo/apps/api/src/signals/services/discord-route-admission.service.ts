@@ -113,7 +113,7 @@ const resolveDiscordAdmissionSource$ = command(
       {
         orgId: binding.orgId,
         userId: binding.userId,
-        guildId: binding.guildId,
+        guildId: message.guild_id,
         channelId: message.channel_id,
         mode: "write",
       },
@@ -166,7 +166,13 @@ const resolveDiscordAdmissionSource$ = command(
     if (!routeChannelId) {
       throw new Error("Discord thread has no parent channel");
     }
-    return { binding, channel, isDm, isThread, routeChannelId };
+    return {
+      binding: sourceAccess.binding,
+      channel,
+      isDm,
+      isThread,
+      routeChannelId,
+    };
   },
 );
 

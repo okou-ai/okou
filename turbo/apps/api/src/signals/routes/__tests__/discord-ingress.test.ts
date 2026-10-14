@@ -154,6 +154,7 @@ async function launchedRun(actor: ConnectedDiscordActor, threadId: string) {
 async function discordStatus(
   actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
 ) {
+  mockDiscordMemberships(context, [actor]);
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -191,15 +192,13 @@ describe("canonical Discord ingress", () => {
       const client = setupApp({ context, routes: integrationsDiscordRoutes })(
         integrationsDiscordContract,
       );
-      for (const action of ["disconnect", "uninstall"] as const) {
-        await accept(
-          client.disconnect({
-            headers: { authorization: "Bearer clerk-session" },
-            query: { action },
-          }),
-          [200, 403, 404],
-        );
-      }
+      await accept(
+        client.disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200, 404],
+      );
       await deleteFeatureSwitchesForUser(context, identity);
     });
     await updateFeatureSwitchesForUser(context, identity, {
@@ -215,7 +214,6 @@ describe("canonical Discord ingress", () => {
     const status = await discordStatus(actor);
     expect(status).toMatchObject({
       isAvailable: true,
-      isInstalled: true,
       isConnected: true,
       discordUserId: actor.discordUserId,
       defaultAgentId: null,
@@ -226,6 +224,7 @@ describe("canonical Discord ingress", () => {
         connectionId: actor.connectionId,
         guildId: actor.guildId,
         guildName: actor.guildName,
+        workspaceName: "Discord test workspace",
       },
     ]);
     const message = discordMessageForTest(actor, {
@@ -363,7 +362,67 @@ describe("canonical Discord ingress", () => {
     },
   );
 
-  it.each(["installed", "uninstalled", "connected-elsewhere"] as const)(
+  it("uses a connected account in another server after the bot leaves its original server", async () => {
+    const actor = await connected();
+    const elsewhere = { ...actor, guildId: uniqueDiscordSnowflake() };
+    const provider = mockDiscordProvider(elsewhere);
+    const message = discordMessageForTest(elsewhere, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> help from another server`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected cross-server account routing");
+    }
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await launchedRun(actor, thread.id);
+    // A connection does not grant access after Discord removes the bot.
+    provider.deniedMembers.add(actor.botUserId);
+    const denied = discordMessageForTest(elsewhere, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> bot no longer belongs here`,
+    });
+    provider.messages.set(denied.id, denied);
+    // Gateway acceptance records the event; live authorization happens before chat admission.
+    expect((await postDiscordMessage(context, denied)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(1);
+    await expect(discordStatus(actor)).resolves.toMatchObject({
+      isConnected: true,
+    });
+  });
+
+  it("uses the account's bot DM when its original server is no longer shared", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider({
+      ...actor,
+      guildId: uniqueDiscordSnowflake(),
+    });
+    const message = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "continue in my private chat",
+    });
+    provider.messages.set(message.id, message);
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the verified account's DM to remain usable");
+    }
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await launchedRun(actor, thread.id);
+  });
+
+  it.each(["installed", "uninstalled"] as const)(
     "replies to unconnected guild mentions with a setup link (%s)",
     async (scenario) => {
       mockEnv("APP_URL", "https://app.okou.ai");
@@ -376,10 +435,7 @@ describe("canonical Discord ingress", () => {
         type: 0,
         guild_id: guildId,
       });
-      const stranger =
-        scenario === "connected-elsewhere"
-          ? actor.discordUserId
-          : uniqueDiscordSnowflake();
+      const stranger = uniqueDiscordSnowflake();
       const message = {
         ...discordMessageForTest(actor, {
           channelId: provider.guildChannelId,
@@ -395,7 +451,7 @@ describe("canonical Discord ingress", () => {
       expect(provider.sentMessages).toHaveLength(1);
       expect(provider.sentMessages[0]).toMatchObject({
         channel_id: message.channel_id,
-        content: `<@${stranger}> Please connect your account to use Okou in this workspace.`,
+        content: `<@${stranger}> Please connect your account to use Okou from Discord.`,
         components: [
           {
             type: 1,
@@ -939,7 +995,7 @@ describe("canonical Discord ingress", () => {
     );
   });
 
-  it("ignores temporary guild unavailability and deduplicates uninstall replay after reinstall", async () => {
+  it("preserves account connections across temporary unavailability, bot removal, and replay", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const eventId = `GUILD_DELETE:${actor.guildId}:removed`;
@@ -962,7 +1018,7 @@ describe("canonical Discord ingress", () => {
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const removed = {
       version: 1 as const,
@@ -973,17 +1029,14 @@ describe("canonical Discord ingress", () => {
     };
     expect(
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
-    ).toBe("accepted");
+    ).toBe("ignored");
     await flushWaitUntilForTest();
     expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
-      [`user:${actor.userId}`],
+      [],
     );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "discord:changed",
-      null,
-    );
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: false,
+      isConnected: true,
     });
     const reinstalled = await createPublicDiscordBinding(context, {
       flow: "install",
@@ -995,19 +1048,19 @@ describe("canonical Discord ingress", () => {
       discordUserId: actor.discordUserId,
       guildName: "Discord test guild",
     });
-    expect(reinstalled.connectionId).not.toBe(actor.connectionId);
+    expect(reinstalled.connectionId).toBe(actor.connectionId);
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.channelGet.mockClear();
     expect(
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
-    ).toBe("duplicate");
+    ).toBe("ignored");
     await flushWaitUntilForTest();
     expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
@@ -1557,7 +1610,7 @@ describe("canonical Discord ingress", () => {
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
     expect(noticesTo(dmId)[0]).toMatchObject({
-      content: "Please connect your account to use Okou in this workspace.",
+      content: "Please connect your account to use Okou from Discord.",
       components: [
         {
           type: 1,

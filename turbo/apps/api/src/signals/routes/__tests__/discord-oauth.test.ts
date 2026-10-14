@@ -65,7 +65,7 @@ function fixture() {
   const botId = snowflake();
   const guildId = snowflake();
   const discordUserId = snowflake();
-  const dmId = snowflake();
+  const dmChannels = new Map<string, string>();
   const actors: Actor[] = [];
   const grants = new Map<string, Grant>();
   const messages: string[] = [];
@@ -81,7 +81,6 @@ function fixture() {
           permissions: string;
         }[]
       | undefined,
-    dmRecipient: discordUserId,
   };
   mockEnv("DISCORD_APPLICATION_ID", botId);
   mockEnv("DISCORD_BOT_TOKEN", "test-discord-bot");
@@ -233,41 +232,54 @@ function fixture() {
       const body = z
         .object({ recipient_id: z.string() })
         .parse(await request.json());
-      provider.dmRecipient = body.recipient_id;
+      let channelId = dmChannels.get(body.recipient_id);
+      if (!channelId) {
+        channelId = snowflake();
+        dmChannels.set(body.recipient_id, channelId);
+      }
       return HttpResponse.json({
-        id: dmId,
+        id: channelId,
         type: 1,
         recipients: [user(body.recipient_id)],
       });
     }),
-    http.get(`${API}/channels/${dmId}`, () => {
-      return HttpResponse.json({
-        id: dmId,
-        type: 1,
-        recipients: [user(provider.dmRecipient)],
-      });
+    http.get(`${API}/channels/:channelId`, ({ params }) => {
+      const channelId = String(params.channelId);
+      const recipient = [...dmChannels].find(([, id]) => {
+        return id === channelId;
+      })?.[0];
+      return recipient
+        ? HttpResponse.json({
+            id: channelId,
+            type: 1,
+            recipients: [user(recipient)],
+          })
+        : HttpResponse.json({}, { status: 404 });
     }),
-    http.post(`${API}/channels/${dmId}/messages`, async ({ request }) => {
-      const body = z
-        .object({
-          content: z.string(),
-          allowed_mentions: z.object({ parse: z.array(z.string()) }),
-          nonce: z.string(),
-          enforce_nonce: z.boolean(),
-        })
-        .parse(await request.json());
-      expect(body.allowed_mentions.parse).toStrictEqual([]);
-      expect(body.enforce_nonce).toBeTruthy();
-      messages.push(body.content);
-      return HttpResponse.json({
-        id: snowflake(),
-        channel_id: dmId,
-        content: body.content,
-        author: user(botId, true),
-        timestamp: new Date(now()).toISOString(),
-        attachments: [],
-      });
-    }),
+    http.post(
+      `${API}/channels/:channelId/messages`,
+      async ({ request, params }) => {
+        const body = z
+          .object({
+            content: z.string(),
+            allowed_mentions: z.object({ parse: z.array(z.string()) }),
+            nonce: z.string(),
+            enforce_nonce: z.boolean(),
+          })
+          .parse(await request.json());
+        expect(body.allowed_mentions.parse).toStrictEqual([]);
+        expect(body.enforce_nonce).toBeTruthy();
+        messages.push(body.content);
+        return HttpResponse.json({
+          id: snowflake(),
+          channel_id: String(params.channelId),
+          content: body.content,
+          author: user(botId, true),
+          timestamp: new Date(now()).toISOString(),
+          attachments: [],
+        });
+      },
+    ),
   );
   async function actor(
     orgId = `org_${randomUUID()}`,
@@ -342,7 +354,7 @@ async function start(
   const response = await accept(
     clients()(discordOauthContract).start({
       headers: actorHeaders(actor),
-      body: { flow, ...(guildId ? { guildId } : {}) },
+      body: flow === "connect" && guildId ? { guildId } : {},
     }),
     [200],
   );
@@ -482,7 +494,7 @@ async function installed(
         options,
       )
     ).status,
-  ).toBe("installed");
+  ).toBe("connected");
 }
 
 describe("Discord product OAuth", () => {
@@ -512,13 +524,11 @@ describe("Discord product OAuth", () => {
       [200],
     );
     await expect(status(admin)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
       onboarding: "oauth",
     });
     await installed(f, admin);
     await expect(status(admin)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: f.guildId,
       discordUserId: f.discordUserId,
@@ -557,14 +567,16 @@ describe("Discord product OAuth", () => {
     expect(started.url.searchParams.get("scope")).toBe(
       "bot applications.commands identify guilds",
     );
+    expect(started.url.searchParams.get("integration_type")).toBe("0");
+    expect(started.url.searchParams.get("guild_id")).toBeNull();
+    expect(started.url.searchParams.get("disable_guild_select")).toBeNull();
     await expect(
       finish(f, started, {
         scopes: ["identify", "guilds"],
         tokenScopes: "identify guilds",
       }),
-    ).resolves.toMatchObject({ status: "installed", httpStatus: 200 });
+    ).resolves.toMatchObject({ status: "connected", httpStatus: 200 });
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: f.guildId,
       discordUserId: f.discordUserId,
@@ -575,7 +587,7 @@ describe("Discord product OAuth", () => {
     const actor = await f.actor();
     const initial = now();
     const installed = await start(actor, "install", f.guildId);
-    expect((await finish(f, installed)).status).toBe("installed");
+    expect((await finish(f, installed)).status).toBe("connected");
     const before = await status(actor);
     expect(before.isConnected).toBeTruthy();
     expect(before.dmBindings).toHaveLength(1);
@@ -600,35 +612,53 @@ describe("Discord product OAuth", () => {
     expect((await status(member)).discordUserId).toBe(f.discordUserId);
   });
 
+  it("connects from a server link without a workspace installation or server-management permission", async () => {
+    const f = fixture();
+    const member = await f.actor(undefined, "org:member");
+    f.provider.page = [
+      { id: f.guildId, name: "Shared server", owner: false, permissions: "0" },
+    ];
+    const started = await start(member, "connect", f.guildId);
+    expect(started.url.searchParams.get("scope")).toBe("identify guilds");
+    expect(started.url.searchParams.get("permissions")).toBeNull();
+    expect(started.url.searchParams.get("integration_type")).toBeNull();
+    expect((await finish(f, started, { noGuildProof: true })).status).toBe(
+      "connected",
+    );
+    await expect(status(member)).resolves.toMatchObject({
+      isConnected: true,
+      isAdmin: false,
+    });
+  });
+
   it("lets an ordinary current org member connect only their verified Discord identity", async () => {
     const f = await fixture();
     const admin = await f.actor();
     await installed(f, admin);
     const member = await f.actor(admin.orgId, "org:member");
     const memberDiscordId = snowflake();
-    const started = await start(member, "connect");
+    const started = await start(member, "connect", f.guildId);
     expect(started.url.searchParams.get("scope")).toBe("identify guilds");
     expect(
       (await finish(f, started, { discordUserId: memberDiscordId })).status,
     ).toBe("connected");
     await expect(status(member)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       isAdmin: false,
       discordUserId: memberDiscordId,
     });
     expect((await status(admin)).discordUserId).toBe(f.discordUserId);
   });
-  it("requires authentication, rejects ordinary-member installs and malformed owner input", async () => {
+  it("allows ordinary workspace members to connect and rejects unauthenticated or malformed owner input", async () => {
     const f = await fixture();
     const member = await f.actor(undefined, "org:member");
     authenticate(member);
     await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
-      [403],
+      [200],
     );
     const raw = setupRawAppRequest({ context, routes });
     await accept(
@@ -636,7 +666,6 @@ describe("Discord product OAuth", () => {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
-          flow: "connect",
           userId: "arbitrary",
           orgId: "arbitrary",
         }),
@@ -647,7 +676,7 @@ describe("Discord product OAuth", () => {
       raw("/api/integrations/discord/oauth/start", {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ flow: "install", guildId: "not-a-snowflake" }),
+        body: JSON.stringify({ guildId: "not-a-snowflake" }),
       }),
       [400],
     );
@@ -660,28 +689,38 @@ describe("Discord product OAuth", () => {
     await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
       [401],
     );
-    expect((await status(member)).isInstalled).toBeFalsy();
+    expect((await status(member)).isConnected).toBeFalsy();
   });
-  it("rejects connect before installation and reports missing configuration without inventing defaults", async () => {
+  it("allows account consent after an Okou admin becomes an ordinary workspace member", async () => {
+    const f = fixture();
+    const actor = await f.actor();
+    const started = await start(actor, "install");
+    actor.orgRole = "org:member";
+    await expect(finish(f, started)).resolves.toMatchObject({
+      status: "connected",
+    });
+    expect((await status(actor)).isConnected).toBeTruthy();
+  });
+  it("starts account consent without a workspace installation and reports missing configuration", async () => {
     const f = await fixture();
     const actor = await f.actor();
     authenticate(actor);
     await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "connect" },
+        body: { guildId: f.guildId },
       }),
-      [404],
+      [200],
     );
     mockEnv("DISCORD_OAUTH_CLIENT_SECRET", undefined);
     const response = await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
       [503],
     );
@@ -700,8 +739,8 @@ describe("Discord product OAuth", () => {
         })
       ).searchParams.get("discord_error"),
     ).toBe("invalid_state");
-    expect((await status(actor)).isInstalled).toBeFalsy();
-    expect((await finish(f, started)).status).toBe("installed");
+    expect((await status(actor)).isConnected).toBeFalsy();
+    expect((await finish(f, started)).status).toBe("connected");
   });
   it.each([
     "malformed-state",
@@ -725,7 +764,7 @@ describe("Discord product OAuth", () => {
           : {}),
       };
       await accept(clients()(discordOauthContract).callback({ query }), [400]);
-      expect((await finish(f, started)).status).toBe("installed");
+      expect((await finish(f, started)).status).toBe("connected");
     },
   );
   it("rejects expired and reused state, and cancellation is one-use with no provider text", async () => {
@@ -751,7 +790,7 @@ describe("Discord product OAuth", () => {
         "discord_error",
       ),
     ).toBe("invalid_state");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
     const good = await start(actor, "install", f.guildId);
     await finish(f, good);
@@ -817,7 +856,7 @@ describe("Discord product OAuth", () => {
     const result = await finish(f, started, options);
     expect(result.status).toBe("error");
     expect(JSON.stringify(result)).not.toContain("secret-provider-detail");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("rejects a callback guild hint that disagrees with verified token guild evidence", async () => {
@@ -835,9 +874,9 @@ describe("Discord product OAuth", () => {
         await callback(started, { code, guild_id: snowflake() })
       ).searchParams.get("discord_error"),
     ).toBe("guild_unverified");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
   });
-  it.each(["revoked-member", "downgraded-admin", "switch-off"])(
+  it.each(["revoked-member", "switch-off"])(
     "revalidates %s while authorization is open",
     async (variant) => {
       const f = await fixture();
@@ -846,9 +885,6 @@ describe("Discord product OAuth", () => {
       if (variant === "revoked-member") {
         f.actors.splice(0);
       }
-      if (variant === "downgraded-admin") {
-        actor.orgRole = "org:member";
-      }
       if (variant === "switch-off") {
         await updateFeatureSwitchesForUser(context, actor, {
           [FeatureSwitchKey.DiscordIntegration]: false,
@@ -856,7 +892,7 @@ describe("Discord product OAuth", () => {
       }
       const result = await finish(f, started);
       expect(result.status).toBe("error");
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -874,7 +910,7 @@ describe("Discord product OAuth", () => {
       }),
     );
     expect((await finish(f, started)).error).toBe("forbidden");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("paginates past 200 eligible guilds rather than silently truncating membership", async () => {
@@ -891,38 +927,37 @@ describe("Discord product OAuth", () => {
     await installed(f, actor);
     expect((await status(actor)).guildId).toBe(f.guildId);
   });
-  it("never moves an occupied guild into another org or replaces a workspace's server", async () => {
-    const f = await fixture();
+  it("connects independent workspaces in the same server and preserves a connection when choosing another server", async () => {
+    const f = fixture();
     const owner = await f.actor();
     await installed(f, owner);
+    const original = await status(owner);
     const other = await f.actor();
-    expect(
-      (
-        await finish(f, await start(other, "install", f.guildId), {
-          discordUserId: snowflake(),
-        })
-      ).error,
-    ).toBe("conflict");
-    expect((await status(other)).isInstalled).toBeFalsy();
-    expect((await status(owner)).guildId).toBe(f.guildId);
-    authenticate(owner);
-    await accept(
-      clients()(discordOauthContract).start({
-        headers,
-        body: { flow: "install", guildId: snowflake() },
+    await expect(
+      finish(f, await start(other, "connect", f.guildId), {
+        discordUserId: snowflake(),
       }),
-      [409],
+    ).resolves.toMatchObject({ status: "connected" });
+    const nextGuild = snowflake();
+    await expect(
+      finish(f, await start(owner, "install"), { guildId: nextGuild }),
+    ).resolves.toMatchObject({ status: "connected" });
+    const reconnected = await status(owner);
+    expect(reconnected.guildId).toBe(nextGuild);
+    expect(reconnected.dmBindings[0]?.connectionId).toBe(
+      original.dmBindings[0]?.connectionId,
     );
-    expect(f.messages).toHaveLength(1);
+    expect((await status(other)).isConnected).toBeTruthy();
+    expect(f.messages).toHaveLength(2);
   });
   it("rejects stealing a Discord identity in the same guild and across guilds", async () => {
     const f = await fixture();
     const owner = await f.actor();
     await installed(f, owner);
     const member = await f.actor(owner.orgId, "org:member");
-    expect((await finish(f, await start(member, "connect"))).error).toBe(
-      "conflict",
-    );
+    expect(
+      (await finish(f, await start(member, "connect", f.guildId))).error,
+    ).toBe("conflict");
     expect((await status(member)).isConnected).toBeFalsy();
     const otherOrg = await f.actor();
     const otherGuild = snowflake();
@@ -933,7 +968,7 @@ describe("Discord product OAuth", () => {
         })
       ).error,
     ).toBe("conflict");
-    expect((await status(otherOrg)).isInstalled).toBeFalsy();
+    expect((await status(otherOrg)).isConnected).toBeFalsy();
     expect((await status(owner)).discordUserId).toBe(f.discordUserId);
     expect(f.messages).toHaveLength(1);
   });
@@ -943,7 +978,7 @@ describe("Discord product OAuth", () => {
     await installed(f, owner);
     expect(
       (
-        await finish(f, await start(owner, "connect"), {
+        await finish(f, await start(owner, "connect", f.guildId), {
           discordUserId: snowflake(),
         })
       ).error,
@@ -955,9 +990,9 @@ describe("Discord product OAuth", () => {
     );
     expect((await status(owner)).isConnected).toBeFalsy();
     const member = await f.actor(owner.orgId, "org:member");
-    expect((await finish(f, await start(member, "connect"))).status).toBe(
-      "connected",
-    );
+    expect(
+      (await finish(f, await start(member, "connect", f.guildId))).status,
+    ).toBe("connected");
     expect((await status(member)).discordUserId).toBe(f.discordUserId);
   });
   it("does not reserve a replacement Discord identity after an occupied-user binding fails", async () => {
@@ -965,7 +1000,7 @@ describe("Discord product OAuth", () => {
     const owner = await f.actor();
     await installed(f, owner);
     const replacement = snowflake();
-    const started = await start(owner, "connect");
+    const started = await start(owner, "connect", f.guildId);
     const landing = await verified(f, started, { discordUserId: replacement });
     expect((await approve(started, landing)).status).toBe(200);
     expect((await complete(started)).status).toBe(409);
@@ -1012,7 +1047,7 @@ describe("Discord product OAuth", () => {
     expect((await complete(second)).status).toBe(200);
     expect(f.messages).toHaveLength(1);
   });
-  it("allows only one org to win concurrent claims for the same verified guild", async () => {
+  it("connects different users in different workspaces concurrently through the same server", async () => {
     const f = await fixture();
     const firstOwner = await f.actor();
     const secondOwner = await f.actor();
@@ -1028,64 +1063,31 @@ describe("Discord product OAuth", () => {
           return result.status;
         })
         .sort(),
-    ).toStrictEqual(["error", "installed"]);
+    ).toStrictEqual(["connected", "connected"]);
     const statuses = [await status(firstOwner), await status(secondOwner)];
     expect(
       statuses.filter((result) => {
         return result.isConnected;
       }),
-    ).toHaveLength(1);
-    expect(
-      statuses.filter((result) => {
-        return result.isInstalled;
-      }),
-    ).toHaveLength(1);
-    expect(f.messages).toHaveLength(1);
-  });
-  it("keeps one guild per workspace when two approved installations race without reserving the losing guild", async () => {
-    const f = await fixture();
-    const owner = await f.actor();
-    const secondGuild = snowflake();
-    const cases = [
-      { attempt: await start(owner, "install", f.guildId), guildId: f.guildId },
-      {
-        attempt: await start(owner, "install", secondGuild),
-        guildId: secondGuild,
-      },
-    ];
-    const results = await Promise.all(
-      cases.map(async ({ attempt, guildId }) => {
-        return await finish(f, attempt, { guildId });
-      }),
-    );
-    expect(
-      results
-        .map((result) => {
-          return result.status;
-        })
-        .sort(),
-    ).toStrictEqual(["error", "installed"]);
-    const loser =
-      cases[
-        results.findIndex((result) => {
-          return result.status === "error";
-        })
-      ];
-    if (!loser) {
-      throw new Error("Expected one conflicting guild installation");
-    }
-    expect((await complete(loser.attempt)).status).toBe(400);
-    const bound = await status(owner);
-    expect(bound.isConnected).toBeTruthy();
-    expect(bound.guildId).not.toBe(loser.guildId);
-    const otherOwner = await f.actor();
-    await installed(f, otherOwner, {
-      guildId: loser.guildId,
-      discordUserId: snowflake(),
-    });
-    expect((await status(otherOwner)).guildId).toBe(loser.guildId);
-    expect((await status(owner)).guildId).toBe(bound.guildId);
+    ).toHaveLength(2);
     expect(f.messages).toHaveLength(2);
+  });
+  it("keeps one account connection when the same owner connects from two servers concurrently", async () => {
+    const f = fixture();
+    const owner = await f.actor();
+    const first = await start(owner, "install");
+    const second = await start(owner, "install");
+    const results = await Promise.all([
+      finish(f, first),
+      finish(f, second, { guildId: snowflake() }),
+    ]);
+    expect(
+      results.map((result) => {
+        return result.status;
+      }),
+    ).toStrictEqual(["connected", "connected"]);
+    expect((await status(owner)).dmBindings).toHaveLength(1);
+    expect(f.messages).toHaveLength(1);
   });
   it("allows only one account to win concurrent Discord identity claims across guilds", async () => {
     const f = await fixture();
@@ -1104,16 +1106,11 @@ describe("Discord product OAuth", () => {
           return result.status;
         })
         .sort(),
-    ).toStrictEqual(["error", "installed"]);
+    ).toStrictEqual(["connected", "error"]);
     const statuses = [await status(firstOwner), await status(secondOwner)];
     expect(
       statuses.filter((result) => {
         return result.isConnected;
-      }),
-    ).toHaveLength(1);
-    expect(
-      statuses.filter((result) => {
-        return result.isInstalled;
       }),
     ).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
@@ -1124,8 +1121,14 @@ describe("Discord product OAuth", () => {
     await installed(f, admin);
     const member = await f.actor(admin.orgId, "org:member");
     const cases = [
-      { attempt: await start(member, "connect"), sender: snowflake() },
-      { attempt: await start(member, "connect"), sender: snowflake() },
+      {
+        attempt: await start(member, "connect", f.guildId),
+        sender: snowflake(),
+      },
+      {
+        attempt: await start(member, "connect", f.guildId),
+        sender: snowflake(),
+      },
     ];
     const results = await Promise.all(
       cases.map(async ({ attempt, sender }) => {
@@ -1175,7 +1178,7 @@ describe("Discord product OAuth", () => {
       results.map((result) => {
         return result.status;
       }),
-    ).toStrictEqual(["installed", "installed"]);
+    ).toStrictEqual(["connected", "connected"]);
     expect((await status(actor)).isConnected).toBeTruthy();
     expect(f.messages).toHaveLength(1);
   });
@@ -1190,26 +1193,25 @@ describe("Discord product OAuth", () => {
           return result.status;
         })
         .sort(),
-    ).toStrictEqual(["error", "installed"]);
+    ).toStrictEqual(["connected", "error"]);
     expect((await status(actor)).isConnected).toBeTruthy();
     expect(f.messages).toHaveLength(1);
   });
-  it("does not revive an uninstalled guild from an already-open member connect attempt", async () => {
+  it("does not reconnect an account from a pending attempt after disconnect", async () => {
     const f = await fixture();
     const actor = await f.actor();
     await installed(f, actor);
-    const started = await start(actor, "connect");
+    const started = await start(actor, "connect", f.guildId);
     authenticate(actor);
     await accept(
       clients()(integrationsDiscordContract).disconnect({
         headers,
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200],
     );
     expect((await finish(f, started)).error).toBe("invalid_state");
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toHaveLength(1);
@@ -1251,7 +1253,7 @@ describe("Discord product OAuth", () => {
     release.resolve();
     const result = await settled;
     expect(result.ok).toBeFalsy();
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("authorizes the exact DM recipient independently before a welcome, without undoing connection", async () => {
@@ -1281,14 +1283,12 @@ describe("Discord product OAuth", () => {
     const landing = await verified(f, started);
     expect(landing.searchParams.get("discord")).toBe("pending");
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toStrictEqual([]);
     expect((await complete(started)).status).toBe(409);
     expect((await approve(started, landing)).status).toBe(200);
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toStrictEqual([]);
@@ -1322,10 +1322,8 @@ describe("Discord product OAuth", () => {
   );
   it.each([
     "member-before-approve",
-    "admin-before-approve",
     "switch-before-approve",
     "member-before-complete",
-    "admin-before-complete",
     "switch-before-complete",
   ])("revalidates %s after provider verification", async (variant) => {
     const f = await fixture();
@@ -1338,9 +1336,6 @@ describe("Discord product OAuth", () => {
     if (variant.startsWith("member")) {
       f.actors.splice(0);
     }
-    if (variant.startsWith("admin")) {
-      actor.orgRole = "org:member";
-    }
     if (variant.startsWith("switch")) {
       await updateFeatureSwitchesForUser(context, actor, {
         [FeatureSwitchKey.DiscordIntegration]: false,
@@ -1350,7 +1345,7 @@ describe("Discord product OAuth", () => {
       ? await complete(started)
       : await approve(started, landing);
     expect(result.status).toBe(403);
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it.each(["bot-gone", "sender-gone", "bot-replaced", "guild-admin-revoked"])(
@@ -1391,7 +1386,7 @@ describe("Discord product OAuth", () => {
         );
       }
       expect((await complete(started)).status).toBe(503);
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -1415,7 +1410,7 @@ describe("Discord product OAuth", () => {
       }),
     );
     expect((await complete(started)).status).toBe(403);
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it.each(["verified", "approved"])(
@@ -1433,7 +1428,7 @@ describe("Discord product OAuth", () => {
       mockNow(initial + 600_001);
       expect((await approve(started, landing)).status).toBe(400);
       expect((await complete(started)).status).toBe(400);
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -1509,7 +1504,7 @@ describe("Discord product OAuth", () => {
     await accept(
       clients()(discordOauthContract).start({
         headers: actorHeaders(actor),
-        body: { flow: "install", guildId: "18446744073709551616" },
+        body: { guildId: "18446744073709551616" },
       }),
       [400],
     );
@@ -1580,9 +1575,9 @@ describe("Discord product OAuth", () => {
         }),
         [200],
       );
-      expect((await finish(f, await start(oldOwner, "connect"))).status).toBe(
-        "connected",
-      );
+      expect(
+        (await finish(f, await start(oldOwner, "connect", f.guildId))).status,
+      ).toBe("connected");
     }
   });
   it("excludes actual callback query and approval Location from real OTel spans while preserving provider query handling and other request tracing", async () => {

@@ -178,7 +178,7 @@ describe("Discord private account interactions", () => {
       await accept(client().post(signedRequest(command(name))), [202]);
       const message = await replies.delivered;
       expect(message.content).toBe(
-        "Please connect your account to use Okou in this workspace.",
+        "Please connect your account to use Okou from Discord.",
       );
       expect(message.components).toStrictEqual([
         {

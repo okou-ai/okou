@@ -186,7 +186,7 @@ const authorizeDelivery$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        guildId: row.destination.guildId,
+        guildId: row.destination.guildId ?? undefined,
         channelId: row.destination.channelId,
         createThread,
         attachFiles: true,

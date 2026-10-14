@@ -21,7 +21,6 @@ const path = `/settings/discord?guild_id=${guildId}`;
 function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   return {
     isAvailable: true,
-    isInstalled: true,
     isConnected: false,
     isAdmin: true,
     guildId,
@@ -41,7 +40,6 @@ test.each(["install", "connect"] as const)(
   "The Discord bot link offers %s directly and retains the target server",
   async (flow) => {
     let current = status({
-      isInstalled: flow === "connect",
       guildId: flow === "connect" ? guildId : null,
       guildName: flow === "connect" ? "Design team" : null,
     });
@@ -65,9 +63,9 @@ test.each(["install", "connect"] as const)(
     });
     context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
       completionBody = body;
-      current = status({ isConnected: flow === "connect" });
+      current = status({ isConnected: true });
       return respond(200, {
-        status: flow === "install" ? "installed" : "connected",
+        status: "connected",
       });
     });
     await setupPage({
@@ -78,12 +76,7 @@ test.each(["install", "connect"] as const)(
     expect(
       screen.getByRole("heading", { name: "Connect to Discord" }),
     ).toBeInTheDocument();
-    click(
-      getAction(
-        "button",
-        flow === "install" ? "Install to Discord" : "Connect",
-      ),
-    );
+    click(getAction("button", "Connect"));
     await waitFor(() => {
       expect(popup.location.href).toBe(authorizationUrl);
     });
@@ -92,34 +85,31 @@ test.each(["install", "connect"] as const)(
       "Complete authorization in the Discord window",
     );
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
-    expect(requestBody).toStrictEqual({ flow, guildId });
+    expect(requestBody).toStrictEqual({ guildId });
     expect(completionBody).toBeUndefined();
     popup.close();
     await waitFor(() => {
-      const completed =
-        flow === "connect"
-          ? screen.getByRole("heading", { name: "Connected to Discord" })
-          : getAction("button", "Connect");
+      const completed = screen.getByRole("heading", {
+        name: "Connected to Discord",
+      });
       expect(completed).toBeInTheDocument();
     });
     expect(completionBody).toStrictEqual({ state, completionToken });
     await waitFor(() => {
       expect(
         Object.fromEntries(new URLSearchParams(window.location.search)),
-      ).toStrictEqual(
-        flow === "connect"
-          ? { status: "connected", workspace: "Design team", guild_id: guildId }
-          : { guild_id: guildId },
-      );
+      ).toStrictEqual({
+        status: "connected",
+        workspace: "Design team",
+        guild_id: guildId,
+      });
     });
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(flow === "connect" ? `discord://-/channels/${guildId}` : null);
+    ).toBe(`discord://-/channels/${guildId}`);
     expect(
       queryAction("link", "Open in browser")?.getAttribute("href") ?? null,
-    ).toBe(
-      flow === "connect" ? `https://discord.com/channels/${guildId}` : null,
-    );
+    ).toBe(`https://discord.com/channels/${guildId}`);
   },
 );
 
@@ -140,9 +130,6 @@ test.each([false, true])(
         name: isConnected ? "Connected to Discord" : "Connect to Discord",
       }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByText(/You're connected to Design team/u) !== null,
-    ).toBe(isConnected);
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
     ).toBe(isConnected ? `discord://-/channels/${guildId}` : null);
@@ -246,18 +233,33 @@ test("A failed Discord status request exposes the error page and its back link",
   expect(queryAction("button", "Connect")).not.toBeInTheDocument();
 });
 
-test("A link for another server does not connect the wrong workspace", async () => {
+test("A server link is independent of the workspace's previous server", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, status({ guildId: "987654321098765432" }));
+    return respond(
+      200,
+      status({ guildId: "987654321098765432", isAdmin: false }),
+    );
   });
   await setupPage({
     context,
     path,
     featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
   });
+  expect(getAction("button", "Connect")).toBeEnabled();
+});
+
+test("A malformed server link cannot start consent", async () => {
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(200, status());
+  });
+  await setupPage({
+    context,
+    path: "/settings/discord?guild_id=invalid",
+    featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+  });
   expect(
     screen.getByText(
-      "This link is for a different Discord server. Switch to its Okou workspace and open the link again.",
+      "This Discord connection link is invalid. Open a new link from Discord.",
     ),
   ).toBeInTheDocument();
   expect(queryAction("button", "Connect")).not.toBeInTheDocument();
