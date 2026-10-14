@@ -19,6 +19,7 @@ use std::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 const DERIVED: &str = "tskey-auth-REGISTER-CANARY-SYNTHETIC";
+const TAGS: [&str; 2] = ["tag:ssh", "tag:business"];
 const ACCEPTED: &[u8] = br#"{"User":{"ID":1},"Login":{"ID":1,"Provider":"synthetic","LoginName":"synthetic"},"NodeKeyExpired":false,"MachineAuthorized":true,"AuthURL":"","Error":""}"#;
 
 fn work(
@@ -28,7 +29,7 @@ fn work(
     let (sent, keys) = tokio::sync::oneshot::channel();
     let work: Work = Box::new(move |control: Control| {
         Box::pin(async move {
-            let profile = Registration::new();
+            let profile = Registration::with_tags(&TAGS.map(String::from));
             let public = (
                 profile.keys().node_keys.public.to_string(),
                 profile.keys().machine_keys.public.to_string(),
@@ -71,6 +72,7 @@ async fn sdk_registration_explicitly_sends_ephemeral_with_fresh_memory_only_iden
         let request = http.body();
         assert_eq!(request["Ephemeral"], true);
         assert_eq!(request["Auth"]["AuthKey"], DERIVED);
+        assert_eq!(request["Hostinfo"]["RequestTags"], serde_json::json!(TAGS));
         assert!(request["Followup"].is_null() || request["Followup"] == "");
         http.reply();
         bounded(node.ready()).await.unwrap();

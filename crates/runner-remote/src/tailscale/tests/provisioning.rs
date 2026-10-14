@@ -15,6 +15,7 @@ async fn closing_an_undispatched_fixed_producer_joins_its_actual_worker_before_s
     drop(node);
     bounded(registry.shutdown()).await.unwrap();
 }
+mod logout;
 mod registered;
 
 use std::sync::Arc;

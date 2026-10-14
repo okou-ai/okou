@@ -83,6 +83,22 @@ impl Registration {
         registration
     }
 
+    // Map updates carry the current complete HostInfo, not a partial patch.
+    // Keep the claimed tags and client identity consistent with registration.
+    fn host_info<'a>(&'a self, app: &'a str) -> HostInfo<'a> {
+        HostInfo {
+            hostname: self.config.hostname.as_deref(),
+            app,
+            ipn_version: ts_control::PKG_VERSION,
+            request_tags: if self.config.tags.is_empty() {
+                None
+            } else {
+                Some(self.config.tags.iter().map(String::as_str).collect())
+            },
+            ..Default::default()
+        }
+    }
+
     #[cfg(test)]
     pub(super) async fn connect_provisioned<KeyIo, ControlIo>(
         &self,
@@ -112,12 +128,7 @@ impl Registration {
             .as_stream()
             .build();
         let app = self.config.format_client_name();
-        request.host_info = Some(HostInfo {
-            hostname: self.config.hostname.as_deref(),
-            app: &app,
-            ipn_version: ts_control::PKG_VERSION,
-            ..Default::default()
-        });
+        request.host_info = Some(self.host_info(&app));
         let url = self
             .config
             .server_url
@@ -147,11 +158,8 @@ impl Registration {
         let app = self.config.format_client_name();
         let net_info = request.host_info.take().and_then(|host| host.net_info);
         request.host_info = Some(HostInfo {
-            hostname: self.config.hostname.as_deref(),
-            app: &app,
-            ipn_version: ts_control::PKG_VERSION,
             net_info,
-            ..Default::default()
+            ..self.host_info(&app)
         });
         let url = self
             .config
@@ -332,17 +340,7 @@ impl Registration {
             node_key: self.keys.node_keys.public,
             nl_key: Some(self.keys.network_lock_keys.public),
             auth: Some(RegisterAuth::from(derived_key)),
-            hostinfo: HostInfo {
-                hostname: self.config.hostname.as_deref(),
-                app: &app,
-                ipn_version: ts_control::PKG_VERSION,
-                request_tags: if self.config.tags.is_empty() {
-                    None
-                } else {
-                    Some(self.config.tags.iter().map(String::as_str).collect())
-                },
-                ..Default::default()
-            },
+            hostinfo: self.host_info(&app),
             ephemeral: true,
             ..Default::default()
         };
@@ -366,7 +364,21 @@ impl Registration {
             .await
             .map_err(|_| Failure::DomainFailed)?;
         if let Some(key) = provider_key {
-            key.consuming()?;
+            // Match the official client's self-logout: expire the current node
+            // through its authenticated Noise session, without reusing auth.
+            let logout = RegisterRequest {
+                auth: None,
+                expiry: Some(
+                    chrono::DateTime::from_timestamp(123, 0).ok_or(Failure::DomainFailed)?,
+                ),
+                ..request
+            };
+            key.consuming(super::logout::Logout::new(
+                client.clone(),
+                url.clone(),
+                header.clone(),
+                &logout,
+            )?)?;
         }
         let response = client
             .post(&url, [header], Bytes::from(body).into())

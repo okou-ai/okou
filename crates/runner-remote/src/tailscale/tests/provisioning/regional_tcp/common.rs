@@ -48,6 +48,7 @@ async fn native_common_cleanup_rejection_reaches_guest_rpc_without_retry_or_logi
     control.assert_control_closed();
     dial.assert_closed(3);
     api.assert_contract(1, 1);
+    assert_eq!(control.logout_count(), 0);
     home.task.abort();
     assert!(matches!(bounded(home.task).await, Err(error) if error.is_cancelled()));
     api.finish().await;
