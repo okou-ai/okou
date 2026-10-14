@@ -4420,7 +4420,14 @@ function ImportedPresentationTemplatePreviewHeader({
   return (
     <DialogHeader className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
       <div className="flex min-w-0 max-w-full items-center gap-1.5">
-        <DialogTitle className="flex min-w-0 items-center justify-start gap-1.5 text-left text-base leading-none">
+        <DialogTitle
+          className={cn(
+            "flex items-center justify-start gap-1.5 text-left text-base leading-none",
+            // Beside an editor the title holds only the way back, which must
+            // never be squeezed; alone, it is what truncates.
+            editor === null ? "min-w-0" : "shrink-0",
+          )}
+        >
           <button
             type="button"
             className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
