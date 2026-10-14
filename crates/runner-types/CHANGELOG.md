@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.6.16](https://github.com/okou-ai/okou/compare/runner-types-v0.6.15...runner-types-v0.6.16) (2026-10-14)
+
 ## [0.6.15](https://github.com/okou-ai/okou/compare/runner-types-v0.6.14...runner-types-v0.6.15) (2026-10-14)
 
 ## [0.6.14](https://github.com/okou-ai/okou/compare/runner-types-v0.6.13...runner-types-v0.6.14) (2026-10-14)
