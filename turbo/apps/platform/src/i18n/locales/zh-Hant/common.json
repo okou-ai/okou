@@ -1521,7 +1521,6 @@
     "agentSuggestions": {
       "existingThread": "現有對話",
       "label": "建議",
-      "loadFailed": "無法載入建議。",
       "newThread": "與 Okou 開始新對話",
       "origin": "來自你的晨間簡報",
       "showAll_other": "查看全部 {{count}} 則",

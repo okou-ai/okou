@@ -43,9 +43,13 @@ const agentSuggestions$ = computed(async (get) => {
   if (!(await get(agentSuggestionsEnabled$))) {
     return [];
   }
+  // Suggestions are an optional entry on the home page, so a failed read
+  // hides the tab instead of raising a toast over the composer.
   const result = await accept(
     get(apiClient$)(suggestionsContract).list({}),
     [200, 403],
+    undefined,
+    { showErrorToast: false },
   );
   return result.status === 200 ? result.body.suggestions : [];
 });
