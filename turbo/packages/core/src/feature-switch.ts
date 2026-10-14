@@ -72,12 +72,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HomeTaskRecommendations]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
-    enabled: false,
-  },
   [FeatureSwitchKey.AgentSuggestion]: {
     maintainer: "lancy@okou.ai",
     displayName: "Agent Suggestion",

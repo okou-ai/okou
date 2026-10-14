@@ -267,8 +267,6 @@ export {
   cronDrainEmailOutboxContract,
   cronDrainEmailOutboxResponseSchema,
   cronExecuteWorkflowAutomationsContract,
-  cronRefreshHomeTaskRecommendationsContract,
-  cronRefreshHomeTaskRecommendationsResponseSchema,
   cronRenewGmailWatchesContract,
   cronRenewGmailWatchesResponseSchema,
   cronRenewGoogleFormsWatchesContract,
@@ -292,7 +290,6 @@ export {
   type CronConnectorOauthStateCleanupContract,
   type CronDrainEmailOutboxContract,
   type CronProcessUsageEventsContract,
-  type CronRefreshHomeTaskRecommendationsContract,
   type CronReconcileBillingEntitlementsContract,
   type CronRenewGmailWatchesContract,
   type CronRenewGoogleFormsWatchesContract,
@@ -518,10 +515,8 @@ export {
   ablyTokenRequestSchema,
   browserSessionChangedPayloadSchema,
   connectorChangedPayloadSchema,
-  homeTaskRecommendationsChangedPayloadSchema,
   type BrowserSessionChangedPayload,
   type ConnectorChangedPayload,
-  type HomeTaskRecommendationsChangedPayload,
   runnerRealtimeTokenContract,
   type RunnerRealtimeTokenContract,
   platformRealtimeTokenContract,
@@ -1692,14 +1687,3 @@ export {
   chatInputStatusResponseSchema,
   type ChatInputStatusResponse,
 } from "./chat-input-status";
-
-export {
-  HOME_TASK_RECOMMENDATION_LIMIT,
-  HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY,
-  HOME_TASK_RECOMMENDATION_REFRESH_MS,
-  homeTaskRecommendationSchema,
-  homeTaskRecommendationsContract,
-  homeTaskRecommendationsResponseSchema,
-  type HomeTaskRecommendation,
-  type HomeTaskRecommendationsResponse,
-} from "./home-task-recommendations";

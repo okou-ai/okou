@@ -10,7 +10,6 @@ import {
   computerUseCommandResultChangedEvent,
   type RealtimeSubscription,
   type BrowserSessionChangedPayload,
-  type HomeTaskRecommendationsChangedPayload,
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
@@ -280,17 +279,6 @@ function publishChatDatabaseSignal(
 ): Promise<void> {
   waitUntil(bestEffort(publishChatDatabaseSignalNow(target, topic, payload)));
   return Promise.resolve();
-}
-
-export function publishHomeTaskRecommendationsChangedSafely(
-  target: { readonly userId: string; readonly orgId: string },
-  payload: HomeTaskRecommendationsChangedPayload,
-): Promise<void> {
-  return publishChatDatabaseSignal(
-    target,
-    "homeTaskRecommendationsChanged",
-    payload,
-  );
 }
 
 export function publishAgentSuggestionsChangedSafely(target: {

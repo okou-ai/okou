@@ -195,12 +195,12 @@ function createAgentDraftLoad(
         get(draft.attachments$).length > 0
       );
     };
-    const handoff = get(draft.recommendationHandoff$);
+    const handoff = get(draft.composerDraftHandoff$);
     if (hasLocalDraft() && !handoff) {
       return;
     }
     if (handoff && !handoff.needsRemoteMerge) {
-      if (await set(draft.finishRecommendationHandoff$, null, signal)) {
+      if (await set(draft.finishComposerDraftHandoff$, null, signal)) {
         await set(queueDraftSync$, signal);
       }
       return;
@@ -218,10 +218,8 @@ function createAgentDraftLoad(
     const restoredDraft = await get(serverDraft$);
     signal.throwIfAborted();
 
-    if (get(draft.recommendationHandoff$)) {
-      if (
-        await set(draft.finishRecommendationHandoff$, restoredDraft, signal)
-      ) {
+    if (get(draft.composerDraftHandoff$)) {
+      if (await set(draft.finishComposerDraftHandoff$, restoredDraft, signal)) {
         await set(queueDraftSync$, signal);
       }
       return;

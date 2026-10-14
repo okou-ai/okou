@@ -59,7 +59,6 @@ export enum FeatureSwitchKey {
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",
-  HomeTaskRecommendations = "homeTaskRecommendations",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
 }

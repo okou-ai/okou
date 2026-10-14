@@ -2,15 +2,11 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
-import { OpenRouterRequestError } from "../external/openrouter";
 import { gcpLlmConfiguration, GcpLlmAuthError } from "../external/gcp-llm-auth";
-import { VertexTextError } from "../external/vertex-text";
 import {
-  isTransientProviderFailure,
-  openRouterFailureReason,
-  type OpenRouterFailureReason,
-  type OpenRouterTokenCounts,
-} from "../external/openrouter-failure";
+  VertexTextError,
+  type VertexTextTokens,
+} from "../external/vertex-text";
 import { onRejection, safeSync, settle } from "../utils";
 
 type AuxiliaryFeature =
@@ -20,12 +16,12 @@ type AuxiliaryFeature =
   | "chat_initial_thinking"
   | "run_summary"
   | "recommended_followups"
-  | "home_task_recommendations"
   | "notification_summary"
   | "agent_setup_prompt";
 type Outcome = "success" | "degraded" | "cancelled" | "error" | "skipped";
 type Reason =
-  | OpenRouterFailureReason
+  | VertexTextError["reason"]
+  | "unknown"
   | "none"
   | "caller_cancelled"
   | "not_applicable"
@@ -40,7 +36,7 @@ type Reason =
  */
 interface AuxiliaryGenerationDetail {
   readonly truncated: boolean;
-  readonly tokens: OpenRouterTokenCounts;
+  readonly tokens: VertexTextTokens;
 }
 
 export type RecordAuxiliaryGenerationDetail = (
@@ -51,43 +47,21 @@ interface AuxiliaryResult {
   readonly feature: AuxiliaryFeature;
   readonly outcome: Outcome;
   readonly reason: Reason;
-  readonly tokens: OpenRouterTokenCounts;
-  /** Present only when the provider asked for a delay; bounded upstream. */
-  readonly retryAfterMs?: number;
+  readonly tokens: VertexTextTokens;
   readonly runId?: string;
   readonly startedAt: number;
 }
 
-/**
- * A `rate_limited` outcome only justifies waiting when the provider says how
- * long to wait. Nothing consumes this delay yet: record it first so the choice
- * between honoring `Retry-After` and backing off blindly rests on production
- * evidence rather than on the header's assumed presence.
- */
-function retryAfterMilliseconds(error: unknown): number | undefined {
-  return error instanceof OpenRouterRequestError &&
-    error.retryAfterMs !== undefined
-    ? Math.trunc(error.retryAfterMs)
-    : undefined;
-}
-
 /** Reasons the caller can do nothing about: counted, never warned. */
 function isDegradedReason(reason: Reason): boolean {
-  switch (reason) {
-    case "output_truncated":
-    case "unexpected_tool_calls": {
-      return true;
-    }
-    case "caller_cancelled":
-    case "not_applicable":
-    case "none":
-    case "unusable_output": {
-      return false;
-    }
-    default: {
-      return isTransientProviderFailure(reason);
-    }
-  }
+  return (
+    reason === "output_truncated" ||
+    reason === "unexpected_tool_calls" ||
+    reason === "rate_limited" ||
+    reason === "upstream_timeout" ||
+    reason === "network" ||
+    reason === "provider_unavailable"
+  );
 }
 
 const log = logger("api:auxiliary-generation");
@@ -112,9 +86,6 @@ async function deliverResult(result: AuxiliaryResult): Promise<void> {
         ...(result.tokens.reasoningTokens === undefined
           ? {}
           : { reasoning_tokens: result.tokens.reasoningTokens }),
-        ...(result.retryAfterMs === undefined
-          ? {}
-          : { retry_after_ms: result.retryAfterMs }),
         // One rate-limit window rejects several independent generations at
         // once, so an event count alone overstates how many runs it reached.
         ...(result.runId === undefined ? {} : { run_id: result.runId }),
@@ -154,24 +125,13 @@ function diagnose(
         ? "vertex_request"
         : error instanceof GcpLlmAuthError
           ? "gcp_auth"
-          : error instanceof OpenRouterRequestError
-            ? "openrouter_request"
-            : error instanceof TypeError
-              ? "type_error"
-              : error instanceof SyntaxError
-                ? "syntax_error"
-                : "unknown",
+          : error instanceof TypeError
+            ? "type_error"
+            : error instanceof SyntaxError
+              ? "syntax_error"
+              : "unknown",
     ...(error instanceof VertexTextError || error instanceof GcpLlmAuthError
       ? { status: error.status }
-      : {}),
-    ...(error instanceof OpenRouterRequestError
-      ? {
-          status: error.status,
-          errorCode: error.errorCode,
-          errorParam: error.errorParam,
-          errorType: error.errorType,
-          retryAfterMs: error.retryAfterMs,
-        }
       : {}),
   };
   log.warn("Auxiliary generation failed", fields);
@@ -269,7 +229,7 @@ export async function generateAuxiliary<T>(
               ? error.temporary
                 ? "provider_unavailable"
                 : "auth"
-              : openRouterFailureReason(error);
+              : "unknown";
         const outcome = cancelled
           ? "cancelled"
           : isDegradedReason(reason)
@@ -278,13 +238,11 @@ export async function generateAuxiliary<T>(
         if (outcome === "error") {
           diagnose(args.feature, reason, error, args.diagnosticContext);
         }
-        const retryAfterMs = retryAfterMilliseconds(error);
         recordResult({
           feature: args.feature,
           outcome,
           reason,
           tokens: error instanceof VertexTextError ? error.tokens : {},
-          ...(retryAfterMs === undefined ? {} : { retryAfterMs }),
           ...(runId === undefined ? {} : { runId }),
           startedAt,
         });

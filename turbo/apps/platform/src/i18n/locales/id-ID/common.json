@@ -1938,15 +1938,6 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
-    "homeTasks": {
-      "empty": "Belum ada saran tugas",
-      "existingThread": "Lanjutkan chat",
-      "exploreWorkflow": "Jelajahi alur kerja",
-      "heading": "Diambil dari pekerjaan terbaru Anda",
-      "newTasksAvailable": "Tugas baru tersedia",
-      "newThread": "Chat baru",
-      "reload": "Muat ulang tugas"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",

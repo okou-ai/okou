@@ -73,7 +73,6 @@ import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage
 import { cronReconcileArtifactCatalogRoutes } from "./routes/cron-reconcile-artifact-catalog";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
 import { cronReconcileSocialKitDownloadRoutes } from "./routes/cron-reconcile-socialkit-downloads";
-import { cronRefreshHomeTaskRecommendationsRoutes } from "./routes/cron-refresh-home-task-recommendations";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
 import { cronRenewGoogleCalendarWatchesRoutes } from "./routes/cron-renew-google-calendar-watches";
 import { cronRenewGoogleFormsWatchesRoutes } from "./routes/cron-renew-google-forms-watches";
@@ -102,7 +101,6 @@ import { financeRoutes } from "./routes/finance";
 import { getStartedRoutes } from "./routes/get-started";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
-import { homeTaskRecommendationRoutes } from "./routes/home-task-recommendations";
 import { hostRoutes } from "./routes/host";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
 import { integrationsAgentPhoneRoutes } from "./routes/integrations-agentphone";
@@ -276,7 +274,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronDrainEmailOutboxRoutes,
-  ...cronRefreshHomeTaskRecommendationsRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,
   ...cronRenewGmailWatchesRoutes,
@@ -318,7 +315,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
   ...chatThreadRoutes,
-  ...homeTaskRecommendationRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
