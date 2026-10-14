@@ -1521,7 +1521,6 @@
     "agentSuggestions": {
       "existingThread": "기존 대화",
       "label": "제안",
-      "loadFailed": "제안을 불러올 수 없습니다.",
       "newThread": "Okou와 새 대화",
       "origin": "모닝 브리프에서",
       "showAll_other": "전체 {{count}}개 보기",

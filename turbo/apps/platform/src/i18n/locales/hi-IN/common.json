@@ -1522,7 +1522,6 @@
     "agentSuggestions": {
       "existingThread": "मौजूदा बातचीत",
       "label": "सुझाव",
-      "loadFailed": "सुझाव लोड नहीं हो सके।",
       "newThread": "Okou के साथ नई बातचीत",
       "origin": "आपकी सुबह की ब्रीफ़िंग से",
       "showAll_one": "सभी {{count}} देखें",

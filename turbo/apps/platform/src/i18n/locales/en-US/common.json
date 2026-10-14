@@ -1522,7 +1522,6 @@
     "agentSuggestions": {
       "existingThread": "Existing conversation",
       "label": "Suggestions",
-      "loadFailed": "Suggestions could not be loaded.",
       "newThread": "New conversation with Okou",
       "origin": "From your Morning Brief",
       "showAll_one": "View all {{count}}",

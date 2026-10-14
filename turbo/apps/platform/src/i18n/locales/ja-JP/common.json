@@ -1521,7 +1521,6 @@
     "agentSuggestions": {
       "existingThread": "既存の会話",
       "label": "提案",
-      "loadFailed": "提案を読み込めませんでした。",
       "newThread": "Okou と新しい会話",
       "origin": "モーニングブリーフから",
       "showAll_other": "全 {{count}} 件を表示",

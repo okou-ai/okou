@@ -1546,7 +1546,6 @@
     "agentSuggestions": {
       "existingThread": "Conversazione esistente",
       "label": "Suggerimenti",
-      "loadFailed": "Impossibile caricare i suggerimenti.",
       "newThread": "Nuova conversazione con Okou",
       "origin": "Dal tuo briefing mattutino",
       "showAll_one": "Mostra tutti ({{count}})",

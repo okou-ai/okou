@@ -1522,7 +1522,6 @@
     "agentSuggestions": {
       "existingThread": "Bestehende Unterhaltung",
       "label": "Vorschläge",
-      "loadFailed": "Vorschläge konnten nicht geladen werden.",
       "newThread": "Neue Unterhaltung mit Okou",
       "origin": "Aus deinem Morgenbriefing",
       "showAll_one": "Alle {{count}} anzeigen",

@@ -24,6 +24,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   draftAttachment,
@@ -188,8 +189,40 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   await screen.findByText(makeSuggestion().title);
   expect(composer()).toHaveTextContent("Keep my draft");
 });
-test("A suggestion-list failure stays visible rather than appearing to be an empty pool", async () => {
+test("Suggestions stays out of the row until the pool resolves with items", async () => {
+  const requested = createDeferredPromise<void>(context.signal);
+  const answer = createDeferredPromise<void>(context.signal);
+  context.mocks.api(suggestionsContract.list, async ({ respond }) => {
+    if (!requested.settled()) {
+      requested.resolve();
+    }
+    await answer.promise;
+    return respond(200, { suggestions: [makeSuggestion()] });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await requested.promise;
+  await waitFor(() => {
+    expect(queryTab("Workflow")).toBeInTheDocument();
+  });
+  expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  answer.resolve();
+  await screen.findByText(makeSuggestion().title);
+  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
+});
+test("A failed suggestion read stays silent until a realtime publication recovers the pool", async () => {
+  let available = false;
+  const failed = createDeferredPromise<void>(context.signal);
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
+    if (available) {
+      return respond(200, { suggestions: [makeSuggestion()] });
+    }
+    if (!failed.settled()) {
+      failed.resolve();
+    }
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Suggestion service unavailable" },
     });
@@ -199,10 +232,22 @@ test("A suggestion-list failure stays visible rather than appearing to be an emp
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
-  await screen.findByText("Suggestions could not be loaded.");
+  await failed.promise;
+  await waitFor(() => {
+    expect(queryTab("Workflow")).toBeInTheDocument();
+  });
+  expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+    ).toBeTruthy();
+  });
+  available = true;
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await screen.findByText(makeSuggestion().title);
   expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
   expect(
-    screen.queryByText("No suggestions right now."),
+    screen.queryByText("Suggestion service unavailable"),
   ).not.toBeInTheDocument();
 });
 test("A new-chat suggestion is consumed and prepends its structured reference without sending", async () => {

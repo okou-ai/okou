@@ -1546,7 +1546,6 @@
     "agentSuggestions": {
       "existingThread": "Conversación existente",
       "label": "Sugerencias",
-      "loadFailed": "No se pudieron cargar las sugerencias.",
       "newThread": "Nueva conversación con Okou",
       "origin": "De tu resumen matutino",
       "showAll_one": "Ver las {{count}}",

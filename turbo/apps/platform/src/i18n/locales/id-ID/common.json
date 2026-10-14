@@ -1521,7 +1521,6 @@
     "agentSuggestions": {
       "existingThread": "Percakapan yang ada",
       "label": "Saran",
-      "loadFailed": "Saran tidak dapat dimuat.",
       "newThread": "Percakapan baru dengan Okou",
       "origin": "Dari ringkasan pagimu",
       "showAll_other": "Lihat semua ({{count}})",
