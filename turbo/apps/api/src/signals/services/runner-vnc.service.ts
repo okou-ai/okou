@@ -1,12 +1,10 @@
 import { command } from "ccstate";
 import {
   runnerVncSecuritySchema,
-  VNC_AUTHORITY_MAX_LIFETIME_SECONDS,
   type RunnerVncCheckRequest,
   type RunnerVncCheckResponse,
   type RunnerVncResolveRequest,
   type RunnerVncResolveResponse,
-  type RunnerVncSnapshotResponse,
 } from "@okouai/api-contracts/contracts/runner-vnc";
 import {
   vncLegacyAuthenticationSchema,
@@ -256,12 +254,12 @@ async function isSameCurrentHandoff(
   );
 }
 
-export const checkRunnerVncSnapshot$ = command(
+export const checkRunnerVnc$ = command(
   async (
     { get, set },
     input: RunnerVncCheckRequest & { readonly runId: string },
     signal: AbortSignal,
-  ): Promise<RunnerVncSnapshotResponse> => {
+  ): Promise<RunnerVncCheckResponse> => {
     const clerk = get(clerk$);
 
     const row = await set(currentRunnerVncAuthority$, input, signal);
@@ -280,49 +278,22 @@ export const checkRunnerVncSnapshot$ = command(
     if (!hasValidAppleRoute(row, transport)) {
       return { outcome: "unavailable" };
     }
-    const matches =
-      row.generation === input.expectedGeneration &&
-      matchesExpectedTransport(transport, input.expectedTransport) &&
-      (!isVncKerberosMethod(row.authMethod) ||
-        (row.credentialRevision === input.expectedCredentialRevision &&
-          (row.authMethod === "qemu_kerberos_ticket"
-            ? input.expectedKdcTransport === undefined
-            : input.expectedKdcTransport !== undefined &&
-              matchesExpectedTransport(
-                storedKdcSnapshot(row)!,
-                input.expectedKdcTransport,
-              ))));
-    if (!matches) {
-      return { outcome: "configuration_changed" };
-    }
-    // Cached authority cannot outlive the saved supplied ticket. Round down
-    // against the next second; the Runner also anchors before its request.
-    let lifetimeSeconds = VNC_AUTHORITY_MAX_LIFETIME_SECONDS;
-    if (row.authMethod === "qemu_kerberos_ticket") {
-      const expiry = row.kerberosDeclaredExpiresAt;
-      if (expiry === null) {
-        throw new Error("Missing stored VNC Kerberos ticket expiry");
-      }
-      lifetimeSeconds = Math.min(
-        lifetimeSeconds,
-        expiry - Math.ceil(nowDate().getTime() / 1000),
-      );
-    }
-    return lifetimeSeconds > 0
-      ? { outcome: "valid", lifetimeSeconds }
-      : { outcome: "unavailable" };
-  },
-);
-
-/** Retained wire contract for old Runners and independent KDC exchanges. */
-export const checkRunnerVnc$ = command(
-  async (
-    { set },
-    input: RunnerVncCheckRequest & { readonly runId: string },
-    signal: AbortSignal,
-  ): Promise<RunnerVncCheckResponse> => {
-    const result = await set(checkRunnerVncSnapshot$, input, signal);
-    return { outcome: result.outcome };
+    return {
+      outcome:
+        row.generation === input.expectedGeneration &&
+        matchesExpectedTransport(transport, input.expectedTransport) &&
+        (!isVncKerberosMethod(row.authMethod) ||
+          (row.credentialRevision === input.expectedCredentialRevision &&
+            (row.authMethod === "qemu_kerberos_ticket"
+              ? input.expectedKdcTransport === undefined
+              : input.expectedKdcTransport !== undefined &&
+                matchesExpectedTransport(
+                  storedKdcSnapshot(row)!,
+                  input.expectedKdcTransport,
+                ))))
+          ? "valid"
+          : "configuration_changed",
+    };
   },
 );
 

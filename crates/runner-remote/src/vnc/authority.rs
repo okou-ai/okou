@@ -12,7 +12,6 @@ use rfb_client::{
 };
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::time::Instant;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -1225,13 +1224,14 @@ impl Authority {
         })
     }
 
-    fn check_request(
+    pub(super) async fn check(
         &self,
+        run: RunId,
         connection: uuid::Uuid,
         generation: i64,
         transport: Transport,
         kerberos: Option<super::kerberos::Binding>,
-    ) -> CheckRequest {
+    ) -> Result<(), Failure> {
         let expected_transport = match transport {
             Transport::Direct => CheckRequestExpectedTransport::Direct,
             Transport::Ssh {
@@ -1242,7 +1242,7 @@ impl Authority {
                 generation,
             },
         };
-        CheckRequest {
+        let request = CheckRequest {
             connection_id: connection.to_string(),
             runner_identity: CheckRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
@@ -1263,18 +1263,7 @@ impl Authority {
                     },
                 },
             ),
-        }
-    }
-
-    pub(super) async fn check_kerberos(
-        &self,
-        run: RunId,
-        connection: uuid::Uuid,
-        generation: i64,
-        transport: Transport,
-        kerberos: Option<super::kerberos::Binding>,
-    ) -> Result<(), Failure> {
-        let request = self.check_request(connection, generation, transport, kerberos);
+        };
         match self
             .call(
                 routes::check::route(routes::check::Params {
@@ -1287,44 +1276,6 @@ impl Authority {
             CheckResponse::Valid => Ok(()),
             CheckResponse::Unavailable => Err(Failure::Unavailable),
             CheckResponse::ConfigurationChanged => Err(Failure::ConfigurationChanged),
-        }
-    }
-
-    /// A new session always fills from current API authority. An older API
-    /// without this endpoint cannot admit cached work; there is no fallback.
-    pub(super) async fn snapshot(
-        &self,
-        run: RunId,
-        connection: uuid::Uuid,
-        generation: i64,
-        transport: Transport,
-        kerberos: Option<super::kerberos::Binding>,
-    ) -> Result<Instant, Failure> {
-        // Anchor before the round trip, so a slow response cannot extend a
-        // saved ticket's remaining lifetime reported by the API.
-        let started = Instant::now();
-        let request = self.check_request(connection, generation, transport, kerberos);
-        let response: SnapshotResponse = self
-            .call(
-                routes::snapshot::route(routes::snapshot::Params {
-                    run_id: &run.to_string(),
-                }),
-                &request,
-            )
-            .await?;
-        match response {
-            SnapshotResponse::Valid { lifetime_seconds } => {
-                if !(1..=7200).contains(&lifetime_seconds) {
-                    return Err(Failure::Authority);
-                }
-                let expires = started + std::time::Duration::from_secs(lifetime_seconds as u64);
-                if Instant::now() >= expires {
-                    return Err(Failure::Unavailable);
-                }
-                Ok(expires)
-            }
-            SnapshotResponse::Unavailable => Err(Failure::Unavailable),
-            SnapshotResponse::ConfigurationChanged => Err(Failure::ConfigurationChanged),
         }
     }
 }

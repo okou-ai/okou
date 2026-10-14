@@ -410,39 +410,6 @@ pub mod runners {
                         crate::ResolvedRoute::new(RESOLVE.method, path(params))
                     }
                 }
-
-                /// Generated route bindings under `runners::runs::by_run_id::vnc::snapshot`.
-                pub mod snapshot {
-                    /// Admit a bounded notification-revoked VNC authority snapshot.
-                    /// Route contract: `POST /api/runners/runs/:runId/vnc/snapshot`.
-                    pub const SNAPSHOT: crate::RouteTemplate = crate::RouteTemplate {
-                        method: crate::Method::Post,
-                        path: "/api/runners/runs/:runId/vnc/snapshot",
-                    };
-
-                    /// Path parameters for `POST /api/runners/runs/:runId/vnc/snapshot`.
-                    #[derive(Debug, Clone, Copy)]
-                    pub struct Params<'a> {
-                        /// Value for the `:runId` path parameter.
-                        pub run_id: &'a str,
-                    }
-
-                    /// Build the concrete path for `POST /api/runners/runs/:runId/vnc/snapshot`.
-                    /// Percent-encodes each path parameter as a URL path segment.
-                    #[must_use]
-                    pub fn path(params: Params<'_>) -> String {
-                        format!(
-                            "/api/runners/runs/{}/vnc/snapshot",
-                            crate::route::encode_path_segment(params.run_id),
-                        )
-                    }
-
-                    /// Build a resolved route for `POST /api/runners/runs/:runId/vnc/snapshot`.
-                    #[must_use]
-                    pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
-                        crate::ResolvedRoute::new(SNAPSHOT.method, path(params))
-                    }
-                }
             }
         }
     }

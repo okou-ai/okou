@@ -116,7 +116,7 @@ async fn immediate_list_terminal_survives_the_bundled_helpers_input_end() {
 async fn bundled_streaming_helper_delivers_capture_and_proves_terminal_eof() {
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let _check = h.snapshot("valid", 200).await;
+    let _check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let request =
@@ -152,7 +152,7 @@ async fn bundled_streaming_helper_delivers_capture_and_proves_terminal_eof() {
 async fn post_handshake_generation_check_denies_before_publishing_session() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let check = h.snapshot("configuration_changed", 200).await;
+    let check = h.check("configuration_changed", 200).await;
     let reply = h.start("shared").await;
     assert_eq!(
         reply.result(),
@@ -173,7 +173,7 @@ async fn post_handshake_generation_check_denies_before_publishing_session() {
 async fn x509_plain_authenticates_exact_credentials_and_publishes_the_requested_mode() {
     let mut h = Harness::new_plain().await;
     let resolve = h.resolve_plain().await;
-    let check = h.snapshot("valid", 200).await;
+    let check = h.check("valid", 200).await;
     let session = h.start("exclusive").await.session();
     mode(&h, 0).await;
     assert_eq!(
@@ -211,7 +211,7 @@ async fn x509_none_verifies_tls_and_streams_without_a_vnc_client_credential() {
             "security":{"type":"x509_none","trust":{"mode":"custom_ca","caBundle":h.peer.ca}},
         }))
         .await;
-    let check = h.snapshot("valid", 200).await;
+    let check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let capture = h
@@ -267,7 +267,7 @@ async fn client_certificate_pairs_complete_runner_session_against_verifying_peer
                 "security":{"type":security,"trust":{"mode":"custom_ca","caBundle":h.peer.ca}},
             }))
             .await;
-        let check = h.snapshot("valid", 200).await;
+        let check = h.check("valid", 200).await;
         let session = h.start("shared").await.session();
         mode(&h, 1).await;
         let capture = h
@@ -321,7 +321,7 @@ async fn x509_none_rejects_the_wrong_tls_server_identity_before_session_start() 
 async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.snapshot("valid", 200).await;
+    let _check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     h.peer.disconnect.cancel();
@@ -346,7 +346,7 @@ async fn input_write_to_reset_socket_is_unknown_and_never_replayed() {
 async fn failed_input_terminal_delivery_closes_session_without_replaying_input() {
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
-    let _check = h.snapshot("valid", 200).await;
+    let _check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let mut guest = h.run.open_failing_output().await;
@@ -383,7 +383,7 @@ async fn failed_input_terminal_delivery_closes_session_without_replaying_input()
 async fn blocked_list_metadata_does_not_retain_a_closed_sessions_capacity() {
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let check = h.snapshot("valid", 200).await;
+    let check = h.check("valid", 200).await;
     let first = h.start("shared").await.session();
     mode(&h, 1).await;
     h.start("shared").await.session();

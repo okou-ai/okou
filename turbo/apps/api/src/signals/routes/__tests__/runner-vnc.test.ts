@@ -598,30 +598,6 @@ describe("private Runner VNC authority", () => {
       expect((await check(f, 2, binding)).body).toStrictEqual({
         outcome: "valid",
       });
-      const cachedTicket = () => {
-        return accept(
-          api.runner().snapshot({
-            headers: vncRunnerHeaders,
-            params: { runId: f.runId },
-            body: {
-              connectionId: f.connectionId,
-              runnerIdentity: f.runnerIdentity,
-              expectedGeneration: 2,
-              ...binding,
-            },
-          }),
-          [200],
-        );
-      };
-      expect((await cachedTicket()).body).toStrictEqual({
-        outcome: "valid",
-        lifetimeSeconds: 800,
-      });
-      mockNow(new Date(200_001));
-      expect((await cachedTicket()).body).toStrictEqual({
-        outcome: "valid",
-        lifetimeSeconds: 799,
-      });
       expect(kms.decryptCalls).toBe(1);
       mockNow(new Date(1_000_000));
       await expect(
@@ -630,9 +606,6 @@ describe("private Runner VNC authority", () => {
         outcome: "unavailable",
       });
       expect((await check(f, 2, binding)).body).toStrictEqual({
-        outcome: "unavailable",
-      });
-      expect((await cachedTicket()).body).toStrictEqual({
         outcome: "unavailable",
       });
       expect(kms.decryptCalls).toBe(1);

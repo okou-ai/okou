@@ -340,21 +340,6 @@ const checkResponseSchema = z.discriminatedUnion("outcome", [
   configurationChangedSchema,
 ]);
 
-export const VNC_AUTHORITY_MAX_LIFETIME_SECONDS = 7200;
-const snapshotResponseSchema = z.discriminatedUnion("outcome", [
-  z
-    .object({
-      outcome: z.literal("valid"),
-      lifetimeSeconds: z
-        .int()
-        .positive()
-        .max(VNC_AUTHORITY_MAX_LIFETIME_SECONDS),
-    })
-    .strict(),
-  unavailableSchema,
-  configurationChangedSchema,
-]);
-
 const pathParams = z.object({ runId: z.uuid() }).strict();
 const errors = {
   400: apiErrorSchema,
@@ -383,19 +368,9 @@ export const runnerVncContract = c.router({
     responses: { 200: checkResponseSchema, ...errors },
     summary: "Check current VNC authorization and configuration",
   },
-  snapshot: {
-    method: "POST",
-    path: "/api/runners/runs/:runId/vnc/snapshot",
-    pathParams,
-    headers: authHeadersSchema,
-    body: checkRequestSchema,
-    responses: { 200: snapshotResponseSchema, ...errors },
-    summary: "Admit a bounded notification-revoked VNC authority snapshot",
-  },
 });
 
 export type RunnerVncResolveRequest = z.infer<typeof resolveRequestSchema>;
 export type RunnerVncResolveResponse = z.infer<typeof resolveResponseSchema>;
 export type RunnerVncCheckRequest = z.infer<typeof checkRequestSchema>;
 export type RunnerVncCheckResponse = z.infer<typeof checkResponseSchema>;
-export type RunnerVncSnapshotResponse = z.infer<typeof snapshotResponseSchema>;

@@ -19,9 +19,9 @@ async fn list_during_close(close_capturing: bool) {
     let _other_resolve = h
         .resolve_connection("58629e7e-6504-46f7-a294-ce1732b83b82")
         .await;
-    let check = h.snapshot("valid", 200).await;
+    let check = h.check("valid", 200).await;
     let other_check = h
-        .snapshot_connection("58629e7e-6504-46f7-a294-ce1732b83b82", "valid", 200)
+        .check_connection("58629e7e-6504-46f7-a294-ce1732b83b82", "valid", 200)
         .await;
     let first = h.start("shared").await.session();
     mode(&h, 1).await;
@@ -85,7 +85,7 @@ async fn list_omits_a_closed_sibling_while_another_capture_is_active() {
 async fn interrupted_list(cancel_run: bool) {
     let mut h = Harness::new().await;
     let _resolve = h.resolve().await;
-    let check = h.snapshot("valid", 200).await;
+    let check = h.check("valid", 200).await;
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
     let gate = Arc::new(Semaphore::new(0));

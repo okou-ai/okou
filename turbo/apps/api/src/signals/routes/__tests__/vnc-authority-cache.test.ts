@@ -36,7 +36,7 @@ const runs = createRunsApi(context);
 beforeEach(initializeVncRuntimeTest);
 afterEach(claimed.cleanup);
 
-function snapshot(
+function check(
   f: Pick<
     VncRuntimeFixture,
     "runId" | "connectionId" | "runnerIdentity" | "orgId" | "userId"
@@ -45,7 +45,7 @@ function snapshot(
 ) {
   api.authenticate(f);
   return accept(
-    api.runner().snapshot({
+    api.runner().check({
       headers: vncRunnerHeaders,
       params: { runId: f.runId },
       body: {
@@ -65,7 +65,7 @@ function notifications() {
   });
 }
 
-describe("bounded VNC authority snapshots", () => {
+describe("VNC authority and revocation", () => {
   it.each(["user", "organization"] as const)(
     "%s erasure notifies only matching VNC Runs and removes their authority",
     async (kind) => {
@@ -112,12 +112,11 @@ describe("bounded VNC authority snapshots", () => {
           { runId: removed.runId, connectionId: null },
         ],
       ]);
-      expect((await snapshot(removed)).body).toStrictEqual({
+      expect((await check(removed)).body).toStrictEqual({
         outcome: "unavailable",
       });
-      expect((await snapshot(unrelated)).body).toStrictEqual({
+      expect((await check(unrelated)).body).toStrictEqual({
         outcome: "valid",
-        lifetimeSeconds: 7200,
       });
     },
   );
@@ -157,8 +156,8 @@ describe("bounded VNC authority snapshots", () => {
       );
       await api.enableDefault(member, "vnc", desktop.body.id);
       expect(
-        (await snapshot({ ...memberRun, connectionId: desktop.body.id })).body,
-      ).toStrictEqual({ outcome: "valid", lifetimeSeconds: 7200 });
+        (await check({ ...memberRun, connectionId: desktop.body.id })).body,
+      ).toStrictEqual({ outcome: "valid" });
       context.mocks.ably.publish.mockClear();
       if (entry === "configuration") {
         await bdd.updateAgent(actor, agent.agentId, { visibility: "private" });
@@ -174,7 +173,7 @@ describe("bounded VNC authority snapshots", () => {
         ],
       ]);
       expect(
-        (await snapshot({ ...memberRun, connectionId: desktop.body.id })).body,
+        (await check({ ...memberRun, connectionId: desktop.body.id })).body,
       ).toStrictEqual({ outcome: "unavailable" });
       await expect(bdd.readAgent(actor, agent.agentId)).resolves.toMatchObject({
         visibility: "private",
@@ -190,27 +189,12 @@ describe("bounded VNC authority snapshots", () => {
     },
   );
 
-  it("requires exact current Run/Runner/configuration and retains the old check response", async () => {
+  it("requires exact current Run/Runner/configuration", async () => {
     const f = await claimed.fixture();
-    expect((await snapshot(f)).body).toStrictEqual({
+    expect((await check(f)).body).toStrictEqual({
       outcome: "valid",
-      lifetimeSeconds: 7200,
     });
-    const old = await accept(
-      api.runner().check({
-        headers: vncRunnerHeaders,
-        params: { runId: f.runId },
-        body: {
-          connectionId: f.connectionId,
-          runnerIdentity: f.runnerIdentity,
-          expectedGeneration: 1,
-          expectedTransport: { type: "direct" },
-        },
-      }),
-      [200],
-    );
-    expect(old.body).toStrictEqual({ outcome: "valid" });
-    expect((await snapshot(f, 2)).body).toStrictEqual({
+    expect((await check(f, 2)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
     for (const runnerIdentity of [
@@ -220,16 +204,16 @@ describe("bounded VNC authority snapshots", () => {
         heartbeatGeneration: f.runnerIdentity.heartbeatGeneration + 1,
       },
     ]) {
-      expect((await snapshot({ ...f, runnerIdentity })).body).toStrictEqual({
+      expect((await check({ ...f, runnerIdentity })).body).toStrictEqual({
         outcome: "unavailable",
       });
     }
-    expect((await snapshot({ ...f, runId: randomUUID() })).body).toStrictEqual({
+    expect((await check({ ...f, runId: randomUUID() })).body).toStrictEqual({
       outcome: "unavailable",
     });
     const another = await claimed.fixture();
     expect(
-      (await snapshot({ ...another, connectionId: f.connectionId })).body,
+      (await check({ ...another, connectionId: f.connectionId })).body,
     ).toStrictEqual({ outcome: "unavailable" });
   });
 
@@ -255,7 +239,7 @@ describe("bounded VNC authority snapshots", () => {
     expect(
       channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
     ).toStrictEqual([]);
-    expect((await snapshot(f)).body).toStrictEqual({
+    expect((await check(f)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
     context.mocks.ably.publish.mockClear();
@@ -282,7 +266,7 @@ describe("bounded VNC authority snapshots", () => {
         { runId: f.runId, connectionId: f.connectionId },
       ],
     ]);
-    expect((await snapshot(f, 2)).body).toStrictEqual({
+    expect((await check(f, 2)).body).toStrictEqual({
       outcome: "unavailable",
     });
     for (const value of [f, another]) {
@@ -341,12 +325,11 @@ describe("bounded VNC authority snapshots", () => {
       { runId: f.runId, connectionId: unrelated.body.id },
     ]);
     expect(requireVncCredentialId(unrelated.body)).not.toBe(f.credentialId);
-    expect((await snapshot(f)).body).toStrictEqual({
+    expect((await check(f)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
-    expect((await snapshot(f, 2)).body).toStrictEqual({
+    expect((await check(f, 2)).body).toStrictEqual({
       outcome: "valid",
-      lifetimeSeconds: 7200,
     });
   });
 
@@ -368,12 +351,11 @@ describe("bounded VNC authority snapshots", () => {
       expect(notifications()).toStrictEqual([
         ["vnc-authority-invalidated", { runId: f.runId, connectionId: null }],
       ]);
-      expect((await snapshot(f)).body).toStrictEqual({
+      expect((await check(f)).body).toStrictEqual({
         outcome: "unavailable",
       });
-      expect((await snapshot(another)).body).toStrictEqual({
+      expect((await check(another)).body).toStrictEqual({
         outcome: "valid",
-        lifetimeSeconds: 7200,
       });
       expect(
         channelsPublishedTo(context.mocks, "ssh-authority-invalidated"),
@@ -401,12 +383,11 @@ describe("bounded VNC authority snapshots", () => {
       }),
       [200],
     );
-    expect((await snapshot(f)).body).toStrictEqual({
+    expect((await check(f)).body).toStrictEqual({
       outcome: "configuration_changed",
     });
-    expect((await snapshot(f, 2)).body).toStrictEqual({
+    expect((await check(f, 2)).body).toStrictEqual({
       outcome: "valid",
-      lifetimeSeconds: 7200,
     });
     context.mocks.ably.publish.mockResolvedValue(undefined);
   });

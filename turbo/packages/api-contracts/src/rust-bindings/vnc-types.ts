@@ -478,30 +478,4 @@ export const vncTypeBindings = [
       },
     ],
   },
-  {
-    schema: runnerVncContract.snapshot.responses[200],
-    rustModulePath: ["runners", "vnc"],
-    rustTypeName: "SnapshotResponse",
-    direction: "response",
-    declarations: [
-      {
-        rustTypeName: "SnapshotResponse",
-        rustDoc: [
-          "Secret-free admission for bounded Run-owned VNC authority.",
-          "Delivered notifications revoke it; missed delivery can delay revocation.",
-        ],
-        fields: {
-          lifetimeSeconds: [
-            "Positive lifetime up to 7200 seconds, bounded by saved ticket expiry.",
-            "Anchor before the request and cap by native authentication expiry.",
-          ],
-        },
-        variants: {
-          valid: ["Admit this exact current configuration and Run."],
-          unavailable: ["Current authority is unavailable."],
-          configuration_changed: ["The resolved authority no longer matches."],
-        },
-      },
-    ],
-  },
 ] as const satisfies readonly RustTypeBinding[];

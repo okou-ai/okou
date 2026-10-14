@@ -38,14 +38,13 @@ async fn desktop(
     h.api
         .mock_async(|when, then| {
             when.method("POST")
-                .path(format!("/api/runners/runs/{}/vnc/snapshot", h.run))
+                .path(format!("/api/runners/runs/{}/vnc/check", h.run))
                 .json_body_includes(
                     json!({"connectionId":connection,"expectedGeneration":11,
                 "expectedTransport":{"type":"ssh","connectionId":CONNECTION,"generation":7}})
                     .to_string(),
                 );
-            then.status(200)
-                .json_body(json!({"outcome":"valid","lifetimeSeconds":7200}));
+            then.status(200).json_body(json!({"outcome":"valid"}));
         })
         .await;
     let start = h.raw(
@@ -282,7 +281,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
             .api
             .mock_async(|when, then| {
                 when.method("POST")
-                    .path(format!("/api/runners/runs/{}/vnc/snapshot", harness.run))
+                    .path(format!("/api/runners/runs/{}/vnc/check", harness.run))
                     .header("authorization", format!("Bearer {TOKEN}"))
                     .json_body(json!({
                         "connectionId": CONNECTION,
@@ -297,8 +296,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                             "generation": if pinned { 7 } else { 8 }
                         }
                     }));
-                then.status(200)
-                    .json_body(json!({"outcome": "valid","lifetimeSeconds":7200}));
+                then.status(200).json_body(json!({"outcome": "valid"}));
             })
             .await;
 

@@ -2915,26 +2915,6 @@ pub mod runners {
                 deserializer.deserialize_map(Visitor)
             }
         }
-
-        /// Secret-free admission for bounded Run-owned VNC authority.
-        /// Delivered notifications revoke it; missed delivery can delay revocation.
-        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-        #[serde(tag = "outcome", rename_all_fields = "camelCase")]
-        pub enum SnapshotResponse {
-            /// Admit this exact current configuration and Run.
-            #[serde(rename = "valid")]
-            Valid {
-                /// Positive lifetime up to 7200 seconds, bounded by saved ticket expiry.
-                /// Anchor before the request and cap by native authentication expiry.
-                lifetime_seconds: i64,
-            },
-            /// Current authority is unavailable.
-            #[serde(rename = "unavailable")]
-            Unavailable,
-            /// The resolved authority no longer matches.
-            #[serde(rename = "configuration_changed")]
-            ConfigurationChanged,
-        }
     }
 
     /// Official Runner one-use WSS ticket redemption.

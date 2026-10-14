@@ -104,7 +104,7 @@ impl Drop for NativeWork {
 
 pub(super) struct Session {
     pub(super) info: Info,
-    // Secret-free authority is cached only for this bounded, admitted session.
+    // Authority follows this Run-owned transport's native lifetime, as with SSH.
     pub(super) expires: Instant,
     pub(super) transport: Transport,
     pub(super) kerberos: Option<super::kerberos::Binding>,
@@ -419,8 +419,13 @@ impl Run {
             .map_err(Failure::from)?;
         let engine = Engine::new(connection);
         let expires = engine.expires_at();
-        let authority_expires = scope
-            .wait(self.runtime.authority.snapshot(
+        // Admission must not hold a transport past its native authentication expiry.
+        let authority_scope = Scope {
+            deadline: scope.deadline.min(expires),
+            ..scope.clone()
+        };
+        authority_scope
+            .wait(self.runtime.authority.check(
                 self.id,
                 request.connection_id,
                 credential.generation,
@@ -428,8 +433,7 @@ impl Run {
                 kerberos,
             ))
             .await??;
-        let expires = expires.min(authority_expires);
-        scope.check()?;
+        authority_scope.check()?;
         if self.cancel.is_cancelled() {
             return Err(Failure::Cancelled);
         }

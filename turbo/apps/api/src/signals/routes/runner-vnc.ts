@@ -6,7 +6,6 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import {
   checkRunnerVnc$,
-  checkRunnerVncSnapshot$,
   resolveRunnerVnc$,
 } from "../services/runner-vnc.service";
 
@@ -69,27 +68,7 @@ const check$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: result };
 });
 
-const snapshot$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const error = await set(authorizeVncRunner$, signal);
-  if (error) {
-    return error;
-  }
-  const body = await get(bodyResultOf(runnerVncContract.snapshot));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { runId } = get(pathParamsOf(runnerVncContract.snapshot));
-  const result = await set(
-    checkRunnerVncSnapshot$,
-    { runId, ...body.data },
-    signal,
-  );
-  return { status: 200 as const, body: result };
-});
-
 export const runnerVncRoutes: readonly RouteEntry[] = [
   { route: runnerVncContract.resolve, handler: resolve$ },
   { route: runnerVncContract.check, handler: check$ },
-  { route: runnerVncContract.snapshot, handler: snapshot$ },
 ];

@@ -424,26 +424,21 @@ impl Harness {
         }).await
     }
 
-    pub(super) async fn snapshot(&self, outcome: &str, status: u16) -> Mock<'_> {
-        self.snapshot_connection(CONNECTION, outcome, status).await
+    pub(super) async fn check(&self, outcome: &str, status: u16) -> Mock<'_> {
+        self.check_connection(CONNECTION, outcome, status).await
     }
 
-    pub(super) async fn snapshot_connection(
+    pub(super) async fn check_connection(
         &self,
         connection: &str,
         outcome: &str,
         status: u16,
     ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
-            when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/snapshot$")
+            when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":{"type":"direct"}}));
-            let response = if outcome == "valid" {
-                json!({"outcome":outcome,"lifetimeSeconds":7200})
-            } else {
-                json!({"outcome":outcome})
-            };
-            then.status(status).json_body(response);
+            then.status(status).json_body(json!({"outcome":outcome}));
         }).await
     }
 

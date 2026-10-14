@@ -8,7 +8,7 @@ const expectedBindings = [
     rustModulePath: ["runners", "wss"],
     rustConstName: "CONSUME",
   },
-  ...(["resolve", "check", "snapshot"] as const).map((action) => {
+  ...(["resolve", "check"] as const).map((action) => {
     return {
       method: "POST",
       path: `/api/runners/runs/:runId/vnc/${action}`,

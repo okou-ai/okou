@@ -123,7 +123,7 @@ async fn mac_classic_password_starts_only_over_verified_ssh_loopback() {
         .api
         .mock_async(|when, then| {
             when.method("POST")
-                .path(format!("/api/runners/runs/{}/vnc/snapshot", harness.run))
+                .path(format!("/api/runners/runs/{}/vnc/check", harness.run))
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({
                     "connectionId": CONNECTION,
@@ -136,8 +136,7 @@ async fn mac_classic_password_starts_only_over_verified_ssh_loopback() {
                         "type":"ssh","connectionId":CONNECTION,"generation":7
                     }
                 }));
-            then.status(200)
-                .json_body(json!({"outcome":"valid","lifetimeSeconds":7200}));
+            then.status(200).json_body(json!({"outcome":"valid"}));
         })
         .await;
 

@@ -15,8 +15,8 @@ async fn normal_operations_reuse_snapshots_without_notifications_or_api_reauthor
     let mut h = Harness::new().await;
     let resolve = h.resolve().await;
     let other_resolve = h.resolve_connection(OTHER).await;
-    let allowed = h.snapshot("valid", 200).await;
-    let other_allowed = h.snapshot_connection(OTHER, "valid", 200).await;
+    let allowed = h.check("valid", 200).await;
+    let other_allowed = h.check_connection(OTHER, "valid", 200).await;
     // No notification subscription is connected in this harness. Admission
     // and established operations must not require its readiness or continuity.
     let first = h.start("shared").await.session();
@@ -34,8 +34,8 @@ async fn normal_operations_reuse_snapshots_without_notifications_or_api_reauthor
     other_allowed.assert_calls_async(1).await;
     allowed.delete_async().await;
     other_allowed.delete_async().await;
-    let outage = h.snapshot("unavailable", 500).await;
-    let other_outage = h.snapshot_connection(OTHER, "unavailable", 500).await;
+    let outage = h.check("unavailable", 500).await;
+    let other_outage = h.check_connection(OTHER, "unavailable", 500).await;
 
     for _ in 0..3 {
         let listed = h.run.request("vnc.session.list", json!({})).await;
