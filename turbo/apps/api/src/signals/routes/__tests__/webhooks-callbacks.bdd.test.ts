@@ -6771,6 +6771,12 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
       context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
         { data: [{ publicUserData: { userId: peer.userId } }] },
       );
+      const peerAccountsBeforeDeletion = await own(() => {
+        return connectors.listBuiltinConnectorAccounts(peer, "openai");
+      });
+      expect(peerAccountsBeforeDeletion).toMatchObject([
+        { connectionStatus: "connected" },
+      ]);
       const deletionEvent = {
         type: "user.deleted",
         data: { id: doomed.userId },
@@ -6824,7 +6830,7 @@ describe("WHCB-08: Clerk deletion webhooks tear down account state", () => {
         own(() => {
           return connectors.listBuiltinConnectorAccounts(peer, "openai");
         }),
-      ).resolves.toMatchObject([{ connectionStatus: "connected" }]);
+      ).resolves.toStrictEqual(peerAccountsBeforeDeletion);
       expect(context.mocks.stripe.subscriptions.list).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.update).not.toHaveBeenCalled();
       expect(context.mocks.stripe.subscriptions.cancel).not.toHaveBeenCalled();
