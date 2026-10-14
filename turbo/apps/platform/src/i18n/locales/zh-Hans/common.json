@@ -6418,7 +6418,7 @@
     "connected": "已连接",
     "connectedWithDetail": "已连接（{{detail}}）",
     "discord": {
-      "addNewServer": "添加新服务器",
+      "addNewServer": "加入新的服务器",
       "approvalFailed": "确认失败。请使用原先的 Okou 账号和组织登录，或重新发起授权。",
       "authorizationError": "无法完成 Discord 授权，请重试。",
       "chooseWorkspace": "选择工作区",

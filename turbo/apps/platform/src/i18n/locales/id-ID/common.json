@@ -6418,7 +6418,7 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
-      "addNewServer": "Tambahkan server baru",
+      "addNewServer": "Gabung ke server baru",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
       "chooseWorkspace": "Pilih ruang kerja",

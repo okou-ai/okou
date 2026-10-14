@@ -6445,7 +6445,7 @@
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
-      "addNewServer": "नया सर्वर जोड़ें",
+      "addNewServer": "नए सर्वर से जुड़ें",
       "approvalFailed": "पुष्टि नहीं हो सकी। मूल Okou खाते और संगठन से लॉग इन करें या अनुमति फिर शुरू करें।",
       "authorizationError": "Discord प्राधिकरण पूरा नहीं हो सका। फिर से प्रयास करें।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
