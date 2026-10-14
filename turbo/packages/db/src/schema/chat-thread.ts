@@ -5,6 +5,7 @@ import {
   pgTable,
   unique,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { chatThreadColumns } from "../columns/chat-thread";
 
@@ -15,7 +16,12 @@ import { chatThreadColumns } from "../columns/chat-thread";
  */
 export const chatThreads = pgTable(
   "chat_threads",
-  chatThreadColumns(),
+  {
+    ...chatThreadColumns(),
+    /** Physical compatibility storage, omitted from the runtime mapping. */
+    agentSessionId: uuid("agent_session_id"),
+    agentSessionRunId: uuid("agent_session_run_id"),
+  },
   (table) => {
     return [
       unique("uq_chat_threads_id_user").on(table.id, table.userId),

@@ -3328,68 +3328,6 @@ test("promotes a queued workflow after failure and completes it with a real Runn
   await api.heartbeatRunner(runnerGroup);
   const nextClaim = await api.claimRunnerJob(next.runId);
   const sessionId = `workflow-session-${next.runId}`;
-  const history = Buffer.from(
-    JSON.stringify({
-      type: "assistant",
-      sessionId,
-      uuid: randomUUID(),
-      timestamp: new Date(now()).toISOString(),
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: "Workflow completed" }],
-      },
-    }) + "\n",
-  );
-  const historyHash = createHash("sha256").update(history).digest("hex");
-  const presign = context.mocks.s3.getSignedUrl.getMockImplementation();
-  const transport = context.mocks.s3.send.getMockImplementation();
-  if (!presign || !transport) {
-    throw new Error("Expected the configured S3 transport");
-  }
-  let preparedKey: string | undefined;
-  context.mocks.s3.getSignedUrl.mockImplementation(
-    (client, command, options) => {
-      if (command instanceof PutObjectCommand) {
-        preparedKey = command.input.Key;
-      }
-      return presign(client, command, options);
-    },
-  );
-  const prepared = await webhooks.requestAgentSessionHistoryPrepare(
-    {
-      runId: next.runId,
-      hash: historyHash,
-      rawSize: history.length,
-      encodedSize: history.length,
-      encoding: "identity",
-    },
-    { authorization: `Bearer ${nextClaim.sandboxToken}` },
-    [200],
-  );
-  if (prepared.status !== 200) {
-    throw new Error("Expected the authorized history prepare to succeed");
-  }
-  expect(prepared.body.existing).toBeFalsy();
-  expect(prepared.body.presignedUrl).toBeTruthy();
-  context.mocks.s3.getSignedUrl.mockImplementation(presign);
-  const historyKey = preparedKey;
-  if (!historyKey) {
-    throw new Error("Expected the history key from the authorized prepare");
-  }
-  // The Runner uploads these bytes to the key authorized by prepare.
-  context.mocks.s3.send.mockImplementation((command: unknown) => {
-    if (
-      command instanceof GetObjectCommand &&
-      command.input.Key === historyKey
-    ) {
-      return Promise.resolve({
-        Body: Readable.from([history]),
-        ContentLength: history.length,
-      });
-    }
-    return transport(command);
-  });
-
   await webhooks.requestAgentComplete(
     {
       runId: next.runId,
@@ -3397,7 +3335,7 @@ test("promotes a queued workflow after failure and completes it with a real Runn
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: sessionId,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     { authorization: `Bearer ${nextClaim.sandboxToken}` },

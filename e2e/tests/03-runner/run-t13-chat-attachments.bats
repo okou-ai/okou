@@ -153,6 +153,6 @@ EOF
     assert_success
     assert_output --partial "$content_marker"
 
-    [[ "$(jq -er '.result.agentSessionId' <<<"$continuation_run_response")" == \
-        "$(jq -er '.result.agentSessionId' <<<"$first_run_response")" ]]
+    [[ "$(jq -er '.result.frameworkSessionId' <<<"$continuation_run_response")" == \
+        "$(jq -er '.result.frameworkSessionId' <<<"$first_run_response")" ]]
 }

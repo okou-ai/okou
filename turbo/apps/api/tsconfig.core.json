@@ -566,7 +566,12 @@
     "src/signals/services/workflow-automation.service.ts",
     "src/signals/services/workflow-delete.service.ts",
     "src/signals/services/workflow-webhook-automation-config.service.ts",
-    "src/signals/services/workflow-webhook-automation-entitlement.service.ts"
+    "src/signals/services/workflow-webhook-automation-entitlement.service.ts",
+    "src/lib/event-consumer/verify.ts",
+    "src/signals/services/chat-event-row-read.service.ts",
+    "src/signals/services/chat-event-snapshot-body.service.ts",
+    "src/signals/services/pi-memory-chat-source.service.ts",
+    "src/signals/services/run-native-session.service.ts"
   ],
   "references": [
     {

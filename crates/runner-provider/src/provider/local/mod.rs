@@ -270,6 +270,7 @@ impl JobProvider for LocalProvider {
             storage_manifest: None,
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),
+            native_continuation: None,
             resume_session: req
                 .session_id
                 .as_ref()

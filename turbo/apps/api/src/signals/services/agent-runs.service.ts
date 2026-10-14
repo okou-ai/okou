@@ -23,7 +23,6 @@ import {
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
@@ -140,8 +139,7 @@ function runningRunRows(orgId: string): Computed<Promise<RunningRunRow[]>> {
         agentDisplayName: agents.displayName,
       })
       .from(agentRuns)
-      .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(and(eq(agentRuns.orgId, orgId), eq(agentRuns.status, "running")))
       .orderBy(asc(agentRuns.startedAt));
   });

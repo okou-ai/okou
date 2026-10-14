@@ -8,7 +8,7 @@ import { z } from "zod";
 import { jsonb, pgTable } from "drizzle-orm/pg-core";
 
 import { schema } from "../src/index";
-import { agentSessions } from "../src/runtime/agent-session";
+import { agentSessions } from "../src/schema/agent-session";
 import { agentSessionColumns } from "../src/columns/agent-session";
 import { resolveAgentConversationId } from "../src/schema/agent-run-reference";
 import type { PersistedStorageMount } from "../src/types";
@@ -51,7 +51,9 @@ export async function validateSessionMountRetirementPreparation(
 ): Promise<void> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  const db = drizzle(client, { schema });
+  // Freeze the outgoing root projection for this historical preparation proof.
+  // The application root schema has since retired Session ownership entirely.
+  const db = drizzle(client, { schema: { ...schema, agentSessions } });
   const namespace = `session_mounts_${randomUUID().replaceAll("-", "")}`;
   try {
     await client.query(`CREATE SCHEMA "${namespace}"`);

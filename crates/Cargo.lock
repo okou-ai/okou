@@ -4541,6 +4541,7 @@ name = "runner-types"
 version = "0.6.16"
 dependencies = [
  "api-contracts",
+ "guest-contracts",
  "idna",
  "sandbox",
  "serde",

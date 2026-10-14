@@ -1,4 +1,3 @@
-import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { randomUUID } from "node:crypto";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
@@ -145,15 +144,6 @@ async function completeChatRunOk(
   sandboxHeaders: { readonly authorization: string },
   lastEventSequence?: number,
 ): Promise<void> {
-  const historyHash = await prepareSessionHistoryBytes(
-    context,
-    runId,
-    sandboxHeaders,
-    Buffer.from(`bdd artifact catalog history ${runId}`),
-    (restore) => {
-      onTestFinished(restore);
-    },
-  );
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -161,7 +151,7 @@ async function completeChatRunOk(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(lastEventSequence === undefined ? {} : { lastEventSequence }),
     },

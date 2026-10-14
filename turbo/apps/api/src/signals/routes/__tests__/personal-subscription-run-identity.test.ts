@@ -271,10 +271,11 @@ async function finish(
           ? {
               completion: {
                 cliAgentType: claim.cliAgentType,
-                cliAgentSessionId: `subscription-${runId}`,
-                cliAgentSessionHistoryHash: createHash("sha256")
-                  .update(`subscription history ${runId}`)
-                  .digest("hex"),
+                cliAgentSessionId:
+                  claim.cliAgentType === "pi"
+                    ? (claim.piSessionId ?? runId)
+                    : `subscription-${runId}`,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             }
           : { error: "Upstream run failed" }),
@@ -1522,17 +1523,7 @@ describe("personal priority credential and session boundaries", () => {
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
     context.sessionHistoryBlobs.set(hash, history);
-    await createWebhookCallbackApi(context).requestAgentSessionHistoryPrepare(
-      {
-        runId: sent.runId,
-        hash,
-        rawSize: history.length,
-        encodedSize: history.length,
-        encoding: "identity",
-      },
-      { authorization: `Bearer ${first.sandboxToken}` },
-      [200],
-    );
+
     await finish(f.actor, sent.runId, first, "completed");
     let nextRunId: string | undefined;
     await flushWaitUntilForTest();
@@ -1564,6 +1555,8 @@ describe("personal priority credential and session boundaries", () => {
       `Bearer ${replacement.token}`,
     );
     expect(second.cliAgentType).toBe("codex");
-    expect(second.resumeSession?.sessionId).toBe(`subscription-${sent.runId}`);
+    expect(second.nativeContinuation?.sessionId).toBe(
+      `subscription-${sent.runId}`,
+    );
   });
 });

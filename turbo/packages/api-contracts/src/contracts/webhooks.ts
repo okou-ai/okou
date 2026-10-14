@@ -355,7 +355,7 @@ const runCompletionMetadataShape = {
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
   cliAgentSessionHistoryHash: sha256HexSchema.optional(),
   cliAgentSessionHistoryDisposition: z
-    .enum(["discarded_oversized", "unavailable"])
+    .enum(["discarded_oversized", "unavailable", "native_only"])
     .optional(),
   // Versions of the run's authorized writeback mounts after publication.
   artifactSnapshots: artifactSnapshotsSchema.optional(),

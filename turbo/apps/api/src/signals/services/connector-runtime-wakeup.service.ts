@@ -4,7 +4,6 @@ import {
   type ConnectorRuntimeTarget,
 } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { and, eq, isNotNull, type SQL } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
@@ -71,7 +70,7 @@ function connectorRuntimeWakeupCondition(scope: ConnectorRuntimeWakeupScope) {
     conditions.push(eq(agentRuns.userId, scope.userId));
   }
   if (scope.agentId !== undefined) {
-    conditions.push(eq(agentSessions.agentId, scope.agentId));
+    conditions.push(eq(agentRuns.agentId, scope.agentId));
   }
   return and(...conditions);
 }
@@ -90,7 +89,7 @@ async function publishConnectorRuntimeSyncWakeupsInner(
       runnerGroup: agentRuns.runnerGroup,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+
     .where(connectorRuntimeWakeupCondition(args.scope));
 
   await publishConnectorRuntimeWakeupRows({ scope: args.scope, targets, rows });
@@ -222,7 +221,7 @@ export const publishConnectorRuntimeSyncWakeups$ = command(
       db
         .select({ runId: agentRuns.id, runnerGroup: agentRuns.runnerGroup })
         .from(agentRuns)
-        .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+
         .where(connectorRuntimeWakeupCondition(args.scope)),
     );
     const result = read.ok

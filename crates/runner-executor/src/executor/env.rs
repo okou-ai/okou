@@ -948,6 +948,15 @@ pub(super) fn prepare_run_payload_for_run(
     let payload = guest_contracts::env::RunPayload {
         prompt: context.prompt.clone(),
         append_system_prompt: context.append_system_prompt.clone().unwrap_or_default(),
+        native_continuation: context
+            .native_continuation
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|error| {
+                RunnerError::Internal(format!("serialize native continuation: {error}"))
+            })?
+            .unwrap_or_default(),
         secret_values: String::new(),
         disallowed_tools,
         tools,

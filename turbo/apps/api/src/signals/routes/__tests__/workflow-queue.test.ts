@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -355,9 +355,7 @@ async function requestRunCompletionThroughSandbox(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `workflow-queue-cli-${runId}`,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`workflow automation history ${runId}`)
-          .digest("hex"),
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(stagedOutputEvents.length === 0
         ? {}
@@ -1124,7 +1122,7 @@ describe("workflow queue", () => {
       scenario,
       secondWorkflowRunId,
     );
-    expect(workflowClaim.resumeSession?.sessionId).toBe(
+    expect(workflowClaim.nativeContinuation?.sessionId).toBe(
       `workflow-queue-cli-${firstRunId}`,
     );
     const userMessage = (await wf.readThreadEvents(automation.threadId)).find(
@@ -1142,20 +1140,16 @@ describe("workflow queue", () => {
       scenario,
       userMessage.runId,
     );
-    expect(userClaim.resumeSession?.sessionId).toBe(
+    expect(userClaim.nativeContinuation?.sessionId).toBe(
       `workflow-queue-cli-${secondWorkflowRunId}`,
     );
-    const session = await readCompletedRunSessionId(
-      context,
-      scenario.actor,
-      firstRunId,
-    );
+    await readCompletedRunSessionId(context, scenario.actor, firstRunId);
     await expect(
       readCompletedRunSessionId(context, scenario.actor, secondWorkflowRunId),
-    ).resolves.toBe(session);
+    ).resolves.toBe(`workflow-queue-cli-${secondWorkflowRunId}`);
     await expect(
       readCompletedRunSessionId(context, scenario.actor, userMessage.runId),
-    ).resolves.toBe(session);
+    ).resolves.toBe(`workflow-queue-cli-${userMessage.runId}`);
   });
 
   it("revokes one pending automation event with the caller's client event id", async () => {

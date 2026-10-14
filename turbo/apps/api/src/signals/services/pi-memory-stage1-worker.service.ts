@@ -27,6 +27,7 @@ import {
   PiMemoryStage1BudgetError,
   type PiMemoryStage1Evidence,
   projectPiMemoryStage1Evidence,
+  projectPiMemoryChatStage1Evidence,
   redactPiMemoryStage1Secrets,
   preparePiMemoryStage1Extraction,
   runPiMemoryStage1PreparedExtraction,
@@ -120,6 +121,8 @@ interface ClaimedPiMemoryStage1Work {
   readonly orgId: string;
   readonly userId: string;
   readonly sourceHistoryHash: string;
+  readonly sourceFormat: "pi-jsonl" | "chat-events-v1";
+  readonly sourceChatEventSeqId: number | null;
   readonly sourceCompletedAt: Date;
   readonly blobEncoding: string;
   readonly blobRawSize: number;
@@ -214,6 +217,8 @@ const selectDueCandidateRows$ = command(
         orgId: piMemoryStage1Candidates.orgId,
         userId: piMemoryStage1Candidates.userId,
         sourceHistoryHash: piMemoryStage1Candidates.sourceHistoryHash,
+        sourceFormat: piMemoryStage1Candidates.sourceFormat,
+        sourceChatEventSeqId: piMemoryStage1Candidates.sourceChatEventSeqId,
         sourceCompletedAt: piMemoryStage1Candidates.sourceCompletedAt,
         status: piMemoryStage1Candidates.status,
         retryCount: piMemoryStage1Candidates.retryCount,
@@ -412,12 +417,17 @@ const claimPiMemoryStage1Selection$ = command(
   },
 );
 const claimPiMemoryStage1Work$ = command(
-  async ({ set }, input: PiMemoryStage1WorkerInput): Promise<ClaimResult> => {
+  async (
+    { set },
+    input: PiMemoryStage1WorkerInput,
+    signal: AbortSignal,
+  ): Promise<ClaimResult> => {
     // Preserve DB initialization before scheduling and the original whole-claim
     // cancellation boundary owned by executePiMemoryStage1Work$.
     set(writeDb$);
-    await set(consumePiMemoryStage1Days$, input.currentTime);
+    await set(consumePiMemoryStage1Days$, input.currentTime, signal);
     const rows = await set(selectDueCandidateRows$, input);
+    signal.throwIfAborted();
     let staleDiscarded = 0,
       terminalFailure = 0;
     const claimed: ClaimedPiMemoryStage1Work[] = [];
@@ -430,6 +440,7 @@ const claimPiMemoryStage1Work$ = command(
         row,
         input.currentTime,
       );
+      signal.throwIfAborted();
       if (result.kind === "stale") {
         staleDiscarded += 1;
       }
@@ -548,6 +559,17 @@ const loadAndProjectHistory$ = command(
       throw new PermanentSourceError("source_utf8_invalid");
     }
     const projection = safeSync(() => {
+      if (args.work.sourceFormat === "chat-events-v1") {
+        if (args.work.sourceChatEventSeqId === null) {
+          throw new Error("Memory Chat cursor is missing");
+        }
+        return projectPiMemoryChatStage1Evidence({
+          input: JSON.parse(decodedJsonl.ok),
+          threadId: args.work.selection.chatThreadId,
+          sourceRunId: args.work.selection.sourceRunId,
+          lastSeqId: args.work.sourceChatEventSeqId,
+        });
+      }
       return projectPiMemoryStage1Evidence({
         jsonl: decodedJsonl.ok,
         expectedSessionId: args.work.piSessionId,
@@ -1187,7 +1209,7 @@ export const executePiMemoryStage1Work$ = command(
     signal: AbortSignal,
   ): Promise<PiMemoryStage1WorkerResult> => {
     const startedAt = performance.now();
-    const claim = await set(claimPiMemoryStage1Work$, input);
+    const claim = await set(claimPiMemoryStage1Work$, input, signal);
     if (signal.aborted) {
       await set(
         retryOwnedWorkAfterAbort$,

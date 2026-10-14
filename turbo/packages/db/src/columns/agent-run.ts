@@ -27,11 +27,11 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
 /** Shared physical and runtime column builders. */
-export function agentRunColumns(sessionId: () => AnyPgColumn) {
+export function agentRunColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(), // Clerk user ID - owner of this run
-    // Mirrored at admission while Session remains the runtime authority.
+    // Genuine Agent identity captured at Run admission.
     agentId: uuid("agent_id").references(
       (): AnyPgColumn => {
         return agents.id;
@@ -48,15 +48,6 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     legacyConversationHistoryHash: varchar("legacy_conversation_history_hash", {
       length: 64,
     }),
-    continuedFromSessionId: uuid("continued_from_session_id"),
-    sessionId: uuid("session_id")
-      .notNull()
-      .references(
-        (): AnyPgColumn => {
-          return sessionId();
-        },
-        { onDelete: "cascade" },
-      ),
     status: varchar("status", { length: 20 }).notNull(),
     // Explicit stop intent. NULL preserves ordinary completion and older writers.
     runnerCancellationMode: text(

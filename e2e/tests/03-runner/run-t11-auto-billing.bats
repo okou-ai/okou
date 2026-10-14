@@ -57,7 +57,7 @@ teardown() {
     assert_success
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<<"$output"
     echo "$output"
     assert_success

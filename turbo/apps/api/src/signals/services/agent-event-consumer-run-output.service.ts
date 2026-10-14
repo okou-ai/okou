@@ -23,6 +23,7 @@ import {
 } from "./chat-event-shared.service";
 import { recordFirstAssistantEventAcknowledgementMetric } from "./chat-first-assistant-event-metric.service";
 import { runMetadataWritePlan } from "./agent-run-metadata-write.service";
+import { captureRunNativeSession$ } from "./run-native-session.service";
 import {
   assertRunOutputOwner,
   prepareRunOutputOwnership,
@@ -465,6 +466,8 @@ const materializePreparedRunOutputEvents$ = command(
     // No transaction or run lock: a timeout committed after preparation may admit
     // this batch. The single reserve+insert statement is the only write here.
     assertRunOutputOwner(ownership, payload.context);
+    await set(captureRunNativeSession$, payload);
+    signal.throwIfAborted();
     const thread =
       ownership.triggerSource !== null && ownership.thread
         ? { ...ownership.thread, orgId: ownership.orgId }

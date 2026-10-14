@@ -4,7 +4,6 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
@@ -85,18 +84,11 @@ export const currentRunnerVncAuthority$ = command(
         kdcSshNeedsRebind,
       })
       .from(agentRuns)
-      .innerJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, agentRuns.sessionId),
-          eq(agentSessions.orgId, agentRuns.orgId),
-          eq(agentSessions.userId, agentRuns.userId),
-        ),
-      )
+
       .innerJoin(
         agents,
         and(
-          eq(agents.id, agentSessions.agentId),
+          eq(agents.id, agentRuns.agentId),
           eq(agents.orgId, agentRuns.orgId),
           or(
             eq(agents.visibility, "public"),

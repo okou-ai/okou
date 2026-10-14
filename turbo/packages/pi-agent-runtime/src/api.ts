@@ -29,6 +29,7 @@ import type { PiMemoryStage1Model } from "./memory-background-config";
 import { piMemoryPhase2SelectionDigest } from "./phase2-memory-selection";
 import {
   projectPiMemoryStage1Evidence,
+  projectPiMemoryChatStage1Evidence,
   runPiMemoryStage1Extraction,
   preparePiMemoryStage1Extraction,
   runPiMemoryStage1PreparedExtraction,
@@ -57,6 +58,7 @@ export {
   PI_MEMORY_STAGE1_PERSONAL_MODEL,
   PiMemoryStage1BudgetError,
   projectPiMemoryStage1Evidence,
+  projectPiMemoryChatStage1Evidence,
   redactPiMemoryStage1Secrets,
   runPiMemoryStage1Extraction,
   preparePiMemoryStage1Extraction,

@@ -119,11 +119,7 @@ describe("CHAT-02: incomplete-round context", () => {
     });
     const firstClaim = await claimChatRun(runnerGroup, first.runId);
     await failChatRun(first.runId, firstClaim.sandboxHeaders, "boom one");
-    const establishedSession = await readCompletedRunSessionId(
-      context,
-      actor,
-      anchor.runId,
-    );
+    await readCompletedRunSessionId(context, actor, anchor.runId);
 
     const longPrompt = `second ${"x".repeat(4100)}`;
     const second = await sendChatRun(actor, {
@@ -151,13 +147,13 @@ describe("CHAT-02: incomplete-round context", () => {
     expect(appended).toContain("...[truncated]");
     expect(appended).not.toContain("retry after two failures");
     const thirdClaim = await claimChatRun(runnerGroup, third.runId);
-    expect(thirdClaim.claim.resumeSession?.sessionId).toBe(
+    expect(thirdClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${anchor.runId}`,
     );
     await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);
     await expect(
       readCompletedRunSessionId(context, actor, third.runId),
-    ).resolves.toBe(establishedSession);
+    ).resolves.toBe(`bdd-cli-${third.runId}`);
   }, 90_000);
 });
 

@@ -1,4 +1,3 @@
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -144,20 +143,14 @@ async function completeRun(args: {
       [200],
     );
   }
-  const history = `Discord conversation history ${args.runId}`;
-  const hash = await prepareRunnerSessionHistory(
-    context,
-    args.runId,
-    headers,
-    history,
-  );
+
   const completion = {
     runId: args.runId,
     exitCode: 0,
     completion: {
       cliAgentType: "claude-code" as const,
       cliAgentSessionId: `discord-session-${args.runId}`,
-      cliAgentSessionHistoryHash: hash,
+      cliAgentSessionHistoryDisposition: "native_only" as const,
     },
     ...(args.text === undefined ? {} : { lastEventSequence: 1 }),
   };
@@ -562,12 +555,6 @@ describe("canonical Discord terminal replies", () => {
         headers,
         [200],
       );
-      const hash = await prepareRunnerSessionHistory(
-        context,
-        started.runId,
-        headers,
-        `Discord conversation history ${started.runId}`,
-      );
       for (let attempt = 0; attempt < 2; attempt += 1) {
         await webhooks.requestAgentComplete(
           {
@@ -577,7 +564,7 @@ describe("canonical Discord terminal replies", () => {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `discord-session-${started.runId}`,
-              cliAgentSessionHistoryHash: hash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           headers,

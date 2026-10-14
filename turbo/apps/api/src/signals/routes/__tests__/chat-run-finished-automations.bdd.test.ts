@@ -1,5 +1,4 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { randomUUID } from "node:crypto";
 
@@ -220,12 +219,6 @@ async function completeChatRunOk(
       [200],
     );
   }
-  const historyHash = await prepareRunnerSessionHistory(
-    context,
-    runId,
-    sandboxHeaders,
-    `bdd chat session history ${runId}`,
-  );
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -233,7 +226,7 @@ async function completeChatRunOk(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(options.lastEventSequence === undefined
         ? stagedOutputEvents.length === 0

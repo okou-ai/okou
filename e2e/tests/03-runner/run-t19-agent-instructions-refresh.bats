@@ -55,7 +55,7 @@ EOF
     local first_run_response="$output"
     local first_session_id
     first_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$first_run_response")
 
     run runner_e2e_wait_for_chat_text \
@@ -105,7 +105,7 @@ EOF
     local continuation_run_response="$output"
     local continuation_session_id
     continuation_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$continuation_run_response")
 
     run runner_e2e_wait_for_chat_text \

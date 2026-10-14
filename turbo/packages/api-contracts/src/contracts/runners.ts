@@ -705,6 +705,31 @@ export const resumeSessionSchema = z.union([
   resumeSessionRefSchema,
 ]);
 
+/** Retained native files are disposable; Chat remains the recovery source. */
+export const nativeContinuationSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .min(1)
+      .max(255)
+      .regex(/^[A-Za-z0-9_-]+$/)
+      .nullable(),
+    generationRunId: z.uuid().nullable(),
+    /** Enabled only when native context could not resume, before CLI start. */
+    recoveryPrompt: z.string().min(1).max(4096).nullable(),
+  })
+  .strict()
+  .superRefine((native, context) => {
+    if ((native.sessionId === null) !== (native.generationRunId === null)) {
+      context.addIssue({
+        code: "custom",
+        path: ["generationRunId"],
+        message: "Native identity requires its producing Run",
+      });
+    }
+  });
+export type NativeContinuation = z.infer<typeof nativeContinuationSchema>;
+
 export const secretConnectorMetadataSchema = z.object({
   sourceType: z.enum(["connector", "model-provider", "platform-secret"]),
   sourceUserId: z.string().optional(),
@@ -1155,6 +1180,7 @@ const storedExecutionContextObjectSchema = z.object({
   // User-provided run vars stay in agent_runs.vars and are merged at claim time.
   vars: z.record(z.string(), z.string()).nullable().optional(),
   resumeSession: storedResumeSessionSchema.nullable(),
+  nativeContinuation: nativeContinuationSchema.optional(),
   // AES-256-GCM encrypted Record<string, string>. Keys are the runtime secret
   // names used by `${{ secrets.NAME }}`; connector/model-provider keys are env
   // aliases, not backing storage secret names.
@@ -1261,6 +1287,7 @@ const executionContextObjectSchema = z.object({
   environment: z.record(z.string(), z.string()).nullable(),
   platformEnvironment: z.record(z.string(), z.string()),
   resumeSession: resumeSessionSchema.nullable(),
+  nativeContinuation: nativeContinuationSchema.optional(),
   // Plain secret values used by the runner for redaction. These are values, not
   // names, and are base64-encoded only when exported through OKOU_SECRET_VALUES.
   secretValues: z.array(z.string()).nullable(),
@@ -1383,6 +1410,8 @@ export const runnersJobClaimContract = c.router({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),
       capabilities: runnerClaimCapabilitiesSchema,
+      // Top-level so outgoing APIs can strip this additive advertisement.
+      nativeContinuationSupported: z.literal(true).optional(),
       telemetry: runnerClaimTelemetrySchema.optional(),
       installedVersions: runnerInstalledVersionsSchema.optional(),
     }),

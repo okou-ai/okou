@@ -22,36 +22,6 @@ export type QueuedUserMessageTriggerSource =
   | "agentphone"
   | "automation-schedule";
 
-function unreachableQueuedContextType(contextType: never): never {
-  throw new Error(`Unsupported queued context type: ${String(contextType)}`);
-}
-
-export function queuedUserMessageTriggerSource(
-  contextType: Exclude<QueuedUserMessageContextType, "feishu">,
-): QueuedUserMessageTriggerSource {
-  switch (contextType) {
-    case "web":
-    case "slack":
-    case "discord":
-    case "teams":
-    case "telegram":
-    case "agentphone": {
-      return contextType;
-    }
-    case "agent_run": {
-      return "agent";
-    }
-    case "automation": {
-      throw new Error(
-        `${contextType} context cannot be routed as a queued user message`,
-      );
-    }
-    default: {
-      return unreachableQueuedContextType(contextType);
-    }
-  }
-}
-
 export function isWebChatContextType(
   contextType: QueuedUserMessageContextType,
 ): contextType is Extract<QueuedUserMessageContextType, "web" | "agent_run"> {

@@ -6,6 +6,7 @@ description = "Shared Runner identifiers, API payloads, and validation types"
 
 [dependencies]
 api-contracts.workspace = true
+guest-contracts.workspace = true
 sandbox.workspace = true
 
 idna = { workspace = true, features = ["compiled_data", "std"] }

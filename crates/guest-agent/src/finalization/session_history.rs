@@ -6,9 +6,7 @@ use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use crate::session_history as history;
-use crate::session_history_identity::{
-    SessionHistoryIdentityBuildError, build_final_session_history_identity,
-};
+use crate::session_history_identity::SessionHistoryIdentityBuildError;
 use api_contracts::generated::constants::runners::{
     RESUME_SESSION_HISTORY_MAX_BYTES, SESSION_HISTORY_ENCODING_GZIP,
     SESSION_HISTORY_ENCODING_IDENTITY, SESSION_HISTORY_ENCODING_ZSTD,
@@ -17,6 +15,7 @@ use api_contracts::generated::constants::runners::{
 use api_contracts::generated::types::webhooks::agent::session_history::prepare as prepare_history;
 use bytes::Bytes;
 use guest_contracts::session_history_identity::SessionHistorySourceRef;
+use guest_contracts::session_history_identity::{SessionHistoryIdentity, SessionHistoryRefKind};
 use guest_telemetry::telemetry::{
     SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
 };
@@ -387,6 +386,7 @@ pub(super) struct SessionHistoryInputs {
     limits: SessionHistoryLimits,
     cli_agent_session_id: String,
     history_source: Option<SessionHistorySourceRef>,
+    native_only: bool,
 }
 
 impl SessionHistoryInputs {
@@ -400,6 +400,7 @@ impl SessionHistoryInputs {
             limits: inputs.session_history_limits,
             cli_agent_session_id: inputs.session_metadata.cli_agent_session_id().to_string(),
             history_source: inputs.session_metadata.history_source().cloned(),
+            native_only: inputs.native_only,
         }
     }
 }
@@ -410,12 +411,21 @@ pub(super) struct UploadedSessionHistory {
     pub(super) history_hash: String,
     pub(super) history_size: u64,
     pub(super) live_history: PreparedLiveHistory,
+    pub(super) ref_kind: SessionHistoryRefKind,
 }
 
 pub(super) enum SessionHistoryOutcome {
     Uploaded(UploadedSessionHistory),
-    DiscardedOversized { cli_agent_session_id: String },
-    Unavailable { cli_agent_session_id: String },
+    NativeOnly {
+        cli_agent_session_id: String,
+        history: Option<UploadedSessionHistory>,
+    },
+    DiscardedOversized {
+        cli_agent_session_id: String,
+    },
+    Unavailable {
+        cli_agent_session_id: String,
+    },
 }
 
 enum PreparedFinalizationSessionHistory {
@@ -1100,6 +1110,7 @@ fn prepare_finalization_session_history(
         limits,
         cli_agent_session_id,
         history_source,
+        native_only: _,
     } = inputs;
     if cli_agent_session_id.is_empty() {
         return Err(history_failure(
@@ -1141,6 +1152,7 @@ fn prepare_finalization_session_history(
                     history_hash,
                     history_size,
                     live_history,
+                    ref_kind: SessionHistoryRefKind::Blob,
                 }),
                 upload,
             })
@@ -1169,6 +1181,28 @@ pub(super) async fn prepare_and_upload_session_history(
     run_id: &str,
     inputs: SessionHistoryInputs,
 ) -> Result<SessionHistoryOutcome, AgentError> {
+    if inputs.native_only {
+        let cli_agent_session_id = inputs.cli_agent_session_id.clone();
+        let history = run_session_history_blocking(move || {
+            Ok(inputs.history_source.and_then(|source| {
+                let file = history::resolve_session_history_from_source(&source).ok()?;
+                let digest = file.digest_retained_home(64 * 1024 * 1024).ok()?;
+                Some(UploadedSessionHistory {
+                    cli_agent_session_id: inputs.cli_agent_session_id,
+                    history_source: source,
+                    history_hash: digest.sha256_hex,
+                    history_size: digest.size_bytes,
+                    live_history: PreparedLiveHistory::MatchesPreparedHistory,
+                    ref_kind: SessionHistoryRefKind::LocalHome,
+                })
+            }))
+        })
+        .await??;
+        return Ok(SessionHistoryOutcome::NativeOnly {
+            cli_agent_session_id,
+            history,
+        });
+    }
     if inputs.cli_agent_session_id.is_empty() {
         return Err(history_failure(
             "session_id_read",
@@ -1279,23 +1313,14 @@ pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLi
 
 pub(super) fn write_final_session_history_identity(
     mode: FinalizationMode,
-    cli_agent_session_id: &str,
-    history_hash: &str,
-    history_size: u64,
-    history_source: &SessionHistorySourceRef,
-    framework: env::Framework,
+    identity: Result<SessionHistoryIdentity, SessionHistoryIdentityBuildError>,
     final_session_history_identity_file: &str,
+    ref_kind: SessionHistoryRefKind,
 ) {
-    if !matches!(mode, FinalizationMode::Success) {
+    if ref_kind != SessionHistoryRefKind::LocalHome && !matches!(mode, FinalizationMode::Success) {
         return;
     }
-    let identity = match build_final_session_history_identity(
-        framework,
-        cli_agent_session_id,
-        history_hash,
-        history_size,
-        history_source,
-    ) {
+    let mut identity = match identity {
         Ok(identity) => identity,
         Err(error) => {
             match error {
@@ -1316,6 +1341,7 @@ pub(super) fn write_final_session_history_identity(
             return;
         }
     };
+    identity.history_ref_kind = ref_kind;
     let bytes = match identity.to_json_vec() {
         Ok(bytes) => bytes,
         Err(error) => {

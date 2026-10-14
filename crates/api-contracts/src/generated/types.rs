@@ -3320,6 +3320,9 @@ pub mod webhooks {
                 /// The native history was unavailable or unusable.
                 #[serde(rename = "unavailable")]
                 Unavailable,
+                /// Native history is retained only in the disposable sandbox/home.
+                #[serde(rename = "native_only")]
+                NativeOnly,
             }
 
             /// Policy used when a final Run output artifact root is missing.

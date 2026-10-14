@@ -10,7 +10,6 @@ import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-
 import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import type { Tx } from "../../lib/db-types";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -115,7 +114,6 @@ interface RunRecord extends AgentRunFailureLogSnapshot {
   readonly cancellationRecoveryCompleted: boolean | null;
   readonly error: string | null;
   readonly orgId: string;
-  readonly sessionId: string;
   readonly status: RunStatus;
   readonly userId: string;
   readonly chatThreadId: string | null;
@@ -225,7 +223,6 @@ function createInitialCompletionRun(runId: string, userId: string) {
         id: agentRuns.id,
         error: agentRuns.error,
         orgId: agentRuns.orgId,
-        sessionId: agentRuns.sessionId,
         status: agentRuns.status,
         userId: agentRuns.userId,
         cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
@@ -280,7 +277,6 @@ async function lockCompletionRun(
       id: agentRuns.id,
       error: agentRuns.error,
       orgId: agentRuns.orgId,
-      sessionId: agentRuns.sessionId,
       status: agentRuns.status,
       userId: agentRuns.userId,
       cancellationRecoveryCompleted: agentRuns.cancellationRecoveryCompleted,
@@ -356,24 +352,6 @@ async function applyTerminalCompletion(
   prepared: PreparedCompletion,
   completedAt: Date,
 ): Promise<void> {
-  if (
-    run.launchSnapshot?.framework === "pi" &&
-    prepared.status === "completed"
-  ) {
-    const conversationId = prepared.result?.conversationId;
-    if (!conversationId) {
-      throw new Error("Completed Pi run is missing its canonical conversation");
-    }
-    const [session] = await tx
-      .update(agentSessions)
-      .set({ conversationId, updatedAt: completedAt })
-      .where(eq(agentSessions.id, run.sessionId))
-      .returning({ id: agentSessions.id });
-    if (!session) {
-      throw new Error("Completed Pi run is missing its AgentSession");
-    }
-  }
-
   const [updated] = await transitionAgentRunsToTerminal(tx, {
     values: {
       status: prepared.status,

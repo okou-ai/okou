@@ -207,9 +207,9 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
     });
     const claimed = await claimChatRun(runnerGroup, second.runId);
-    expect(claimed.claim.resumeSession).toMatchObject({
+    expect(claimed.claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { kind: "blob" },
+      generationRunId: expect.any(String),
     });
     const mounts = expectCanonicalStorageManifest(
       claimed.claim.storageManifest,
@@ -342,9 +342,9 @@ describe("CHAT-02: model-first routing", () => {
       model: "gpt-6-luna",
     });
     const next = await claimChatRun(runnerGroup, continuation.runId);
-    expect(next.claim.resumeSession).toMatchObject({
+    expect(next.claim.nativeContinuation).toMatchObject({
       sessionId: first.threadId,
-      historyRef: { kind: "blob" },
+      generationRunId: expect.any(String),
     });
     expect(next.claim.piLaunchConfig?.memoryRecall).toMatchObject({
       status: "no-content",

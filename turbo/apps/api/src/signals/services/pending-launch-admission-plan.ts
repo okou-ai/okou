@@ -10,7 +10,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   chatEvents,
@@ -37,8 +36,9 @@ interface ValidatedPendingThreadSession {
   readonly kind: "validated-thread-session-snapshot";
   readonly chatThreadId: string;
   readonly threadAgentId: string | null;
-  readonly agentSessionId: string | null;
-  readonly agentSessionRunId: string | null;
+  readonly framework: string | null;
+  readonly frameworkSessionId: string | null;
+  readonly frameworkSessionRunId: string | null;
 }
 
 interface AdmissionFacts {
@@ -50,12 +50,9 @@ const readRecordSchema = z.discriminatedUnion("phase", [
   z.object({
     phase: z.literal("thread"),
     threadAgentId: z.string().nullable(),
-    agentSessionId: z.string().nullable(),
-    agentSessionRunId: z.string().nullable(),
-  }),
-  z.object({
-    phase: z.literal("session"),
-    conversationId: z.string().nullable(),
+    framework: z.string().nullable(),
+    frameworkSessionId: z.string().nullable(),
+    frameworkSessionRunId: z.string().nullable(),
   }),
   z.object({
     phase: z.literal("subscription"),
@@ -84,7 +81,7 @@ type AdmissionRecord = z.output<typeof pendingAdmissionRecordSchema>;
 
 type AdmissionStatement = AdmissionFacts & {
   readonly kind: "statement";
-  readonly phase: "thread" | "session" | "subscription" | "head" | "claim";
+  readonly phase: "thread" | "subscription" | "head" | "claim";
   readonly sql: SQL;
 };
 type Admitted = AdmissionFacts & {
@@ -118,29 +115,19 @@ export function pendingLaunchAdmissionStart(
         kind: "validated-thread-session-snapshot",
         chatThreadId: threadId,
         threadAgentId: resolution.expected.threadAgentId,
-        agentSessionId: resolution.expected.agentSessionId,
-        agentSessionRunId: resolution.expected.agentSessionRunId,
+        framework: resolution.expected.framework,
+        frameworkSessionId: resolution.expected.frameworkSessionId,
+        frameworkSessionRunId: resolution.expected.frameworkSessionRunId,
       },
     };
-    // The atomic binding CAS fences both captured thread columns. Keep the
-    // separate session/conversation lock; it protects a different row.
-    const sessionId = resolution.expected.sessionId;
-    return sessionId === null
-      ? subscriptionStep(args, captured)
-      : {
-          ...captured,
-          kind: "statement",
-          phase: "session",
-          sql: sql`SELECT 'session' AS phase, ${agentSessions.conversationId} AS "conversationId"
-        FROM ${agentSessions} WHERE ${eq(agentSessions.id, sessionId)} LIMIT 1 FOR UPDATE`,
-        };
+    return subscriptionStep(args, captured);
   }
   return threadId
     ? {
         ...facts,
         kind: "statement",
         phase: "thread",
-        sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.agentSessionId} AS "agentSessionId", ${chatThreads.agentSessionRunId} AS "agentSessionRunId"
+        sql: sql`SELECT 'thread' AS phase, ${chatThreads.agentId} AS "threadAgentId", ${chatThreads.framework} AS "framework", ${chatThreads.frameworkSessionId} AS "frameworkSessionId", ${chatThreads.frameworkSessionRunId} AS "frameworkSessionRunId"
       FROM ${chatThreads} WHERE ${eq(chatThreads.id, threadId)} LIMIT 1`,
       }
     : subscriptionStep(args, facts);
@@ -230,22 +217,10 @@ export function advancePendingLaunchAdmission(
     validatedThreadSession: step.validatedThreadSession,
     validatedAccountIdentity: step.validatedAccountIdentity,
   };
-  const resolution = args.createArgs.threadSessionResolution;
+
   switch (step.phase) {
     case "thread": {
       return advanceThreadSnapshot(args, facts, row);
-    }
-    case "session": {
-      if (
-        !row ||
-        !("phase" in row) ||
-        row.phase !== "session" ||
-        !resolution ||
-        row.conversationId !== resolution.expected.conversationId
-      ) {
-        throw new Error("Chat thread session changed during run preparation");
-      }
-      return subscriptionStep(args, facts);
     }
     case "subscription": {
       if (!row) {
@@ -294,8 +269,9 @@ function advanceThreadSnapshot(
     return subscriptionStep(args, facts);
   }
   if (
-    row.agentSessionId !== resolution.expected.agentSessionId ||
-    row.agentSessionRunId !== resolution.expected.agentSessionRunId
+    row.framework !== resolution.expected.framework ||
+    row.frameworkSessionId !== resolution.expected.frameworkSessionId ||
+    row.frameworkSessionRunId !== resolution.expected.frameworkSessionRunId
   ) {
     throw new Error("Chat thread session changed during run preparation");
   }
@@ -307,20 +283,12 @@ function advanceThreadSnapshot(
     kind: "validated-thread-session-snapshot",
     chatThreadId: threadId,
     threadAgentId: row.threadAgentId,
-    agentSessionId: row.agentSessionId,
-    agentSessionRunId: row.agentSessionRunId,
+    framework: row.framework,
+    frameworkSessionId: row.frameworkSessionId,
+    frameworkSessionRunId: row.frameworkSessionRunId,
   });
   const captured = { ...facts, validatedThreadSession };
-  const sessionId = resolution.expected.sessionId;
-  return sessionId === null
-    ? subscriptionStep(args, captured)
-    : {
-        ...captured,
-        kind: "statement",
-        phase: "session",
-        sql: sql`SELECT 'session' AS phase, ${agentSessions.conversationId} AS "conversationId"
-      FROM ${agentSessions} WHERE ${eq(agentSessions.id, sessionId)} LIMIT 1 FOR UPDATE`,
-      };
+  return subscriptionStep(args, captured);
 }
 
 function advanceQueueHead(

@@ -711,9 +711,7 @@ test.each([
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: `export-${claimed.run.runId}`,
-            cliAgentSessionHistoryHash: createHash("sha256")
-              .update(`bdd chat session history ${claimed.run.runId}`)
-              .digest("hex"),
+            cliAgentSessionHistoryDisposition: "native_only",
           },
         },
         claimed.headers,
