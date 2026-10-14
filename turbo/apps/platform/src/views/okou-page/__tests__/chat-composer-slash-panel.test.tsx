@@ -140,7 +140,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
 
   // A deck cover really is a slide, so it still asks for the 16:9 box.
   const deckCover = detailPane()?.querySelector("img");
-  expect(deckCover?.getAttribute("src")).toContain("height=158");
+  expect(deckCover?.getAttribute("src")).toContain("height=234");
 
   await user.hover(slashButton("Illustration"));
   await waitFor(() => {
@@ -157,7 +157,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
   const cover = pane.querySelector("img");
   // Width only: passing a 16:9 height too made the transform fit a portrait
   // style inside it, so the card received a picture far smaller than it paints.
-  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).toContain("width=416");
   expect(cover?.getAttribute("src")).not.toContain("height=");
   // The tile declares the catalog's own ratio rather than a shared one, which
   // is what stops the artwork being cropped.

@@ -84,8 +84,11 @@ export type SlashTemplateCategory = (typeof SLASH_TEMPLATE_CATEGORIES)[number];
 export type SlashTemplatePreviewCategory =
   "slides" | "illustration" | "website";
 
-/** Covers render two across a 320px pane, so they are requested at 2x that. */
-const SLASH_TEMPLATE_COVER_SIZE = { width: 280, height: 158 } as const;
+/**
+ * Covers render two across the slash pane, 204px each under the thread's 900px
+ * composer, so they are requested at 2x that.
+ */
+const SLASH_TEMPLATE_COVER_SIZE = { width: 416, height: 234 } as const;
 
 /**
  * Illustrations are asked for by width alone. The transform fits inside the box
@@ -93,7 +96,7 @@ const SLASH_TEMPLATE_COVER_SIZE = { width: 280, height: 158 } as const;
  * wide and the card then upscaled it. Width-only keeps the native proportion at
  * the resolution the card actually paints.
  */
-const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 280 } as const;
+const SLASH_TEMPLATE_NATIVE_COVER_SIZE = { width: 416 } as const;
 
 /**
  * Categories whose covers keep their own proportion instead of the 16:9 tile.
