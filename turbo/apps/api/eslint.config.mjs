@@ -440,6 +440,18 @@ export default [
     },
   },
   {
+    files: ["src/signals/services/telegram-data.service.ts"],
+    rules: {
+      // #39897 needs both failed and successful readiness probes to explain
+      // different attempts. Axiom drops debug; info preserves one content-free
+      // receipt per unlinked check without warning on every transient failure.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Telegram connection readiness checked"] },
+      ],
+    },
+  },
+  {
     files: ["src/signals/auth/temporary-auth-diagnostics.ts"],
     rules: {
       // #36177 diagnostics stop on 2026-10-29. Axiom drops debug; an expected

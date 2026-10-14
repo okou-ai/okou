@@ -1013,7 +1013,7 @@ function TelegramCard() {
             disabled={loading || !configured || connecting}
             onClick={() => {
               detach(
-                connect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
                 Reason.DomCallback,
               );
             }}
