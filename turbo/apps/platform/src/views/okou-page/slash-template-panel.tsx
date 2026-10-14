@@ -38,6 +38,17 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
 export const SLASH_PANEL_EXPAND_WORKFLOWS_ID = "expand-workflows";
 
+// A workflow description is written for the agent and often runs a paragraph,
+// so a row shows only its first clause: up to the first comma, colon,
+// semicolon, dash, parenthesis or sentence end, in Latin or CJK punctuation.
+// A period inside a word such as `app.vm0.ai` does not end the clause.
+const WORKFLOW_SUMMARY_END = /[,;:，；：。—(（\n]|\.(?=\s|$)/u;
+
+function workflowSummary(description: string): string {
+  const end = description.search(WORKFLOW_SUMMARY_END);
+  return (end === -1 ? description : description.slice(0, end)).trim();
+}
+
 interface SlashTemplatePanelProps {
   readonly menuRef: Ref<HTMLDivElement>;
   /** Already filtered by the typed slash query. */
@@ -396,6 +407,10 @@ function SlashPanelWorkflowList({
           const index = reversed
             ? workflows.length - 1 - visualIndex
             : visualIndex;
+          const summary =
+            describe && workflow.description
+              ? workflowSummary(workflow.description)
+              : "";
           return (
             <button
               key={workflow.id}
@@ -427,15 +442,16 @@ function SlashPanelWorkflowList({
               />
               {/*
                 One line that truncates as a whole: the name comes first, so the
-                description is what the ellipsis eats. The space keeps the two
-                apart in the row's accessible name.
+                summary is what the ellipsis eats, and the ellipsis takes this
+                span's colour, the summary's. The space keeps the two apart in
+                the row's accessible name.
               */}
-              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground/50">
                 <SlashWorkflowName workflow={workflow} />
-                {describe && workflow.description && (
+                {summary && (
                   <>
                     {" "}
-                    <span className="ml-1">{workflow.description}</span>
+                    <span className="ml-1">{summary}</span>
                   </>
                 )}
               </span>
