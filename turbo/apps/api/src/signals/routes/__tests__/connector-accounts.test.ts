@@ -1292,13 +1292,34 @@ describe("connector account lifecycle routes", () => {
     });
 
     it("paginates more than one hundred accounts", async () => {
-      const defaultAccount = await accept(
-        connectorProjectionClient().get({
+      const firstTwo = await accept(
+        accountClient().connections({
           headers: authHeaders(),
-          params: { connectorSlug: "openai" },
+          query: { kind: "builtin", connectorSlug: "openai", limit: 2 },
         }),
         [200],
       );
+      expect(firstTwo.body.connections).toHaveLength(2);
+      const outsideFirstTwo = createdAccountIds.find((id) => {
+        return !firstTwo.body.connections.some((account) => {
+          return account.id === id;
+        });
+      });
+      if (!outsideFirstTwo) {
+        throw new Error("Expected an account outside the first two rows");
+      }
+      const defaultAccount = await accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: outsideFirstTwo },
+          body: { target: { kind: "builtin", connectorSlug: "openai" } },
+        }),
+        [200],
+      );
+      expect(defaultAccount.body).toMatchObject({
+        id: outsideFirstTwo,
+        isDefault: true,
+      });
       const firstPage = await accept(
         accountClient().connections({
           headers: authHeaders(),
@@ -1312,8 +1333,8 @@ describe("connector account lifecycle routes", () => {
         [200],
       );
       expect(firstPage.body.connections).toHaveLength(1);
-      expect(firstPage.body.connections[0]!.id).not.toBe(
-        defaultAccount.body.id,
+      expect(firstPage.body.connections[0]!.id).toBe(
+        firstTwo.body.connections[0]!.id,
       );
       expect(firstPage.body.defaultConnection).toMatchObject({
         id: defaultAccount.body.id,
