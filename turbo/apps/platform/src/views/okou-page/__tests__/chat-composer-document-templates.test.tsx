@@ -20,7 +20,7 @@ import {
 
 function control(
   dialog: HTMLElement,
-  role: "tab" | "button",
+  role: "tab" | "button" | "link",
   name: string,
 ): HTMLElement {
   const result = queryAllByRoleFast(role, dialog).find((element) => {
@@ -93,7 +93,7 @@ test("Document category and scroll survive preview; Use preserves the draft and 
   click(control(dialog, "button", "Preview Simple invoice"));
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
   expect(
-    within(dialog).getByRole("heading", { name: "Simple invoice" }),
+    within(dialog).getByRole("heading", { name: "Simple invoice", level: 2 }),
   ).toBeVisible();
   await user.keyboard("{Escape}");
   expect(control(dialog, "button", "Invoice")).toHaveAttribute(
@@ -141,4 +141,50 @@ test("Document failed preview pages can be retried", async () => {
   expect(within(dialog).getByText("Preview unavailable")).toBeVisible();
   click(control(dialog, "button", "Retry"));
   expect(within(dialog).getByAltText("Page 1")).toBeInTheDocument();
+});
+
+test("Document preview pages navigate, reset on reopen, and can be selected from details", async () => {
+  const { user, capture } = await setup();
+  const dialog = await openTemplatePicker(user);
+  click(control(dialog, "tab", "Document"));
+  click(control(dialog, "button", "Preview Mutual NDA"));
+  expect(control(dialog, "button", "Back to templates")).toHaveFocus();
+  expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
+  const firstPage = within(dialog).getByAltText("Page 1");
+  const firstUrl = firstPage.getAttribute("src");
+  expect(control(dialog, "link", "Open larger preview")).toHaveAttribute(
+    "href",
+    firstUrl,
+  );
+  click(control(dialog, "button", "Next sample page"));
+  expect(firstPage).not.toBeInTheDocument();
+  const secondUrl = within(dialog).getByAltText("Page 2").getAttribute("src");
+  expect(secondUrl).not.toBe(firstUrl);
+  expect(control(dialog, "button", "Next sample page")).toBeDisabled();
+  expect(control(dialog, "link", "Open larger preview")).toHaveAttribute(
+    "href",
+    secondUrl,
+  );
+  click(control(dialog, "button", "Previous sample page"));
+  expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
+    "src",
+    firstUrl,
+  );
+  click(control(dialog, "button", "Next sample page"));
+  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Preview Mutual NDA"));
+  expect(within(dialog).getByAltText("Page 1")).toHaveAttribute(
+    "src",
+    firstUrl,
+  );
+  click(control(dialog, "button", "Back to templates"));
+  click(control(dialog, "button", "Preview Simple invoice"));
+  expect(control(dialog, "button", "Previous sample page")).toBeDisabled();
+  expect(control(dialog, "button", "Next sample page")).toBeDisabled();
+  click(control(dialog, "button", "Use template"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
+  expect(capture.sentMessages).toHaveLength(0);
 });

@@ -3876,6 +3876,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
     "back": "Torna ai modelli",
     "categories": {
       "all": "Tutti",
@@ -3889,11 +3890,46 @@
       "resume": "Curriculum",
       "service-agreement": "Accordo di servizi"
     },
+    "contents": {
+      "agreement": {
+        "content": "Termini e responsabilità",
+        "delivery": "Revisione e firme",
+        "details": "Durata e risoluzione",
+        "overview": "Parti e ambito"
+      },
+      "brief": {
+        "content": "Pubblico e messaggio principale",
+        "delivery": "Tempistiche e processo di revisione",
+        "details": "Risultati da consegnare e formati",
+        "overview": "Panoramica e obiettivi del progetto"
+      },
+      "general": {
+        "content": "Sezioni per i tuoi contenuti",
+        "delivery": "Word modificabile o PDF",
+        "details": "Impaginazione coerente",
+        "overview": "Struttura chiara del documento"
+      },
+      "invoice": {
+        "content": "Servizi e tariffe dettagliati",
+        "delivery": "Dati di pagamento",
+        "details": "Imposte, totali e scadenza",
+        "overview": "Dati del fornitore e del cliente"
+      }
+    },
     "filter": "Categoria del documento",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Documento Word"
+    },
     "imageError": "Anteprima non disponibile",
+    "included": "Contenuti inclusi",
+    "nextPage": "Pagina di esempio successiva",
+    "openLarger": "Apri anteprima ingrandita",
     "page": "Pagina {{page}}",
     "preview": "Anteprima di {{title}}",
+    "previousPage": "Pagina di esempio precedente",
     "retry": "Riprova",
+    "samplePages": "Pagine di esempio: {{total}}",
     "title": "Documento",
     "use": "Usa modello",
     "useNamed": "Usa {{title}}"

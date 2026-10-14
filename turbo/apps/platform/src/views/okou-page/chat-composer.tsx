@@ -1,8 +1,6 @@
 import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
-import {
-  DocumentTemplatePickerPane,
-  DocumentTemplatePreviewPage,
-} from "./document-template-picker-pane.tsx";
+import { DocumentTemplatePickerPane } from "./document-template-picker-pane.tsx";
+import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {

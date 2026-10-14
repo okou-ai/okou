@@ -3795,6 +3795,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
     "back": "テンプレートに戻る",
     "categories": {
       "all": "すべて",
@@ -3808,11 +3809,46 @@
       "resume": "履歴書",
       "service-agreement": "業務委託契約"
     },
+    "contents": {
+      "agreement": {
+        "content": "条件と責任",
+        "delivery": "確認と署名",
+        "details": "期間と解約",
+        "overview": "当事者と範囲"
+      },
+      "brief": {
+        "content": "対象者と主要メッセージ",
+        "delivery": "スケジュールと確認手順",
+        "details": "成果物と形式",
+        "overview": "プロジェクト概要と目標"
+      },
+      "general": {
+        "content": "内容を記入するセクション",
+        "delivery": "編集可能な Word または PDF",
+        "details": "統一されたページレイアウト",
+        "overview": "明確な文書構成"
+      },
+      "invoice": {
+        "content": "サービスと単価の明細",
+        "delivery": "支払情報",
+        "details": "税額、合計、支払期限",
+        "overview": "提供者と顧客の情報"
+      }
+    },
     "filter": "文書の分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文書"
+    },
     "imageError": "プレビューを表示できません",
+    "included": "含まれる内容",
+    "nextPage": "次のサンプルページ",
+    "openLarger": "大きいプレビューを開く",
     "page": "{{page}} ページ",
     "preview": "{{title}} をプレビュー",
+    "previousPage": "前のサンプルページ",
     "retry": "再試行",
+    "samplePages": "サンプルページ数：{{total}}",
     "title": "ドキュメント",
     "use": "テンプレートを使用",
     "useNamed": "{{title}} を使用"

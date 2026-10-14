@@ -3876,6 +3876,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "Um ponto de partida para seu acordo. Revise os termos do projeto e da jurisdição aplicável antes de assinar.",
     "back": "Voltar aos modelos",
     "categories": {
       "all": "Todos",
@@ -3889,11 +3890,46 @@
       "resume": "Currículos",
       "service-agreement": "Acordo de serviços"
     },
+    "contents": {
+      "agreement": {
+        "content": "Termos e responsabilidades",
+        "delivery": "Revisão e assinaturas",
+        "details": "Vigência e rescisão",
+        "overview": "Partes e escopo"
+      },
+      "brief": {
+        "content": "Público e mensagem principal",
+        "delivery": "Cronograma e processo de revisão",
+        "details": "Entregas e formatos",
+        "overview": "Visão geral e objetivos do projeto"
+      },
+      "general": {
+        "content": "Seções para seu conteúdo",
+        "delivery": "Word editável ou PDF",
+        "details": "Layout de página consistente",
+        "overview": "Estrutura clara do documento"
+      },
+      "invoice": {
+        "content": "Serviços e preços detalhados",
+        "delivery": "Dados de pagamento",
+        "details": "Impostos, totais e vencimento",
+        "overview": "Dados do fornecedor e do cliente"
+      }
+    },
     "filter": "Categoria do documento",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Documento do Word"
+    },
     "imageError": "Prévia indisponível",
+    "included": "O que está incluído",
+    "nextPage": "Próxima página de exemplo",
+    "openLarger": "Abrir prévia ampliada",
     "page": "Página {{page}}",
     "preview": "Visualizar {{title}}",
+    "previousPage": "Página de exemplo anterior",
     "retry": "Tentar novamente",
+    "samplePages": "Páginas de exemplo: {{total}}",
     "title": "Documento",
     "use": "Usar modelo",
     "useNamed": "Usar {{title}}"

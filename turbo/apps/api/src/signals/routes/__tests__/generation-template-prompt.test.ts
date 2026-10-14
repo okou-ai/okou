@@ -521,8 +521,8 @@ describe("built-in document template context", () => {
       expect(result.prompt).toContain(
         `License: https://raw.githubusercontent.com/${license}`,
       );
-      expect(result.prompt).toContain("editable Word and PDF");
-      expect(result.prompt).toContain("at this exact commit");
+      expect(result.prompt).toContain("office-files");
+      expect(result.prompt).toContain("Word or PDF");
       expect(result.prompt).not.toContain("okou resource pull");
       expect(result.prompt).not.toContain("Template-artifact");
       expect(result.prompt).not.toContain("docs-design");

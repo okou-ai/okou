@@ -3815,6 +3815,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",
     "back": "Zurück zu Vorlagen",
     "categories": {
       "all": "Alle",
@@ -3828,11 +3829,46 @@
       "resume": "Lebensläufe",
       "service-agreement": "Dienstleistungsvertrag"
     },
+    "contents": {
+      "agreement": {
+        "content": "Bedingungen und Verantwortlichkeiten",
+        "delivery": "Prüfung und Unterschriften",
+        "details": "Laufzeit und Kündigung",
+        "overview": "Vertragsparteien und Umfang"
+      },
+      "brief": {
+        "content": "Zielgruppe und Kernbotschaft",
+        "delivery": "Zeitplan und Prüfprozess",
+        "details": "Ergebnisse und Formate",
+        "overview": "Projektübersicht und Ziele"
+      },
+      "general": {
+        "content": "Abschnitte für Ihre Inhalte",
+        "delivery": "Bearbeitbare Word-Datei oder PDF",
+        "details": "Einheitliches Seitenlayout",
+        "overview": "Klare Dokumentstruktur"
+      },
+      "invoice": {
+        "content": "Leistungen und Preise",
+        "delivery": "Zahlungsangaben",
+        "details": "Steuern, Summen und Fälligkeit",
+        "overview": "Angaben zu Anbieter und Kunde"
+      }
+    },
     "filter": "Dokumentkategorie",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word-Dokument"
+    },
     "imageError": "Vorschau nicht verfügbar",
+    "included": "Enthaltene Inhalte",
+    "nextPage": "Nächste Beispielseite",
+    "openLarger": "Größere Vorschau öffnen",
     "page": "Seite {{page}}",
     "preview": "Vorschau: {{title}}",
+    "previousPage": "Vorherige Beispielseite",
     "retry": "Erneut versuchen",
+    "samplePages": "Beispielseiten: {{total}}",
     "title": "Dokument",
     "use": "Vorlage verwenden",
     "useNamed": "{{title}} verwenden"

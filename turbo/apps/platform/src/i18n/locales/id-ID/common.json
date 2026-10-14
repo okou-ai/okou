@@ -3795,6 +3795,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
     "back": "Kembali ke templat",
     "categories": {
       "all": "Semua",
@@ -3808,11 +3809,46 @@
       "resume": "CV",
       "service-agreement": "Perjanjian layanan"
     },
+    "contents": {
+      "agreement": {
+        "content": "Ketentuan dan tanggung jawab",
+        "delivery": "Peninjauan dan tanda tangan",
+        "details": "Jangka waktu dan pengakhiran",
+        "overview": "Para pihak dan ruang lingkup"
+      },
+      "brief": {
+        "content": "Audiens dan pesan utama",
+        "delivery": "Jadwal dan proses peninjauan",
+        "details": "Hasil kerja dan format",
+        "overview": "Gambaran dan tujuan proyek"
+      },
+      "general": {
+        "content": "Bagian untuk konten Anda",
+        "delivery": "Word yang dapat diedit atau PDF",
+        "details": "Tata letak halaman yang konsisten",
+        "overview": "Struktur dokumen yang jelas"
+      },
+      "invoice": {
+        "content": "Rincian layanan dan tarif",
+        "delivery": "Detail pembayaran",
+        "details": "Pajak, total, dan jatuh tempo",
+        "overview": "Detail penyedia dan klien"
+      }
+    },
     "filter": "Kategori dokumen",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Dokumen Word"
+    },
     "imageError": "Pratinjau tidak tersedia",
+    "included": "Isi yang disertakan",
+    "nextPage": "Halaman contoh berikutnya",
+    "openLarger": "Buka pratinjau lebih besar",
     "page": "Halaman {{page}}",
     "preview": "Pratinjau {{title}}",
+    "previousPage": "Halaman contoh sebelumnya",
     "retry": "Coba lagi",
+    "samplePages": "Halaman contoh: {{total}}",
     "title": "Dokumen",
     "use": "Gunakan templat",
     "useNamed": "Gunakan {{title}}"

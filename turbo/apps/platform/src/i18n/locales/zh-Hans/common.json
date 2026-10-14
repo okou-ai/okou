@@ -3795,6 +3795,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
     "back": "返回模板列表",
     "categories": {
       "all": "全部",
@@ -3808,11 +3809,46 @@
       "resume": "简历",
       "service-agreement": "服务协议"
     },
+    "contents": {
+      "agreement": {
+        "content": "条款与责任",
+        "delivery": "审阅与签署",
+        "details": "期限与终止",
+        "overview": "签约主体与范围"
+      },
+      "brief": {
+        "content": "目标受众与核心信息",
+        "delivery": "时间安排与审核流程",
+        "details": "交付物与格式",
+        "overview": "项目概况与目标"
+      },
+      "general": {
+        "content": "适合填写内容的章节",
+        "delivery": "可编辑 Word 或 PDF 输出",
+        "details": "统一的页面版式",
+        "overview": "清晰的文档结构"
+      },
+      "invoice": {
+        "content": "服务明细与单价",
+        "delivery": "付款信息",
+        "details": "税额、合计与到期日",
+        "overview": "供应方与客户信息"
+      }
+    },
     "filter": "文档分类",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文档"
+    },
     "imageError": "预览暂不可用",
+    "included": "包含内容",
+    "nextPage": "下一页样张",
+    "openLarger": "查看大图",
     "page": "第 {{page}} 页",
     "preview": "预览 {{title}}",
+    "previousPage": "上一页样张",
     "retry": "重试",
+    "samplePages": "样张页数：{{total}}",
     "title": "文档",
     "use": "使用模板",
     "useNamed": "使用 {{title}}"

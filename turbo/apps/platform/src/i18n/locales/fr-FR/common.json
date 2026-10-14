@@ -3876,6 +3876,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "Un point de départ pour votre accord. Vérifiez les conditions de votre projet et le droit applicable avant de signer.",
     "back": "Retour aux modèles",
     "categories": {
       "all": "Tous",
@@ -3889,11 +3890,46 @@
       "resume": "CV",
       "service-agreement": "Accord de services"
     },
+    "contents": {
+      "agreement": {
+        "content": "Conditions et responsabilités",
+        "delivery": "Révision et signatures",
+        "details": "Durée et résiliation",
+        "overview": "Parties et périmètre"
+      },
+      "brief": {
+        "content": "Public cible et message principal",
+        "delivery": "Calendrier et processus de validation",
+        "details": "Livrables et formats",
+        "overview": "Présentation et objectifs du projet"
+      },
+      "general": {
+        "content": "Sections pour votre contenu",
+        "delivery": "Document Word modifiable ou PDF",
+        "details": "Mise en page cohérente",
+        "overview": "Structure claire du document"
+      },
+      "invoice": {
+        "content": "Services et tarifs détaillés",
+        "delivery": "Informations de paiement",
+        "details": "Taxes, totaux et échéance",
+        "overview": "Coordonnées du prestataire et du client"
+      }
+    },
     "filter": "Catégorie de document",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Document Word"
+    },
     "imageError": "Aperçu indisponible",
+    "included": "Contenu inclus",
+    "nextPage": "Page d’exemple suivante",
+    "openLarger": "Ouvrir l’aperçu agrandi",
     "page": "Page {{page}}",
     "preview": "Aperçu de {{title}}",
+    "previousPage": "Page d’exemple précédente",
     "retry": "Réessayer",
+    "samplePages": "Pages d’exemple : {{total}}",
     "title": "Document",
     "use": "Utiliser ce modèle",
     "useNamed": "Utiliser {{title}}"

@@ -3795,6 +3795,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",
     "back": "返回範本清單",
     "categories": {
       "all": "全部",
@@ -3808,11 +3809,46 @@
       "resume": "履歷",
       "service-agreement": "服務協議"
     },
+    "contents": {
+      "agreement": {
+        "content": "條款與責任",
+        "delivery": "審閱與簽署",
+        "details": "期限與終止",
+        "overview": "簽約主體與範圍"
+      },
+      "brief": {
+        "content": "目標受眾與核心訊息",
+        "delivery": "時程與審核流程",
+        "details": "交付項目與格式",
+        "overview": "專案概況與目標"
+      },
+      "general": {
+        "content": "適合填寫內容的章節",
+        "delivery": "可編輯 Word 或 PDF 輸出",
+        "details": "一致的頁面版式",
+        "overview": "清晰的文件結構"
+      },
+      "invoice": {
+        "content": "服務明細與單價",
+        "delivery": "付款資訊",
+        "details": "稅額、合計與到期日",
+        "overview": "供應方與客戶資訊"
+      }
+    },
     "filter": "文件分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文件"
+    },
     "imageError": "預覽暫時無法使用",
+    "included": "包含內容",
+    "nextPage": "下一頁樣張",
+    "openLarger": "查看大圖",
     "page": "第 {{page}} 頁",
     "preview": "預覽 {{title}}",
+    "previousPage": "上一頁樣張",
     "retry": "重試",
+    "samplePages": "樣張頁數：{{total}}",
     "title": "文件",
     "use": "使用範本",
     "useNamed": "使用 {{title}}"

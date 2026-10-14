@@ -1,8 +1,7 @@
-import { formatLocalizedNumber } from "../../i18n/format.ts";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, FileText } from "lucide-react";
-import { Button, DialogTitle, cn } from "@okouai/ui";
+import { FileText } from "lucide-react";
+import { cn } from "@okouai/ui";
 import {
   DOCUMENT_TEMPLATE_CATEGORIES,
   type DocumentTemplateItem,
@@ -150,101 +149,6 @@ function DocumentTemplateCard({
       </div>
       <div className={TEMPLATE_TILE_CAPTION}>
         <span className={TEMPLATE_TILE_NAME}>{item.title}</span>
-      </div>
-    </div>
-  );
-}
-
-export function DocumentTemplatePreviewPage({
-  signals,
-  item,
-  onSelect,
-}: Props & { readonly item: DocumentTemplateItem }) {
-  const { t } = useTranslation();
-  const close = useSet(signals.template.closeDocumentPreview$);
-  const failures = useGet(signals.template.documentImageFailures$);
-  const failImage = useSet(signals.template.failDocumentImage$);
-  const retryImage = useSet(signals.template.retryDocumentImage$);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex h-[68px] shrink-0 items-center gap-3 border-b border-border px-6 pr-14">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label={t(($) => {
-            return $.documentTemplates.back;
-          })}
-          onClick={() => {
-            close();
-          }}
-        >
-          <ArrowLeft className="size-4" />
-        </Button>
-        <DialogTitle className="min-w-0 flex-1 truncate">
-          {item.title}
-        </DialogTitle>
-        <Button
-          onClick={() => {
-            onSelect(item);
-          }}
-        >
-          {t(($) => {
-            return $.documentTemplates.use;
-          })}
-        </Button>
-      </div>
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-muted p-4 sm:p-8">
-        <p className="mx-auto mb-5 max-w-2xl text-sm text-muted-foreground">
-          {item.description}
-        </p>
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
-          {item.previewPages.map((url, index) => {
-            return (
-              <div
-                key={url}
-                className="overflow-hidden rounded-sm border border-border bg-[#ffffff]"
-              >
-                {failures.has(url) ? (
-                  <div className="flex aspect-[210/297] flex-col items-center justify-center gap-4 text-muted-foreground">
-                    <FileText className="size-8" />
-                    <p>
-                      {t(($) => {
-                        return $.documentTemplates.imageError;
-                      })}
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        retryImage(url);
-                      }}
-                    >
-                      {t(($) => {
-                        return $.documentTemplates.retry;
-                      })}
-                    </Button>
-                  </div>
-                ) : (
-                  <img
-                    onError={() => {
-                      failImage(url);
-                    }}
-                    className="h-auto w-full"
-                    loading={index === 0 ? "eager" : "lazy"}
-                    src={url}
-                    alt={t(
-                      ($) => {
-                        return $.documentTemplates.page;
-                      },
-                      {
-                        page: formatLocalizedNumber(index + 1),
-                      },
-                    )}
-                  />
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

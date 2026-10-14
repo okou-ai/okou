@@ -3795,6 +3795,7 @@
     }
   },
   "documentTemplates": {
+    "agreementNote": "계약서 작성을 위한 출발점입니다. 서명 전에 프로젝트와 관할 법률에 맞게 조항을 검토하세요.",
     "back": "템플릿으로 돌아가기",
     "categories": {
       "all": "전체",
@@ -3808,11 +3809,46 @@
       "resume": "이력서",
       "service-agreement": "서비스 계약"
     },
+    "contents": {
+      "agreement": {
+        "content": "조건 및 책임",
+        "delivery": "검토 및 서명",
+        "details": "기간 및 해지",
+        "overview": "당사자 및 범위"
+      },
+      "brief": {
+        "content": "대상과 핵심 메시지",
+        "delivery": "일정 및 검토 절차",
+        "details": "결과물 및 형식",
+        "overview": "프로젝트 개요 및 목표"
+      },
+      "general": {
+        "content": "내용을 담을 섹션",
+        "delivery": "편집 가능한 Word 또는 PDF",
+        "details": "일관된 페이지 레이아웃",
+        "overview": "명확한 문서 구조"
+      },
+      "invoice": {
+        "content": "서비스 및 단가 명세",
+        "delivery": "결제 정보",
+        "details": "세금, 합계 및 납기일",
+        "overview": "공급자 및 고객 정보"
+      }
+    },
     "filter": "문서 분류",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 문서"
+    },
     "imageError": "미리 보기를 사용할 수 없습니다",
+    "included": "포함 내용",
+    "nextPage": "다음 샘플 페이지",
+    "openLarger": "큰 미리보기 열기",
     "page": "{{page}} 페이지",
     "preview": "{{title}} 미리 보기",
+    "previousPage": "이전 샘플 페이지",
     "retry": "다시 시도",
+    "samplePages": "샘플 페이지 수: {{total}}",
     "title": "문서",
     "use": "템플릿 사용",
     "useNamed": "{{title}} 사용"
