@@ -3,11 +3,12 @@ import {
   type UsagePackCreditGrantType,
 } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePackAllocations } from "@okouai/db/schema/usage-pack-subscription";
+import { command } from "ccstate";
 import { and, desc, eq, gt, inArray, sql, sum } from "drizzle-orm";
 
 import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import {
   ensureUsagePackCreditRefundSource,
   type UsagePackCreditRefundSource,
@@ -154,6 +155,40 @@ export async function getSpendableUsagePackCredits(
     );
   return row?.total ?? 0;
 }
+
+/** Root admission reads own their connection; the plain helper above remains
+ * inside Social's existing financial snapshot. Callers check cancellation after
+ * the complete unsignalled admission phase. */
+export const getSpendableUsagePackCredits$ = command(
+  async (
+    { get },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly at?: Date;
+    },
+  ): Promise<number> => {
+    const db = get(db$);
+    const at = args.at ?? nowDate();
+    const [row] = await db
+      .select({
+        total:
+          sql`COALESCE(${sum(usagePackCreditGrants.remainingAmount)}, 0)::bigint`
+            .mapWith(pgInt8ToSafeIntegerDecoder)
+            .as("total"),
+      })
+      .from(usagePackCreditGrants)
+      .where(
+        and(
+          eq(usagePackCreditGrants.orgId, args.orgId),
+          eq(usagePackCreditGrants.userId, args.userId),
+          gt(usagePackCreditGrants.remainingAmount, 0),
+          gt(usagePackCreditGrants.expiresAt, at),
+        ),
+      );
+    return row?.total ?? 0;
+  },
+);
 
 export async function hasActiveUsagePackAllocation(
   db: Pick<Db, "select">,
