@@ -69,6 +69,7 @@ import { settle } from "../utils";
 import { createUsagePackCreditGrant } from "./usage-pack-credit.service";
 import { prepareUsagePackMemberCreditRefunds } from "./usage-pack-credit-refund.service";
 import { completeBillingOperationInvoice } from "./billing-operation-invoice.service";
+import { subscriptionSchedulePhasesEndingAt } from "./stripe-subscription-schedules.service";
 import {
   setStripeSubscriptionPaymentMethod,
   type BillingPurchasePaymentMethod,
@@ -1530,17 +1531,6 @@ export const previewUsagePackAllocationChange$ = command(
   },
 );
 
-function subscriptionPhaseItems(
-  subscription: UsagePackChangeSubscriptionInput,
-): StripeSchedulePhaseItemParam[] {
-  return subscription.items.data.map((item) => {
-    return {
-      price: item.price.id,
-      quantity: item.quantity ?? 1,
-    };
-  });
-}
-
 function subscriptionPhaseDiscounts(
   subscription: UsagePackChangeSubscriptionInput,
 ): StripeSchedulePhaseDiscountParam[] {
@@ -1549,15 +1539,6 @@ function subscriptionPhaseDiscounts(
     const id = stripeObjectId(discount);
     return id ? [{ discount: id }] : [];
   });
-}
-
-function phaseWithDiscounts(
-  phase: StripeSchedulePhaseParam,
-  discounts: readonly StripeSchedulePhaseDiscountParam[],
-): StripeSchedulePhaseParam {
-  return discounts.length === 0
-    ? phase
-    : { ...phase, discounts: [...discounts] };
 }
 
 function subscriptionRecurringDuration(
@@ -1843,6 +1824,7 @@ async function syncUsagePackProjection(
     readonly currentQuantities: ReadonlyMap<string, number>;
     readonly renewalQuantities: ReadonlyMap<string, number>;
     readonly operationId: string | null;
+    readonly schedule?: StripeSubscriptionSchedule;
   },
   signal?: AbortSignal,
 ): Promise<void> {
@@ -1856,39 +1838,16 @@ async function syncUsagePackProjection(
   const stripe = getStripeClient();
   const scheduleId = subscriptionScheduleId(subscription);
   if (scheduleId) {
-    const period = usagePackItemPeriod(subscription);
-    const discounts = subscriptionPhaseDiscounts(subscription);
+    const schedule =
+      args.schedule ??
+      (await stripe.subscriptionSchedules.retrieve(scheduleId));
+    signal?.throwIfAborted();
     await stripe.subscriptionSchedules.update(
       scheduleId,
       {
         end_behavior: "release",
         proration_behavior: "none",
-        phases: [
-          phaseWithDiscounts(
-            {
-              start_date: period.start,
-              end_date: period.end,
-              items: projectedScheduleItems(
-                subscription,
-                args.currentQuantities,
-              ),
-              proration_behavior: "none",
-            },
-            discounts,
-          ),
-          phaseWithDiscounts(
-            {
-              start_date: period.end,
-              duration: subscriptionRecurringDuration(subscription),
-              items: projectedScheduleItems(
-                subscription,
-                args.renewalQuantities,
-              ),
-              proration_behavior: "none",
-            },
-            discounts,
-          ),
-        ],
+        phases: projectedUsagePackSchedulePhases(subscription, schedule, args),
       },
       projectionRequestOptions(args.operationId, projectionId, "schedule"),
     );
@@ -2080,7 +2039,7 @@ function schedulePhaseQuantities(
 }
 
 /**
- * The phase covering `at` and the single phase that follows it. A schedule
+ * Stripe's current phase and the single phase that follows it. A schedule
  * releasing after its current phase renews with that phase's items. More
  * future phases belong to another workflow and are not rewritten here.
  */
@@ -2093,13 +2052,90 @@ function currentAndRenewalSchedulePhases(
 } | null {
   const seconds = Math.floor(at.getTime() / 1000);
   const index = schedule.phases.findIndex((phase) => {
-    return phase.start_date <= seconds && seconds < phase.end_date;
+    return (
+      phase.start_date === schedule.current_phase?.start_date &&
+      phase.end_date === schedule.current_phase.end_date
+    );
   });
   const current = schedule.phases[index];
-  if (!current || schedule.phases.length - index > 2) {
+  const renewal = schedule.phases[index + 1];
+  if (
+    !current ||
+    schedule.end_behavior !== "release" ||
+    schedule.phases.length - index > 2 ||
+    current.start_date > seconds ||
+    current.end_date <= seconds ||
+    (renewal && renewal.start_date !== current.end_date)
+  ) {
     return null;
   }
-  return { current, renewal: schedule.phases[index + 1] ?? current };
+  return { current, renewal: renewal ?? current };
+}
+
+function projectedPhaseItems(
+  phase: StripeSchedulePhaseParam,
+  quantities: ReadonlyMap<string, number>,
+): StripeSchedulePhaseItemParam[] {
+  const existing = new Map(
+    phase.items.map((item) => {
+      return [item.price, item];
+    }),
+  );
+  return [
+    ...phase.items.filter((item) => {
+      return usagePackUsdForKnownPriceId(item.price) === null;
+    }),
+    ...[...quantities].map(([price, quantity]) => {
+      return { ...existing.get(price), price, quantity };
+    }),
+  ];
+}
+
+function projectedUsagePackSchedulePhases(
+  subscription: UsagePackChangeSubscriptionInput,
+  schedule: StripeSubscriptionSchedule,
+  args: {
+    readonly currentQuantities: ReadonlyMap<string, number>;
+    readonly renewalQuantities: ReadonlyMap<string, number>;
+  },
+): StripeSchedulePhaseParam[] {
+  const phases = currentAndRenewalSchedulePhases(schedule, nowDate());
+  const period = usagePackItemPeriod(subscription);
+  if (!phases || phases.current.end_date !== period.end) {
+    throw new Error(
+      "Stripe usage pack schedule does not match the current period",
+    );
+  }
+  // Billing periods can start before the current schedule phase after a
+  // mid-period update. Retain Stripe's writable phase boundaries and settings.
+  const [current, renewal] = subscriptionSchedulePhasesEndingAt(
+    schedule,
+    phases.renewal.end_date,
+  );
+  if (!current) {
+    throw new Error("Stripe usage pack schedule has no current phase");
+  }
+  const projected = [
+    {
+      ...current,
+      items: projectedPhaseItems(current, args.currentQuantities),
+    },
+  ];
+  if (renewal) {
+    projected.push({
+      ...renewal,
+      items: projectedPhaseItems(renewal, args.renewalQuantities),
+    });
+  } else if (!quantitiesMatch(args.currentQuantities, args.renewalQuantities)) {
+    const { end_date: startDate, ...settings } = current;
+    projected.push({
+      ...settings,
+      start_date: startDate,
+      duration: subscriptionRecurringDuration(subscription),
+      items: projectedPhaseItems(current, args.renewalQuantities),
+    });
+  }
+  return projected;
 }
 
 function subscriptionOtherQuantities(
@@ -2214,6 +2250,7 @@ export const syncUsagePackSubscriptionConfiguration$ = command(
         currentQuantities: desired.current,
         renewalQuantities: desired.renewal,
         operationId: null,
+        schedule,
       },
       signal,
     );
@@ -2309,32 +2346,19 @@ async function scheduleUsagePackAllocationChange(
   if (!scheduleId) {
     throw new Error("Stripe did not return a subscription schedule ID");
   }
-  const discounts = subscriptionPhaseDiscounts(subscription);
+  const schedule =
+    createdSchedule ??
+    (await stripe.subscriptionSchedules.retrieve(scheduleId));
+  signal?.throwIfAborted();
   await stripe.subscriptionSchedules.update(
     scheduleId,
     {
       end_behavior: "release",
       proration_behavior: "none",
-      phases: [
-        phaseWithDiscounts(
-          {
-            start_date: period.start,
-            end_date: period.end,
-            items: subscriptionPhaseItems(subscription),
-            proration_behavior: "none",
-          },
-          discounts,
-        ),
-        phaseWithDiscounts(
-          {
-            start_date: period.end,
-            duration: subscriptionRecurringDuration(subscription),
-            items: projectedScheduleItems(subscription, targetQuantities),
-            proration_behavior: "none",
-          },
-          discounts,
-        ),
-      ],
+      phases: projectedUsagePackSchedulePhases(subscription, schedule, {
+        currentQuantities: packageQuantitiesForSubscription(subscription),
+        renewalQuantities: targetQuantities,
+      }),
     },
     { idempotencyKey: `usage-pack-change:${operationId}:schedule-update` },
   );
