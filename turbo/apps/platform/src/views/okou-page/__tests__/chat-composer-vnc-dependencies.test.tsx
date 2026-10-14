@@ -221,13 +221,15 @@ test("An enabled VNC host warns until its exact SSH dependency is enabled", asyn
     expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
   });
   await chooseHost("SSH MacinCloud", "On");
-  expect(await within(menu).findByText(SSH_NOTE)).toBeInTheDocument();
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 
   await chooseHost("SSH MacinCloud", "Off");
-  expect(await within(menu).findByText(SSH_WARNING)).toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_WARNING),
+  ).resolves.toBeInTheDocument();
   await chooseHost("VNC MacinCloud", "Off");
-  expect(await within(menu).findByText(SSH_NOTE)).toBeInTheDocument();
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 });
 
@@ -242,19 +244,19 @@ test.each([
       sshOverrideEnabled: overrideEnabled,
     });
     const menu = await openRemoteAccess();
-    expect(
-      await within(menu).findByText(warningExpected ? SSH_WARNING : SSH_NOTE),
-    ).toBeInTheDocument();
-    if (!warningExpected) {
-      expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
-    }
+    await expect(
+      within(menu).findByText(warningExpected ? SSH_WARNING : SSH_NOTE),
+    ).resolves.toBeInTheDocument();
+    expect(within(menu).queryAllByText(SSH_WARNING)).toHaveLength(
+      Number(warningExpected),
+    );
     await chooseHost(
       "SSH MacinCloud",
       defaultEnabled ? "Default (On)" : "Default (Off)",
     );
-    expect(
-      await within(menu).findByText(warningExpected ? SSH_NOTE : SSH_WARNING),
-    ).toBeInTheDocument();
+    await expect(
+      within(menu).findByText(warningExpected ? SSH_NOTE : SSH_WARNING),
+    ).resolves.toBeInTheDocument();
   },
 );
 
@@ -265,12 +267,14 @@ test("A new chat updates VNC warnings from unsent host choices", async () => {
     sshDefaultEnabled: true,
   });
   const menu = await openRemoteAccess(true);
-  expect(await within(menu).findByText(SSH_NOTE)).toBeInTheDocument();
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
   await chooseHost("SSH MacinCloud", "Off");
   await chooseHost("VNC MacinCloud", "On");
-  expect(await within(menu).findByText(SSH_WARNING)).toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_WARNING),
+  ).resolves.toBeInTheDocument();
   await chooseHost("SSH MacinCloud", "Default (On)");
-  expect(await within(menu).findByText(SSH_NOTE)).toBeInTheDocument();
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
 });
 
@@ -281,25 +285,36 @@ test("Direct VNC access does not warn about unrelated disabled SSH hosts", async
   expect(within(menu).queryByText(SSH_NOTE)).toBeNull();
 });
 
-test.each([SSH_ID, null])(
-  "VNC shows an unmet KDC SSH dependency with primary transport %s",
-  async (transportSshId) => {
-    installDependencyFixture({ transportSshId, kdcSshId: KDC_SSH_ID });
-    const menu = await openRemoteAccess();
-    expect(await within(menu).findByText(KDC_WARNING)).toBeInTheDocument();
-    if (transportSshId) {
-      expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
-      await chooseHost("SSH MacinCloud", "On");
-      expect(await within(menu).findByText(SSH_NOTE)).toBeInTheDocument();
-      expect(within(menu).getByText(KDC_WARNING)).toBeInTheDocument();
-    }
-    await chooseHost("SSH Directory tunnel", "On");
-    expect(
-      await within(menu).findByText("Requires SSH access to Directory tunnel."),
-    ).toBeInTheDocument();
-    expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
-  },
-);
+test("VNC reports its transport and KDC SSH dependencies independently", async () => {
+  installDependencyFixture({ kdcSshId: KDC_SSH_ID });
+  const menu = await openRemoteAccess();
+  await expect(
+    within(menu).findByText(KDC_WARNING),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).getByText(SSH_WARNING)).toBeInTheDocument();
+  await chooseHost("SSH MacinCloud", "On");
+  await expect(within(menu).findByText(SSH_NOTE)).resolves.toBeInTheDocument();
+  expect(within(menu).getByText(KDC_WARNING)).toBeInTheDocument();
+  await chooseHost("SSH Directory tunnel", "On");
+  await expect(
+    within(menu).findByText("Requires SSH access to Directory tunnel."),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
+});
+
+test("Direct VNC transport still explains an SSH-backed KDC dependency", async () => {
+  installDependencyFixture({ transportSshId: null, kdcSshId: KDC_SSH_ID });
+  const menu = await openRemoteAccess();
+  await expect(
+    within(menu).findByText(KDC_WARNING),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
+  await chooseHost("SSH Directory tunnel", "On");
+  await expect(
+    within(menu).findByText("Requires SSH access to Directory tunnel."),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
+});
 
 test("The same SSH host used for VNC and KDC is explained only once", async () => {
   installDependencyFixture({ kdcSshId: SSH_ID });
@@ -314,7 +329,9 @@ test("Pending VNC configuration is not interpreted as disabled SSH access", asyn
   const menu = await openRemoteAccess();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
   ready.resolve(undefined);
-  expect(await within(menu).findByText(SSH_WARNING)).toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_WARNING),
+  ).resolves.toBeInTheDocument();
 });
 
 test("A failed access refresh reports its error before showing dependency feedback after retry", async () => {
@@ -325,10 +342,12 @@ test("A failed access refresh reports its error before showing dependency feedba
   const menu = await openRemoteAccess();
   await within(menu).findByText(SSH_NOTE);
   await chooseHost("VNC MacinCloud", "On");
-  expect(
-    await within(menu).findByText("Couldn't load remote access."),
-  ).toBeInTheDocument();
+  await expect(
+    within(menu).findByText("Couldn't load remote access."),
+  ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
   click(await findFastControl("button", "Retry", menu));
-  expect(await within(menu).findByText(SSH_WARNING)).toBeInTheDocument();
+  await expect(
+    within(menu).findByText(SSH_WARNING),
+  ).resolves.toBeInTheDocument();
 });
