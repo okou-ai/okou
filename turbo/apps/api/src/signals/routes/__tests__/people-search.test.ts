@@ -15,7 +15,6 @@ import { env, mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 
 import { now } from "../../../lib/time";
-import { settleIncludingAbort } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { billingStatusRoutes } from "../billing-status";
@@ -87,7 +86,6 @@ interface FundedPeopleSearchActor {
 
 async function cleanupFundedPeopleSearchActor(
   owned: FundedPeopleSearchActor,
-  beforeOrganizationCleanup?: () => Promise<void>,
 ): Promise<void> {
   mockEnv("R2_USER_STORAGES_BUCKET_NAME", owned.storageBucket);
   mockEnv("SECRETS_KMS_KEY_ID", owned.kmsKeyId);
@@ -98,9 +96,6 @@ async function cleanupFundedPeopleSearchActor(
   context.mocks.ably.publish.mockResolvedValue(undefined);
   await flushWaitUntilForTest();
 
-  const beforeCleanup = await settleIncludingAbort(
-    beforeOrganizationCleanup?.() ?? Promise.resolve(),
-  );
   const webhooks = createWebhookCallbackApi(context);
   webhooks.configureStripeBillingEnv();
   context.mocks.stripe.subscriptions.list.mockResolvedValue({
@@ -132,22 +127,9 @@ async function cleanupFundedPeopleSearchActor(
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
-
-  if (!beforeCleanup.ok) {
-    throw beforeCleanup.error;
-  }
 }
 
-async function fundActorWithSubscription(
-  actor: ApiTestUser,
-  {
-    deleteCliUser = false,
-    beforeOrganizationCleanup,
-  }: {
-    readonly deleteCliUser?: boolean;
-    readonly beforeOrganizationCleanup?: () => Promise<void>;
-  } = {},
-) {
+async function fundActorWithSubscription(actor: ApiTestUser) {
   if (!actor.orgId) {
     throw new Error("People Search test actor must belong to an organization");
   }
@@ -161,28 +143,8 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
-  const owner = createFixtureOperationOwner(async () => {
-    const cleanupResult = await settleIncludingAbort(
-      cleanupFundedPeopleSearchActor(owned, beforeOrganizationCleanup),
-    );
-
-    if (deleteCliUser) {
-      // Clerk deletion does not revoke tokens. This unique user retains issued
-      // tokens, including a lost issue response, without affecting other tests.
-      const webhooks = createWebhookCallbackApi(context);
-      webhooks.configureClerkWebhookSecret();
-      webhooks.verifyNextClerkWebhook({
-        type: "user.deleted",
-        data: { id: actor.userId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-      // Unapproved anonymous challenges retain their public 900-second expiry.
-    }
-
-    if (!cleanupResult.ok) {
-      throw cleanupResult.error;
-    }
+  const owner = createFixtureOperationOwner(() => {
+    return cleanupFundedPeopleSearchActor(owned);
   });
   await owner.run(async () => {
     await bootstrapOnboarding(actor);
@@ -504,9 +466,7 @@ describe("okou people-search route", () => {
     const actor = createBddApi(context).user();
     configureProvider();
 
-    const owner = await fundActorWithSubscription(actor, {
-      deleteCliUser: true,
-    });
+    const owner = await fundActorWithSubscription(actor);
     await owner.run(async () => {
       const { token } = await createRunsApi(context).createCliToken(actor);
       server.use(

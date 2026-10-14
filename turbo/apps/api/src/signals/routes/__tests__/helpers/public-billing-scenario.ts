@@ -6,7 +6,6 @@ import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { settleIncludingAbort } from "../../../utils";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
-import type { BillingOrgFixture } from "./billing-checkout-fixture";
 
 /** Keep the same provider response cursor when an accepted request outlives afterEach. */
 export function retainBillingSequence<Result>(
@@ -179,9 +178,6 @@ export function createPublicBillingScenario(context: TestContext) {
         }
         return consumeEvent(clerkEvents, await request.clone().text());
       });
-    },
-    own<T extends BillingOrgFixture>(fixture: T): T {
-      return fixture;
     },
     run<T>(operation: () => Promise<T>): Promise<T> {
       return owner.run(() => {

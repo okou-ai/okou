@@ -1077,7 +1077,6 @@ describe("CHAT-01 thread detail, create, and delete cascades", () => {
           displayName: "Limited free model pin agent",
           visibility: "private",
         });
-        fixture.registerAgent(agent.agentId);
         const agentId = agent.agentId;
         const billingStatus = await api.readBillingStatus(actor);
         await createWebhookCallbackApi(context).postStripeEvent(

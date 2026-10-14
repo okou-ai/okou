@@ -238,8 +238,7 @@ const changeSharedThreadArtifactPhase$ = command(
     if (!current || current.policy.status !== "preparing") {
       throw new Error("Conversation snapshot is no longer pending publication");
     }
-    // The durable denied identity is discoverable by owner cleanup. Policy
-    // ETags fence publication against revocation without holding SQL locks.
+    // Policy ETags fence publication against revocation without holding SQL locks.
     const membership = await settle(
       get(clerk$).organizations.getOrganizationMembershipList(
         {

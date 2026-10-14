@@ -115,7 +115,7 @@ export const publishRemoteRunnerInvalidation$ = command(
   },
 );
 
-/** Owner erasure or loss of agent access retires only matching VNC Runs. */
+/** Membership removal or loss of agent access invalidates matching VNC Runs. */
 export const publishVncLifecycleInvalidation$ = command(
   async (
     { get },

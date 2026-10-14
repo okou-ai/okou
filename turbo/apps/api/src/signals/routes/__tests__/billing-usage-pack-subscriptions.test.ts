@@ -2665,9 +2665,6 @@ describe("usage pack allocation management", () => {
       (<T>(operation: () => Promise<T>) => {
         return operation();
       });
-    const own = <T extends BillingOrgFixture>(fixture: T): T => {
-      return lifecycle?.own(fixture) ?? fixture;
-    };
     function managedUsagePackPlanPriceId(
       tier: ManagedUsagePackFixture["tier"],
     ): string {
@@ -2947,7 +2944,7 @@ describe("usage pack allocation management", () => {
             "A managed usage pack purchase requires a paid member",
           );
         }
-        const fixture = own(actor ?? createOrgFixture());
+        const fixture = actor ?? createOrgFixture();
         authenticateOrg(fixture);
         mockClerkOrganization(fixture);
         const memberIds = [
@@ -3915,7 +3912,7 @@ describe("usage pack allocation management", () => {
         throw new Error("Expected an owned usage-pack purchase");
       }
       return await run(async () => {
-        const actor = own(createOrgFixture());
+        const actor = createOrgFixture();
         authenticateOrg(actor);
         mockClerkOrganization(actor);
         const customerId = `cus_${randomUUID()}`;
@@ -4071,7 +4068,7 @@ describe("usage pack allocation management", () => {
         throw new Error("Expected an owned usage-pack purchase");
       }
       return await run(async () => {
-        const actor = own(createOrgFixture());
+        const actor = createOrgFixture();
         authenticateOrg(actor);
         mockClerkOrganization(actor);
         const customerId = `cus_${randomUUID()}`;
@@ -4687,7 +4684,7 @@ describe("usage pack allocation management", () => {
     } = createManagedUsagePackHelpers(lifecycle);
     return await withNowScopeForTest(() => {
       return run(async () => {
-        const actor = lifecycle.own(createOrgFixture());
+        const actor = createOrgFixture();
         const fixture = await purchaseManagedUsagePack(
           [{ userId: actor.userId, usagePackUsd: 20 }],
           "team",
@@ -4765,7 +4762,7 @@ describe("usage pack allocation management", () => {
     } = createManagedUsagePackHelpers(lifecycle);
     return await withNowScopeForTest(() => {
       return run(async () => {
-        const actor = lifecycle.own(createOrgFixture());
+        const actor = createOrgFixture();
         const fixture = await purchaseManagedUsagePack(
           [{ userId: actor.userId, usagePackUsd: 20 }],
           "team",
@@ -5048,7 +5045,7 @@ describe("usage pack allocation management", () => {
     } = createManagedUsagePackHelpers(lifecycle);
     return await withNowScopeForTest(() => {
       return run(async () => {
-        const actor = lifecycle.own(createOrgFixture());
+        const actor = createOrgFixture();
         const fixture = await purchaseManagedUsagePack(
           [{ userId: actor.userId, usagePackUsd: 20 }],
           "team",
@@ -14726,7 +14723,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         context.mocks.signalTimers.delay.mockResolvedValue(undefined);
@@ -14784,7 +14781,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         context.mocks.clerk.organizations.getOrganizationMembershipList.mockClear();
@@ -14882,7 +14879,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         const purchase = await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         mockSavedCardInvitationPayment(purchase);
@@ -15018,7 +15015,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         const purchase = await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         mockSavedCardInvitationPayment(purchase);
@@ -15461,7 +15458,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         const purchase = await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         const creditsBefore = await readPurchasedCreditGrants(purchase.fixture);
@@ -16324,7 +16321,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         const purchase = await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         const invitationId = `inv_refund_${randomUUID()}`;
@@ -16442,7 +16439,7 @@ describe("usage pack allocation management", () => {
       return await withNowScopeForTest(() => {
         return run(async () => {
           const purchase = await beginInvitationPurchase(
-            lifecycle.own(createOrgFixture()),
+            createOrgFixture(),
             purchaseManagedUsagePack,
           );
           const invitationId = `inv_refund_${randomUUID()}`;
@@ -16554,7 +16551,7 @@ describe("usage pack allocation management", () => {
     return await withNowScopeForTest(() => {
       return run(async () => {
         const purchase = await beginInvitationPurchase(
-          lifecycle.own(createOrgFixture()),
+          createOrgFixture(),
           purchaseManagedUsagePack,
         );
         const invitationId = `inv_refund_${randomUUID()}`;

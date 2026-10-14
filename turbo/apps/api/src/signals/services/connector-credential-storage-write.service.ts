@@ -232,18 +232,7 @@ export async function deleteConnectorOwnedCredentialRows(
   signal.throwIfAborted();
 }
 
-/** Deletes one account with its selections and credential rows. */
-export async function deleteConnectorCredentialStorageConnection(
-  db: Db,
-  args: { readonly connectorId: string },
-  signal: AbortSignal,
-): Promise<number> {
-  return await deleteConnectorCredentialStorageConnectionsWhere(
-    db,
-    args,
-    signal,
-  );
-}
+export { deleteConnectorCredentialStorageConnectionsWhere as deleteConnectorCredentialStorageConnection };
 
 export async function deleteConnectorSelectionsForCustomConnectorDefinition(
   db: Db,

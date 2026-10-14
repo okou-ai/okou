@@ -192,32 +192,8 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
-  const owner = createFixtureOperationOwner(async () => {
-    const outcome = await settleIncludingAbort(
-      (async () => {
-        const cleanupResult = await settleIncludingAbort(
-          cleanupFundedScrapeActor(owned),
-        );
-        if (options.createCliTokenBeforeFunding) {
-          const webhooks = createWebhookCallbackApi(context);
-          webhooks.configureClerkWebhookSecret();
-          webhooks.verifyNextClerkWebhook({
-            type: "user.deleted",
-            data: { id: actor.userId },
-          });
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-          await flushWaitUntilForTest();
-          // Clerk deletion does not revoke issued tokens. Unique user IDs keep
-          // retained tokens isolated; anonymous challenges expire after 900 seconds.
-        }
-        if (!cleanupResult.ok) {
-          throw cleanupResult.error;
-        }
-      })(),
-    );
-    if (!outcome.ok) {
-      throw outcome.error;
-    }
+  const owner = createFixtureOperationOwner(() => {
+    return cleanupFundedScrapeActor(owned);
   });
   await owner.run(async () => {
     await options.createCliTokenBeforeFunding?.();

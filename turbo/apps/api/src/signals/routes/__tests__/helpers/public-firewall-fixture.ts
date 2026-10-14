@@ -32,13 +32,11 @@ export function createPublicFirewallFixture(
   const invoiceId = `in_public_cash_${randomUUID()}`;
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
-  const agentIds = new Set<string>();
   const runIds = new Set<string>();
   const claims = new Map<string, string>();
   const deletedRuns = new Set<string>();
   const queuedThreads = new Set<string>();
   const scenarioCleanups: (() => Promise<void>)[] = [];
-  const deletedUsers = new Set<string>();
   const builtinAccounts = new Map<ConnectorSlug, Set<string>>();
   const builtinDeletionIntents = new Map<ConnectorSlug, Set<string>>();
   const customAccounts = new Map<string, Set<string>>();
@@ -190,14 +188,6 @@ export function createPublicFirewallFixture(
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    for (const userId of deletedUsers) {
-      webhooks.verifyNextClerkWebhook({
-        type: "user.deleted",
-        data: { id: userId },
-      });
-      await webhooks.requestClerkWebhook("{}", {}, [200]);
-      await flushWaitUntilForTest();
-    }
     // Clerk deletion stops active work; UUID-owned history, agents, connections,
     // storage, billing, caches, local identities and tokens remain retained.
   });
@@ -308,15 +298,9 @@ export function createPublicFirewallFixture(
         subscriptionId,
       });
     },
-    registerAgent(agentId: string): void {
-      agentIds.add(agentId);
-    },
     registerClaim(runId: string, token: string): void {
       runIds.add(runId);
       claims.set(runId, token);
-    },
-    registerOwnedUserDeletion(userId = actor.userId): void {
-      deletedUsers.add(userId);
     },
     registerRun(runId: string): void {
       runIds.add(runId);

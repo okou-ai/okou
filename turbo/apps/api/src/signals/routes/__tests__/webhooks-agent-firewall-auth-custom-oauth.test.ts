@@ -78,7 +78,6 @@ async function setupCustomOAuthFirewall(
   const agent = await bdd.createAgent(actor, {
     displayName: "Custom OAuth refresh agent",
   });
-  publicFixture.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve custom OAuth firewall auth",

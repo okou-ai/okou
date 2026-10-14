@@ -55,7 +55,6 @@ async function startRun(
     displayName: "Session history upload Agent",
     visibility: "private",
   });
-  fixture.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "Prepare native session history",

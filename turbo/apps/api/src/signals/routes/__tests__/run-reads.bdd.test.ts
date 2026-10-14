@@ -1058,7 +1058,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         displayName: "BDD resume agent",
         visibility: "private",
       });
-      fixture.registerAgent(agent.agentId);
       const workflowName = `bdd-resume-${randomUUID().slice(0, 8)}`;
       const misc = createMiscRoutesApi(context);
       const workflowWritesStart = context.mocks.s3.send.mock.calls.length;

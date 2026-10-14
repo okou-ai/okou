@@ -1,22 +1,17 @@
 import { Buffer } from "node:buffer";
-import { randomUUID } from "node:crypto";
 import { MsgPack } from "ably/modular";
 import { http, HttpResponse } from "msw";
-import { Webhook } from "svix";
-import { expect, vi } from "vitest";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { TestContext } from "../../../../__tests__/test-context";
-import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../../lib/env";
-import { nowDate } from "../../../../lib/time";
+import { env, mockEnv } from "../../../../lib/env";
 import { server } from "../../../../mocks/server";
 import { flushWaitUntilForTest } from "../../../context/wait-until";
 import { settleIncludingAbort } from "../../../utils";
 import type { ApiTestUser } from "./api-bdd";
-import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 
 const ablyKey = "externalcode.key:external-code-synthetic-secret";
-const signingSecret = `whsec_${Buffer.from("external-code-workspace-fixture").toString("base64")}`;
 const connectorChanged = Object.freeze({
   name: "connector:changed",
   data: JSON.stringify({ connectorSlug: "aws" }),
@@ -92,6 +87,8 @@ export function createExternalCodeProviderFixture(
     },
   );
 
+  const previousAblyKey = env("ABLY_API_KEY");
+  const previousPublishMode = context.mocks.ably.useRealPublish();
   mockEnv("ABLY_API_KEY", ablyKey);
   context.mocks.ably.useRealPublish.mockReturnValue(true);
   server.use(publishHandler);
@@ -106,59 +103,9 @@ export function createExternalCodeProviderFixture(
       });
     },
 
-    async deleteWorkspace(): Promise<void> {
-      if (!actor.orgId) {
-        throw new Error("Expected an owned workspace to clean up");
-      }
-      const sdk = await vi.importActual<
-        typeof import("@clerk/backend/webhooks")
-      >("@clerk/backend/webhooks");
-      const body = JSON.stringify({
-        type: "organization.deleted",
-        data: { id: actor.orgId },
-      });
-      const id = randomUUID();
-      const at = nowDate();
-      const headers = {
-        "svix-id": id,
-        "svix-timestamp": String(Math.floor(at.getTime() / 1000)),
-        "svix-signature": new Webhook(signingSecret).sign(id, at, body),
-      };
-      const previousSecret = optionalEnv("CLERK_WEBHOOK_SIGNING_SECRET");
-      const previousPublishMode = context.mocks.ably.useRealPublish();
-      const previousVerifier =
-        context.mocks.clerk.verifyWebhook.getMockImplementation();
-      mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", signingSecret);
-      context.mocks.clerk.verifyWebhook.mockImplementation(
-        (request: unknown, options: unknown) => {
-          if (!(request instanceof Request)) {
-            throw new Error("Expected a Clerk webhook request");
-          }
-          return sdk.verifyWebhook(
-            request,
-            z.object({ signingSecret: z.string() }).parse(options),
-          );
-        },
-      );
-      // Shared afterEach resets providers before the owner's finished callback.
-      context.mocks.ably.useRealPublish.mockReturnValue(true);
-      server.use(publishHandler);
-      const deleted = await settleIncludingAbort(
-        createWebhookCallbackApi(context).requestClerkWebhook(
-          body,
-          headers,
-          [200],
-        ),
-      );
+    async restore(): Promise<void> {
       await flushWaitUntilForTest().finally(() => {
-        mockOptionalEnv("CLERK_WEBHOOK_SIGNING_SECRET", previousSecret);
-        if (previousVerifier) {
-          context.mocks.clerk.verifyWebhook.mockImplementation(
-            previousVerifier,
-          );
-        } else {
-          context.mocks.clerk.verifyWebhook.mockReset();
-        }
+        mockEnv("ABLY_API_KEY", previousAblyKey);
         context.mocks.ably.useRealPublish.mockReturnValue(previousPublishMode);
         server.resetHandlers(
           ...server.listHandlers().filter((handler) => {
@@ -166,9 +113,6 @@ export function createExternalCodeProviderFixture(
           }),
         );
       });
-      if (!deleted.ok) {
-        throw deleted.error;
-      }
       expect(invalidRequests).toStrictEqual([]);
     },
   };
