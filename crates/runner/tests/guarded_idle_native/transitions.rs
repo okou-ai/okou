@@ -196,7 +196,11 @@ async fn prepare_incoming(
                     memory_mb: 4096,
                 },
                 device_rate_limits: None,
-                home_drive: None,
+                home_drive: Some(sandbox::HomeDriveConfig {
+                    size_mb: 16384,
+                    seed_image: None,
+                    space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
+                }),
             })
             .await?;
         let prepared: TestResult<()> = async {
