@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.231.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.4...runner-rs-v0.231.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** avoid retaining aws query request urls ([#39938](https://github.com/okou-ai/okou/issues/39938)) ([5d6acb3](https://github.com/okou-ai/okou/commit/5d6acb3b4e73c442b7d9ef048b6e836c483fdabb))
+* **runner:** preserve cleanup on response inspection cancellation ([#39941](https://github.com/okou-ai/okou/issues/39941)) ([bd2b16f](https://github.com/okou-ai/okou/commit/bd2b16f1a9b72ffecec8d069425c9bb56beb4244))
+
+
+### Performance Improvements
+
+* **python:** bound nested-finally metadata linter replay ([#39942](https://github.com/okou-ai/okou/issues/39942)) ([7662d21](https://github.com/okou-ai/okou/commit/7662d2190c2d312b1d278c7a161e32787c0b6fb1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.3...runner-rs-v0.231.4) (2026-10-14)
 
 

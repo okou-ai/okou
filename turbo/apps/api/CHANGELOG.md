@@ -9,6 +9,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.733.1](https://github.com/okou-ai/okou/compare/api-v1.733.0...api-v1.733.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* align wallet authorization cards and resume chat after consent ([#39918](https://github.com/okou-ai/okou/issues/39918)) ([b8f5ba9](https://github.com/okou-ai/okou/commit/b8f5ba9616117089475b8aef8854808195ec09f4))
+* **api:** preserve usage pack schedule phase boundaries ([#39934](https://github.com/okou-ai/okou/issues/39934)) ([2d4c9fb](https://github.com/okou-ai/okou/commit/2d4c9fb00b2c1d5ae21cec76f96db5849264839c))
+
+
+### Refactoring
+
+* remove abandoned home task recommendations ([#39928](https://github.com/okou-ai/okou/issues/39928)) ([334940b](https://github.com/okou-ai/okou/commit/334940bb4da2cf321bf65b6a376c4dc1ae12daa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.1
+    * @okouai/core bumped to 8.752.2
+    * @okouai/db bumped to 1.336.1
+    * @okouai/pi-agent-runtime bumped to 1.49.29
+
 ## [1.733.0](https://github.com/okou-ai/okou/compare/api-v1.732.6...api-v1.733.0) (2026-10-14)
 
 
