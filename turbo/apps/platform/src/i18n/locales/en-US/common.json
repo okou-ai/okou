@@ -4691,10 +4691,18 @@
       "personal": {
         "accountFallback": "Account {{number}}",
         "activeAccount": "Active",
+        "autoCredits": "Uses Okou credits",
         "autoDescription": "Connect your Claude or ChatGPT account to use more models.",
         "autoTitle": "Use more models",
+        "claudeConnectedOnPlan": "Claude connected. New chats run on your plan.",
+        "claudeGroup": "Your Claude plan",
+        "claudePlans": "Pro or Max",
         "claudeTitle": "Claude",
+        "codexConnectedOnPlan": "ChatGPT connected. New chats run on your plan.",
+        "codexGroup": "Your ChatGPT plan",
+        "codexPlans": "Plus, Pro or Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "Connect",
         "connectAccount": "Connect account",
         "disconnectAccount": "Disconnect account",
         "disconnectDescription": "This removes the account from Okou. It won’t cancel your subscription with the provider.",
@@ -4702,7 +4710,9 @@
         "disconnectTitle": "Disconnect {{account}}?",
         "loadError": "Couldn’t load your accounts.",
         "loadingAccounts": "Loading accounts…",
+        "managePlans": "Manage plans",
         "noAccounts": "No accounts connected.",
+        "ownPlan": "Run on your own plan",
         "reconnectAccount": "Reconnect",
         "retry": "Try again",
         "status": {
@@ -4712,7 +4722,8 @@
           "stale": "Attention",
           "week": "Week"
         },
-        "useAccount": "Use"
+        "useAccount": "Use",
+        "useAuto": "Use Auto"
       },
       "picker": {
         "auto": "Auto",

@@ -8515,6 +8515,7 @@ function ComposerModelPickerControls({
       <ComposerModelPanel
         value={value}
         onChange={onChange}
+        selectModel$={signals.model.setModelSelection$}
         placeholder={t(($) => {
           return $.chat.composer.selectModel;
         })}
@@ -8532,14 +8533,20 @@ function ComposerModelSlotDivider() {
 }
 
 /** The model slot of a member who can only run Auto; see the menu's note. */
-function ComposerSubscriptionLinkingSlot() {
+function ComposerSubscriptionLinkingSlot({
+  signals,
+}: {
+  signals: ComposerSignals;
+}) {
   const available = useSubscriptionLinkingAvailable();
   if (!available) {
     return null;
   }
   return (
     <>
-      <SubscriptionLinkingComposerMenu />
+      <SubscriptionLinkingComposerMenu
+        select$={signals.model.setModelSelection$}
+      />
       <ComposerModelSlotDivider />
     </>
   );
@@ -8564,7 +8571,7 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
       return runModel.model === null;
     });
   if (models !== undefined && autoOnly) {
-    return <ComposerSubscriptionLinkingSlot />;
+    return <ComposerSubscriptionLinkingSlot signals={signals} />;
   }
   if (modelPickerLoading || value === null || autoOnly) {
     return null;

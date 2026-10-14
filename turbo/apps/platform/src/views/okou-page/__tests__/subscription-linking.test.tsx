@@ -13,17 +13,21 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   buildRunModel,
+  composerModelTrigger,
   findComposerEditor,
 } from "./chat-composer-test-helpers.ts";
+import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
 import {
   AGENT_ID,
   context,
   mockTemplateChat,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
+type ActionRole = "button" | "menuitem" | "menuitemradio";
+
 function findAction(
   name: string,
-  role: "button" | "menuitem" = "button",
+  role: ActionRole = "button",
   container: ParentNode = document,
 ): HTMLElement | undefined {
   return queryAllByRoleFast(role, container).find((candidate) => {
@@ -37,7 +41,7 @@ function findAction(
 
 function action(
   name: string,
-  role: "button" | "menuitem" = "button",
+  role: ActionRole = "button",
   container: ParentNode = document,
 ): HTMLElement {
   const element = findAction(name, role, container);
@@ -64,9 +68,10 @@ async function openComposerProviders(): Promise<HTMLElement> {
 
 function codexRunModels() {
   return [
+    buildRunModel({ model: null }),
     buildRunModel({
-      model: "gpt-5.5",
-      modelLabel: "GPT-5.5",
+      model: "gpt-6-astra",
+      modelLabel: "GPT 6 Astra",
       providerType: "codex-oauth-token",
       modelProviderId: connectedCodex().id,
     }),
@@ -131,14 +136,26 @@ test("An unlinked member finds the subscriptions in the composer's model slot", 
   await setupLinking();
   await findComposerEditor();
   const menu = await openComposerProviders();
-  expect(action("ChatGPT (Codex)", "menuitem", menu)).toBeInTheDocument();
-  expect(action("Claude", "menuitem", menu)).toBeInTheDocument();
+  expect(action("Auto", "menuitemradio", menu)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  expect(action("Auto", "menuitemradio", menu)).toHaveAccessibleDescription(
+    "Uses Okou credits",
+  );
+  expect(menu).toHaveTextContent("Run on your own plan");
+  expect(
+    action("ChatGPT (Codex)", "menuitem", menu),
+  ).toHaveAccessibleDescription("Plus, Pro or Business");
+  expect(action("Claude", "menuitem", menu)).toHaveAccessibleDescription(
+    "Pro or Max",
+  );
   expect(
     screen.getByRole("region", { name: "Tasks to get started" }),
   ).toBeInTheDocument();
 });
 
-test("Codex opens its authorization from the composer and the slot becomes the model picker after confirmation", async () => {
+test("Codex opens its authorization from the composer, which then runs on the plan until the member goes back to Auto", async () => {
   const user = userEvent.setup();
   const approval = context.mocks.deferred<void>();
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
@@ -182,13 +199,48 @@ test("Codex opens its authorization from the composer and the slot becomes the m
       screen.queryByRole("dialog", { name: "Connect Codex" }),
     ).not.toBeInTheDocument();
   });
-  await waitFor(() => {
-    expect(action("Auto")).toBeInTheDocument();
-  });
+  await screen.findByText("ChatGPT connected. New chats run on your plan.");
+  await composerModelTrigger("GPT 6 Astra");
   expect(findAction("Use more models")).toBeUndefined();
   expect(editor).toHaveTextContent("Keep this draft");
+  click(action("Use Auto"));
+  await composerModelTrigger("Auto");
   const accountMenu = await openAccountMenu();
   expect(accountMenu).not.toHaveTextContent("Use more models");
+});
+
+test("Linking one subscription keeps the other one connectable from the model panel", async () => {
+  context.mocks.api(claudeCodeDeviceAuthContract.start, ({ respond }) => {
+    return respond(200, {
+      sessionToken: "panel-claude-session",
+      type: "claude-code",
+      status: "pending",
+      scope: "personal",
+      browserUrl: "https://claude.ai/oauth/authorize",
+      expiresIn: 30,
+    });
+  });
+  await setupLinking({ accounts: [connectedCodex()] });
+  await findComposerEditor();
+  const panel = await openModelPanel("Auto");
+  expect(panel).toHaveTextContent("Your ChatGPT plan");
+  expect(panel).toHaveTextContent("0% left");
+  expect(panel).toHaveTextContent("Your Claude plan");
+  expect(action("Claude", "button", panel)).toHaveAccessibleDescription(
+    "Pro or Max",
+  );
+  click(action("Claude", "button", panel));
+  await screen.findByTestId("claude-code-device-auth-code");
+});
+
+test("Manage plans in the model panel opens Models", async () => {
+  await setupLinking({ accounts: [connectedCodex()] });
+  await findComposerEditor();
+  const panel = await openModelPanel("Auto");
+  click(action("Manage plans", "button", panel));
+  await waitFor(() => {
+    expect(window.location.search).toContain("settings=model");
+  });
 });
 
 test("Claude opens its authorization from the account menu and cancelling keeps both entries", async () => {
@@ -256,6 +308,15 @@ test("The feature switch removes every entry and preserves task chips", async ()
   const menu = await openAccountMenu();
   expect(menu).not.toHaveTextContent("Use more models");
   expect(findAction("Use more models")).toBeUndefined();
+});
+
+test("The feature switch leaves a linked member's model panel ungrouped", async () => {
+  await setupLinking({ enabled: false, accounts: [connectedCodex()] });
+  await findComposerEditor();
+  const panel = await openModelPanel("Auto");
+  expect(panel).toHaveTextContent("GPT 6 Astra");
+  expect(panel).not.toHaveTextContent("Your ChatGPT plan");
+  expect(findAction("Manage plans", "button", panel)).toBeUndefined();
 });
 
 test("An unresolved subscription lookup offers no entry yet", async () => {

@@ -4678,10 +4678,18 @@
       "personal": {
         "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "消耗 Okou 點數",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
+        "claudeConnectedOnPlan": "Claude 已連接，新對話將使用你的方案。",
+        "claudeGroup": "你的 Claude 方案",
+        "claudePlans": "Pro 或 Max",
         "claudeTitle": "Claude",
+        "codexConnectedOnPlan": "ChatGPT 已連接，新對話將使用你的方案。",
+        "codexGroup": "你的 ChatGPT 方案",
+        "codexPlans": "Plus、Pro 或 Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "連接",
         "connectAccount": "連接帳號",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從 Okou 中移除，但不會取消你在該服務商處的訂閱。",
@@ -4689,7 +4697,9 @@
         "disconnectTitle": "斷開{{account}}？",
         "loadError": "無法載入你的帳號。",
         "loadingAccounts": "正在載入帳號…",
+        "managePlans": "管理方案",
         "noAccounts": "還沒有連線任何帳號。",
+        "ownPlan": "使用你自己的方案",
         "reconnectAccount": "重新連線",
         "retry": "重試",
         "status": {
@@ -4699,7 +4709,8 @@
           "stale": "需處理",
           "week": "本週"
         },
-        "useAccount": "使用"
+        "useAccount": "使用",
+        "useAuto": "改用 Auto"
       },
       "picker": {
         "auto": "Auto",

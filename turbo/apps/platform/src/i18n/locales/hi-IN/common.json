@@ -4699,10 +4699,18 @@
       "personal": {
         "accountFallback": "खाता {{number}}",
         "activeAccount": "सक्रिय",
+        "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
+        "claudeConnectedOnPlan": "Claude कनेक्ट हो गया। नई चैट आपके प्लान से चलेंगी।",
+        "claudeGroup": "आपका Claude प्लान",
+        "claudePlans": "Pro या Max",
         "claudeTitle": "Claude",
+        "codexConnectedOnPlan": "ChatGPT कनेक्ट हो गया। नई चैट आपके प्लान से चलेंगी।",
+        "codexGroup": "आपका ChatGPT प्लान",
+        "codexPlans": "Plus, Pro या Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "कनेक्ट करें",
         "connectAccount": "खाता कनेक्ट करें",
         "disconnectAccount": "खाता डिस्कनेक्ट करें",
         "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
@@ -4710,7 +4718,9 @@
         "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "loadError": "आपके खाते लोड नहीं हो सके।",
         "loadingAccounts": "खाते लोड हो रहे हैं…",
+        "managePlans": "प्लान मैनेज करें",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
+        "ownPlan": "अपने प्लान से चलाएं",
         "reconnectAccount": "फिर से कनेक्ट करें",
         "retry": "फिर से कोशिश करें",
         "status": {
@@ -4720,7 +4730,8 @@
           "stale": "ध्यान",
           "week": "सप्ताह"
         },
-        "useAccount": "उपयोग करें"
+        "useAccount": "उपयोग करें",
+        "useAuto": "Auto इस्तेमाल करें"
       },
       "picker": {
         "auto": "Auto",
