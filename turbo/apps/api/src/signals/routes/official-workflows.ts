@@ -1,3 +1,4 @@
+import { INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   officialWorkflowInstallationsContract,
   officialWorkflowsContract,
@@ -83,7 +84,12 @@ const listOfficialWorkflowsInner$ = command(
     }
     signal.throwIfAborted();
     const workflows = await set(listActiveOfficialWorkflows$, signal);
-    return { status: 200 as const, body: [...workflows] };
+    return {
+      status: 200 as const,
+      body: workflows.filter((workflow) => {
+        return workflow.name !== INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME;
+      }),
+    };
   },
 );
 
@@ -94,6 +100,23 @@ const getOfficialWorkflowInner$ = command(
     }
     signal.throwIfAborted();
     const params = get(pathParamsOf(officialWorkflowsContract.get));
+    if (params.definitionName === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME) {
+      const auth = get(organizationAuthContext$);
+      const overrides = await get(
+        userFeatureSwitchOverrides(auth.orgId, auth.userId),
+      );
+      signal.throwIfAborted();
+      if (
+        !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
+          ...auth,
+          overrides,
+        })
+      ) {
+        return notFound(
+          `Official Workflow not found: ${params.definitionName}`,
+        );
+      }
+    }
     const workflow = await set(
       getOfficialWorkflow$,
       params.definitionName,
@@ -114,6 +137,11 @@ const installOfficialWorkflowInner$ = command(
     }
     signal.throwIfAborted();
     const params = get(pathParamsOf(officialWorkflowsContract.install));
+    if (params.definitionName === INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME) {
+      return forbidden(
+        "The test Morning Brief is managed through Morning Brief preferences",
+      );
+    }
     const body = await get(installBody$);
     signal.throwIfAborted();
     if (!body.ok) {

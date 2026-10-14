@@ -474,7 +474,7 @@ describe("Official Workflow catalog release boundary", () => {
     expect(connectorDoctorDefinition.blueprints).toStrictEqual(
       releasedConnectorDoctor.blueprints,
     );
-    expect(s3.objects.size).toBe(4);
+    expect(s3.objects.size).toBe(6);
 
     const morningBriefRevision = morningBriefDefinition.revision;
     const morningBriefInstruction = morningBriefDefinition.workflow.instruction;

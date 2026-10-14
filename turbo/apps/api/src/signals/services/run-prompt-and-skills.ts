@@ -5,7 +5,6 @@ export interface SystemPromptVariables {
   readonly userIdentity?: string;
   readonly channelUserIdentity?: string;
   readonly integrationContext?: string;
-  readonly morningBriefSuggestions?: string;
   readonly continuationContext?: string;
   readonly generationTemplatePrompt?: string;
   readonly computerUseContext?: string;
@@ -156,7 +155,6 @@ export function renderRunPrompts(part: RunPromptAndSkills): RenderedRunPrompts {
         .filter(Boolean)
         .join("\n"),
       variables.integrationContext,
-      variables.morningBriefSuggestions,
       variables.continuationContext,
       variables.generationTemplatePrompt,
       variables.computerUseContext,

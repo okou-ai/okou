@@ -1,6 +1,6 @@
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import type { AgentRunOfficialWorkflowProvenance } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
@@ -37,11 +37,11 @@ export function isMorningBriefNotificationSource(
     source.automationOwnerUserId === owner.userId &&
     source.workflowOrgId === owner.orgId &&
     source.workflowOwnerUserId === owner.userId &&
-    source.officialDefinitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME &&
+    isMorningBriefDefinitionName(source.officialDefinitionName) &&
     source.officialBlueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY &&
     run.officialWorkflowProvenance !== null &&
     run.officialWorkflowProvenance.definitions.some((definition) => {
-      return definition.name === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME;
+      return isMorningBriefDefinitionName(definition.name);
     })
   );
 }
