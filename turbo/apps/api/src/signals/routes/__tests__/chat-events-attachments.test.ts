@@ -1479,7 +1479,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(rejected.events).toContainEqual(
       expect.objectContaining({
         eventType: "output.error",
-        content: "Built-in document templates are not enabled",
+        error: "forbidden",
       }),
     );
     expect(
