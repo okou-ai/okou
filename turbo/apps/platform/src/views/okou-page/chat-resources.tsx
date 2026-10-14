@@ -216,8 +216,8 @@ function ChatResourcesBody({
   const { t } = useTranslation();
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
-  const openArtifacts = useOpenThreadArtifacts(thread, "artifacts");
-  const openLinks = useOpenThreadArtifacts(thread, "links");
+  const expanded = useGet(thread.resources.expandedSections$);
+  const expandSection = useSet(thread.resources.expandSection$);
   const setOpen = useSet(thread.resources.setOpen$);
   const data = content.state === "hasData" ? content.data : null;
   return (
@@ -251,7 +251,10 @@ function ChatResourcesBody({
                 </h3>
                 <ul className="m-0 list-none p-0">
                   {data.artifacts
-                    .slice(0, RESOURCE_PREVIEW_LIMIT)
+                    .slice(
+                      0,
+                      expanded.artifacts ? undefined : RESOURCE_PREVIEW_LIMIT,
+                    )
                     .map((file) => {
                       return (
                         <ResourceOutputRow
@@ -262,33 +265,36 @@ function ChatResourcesBody({
                       );
                     })}
                 </ul>
-                {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
-                  <Button
-                    variant="quiet"
-                    iconSize="lg"
-                    className="h-7 w-full justify-start rounded-lg px-2"
-                    aria-label={t(($) => {
-                      return $.chat.resources.viewAll;
-                    })}
-                    onClick={() => {
-                      setOpen(false);
-                      openArtifacts();
-                    }}
-                  >
-                    <Ellipsis size={20} />
-                  </Button>
-                )}
+                {!expanded.artifacts &&
+                  data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
+                    <Button
+                      variant="quiet"
+                      iconSize="lg"
+                      className="h-7 w-full justify-start rounded-lg px-2"
+                      aria-label={t(($) => {
+                        return $.chat.resources.viewAll;
+                      })}
+                      onClick={() => {
+                        expandSection("artifacts");
+                      }}
+                    >
+                      <Ellipsis size={20} />
+                    </Button>
+                  )}
               </section>
             )}
             <ChatResourceLinks
               thread={thread}
-              preview={{
-                limit: RESOURCE_PREVIEW_LIMIT,
-                onViewAll: () => {
-                  setOpen(false);
-                  openLinks();
-                },
-              }}
+              preview={
+                expanded.links
+                  ? undefined
+                  : {
+                      limit: RESOURCE_PREVIEW_LIMIT,
+                      onViewAll: () => {
+                        expandSection("links");
+                      },
+                    }
+              }
             />
             {data.artifacts.length === 0 && data.links.length === 0 && (
               <p className="px-2 py-4 text-sm text-muted-foreground">

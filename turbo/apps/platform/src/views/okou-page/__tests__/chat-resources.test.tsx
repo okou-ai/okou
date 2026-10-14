@@ -214,7 +214,7 @@ test("Show all six resources without an overflow control at the limit", async ()
 });
 
 test.each(["Artifacts", "Links"] as const)(
-  "Keep both previews bounded and open the complete %s list from its ellipsis",
+  "Expand the complete %s list in place from its ellipsis",
   async (name) => {
     const panel = await setupOverflowResources(7);
     expect(
@@ -237,32 +237,43 @@ test.each(["Artifacts", "Links"] as const)(
     more.focus();
     await userEvent.keyboard("{Enter}");
 
-    const all = await screen.findByRole("complementary", { name });
-    await within(all).findByText(
+    await within(section).findByText(
       name === "Artifacts" ? "report-7.pdf" : "Reference 7",
     );
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(within(section).getAllByRole("listitem")).toHaveLength(7);
     expect(
-      within(all).queryByText(
-        name === "Artifacts" ? "Reference 1" : "report-1.pdf",
-      ),
+      screen.queryByTestId("thread-sidebar-artifacts"),
     ).not.toBeInTheDocument();
-    expect(buttonNamed(`Close ${name.toLowerCase()}`, all)).toBeInTheDocument();
+    expect(more).not.toBeInTheDocument();
+    const other = within(panel).getByRole("region", {
+      name: name === "Artifacts" ? "Links" : "Artifacts",
+    });
+    expect(within(other).getAllByRole("listitem")).toHaveLength(6);
+    click(buttonNamed("View all", other));
+    await within(other).findByText(
+      name === "Artifacts" ? "Reference 7" : "report-7.pdf",
+    );
+    expect(within(other).getAllByRole("listitem")).toHaveLength(7);
+    expect(within(section).getAllByRole("listitem")).toHaveLength(7);
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
     expect(
-      queryAllByRoleFast("link", all).map((link) => {
+      screen.queryByTestId("thread-sidebar-artifacts"),
+    ).not.toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("link", panel).map((link) => {
         return {
           href: link.getAttribute("href"),
           target: link.getAttribute("target"),
         };
       }),
     ).toStrictEqual(
-      name === "Links"
-        ? Array.from({ length: 7 }, (_, index) => {
-            return {
-              href: `https://example.test/reference-${index + 1}`,
-              target: "_blank",
-            };
-          })
-        : [],
+      Array.from({ length: 7 }, (_, index) => {
+        return {
+          href: `https://example.test/reference-${index + 1}`,
+          target: "_blank",
+        };
+      }),
     );
   },
 );
