@@ -594,6 +594,17 @@ pub mod runners {
             }
         }
 
+        /// Run-authenticated actual sandbox startup reporting DTOs.
+        pub mod startup {
+            /// Actual settled resource reported by the Run's Runner.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct Request {
+                /// Canonical resource path after preparation and replacement settle.
+                pub sandbox_startup_path: crate::generated::types::runners::SandboxStartupPath,
+            }
+        }
+
         /// DTOs for steering prompts and run-targeted budgets into a running run.
         pub mod steerable_inputs {
             /// DTOs for reading the next steerable prompt or run-targeted budget.

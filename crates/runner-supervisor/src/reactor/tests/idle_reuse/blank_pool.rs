@@ -37,6 +37,11 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
     assert!(calls.run_control_bind_calls().is_empty());
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
+    // Keep the refill from mounting another home while checking that the
+    // consumed blank does not remount its already prepared home.
+    let refill_gate = sandbox_mock::MockLifecycleGate::new();
+    calls.set_create_lifecycle_gate(refill_gate.clone());
+
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
     let completion = env
@@ -56,6 +61,18 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
     );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(calls.home_drive_mount_calls(), 1);
+
+    refill_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("consuming the blank should prepare a replacement");
+    refill_gate.release_one();
+    wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
+    assert_ne!(
+        idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id,
+        blank_sandbox_id
+    );
+    assert_eq!(calls.home_drive_mount_calls(), 2);
 
     shutdown(&env, run_handle).await;
     let status: serde_json::Value = serde_json::from_str(

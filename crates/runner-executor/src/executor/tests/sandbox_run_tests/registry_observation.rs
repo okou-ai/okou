@@ -32,7 +32,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
         .tempdir()
         .unwrap();
     let listener = UnixListener::bind(control_dir.path().join("control.sock")).unwrap();
-    let mut config = test_executor_config(dir.path()).await;
+    let (mut config, _startup_api) = test_executor_config_with_startup_api(dir.path()).await;
     config
         .registry
         .set_control_target_for_test(control_dir.path().to_path_buf(), "generation-1".into());

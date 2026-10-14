@@ -11,5 +11,6 @@ mod runner_wss;
 mod shared_resource_progress;
 mod shutdown;
 mod startup;
+mod startup_report;
 mod telemetry;
 mod usage_flush;

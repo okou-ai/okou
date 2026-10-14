@@ -16,6 +16,7 @@ import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
 import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
+import { runnersRunStartupContract } from "../contracts/runner-startup";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
 import { fileEntryWithHashSchema } from "../contracts/storages";
@@ -56,6 +57,10 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["runners", "runs", "startup"],
+    rustDoc: ["Run-authenticated actual sandbox startup reporting DTOs."],
+  },
   {
     rustModulePath: ["sandbox_channel"],
     rustDoc: ["Shared sandbox application schema and role contracts."],
@@ -153,6 +158,27 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: runnersRunStartupContract.setStartup.body,
+    rustModulePath: ["runners", "runs", "startup"],
+    rustTypeName: "Request",
+    direction: "request",
+    fieldTypeOverrides: {
+      sandboxStartupPath:
+        "crate::generated::types::runners::SandboxStartupPath",
+    },
+    declarations: [
+      {
+        rustTypeName: "Request",
+        rustDoc: ["Actual settled resource reported by the Run's Runner."],
+        fields: {
+          sandboxStartupPath: [
+            "Canonical resource path after preparation and replacement settle.",
+          ],
+        },
+      },
+    ],
+  },
   {
     schema: sandboxStartupPathSchema,
     rustModulePath: ["runners"],

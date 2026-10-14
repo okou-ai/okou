@@ -243,6 +243,7 @@ impl ExecutorInvocation {
                         network_log_session: None,
                         home_image: None,
                         home_reuse_result: None,
+                        startup_report: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
                     },
@@ -332,6 +333,7 @@ impl FinalizationPhase {
             network_log_session,
             home_image,
             home_reuse_result: _,
+            startup_report: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
@@ -643,6 +645,7 @@ pub(super) async fn run_job(
         maybe_panic_outer_job(outer_job_panic, OuterJobPanicPoint::ActiveOrUnknown, run_id);
 
         let mut executor_result = executor.execute().await;
+        let startup_report = executor_result.outcome.startup_report.take();
         let cancelled_for_log = job_cancel.is_cancelled();
         log_terminal_job_outcome(
             run_id,
@@ -679,7 +682,13 @@ pub(super) async fn run_job(
                 &cleanup_state_for_body,
             )
             .await;
-        deferred_upload.flush(telemetry).await;
+        // Completion, reuse handoff, and capacity release precede ancillary
+        // delivery. The existing job owner still drains both tasks on shutdown.
+        tokio::join!(deferred_upload.flush(telemetry), async {
+            if let Some(report) = startup_report {
+                report.finish().await;
+            }
+        });
     };
 
     let body_result = AssertUnwindSafe(body).catch_unwind().await;
@@ -941,6 +950,7 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity,
             },
@@ -960,6 +970,7 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },

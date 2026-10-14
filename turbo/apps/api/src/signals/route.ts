@@ -216,6 +216,7 @@ import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewal
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
+import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
@@ -232,6 +233,7 @@ import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { workflowsRoutes } from "./routes/workflows";
 
 export const ROUTES: readonly RouteEntry[] = [
+  ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
