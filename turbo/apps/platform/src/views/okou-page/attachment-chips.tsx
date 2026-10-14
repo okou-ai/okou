@@ -665,6 +665,7 @@ function ArtifactDialogImageStage({
               src={resourceUrl}
               alt={filename}
               signals={imageCanvasSignals}
+              expanded={fullscreen}
               imageTestId="attachment-lightbox-image"
               contentClassName="p-6"
               imageClassName="rounded-lg shadow-sm"
