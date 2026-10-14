@@ -1755,8 +1755,9 @@ async fn execute_job_publishes_first_run_startup_without_api_start_time() {
     let mut context = minimal_context();
     context.is_first_run = Some(true);
     assert!(context.api_start_time.is_none());
+    let run_id = context.run_id;
     let factory = MockSandboxFactory::new();
-    let (outcome, telemetry) = execute_job(
+    let (mut outcome, telemetry) = execute_job(
         &factory,
         context,
         NewSandboxDispatch {
@@ -1770,15 +1771,24 @@ async fn execute_job_publishes_first_run_startup_without_api_start_time() {
     .await;
 
     assert!(outcome.failure.is_none());
-    assert_startup_observation(telemetry, server, "cold", true).await;
+    outcome
+        .startup_report
+        .take()
+        .expect("startup report should remain owned")
+        .finish()
+        .await;
+    assert_startup_observation(telemetry, server, run_id, "cold", true).await;
     let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
     sandbox.stop().await.unwrap();
     factory.destroy(sandbox).await;
 }
 
 async fn startup_telemetry_server() -> RawHttpTestServer {
-    let response = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    // StartupReport requires 204; telemetry accepts the same successful ack.
+    // The resource report and two telemetry batches can arrive in either order.
+    let response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
     RawHttpTestServer::spawn(vec![
+        RawHttpAction::Respond(response.to_vec()),
         RawHttpAction::Respond(response.to_vec()),
         RawHttpAction::Respond(response.to_vec()),
     ])
@@ -1798,14 +1808,25 @@ fn startup_telemetry_client(server: &RawHttpTestServer) -> HttpClient {
 async fn assert_startup_observation(
     telemetry: JobTelemetry,
     server: RawHttpTestServer,
+    run_id: RunId,
     path: &str,
     is_first_run: bool,
 ) {
     telemetry.flush().await;
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 3);
     let mut startup = Vec::new();
-    for request in server.assert_finished_with_requests().await {
+    let mut resource_reports = 0;
+    for request in requests {
         let body: serde_json::Value =
             serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        if request.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup ")) {
+            assert_eq!(body, serde_json::json!({ "sandboxStartupPath": path }));
+            resource_reports += 1;
+            continue;
+        }
+        assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+        assert_eq!(body["runId"], run_id.to_string());
         for operation in body["sandboxOperations"].as_array().unwrap() {
             assert_eq!(operation["is_first_run"], is_first_run);
             if operation["action_type"] == "runner_sandbox_startup" {
@@ -1813,6 +1834,7 @@ async fn assert_startup_observation(
             }
         }
     }
+    assert_eq!(resource_reports, 1);
     assert_eq!(startup.len(), 1);
     assert_eq!(startup[0]["runner_startup_path"], path);
     assert_eq!(startup[0]["success"], true);
@@ -1882,7 +1904,8 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
     let mut context = minimal_context();
     context.is_first_run = Some(false);
-    let (outcome, telemetry) = execute_job_reuse_with_hooks(
+    let run_id = context.run_id;
+    let (mut outcome, telemetry) = execute_job_reuse_with_hooks(
         crate::executor::ReusedSandboxDispatch {
             factory: &MockSandboxFactory::new(),
             idle_sandbox,
@@ -1924,7 +1947,13 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");
-    assert_startup_observation(telemetry, server, "blank", false).await;
+    outcome
+        .startup_report
+        .take()
+        .expect("startup report should remain owned")
+        .finish()
+        .await;
+    assert_startup_observation(telemetry, server, run_id, "blank", false).await;
 
     let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
     sandbox.stop().await.unwrap();
