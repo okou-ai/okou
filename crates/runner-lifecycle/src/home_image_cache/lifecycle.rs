@@ -1549,6 +1549,11 @@ struct HeldHomeStateScan {
 }
 
 impl HomeImageLease {
+    pub fn with_first_run(mut self, is_first_run: Option<bool>) -> Self {
+        self.cache.is_first_run = is_first_run;
+        self
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn working_dir(&self) -> &str {
         &self.working_dir

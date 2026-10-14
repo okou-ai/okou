@@ -57,7 +57,7 @@ describe("Runner sandbox operations without a Run", () => {
       }),
       [200],
     );
-    expect(accepted.body).toEqual({ success: true });
+    expect(accepted.body).toStrictEqual({ success: true });
     const denied = await accept(
       client().send({
         headers,
@@ -83,7 +83,7 @@ describe("Runner sandbox operations without a Run", () => {
       }),
       [200],
     );
-    expect(response.body).toEqual({ success: true });
+    expect(response.body).toStrictEqual({ success: true });
   });
 
   it("accepts known publication identity and a false first-run label from the official host", async () => {
@@ -108,7 +108,7 @@ describe("Runner sandbox operations without a Run", () => {
       }),
       [200],
     );
-    expect(response.body).toEqual({ success: true });
+    expect(response.body).toStrictEqual({ success: true });
   });
 
   it("rejects invalid Runner credentials for unlinked operations", async () => {

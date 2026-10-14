@@ -892,7 +892,8 @@ pub async fn execute_job_reuse_with_hooks(
                 .await,
         ),
         (None, None) => None,
-    };
+    }
+    .map(|lease| lease.with_first_run(context.is_first_run));
 
     // The reuse owner either returns a live sandbox for caller finalization or
     // retires an unusable blank before attempting its single replacement.

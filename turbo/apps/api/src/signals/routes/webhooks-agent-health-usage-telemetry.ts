@@ -347,6 +347,22 @@ function archiveConnectionAttemptDimensions(
   };
 }
 
+function homeImageDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.cache_key === undefined ? {} : { cache_key: op.cache_key }),
+    ...(op.profile_name === undefined ? {} : { profile_name: op.profile_name }),
+    ...(op.image_generation === undefined
+      ? {}
+      : { image_generation: op.image_generation }),
+    ...(op.allocated_bytes === undefined
+      ? {}
+      : { allocated_bytes: op.allocated_bytes }),
+    ...(op.handoff_path === undefined ? {} : { handoff_path: op.handoff_path }),
+  };
+}
+
 function sandboxOperationDimensions(
   op: SandboxOperationDimensionInput,
   runner: SandboxRunnerDimensionInput,
@@ -360,15 +376,7 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
-    ...(op.cache_key === undefined ? {} : { cache_key: op.cache_key }),
-    ...(op.profile_name === undefined ? {} : { profile_name: op.profile_name }),
-    ...(op.image_generation === undefined
-      ? {}
-      : { image_generation: op.image_generation }),
-    ...(op.allocated_bytes === undefined
-      ? {}
-      : { allocated_bytes: op.allocated_bytes }),
-    ...(op.handoff_path === undefined ? {} : { handoff_path: op.handoff_path }),
+    ...homeImageDimensions(op),
     ...(op.archive_size_mismatch
       ? {
           archive_size_mismatch_expected_bytes:
@@ -855,17 +863,36 @@ function telemetryOomEvents(
   ];
 }
 
-const telemetryBody$ = bodyResultOf(webhookTelemetryContract.send);
-const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const bodyResult = await get(telemetryBody$);
-  signal.throwIfAborted();
-  if (!bodyResult.ok) {
-    return bodyResult.response;
+function recordTelemetrySandboxOperations(
+  body: TelemetryBody,
+  attribution: {
+    readonly runId?: string;
+    readonly runnerAuthType?: "user" | "official-runner";
+  },
+): void {
+  for (const op of body.sandboxOperations ?? []) {
+    const dimensions = sandboxOperationDimensions(op, {
+      runnerHostname: body.runnerHostname,
+      runnerVersion: body.runnerVersion,
+    });
+    if (attribution.runnerAuthType !== undefined) {
+      dimensions.runner_auth_type = attribution.runnerAuthType;
+      dimensions.source = "runner";
+    }
+    recordSandboxOperation({
+      actionType: op.action_type,
+      sandboxType: "runner",
+      durationMs: op.duration_ms,
+      success: op.success,
+      runId: attribution.runId ?? op.run_id,
+      timestamp: op.ts,
+      dimensions,
+    });
   }
+}
 
-  const body = bodyResult.data;
-  const runId = body.runId;
-  if (runId === undefined) {
+const runnerTelemetry$ = command(
+  async ({ get, set }, body: TelemetryBody, signal: AbortSignal) => {
     if (
       body.systemLog !== undefined ||
       body.metrics !== undefined ||
@@ -907,25 +934,23 @@ const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
         }
       }
     }
-    for (const op of body.sandboxOperations) {
-      recordSandboxOperation({
-        actionType: op.action_type,
-        sandboxType: "runner",
-        durationMs: op.duration_ms,
-        success: op.success,
-        runId: op.run_id,
-        timestamp: op.ts,
-        dimensions: {
-          ...sandboxOperationDimensions(op, {
-            runnerHostname: body.runnerHostname,
-            runnerVersion: body.runnerVersion,
-          }),
-          runner_auth_type: runnerAuth.type,
-          source: "runner",
-        },
-      });
-    }
+    recordTelemetrySandboxOperations(body, { runnerAuthType: runnerAuth.type });
     return { status: 200 as const, body: { success: true } };
+  },
+);
+
+const telemetryBody$ = bodyResultOf(webhookTelemetryContract.send);
+const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const bodyResult = await get(telemetryBody$);
+  signal.throwIfAborted();
+  if (!bodyResult.ok) {
+    return bodyResult.response;
+  }
+
+  const body = bodyResult.data;
+  const runId = body.runId;
+  if (runId === undefined) {
+    return set(runnerTelemetry$, body, signal);
   }
   const authResult = resolveSandboxAuthForRun(runId, get(authorization$));
   if (!authResult.ok) {
@@ -1030,22 +1055,7 @@ const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
     });
   }
 
-  if (body.sandboxOperations && body.sandboxOperations.length > 0) {
-    for (const op of body.sandboxOperations) {
-      recordSandboxOperation({
-        actionType: op.action_type,
-        sandboxType: "runner",
-        durationMs: op.duration_ms,
-        success: op.success,
-        runId: runId,
-        timestamp: op.ts,
-        dimensions: sandboxOperationDimensions(op, {
-          runnerHostname: body.runnerHostname,
-          runnerVersion: body.runnerVersion,
-        }),
-      });
-    }
-  }
+  recordTelemetrySandboxOperations(body, { runId });
 
   return {
     status: 200 as const,

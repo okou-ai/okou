@@ -1198,6 +1198,8 @@ async fn execute_job_reuse_uses_home_cache_when_configured() {
     let (idle_sandbox, _lease) = make_reusable_idle_sandbox(sandbox, source_ip, session_id).await;
 
     let mut ctx = minimal_context();
+    ctx.is_first_run = Some(false);
+    let run_id = ctx.run_id;
     enable_api_start_telemetry(&mut ctx);
     set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
 
@@ -1207,6 +1209,12 @@ async fn execute_job_reuse_uses_home_cache_when_configured() {
 
     assert_eq!(reuse_outcome.exit_code(), 0);
     assert!(reuse_outcome.home_image.is_some());
+    let fact = reuse_outcome
+        .home_image
+        .as_ref()
+        .unwrap()
+        .consumption_observation(Some(run_id), HomeOutcome::Retained, "reuse");
+    assert_eq!(fact.is_first_run, Some(false));
     assert_eq!(
         reuse_outcome.home_reuse_result,
         Some(HomeReuseResult::SandboxReused),
@@ -1397,7 +1405,7 @@ async fn unconfigured_cache_reuse_stops_when_cache_invalidation_fails() {
 async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let cache = HomeImageCache::new(runner_paths.clone()).with_first_run(Some(true));
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let params = JobParams {
@@ -1409,6 +1417,8 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
         reusable_idle_sandbox_with_home_promotion(&cache, &runner_paths, &params, session_id).await;
 
     let mut ctx = minimal_context();
+    ctx.is_first_run = Some(false);
+    let run_id = ctx.run_id;
     set_reuse_and_session_identity(&mut ctx, session_id, r#"{"type":"init"}"#);
     ctx.environment = Some(HashMap::from([(
         "OPENAI_API_KEY".into(),
@@ -1422,6 +1432,16 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
     assert_eq!(reuse_outcome.exit_code(), 1);
     assert!(reuse_outcome.sandbox.is_some());
     assert!(reuse_outcome.home_image.is_some());
+    let fact = reuse_outcome
+        .home_image
+        .as_ref()
+        .unwrap()
+        .consumption_observation(Some(run_id), HomeOutcome::Retained, "reuse");
+    assert_eq!(
+        fact.is_first_run,
+        Some(false),
+        "current Run replaces the producer's first-run flag"
+    );
     assert!(
         overrides.start_agent_process_calls().is_empty(),
         "reused sandbox must not start a process after env validation failure"
