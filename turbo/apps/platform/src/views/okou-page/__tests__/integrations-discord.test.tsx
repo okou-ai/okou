@@ -910,6 +910,7 @@ test("A connected admin can open and dismiss their account menu with the keyboar
   const more = getAction("button", "More options", card);
   expect(queryAction("button", "Disconnect Discord")).toBeNull();
   await user.click(more);
+  expect(getAction("button", "Add new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
   expect(queryAction("button", "Remove Discord")).toBeNull();
   expect(queryAction("button", "Uninstall")).toBeNull();
@@ -920,8 +921,76 @@ test("A connected admin can open and dismiss their account menu with the keyboar
     expect(queryAction("button", "Disconnect Discord")).toBeNull();
   });
   await user.keyboard("{Enter}");
+  expect(getAction("button", "Add new server")).toBeEnabled();
   expect(getAction("button", "Disconnect Discord")).toBeEnabled();
 });
+
+test.each([true, false])(
+  "Adding a server from the shared Works menu retains the connection (approved: %s)",
+  async (approved) => {
+    let finished = false;
+    let current = status();
+    const { popup } = authorizationWindow();
+    let requestBody: unknown;
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, current);
+    });
+    context.mocks.api(discordOauthContract.start, ({ body, respond }) => {
+      requestBody = body;
+      return respond(200, { authorizationUrl, completionToken });
+    });
+    context.mocks.api(discordOauthContract.complete, ({ respond }) => {
+      if (!finished) {
+        return respond(409, approvalRequired());
+      }
+      if (!approved) {
+        return respond(400, {
+          error: { code: "BAD_REQUEST", message: "Consent was not completed" },
+        });
+      }
+      current = {
+        ...current,
+        guildId: "345678901234567890",
+        guildName: "New server",
+      };
+      return respond(200, { status: "connected" });
+    });
+    await setupDiscordPage();
+    const card = getIntegrationCard("Discord");
+    const more = getAction("button", "More options", card);
+    expect(queryAction("button", "Add new server")).toBeNull();
+    click(more);
+    expect(getAction("button", "Disconnect Discord")).toBeEnabled();
+    click(getAction("button", "Add new server"));
+    await waitFor(() => {
+      expect(popup.location.href).toBe(authorizationUrl);
+    });
+    expect(requestBody).toStrictEqual({ flow: "install" });
+    expect(getAction("button", "Add new server")).toBeDisabled();
+    expect(getAction("button", "Disconnect Discord")).toBeDisabled();
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/works");
+    finished = true;
+    await waitFor(() => {
+      expect(popup.location.href).toBe(
+        new URL(
+          `/settings/discord?status=${approved ? "connected" : "error"}`,
+          window.location.origin,
+        ).toString(),
+      );
+      expect(getAction("button", "Add new server")).toBeEnabled();
+    });
+    expect(getAction("button", "Disconnect Discord")).toBeEnabled();
+    expect(within(card).getByText("Connected")).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/works");
+    expect(window.location.search).toBe("");
+    expect(popup.closed).toBeFalsy();
+    expect(queryAction("link", "Open Discord")).toBeNull();
+    expect(screen.queryByText("Consent was not completed") !== null).toBe(
+      !approved,
+    );
+  },
+);
 
 test("Discord status converges after a connection change from another surface", async () => {
   let current = status({
@@ -1369,7 +1438,11 @@ test.each([
     if (menu) {
       click(menu);
     }
-    for (const action of ["Disconnect Discord", "Remove Discord"]) {
+    for (const action of [
+      "Disconnect Discord",
+      "Remove Discord",
+      "Add new server",
+    ]) {
       expect(queryAction("button", action) !== null).toBe(
         actions.includes(action),
       );

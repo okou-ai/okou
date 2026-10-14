@@ -349,12 +349,17 @@ async function start(
   actor: Actor,
   flow: "install" | "connect",
   guildId?: string,
+  explicitFlow = false,
 ) {
   authenticate(actor);
   const response = await accept(
     clients()(discordOauthContract).start({
       headers: actorHeaders(actor),
-      body: flow === "connect" && guildId ? { guildId } : {},
+      body: explicitFlow
+        ? { flow, ...(guildId ? { guildId } : {}) }
+        : flow === "connect" && guildId
+          ? { guildId }
+          : {},
     }),
     [200],
   );
@@ -1088,6 +1093,43 @@ describe("Discord product OAuth", () => {
     ).toStrictEqual(["connected", "connected"]);
     expect((await status(owner)).dmBindings).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
+  });
+  it("installs into an invite's server while preserving the existing account connection", async () => {
+    const f = fixture();
+    const owner = await f.actor();
+    await installed(f, owner);
+    const before = await status(owner);
+    const guildId = snowflake();
+    const attempt = await start(owner, "install", guildId, true);
+    expect(attempt.url.searchParams.get("guild_id")).toBe(guildId);
+    expect(attempt.url.searchParams.get("disable_guild_select")).toBe("true");
+    expect(attempt.url.searchParams.get("scope")?.split(" ")).toContain("bot");
+    expect(attempt.url.searchParams.get("integration_type")).toBe("0");
+    expect((await finish(f, attempt, { guildId })).status).toBe("connected");
+    const after = await status(owner);
+    expect(after.guildId).toBe(guildId);
+    expect(after.discordUserId).toBe(before.discordUserId);
+    expect(
+      after.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    ).toStrictEqual(
+      before.dmBindings.map((binding) => {
+        return binding.connectionId;
+      }),
+    );
+    expect(f.messages).toHaveLength(1);
+  });
+  it("rejects a different installed server than the invite target and keeps the old connection", async () => {
+    const f = fixture();
+    const owner = await f.actor();
+    await installed(f, owner);
+    const before = await status(owner);
+    const attempt = await start(owner, "install", snowflake(), true);
+    expect((await finish(f, attempt, { guildId: snowflake() })).status).toBe(
+      "error",
+    );
+    await expect(status(owner)).resolves.toStrictEqual(before);
   });
   it("allows only one account to win concurrent Discord identity claims across guilds", async () => {
     const f = await fixture();

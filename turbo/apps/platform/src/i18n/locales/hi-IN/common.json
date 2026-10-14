@@ -6438,6 +6438,7 @@
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
+      "addNewServer": "नया सर्वर जोड़ें",
       "approvalFailed": "पुष्टि नहीं हो सकी। मूल Okou खाते और संगठन से लॉग इन करें या अनुमति फिर शुरू करें।",
       "authorizationError": "Discord प्राधिकरण पूरा नहीं हो सका। फिर से प्रयास करें।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
@@ -6447,6 +6448,8 @@
       "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
       "description": "सर्वर में Okou को मेंशन करें या बॉट को सीधा संदेश भेजें।",
       "disconnect": "Discord को डिस्कनेक्ट करें",
+      "installDescription": "सर्वर प्रबंधित करने की अनुमति वाले खाते से Discord में Okou को अधिकृत करें।",
+      "installTitle": "Okou को सर्वर में जोड़ें",
       "invalidLink": "यह Discord कनेक्शन लिंक अमान्य है। Discord से एक नया लिंक खोलें।",
       "open": "Discord खोलें",
       "openInBrowser": "ब्राउज़र में खोलें",

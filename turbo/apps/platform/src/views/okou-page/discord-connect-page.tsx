@@ -18,7 +18,8 @@ import {
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { searchParams$ } from "../../signals/route.ts";
+import { pathname$, searchParams$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import {
@@ -118,6 +119,7 @@ function DiscordConnectionState() {
   const { t } = useTranslation();
   const status = useLastLoadable(discordOrgData$);
   const guildId = useGet(searchParams$).get("guild_id");
+  const installing = useGet(pathname$) === ROUTES.settingsDiscordInstall;
   const [authorization, connect] = useLoadableSet(connectDiscordAccount$);
   const pageSignal = useGet(pageSignal$);
   const connecting = authorization.state === "loading";
@@ -157,14 +159,15 @@ function DiscordConnectionState() {
     );
   }
   // A callback URL is presentation metadata, not evidence of a connection.
-  if (data?.isConnected) {
+  // An existing account connection does not prove this installation completed.
+  if (data?.isConnected && !installing) {
     return <DiscordSuccessState data={data} guildId={guildId} />;
   }
   return (
     <>
-      <DiscordConnectIntro data={data} />
+      <DiscordConnectIntro data={data} installing={installing} />
       <ConnectErrorAlert error={error} />
-      {data && canAuthorizeDiscord(data) ? (
+      {data && (installing ? data.isAvailable : canAuthorizeDiscord(data)) ? (
         <ConnectSubmitButton
           connecting={connecting}
           spinnerClassName="animate-spin mr-2"
@@ -173,12 +176,25 @@ function DiscordConnectionState() {
               ? t(($) => {
                   return $.works.discord.retry;
                 })
-              : t(($) => {
-                  return $.works.actions.connect;
-                })
+              : installing
+                ? t(($) => {
+                    return $.works.discord.addNewServer;
+                  })
+                : t(($) => {
+                    return $.works.actions.connect;
+                  })
           }
           onConnect={() => {
-            detach(connect(guildId, pageSignal), Reason.DomCallback);
+            detach(
+              connect(
+                {
+                  ...(guildId ? { guildId } : {}),
+                  ...(installing ? { flow: "install" } : {}),
+                },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
         />
       ) : null}
@@ -187,20 +203,36 @@ function DiscordConnectionState() {
   );
 }
 
-function DiscordConnectIntro({ data }: { data: DiscordOrgStatus | null }) {
+function DiscordConnectIntro({
+  data,
+  installing,
+}: {
+  data: DiscordOrgStatus | null;
+  installing: boolean;
+}) {
   const { t } = useTranslation();
   return (
     <>
       <ConnectStatusMark idle={<DiscordMark size={40} />} />
       <CenterText
-        title={t(($) => {
-          return $.works.discord.connectTitle;
-        })}
+        title={
+          installing
+            ? t(($) => {
+                return $.works.discord.installTitle;
+              })
+            : t(($) => {
+                return $.works.discord.connectTitle;
+              })
+        }
         body={
           data?.isAvailable
-            ? t(($) => {
-                return $.works.discord.connectDescription;
-              })
+            ? installing
+              ? t(($) => {
+                  return $.works.discord.installDescription;
+                })
+              : t(($) => {
+                  return $.works.discord.connectDescription;
+                })
             : data
               ? discordDescription(data)
               : t(($) => {

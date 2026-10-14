@@ -1,4 +1,5 @@
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
+import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import {
   integrationsDiscordReadContract,
   type DiscordChannelListQuery,
@@ -19,6 +20,16 @@ import {
   getClientConfig,
   handleError,
 } from "../core/client-factory";
+
+export async function createDiscordInstallLink(invite: string) {
+  const client = initClient(
+    integrationsDiscordContract,
+    await getClientConfig(),
+  );
+  const result = await client.installLink({ body: { invite }, headers: {} });
+  if (result.status === 200) return result.body;
+  handleError(result, "Failed to resolve the Discord server invitation");
+}
 
 export async function listDiscordChannels(
   query: DiscordChannelListQuery,

@@ -6438,6 +6438,7 @@
     "connected": "Verbunden",
     "connectedWithDetail": "Verbunden ({{detail}})",
     "discord": {
+      "addNewServer": "Neuen Server hinzufügen",
       "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
       "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuche es erneut.",
       "chooseWorkspace": "Workspace auswählen",
@@ -6447,6 +6448,8 @@
       "defaultWorkspace": "Standard-Workspace für Discord",
       "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
       "disconnect": "Verbindung zu Discord trennen",
+      "installDescription": "Autorisiere Okou in Discord mit einem Konto, das den Server verwalten kann.",
+      "installTitle": "Okou zu einem Server hinzufügen",
       "invalidLink": "Dieser Discord-Verbindungslink ist ungültig. Öffne einen neuen Link in Discord.",
       "open": "Discord öffnen",
       "openInBrowser": "Im Browser öffnen",

@@ -6410,6 +6410,7 @@
     "connected": "연결됨",
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
+      "addNewServer": "새 서버 추가",
       "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
       "authorizationError": "Discord 인증을 완료하지 못했습니다. 다시 시도하세요.",
       "chooseWorkspace": "워크스페이스 선택",
@@ -6419,6 +6420,8 @@
       "defaultWorkspace": "Discord 기본 워크스페이스",
       "description": "서버에서 Okou를 멘션하거나 봇에게 다이렉트 메시지를 보내세요.",
       "disconnect": "Discord 연결 해제",
+      "installDescription": "서버 관리 권한이 있는 계정으로 Discord에서 Okou를 승인하세요.",
+      "installTitle": "서버에 Okou 추가",
       "invalidLink": "이 Discord 연결 링크는 유효하지 않습니다. Discord에서 새 링크를 여세요.",
       "open": "Discord 열기",
       "openInBrowser": "브라우저에서 열기",

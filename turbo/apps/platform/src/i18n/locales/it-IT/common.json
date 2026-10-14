@@ -6524,6 +6524,7 @@
     "connected": "Connesso",
     "connectedWithDetail": "Connesso ({{detail}})",
     "discord": {
+      "addNewServer": "Aggiungi nuovo server",
       "approvalFailed": "Conferma non riuscita. Accedi con l’account e l’organizzazione Okou originali o riavvia l’autorizzazione.",
       "authorizationError": "Impossibile completare l’autorizzazione di Discord. Riprova.",
       "chooseWorkspace": "Scegli uno spazio di lavoro",
@@ -6533,6 +6534,8 @@
       "defaultWorkspace": "Spazio di lavoro predefinito per Discord",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",
+      "installDescription": "Autorizza Okou su Discord con un account che possa gestire il server.",
+      "installTitle": "Aggiungi Okou a un server",
       "invalidLink": "Questo link di connessione Discord non è valido. Apri un nuovo link da Discord.",
       "open": "Apri Discord",
       "openInBrowser": "Apri nel browser",

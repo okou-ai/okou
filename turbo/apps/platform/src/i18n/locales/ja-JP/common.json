@@ -6410,6 +6410,7 @@
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
+      "addNewServer": "新しいサーバーを追加",
       "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
       "authorizationError": "Discord の認証を完了できませんでした。もう一度お試しください。",
       "chooseWorkspace": "ワークスペースを選択",
@@ -6419,6 +6420,8 @@
       "defaultWorkspace": "Discord の既定のワークスペース",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
+      "installDescription": "サーバーを管理できるアカウントで Discord にログインし、Okou を承認してください。",
+      "installTitle": "Okou をサーバーに追加",
       "invalidLink": "この Discord 接続リンクは無効です。Discord から新しいリンクを開いてください。",
       "open": "Discord を開く",
       "openInBrowser": "ブラウザーで開く",

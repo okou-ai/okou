@@ -36,6 +36,82 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   };
 }
 
+test.each([true, false])(
+  "An install link starts a new installation for an already connected user (approved: %s)",
+  async (approved) => {
+    let finished = false;
+    let current = status({ isConnected: true, guildId: "345678901234567890" });
+    const popup = context.mocks.browser.authWindow();
+    Object.defineProperty(popup, "location", {
+      configurable: true,
+      value: { href: "" },
+    });
+    context.mocks.browser.open(popup);
+    let requestBody: unknown;
+    const authorizationUrl = `https://discord.com/oauth2/authorize?state=${"s".repeat(43)}`;
+    context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+      return respond(200, current);
+    });
+    context.mocks.api(discordOauthContract.start, ({ body, respond }) => {
+      requestBody = body;
+      return respond(200, {
+        authorizationUrl,
+        completionToken: "c".repeat(43),
+      });
+    });
+    context.mocks.api(discordOauthContract.complete, ({ respond }) => {
+      if (!finished) {
+        return respond(409, {
+          error: {
+            code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
+            message: "Approve this authorization in the consent browser.",
+          },
+        });
+      }
+      if (!approved) {
+        return respond(400, {
+          error: { code: "BAD_REQUEST", message: "Consent was not completed" },
+        });
+      }
+      current = status({ isConnected: true });
+      return respond(200, { status: "connected" });
+    });
+    await setupPage({
+      context,
+      path: `/settings/discord/install?guild_id=${guildId}`,
+      featureSwitches: { [FeatureSwitchKey.DiscordIntegration]: true },
+    });
+    expect(
+      screen.getByRole("heading", { name: "Add Okou to a server" }),
+    ).toBeInTheDocument();
+    expect(queryAction("link", "Open Discord")).toBeNull();
+    expect(requestBody).toBeUndefined();
+    click(getAction("button", "Add new server"));
+    await waitFor(() => {
+      return expect(popup.location.href).toBe(authorizationUrl);
+    });
+    expect(requestBody).toStrictEqual({ flow: "install", guildId });
+    finished = true;
+    await expect(
+      screen.findByText(
+        approved
+          ? "Connected to Discord"
+          : "Discord authorization could not be completed. Try again.",
+      ),
+    ).resolves.toBeInTheDocument();
+    expect(popup.closed).toBeFalsy();
+    expect(window.location.pathname).toBe(
+      approved ? "/settings/discord" : "/settings/discord/install",
+    );
+    expect(
+      queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
+    ).toBe(approved ? `discord://-/channels/${guildId}` : null);
+    expect(
+      queryAction("button", "Retry")?.hasAttribute("disabled") ?? null,
+    ).toBe(approved ? null : false);
+  },
+);
+
 test.each(["install", "connect"] as const)(
   "The Discord bot link offers %s directly and retains the target server",
   async (flow) => {

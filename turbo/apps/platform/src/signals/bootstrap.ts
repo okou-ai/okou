@@ -364,6 +364,10 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupDiscordConnectPage$),
   },
   {
+    path: ROUTES.settingsDiscordInstall,
+    setup: setupAuthSidebarPageWrapper(setupDiscordConnectPage$),
+  },
+  {
     path: ROUTES.settingsTeams,
     setup: setupAuthSidebarPageWrapper(setupTeamsConnectPage$),
   },

@@ -197,9 +197,12 @@ const startDiscordOauth$ = command(
     }
     const db = set(writeDb$);
     const guildId = body.data.guildId ?? null;
-    // A server link needs only account consent. The Web entry adds the bot and
-    // lets Discord's native authorization page choose the destination server.
-    const flow = guildId ? "connect" : "install";
+    // Connect actions use the server context to choose their default flow.
+    // Explicit installation also supports an invite target for bound users.
+    const flow = body.data.flow ?? (guildId ? "connect" : "install");
+    if (flow === "connect" && !guildId) {
+      return apiError(400, "BAD_REQUEST", "Connecting requires a server ID.");
+    }
     const state = secret();
     const completionToken = secret();
     const redirectUri = `${getOAuthApiOrigin(get(request$).raw)}${CALLBACK}`;
