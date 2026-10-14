@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
 import {
   integrationsTeamsUploadCompleteContract,
@@ -16,7 +16,7 @@ import {
 } from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
-  loadInstallation,
+  teamsInstallation,
   resolveTeamsMessageTarget,
   routeError,
   teamsErrorResponse,
@@ -62,6 +62,11 @@ function buildMetadata(args: {
   };
 }
 
+const installationOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+const installation$ = teamsInstallation(installationOrgId$);
+
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -76,7 +81,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = bodyResult.data;
 
   const db = set(writeDb$);
-  const installation = await loadInstallation(db, auth.orgId);
+  const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
     return routeError(

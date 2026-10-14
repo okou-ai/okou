@@ -1,8 +1,9 @@
 import { teamsOrgConnections } from "@okouai/db/schema/teams-org-connection";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
 import { and, eq } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
 
-import type { ReadonlyDb } from "../external/db";
+import { db$, type ReadonlyDb } from "../external/db";
 import { createTeamsPersonalConversation } from "../external/teams-bot-client";
 
 interface TeamsInstallation {
@@ -25,21 +26,24 @@ export function routeError<Status extends 400 | 401 | 403 | 404 | 502>(
   return { status, body: { error: { message, code } } };
 }
 
-export async function loadInstallation(
-  db: ReadonlyDb,
-  orgId: string,
-): Promise<TeamsInstallation | undefined> {
-  const [installation] = await db
-    .select({
-      teamsTenantId: teamsOrgInstallations.teamsTenantId,
-      serviceUrl: teamsOrgInstallations.serviceUrl,
-      botId: teamsOrgInstallations.botId,
-      botName: teamsOrgInstallations.botName,
-    })
-    .from(teamsOrgInstallations)
-    .where(eq(teamsOrgInstallations.orgId, orgId))
-    .limit(1);
-  return installation;
+export function teamsInstallation(
+  orgId$: Computed<string>,
+): Computed<Promise<TeamsInstallation | undefined>> {
+  return computed(async (get) => {
+    const orgId = get(orgId$);
+    const db = get(db$);
+    const [installation] = await db
+      .select({
+        teamsTenantId: teamsOrgInstallations.teamsTenantId,
+        serviceUrl: teamsOrgInstallations.serviceUrl,
+        botId: teamsOrgInstallations.botId,
+        botName: teamsOrgInstallations.botName,
+      })
+      .from(teamsOrgInstallations)
+      .where(eq(teamsOrgInstallations.orgId, orgId))
+      .limit(1);
+    return installation;
+  });
 }
 
 export function teamsErrorResponse(result: {
