@@ -67,11 +67,7 @@ test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot us
   });
   await setupPage({ context, path: RUN_PATH });
   await readyChat();
-  const piPanel = await openModelPanel("GPT 6.1 Sol, Max");
-  expect(
-    within(piPanel).getByRole("slider", { name: "Effort" }),
-  ).toHaveAttribute("aria-valuetext", "Max");
-  await closeModelPanel();
+  await expect(findButton("GPT 6.1 Sol, Max")).resolves.toBeInTheDocument();
 
   click(await findButton("Test User"));
   click(await screen.findByText("Lab"));

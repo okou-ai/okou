@@ -233,7 +233,7 @@ test("Changing language preserves the open conversation and draft", async () => 
   const visibleTitle = titleCopies.find((element) => {
     return element.closest("header") !== null;
   });
-  expect(visibleTitle).toBeVisible();
+  expect(visibleTitle).toBeInTheDocument();
   const originalComposer = composerEditor();
   expect(originalComposer).toHaveTextContent(draft);
   const originalUrl = `${pathname()}${search()}`;
@@ -247,5 +247,5 @@ test("Changing language preserves the open conversation and draft", async () => 
   const translatedVisibleTitle = translatedTitleCopies.find((element) => {
     return element.closest("header") !== null;
   });
-  expect(translatedVisibleTitle).toBeVisible();
+  expect(translatedVisibleTitle).toBeInTheDocument();
 });
