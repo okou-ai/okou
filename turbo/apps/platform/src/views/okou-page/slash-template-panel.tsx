@@ -610,11 +610,11 @@ function SlashPanelBrowseAll({
   onBrowseAll,
 }: Pick<SlashTemplatePanelProps, "anchored" | "onBrowseAll">) {
   const { t } = useTranslation();
+  // Anchored, it is one more row of the list: no gap above it, and the
+  // scroller's 4px below it matches the 4px inset at the sides.
   return (
     <div
-      className={
-        anchored ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
-      }
+      className={anchored ? "px-1" : "shrink-0 border-t border-border/60 p-1"}
     >
       {/*
         Full width like the rows above it, so its hover fill has the same shape
@@ -636,18 +636,19 @@ function SlashPanelBrowseAll({
             <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
           </span>
         )}
-        <span className="truncate">
+        <span className="min-w-0 truncate">
           {t(($) => {
             return $.chat.composer.slashPanel.browseAll;
           })}
         </span>
-        {!anchored && (
-          <ChevronRight
-            size={16}
-            className="shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-        )}
+        <ChevronRight
+          size={16}
+          className={cn(
+            "ml-auto shrink-0",
+            anchored ? "text-muted-foreground/50" : "text-muted-foreground",
+          )}
+          aria-hidden
+        />
       </button>
     </div>
   );
