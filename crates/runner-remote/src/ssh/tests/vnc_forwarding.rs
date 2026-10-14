@@ -399,7 +399,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
             pin.assert_calls_async(1).await;
         }
         vnc_resolve.assert_calls_async(1).await;
-        vnc_check.assert_calls_async(2).await;
+        vnc_check.assert_calls_async(1).await;
         harness.shutdown().await;
     }
 }

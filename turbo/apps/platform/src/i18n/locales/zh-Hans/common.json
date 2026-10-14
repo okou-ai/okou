@@ -1521,7 +1521,6 @@
     "agentSuggestions": {
       "existingThread": "已有对话",
       "label": "建议",
-      "loadFailed": "无法加载建议。",
       "newThread": "与 Okou 开始新对话",
       "origin": "来自你的晨间简报",
       "showAll_other": "查看全部 {{count}} 条",
@@ -4882,26 +4881,22 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
-        "morningBriefEmail": {
-          "checkStatus": "检查投递状态",
-          "description": "使用 Morning Brief 模板向你的账号邮箱发送固定样例。不会运行 Agent，也不会改变早报计划。",
-          "reasons": {
-            "delivery-failed": "投递失败；此前的发送尝试仍可能已被邮件服务接受。",
-            "expired": "投递已过期；此前的发送尝试仍可能已被邮件服务接受。",
-            "no-email": "已跳过：你的账号没有邮箱地址。",
-            "suppressed": "已跳过：你的账号邮箱已被列入投递屏蔽名单。",
-            "unsubscribed": "已跳过：你的账号已退订邮件更新。"
-          },
-          "requestFailed": "请求未完成。重试会复用原请求，避免重复发送。",
-          "retry": "重试测试邮件",
-          "send": "发送测试邮件",
-          "sendAnother": "再发送一封测试邮件",
-          "sending": "正在发送…",
+        "morningBrief": {
+          "checkStatus": "查看运行状态",
+          "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
+          "openChat": "打开对话",
+          "requestFailed": "请求未完成。重试会沿用同一请求，避免重复运行。",
+          "retry": "重试晨间简报",
+          "run": "运行晨间简报",
+          "runAgain": "再次运行晨间简报",
+          "starting": "正在启动…",
           "status": {
-            "queued": "已排队。再次发送样例前，请检查投递状态。",
-            "sent": "邮件服务已接受。请检查收件箱和垃圾邮件；尚未确认实际到达。"
+            "completed": "晨间简报已完成。",
+            "failed": "晨间简报运行失败，请打开对话查看详情。",
+            "queued": "已加入队列，可打开对话查看进度。",
+            "running": "晨间简报正在运行。"
           },
-          "title": "Morning Brief 测试邮件"
+          "title": "晨间简报"
         },
         "openrouterPreset": {
           "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",

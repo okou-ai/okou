@@ -348,6 +348,7 @@ import { isWebChatContextId } from "./web-chat-queue-context.service";
 
 import {
   EVENT_POLICY,
+  type WorkflowAutomationEventType,
   restoredWorkflowAutomationEventPayload,
   type WorkflowAutomationEventPayload,
   workflowAutomationEventTypeSchema,
@@ -647,6 +648,7 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
       args.automation,
       args.agentId,
       args.chatThreadId,
+      eventType,
     ),
     ...EVENT_POLICY[eventType],
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
@@ -977,9 +979,11 @@ function buildWorkflowAutomationCallbacks(
   automation: AutomationRow,
   agentId: string,
   chatThreadId: string,
+  eventType: WorkflowAutomationEventType,
 ): InternalRunCallbackInput[] {
   const callbacks: InternalRunCallbackInput[] = [];
-  if (automation.kind === "schedule") {
+  // Debug adds one delivery and never settles the daily schedule occurrence.
+  if (automation.kind === "schedule" && eventType !== "morning-brief-debug") {
     if (automation.scheduleType === "loop") {
       callbacks.push({
         internalKind: "workflow-automation:loop",

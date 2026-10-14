@@ -12,6 +12,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1022.2](https://github.com/okou-ai/okou/compare/app-v0.1022.1...app-v0.1022.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* explain telegram readiness failures and add diagnostics ([#39984](https://github.com/okou-ai/okou/issues/39984)) ([098184f](https://github.com/okou-ai/okou/commit/098184f9b8dc998dbf95d5c6426b49675188de95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.3
+    * @okouai/core bumped to 8.753.2
+
 ## [0.1022.1](https://github.com/okou-ai/okou/compare/app-v0.1022.0...app-v0.1022.1) (2026-10-14)
 
 

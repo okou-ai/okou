@@ -104,7 +104,8 @@ impl Drop for NativeWork {
 
 pub(super) struct Session {
     pub(super) info: Info,
-    pub(super) generation: i64,
+    // Authority follows this Run-owned transport's native lifetime, as with SSH.
+    pub(super) expires: Instant,
     pub(super) transport: Transport,
     pub(super) kerberos: Option<super::kerberos::Binding>,
     pub(super) cancel: CancellationToken,
@@ -440,8 +441,13 @@ impl Run {
             observation.authenticated_at = Some(chrono::Utc::now());
             let engine = Engine::new(connection);
             let expires = engine.expires_at();
-            scope
-                .wait(self.runtime.authority.check_kerberos(
+            // Retain main's native-expiry bound while recording connection evidence.
+            let authority_scope = Scope {
+                deadline: scope.deadline.min(expires),
+                ..scope.clone()
+            };
+            authority_scope
+                .wait(self.runtime.authority.check(
                     self.id,
                     request.connection_id,
                     credential.generation,
@@ -449,7 +455,7 @@ impl Run {
                     kerberos,
                 ))
                 .await??;
-            scope.check()?;
+            authority_scope.check()?;
             if self.cancel.is_cancelled() {
                 return Err(Failure::Cancelled);
             }
@@ -459,7 +465,7 @@ impl Run {
                     connection_id: request.connection_id,
                     mode: request.mode,
                 },
-                generation: credential.generation,
+                expires,
                 transport,
                 kerberos,
                 cancel: session_cancel,
@@ -493,21 +499,19 @@ impl Run {
         result
     }
 
-    pub(super) async fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
-        let result = scope
-            .wait(self.runtime.authority.check_kerberos(
-                self.id,
-                session.info.connection_id,
-                session.generation,
-                session.transport,
-                session.kerberos,
-            ))
-            .await
-            .and_then(|r| r);
-        if result.is_err() {
-            session.cancel.cancel();
+    pub(super) fn authorize(&self, session: &Session, scope: &Scope) -> Result<(), Failure> {
+        scope.check()?;
+        if self.cancel.is_cancelled() || session.cancel.is_cancelled() {
+            return Err(Failure::Cancelled);
         }
-        result
+        if Instant::now() >= session.expires {
+            session.cancel.cancel();
+            return Err(Failure::TimedOut);
+        }
+        // Notifications only cancel this exact authority. Subscription outages
+        // neither restore it nor retire it; missed delivery can delay revocation
+        // until the original Run/session/credential lifetime ends, as with SSH.
+        Ok(())
     }
 }
 

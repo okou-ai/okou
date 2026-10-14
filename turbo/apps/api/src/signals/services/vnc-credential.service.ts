@@ -17,6 +17,7 @@ import { vncConnections } from "@okouai/db/schema/vnc-connection";
 import { vncCredentials } from "@okouai/db/schema/vnc-credential";
 import { and, asc, count, eq, gte, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
+import { logger } from "../../lib/log";
 import { command } from "ccstate";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { writeDb$ } from "../external/db";
@@ -33,6 +34,54 @@ import {
   resolveVncCreationConflict$,
 } from "./vnc-creation.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
+import { publishRemoteRunnerInvalidation$ } from "./remote-runtime-wakeup.service";
+
+/** Discover references after commit, not from the pre-encryption snapshot.
+ * A concurrent rebind/delete is revoked by its own host mutation. */
+const notifyVncCredentialChange$ = command(
+  async (
+    { set },
+    owner: VncOwner,
+    credentialId: string,
+    signal: AbortSignal,
+  ) => {
+    const hosts = await settle(
+      set(writeDb$)
+        .select({ id: vncConnections.id })
+        .from(vncConnections)
+        .where(
+          and(
+            eq(vncConnections.orgId, owner.orgId),
+            eq(vncConnections.userId, owner.userId),
+            eq(vncConnections.credentialId, credentialId),
+          ),
+        ),
+    );
+    signal.throwIfAborted();
+    if (!hosts.ok) {
+      logger("VncCredential").warn(
+        "Failed to discover VNC credential invalidation references",
+        {
+          ...owner,
+          credentialId,
+          error: hosts.error,
+        },
+      );
+      return;
+    }
+    await set(
+      publishRemoteRunnerInvalidation$,
+      {
+        ...owner,
+        connectionIds: hosts.value.map((host) => {
+          return host.id;
+        }),
+      },
+      "vnc",
+    );
+    signal.throwIfAborted();
+  },
+);
 
 const vncCredentialMetadata = Object.freeze({
   id: vncCredentials.id,
@@ -532,6 +581,7 @@ export const updateVncCredential$ = command(
     if (!updated) {
       return vncFailure("credentialNotFound");
     }
+    await set(notifyVncCredentialChange$, owner, args.credentialId, signal);
     return {
       ok: true,
       value: response(

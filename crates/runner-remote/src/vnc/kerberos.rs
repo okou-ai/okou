@@ -313,7 +313,7 @@ impl kerberos_worker::KdcExchange for Caller {
     }
     async fn authorize(&mut self) -> Result<(), kerberos_worker::Error> {
         self.scope
-            .wait(self.runtime.authority.check_kerberos(
+            .wait(self.runtime.authority.check(
                 self.run,
                 self.connection,
                 self.generation,

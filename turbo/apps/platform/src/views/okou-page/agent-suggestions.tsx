@@ -1,4 +1,4 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowUpRight,
@@ -7,7 +7,7 @@ import {
   MessageSquare,
   MessageSquarePlus,
 } from "lucide-react";
-import { Button, Skeleton } from "@okouai/ui";
+import { Button } from "@okouai/ui";
 import {
   visibleAgentSuggestions$,
   startAgentSuggestion$,
@@ -19,33 +19,23 @@ import { detach, Reason } from "../../signals/utils.ts";
 
 export function AgentSuggestions() {
   const { t } = useTranslation();
-  const result = useLoadable(visibleAgentSuggestions$);
+  const result = useLastLoadable(visibleAgentSuggestions$);
   const start = useSet(startAgentSuggestion$);
   const signal = useGet(pageSignal$);
   const expanded = useGet(agentSuggestionsExpanded$);
   const toggleExpanded = useSet(toggleAgentSuggestionsExpanded$);
-  if (result.state === "loading") {
-    return <Skeleton className="h-20 w-full" />;
-  }
-  if (result.state === "hasError") {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.agentSuggestions.loadFailed;
-        })}
-      </p>
-    );
-  }
-  const items = result.data;
-  if (items.length === 0) {
+  // The tab exists only for a resolved, non-empty pool, so a read that is
+  // still pending or has failed has nothing to show here.
+  if (result.state !== "hasData" || result.data.length === 0) {
     return null;
   }
+  const items = result.data;
   return (
     <section
       aria-label={t(($) => {
         return $.chat.agentSuggestions.label;
       })}
-      className="flex flex-col gap-2"
+      className="flex flex-col gap-2 motion-safe:animate-composer-panel-in"
     >
       <p className="text-xs text-muted-foreground">
         {t(($) => {

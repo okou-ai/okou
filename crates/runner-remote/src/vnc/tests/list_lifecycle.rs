@@ -1,185 +1,132 @@
-use serde_json::{Value, json};
-use tokio::{io::DuplexStream, sync::oneshot};
+use runner_rpc_proto::{
+    Response,
+    stream::{Frame, Reader},
+};
+use serde_json::json;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
 
 use super::{
     closed,
-    harness::{CONNECTION, Harness, read, resolved_response, send},
+    harness::{Harness, read, send},
     mode,
-    peer::{Event, Peer},
+    peer::Event,
 };
-use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, json_response};
 
-struct PendingList {
-    harness: Harness,
-    server: RawHttpTestServer,
-    guest: DuplexStream,
-    checking: Value,
-    waiting: Value,
-}
-
-impl PendingList {
-    async fn start(gate: RawHttpAction, subsequent_checks: usize, remaining_ms: u64) -> Self {
-        let peer = Peer::new().await;
-        let resolved = resolved_response(
-            &json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
-                "serverName":"vnc.example.test","transport":{"type":"direct"},
-                "authentication":{"method":"vnc_password","password":" secret "},
-                "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":peer.ca}}})
-            .to_string(),
-        );
-        let mut actions = Vec::new();
-        for _ in 0..2 {
-            actions.push(RawHttpAction::Respond(resolved.clone()));
-            actions.push(valid());
-            actions.push(RawHttpAction::Respond(json_response(
-                "200 OK",
-                r#"{"outcome":"recorded"}"#,
-            )));
-        }
-        actions.push(gate);
-        actions.extend((0..subsequent_checks).map(|_| valid()));
-        let mut server = RawHttpTestServer::spawn(actions).await;
-        let h = Harness::with_authority(peer, Some(server.url())).await;
-        let mut sessions = Vec::new();
-        for connection in [CONNECTION, "58629e7e-6504-46f7-a294-ce1732b83b82"] {
-            let started = h
-                .run
-                .request(
-                    "vnc.session.start",
-                    json!({"connectionId":connection,"mode":"shared"}),
-                )
-                .await;
-            started.session();
-            sessions.push(started.result()["session"].clone());
-            mode(&h, 1).await;
-            server.next_request("resolve before session start").await;
-            server.next_request("check after session start").await;
-            let report = server
-                .next_request("connection observation after session start")
-                .await;
-            assert!(report.contains("/vnc/observations "));
-        }
-        let mut guest = h.run.open().await;
-        send(
-            &mut guest,
-            &json!({"version":1,"method":"vnc.session.list","remaining_ms":remaining_ms,"params":{}})
-                .to_string(),
-        )
+async fn list_during_close(close_capturing: bool) {
+    let mut h = Harness::new().await;
+    let _resolve = h.resolve().await;
+    let _other_resolve = h
+        .resolve_connection("58629e7e-6504-46f7-a294-ce1732b83b82")
         .await;
-        let request = server.next_request("first list authority check").await;
-        let (_, body) = request.split_once("\r\n\r\n").unwrap();
-        let body: Value = serde_json::from_str(body).unwrap();
-        let first = sessions
-            .iter()
-            .position(|session| session["connectionId"] == body["connectionId"])
-            .unwrap();
-        let checking = sessions.remove(first);
-        Self {
-            harness: h,
-            server,
-            guest,
-            checking,
-            waiting: sessions.pop().unwrap(),
-        }
-    }
-}
-
-fn valid() -> RawHttpAction {
-    RawHttpAction::Respond(json_response("200 OK", r#"{"outcome":"valid"}"#))
-}
-
-async fn list_during_close(close_checking: bool) {
-    let (release, gate) = oneshot::channel();
-    let action = if close_checking {
-        RawHttpAction::WaitForDisconnect
-    } else {
-        RawHttpAction::WaitThenRespond {
-            release: gate,
-            response: json_response("200 OK", r#"{"outcome":"valid"}"#),
-        }
-    };
-    let PendingList {
-        mut harness,
-        server,
-        guest,
-        checking,
-        waiting,
-    } = PendingList::start(action, if close_checking { 2 } else { 1 }, 60000).await;
-    let (closing, surviving) = if close_checking {
-        (checking, waiting)
-    } else {
-        (waiting, checking)
-    };
-    let closed_reply = harness
+    let check = h.check("valid", 200).await;
+    let other_check = h
+        .check_connection("58629e7e-6504-46f7-a294-ce1732b83b82", "valid", 200)
+        .await;
+    let first = h.start("shared").await.session();
+    mode(&h, 1).await;
+    let second = h
         .run
         .request(
-            "vnc.session.close",
-            json!({"sessionId":closing["sessionId"]}),
+            "vnc.session.start",
+            json!({"connectionId":"58629e7e-6504-46f7-a294-ce1732b83b82","mode":"shared"}),
         )
-        .await;
-    assert_eq!(closed_reply.result()["outcome"], "closed");
-    closed(&harness).await;
-    if !close_checking {
-        release.send(()).unwrap();
-    }
-    let listed = read(guest).await;
+        .await
+        .session();
+    mode(&h, 1).await;
+    let gate = Arc::new(Semaphore::new(0));
+    *h.peer.capture_gate.lock().await = Some(Arc::clone(&gate));
+    let mut capture = h.run.open().await;
+    send(&mut capture, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":first}}).to_string()).await;
+    assert!(matches!(h.peer.event().await, Event::Capture));
+    let mut list = h.run.open().await;
+    send(
+        &mut list,
+        &json!({"version":1,"method":"vnc.session.list","remaining_ms":60000,"params":{}})
+            .to_string(),
+    )
+    .await;
+    let (closing, surviving, connection) = if close_capturing {
+        (&first, &second, "58629e7e-6504-46f7-a294-ce1732b83b82")
+    } else {
+        (&second, &first, super::harness::CONNECTION)
+    };
+    assert_eq!(
+        h.run
+            .request("vnc.session.close", json!({"sessionId":closing}))
+            .await
+            .result()["outcome"],
+        "closed"
+    );
+    gate.add_permits(1);
+    read(capture).await;
+    closed(&h).await;
+    let listed = read(list).await;
     assert_eq!(
         listed.result(),
-        &json!({"outcome":"listed","sessions":[surviving.clone()]})
+        &json!({"outcome":"listed","sessions":[{"sessionId":surviving,"connectionId":connection,"mode":"shared"}]})
     );
-    let capture = harness
-        .run
-        .request("vnc.capture", json!({"sessionId":surviving["sessionId"]}))
-        .await;
-    assert_eq!(capture.result()["outcome"], "captured");
-    assert!(capture.ended);
-    assert!(matches!(harness.peer.event().await, Event::Capture));
-    harness.run.shutdown().await;
-    closed(&harness).await;
-    server.assert_finished().await;
+    check.assert_calls_async(1).await;
+    other_check.assert_calls_async(1).await;
+    h.run.shutdown().await;
+    closed(&h).await;
 }
 
 #[tokio::test]
-async fn list_omits_a_session_closed_before_its_authority_check() {
-    list_during_close(false).await;
-}
-
-#[tokio::test]
-async fn list_omits_a_session_closed_during_its_authority_check() {
+async fn list_omits_a_session_closed_while_waiting_for_its_active_capture() {
     list_during_close(true).await;
 }
 
 #[tokio::test]
-async fn list_preserves_run_cancellation() {
-    let PendingList {
-        mut harness,
-        server,
-        guest,
-        ..
-    } = PendingList::start(RawHttpAction::WaitForDisconnect, 0, 60000).await;
-    harness.run.cancel.cancel();
-    let listed = read(guest).await;
-    assert_eq!(listed.result()["outcome"], "failed");
-    assert_eq!(listed.result()["reason"], "cancelled");
-    harness.run.shutdown().await;
-    closed(&harness).await;
-    closed(&harness).await;
-    server.assert_finished().await;
+async fn list_omits_a_closed_sibling_while_another_capture_is_active() {
+    list_during_close(false).await;
+}
+
+async fn interrupted_list(cancel_run: bool) {
+    let mut h = Harness::new().await;
+    let _resolve = h.resolve().await;
+    let check = h.check("valid", 200).await;
+    let session = h.start("shared").await.session();
+    mode(&h, 1).await;
+    let gate = Arc::new(Semaphore::new(0));
+    *h.peer.capture_gate.lock().await = Some(Arc::clone(&gate));
+    let mut capture = h.run.open().await;
+    send(&mut capture, &json!({"version":1,"method":"vnc.capture","remaining_ms":60000,"params":{"sessionId":session}}).to_string()).await;
+    assert!(matches!(h.peer.event().await, Event::Capture));
+    let mut list = h.run.open().await;
+    send(&mut list, &json!({"version":1,"method":"vnc.session.list","remaining_ms":if cancel_run { 60000 } else { 2000 },"params":{}}).to_string()).await;
+    if cancel_run {
+        h.run.cancel.cancel();
+    }
+    if cancel_run {
+        // Run teardown may close the guest stream before list dispatch. It
+        // must never claim a successful list or retain the capture transport.
+        let mut reader = Reader::responses(list);
+        while let Ok(Some(frame)) = super::harness::bounded(reader.next()).await {
+            if let Frame::Control(Response::Result { data }) = frame {
+                let data: serde_json::Value = serde_json::from_str(data.get()).unwrap();
+                assert_eq!(data["outcome"], "failed");
+                assert_eq!(data["reason"], "cancelled");
+            }
+        }
+    } else {
+        let listed = read(list).await;
+        assert_eq!(listed.result()["outcome"], "failed");
+        assert_eq!(listed.result()["reason"], "timed_out");
+    }
+    gate.add_permits(1);
+    read(capture).await;
+    closed(&h).await;
+    check.assert_calls_async(1).await;
+    h.run.shutdown().await;
 }
 
 #[tokio::test]
-async fn list_preserves_request_deadline() {
-    let PendingList {
-        mut harness,
-        server,
-        guest,
-        ..
-    } = PendingList::start(RawHttpAction::WaitForDisconnect, 0, 2000).await;
-    let listed = read(guest).await;
-    assert_eq!(listed.result()["outcome"], "failed");
-    assert_eq!(listed.result()["reason"], "timed_out");
-    closed(&harness).await;
-    harness.run.shutdown().await;
-    closed(&harness).await;
-    server.assert_finished().await;
+async fn list_preserves_run_cancellation_while_capture_owns_the_engine() {
+    interrupted_list(true).await;
+}
+
+#[tokio::test]
+async fn list_preserves_request_deadline_while_capture_owns_the_engine() {
+    interrupted_list(false).await;
 }
