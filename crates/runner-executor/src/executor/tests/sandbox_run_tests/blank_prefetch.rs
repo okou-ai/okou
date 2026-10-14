@@ -2,6 +2,8 @@ use super::*;
 use crate::executor::{ExecuteOutcome, ExecutorConfig};
 use crate::idle_pool::IdleSandboxKind;
 use crate::telemetry::JobTelemetry;
+use httpmock::prelude::*;
+use runner_provider::http::{HttpClient, HttpClientConfig};
 use sandbox::{SandboxOperation, SandboxOperationTimeoutStage, SandboxOperationWriteStage};
 use sandbox_mock::MockSandboxOverrides;
 use tokio_util::sync::CancellationToken;
@@ -95,7 +97,26 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         },
     ] {
         let dir = tempfile::tempdir().unwrap();
-        let config = test_executor_config(dir.path()).await;
+        let mut config = test_executor_config(dir.path()).await;
+        let api = MockServer::start_async().await;
+        config.http = HttpClient::new(HttpClientConfig {
+            api_url: api.base_url(),
+            vercel_bypass: None,
+            client_session_id: "blank-replacement-startup".into(),
+            runner_version: env!("CARGO_PKG_VERSION"),
+        })
+        .unwrap();
+        let cold_report = api.mock(|when, then| {
+            when.method(PUT)
+                .path_matches("/api/runners/runs/[^/]+/startup")
+                .json_body(serde_json::json!({ "sandboxStartupPath": "cold" }));
+            then.status(204);
+        });
+        let tentative_blank = api.mock(|when, then| {
+            when.method(PUT)
+                .json_body(serde_json::json!({ "sandboxStartupPath": "blank" }));
+            then.status(204);
+        });
         let overrides = Arc::new(MockSandboxOverrides::new());
         overrides.push_start_process_error(error);
         let destroy = MockLifecycleGate::new();
@@ -136,6 +157,8 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         assert_eq!(overrides.destroy_call_count(), 1);
         assert_eq!(overrides.start_process_calls().len(), 1);
         assert_eq!(overrides.start_agent_process_calls().len(), 1);
+        cold_report.assert_calls_async(1).await;
+        tentative_blank.assert_calls_async(0).await;
         assert_eq!(overrides.guest_state_restore_calls().len(), 1);
         assert_eq!(overrides.home_drive_mount_calls(), 1);
         assert_telemetry_action(&telemetry, REPLACEMENT, true, None);

@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
+import { runnersRunStartupContract } from "@okouai/api-contracts/contracts/runner-startup";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
-import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
-import { testContext } from "../../../__tests__/test-context";
-import { mockOptionalEnv } from "../../../lib/env";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
-import { server } from "../../../mocks/server";
+import { runnersStartupRoutes } from "../runners-startup";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -24,6 +24,20 @@ async function readStartupPath(actor: ApiTestUser, runId: string) {
   return response.body.sandboxStartupPath;
 }
 
+function writeStartupPath(
+  runId: string,
+  sandboxStartupPath: SandboxStartupPath,
+  headers: { readonly authorization?: string },
+  statuses: readonly (204 | 400 | 401 | 404 | 409 | 500)[] = [204],
+) {
+  return accept(
+    setupApp({ context, routes: runnersStartupRoutes })(
+      runnersRunStartupContract,
+    ).setStartup({ params: { runId }, headers, body: { sandboxStartupPath } }),
+    statuses,
+  );
+}
+
 function readyOperation(path: SandboxStartupPath) {
   return {
     ts: nowDate().toISOString(),
@@ -34,8 +48,20 @@ function readyOperation(path: SandboxStartupPath) {
   };
 }
 
+function completionBody(runId: string) {
+  return {
+    runId,
+    exitCode: 0,
+    completion: {
+      cliAgentType: "claude-code" as const,
+      cliAgentSessionId: randomUUID(),
+      cliAgentSessionHistoryDisposition: "unavailable" as const,
+    },
+  };
+}
+
 test.each(["sandbox", "home", "blank", "cold"] as const)(
-  "runner read persists settled %s startup while running and after completion",
+  "dedicated startup API persists %s while running and after completion",
   async (path) => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
@@ -43,17 +69,13 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
         agentId: owned.agentId,
         prompt: "Persist actual startup resource",
       });
-      expect(await readStartupPath(owned.actor, run.runId)).toBeNull();
+      await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
       const { sandboxHeaders } = await owned.claimChatRun(
         owned.runnerGroup,
         run.runId,
       );
-      await callbacks.requestAgentTelemetry(
-        { runId: run.runId, sandboxOperations: [readyOperation(path)] },
-        sandboxHeaders,
-        [200],
-      );
-      expect(await readStartupPath(owned.actor, run.runId)).toBe(path);
+      await writeStartupPath(run.runId, path, sandboxHeaders);
+      await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(path);
 
       const sandboxReuseResult = path === "sandbox" ? "reused" : "poolMiss";
       const homeReuseResult =
@@ -63,17 +85,7 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
             ? "reused"
             : "cacheMiss";
       await callbacks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 0,
-          sandboxReuseResult,
-          homeReuseResult,
-          completion: {
-            cliAgentType: "claude-code",
-            cliAgentSessionId: randomUUID(),
-            cliAgentSessionHistoryDisposition: "unavailable",
-          },
-        },
+        { ...completionBody(run.runId), sandboxReuseResult, homeReuseResult },
         sandboxHeaders,
         [200],
       );
@@ -88,61 +100,35 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
   },
 );
 
-test("missing, failed and boundary observations cannot manufacture a startup fact", async () => {
+test("telemetry and old completion writers cannot manufacture a startup path", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "Keep unavailable startup truthfully unknown",
+      prompt: "Keep unreported startup unknown",
     });
     const { sandboxHeaders } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,
     );
-    const oldReady = {
-      ts: nowDate().toISOString(),
-      action_type: "runner_agent_start_to_ready",
-      duration_ms: 100,
-      success: true,
-    };
     await callbacks.requestAgentTelemetry(
       {
         runId: run.runId,
         sandboxOperations: [
-          { ...readyOperation("cold"), action_type: "api_to_agent_ready" },
-          {
-            ...readyOperation("blank"),
-            action_type: "runner_blank_pool_borrow",
-          },
+          readyOperation("blank"),
           { ...readyOperation("cold"), success: false },
-          { ...readyOperation("home"), runner_startup_path: "workspace" },
-          oldReady,
+          { ...readyOperation("home"), action_type: "api_to_agent_ready" },
         ],
       },
       sandboxHeaders,
       [200],
     );
-    await callbacks.requestAgentTelemetryUnchecked(
-      {
-        runId: run.runId,
-        sandboxOperations: [
-          { ...readyOperation("blank"), runner_startup_path: "unsupported" },
-        ],
-      },
-      sandboxHeaders,
-      [400],
-    );
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
     await callbacks.requestAgentComplete(
       {
-        runId: run.runId,
-        exitCode: 0,
+        ...completionBody(run.runId),
         sandboxReuseResult: "poolMiss",
         homeReuseResult: "cacheMiss",
-        completion: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: randomUUID(),
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
       },
       sandboxHeaders,
       [200],
@@ -154,84 +140,141 @@ test("missing, failed and boundary observations cannot manufacture a startup fac
       sandboxReuseResult: "poolMiss",
       homeReuseResult: "cacheMiss",
     });
+    // A delayed authenticated report can still provide the actual fact after
+    // completion; the legacy miss pair alone was not enough to populate it.
+    await writeStartupPath(run.runId, "cold", sandboxHeaders);
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe("cold");
   });
 });
 
-test("duplicate and late unrelated telemetry preserve the accepted startup fact", async () => {
+test("malformed startup reports leave the path unset", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
-      prompt: "Replay ready receipt",
+      prompt: "Validate dedicated startup reports",
     });
     const { sandboxHeaders } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,
     );
-    const operation = readyOperation("blank");
-    for (const sandboxOperations of [[operation], [operation], []]) {
-      await callbacks.requestAgentTelemetry(
-        { runId: run.runId, sandboxOperations },
-        sandboxHeaders,
-        [200],
-      );
-    }
-    await callbacks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 0,
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
-        completion: {
-          cliAgentType: "claude-code",
-          cliAgentSessionId: randomUUID(),
-          cliAgentSessionHistoryDisposition: "unavailable",
-        },
-      },
-      sandboxHeaders,
-      [200],
-    );
-    await callbacks.requestAgentTelemetry(
-      {
-        runId: run.runId,
-        sandboxOperations: [
-          { ...readyOperation("cold"), action_type: "api_to_agent_ready" },
-        ],
-      },
-      sandboxHeaders,
-      [200],
-    );
-    expect(await readStartupPath(owned.actor, run.runId)).toBe("blank");
-  });
-});
-
-test("startup persistence and reads retain token, user and organization boundaries", async () => {
-  const owned = await publicChatActor(context);
-  await owned.run(async () => {
-    const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "Authorize startup receipt",
+    const request = setupRawAppRequest({
+      context,
+      routes: runnersStartupRoutes,
     });
-    const { sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
-    );
-    await callbacks.requestAgentTelemetry(
-      { runId: randomUUID(), sandboxOperations: [readyOperation("blank")] },
-      sandboxHeaders,
-      [401],
-    );
-    await callbacks.requestAgentTelemetry(
-      { runId: run.runId, sandboxOperations: [readyOperation("blank")] },
+    for (const body of [
       {},
-      [401],
+      { sandboxStartupPath: null },
+      { sandboxStartupPath: "workspace" },
+      { sandboxStartupPath: "unsupported" },
+      { sandboxStartupPath: "blank", extra: true },
+    ]) {
+      const response = await request(`/api/runners/runs/${run.runId}/startup`, {
+        method: "PUT",
+        headers: { ...sandboxHeaders, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      expect(response.status).toBe(400);
+    }
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
+    await writeStartupPath(run.runId, "blank", sandboxHeaders);
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(
+      "blank",
     );
-    expect(await readStartupPath(owned.actor, run.runId)).toBeNull();
-    await callbacks.requestAgentTelemetry(
-      { runId: run.runId, sandboxOperations: [readyOperation("blank")] },
+  });
+});
+
+test("same-value retries succeed and conflicting or telemetry reports cannot overwrite startup", async () => {
+  const owned = await publicChatActor(context);
+  await owned.run(async () => {
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Replay startup receipt",
+    });
+    const { sandboxHeaders } = await owned.claimChatRun(
+      owned.runnerGroup,
+      run.runId,
+    );
+    await writeStartupPath(run.runId, "blank", sandboxHeaders);
+    await writeStartupPath(run.runId, "blank", sandboxHeaders);
+    await writeStartupPath(run.runId, "cold", sandboxHeaders, [409]);
+    await callbacks.requestAgentComplete(
+      completionBody(run.runId),
       sandboxHeaders,
       [200],
     );
+    await writeStartupPath(run.runId, "blank", sandboxHeaders);
+    await writeStartupPath(run.runId, "home", sandboxHeaders, [409]);
+    await callbacks.requestAgentTelemetry(
+      { runId: run.runId, sandboxOperations: [readyOperation("cold")] },
+      sandboxHeaders,
+      [200],
+    );
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(
+      "blank",
+    );
+  });
+});
+
+test("concurrent conflicting startup reports accept exactly one immutable fact", async () => {
+  const owned = await publicChatActor(context);
+  await owned.run(async () => {
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Arbitrate startup receipts",
+    });
+    const { sandboxHeaders } = await owned.claimChatRun(
+      owned.runnerGroup,
+      run.runId,
+    );
+    const paths = ["blank", "cold"] as const;
+    const responses = await Promise.all(
+      paths.map((path) => {
+        return writeStartupPath(run.runId, path, sandboxHeaders, [204, 409]);
+      }),
+    );
+    expect(
+      responses
+        .map((response) => {
+          return response.status;
+        })
+        .sort(),
+    ).toStrictEqual([204, 409]);
+    const acceptedIndex = responses.findIndex((response) => {
+      return response.status === 204;
+    });
+    const accepted = paths[acceptedIndex];
+    if (!accepted) {
+      throw new Error("Expected one accepted startup report");
+    }
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(
+      accepted,
+    );
+    await writeStartupPath(run.runId, accepted, sandboxHeaders);
+  });
+});
+
+test("startup writes and reads preserve Run token, user and organization boundaries", async () => {
+  const owned = await publicChatActor(context);
+  await owned.run(async () => {
+    const run = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: "Authorize startup setting",
+    });
+    const { sandboxHeaders } = await owned.claimChatRun(
+      owned.runnerGroup,
+      run.runId,
+    );
+    await writeStartupPath(randomUUID(), "blank", sandboxHeaders, [401]);
+    await writeStartupPath(run.runId, "blank", {}, [401]);
+    await writeStartupPath(
+      run.runId,
+      "blank",
+      { authorization: "Bearer clerk-session" },
+      [401],
+    );
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
+    await writeStartupPath(run.runId, "blank", sandboxHeaders);
     const stranger = createBddApi(context).user({
       orgId: owned.actor.orgId,
       orgRole: "org:member",
@@ -243,45 +286,8 @@ test("startup persistence and reads retain token, user and organization boundari
       [404],
     );
     await runs.requestRunRunner(null, run.runId, [401]);
-    expect(await readStartupPath(owned.actor, run.runId)).toBe("blank");
-  });
-});
-
-test("provider ingestion failure does not prevent or erase the persisted startup fact", async () => {
-  const owned = await publicChatActor(context);
-  await owned.run(async () => {
-    const run = await owned.sendChatRun(owned.actor, {
-      agentId: owned.agentId,
-      prompt: "Persist startup before optional transport",
-    });
-    const { sandboxHeaders } = await owned.claimChatRun(
-      owned.runnerGroup,
-      run.runId,
+    await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe(
+      "blank",
     );
-    mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", "startup-test-token");
-    server.use(
-      http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
-        return HttpResponse.json(
-          { message: "Temporarily unavailable" },
-          { status: 503 },
-        );
-      }),
-    );
-    await callbacks.requestAgentTelemetry(
-      {
-        runId: run.runId,
-        systemLog: "Startup transport test",
-        sandboxOperations: [readyOperation("blank")],
-      },
-      sandboxHeaders,
-      [500],
-    );
-    expect(await readStartupPath(owned.actor, run.runId)).toBe("blank");
-    await callbacks.requestAgentTelemetry(
-      { runId: run.runId, sandboxOperations: [readyOperation("blank")] },
-      sandboxHeaders,
-      [200],
-    );
-    expect(await readStartupPath(owned.actor, run.runId)).toBe("blank");
   });
 });

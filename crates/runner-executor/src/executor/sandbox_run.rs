@@ -1576,16 +1576,26 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
-    let result = run_in_sandbox_with_process_cancel_timeouts(
-        sandbox.as_ref(),
-        context,
-        config,
-        start,
-        telemetry,
-        inputs,
-        process_cancel_timeouts,
-    )
-    .await;
+    // Preparation and replacement have settled the actual resource. Own the
+    // bounded upload alongside execution so it never gates Agent startup.
+    let (_, result) = tokio::join!(
+        super::startup::report_startup_path(
+            &config.http,
+            context.run_id,
+            &context.sandbox_token,
+            sandbox_startup_path,
+            &cleanup_cancel,
+        ),
+        run_in_sandbox_with_process_cancel_timeouts(
+            sandbox.as_ref(),
+            context,
+            config,
+            start,
+            telemetry,
+            inputs,
+            process_cancel_timeouts,
+        ),
+    );
 
     let remote_cleanup = match guest_rpc {
         Some(guest_rpc) => guest_rpc.shutdown().await,

@@ -43,6 +43,7 @@ mod session_history_download;
 mod session_history_restore_plan;
 mod session_id;
 mod session_restore;
+mod startup;
 mod storage;
 mod telemetry;
 

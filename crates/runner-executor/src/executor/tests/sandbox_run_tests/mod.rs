@@ -65,6 +65,7 @@ mod proxy_registry;
 mod registry_observation;
 mod reuse;
 mod ssh;
+mod startup;
 
 fn storage_archive(content: &[u8]) -> Vec<u8> {
     let encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::none());

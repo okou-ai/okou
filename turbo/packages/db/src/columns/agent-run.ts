@@ -84,8 +84,8 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     // Final home reuse outcome; retain the existing physical storage name.
     // Null means the runner did not reach a reliable decision.
     homeReuseResult: varchar("workspace_reuse_result", { length: 50 }),
-    // Actual prepared resource, reported by a successful settled ready event.
-    // Old producers and runs without reliable ready evidence remain unknown.
+    // Actual settled resource reported through the dedicated Run startup API.
+    // Old producers and runs without an accepted report remain unknown.
     sandboxStartupPath: varchar("sandbox_startup_path", {
       length: 20,
     }).$type<SandboxStartupPath>(),
