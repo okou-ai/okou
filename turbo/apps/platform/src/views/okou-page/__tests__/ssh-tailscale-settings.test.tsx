@@ -225,6 +225,51 @@ test.each([
   },
 );
 
+test("Keyboard guidance preserves the inline network draft without submitting the SSH host", async () => {
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    return respond(201, { ...host, id: body.id });
+  });
+  await page();
+  const dialog = await addHost();
+  await userEvent.click(within(dialog).getByLabelText("Tailscale"));
+  await userEvent.click(
+    await screen.findByRole("option", { name: "Create new Tailscale network" }),
+  );
+  await fill(within(dialog).getByLabelText("Name"), "Inline network");
+  await fill(within(dialog).getByLabelText("Registration tags"), "tag:okou");
+  await fill(
+    within(dialog).getByLabelText("OAuth client ID"),
+    "client-id-canary",
+  );
+  const secret = within(dialog).getByLabelText("OAuth client secret");
+  await fill(secret, "oauth-secret-canary");
+  const guide = within(dialog).getByRole("region", {
+    name: "Set up Tailscale",
+  });
+  await userEvent.click(getAction("tab", "Tags", guide));
+  await userEvent.keyboard("{ArrowRight}{ArrowRight}{Enter}");
+  expect(
+    within(guide).getByRole("tabpanel", { name: "General access rules" }),
+  ).toBeVisible();
+  expect(within(dialog).getByLabelText("Name")).toHaveValue("Inline network");
+  expect(within(dialog).getByLabelText("Registration tags")).toHaveValue(
+    "tag:okou",
+  );
+  expect(within(dialog).getByLabelText("OAuth client ID")).toHaveValue(
+    "client-id-canary",
+  );
+  expect(secret).toHaveValue("oauth-secret-canary");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "New private host",
+  );
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Cancel", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(secret).toHaveValue("");
+});
+
 test("A saved Tailscale host retains its port, credential and learned key during editing", async () => {
   const requests: unknown[] = [];
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
