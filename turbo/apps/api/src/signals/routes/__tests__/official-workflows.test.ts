@@ -20,7 +20,10 @@ import {
   cronRenewGoogleFormsWatchesContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
-import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import {
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+  morningBriefPreferenceContract,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowBlueprint,
@@ -1262,7 +1265,9 @@ async function listMorningBriefInstallations(actor: ApiTestUser) {
     [200],
   );
   return response.body.filter((workflow) => {
-    return workflow.official?.definitionName === "morning-brief";
+    return MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.some((name) => {
+      return name === workflow.official?.definitionName;
+    });
   });
 }
 
@@ -2283,6 +2288,11 @@ describe("Morning Brief preference", () => {
       catalog([
         activeDefinition("morning-brief", []),
         {
+          name: "internal-test-morning-brief",
+          lifecycle: "retired",
+          presentation: { category: "productivity" },
+        },
+        {
           name: "connector-doctor",
           lifecycle: "retired",
           presentation: { category: "productivity" },
@@ -2415,7 +2425,9 @@ describe("Morning Brief preference", () => {
     );
     expect(
       listed.body.filter((workflow) => {
-        return workflow.official?.definitionName === "morning-brief";
+        return MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES.some((name) => {
+          return name === workflow.official?.definitionName;
+        });
       }),
     ).toHaveLength(0);
   });
@@ -2964,6 +2976,38 @@ describe("Morning Brief explicit installation", () => {
   });
 });
 
+function capturedOfficialSkill(
+  manifest: Parameters<typeof expectCanonicalStorageManifest>[0],
+  definitionName: string,
+) {
+  const mount = expectCanonicalStorageManifest(manifest)?.storageMounts.find(
+    (entry) => {
+      return (
+        entry.name === getOfficialWorkflowDefinitionStorageName(definitionName)
+      );
+    },
+  );
+  if (!mount) {
+    throw new Error(`Expected captured Official skill: ${definitionName}`);
+  }
+  const archive = context.mocks.s3.send.mock.calls
+    .flatMap(([command]) => {
+      if (
+        !(command instanceof PutObjectCommand) ||
+        !command.input.Key?.endsWith(`/${mount.versionId}/archive.tar.gz`) ||
+        !(command.input.Body instanceof Uint8Array)
+      ) {
+        return [];
+      }
+      return [command.input.Body];
+    })
+    .at(-1);
+  if (!archive) {
+    throw new Error("Expected the exact captured skill publication");
+  }
+  return gunzipSync(archive).toString("utf8");
+}
+
 describe("Morning Brief suggestion instruction rollout", () => {
   it.each([
     { enabled: false, secondary: false, expected: false },
@@ -2975,21 +3019,6 @@ describe("Morning Brief suggestion instruction rollout", () => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         installCatalogStorageFixture();
         await syncDeployedCatalog();
-        const sharedBrief = context.mocks.s3.send.mock.calls.flatMap(
-          ([command]) => {
-            if (
-              !(command instanceof PutObjectCommand) ||
-              !command.input.Key?.endsWith("/archive.tar.gz") ||
-              !(command.input.Body instanceof Uint8Array)
-            ) {
-              return [];
-            }
-            const content = gunzipSync(command.input.Body).toString("utf8");
-            return content.includes("# Morning Brief") ? [content] : [];
-          },
-        );
-        expect(sharedBrief).toHaveLength(1);
-        expect(sharedBrief[0]).not.toContain("okou suggestion");
 
         const { actor } = await workflowBdd.setupWorkflowOrg({
           timezone: "Asia/Shanghai",
@@ -3052,19 +3081,318 @@ describe("Morning Brief suggestion instruction rollout", () => {
           );
           await flushWaitUntilForTest();
         });
+        expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
+        const definitionName = expected
+          ? "internal-test-morning-brief"
+          : "morning-brief";
+        expect(claim.prompt).toMatch(new RegExp(`^/${definitionName}\\n`));
+        const mountedSkill = capturedOfficialSkill(
+          claim.storageManifest,
+          definitionName,
+        );
+        expect(mountedSkill.includes("okou suggestion list --json")).toBe(
+          expected,
+        );
         if (expected) {
-          expect(claim.appendSystemPrompt).toContain(
-            "Curate next-step suggestions when available",
+          expect(mountedSkill).toContain(
+            "Before completing the briefing or making its email decision",
           );
-          expect(claim.appendSystemPrompt).toContain(
-            "okou suggestion list --json",
+          expect(mountedSkill).toContain(
+            "There may be zero to ten active suggestions",
           );
-        } else {
-          expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
         }
       });
     },
   );
+});
+
+describe("Morning Brief workflow selection", () => {
+  it.each([false, true])(
+    "keeps the test definition managed by preferences with suggestions enabled=%s",
+    async (enabled) => {
+      installCatalogStorageFixture();
+      await syncDeployedCatalog();
+      const { actor } = await workflowBdd.setupWorkflowOrg({
+        timezone: "Asia/Shanghai",
+      });
+      if (!actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      await setOfficialWorkflowsEnabled(actor, true);
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.AgentSuggestion]: enabled },
+      );
+      const name = "internal-test-morning-brief";
+      await accept(
+        officialClient().get({
+          headers: authHeaders(actor),
+          params: { definitionName: name },
+        }),
+        [enabled ? 200 : 404],
+      );
+      const listed = await accept(
+        officialClient().list({ headers: authHeaders(actor) }),
+        [200],
+      );
+      expect(
+        listed.body.some((entry) => {
+          return entry.name === name;
+        }),
+      ).toBeFalsy();
+      const onboarding = await bdd.readOnboardingStatus(actor);
+      if (!onboarding.defaultAgentId) {
+        throw new Error("Expected Okou");
+      }
+      await accept(
+        officialClient().install({
+          headers: authHeaders(actor),
+          params: { definitionName: name },
+          body: {
+            agentId: onboarding.defaultAgentId,
+            blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+          },
+        }),
+        [403],
+      );
+    },
+  );
+
+  it("switches an existing schedule both ways without replacing settings or conversation", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Tokyo");
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation || !actor.orgId) {
+        throw new Error("Expected a Morning Brief installation");
+      }
+      const [initial] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!initial) {
+        throw new Error("Expected its schedule");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      let conversation: string | undefined;
+      for (const [iteration, enabled] of [false, true, false].entries()) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: enabled },
+        );
+        const [schedule] = await readMorningBriefAutomations(
+          actor,
+          installation.id,
+        );
+        if (!schedule?.nextRunAt) {
+          throw new Error("Expected retained schedule");
+        }
+        expect(schedule).toMatchObject({
+          id: initial.id,
+          enabled: true,
+          schedule: { timezone: "Asia/Tokyo" },
+        });
+        const fired = await fireOfficialSchedule(actor, schedule);
+        if (conversation) {
+          expect(fired.chatThreadId).toBe(conversation);
+        }
+        conversation = fired.chatThreadId;
+        const claim = await withMockNowForTest(
+          new Date(schedule.nextRunAt),
+          () => {
+            return runs.claimRunnerJob(fired.runId);
+          },
+        );
+        const name = enabled ? "internal-test-morning-brief" : "morning-brief";
+        expect(claim.prompt).toMatch(new RegExp(`^/${name}\\n`));
+        expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
+        expect(
+          capturedOfficialSkill(claim.storageManifest, name).includes(
+            "okou suggestion list --json",
+          ),
+        ).toBe(enabled);
+        await expect(
+          listMorningBriefInstallations(actor),
+        ).resolves.toMatchObject([
+          { id: installation.id, official: { definitionName: name } },
+        ]);
+        if (enabled) {
+          await setOfficialWorkflowsEnabled(actor, true);
+          const onboarding = await bdd.readOnboardingStatus(actor);
+          if (!onboarding.defaultAgentId) {
+            throw new Error("Expected Okou");
+          }
+          await accept(
+            officialClient().install({
+              headers: authHeaders(actor),
+              params: { definitionName: "morning-brief" },
+              body: {
+                agentId: onboarding.defaultAgentId,
+                blueprints: [{ blueprintKey: "daily-delivery", bindings: [] }],
+              },
+            }),
+            [409],
+          );
+          await expect(
+            listMorningBriefInstallations(actor),
+          ).resolves.toHaveLength(1);
+        }
+        expect((await readBriefPreference(actor)).body).toMatchObject({
+          enabled: true,
+          status: "enabled",
+        });
+        if (iteration === 0) {
+          await updateFeatureSwitchesForUser(
+            context,
+            { ...actor, orgId: actor.orgId },
+            { [FeatureSwitchKey.AgentSuggestion]: true },
+          );
+          await withMockNowForTest(
+            new Date(schedule.nextRunAt),
+            executeAutomationCron,
+          );
+          await expect(
+            listMorningBriefInstallations(actor),
+          ).resolves.toMatchObject([
+            {
+              id: installation.id,
+              official: { definitionName: "morning-brief" },
+            },
+          ]);
+        }
+        await withMockNowForTest(new Date(schedule.nextRunAt), async () => {
+          await webhooks.requestAgentComplete(
+            { runId: fired.runId, exitCode: 0 },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          await flushWaitUntilForTest();
+        });
+      }
+    });
+  });
+
+  it("keeps paused briefs paused and admits one occurrence across concurrent rollout ticks", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      if (!actor.orgId) {
+        throw new Error("Expected an organization");
+      }
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation) {
+        throw new Error("Expected installed brief");
+      }
+      const [initial] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!initial) {
+        throw new Error("Expected a schedule");
+      }
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await updateFeatureSwitchesForUser(
+        context,
+        { ...actor, orgId: actor.orgId },
+        { [FeatureSwitchKey.AgentSuggestion]: true },
+      );
+      await executeAutomationCron();
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: false,
+        status: "paused",
+      });
+      await expect(
+        readMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([
+        { id: initial.id, enabled: false, nextRunAt: null },
+      ]);
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const [schedule] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!schedule?.nextRunAt) {
+        throw new Error("Expected resumed schedule");
+      }
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      await withMockNowForTest(new Date(schedule.nextRunAt), async () => {
+        await Promise.all([executeAutomationCron(), executeAutomationCron()]);
+        await flushWaitUntilForTest();
+      });
+      const [running] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      if (!running?.chatThreadId) {
+        throw new Error("Expected a delivery thread");
+      }
+      const runId = await launchedAutomationRunId(actor, running.chatThreadId);
+      if (!runId) {
+        throw new Error("Expected its scheduled Run");
+      }
+      const onboarding = await bdd.readOnboardingStatus(actor);
+      if (!onboarding.defaultAgentId) {
+        throw new Error("Expected Okou");
+      }
+      await expect(
+        listAgentRunLogIds(actor, onboarding.defaultAgentId),
+      ).resolves.toStrictEqual([runId]);
+      const claim = await withMockNowForTest(
+        new Date(schedule.nextRunAt),
+        () => {
+          return runs.claimRunnerJob(runId);
+        },
+      );
+      expect(claim.prompt).toMatch(/^\/internal-test-morning-brief\n/);
+      await expect(
+        readMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([{ id: initial.id, nextRunAt: null }]);
+      await withMockNowForTest(new Date(schedule.nextRunAt), async () => {
+        await webhooks.requestAgentComplete(
+          { runId, exitCode: 0 },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+      });
+      expect((await readBriefPreference(actor)).body).toMatchObject({
+        enabled: true,
+        status: "enabled",
+      });
+    });
+  });
 });
 
 describe("Official schedule expiry", () => {

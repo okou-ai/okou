@@ -1,5 +1,5 @@
 {
-  "id": "bbdaafdc-041d-441f-9046-41d018e07deb",
+  "id": "fe8a9adf-9659-4a7d-81be-dd3d032af68a",
   "prevId": "f660268d-448c-4ad8-9401-d78bbe4d2dfb",
   "version": "7",
   "dialect": "postgresql",
@@ -33528,92 +33528,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.vnc_connection_observations": {
-      "name": "vnc_connection_observations",
-      "schema": "",
-      "columns": {
-        "connection_id": {
-          "name": "connection_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "generation": {
-          "name": "generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "connection_created_at": {
-          "name": "connection_created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "observed_at": {
-          "name": "observed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "failure_reason": {
-          "name": "failure_reason",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ssh_generation": {
-          "name": "ssh_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "kdc_ssh_generation": {
-          "name": "kdc_ssh_generation",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "vnc_connection_observations_connection_id_vnc_connections_id_fk": {
-          "name": "vnc_connection_observations_connection_id_vnc_connections_id_fk",
-          "tableFrom": "vnc_connection_observations",
-          "tableTo": "vnc_connections",
-          "columnsFrom": [
-            "connection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_vnc_observation_ssh_generation": {
-          "name": "chk_vnc_observation_ssh_generation",
-          "value": "\"vnc_connection_observations\".\"ssh_generation\" IS NULL OR \"vnc_connection_observations\".\"ssh_generation\" > 0"
-        },
-        "chk_vnc_observation_kdc_ssh_generation": {
-          "name": "chk_vnc_observation_kdc_ssh_generation",
-          "value": "\"vnc_connection_observations\".\"kdc_ssh_generation\" IS NULL OR \"vnc_connection_observations\".\"kdc_ssh_generation\" > 0"
-        },
-        "chk_vnc_connection_observation_generation": {
-          "name": "chk_vnc_connection_observation_generation",
-          "value": "\"vnc_connection_observations\".\"generation\" > 0"
-        },
-        "chk_vnc_connection_observation_failure": {
-          "name": "chk_vnc_connection_observation_failure",
-          "value": "\"vnc_connection_observations\".\"failure_reason\" IS NULL OR \"vnc_connection_observations\".\"failure_reason\" IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.vnc_connections": {
       "name": "vnc_connections",
       "schema": "",
@@ -35519,6 +35433,34 @@
           ],
           "isUnique": true,
           "where": "official_definition_name IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_workflows_morning_brief_owner_agent_unique": {
+          "name": "idx_workflows_morning_brief_owner_agent_unique",
+          "columns": [
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "owner_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "official_definition_name IN ('morning-brief', 'internal-test-morning-brief')",
           "concurrently": false,
           "method": "btree",
           "with": {}

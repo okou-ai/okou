@@ -584,20 +584,21 @@ impl StartLoopTestObserver {
         &self,
         timeout: Duration,
         context: &'static str,
-        predicate: impl FnMut(&StartLoopEvent) -> Option<T>,
+        mut predicate: impl FnMut(&StartLoopEvent) -> Option<T> + Send,
     ) -> T {
         let (value, _) = self
-            .wait_after(StartLoopCursor(0), timeout, context, predicate)
+            .wait_after(StartLoopCursor(0), timeout, context, &mut predicate)
             .await;
         value
     }
 
+    // Keep predicate ownership with callers while sharing the waiting future.
     async fn wait_after<T>(
         &self,
         cursor: StartLoopCursor,
         timeout: Duration,
         context: &'static str,
-        mut predicate: impl FnMut(&StartLoopEvent) -> Option<T>,
+        predicate: &mut (dyn FnMut(&StartLoopEvent) -> Option<T> + Send),
     ) -> (T, StartLoopCursor) {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
@@ -739,7 +740,7 @@ impl StartLoopTestObserver {
         timeout: Duration,
     ) -> StartLoopCursor {
         let ((), cursor) = self
-            .wait_after(cursor, timeout, "routine heartbeat request", |event| {
+            .wait_after(cursor, timeout, "routine heartbeat request", &mut |event| {
                 matches!(
                     event,
                     StartLoopEvent::RoutineHeartbeatRequested {
@@ -758,7 +759,7 @@ impl StartLoopTestObserver {
         timeout: Duration,
     ) -> StartLoopCursor {
         let ((), cursor) = self
-            .wait_after(cursor, timeout, "home-cache change", |event| {
+            .wait_after(cursor, timeout, "home-cache change", &mut |event| {
                 matches!(event, StartLoopEvent::HomeCacheChangeObserved).then_some(())
             })
             .await;
@@ -849,7 +850,7 @@ mod start_loop_observer_tests {
                 cursor,
                 Duration::from_secs(1),
                 "second ownership transfer",
-                ownership_transfer_run_id,
+                &mut ownership_transfer_run_id,
             )
             .await;
         assert_eq!(
@@ -863,7 +864,7 @@ mod start_loop_observer_tests {
                 cursor,
                 Duration::from_secs(1),
                 "third ownership transfer",
-                ownership_transfer_run_id,
+                &mut ownership_transfer_run_id,
             )
             .await;
         assert_eq!(
@@ -882,7 +883,7 @@ mod start_loop_observer_tests {
                 StartLoopCursor(1),
                 Duration::from_secs(1),
                 "invalid cursor",
-                |_| Some(()),
+                &mut |_| Some(()),
             )
             .await;
     }

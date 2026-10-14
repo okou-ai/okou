@@ -412,6 +412,7 @@ test.each(["name", "tag order"] as const)(
               connectionId: saved.id,
               runnerIdentity: runtime.runnerIdentity,
               expectedGeneration: current.generation,
+              expectedCreatedAt: saved.createdAt,
               observedAt: nowDate().toISOString(),
               failureReason: null,
             },

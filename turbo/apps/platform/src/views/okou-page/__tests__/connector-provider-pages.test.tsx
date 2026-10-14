@@ -418,7 +418,10 @@ test("A user links their account to the official Telegram bot", async () => {
     ),
   ).toBeInTheDocument();
   expect(getAction("button", "Open Telegram")).toBeInTheDocument();
-  expect(getAction("link", "Back to Telegram settings")).toBeInTheDocument();
+  expect(getAction("link", "Back to integrations")).toHaveAttribute(
+    "href",
+    "/works",
+  );
   expect(locationAssign.calls).toStrictEqual(["tg://resolve?domain=agent_bot"]);
   expect(linkedBody).toStrictEqual({
     telegramBotId: TELEGRAM_BOT_ID,

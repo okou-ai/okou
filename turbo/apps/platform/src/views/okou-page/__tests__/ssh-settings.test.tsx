@@ -343,6 +343,7 @@ test("Connection warnings explain the failure and recover through notifications"
         {
           connectionId: id,
           generation: 1,
+          connectionCreatedAt: base.createdAt,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: failed ? "host_key_mismatch" : null,
         },

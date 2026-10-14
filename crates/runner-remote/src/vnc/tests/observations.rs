@@ -83,7 +83,7 @@ async fn actual_vnc_connection_failure_and_recovery_report_only_bounded_evidence
 }
 
 #[tokio::test]
-async fn unavailable_reporting_on_old_api_or_outage_does_not_change_vnc_results_or_retry() {
+async fn unavailable_reporting_does_not_change_vnc_results_or_retry() {
     for status in [404, 500] {
         let mut h = Harness::new().await;
         let _resolve = h.resolve().await;
@@ -156,7 +156,7 @@ async fn denied_vnc_start_does_not_publish_connection_evidence() {
 }
 
 #[tokio::test]
-async fn missing_or_invalid_creation_metadata_preserves_vnc_without_unfenced_reporting() {
+async fn missing_or_invalid_creation_metadata_rejects_authority_before_connect() {
     for created_at in [None, Some("invalid")] {
         let mut h = Harness::new().await;
         let _resolve = h.resolve_response_with_created_at(
@@ -177,9 +177,12 @@ async fn missing_or_invalid_creation_metadata_preserves_vnc_without_unfenced_rep
                 then.status(200).json_body(json!({"outcome":"recorded"}));
             })
             .await;
-        h.start("shared").await.session();
-        mode(&h, 1).await;
+        assert_eq!(
+            h.start("shared").await.result()["reason"],
+            "authority_failure"
+        );
         h.run.shutdown().await;
+        assert!(h.network.attempts.lock().unwrap().is_empty());
         report.assert_calls_async(0).await;
     }
 }

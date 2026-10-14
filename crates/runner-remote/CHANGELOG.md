@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.11...runner-remote-v0.14.12) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** reject non-object tailscale logout replies ([#39956](https://github.com/okou-ai/okou/issues/39956)) ([0f0c35c](https://github.com/okou-ai/okou/commit/0f0c35c6420f0d4b898859ffb09c568f08055255))
+
 ## [0.14.11](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.10...runner-remote-v0.14.11) (2026-10-14)
 
 ## [0.14.10](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.9...runner-remote-v0.14.10) (2026-10-14)

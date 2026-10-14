@@ -23,6 +23,7 @@ pub(super) struct Authority {
 }
 
 pub(super) struct Credential {
+    pub(super) created_at: chrono::DateTime<chrono::Utc>,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) username: String,
@@ -60,6 +61,7 @@ pub(super) enum CredentialAuth {
 }
 
 pub(super) struct PreparedCredential {
+    pub(super) created_at: chrono::DateTime<chrono::Utc>,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) username: String,
@@ -86,6 +88,9 @@ impl Authority {
         observation: super::observation::Observation,
     ) {
         let body = ObservationRequest {
+            expected_created_at: observation
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
             connection_id: connection.to_string(),
             runner_identity: ObservationRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
@@ -142,7 +147,7 @@ impl Authority {
         &self,
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
-    ) -> Result<T, FailureReason> {
+    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>), FailureReason> {
         let body = serde_json::to_value(body).map_err(|_| FailureReason::AuthorityFailure)?;
         let request = self
             .http
@@ -161,6 +166,12 @@ impl Authority {
             return Err(FailureReason::AuthorityFailure);
         }
         // Fixed capacity avoids leaving reallocated plaintext response buffers behind.
+        let created_at = response
+            .headers()
+            .get("x-ssh-connection-created-at")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&chrono::Utc));
         let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_API_BYTES));
         while let Some(chunk) = response
             .chunk()
@@ -172,7 +183,9 @@ impl Authority {
             }
             bytes.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&bytes).map_err(|_| FailureReason::AuthorityFailure)
+        serde_json::from_slice(&bytes)
+            .map(|body| (body, created_at))
+            .map_err(|_| FailureReason::AuthorityFailure)
     }
 
     pub(super) async fn resolve(
@@ -187,8 +200,8 @@ impl Authority {
                 heartbeat_generation: self.identity.heartbeat_generation() as i64,
             },
         };
-        let response = self
-            .call(
+        let (response, created_at) = self
+            .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
                 }),
@@ -314,7 +327,9 @@ impl Authority {
         {
             return Err(FailureReason::AuthorityFailure);
         }
+        let created_at = created_at.ok_or(FailureReason::AuthorityFailure)?;
         Ok(Credential {
+            created_at,
             host,
             port,
             username,
@@ -342,13 +357,14 @@ impl Authority {
             observed_host_key: observed,
         };
         let result = self
-            .call(
+            .call::<PinResponse>(
                 routes::pin::route(routes::pin::Params {
                     run_id: &run.to_string(),
                 }),
                 &body,
             )
-            .await?;
+            .await?
+            .0;
         match result {
             PinResponse::Pinned { generation: actual }
             | PinResponse::Matched { generation: actual }

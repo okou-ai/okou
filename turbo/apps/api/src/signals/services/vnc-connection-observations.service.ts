@@ -12,7 +12,7 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command, computed, type Computed } from "ccstate";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
-import { vncCreationTimestamp } from "./vnc-creation-timestamp.utils";
+import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { db$, writeDb$ } from "../external/db";
 import {
   runThreadSshAccess,

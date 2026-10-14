@@ -28,6 +28,7 @@ import { decryptStoredSecretValue } from "./crypto.utils";
 import { commitRunnerSshPinAttempt$ } from "./runner-ssh-pin.service";
 import { commitRunnerSshObservationAttempt$ } from "./runner-ssh-observation.service";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
+import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -51,6 +52,7 @@ const connectionFields = Object.freeze({
   authMethod: sshCredentials.authMethod,
   encryptedPassword: sshCredentials.encryptedPassword,
   generation: sshConnections.generation,
+  createdAt: sshCreationTimestamp,
   algorithm: sshConnections.learnedHostKeyAlgorithm,
   fingerprint: sshConnections.learnedHostKeyFingerprint,
   encryptedPrivateKey: sshCredentials.encryptedPrivateKey,

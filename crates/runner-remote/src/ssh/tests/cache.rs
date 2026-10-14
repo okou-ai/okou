@@ -213,7 +213,9 @@ async fn full_retained_cache_bypasses_caching_without_rejecting_commands() {
         .mock_async(|when, then| {
             when.method("POST")
                 .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
-            then.status(200).json_body(h.credential(true));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(h.credential(true));
         })
         .await;
     // Populate the documented 256-entry budget through real request dispatch.

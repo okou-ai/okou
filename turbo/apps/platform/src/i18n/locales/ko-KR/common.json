@@ -1766,7 +1766,6 @@
       "threadSuggestions": "채팅 스레드",
       "useForFutureChats": "향후 채팅에도 사용",
       "workflows": {
-        "empty": "일치하는 워크플로가 없습니다",
         "loading": "워크플로 로딩 중...",
         "showAll": "모든 워크플로 표시",
         "title": "워크플로"
@@ -3433,7 +3432,6 @@
         "alreadyDescription": "이미 연결되어 있습니다. Telegram에서 메시지를 보내 대화를 시작하세요.",
         "alreadyDescriptionNamed": "{{bot}}에 이미 연결되어 있습니다. Telegram에서 메시지를 보내 대화를 시작하세요.",
         "alreadyTitle": "Telegram에 이미 연결됨",
-        "back": "Telegram 설정으로 돌아가기",
         "checkingConnectionDescription": "Telegram 연결을 확인하는 중입니다. 잠시만 기다려 주세요.",
         "checkingConnectionTitle": "연결 확인 중...",
         "checkingSession": "{{brandName}} 세션을 확인하는 중입니다. 잠시만 기다려 주세요.",
@@ -3754,16 +3752,8 @@
       },
       "telegram": {
         "backToIntegrations": "통합으로 돌아가기",
-        "botFallback": "Telegram 봇",
-        "disconnectAria": "{{bot}} 연결 해제",
-        "documentTitle": "Telegram",
         "loadError": "Telegram 설정을 불러올 수 없습니다.",
-        "moreOptions": "{{bot}}에 대한 추가 옵션",
-        "notConnected": "연결되지 않음",
-        "officialBot": "공식 Telegram 봇",
-        "officialDescription": "{{brandName}}에서 제공하는 공식 봇입니다.",
-        "officialMissing": "공식 봇 구성이 없습니다.",
-        "pageDescription": "이 워크스페이스의 봇 라우팅 관리"
+        "officialMissing": "공식 봇 구성이 없습니다."
       },
       "toasts": {
         "agentphoneConnected": "전화번호가 연결되었습니다",
@@ -6383,7 +6373,6 @@
       "connect": "연결",
       "disconnect": "연결 해제",
       "disconnecting": "연결 해제 중…",
-      "manage": "관리",
       "moreOptions": "추가 옵션",
       "uninstall": "제거",
       "uninstalling": "제거 중…",
@@ -6454,7 +6443,6 @@
     },
     "telegram": {
       "description": "Telegram 메시지를 에이전트로 라우팅",
-      "openSettings": "Telegram 설정 열기",
       "title": "Telegram"
     }
   }

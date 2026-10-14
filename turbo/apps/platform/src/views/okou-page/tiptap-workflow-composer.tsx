@@ -19,6 +19,7 @@ import type { ComposerSignals } from "../../signals/okou-page/composer-signals.t
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
 import { START_PAGE_CENTRED_MEDIA_QUERY } from "./start-page-breakpoint.ts";
+import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
@@ -340,6 +341,7 @@ interface ComposerSuggestionMenuState {
   ) => void;
   readonly browseAllTemplates: () => void;
   readonly workflowsLoading: boolean;
+  readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
   readonly collapseWorkflows: boolean;
   readonly expandWorkflows: () => void;
@@ -615,14 +617,15 @@ function suggestionNavigationOrder(
 function useComposerSuggestionMenu({
   composer,
   composerAnchored,
-  reversedSuggestions,
+  suggestionsAbove,
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
   readonly composerAnchored: boolean;
-  readonly reversedSuggestions: boolean;
+  readonly suggestionsAbove: boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
+  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const slashRange = useGet(composer.suggestion.activeSlashRange$);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
@@ -653,6 +656,9 @@ function useComposerSuggestionMenu({
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
+  // Mobile keyboards leave little room above the composer. Keep Make first
+  // there, and use the same order for the rows and keyboard navigation.
+  const reversedSuggestions = suggestionsAbove && (!showWorkflows || isDesktop);
   const mentions = useComposerMentionSuggestions(composer, slashRange);
   const { agents, chatThreads, chatThreadRange, showMentions } = mentions;
   const open = showWorkflows || showMentions;
@@ -728,6 +734,7 @@ function useComposerSuggestionMenu({
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
     workflowsLoading: workflowResult.loading,
+    reversed: reversedSuggestions,
     reverseWorkflows: reversedSuggestions && !workflowOverview,
     collapseWorkflows,
     expandWorkflows,
@@ -794,21 +801,19 @@ export function TiptapWorkflowComposer({
   // Composer-anchored menus open on the side with the room. A docked composer
   // sits on the floor of the screen, so its menus open above it. From `sm` up
   // the start page centres its composer and the free space is below it, where
-  // a menu forced above was squeezed against the top of the window. Either way
-  // the most relevant row sits next to the composer, so the rendered order
-  // follows the side.
+  // a menu forced above was squeezed against the top of the window. Desktop
+  // rows follow the side; the mobile slash menu keeps Make at the top.
   const startPageCentred = useMediaQuery(START_PAGE_CENTRED_MEDIA_QUERY);
   const suggestionsBelow =
     composerAnchored &&
     startPageCentred &&
     !composer.editor.singleLineOnMobile &&
     !composer.editor.forwardComposer;
-  const reversedSuggestions = composerAnchored && !suggestionsBelow;
   const suggestionSide = suggestionsBelow ? "bottom" : "top";
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
     composerAnchored,
-    reversedSuggestions,
+    suggestionsAbove: composerAnchored && !suggestionsBelow,
     onKeyDown,
   });
   const suggestionAnchor = composerAnchored
@@ -908,7 +913,7 @@ export function TiptapWorkflowComposer({
             menuRef={setSuggestionMenuRef}
             categories={suggestionMenu.panelCategories}
             anchored={composerAnchored}
-            reversed={reversedSuggestions}
+            reversed={suggestionMenu.reversed}
             reverseWorkflows={suggestionMenu.reverseWorkflows}
             workflows={suggestionMenu.workflows}
             workflowsLoading={suggestionMenu.workflowsLoading}
@@ -935,7 +940,7 @@ export function TiptapWorkflowComposer({
           anchor={suggestionAnchor}
           side={suggestionSide}
           composerAnchored={composerAnchored}
-          reversed={reversedSuggestions}
+          reversed={suggestionMenu.reversed}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}
           selectedIndex={suggestionMenu.selectedIndex}

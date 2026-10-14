@@ -346,7 +346,7 @@
     "src/signals/services/vnc-configuration.utils.ts",
     "src/signals/services/vnc-connection.service.ts",
     "src/signals/services/vnc-creation.service.ts",
-    "src/signals/services/vnc-creation-timestamp.utils.ts",
+    "src/signals/services/remote-connection-creation-timestamp.utils.ts",
     "src/signals/services/vnc-credential.service.ts",
     "src/signals/services/vnc-kerberos.service.ts",
     "src/signals/services/vnc-owner-lifecycle.service.ts",

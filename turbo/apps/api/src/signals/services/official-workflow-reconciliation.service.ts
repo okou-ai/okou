@@ -7,7 +7,7 @@ import type {
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  isMorningBriefDefinitionName,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   googleFormsResponseSubmittedEventConfigSchema,
@@ -155,7 +155,7 @@ function isMorningBriefReconciliation(args: {
   readonly blueprintKey: string | null;
 }): boolean {
   return (
-    args.definitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME &&
+    isMorningBriefDefinitionName(args.definitionName) &&
     args.blueprintKey === MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY
   );
 }

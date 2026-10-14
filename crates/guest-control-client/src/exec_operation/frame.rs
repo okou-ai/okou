@@ -78,7 +78,7 @@ fn mark_exec_operation_host_cancel_requested(
             operations.mark_host_cancel_requested(route_id);
             Ok(())
         }
-        ConnectionState::Closed => Err(io::Error::new(
+        ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
@@ -98,7 +98,7 @@ fn mark_exec_operation_host_cancel_requested_for_wait(
                 Ok(ExecCancelFrameWriteOutcome::AlreadyTerminal)
             }
         }
-        ConnectionState::Closed => Err(io::Error::new(
+        ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
@@ -172,7 +172,7 @@ fn mark_exec_operation_possible_guest_write(
                 Ok(())
             }
         }
-        ConnectionState::Closed => Err(io::Error::new(
+        ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
@@ -233,7 +233,7 @@ pub(in crate::exec_operation) fn mark_pending_exec_control_possible_guest_write(
                 .mark_possible_guest_write_started()
                 .map_err(normal_operation_transition_error)
         }
-        ConnectionState::Closed => Err(io::Error::new(
+        ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),

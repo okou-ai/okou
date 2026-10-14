@@ -70,7 +70,7 @@ pub(super) struct Authority {
 
 /// Consumed by one handshake; never cached, cloned or exposed to the guest.
 pub(super) struct Credential {
-    pub(super) created_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub(super) created_at: chrono::DateTime<chrono::Utc>,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
@@ -120,7 +120,12 @@ pub(super) enum Transport {
     Ssh { connection: Uuid, generation: i64 },
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn rsa_aes_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -174,7 +179,7 @@ fn rsa_aes_credential(
     }
     .map_err(|_| Failure::InvalidCredential)?;
     Ok(Credential {
-        created_at: None,
+        created_at,
         host,
         port,
         generation,
@@ -249,7 +254,12 @@ pub(super) fn parse_transport(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_vnc_password_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -275,7 +285,7 @@ fn apple_vnc_password_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
-        created_at: None,
+        created_at,
         host,
         port,
         generation,
@@ -284,7 +294,12 @@ fn apple_vnc_password_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_dh_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -313,7 +328,7 @@ fn apple_dh_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
-        created_at: None,
+        created_at,
         host,
         port,
         generation,
@@ -322,7 +337,12 @@ fn apple_dh_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_srp_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -351,7 +371,7 @@ fn apple_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
-        created_at: None,
+        created_at,
         host,
         port,
         generation,
@@ -360,7 +380,12 @@ fn apple_srp_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_rsa_srp_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -389,7 +414,7 @@ fn apple_rsa_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
-        created_at: None,
+        created_at,
         host,
         port,
         generation,
@@ -434,6 +459,7 @@ mod apple_vnc_password_tests {
             panic!("expected Apple classic password outcome");
         };
         apple_vnc_password_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -510,6 +536,7 @@ mod apple_dh_tests {
             panic!("expected Apple DH outcome");
         };
         apple_dh_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -605,6 +632,7 @@ mod apple_srp_tests {
             panic!("expected Apple SRP outcome");
         };
         apple_srp_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -719,6 +747,7 @@ mod apple_rsa_srp_tests {
             panic!("expected Apple RSA/SRP outcome");
         };
         apple_rsa_srp_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -786,10 +815,6 @@ impl Authority {
         connection: Uuid,
         observation: super::observation::Observation,
     ) {
-        let Some(created_at) = observation.attempt.created_at else {
-            tracing::info!(run_id = %run, connection_id = %connection, "VNC observation report not confirmed");
-            return;
-        };
         let transport = |route| match route {
             Transport::Direct => ObservationRequestExpectedTransport::Direct,
             Transport::Ssh {
@@ -801,7 +826,10 @@ impl Authority {
             },
         };
         let request = ObservationRequest {
-            expected_created_at: created_at.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            expected_created_at: observation
+                .attempt
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
             connection_id: connection.to_string(),
             runner_identity: ObservationRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
@@ -847,7 +875,7 @@ impl Authority {
             let response = self.transport.execute(request).await.ok()?;
             response.status().is_success().then_some(())
         };
-        // An old API's missing route and reporting outages never change connection results.
+        // Reporting outages never change connection results.
         if !tokio::time::timeout(std::time::Duration::from_secs(1), report)
             .await
             .is_ok_and(|result| result.is_some())
@@ -1060,10 +1088,6 @@ impl Authority {
                 &request,
             )
             .await?;
-        let stamp = |mut credential: Credential| {
-            credential.created_at = created_at;
-            credential
-        };
         let (host, port, generation, server_name, transport, authentication, security) =
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
@@ -1082,6 +1106,7 @@ impl Authority {
                         return Err(Failure::Authority);
                     }
                     return super::kerberos::credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1091,8 +1116,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedRsaAes {
                     host,
@@ -1103,6 +1127,7 @@ impl Authority {
                     security,
                 } => {
                     return rsa_aes_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1110,8 +1135,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedAppleVncPassword {
                     host,
@@ -1122,6 +1146,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_vnc_password_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1129,8 +1154,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedAppleDh {
                     host,
@@ -1141,6 +1165,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_dh_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1148,8 +1173,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedAppleSrp {
                     host,
@@ -1160,6 +1184,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_srp_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1167,8 +1192,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedAppleRsaSrp {
                     host,
@@ -1179,6 +1203,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_rsa_srp_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1186,8 +1211,7 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    )
-                    .map(stamp);
+                    );
                 }
                 ResolveResponse::ResolvedTransport {
                     host,
@@ -1302,8 +1326,8 @@ impl Authority {
                 custom_roots(Zeroizing::new(ca_bundle))?
             }
         };
-        Ok(stamp(Credential {
-            created_at: None,
+        Ok(Credential {
+            created_at: created_at.ok_or(Failure::Authority)?,
             host,
             port,
             generation,
@@ -1323,7 +1347,7 @@ impl Authority {
                     }
                 }
             },
-        }))
+        })
     }
 
     pub(super) async fn check_kerberos(
@@ -1464,6 +1488,7 @@ mod rsa_aes_tests {
                 panic!("wrong private handoff");
             };
             let credential = rsa_aes_credential(
+                chrono::Utc::now(),
                 host,
                 port,
                 generation,

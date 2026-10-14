@@ -19,7 +19,7 @@ import {
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { vncCreationTimestamp } from "./vnc-creation-timestamp.utils";
+import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import {
   runThreadSshAccess,
   runThreadVncAccess,

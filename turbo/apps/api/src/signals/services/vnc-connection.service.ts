@@ -37,7 +37,7 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
-import { vncCreationTimestamp } from "./vnc-creation-timestamp.utils";
+import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import {
   isVncKerberosMethod,

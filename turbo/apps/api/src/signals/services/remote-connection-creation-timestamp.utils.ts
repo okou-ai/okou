@@ -1,4 +1,5 @@
 import { vncConnections } from "@okouai/db/schema/vnc-connection";
+import { sshConnections } from "@okouai/db/runtime/ssh-connection";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -7,5 +8,10 @@ import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 // precision instead of collapsing distinct instances to JavaScript milliseconds.
 export const vncCreationTimestamp =
   sql`to_char(${vncConnections.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
+    zodDriverValueDecoder(z.string().datetime()),
+  );
+
+export const sshCreationTimestamp =
+  sql`to_char(${sshConnections.createdAt}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
     zodDriverValueDecoder(z.string().datetime()),
   );

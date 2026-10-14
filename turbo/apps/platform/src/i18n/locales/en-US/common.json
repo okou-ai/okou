@@ -1770,7 +1770,6 @@
       "threadSuggestions": "Chat threads",
       "useForFutureChats": "Use this for future chats",
       "workflows": {
-        "empty": "No matching workflows",
         "loading": "Loading workflows...",
         "showAll": "Show all workflows",
         "title": "Workflows"
@@ -3445,7 +3444,6 @@
         "alreadyDescription": "You're already connected. Send a message in Telegram to start chatting.",
         "alreadyDescriptionNamed": "You're already connected to {{bot}}. Send a message in Telegram to start chatting.",
         "alreadyTitle": "Already connected to Telegram",
-        "back": "Back to Telegram settings",
         "checkingConnectionDescription": "Please wait while we check your Telegram connection.",
         "checkingConnectionTitle": "Checking connection...",
         "checkingSession": "Please wait while we verify your {{brandName}} session.",
@@ -3766,16 +3764,8 @@
       },
       "telegram": {
         "backToIntegrations": "Back to integrations",
-        "botFallback": "Telegram bot",
-        "disconnectAria": "Disconnect {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Couldn't load Telegram settings.",
-        "moreOptions": "More options for {{bot}}",
-        "notConnected": "Not connected",
-        "officialBot": "Official Telegram bot",
-        "officialDescription": "Official bot provided by {{brandName}}.",
-        "officialMissing": "Official bot configuration is missing.",
-        "pageDescription": "Manage bot routing for this workspace"
+        "officialMissing": "Official bot configuration is missing."
       },
       "toasts": {
         "agentphoneConnected": "Phone number connected",
@@ -6403,7 +6393,6 @@
       "connect": "Connect",
       "disconnect": "Disconnect",
       "disconnecting": "Disconnecting…",
-      "manage": "Manage",
       "moreOptions": "More options",
       "uninstall": "Uninstall",
       "uninstalling": "Uninstalling…",
@@ -6474,7 +6463,6 @@
     },
     "telegram": {
       "description": "Route Telegram messages to agents",
-      "openSettings": "Open Telegram settings",
       "title": "Telegram"
     }
   }

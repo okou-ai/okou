@@ -1,3 +1,4 @@
+import type { WorkflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import type { TriggerSource } from "@okouai/api-contracts/contracts/logs";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
@@ -130,6 +131,7 @@ export interface WorkflowScheduleClaimPlan {
   readonly workflowId: string;
   readonly scheduledAnchorAt: Date;
   readonly claimedAt: Date;
+  readonly automationSnapshot: WorkflowAutomationSnapshot | undefined;
 }
 
 export class ScheduleOccurrenceUnavailableError extends Error {

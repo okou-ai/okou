@@ -1766,7 +1766,6 @@
       "threadSuggestions": "聊天會話",
       "useForFutureChats": "以後的對話都用這個",
       "workflows": {
-        "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
         "showAll": "顯示全部工作流程",
         "title": "工作流"
@@ -3433,7 +3432,6 @@
         "alreadyDescription": "你已經連線。在 Telegram 中傳送訊息，即可開始對話。",
         "alreadyDescriptionNamed": "你已連線到{{bot}}。在 Telegram 中傳送訊息，即可開始對話。",
         "alreadyTitle": "已連線到 Telegram",
-        "back": "返回 Telegram 設定",
         "checkingConnectionDescription": "我們正在檢查你的 Telegram 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
         "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
@@ -3754,16 +3752,8 @@
       },
       "telegram": {
         "backToIntegrations": "返回整合",
-        "botFallback": "Telegram 機器人",
-        "disconnectAria": "斷開{{bot}}的連線",
-        "documentTitle": "Telegram",
         "loadError": "無法載入 Telegram 設定。",
-        "moreOptions": "{{bot}}的更多選項",
-        "notConnected": "未連線",
-        "officialBot": "Telegram 官方機器人",
-        "officialDescription": "由 {{brandName}} 提供的官方機器人。",
-        "officialMissing": "缺少官方機器人配置。",
-        "pageDescription": "管理此工作區的機器人路由"
+        "officialMissing": "缺少官方機器人配置。"
       },
       "toasts": {
         "agentphoneConnected": "電話號碼已連線",
@@ -6383,7 +6373,6 @@
       "connect": "連線",
       "disconnect": "斷開連線",
       "disconnecting": "正在斷開…",
-      "manage": "管理",
       "moreOptions": "更多選項",
       "uninstall": "解除安裝",
       "uninstalling": "正在解除安裝…",
@@ -6454,7 +6443,6 @@
     },
     "telegram": {
       "description": "把 Telegram 訊息轉給智能體",
-      "openSettings": "開啟 Telegram 設定",
       "title": "Telegram"
     }
   }

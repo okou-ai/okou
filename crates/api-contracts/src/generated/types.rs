@@ -706,6 +706,8 @@ pub mod runners {
             pub runner_identity: ObservationRequestRunnerIdentity,
             /// Configuration used, including successful TOFU advancement.
             pub expected_generation: i64,
+            /// Immutable creation instance at PostgreSQL microsecond precision.
+            pub expected_created_at: String,
             /// UTC observation time, ordered independently of report delivery.
             pub observed_at: String,
             /// Connection failure; null means verified host and authenticated user.

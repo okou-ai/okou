@@ -1723,6 +1723,7 @@ describe("protected host writes with authorized Runner authority", () => {
           body: {
             ...request.body,
             expectedGeneration: host.generation,
+            expectedCreatedAt: host.createdAt,
             observedAt: nowDate().toISOString(),
             failureReason: null,
           },
@@ -1920,6 +1921,7 @@ describe("protected host writes with authorized Runner authority", () => {
           body: {
             ...request.body,
             expectedGeneration: host.generation,
+            expectedCreatedAt: host.createdAt,
             observedAt: nowDate().toISOString(),
             failureReason: null,
           },

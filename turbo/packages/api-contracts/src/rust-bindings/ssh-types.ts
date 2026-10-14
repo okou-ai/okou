@@ -65,6 +65,9 @@ export const sshTypeBindings = [
           expectedGeneration: [
             "Configuration used, including successful TOFU advancement.",
           ],
+          expectedCreatedAt: [
+            "Immutable creation instance at PostgreSQL microsecond precision.",
+          ],
           observedAt: [
             "UTC observation time, ordered independently of report delivery.",
           ],

@@ -1770,7 +1770,6 @@
       "threadSuggestions": "चैट थ्रेड",
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
       "workflows": {
-        "empty": "कोई मेल खाता वर्कफ़्लो नहीं",
         "loading": "वर्कफ़्लो लोड हो रहा है...",
         "showAll": "सभी वर्कफ़्लो दिखाएँ",
         "title": "वर्कफ़्लो"
@@ -3453,7 +3452,6 @@
         "alreadyDescription": "आप पहले से ही जुड़े हुए हैं. चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyDescriptionNamed": "आप पहले से ही {{bot}} से जुड़े हुए हैं। चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyTitle": "पहले से ही Telegram से जुड़ा है",
-        "back": "Telegram सेटिंग्स पर वापस जाएँ",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके Telegram कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
@@ -3774,16 +3772,8 @@
       },
       "telegram": {
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
-        "botFallback": "Telegram बॉट",
-        "disconnectAria": "{{bot}} को डिस्कनेक्ट करें",
-        "documentTitle": "Telegram",
         "loadError": "Telegram सेटिंग लोड नहीं हो सकी.",
-        "moreOptions": "{{bot}} के लिए अधिक विकल्प",
-        "notConnected": "जुड़े नहीं हैं",
-        "officialBot": "आधिकारिक Telegram बॉट",
-        "officialDescription": "{{brandName}} द्वारा प्रदान किया गया आधिकारिक बॉट।",
-        "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है.",
-        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें"
+        "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है."
       },
       "toasts": {
         "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
@@ -6411,7 +6401,6 @@
       "connect": "जोड़ना",
       "disconnect": "डिस्कनेक्ट",
       "disconnecting": "डिस्कनेक्ट हो रहा है...",
-      "manage": "प्रबंधित करना",
       "moreOptions": "अधिक विकल्प",
       "uninstall": "अनइंस्टॉल करें",
       "uninstalling": "अनइंस्टॉल किया जा रहा है...",
@@ -6482,7 +6471,6 @@
     },
     "telegram": {
       "description": "एजेंटों को Telegram संदेश रूट करें",
-      "openSettings": "Telegram सेटिंग्स खोलें",
       "title": "Telegram"
     }
   }

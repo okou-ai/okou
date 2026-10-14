@@ -1436,6 +1436,7 @@ describe("protected SSH authority", () => {
             body: {
               ...f.body,
               expectedGeneration: generation,
+              expectedCreatedAt: f.host.createdAt,
               observedAt: nowDate().toISOString(),
               failureReason: "access_rejected",
             },
@@ -1900,6 +1901,7 @@ describe("protected SSH authority", () => {
             body: {
               ...f.body,
               expectedGeneration: 1,
+              expectedCreatedAt: f.host.createdAt,
               observedAt: nowDate().toISOString(),
               failureReason: "access_rejected",
             },
@@ -2017,6 +2019,7 @@ describe("protected SSH authority", () => {
             body: {
               ...f.body,
               expectedGeneration: 2,
+              expectedCreatedAt: f.host.createdAt,
               observedAt: nowDate().toISOString(),
               failureReason: "access_rejected",
             },
@@ -2077,6 +2080,7 @@ describe("protected SSH authority", () => {
     const body = {
       ...f.body,
       expectedGeneration: 1,
+      expectedCreatedAt: f.host.createdAt,
       observedAt: nowDate().toISOString(),
       failureReason: "access_rejected" as const,
     };

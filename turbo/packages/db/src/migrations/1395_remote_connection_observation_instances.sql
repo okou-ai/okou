@@ -12,4 +12,10 @@ CREATE TABLE "vnc_connection_observations" (
 	CONSTRAINT "chk_vnc_connection_observation_failure" CHECK ("vnc_connection_observations"."failure_reason" IS NULL OR "vnc_connection_observations"."failure_reason" IN ('invalid_credential', 'unsafe_destination', 'network_failure', 'protocol', 'timed_out', 'disconnected', 'authentication_failed', 'unsupported_profile', 'kerberos_expired', 'kerberos_non_renewable', 'kerberos_renewal_exhausted'))
 );
 --> statement-breakpoint
+-- Adding the column holds the DDL lock until this migration commits. Clear only
+-- diagnostic rows whose original instance cannot be established, then require
+-- creation identity before a waiting writer can publish.
+ALTER TABLE "ssh_connection_observations" ADD COLUMN "connection_created_at" timestamp;--> statement-breakpoint
+DELETE FROM "ssh_connection_observations";--> statement-breakpoint
+ALTER TABLE "ssh_connection_observations" ALTER COLUMN "connection_created_at" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "vnc_connection_observations" ADD CONSTRAINT "vnc_connection_observations_connection_id_vnc_connections_id_fk" FOREIGN KEY ("connection_id") REFERENCES "public"."vnc_connections"("id") ON DELETE cascade ON UPDATE no action;

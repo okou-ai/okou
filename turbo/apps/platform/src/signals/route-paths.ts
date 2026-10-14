@@ -46,7 +46,6 @@ export const ROUTES = {
   settingsTeams: "/settings/teams",
   settingsFeishu: "/settings/feishu",
   settingsLark: "/settings/lark",
-  settingsTelegram: "/settings/telegram",
   githubConnect: "/github/connect",
   telegramConnect: "/telegram/connect",
   agentphoneConnect: "/agentphone/connect",

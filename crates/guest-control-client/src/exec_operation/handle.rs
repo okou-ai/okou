@@ -300,7 +300,8 @@ impl ExecWaitCore {
         self.result_rx = None;
         self.log_timeout(route_id.wire_seq(), poison_on_timeout, lifecycle);
         if poison_on_timeout {
-            self.shared.poison_connection();
+            self.shared
+                .poison_connection(crate::ConnectionCloseReason::ExecWaitTimeout, None);
         }
         Self::timeout_error(lifecycle)
     }

@@ -12,6 +12,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { MockTelegramBotStatus } from "../../../mocks/handlers/api-integrations-telegram.ts";
 import {
   getAction,
+  getIntegrationCard,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
 
@@ -90,14 +91,18 @@ function authorizationWindow() {
   return { popup, opened };
 }
 
-async function openSettings(): Promise<HTMLElement> {
+async function openWorks(): Promise<HTMLElement> {
   await setupPage({
     context,
     locale: "en-US",
-    path: "/settings/telegram",
+    path: "/works",
   });
   return await waitFor(() => {
-    const connect = getAction("button", "Connect");
+    const connect = getAction(
+      "button",
+      "Connect",
+      getIntegrationCard("Telegram"),
+    );
     expect(connect).toBeEnabled();
     return connect;
   });
@@ -121,6 +126,61 @@ function authorize(popup: Window): void {
   });
 }
 
+test("Works refreshes Telegram connections in realtime and disconnects the displayed account", async () => {
+  mockBot();
+  await openWorks();
+
+  context.mocks.data.telegramIntegration({ statuses: [botStatus(true)] });
+  context.mocks.ably.trigger("telegram:changed");
+
+  await expect(
+    screen.findByText("Connected (@ada_telegram)"),
+  ).resolves.toBeInTheDocument();
+  const card = getIntegrationCard("Telegram");
+  expect(queryAction("button", "Connect", card)).toBeNull();
+  click(getAction("button", "More options", card));
+  const disconnect = await waitFor(() => {
+    return getAction("button", "Disconnect");
+  });
+  click(disconnect);
+
+  await expect(
+    screen.findByText("Telegram account disconnected"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(getAction("button", "Connect", card)).toBeEnabled();
+  });
+  expect(
+    screen.queryByText("Connected (@ada_telegram)"),
+  ).not.toBeInTheDocument();
+  expect(pathname()).toBe("/works");
+});
+
+test("Works disables Telegram Connect when the official bot is not configured", async () => {
+  context.mocks.data.telegramIntegration({
+    statuses: [
+      {
+        ...botStatus(),
+        official: {
+          configured: false,
+          usesDefaultAgent: true,
+          linkedTelegramUserId: null,
+        },
+      },
+    ],
+  });
+
+  await setupPage({ context, path: "/works" });
+
+  await expect(
+    screen.findByText("Official bot configuration is missing."),
+  ).resolves.toBeInTheDocument();
+  expect(
+    getAction("button", "Connect", getIntegrationCard("Telegram")),
+  ).toBeDisabled();
+  expect(getIntegrationCard("Slack")).toBeInTheDocument();
+});
+
 test("The official bot connects from its new OAuth tab and ignores other windows and origins", async () => {
   mockBot();
   context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
@@ -133,7 +193,7 @@ test("The official bot connects from its new OAuth tab and ignores other windows
   });
   const { popup, opened } = authorizationWindow();
   const unrelatedWindow = context.mocks.browser.authWindow();
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
 
@@ -169,14 +229,16 @@ test("The official bot connects from its new OAuth tab and ignores other windows
     screen.findByText("Connected (@ada_telegram)"),
   ).resolves.toBeInTheDocument();
   expect(screen.getByText("Connected to Telegram!")).toBeInTheDocument();
-  expect(queryAction("button", "Connect")).toBeNull();
-  expect(pathname()).toBe("/settings/telegram");
+  expect(
+    queryAction("button", "Connect", getIntegrationCard("Telegram")),
+  ).toBeNull();
+  expect(pathname()).toBe("/works");
 });
 
 test("A blocked authorization tab shows an error and leaves Connect available", async () => {
   mockBot();
   context.mocks.browser.open(null);
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
 
@@ -184,9 +246,11 @@ test("A blocked authorization tab shows an error and leaves Connect available", 
     screen.findByText("Failed to open authorization window"),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
   });
-  expect(pathname()).toBe("/settings/telegram");
+  expect(pathname()).toBe("/works");
 });
 
 test.each([
@@ -215,16 +279,18 @@ test.each([
 }[])("Connect explains $name without opening a middle page", async (input) => {
   mockBot(input.status);
   const { popup } = authorizationWindow();
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
 
   await expect(screen.findByText(input.message)).resolves.toBeInTheDocument();
   expect(popup.closed).toBeTruthy();
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
   });
-  expect(pathname()).toBe("/settings/telegram");
+  expect(pathname()).toBe("/works");
 });
 
 test("The official connect page reports unavailable login configuration", async () => {
@@ -250,14 +316,14 @@ test("The official connect page reports unavailable login configuration", async 
   expect(
     screen.getByText("We couldn't connect Telegram. Try again from Telegram."),
   ).toBeInTheDocument();
-  expect(getAction("link", "Back to Telegram settings")).toBeInTheDocument();
+  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
   expect(queryAction("button", "Continue with Telegram")).toBeNull();
 });
 
 test("Closing the OAuth tab cancels the attempt and restores Connect", async () => {
   mockBot();
   const { popup } = authorizationWindow();
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
   await expectAuthorization(popup);
@@ -266,13 +332,15 @@ test("Closing the OAuth tab cancels the attempt and restores Connect", async () 
   popup.close();
 
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
   });
   expect(screen.queryByText("Connected to Telegram!")).not.toBeInTheDocument();
-  expect(pathname()).toBe("/settings/telegram");
+  expect(pathname()).toBe("/works");
 });
 
-test("A failed account link can be retried from settings", async () => {
+test("A failed account link can be retried from Works", async () => {
   mockBot();
   let shouldReject = true;
   context.mocks.api(integrationsTelegramContract.link, ({ respond }) => {
@@ -291,7 +359,7 @@ test("A failed account link can be retried from settings", async () => {
     });
   });
   const { popup } = authorizationWindow();
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
   await expectAuthorization(popup);
@@ -301,43 +369,49 @@ test("A failed account link can be retried from settings", async () => {
     screen.findByText("This Telegram account is already connected elsewhere."),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
   });
 
   shouldReject = false;
   popup.closed = false;
   popup.location.href = "";
-  click(getAction("button", "Connect"));
+  click(getAction("button", "Connect", getIntegrationCard("Telegram")));
   await expectAuthorization(popup);
   authorize(popup);
 
   await expect(
     screen.findByText("Connected (@ada_telegram)"),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/settings/telegram");
+  expect(pathname()).toBe("/works");
 });
 
-test("Leaving settings cancels authorization and ignores a later tab result", async () => {
+test("Leaving Works cancels authorization and ignores a later tab result", async () => {
   mockBot();
   const { popup } = authorizationWindow();
-  const connect = await openSettings();
+  const connect = await openWorks();
 
   click(connect);
   await expectAuthorization(popup);
-  click(getAction("link", "Back to integrations"));
+  click(getAction("link", "Agents"));
 
-  await waitFor(() => {
-    expect(getAction("link", "Open Telegram settings")).toBeInTheDocument();
-  });
-  expect(pathname()).toBe("/works");
+  await expect(
+    screen.findByRole("heading", { name: "Agents" }),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/agents");
   expect(popup.closed).toBeTruthy();
   authorize(popup);
-  click(getAction("link", "Open Telegram settings"));
+  act(() => {
+    window.history.back();
+  });
 
   await waitFor(() => {
-    expect(getAction("button", "Connect")).toBeEnabled();
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
   });
-  expect(pathname()).toBe("/settings/telegram");
+  expect(pathname()).toBe("/works");
   expect(
     screen.queryByText("Connected (@ada_telegram)"),
   ).not.toBeInTheDocument();

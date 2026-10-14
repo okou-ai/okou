@@ -1800,7 +1800,6 @@
       "threadSuggestions": "Conversaciones",
       "useForFutureChats": "Usar este modelo en futuros chats",
       "workflows": {
-        "empty": "No hay flujos de trabajo coincidentes",
         "loading": "Cargando flujos de trabajo...",
         "showAll": "Mostrar todos los flujos de trabajo",
         "title": "Flujos de trabajo"
@@ -3514,7 +3513,6 @@
         "alreadyDescription": "Ya estás conectado. Envía un mensaje en Telegram para empezar a chatear.",
         "alreadyDescriptionNamed": "Ya estás conectado con {{bot}}. Envía un mensaje en Telegram para empezar a hablar.",
         "alreadyTitle": "Ya está conectado a Telegram",
-        "back": "Volver a los ajustes de Telegram",
         "checkingConnectionDescription": "Espera mientras comprobamos tu conexión con Telegram.",
         "checkingConnectionTitle": "Comprobando conexión...",
         "checkingSession": "Espera mientras verificamos tu sesión de {{brandName}}.",
@@ -3835,16 +3833,8 @@
       },
       "telegram": {
         "backToIntegrations": "Volver a las integraciones",
-        "botFallback": "Bot de Telegram",
-        "disconnectAria": "Desconectar {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "No se pudo cargar la configuración de Telegram.",
-        "moreOptions": "Más opciones para {{bot}}",
-        "notConnected": "No conectado",
-        "officialBot": "Bot oficial de Telegram",
-        "officialDescription": "Bot oficial proporcionado por {{brandName}}.",
-        "officialMissing": "Falta la configuración oficial del bot.",
-        "pageDescription": "Gestiona el enrutamiento de bots para este espacio de trabajo"
+        "officialMissing": "Falta la configuración oficial del bot."
       },
       "toasts": {
         "agentphoneConnected": "Número de teléfono conectado",
@@ -6497,7 +6487,6 @@
       "connect": "Conectar",
       "disconnect": "Desconectar",
       "disconnecting": "Desconectando…",
-      "manage": "Gestionar",
       "moreOptions": "Más opciones",
       "uninstall": "Desinstalar",
       "uninstalling": "Desinstalando...",
@@ -6568,7 +6557,6 @@
     },
     "telegram": {
       "description": "Dirige los mensajes de Telegram a los agentes",
-      "openSettings": "Abrir los ajustes de Telegram",
       "title": "Telegram"
     }
   }
