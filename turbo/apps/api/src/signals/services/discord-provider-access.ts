@@ -151,7 +151,7 @@ export function discordSharedChannelPermissions(
 
 interface DiscordProviderAccessArgs {
   botToken: string;
-  guildId: string;
+  guildId?: string;
   discordUserId: string;
   botUserId: string;
   channelId: string;
@@ -195,6 +195,30 @@ function canStartPublicThread(
   return args.mode === "write" && [0, 5].includes(channel.type);
 }
 
+async function resolveDiscordDmAccess(
+  args: DiscordProviderAccessArgs,
+  channel: DiscordChannel,
+  signal?: AbortSignal,
+): Promise<{ kind: "allowed"; channel: DiscordChannel } | AccessFailure> {
+  // A bot can only fetch its own DMs; the single other recipient must be
+  // the exact connected sender, never a supplied arbitrary Discord user.
+  if (
+    channel.guild_id !== undefined ||
+    channel.recipients?.length !== 1 ||
+    channel.recipients[0]?.id !== args.discordUserId
+  ) {
+    return unavailable();
+  }
+  const self = await discordClient.fetchDiscordCurrentUser(args, signal);
+  if (self.kind !== "ok") {
+    return { kind: "denied", response: discordApiFailure(self) };
+  }
+  if (self.data.id !== args.botUserId || self.data.bot !== true) {
+    return unavailable();
+  }
+  return { kind: "allowed", channel };
+}
+
 export async function resolveDiscordProviderAccess(
   args: DiscordProviderAccessArgs,
   signal?: AbortSignal,
@@ -213,21 +237,15 @@ export async function resolveDiscordProviderAccess(
     return unavailable();
   }
   if (channel.type === 1) {
-    // A bot can only fetch its own DMs; the single other recipient must be
-    // the exact connected sender, never a supplied arbitrary Discord user.
-    if (
-      channel.guild_id !== undefined ||
-      channel.recipients?.length !== 1 ||
-      channel.recipients[0]?.id !== args.discordUserId
-    ) {
-      return unavailable();
-    }
-    const guild = await loadDiscordGuildAccess(args, signal);
-    return guild.kind === "allowed" ? { kind: "allowed", channel } : guild;
+    return await resolveDiscordDmAccess(args, channel, signal);
   }
-  if (channel.guild_id !== args.guildId) {
+  if (
+    !channel.guild_id ||
+    (args.guildId !== undefined && channel.guild_id !== args.guildId)
+  ) {
     return unavailable();
   }
+  const guildArgs = { ...args, guildId: channel.guild_id };
   const thread = isDiscordThread(channel);
   if (
     !isDiscordMessageChannel(channel) &&
@@ -236,14 +254,14 @@ export async function resolveDiscordProviderAccess(
     return unavailable();
   }
   const permissionChannel = await resolvePermissionChannel(
-    args,
+    guildArgs,
     channel,
     signal,
   );
   if (permissionChannel.kind === "denied") {
     return permissionChannel;
   }
-  const guild = await loadDiscordGuildAccess(args, signal);
+  const guild = await loadDiscordGuildAccess(guildArgs, signal);
   if (guild.kind === "denied") {
     return guild;
   }

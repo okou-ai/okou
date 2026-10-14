@@ -2,7 +2,6 @@ import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrati
 import { Button } from "@okouai/ui";
 import { useGet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Download } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -18,7 +17,7 @@ import {
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 
 export function discordDescription(data: DiscordOrgStatus): string {
-  if (!data.isAvailable && data.isInstalled) {
+  if (!data.isAvailable && data.isConnected) {
     return i18n.t(($) => {
       return $.works.discord.suspended;
     });
@@ -27,15 +26,6 @@ export function discordDescription(data: DiscordOrgStatus): string {
     return i18n.t(($) => {
       return $.works.discord.unconfigured;
     });
-  }
-  if (!data.isInstalled) {
-    return data.isAdmin
-      ? i18n.t(($) => {
-          return $.works.discord.adminSetup;
-        })
-      : i18n.t(($) => {
-          return $.works.discord.memberSetup;
-        });
   }
   if (!data.isConnected) {
     return i18n.t(($) => {
@@ -48,11 +38,7 @@ export function discordDescription(data: DiscordOrgStatus): string {
 }
 
 export function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
-  return (
-    data.isAvailable &&
-    ((!data.isInstalled && data.isAdmin) ||
-      (data.isInstalled && !data.isConnected))
-  );
+  return data.isAvailable && !data.isConnected;
 }
 
 export function DiscordAuthorizationActions({
@@ -87,27 +73,15 @@ export function DiscordAuthorizationActions({
     <div className="flex max-w-64 flex-col items-end gap-2">
       {canAuthorize ? (
         <Button
-          data-testid={
-            data.isInstalled
-              ? "discord-connect-button"
-              : "discord-install-button"
-          }
+          data-testid="discord-connect-button"
           variant="outline"
           size="sm"
           className="h-8 shrink-0 gap-1.5 rounded-lg"
           disabled={disabled || authorizationState.state === "loading"}
           onClick={() => {
-            detach(
-              authorize(
-                data.isInstalled ? "connect" : "install",
-                data.guildId,
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
+            detach(authorize(null, pageSignal), Reason.DomCallback);
           }}
         >
-          {!data.isInstalled && <Download size={14} />}
           {authorizationState.state === "loading"
             ? t(($) => {
                 return $.works.discord.authorizing;
@@ -116,13 +90,9 @@ export function DiscordAuthorizationActions({
               ? t(($) => {
                   return $.works.discord.retry;
                 })
-              : data.isInstalled
-                ? t(($) => {
-                    return $.works.actions.connect;
-                  })
-                : t(($) => {
-                    return $.works.discord.install;
-                  })}
+              : t(($) => {
+                  return $.works.actions.connect;
+                })}
         </Button>
       ) : null}
       {authorizationState.state === "loading" ? (

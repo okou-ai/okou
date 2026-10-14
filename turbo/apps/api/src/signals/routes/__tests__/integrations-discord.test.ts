@@ -245,9 +245,9 @@ describe("verified Discord integration settings", () => {
         headers: authenticate(owner),
         query: { action: "uninstall" },
       }),
-      [200],
+      [403],
     );
-    await expectDiscordChanges([owner.userId, owner.userId, peer.userId]);
+    await expectDiscordChanges([owner.userId]);
 
     await enable(owner);
     await enable(peer);
@@ -257,15 +257,15 @@ describe("verified Discord integration settings", () => {
       isConnected: false,
     });
     await expect(status(peer)).resolves.toMatchObject({
-      isInstalled: false,
-      isConnected: false,
+      isInstalled: true,
+      isConnected: true,
     });
     await accept(
       client().disconnect({
         headers: authenticate(owner),
         query: { action: "uninstall" },
       }),
-      [404],
+      [403],
     );
   });
 
@@ -309,6 +309,7 @@ describe("verified Discord integration settings", () => {
           connectionId: installed.connectionId,
           guildId: installed.guildId,
           guildName: "Customer workspace",
+          workspaceName: "Discord test workspace",
         },
       ],
     });
@@ -413,7 +414,7 @@ describe("verified Discord integration settings", () => {
 
     const disconnected = await status(owner);
     expect(disconnected).toMatchObject({
-      isInstalled: true,
+      isInstalled: false,
       isConnected: false,
       discordUserId: null,
     });
@@ -431,49 +432,29 @@ describe("verified Discord integration settings", () => {
     await expectDiscordChanges([owner.userId]);
   });
 
-  it("requires the current admin role for uninstall and removes only that guild", async () => {
+  it("rejects legacy server uninstall for both members and admins", async () => {
     const { actor, restore } = createActors();
     const owner = actor();
     await fixture(owner);
-    const otherOwner = actor();
-    const second = await fixture(otherOwner);
-    mockDiscordMemberships(context, [
-      { ...owner, orgRole: "org:member" },
-      otherOwner,
-    ]);
-
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [403],
-    );
-    await expectDiscordChanges([]);
-    await expect(status(owner)).resolves.toMatchObject({ isInstalled: true });
-
+    const peer = actor({ orgId: owner.orgId });
+    await fixture(peer);
+    for (const role of ["org:member", "org:admin"] as const) {
+      mockDiscordMemberships(context, [{ ...owner, orgRole: role }, peer]);
+      await accept(
+        client().disconnect({
+          headers: authenticate(owner),
+          query: { action: "uninstall" },
+        }),
+        [403],
+      );
+      await expect(status(owner)).resolves.toMatchObject({ isConnected: true });
+      await expect(status(peer)).resolves.toMatchObject({ isConnected: true });
+    }
     restore();
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: true,
-      isInstalled: false,
-      guildId: null,
-    });
-    await expect(status(otherOwner)).resolves.toMatchObject({
-      isAvailable: true,
-      isInstalled: true,
-      guildId: second.guildId,
-    });
+    await expectDiscordChanges([]);
   });
 
-  it("notifies the uninstalling user, connected users, and cached admins once each", async () => {
+  it("notifies only the disconnecting user and preserves peers and cached admins", async () => {
     const { actor } = createActors();
     const owner = actor();
     const installed = await fixture(owner);
@@ -496,7 +477,7 @@ describe("verified Discord integration settings", () => {
     }
     await enable(unconnectedAdmin);
     await expect(status(unconnectedAdmin)).resolves.toMatchObject({
-      isInstalled: true,
+      isInstalled: false,
       isConnected: false,
     });
     await expectDiscordChanges([]);
@@ -504,19 +485,15 @@ describe("verified Discord integration settings", () => {
     await accept(
       client().disconnect({
         headers: authenticate(owner),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200],
     );
-    const recipients = [
-      owner.userId,
-      connected.userId,
-      unconnectedAdmin.userId,
-    ];
+    const recipients = [owner.userId];
     await expectDiscordChanges(recipients);
     await expect(status(connected)).resolves.toMatchObject({
-      isInstalled: false,
-      isConnected: false,
+      isInstalled: true,
+      isConnected: true,
     });
     await expect(status(otherOwner)).resolves.toMatchObject({
       isInstalled: true,
@@ -527,7 +504,7 @@ describe("verified Discord integration settings", () => {
     await accept(
       client().disconnect({
         headers: authenticate(owner),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [404],
     );
@@ -597,6 +574,7 @@ describe("verified Discord integration settings", () => {
             connectionId: binding.connectionId,
             guildId: binding.guildId,
             guildName: binding.guildName,
+            workspaceName: "Discord test workspace",
           },
         ],
         dmSelectionConnectionId: binding.connectionId,
@@ -764,6 +742,7 @@ describe("verified Discord integration settings", () => {
               connectionId: first.connectionId,
               guildId: first.guildId,
               guildName: first.guildName,
+              workspaceName: "Discord test workspace",
             },
           ],
         });
@@ -878,6 +857,7 @@ describe("verified Discord integration settings", () => {
           connectionId: first.connectionId,
           guildId: first.guildId,
           guildName: first.guildName,
+          workspaceName: "Discord test workspace",
         },
       ],
     });
@@ -913,6 +893,7 @@ describe("verified Discord integration settings", () => {
         connectionId: current.connectionId,
         guildId: current.guildId,
         guildName: current.guildName,
+        workspaceName: "Discord test workspace",
       },
     ]);
 

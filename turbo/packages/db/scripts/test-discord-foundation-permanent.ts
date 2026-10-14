@@ -308,11 +308,17 @@ export async function validatePermanentDiscordFoundation(
     assert.equal(await countIds("discord_org_connections", connections), 2);
     assert.equal(await countIds("discord_chat_ingress", ingress), 2);
 
-    // Guild uninstall removes that guild's owned descendants, preserving another guild.
+    // Removing the bot's legacy server record does not revoke account connections.
     await client.query(
       "DELETE FROM discord_org_installations WHERE guild_id = $1",
       [guildA],
     );
+    assert.equal(await countIds("discord_org_connections", connections), 2);
+    assert.equal(await countIds("discord_chat_thread_routes", routes), 2);
+    // Explicit personal consent revocation still removes only its owned descendants.
+    await client.query("DELETE FROM discord_oauth_states WHERE id = $1", [
+      connections[1],
+    ]);
     assert.equal(await countIds("discord_org_connections", connections), 1);
     assert.equal(await countIds("discord_chat_thread_routes", routes), 1);
     assert.equal(await countIds("discord_chat_ingress", ingress), 1);

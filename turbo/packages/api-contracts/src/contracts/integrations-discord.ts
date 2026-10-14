@@ -29,6 +29,7 @@ export const discordOrgStatusSchema = z.object({
       connectionId: z.uuid(),
       guildId: z.string(),
       guildName: z.string().nullable(),
+      workspaceName: z.string().optional(),
     }),
   ),
 });
@@ -60,7 +61,7 @@ export const integrationsDiscordContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Disconnect the current user or remove this guild as an admin",
+    summary: "Disconnect the current user from Discord",
   },
   setDmSelection: {
     method: "PUT",
@@ -73,7 +74,7 @@ export const integrationsDiscordContract = c.router({
       403: apiErrorSchema,
       404: apiErrorSchema,
     },
-    summary: "Choose one of the caller's verified Discord DM bindings",
+    summary: "Choose the caller's default workspace for Discord",
   },
 });
 

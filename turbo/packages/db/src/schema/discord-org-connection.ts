@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   foreignKey,
   index,
   pgTable,
@@ -9,22 +11,17 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { discordOrgInstallations } from "./discord-org-installation";
 import { discordOauthStates } from "./discord-oauth-state";
 
-/** A verified Discord sender binding; organization ownership comes from its guild. */
+/** A verified account connection. Servers are conversation context, not owners. */
 export const discordOrgConnections = pgTable(
   "discord_org_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    guildId: varchar("guild_id", { length: 255 })
-      .notNull()
-      .references(
-        () => {
-          return discordOrgInstallations.guildId;
-        },
-        { onDelete: "cascade" },
-      ),
+    // Nullable legacy columns/keys keep outgoing API statements legal during
+    // promotion. New connections write orgId and leave guildId null.
+    guildId: varchar("guild_id", { length: 255 }),
+    orgId: text("org_id"),
     discordUserId: varchar("discord_user_id", { length: 255 }).notNull(),
     userId: text("user_id").notNull(),
     // Every binding references its genuine completed personal authorization.
@@ -33,6 +30,30 @@ export const discordOrgConnections = pgTable(
   },
   (table) => {
     return [
+      check(
+        "chk_discord_connection_grant_scope",
+        sql`${table.orgId} IS NOT NULL OR ${table.guildId} IS NOT NULL`,
+      ),
+      foreignKey({
+        name: "fk_discord_connection_account_grant",
+        columns: [
+          table.oauthGrantId,
+          table.userId,
+          table.discordUserId,
+          table.orgId,
+        ],
+        foreignColumns: [
+          discordOauthStates.id,
+          discordOauthStates.userId,
+          discordOauthStates.verifiedDiscordUserId,
+          discordOauthStates.orgId,
+        ],
+      }).onDelete("cascade"),
+      unique("uq_discord_connections_org_sender").on(
+        table.orgId,
+        table.discordUserId,
+      ),
+      unique("uq_discord_connections_org_user").on(table.orgId, table.userId),
       foreignKey({
         name: "fk_discord_connection_oauth_grant",
         columns: [

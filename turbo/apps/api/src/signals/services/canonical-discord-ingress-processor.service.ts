@@ -5,7 +5,7 @@ import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/int
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { command } from "ccstate";
 import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -119,7 +119,7 @@ interface InputAttachmentDownload {
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly guildId: string;
+  readonly guildId?: string;
   readonly discordUserId: string;
   readonly messageId: string;
   readonly attachment: DiscordAttachmentDownload;
@@ -345,7 +345,7 @@ const requireIngressAccess$ = command(
       readonly connectionId: string;
       readonly orgId: string;
       readonly userId: string;
-      readonly guildId: string;
+      readonly guildId?: string;
       readonly channelId: string;
       readonly mode: "view" | "read" | "write";
     },
@@ -442,8 +442,8 @@ const enqueueMessage$ = command(
 
 type IngressAccess = Pick<
   DiscordVerifiedBinding,
-  "connectionId" | "orgId" | "userId" | "guildId"
->;
+  "connectionId" | "orgId" | "userId"
+> & { readonly guildId?: string };
 type DiscordInputAsset = CanonicalInputAsset & {
   readonly discordAttachmentId: string;
 };
@@ -933,7 +933,7 @@ const persistClaimedIngress$ = command(
       connectionId: binding.connectionId,
       orgId: binding.orgId,
       userId: binding.userId,
-      guildId: binding.guildId,
+      guildId: message.guild_id,
     };
     // Route admission verified both channels; this one check binds the
     // source channel's current access to this claim. The pick revalidates
@@ -1073,8 +1073,7 @@ const terminalIngressRouteSelection = Object.freeze({
   userId: discordChatThreadRoutes.userId,
   sessionKey: discordChatThreadRoutes.sessionKey,
   destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-  orgId: discordOrgInstallations.orgId,
-  guildId: discordOrgConnections.guildId,
+  orgId: discordOauthStates.orgId,
   discordUserId: discordOrgConnections.discordUserId,
 });
 
@@ -1113,8 +1112,8 @@ async function recordTerminalIngressFailure(
         eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
       )
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
       .where(
         and(
@@ -1176,7 +1175,7 @@ async function recordTerminalIngressFailure(
                 target: {
                   routeId: route.id,
                   connectionId: claimed.connectionId,
-                  guildId: route.guildId,
+                  guildId: message.data.guild_id ?? null,
                   discordUserId: route.discordUserId,
                   channelId: route.destinationChannelId,
                   messageId: message.data.id,

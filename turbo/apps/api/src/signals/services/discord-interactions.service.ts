@@ -41,7 +41,6 @@ import {
   disconnectDiscordBinding$,
   discordDmBinding,
   discordEffectiveAgent,
-  discordGuildUserBinding,
   discordSenderBindings,
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
@@ -64,7 +63,7 @@ function discordHelp(): string {
     "",
     "**Usage**",
     "• Send a DM to this bot or mention it in a channel to message your workspace's default agent",
-    "• Use `/connect` in a DM to choose your workspace",
+    "• Use `/connect` to choose your workspace",
   ].join("\n");
 }
 
@@ -73,18 +72,6 @@ type AccountInteraction =
 
 const currentDiscordBinding$ = command(
   async ({ get }, actor: DiscordInteractionActor, signal: AbortSignal) => {
-    if (actor.guildId) {
-      const binding = await get(
-        discordGuildUserBinding({
-          guildId: actor.guildId,
-          discordUserId: actor.discordUserId,
-        }),
-      );
-      signal.throwIfAborted();
-      return binding
-        ? { kind: "connected" as const, binding }
-        : { kind: "not-connected" as const };
-    }
     const binding = await get(discordDmBinding(actor.discordUserId));
     signal.throwIfAborted();
     return binding;
@@ -146,15 +133,10 @@ const discordOrgPicker$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
-    if (args.actor.guildId) {
-      return discordAccountMessage(
-        "In a server, Okou uses that server's workspace. Use `/connect` in a direct message to the bot to choose your DM workspace.",
-      );
-    }
     const bindings = await get(discordSenderBindings(args.actor.discordUserId));
     signal.throwIfAborted();
     if (bindings.length === 0) {
-      return discordConnectMessage();
+      return discordConnectMessage(args.actor.guildId);
     }
     if (
       bindings.length === 1 &&
@@ -196,7 +178,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "✅ Workspace selected for bot DMs. Message the bot to start chatting."
+          ? "✅ Workspace selected for Discord. Message the bot to start chatting."
           : STALE_CONTROL,
       );
     }
@@ -208,8 +190,8 @@ const discordOrgPicker$ = command(
       })
       .map((binding) => {
         return {
-          label: binding.guildName ?? `Server ${binding.guildId}`,
-          description: `Workspace ${binding.orgId}`,
+          label: binding.orgName,
+
           value: binding.connectionId,
         };
       });
@@ -221,7 +203,7 @@ const discordOrgPicker$ = command(
       ...(current.kind === "connected"
         ? { selected: current.binding.connectionId }
         : {}),
-      content: "Choose your workspace for bot DMs.",
+      content: "Choose your workspace for Discord.",
       placeholder: "Select a workspace",
     });
   },
@@ -289,7 +271,7 @@ const discordAccountAction$ = command(
     if (action === "help") {
       return discordAccountMessage(discordHelp());
     }
-    if (action === "org" || (action === "connect" && !actor.guildId)) {
+    if (action === "org" || action === "connect") {
       return set(
         discordOrgPicker$,
         { actor, botToken, page: control?.page, selection },

@@ -193,28 +193,7 @@ test("stages only the requesting owner's OAuth export content without capabiliti
       ? [parsed]
       : [];
   });
-  expect(installationConsents).toHaveLength(1);
-  const installationConsent = z
-    .object({
-      id: z.uuid(),
-      orgId: z.string(),
-      initiatedByUserId: z.string(),
-      requestedGuildId: z.string(),
-      verifiedGuildId: z.string(),
-      verifiedBotUserId: z.string(),
-      approvedAt: z.iso.datetime(),
-      createdAt: z.iso.datetime(),
-      expiresAt: z.iso.datetime(),
-    })
-    .strict()
-    .parse(installationConsents[0]);
-  expect(installationConsent).toMatchObject({
-    orgId: owner.orgId,
-    initiatedByUserId: owner.userId,
-    requestedGuildId: binding.guildId,
-    verifiedGuildId: binding.guildId,
-    verifiedBotUserId: binding.botUserId,
-  });
+  expect(installationConsents).toHaveLength(0);
   const contents = emitted.join("\n");
   const ownState = new URL(ownAttempt.body.authorizationUrl).searchParams.get(
     "state",

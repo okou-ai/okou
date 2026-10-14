@@ -44,10 +44,10 @@ describe("okou discord connect", () => {
     );
     await run();
     const text = output.mock.calls.flat().join("\n");
-    expect(text).toContain("https://app.okou.ai/works");
-    expect(text).toContain("sign in, and select the intended organization");
+    expect(text).toContain("https://app.okou.ai/settings/discord");
+    expect(text).toContain("sign in, and select the intended workspace");
     expect(text).toContain("Choose Connect");
-    expect(text).toContain("Complete official Discord browser consent");
+    expect(text).toContain("complete official Discord browser consent");
     expect(text).toContain(
       "Authorization has not started or completed in this CLI",
     );
@@ -64,8 +64,8 @@ describe("okou discord connect", () => {
     );
     await run(["--install", "--guild-id", guildId, "--json"]);
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
-      url: "https://app.custom.test/works",
-      flow: "install",
+      url: `https://app.custom.test/settings/discord?guild_id=${guildId}`,
+      flow: "connect",
       guildId,
     });
   });
@@ -79,21 +79,19 @@ describe("okou discord connect", () => {
     vi.stubEnv("OKOU_API_BACKEND_URL", api);
     await run(["--json"]);
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
-      url: `${app}/works`,
+      url: `${app}/settings/discord`,
       flow: "connect",
     });
   });
 
-  it("guides an admin to actual installation without claiming any binding", async () => {
-    await run(["--install", "--guild-id", "123456789012345678"]);
+  it("connects from the given server without a separate installation action", async () => {
+    await run(["--guild-id", "123456789012345678"]);
     const text = output.mock.calls.flat().join("\n");
     expect(text).toContain(
-      "Choose Install to Discord as an organization admin",
+      "https://app.okou.ai/settings/discord?guild_id=123456789012345678",
     );
-    expect(text).toContain(
-      "Select Discord server 123456789012345678 during consent",
-    );
-    expect(text).toContain("guidance, not a verified binding");
+    expect(text).toContain("Choose Connect");
+    expect(text).not.toContain("Install to Discord");
   });
 
   it.each(["", "0", "1e18", "18446744073709551616"])(

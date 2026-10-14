@@ -594,7 +594,7 @@ describe("Discord native authorization and reads", () => {
   });
 
   it.each([
-    "different-guild",
+    "unknown-guild",
     "other-user-dm",
     "group-dm",
     "missing-user",
@@ -603,11 +603,23 @@ describe("Discord native authorization and reads", () => {
     "denies %s without exposing message contents",
     async (scenario) => {
       const f = await fixture();
-      if (scenario === "different-guild") {
+      if (scenario === "unknown-guild") {
+        const unknownGuild = snowflake();
+        server.use(
+          http.get(`${API}/guilds/${unknownGuild}`, () => {
+            return HttpResponse.json({}, { status: 404 });
+          }),
+          http.get(`${API}/guilds/${unknownGuild}/roles`, () => {
+            return HttpResponse.json({}, { status: 404 });
+          }),
+          http.get(`${API}/guilds/${unknownGuild}/members/:userId`, () => {
+            return HttpResponse.json({}, { status: 404 });
+          }),
+        );
         f.channels.set(f.channelId, {
           id: f.channelId,
           type: 0,
-          guild_id: snowflake(),
+          guild_id: unknownGuild,
           name: "private",
           permission_overwrites: [],
         });

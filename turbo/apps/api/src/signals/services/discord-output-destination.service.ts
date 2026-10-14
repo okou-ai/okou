@@ -176,11 +176,6 @@ const resolveDiscordOutputAccess$ = command(
     if (thread.kind !== "ok") {
       return { kind: "denied", response: discordApiFailure(thread) };
     }
-    matchingThread(thread.data, {
-      channelId: args.channelId,
-      parentId: route.channelId,
-      guildId: binding.binding.guildId,
-    });
     const destination = await set(
       requireDiscordConversationAccess$,
       { ...args, mode: "write" },
@@ -192,6 +187,11 @@ const resolveDiscordOutputAccess$ = command(
     if (destination.binding.connectionId !== binding.binding.connectionId) {
       return { kind: "denied", response: discordUnavailable() };
     }
+    matchingThread(thread.data, {
+      channelId: args.channelId,
+      parentId: route.channelId,
+      guildId: destination.binding.guildId,
+    });
     const published = await set(
       recordDiscordOutputDestination$,
       {

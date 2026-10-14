@@ -53,7 +53,7 @@ function createDiscordStoredContext(
       .select({
         connectionId: chatDiscordContext.connectionId,
         routeId: chatDiscordContext.routeId,
-        guildId: discordOrgConnections.guildId,
+        guildId: chatDiscordContext.guildId,
         discordUserId: chatDiscordContext.senderUserId,
         botUserId: chatDiscordContext.botUserId,
         channelId: chatDiscordContext.destinationChannelId,
@@ -151,7 +151,7 @@ export function createDiscordThreadContext(
       ? {
           orgId,
           userId: pickedEvent.userId,
-          guildId: target.guildId,
+          guildId: target.guildId ?? undefined,
           channelId: context.sourceChannelId,
           mode: "view" as const,
         }

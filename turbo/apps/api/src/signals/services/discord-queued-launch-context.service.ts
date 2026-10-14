@@ -50,7 +50,7 @@ export const loadDiscordQueuedLaunchMaterial$ = command(
       .select({
         connectionId: chatDiscordContext.connectionId,
         routeId: chatDiscordContext.routeId,
-        guildId: discordOrgConnections.guildId,
+        guildId: chatDiscordContext.guildId,
         discordUserId: chatDiscordContext.senderUserId,
         botUserId: chatDiscordContext.botUserId,
         channelId: chatDiscordContext.destinationChannelId,
@@ -127,7 +127,7 @@ export const loadDiscordQueuedLaunchMaterial$ = command(
         [
           "# Current Integration",
           "You are currently running inside: Discord",
-          `Guild ID: ${target.guildId}`,
+          ...(target.guildId ? [`Guild ID: ${target.guildId}`] : []),
           `Channel ID: ${target.channelId}`,
           `Message ID: ${target.messageId}`,
           `Sender Discord user ID: ${target.discordUserId}`,

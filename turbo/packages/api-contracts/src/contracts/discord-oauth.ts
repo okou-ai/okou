@@ -17,7 +17,8 @@ export const discordOauthContract = c.router({
     path: "/api/integrations/discord/oauth/start",
     headers: authHeadersSchema,
     body: z.strictObject({
-      flow: z.enum(["install", "connect"]),
+      // Accepted for already-open clients; the server derives scopes from guildId.
+      flow: z.enum(["install", "connect"]).optional(),
       guildId: discordSnowflakeSchema.optional(),
     }),
     responses: {
@@ -32,7 +33,8 @@ export const discordOauthContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Start browser-correlated Discord installation or account linking",
+    summary:
+      "Connect Discord, choosing a server only when no server context is supplied",
   },
   approve: {
     method: "POST",

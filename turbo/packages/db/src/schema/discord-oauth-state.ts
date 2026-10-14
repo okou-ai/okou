@@ -56,6 +56,12 @@ export const discordOauthStates = pgTable(
   },
   (table) => {
     return [
+      unique("uq_discord_oauth_account_owner").on(
+        table.id,
+        table.userId,
+        table.verifiedDiscordUserId,
+        table.orgId,
+      ),
       unique("uq_discord_oauth_grant_owner").on(
         table.id,
         table.userId,

@@ -76,8 +76,8 @@ export async function validatePermanentDiscordGrants(
       [peerGrant, peer, org, guild, peerSender, bot],
     );
     await client.query(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
-      [guild, peerSender, peer, peerGrant],
+      `INSERT INTO discord_org_connections (org_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
+      [org, peerSender, peer, peerGrant],
     );
     await client.query(
       `WITH personal AS (DELETE FROM discord_oauth_states WHERE user_id = $1 RETURNING id)
@@ -96,8 +96,8 @@ export async function validatePermanentDiscordGrants(
     assert.deepEqual(
       (
         await client.query(
-          `SELECT user_id FROM discord_org_connections WHERE guild_id = $1`,
-          [guild],
+          `SELECT user_id FROM discord_org_connections WHERE oauth_grant_id = $1`,
+          [peerGrant],
         )
       ).rows,
       [{ user_id: peer }],
@@ -115,11 +115,30 @@ export async function validatePermanentDiscordGrants(
     assert.deepEqual(
       (
         await client.query(
-          `SELECT user_id FROM discord_org_connections WHERE guild_id = $1`,
-          [guild],
+          `SELECT user_id FROM discord_org_connections WHERE oauth_grant_id = $1`,
+          [peerGrant],
         )
       ).rows,
-      [],
+      [{ user_id: peer }],
+    );
+    await assert.rejects(
+      client.query(
+        `UPDATE discord_org_connections SET org_id = $1 WHERE oauth_grant_id = $2`,
+        [`other-${org}`, peerGrant],
+      ),
+      { code: "23503", constraint: "fk_discord_connection_account_grant" },
+    );
+    await client.query("DELETE FROM discord_oauth_states WHERE id = $1", [
+      peerGrant,
+    ]);
+    assert.equal(
+      (
+        await client.query(
+          "SELECT id FROM discord_org_connections WHERE oauth_grant_id = $1",
+          [peerGrant],
+        )
+      ).rowCount,
+      0,
     );
     console.log(
       "Discord consent provenance, installer anonymization and scoped cascades passed",

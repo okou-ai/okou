@@ -20,7 +20,7 @@ export const discordCommand = new Command()
     `
 Examples:
   Connect account:  okou discord connect
-  Install server:   okou discord connect --install
+  Connect account:  okou discord connect
   List channels:    okou discord channel list --json
   Read history:     okou discord message history --channel-id <id> --json
   Read a thread:    okou discord message replies --channel-id <parent-channel-id> --message-id <root-message-id> --json

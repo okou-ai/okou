@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { discordConnectMessage } from "../../lib/discord-connect-message";
 import type { DiscordMessageCreate } from "../../lib/discord-gateway-event";
@@ -37,14 +37,7 @@ export const sendDiscordAdmissionNotice$ = command(
       const [connection] = await set(writeDb$)
         .select({ id: discordOrgConnections.id })
         .from(discordOrgConnections)
-        .where(
-          and(
-            eq(discordOrgConnections.discordUserId, message.author.id),
-            message.guild_id
-              ? eq(discordOrgConnections.guildId, message.guild_id)
-              : undefined,
-          ),
-        )
+        .where(eq(discordOrgConnections.discordUserId, message.author.id))
         .limit(1);
       signal.throwIfAborted();
       if (connection) {
@@ -79,7 +72,7 @@ export const sendDiscordAdmissionNotice$ = command(
       args.kind === "not-connected"
         ? discordConnectMessage(message.guild_id)
         : discordAccountMessage(
-            "Your Discord account is connected to more than one Okou workspace. Run `/connect` here to choose the workspace for direct messages, then send your message again.",
+            "Your Discord account is connected to more than one Okou workspace. Run `/connect` here to choose the workspace for Discord, then send your message again.",
           );
     const content = message.guild_id
       ? `<@${message.author.id}> ${notice.content}`

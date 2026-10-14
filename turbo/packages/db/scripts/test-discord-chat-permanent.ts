@@ -62,6 +62,18 @@ export async function validatePermanentDiscordChat(
       "DELETE FROM discord_org_installations WHERE guild_id = $1",
       [guild],
     );
+    assert.equal(
+      (
+        await client.query(
+          "SELECT id FROM discord_org_connections WHERE id = $1",
+          [connection],
+        )
+      ).rowCount,
+      1,
+    );
+    await client.query("DELETE FROM discord_oauth_states WHERE id = $1", [
+      connection,
+    ]);
     assert.deepEqual(
       (
         await client.query(

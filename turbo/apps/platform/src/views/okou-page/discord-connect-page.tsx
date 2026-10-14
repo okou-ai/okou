@@ -162,22 +162,18 @@ function DiscordConnectionState() {
     );
   }
   const data = status.state === "hasData" ? status.data : null;
-  if (
-    guildId !== null &&
-    (!discordSnowflakeSchema.safeParse(guildId).success ||
-      (data?.isInstalled && data.guildId !== guildId))
-  ) {
+  if (guildId !== null && !discordSnowflakeSchema.safeParse(guildId).success) {
     return (
       <ConnectErrorState
         message={t(($) => {
-          return $.works.discord.workspaceMismatch;
+          return $.works.discord.invalidLink;
         })}
       />
     );
   }
   // A callback URL is presentation metadata, not evidence of a connection.
   if (data?.isConnected) {
-    return <DiscordSuccessState data={data} />;
+    return <DiscordSuccessState data={data} guildId={guildId} />;
   }
   return (
     <>
@@ -192,23 +188,12 @@ function DiscordConnectionState() {
               ? t(($) => {
                   return $.works.discord.retry;
                 })
-              : data.isInstalled
-                ? t(($) => {
-                    return $.works.actions.connect;
-                  })
-                : t(($) => {
-                    return $.works.discord.install;
-                  })
+              : t(($) => {
+                  return $.works.actions.connect;
+                })
           }
           onConnect={() => {
-            detach(
-              connect(
-                data.isInstalled ? "connect" : "install",
-                guildId ?? data.guildId,
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
+            detach(connect(guildId, pageSignal), Reason.DomCallback);
           }}
         />
       ) : null}
@@ -239,7 +224,7 @@ function DiscordConnectIntro({
                 return $.works.discord.browserConsent;
               })}
             </span>
-          ) : data?.isAvailable && data.isInstalled ? (
+          ) : data?.isAvailable ? (
             t(($) => {
               return $.works.discord.connectDescription;
             })
@@ -256,9 +241,15 @@ function DiscordConnectIntro({
   );
 }
 
-function DiscordSuccessState({ data }: { data: DiscordOrgStatus }) {
+function DiscordSuccessState({
+  data,
+  guildId,
+}: {
+  data: DiscordOrgStatus;
+  guildId: string | null;
+}) {
   const { t } = useTranslation();
-  const destination = `channels/${discordSnowflakeSchema.parse(data.guildId)}`;
+  const destination = `channels/${discordSnowflakeSchema.parse(guildId ?? data.guildId)}`;
   return (
     <>
       <ConnectStatusMark state="success" idle={<DiscordMark size={40} />} />
@@ -266,18 +257,9 @@ function DiscordSuccessState({ data }: { data: DiscordOrgStatus }) {
         title={t(($) => {
           return $.works.discord.connectedTitle;
         })}
-        body={
-          data.guildName
-            ? t(
-                ($) => {
-                  return $.works.discord.successDescriptionWorkspace;
-                },
-                { workspace: data.guildName },
-              )
-            : t(($) => {
-                return $.works.discord.description;
-              })
-        }
+        body={t(($) => {
+          return $.works.discord.description;
+        })}
       />
       <div className="flex w-full flex-col gap-3">
         <a

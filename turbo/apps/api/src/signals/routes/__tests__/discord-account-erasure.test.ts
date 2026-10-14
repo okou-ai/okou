@@ -204,7 +204,7 @@ test("account erasure during provider context import revokes ingress and keeps t
     await accept(
       client(peer).disconnect({
         headers,
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200, 403, 404],
     );

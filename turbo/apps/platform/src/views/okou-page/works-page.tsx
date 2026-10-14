@@ -68,10 +68,7 @@ import {
   discordOrgData$,
   discordAuthorizationPending$,
   disconnectDiscordOrg$,
-  uninstallDiscordOrg$,
   selectDiscordDmBinding$,
-  showDiscordUninstallDialog$,
-  setShowDiscordUninstallDialog$,
 } from "../../signals/okou-page/discord.ts";
 import {
   approveDiscordAuthorization$,
@@ -471,17 +468,17 @@ function DiscordDmSelection({
   const items = data.dmBindings.map((binding) => {
     return {
       value: binding.connectionId,
-      label: binding.guildName ?? binding.guildId,
+      label: binding.workspaceName ?? binding.guildName ?? binding.guildId,
     };
   });
   return (
     <div className="flex flex-col gap-2 border-t border-border p-4">
       <label
-        htmlFor="discord-dm-server"
+        htmlFor="discord-workspace"
         className="text-sm font-medium text-foreground"
       >
         {t(($) => {
-          return $.works.discord.dmServer;
+          return $.works.discord.defaultWorkspace;
         })}
       </label>
       <Select
@@ -503,10 +500,10 @@ function DiscordDmSelection({
           }
         }}
       >
-        <SelectTrigger id="discord-dm-server" variant="neutral">
+        <SelectTrigger id="discord-workspace" variant="neutral">
           <SelectValue
             placeholder={t(($) => {
-              return $.works.discord.chooseDmServer;
+              return $.works.discord.chooseWorkspace;
             })}
           />
         </SelectTrigger>
@@ -606,12 +603,9 @@ function DiscordCard() {
   });
   const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
-  const [uninstallState, uninstall] = useLoadableSet(uninstallDiscordOrg$);
   const [selectionState, selectBinding] = useLoadableSet(
     selectDiscordDmBinding$,
   );
-  const showUninstallDialog = useGet(showDiscordUninstallDialog$);
-  const setShowUninstallDialog = useSet(setShowDiscordUninstallDialog$);
   const pageSignal = useGet(pageSignal$);
   const data = status.state === "hasData" ? status.data : null;
 
@@ -632,44 +626,29 @@ function DiscordCard() {
           </div>
           <DiscordAuthorizationActions
             data={data}
-            disabled={
-              disconnectState.state === "loading" ||
-              uninstallState.state === "loading"
-            }
+            disabled={disconnectState.state === "loading"}
           />
-          {data ? (
-            <ProviderCardActions
-              isConnected={data.isConnected}
-              isInstalled={data.isInstalled}
-              isAdmin={data.isAdmin}
-              installUrl={null}
-              connectUrl={null}
-              connectedDetail={data.guildName}
-              connectedTestId="discord-connected-indicator"
-              installTestId="discord-install-button"
-              installLabel={title}
-              moreOptionsLabel={t(($) => {
-                return $.works.discord.moreOptions;
-              })}
-              disconnectLabel={t(($) => {
-                return $.works.discord.disconnect;
-              })}
-              uninstallLabel={t(($) => {
-                return $.works.discord.uninstall;
-              })}
-              disconnecting={disconnectState.state === "loading"}
-              onDisconnect={() => {
-                detach(disconnect(pageSignal), Reason.DomCallback);
-              }}
-              onUninstall={() => {
-                setShowUninstallDialog(true);
-              }}
-            />
+          {data?.isConnected ? (
+            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <ConnectedIndicator testId="discord-connected-indicator" />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disconnectState.state === "loading"}
+                onClick={() => {
+                  detach(disconnect(pageSignal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.works.discord.disconnect;
+                })}
+              </Button>
+            </div>
           ) : null}
         </div>
         <DiscordApprovalPanel />
         <DiscordAuthorizationPendingNotice />
-        {data?.isInstalled && data.contextMode === "mentions_only" ? (
+        {data?.isConnected && data.contextMode === "mentions_only" ? (
           <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
             {t(($) => {
               return $.works.discord.limitedContext;
@@ -689,20 +668,6 @@ function DiscordCard() {
           />
         ) : null}
       </section>
-      <UninstallConfirmDialog
-        open={showUninstallDialog && data?.isInstalled === true && data.isAdmin}
-        setOpen={setShowUninstallDialog}
-        uninstalling={uninstallState.state === "loading"}
-        uninstall={() => {
-          return uninstall(pageSignal);
-        }}
-        title={t(($) => {
-          return $.works.discord.uninstallTitle;
-        })}
-        description={t(($) => {
-          return $.works.discord.uninstallDescription;
-        })}
-      />
     </>
   );
 }
