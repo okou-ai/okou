@@ -73,6 +73,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Tailscale setup",
     description: "Manage Tailscale networks and bind or rebind SSH hosts.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -254,8 +255,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.LinkWallet]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Enable hosted Link wallet connection and per-purchase approval. Credential retrieval and checkout remain unavailable.",
-    enabled: false,
+      "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
+    enabled: true,
   },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
@@ -274,13 +275,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable Stripe invoice-paid workflow automations with immutable Live-mode OAuth bindings.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OfficialWorkflows]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Official Workflow catalog discovery and new installations.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -409,6 +403,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

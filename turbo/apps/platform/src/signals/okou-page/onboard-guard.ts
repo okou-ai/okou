@@ -33,8 +33,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.githubConnect,
   ROUTES.home,
   ROUTES.ideas,
-  ROUTES.officialWorkflowDetail,
-  ROUTES.officialWorkflows,
   ROUTES.prompt,
   ROUTES.redeemCampaign,
   ROUTES.settings,

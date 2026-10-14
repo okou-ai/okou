@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.23...runner-executor-v0.11.0) (2026-10-14)
+
+
+### Features
+
+* persist sandbox startup path on agent runs ([#39972](https://github.com/okou-ai/okou/issues/39972)) ([db59569](https://github.com/okou-ai/okou/commit/db595699439f7f221fb5df8b9eba14a9a4faac73))
+
 ## [0.10.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.22...runner-executor-v0.10.23) (2026-10-14)
 
 ## [0.10.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.21...runner-executor-v0.10.22) (2026-10-14)

@@ -331,6 +331,50 @@ export const updateCustomTemplate$ = command(
 );
 
 /**
+ * A rename the member asked for from a card's menu. Image templates have no
+ * detail page to rename in, so the menu asks here and the picker shows one
+ * small dialog for it. The title is captured with the request, so the field
+ * starts from the name the member saw.
+ */
+interface CustomTemplateRenameRequest {
+  readonly id: string;
+  readonly title: string;
+}
+
+const internalPendingRename$ = state<CustomTemplateRenameRequest | null>(null);
+
+export const pendingCustomTemplateRename$ = computed((get) => {
+  return get(internalPendingRename$);
+});
+
+export const requestRenameCustomTemplate$ = command(
+  ({ set }, request: CustomTemplateRenameRequest) => {
+    set(internalPendingRename$, request);
+  },
+);
+
+export const cancelRenameCustomTemplate$ = command(({ set }) => {
+  set(internalPendingRename$, null);
+});
+
+/** Saves the name, then closes the dialog; a failure keeps it open. */
+export const renameCustomTemplate$ = command(
+  async (
+    { set },
+    args: { readonly templateId: string; readonly title: string },
+    signal: AbortSignal,
+  ) => {
+    await set(
+      updateCustomTemplate$,
+      { templateId: args.templateId, body: { title: args.title } },
+      signal,
+    );
+    signal.throwIfAborted();
+    set(internalPendingRename$, null);
+  },
+);
+
+/**
  * A removal waiting for the member to confirm it. Deleting is not undoable, so
  * every entry point asks here and the picker confirms once.
  *

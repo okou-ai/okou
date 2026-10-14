@@ -863,6 +863,7 @@ function mockLocationReplace(): LocationReplaceMock {
 function createMockWindow(): MockWindow {
   const mockWindow = {
     closed: false,
+    postMessage: (_message: unknown, _targetOrigin: string) => {},
     close: () => {
       mockWindow.closed = true;
     },

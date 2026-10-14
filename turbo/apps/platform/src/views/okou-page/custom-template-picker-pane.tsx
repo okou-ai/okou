@@ -3,6 +3,7 @@ import {
   ChevronRight,
   MoreHorizontal,
   FileText,
+  Pencil,
   Image as ImageIcon,
   Layers,
   Presentation,
@@ -55,16 +56,21 @@ import {
   CustomTemplatesLoadError,
 } from "./custom-template-preview-dialog.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
+import { normalizeTemplateTitle } from "./template-detail-layout.tsx";
 import { TEMPLATE_CARD_SHADOW, TEMPLATE_TILE_SCRIM } from "./template-tile.ts";
 import {
   cancelDeleteCustomTemplate$,
+  cancelRenameCustomTemplate$,
   customTemplateActiveExample$,
   customTemplateSearchQuery$,
   customTemplateCatalog$,
   deleteCustomTemplate$,
   openCustomTemplate$,
   pendingCustomTemplateDeletion$,
+  pendingCustomTemplateRename$,
+  renameCustomTemplate$,
   requestDeleteCustomTemplate$,
+  requestRenameCustomTemplate$,
   setCustomTemplateSearchQuery$,
   projectCustomTemplatePicker$,
   setCustomTemplateKindFilter$,
@@ -199,10 +205,12 @@ function CustomTemplateMeta({
 function CustomTemplateActions({
   template,
   onVisibilityChange,
+  onRename,
   onDelete,
 }: {
   readonly template: UserTemplateCatalogEntry;
   readonly onVisibilityChange: (visibility: UserTemplateVisibility) => void;
+  readonly onRename: () => void;
   readonly onDelete: () => void;
 }) {
   const { t } = useTranslation();
@@ -234,6 +242,12 @@ function CustomTemplateActions({
           <MoreHorizontal />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onClick={onRename}>
+            <Pencil />
+            {t(($) => {
+              return $.templates.rename.action;
+            })}
+          </DropdownMenuItem>
           <DropdownMenuSub>
             <DropdownMenuSubTrigger>
               <span className="flex-1">
@@ -335,6 +349,80 @@ function CustomTemplateExampleStrip({
 }
 
 /**
+ * An image template's picture. There is no detail page, like the built-in
+ * Illustration card: the card already shows the pictures, the strip and the
+ * action. Where there is more than one picture, clicking a half of it steps
+ * that way, the same affordance the built-in card uses.
+ */
+function CustomTemplateIllustrationHero({
+  template,
+  pictures,
+  shown,
+}: {
+  readonly template: UserTemplateCatalogEntry;
+  readonly pictures: readonly string[];
+  readonly shown: number;
+}) {
+  const { t } = useTranslation();
+  const showExample = useSet(showCustomTemplateExample$);
+  const hero = pictures[shown];
+  const navigable = pictures.length > 1;
+  return (
+    <div className="block w-full bg-muted">
+      {hero ? (
+        <img
+          src={hero}
+          alt={t(
+            ($) => {
+              return $.artifacts.templates.illustrationPreview;
+            },
+            { title: template.title },
+          )}
+          loading="lazy"
+          className={cn(
+            "block h-auto w-full",
+            navigable &&
+              "data-[half=left]:cursor-w-resize data-[half=right]:cursor-e-resize",
+          )}
+          onMouseMove={
+            navigable
+              ? (event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  event.currentTarget.dataset.half =
+                    event.clientX - rect.left < rect.width / 2
+                      ? "left"
+                      : "right";
+                }
+              : undefined
+          }
+          onMouseLeave={
+            navigable
+              ? (event) => {
+                  delete event.currentTarget.dataset.half;
+                }
+              : undefined
+          }
+          onClick={
+            navigable
+              ? (event) => {
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const direction =
+                    event.clientX - rect.left < rect.width / 2 ? -1 : 1;
+                  showExample({
+                    templateId: template.id,
+                    index:
+                      (shown + direction + pictures.length) % pictures.length,
+                  });
+                }
+              : undefined
+          }
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * An image template, shown the way the built-in Illustration tab shows a
  * style: the picture it draws, the other pictures beneath it, then the name.
  *
@@ -352,9 +440,9 @@ function CustomTemplateIllustrationCard({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
   const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const requestRename = useSet(requestRenameCustomTemplate$);
   const activeExample = useGet(customTemplateActiveExample$);
   const pictures = template.previewAssets.map((asset) => {
     return asset.url;
@@ -363,7 +451,6 @@ function CustomTemplateIllustrationCard({
     activeExample(template.id),
     Math.max(0, pictures.length - 1),
   );
-  const hero = pictures[shown];
   return (
     <div className="mb-6 break-inside-avoid">
       <div
@@ -374,28 +461,11 @@ function CustomTemplateIllustrationCard({
         )}
       >
         <div className="relative isolate">
-          <button
-            type="button"
-            className="block w-full cursor-pointer bg-muted"
-            aria-label={t(
-              ($) => {
-                return $.templates.actions.preview;
-              },
-              { title: template.title },
-            )}
-            onClick={() => {
-              openTemplate({ templateId: template.id, kind: template.kind });
-            }}
-          >
-            {hero ? (
-              <img
-                src={hero}
-                alt=""
-                loading="lazy"
-                className="block h-auto w-full"
-              />
-            ) : null}
-          </button>
+          <CustomTemplateIllustrationHero
+            template={template}
+            pictures={pictures}
+            shown={shown}
+          />
           {template.canManage ? (
             <CustomTemplateActions
               template={template}
@@ -407,6 +477,9 @@ function CustomTemplateIllustrationCard({
                   ),
                   Reason.DomCallback,
                 );
+              }}
+              onRename={() => {
+                requestRename({ id: template.id, title: template.title });
               }}
               onDelete={() => {
                 requestDelete({ id: template.id, title: template.title });
@@ -462,6 +535,7 @@ function CustomTemplateCard({
   const openTemplate = useSet(openCustomTemplate$);
   const updateTemplate = useSet(updateCustomTemplate$);
   const requestDelete = useSet(requestDeleteCustomTemplate$);
+  const requestRename = useSet(requestRenameCustomTemplate$);
   const open = () => {
     openTemplate({ templateId: template.id, kind: template.kind });
   };
@@ -535,6 +609,9 @@ function CustomTemplateCard({
                 ),
                 Reason.DomCallback,
               );
+            }}
+            onRename={() => {
+              requestRename({ id: template.id, title: template.title });
             }}
             onDelete={() => {
               requestDelete({ id: template.id, title: template.title });
@@ -850,6 +927,130 @@ function CustomTemplateDeleteConfirm({
   );
 }
 
+/**
+ * The rename a card's menu asked for. Image templates have no detail page, so
+ * this is where every template can be renamed from the catalog. It mounts per
+ * request, keyed by the template, so one request's failure is never shown on
+ * the next, and it closes only once the new name is saved.
+ */
+function CustomTemplateRenameSlot() {
+  const pending = useGet(pendingCustomTemplateRename$);
+  return pending ? (
+    <CustomTemplateRenameDialog
+      key={pending.id}
+      templateId={pending.id}
+      title={pending.title}
+    />
+  ) : null;
+}
+
+function CustomTemplateRenameDialog({
+  templateId,
+  title,
+}: {
+  readonly templateId: string;
+  readonly title: string;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const cancel = useSet(cancelRenameCustomTemplate$);
+  const [renameLoadable, renameTemplate] = useLoadableSet(
+    renameCustomTemplate$,
+  );
+  const saving = renameLoadable.state === "loading";
+  return (
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !saving) {
+          cancel();
+        }
+      }}
+    >
+      <DialogContent smMaxWidth={420}>
+        <form
+          className="grid gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (saving) {
+              return;
+            }
+            const field = new FormData(event.currentTarget).get("title");
+            const normalized =
+              typeof field === "string" ? normalizeTemplateTitle(field) : "";
+            if (normalized.length === 0) {
+              return;
+            }
+            if (normalized === title) {
+              cancel();
+              return;
+            }
+            detach(
+              renameTemplate({ templateId, title: normalized }, pageSignal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          <DialogHeader className="min-w-0 pr-8">
+            <DialogTitle className="break-words leading-tight">
+              {t(($) => {
+                return $.templates.actions.rename;
+              })}
+            </DialogTitle>
+          </DialogHeader>
+          <Input
+            name="title"
+            defaultValue={title}
+            maxLength={255}
+            required
+            autoFocus
+            disabled={saving}
+            aria-label={t(($) => {
+              return $.templates.actions.rename;
+            })}
+            onKeyDown={(event) => {
+              // Confirming an input method's candidate must not submit the
+              // half-composed name. Safari ends composition before that Enter
+              // and reports it with keyCode 229, so both are checked.
+              if (
+                event.key === "Enter" &&
+                (event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229)
+              ) {
+                event.preventDefault();
+              }
+            }}
+          />
+          {renameLoadable.state === "hasError" ? (
+            <p role="alert" className="text-sm text-destructive">
+              {t(($) => {
+                return $.templates.renameFailed;
+              })}
+            </p>
+          ) : null}
+          <DialogFooter className="min-w-0">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={cancel}
+            >
+              {t(($) => {
+                return $.templates.rename.cancel;
+              })}
+            </Button>
+            <Button type="submit" pending={saving}>
+              {t(($) => {
+                return $.templates.rename.save;
+              })}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /** Custom templates retain their loaded cards while a catalog refresh runs. */
 export function CustomTemplatePickerPane({
   signals,
@@ -956,6 +1157,7 @@ export function CustomTemplatePickerPane({
       </div>
       <CustomTemplatePreviewDialog onSelect={onSelect} />
       <CustomTemplateDeleteConfirmSlot />
+      <CustomTemplateRenameSlot />
     </div>
   );
 }

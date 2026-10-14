@@ -3,7 +3,6 @@ import {
   morningBriefPreferenceContract,
   type MorningBriefPreferenceResponse,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, test } from "vitest";
 
 import {
@@ -80,9 +79,6 @@ describe("unified preference settings", () => {
     await setupPage({
       context,
       path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.OfficialWorkflows]: false,
-      },
     });
 
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
@@ -135,9 +131,6 @@ describe("unified preference settings", () => {
     await setupPage({
       context,
       path: "/agents?settings=preference",
-      featureSwitches: {
-        [FeatureSwitchKey.OfficialWorkflows]: false,
-      },
     });
     const toggle = await screen.findByRole("switch", {
       name: "Morning brief",

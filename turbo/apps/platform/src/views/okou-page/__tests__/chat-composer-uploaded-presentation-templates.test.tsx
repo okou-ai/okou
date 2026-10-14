@@ -132,8 +132,12 @@ test("Uploaded templates wait for both subscriptions", async () => {
   gates.user.attach();
   await observed.waitForSubscribed("user");
   expect(
-    within(picker).getByText("Loading uploaded templates…"),
-  ).toBeInTheDocument();
+    within(picker).queryByLabelText(`Select template ${uploaded.title}`),
+  ).not.toBeInTheDocument();
+  expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
+  expect(
+    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+  ).toBeEnabled();
   gates.org.attach();
   await expect(
     within(picker).findByLabelText(`Select template ${uploaded.title}`),
@@ -179,7 +183,7 @@ test("A template subscription failure releases both scopes and leaves built-ins 
   await observed.waitForReleased("user");
 });
 
-test("A resolved empty catalog leaves the import card as the only prompt", async () => {
+test("An empty catalog keeps the import card available without status text", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
   mockTemplateChat();
   mockPresentationTemplateLibrary([]);
@@ -193,6 +197,7 @@ test("A resolved empty catalog leaves the import card as the only prompt", async
       "presentationTemplatesChanged",
     ),
   };
+  const observed = observeTemplateSubscriptions();
   const user = userEvent.setup();
   await setupPage({
     context,
@@ -202,16 +207,11 @@ test("A resolved empty catalog leaves the import card as the only prompt", async
   });
   await Promise.all([gates.user.started, gates.org.started]);
   const picker = await openTemplatePicker(user, "Presentation");
-  expect(
-    within(picker).getByText("Loading uploaded templates…"),
-  ).toBeInTheDocument();
+  expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
   gates.user.attach();
   gates.org.attach();
-  await waitFor(() => {
-    expect(
-      within(picker).queryByText("Loading uploaded templates…"),
-    ).not.toBeInTheDocument();
-  });
+  await observed.waitForSubscribed("user");
+  await observed.waitForSubscribed("org");
   // An empty library is the default state, not a condition worth reporting: the
   // import card already carries both the affordance and the absence.
   expect(

@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import postgres from "postgres";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import {
   applyPendingMigrations,
   NON_TRANSACTIONAL_MIGRATION_MARKER,
@@ -215,15 +215,94 @@ UPDATE migration_probe SET value = 1, annotation = 'applied';`,
     });
     await blocker.connect();
     try {
-      // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0401; new non-billing transactions are prohibited.
-      await blocker.query("BEGIN");
+      const backend = await blocker.query<{ pid: unknown }>(
+        "SELECT pg_backend_pid() AS pid",
+      );
+      assert.equal(backend.rowCount, 1);
+      const pid = backend.rows[0]?.pid;
+      assert.ok(
+        typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0,
+      );
+
+      class PausedCopy extends Query<Record<string, unknown>, []> {
+        paused = false;
+
+        handleCopyData(message: { chunk: unknown }): void {
+          if (!this.paused) {
+            this.paused = true;
+            blocker.connection.stream.pause();
+            this.emit("firstCopyData", message.chunk);
+          }
+        }
+      }
+
+      // COPY emits during execution; a modifying-CTE SELECT portal can finish
+      // its UPDATE before returning the first row. Bound output to about 64 MiB.
+      const resource = new PausedCopy(`COPY (
+        WITH held AS (
+          UPDATE migration_probe SET value = 3 WHERE id = 1 RETURNING id, value
+        )
+        SELECT id, value, ordinal, repeat('x', 8192)
+        FROM held CROSS JOIN generate_series(1, 8192) AS ordinal
+      ) TO STDOUT`);
+      let resourceEnded = false;
+      const outcome = new Promise<unknown>((resolve) => {
+        resource.once("error", (error: unknown) => {
+          resourceEnded = true;
+          resolve(error);
+        });
+        resource.once("end", () => {
+          resourceEnded = true;
+          resolve(new Error("COPY completed before cancellation"));
+        });
+      });
+      const firstData = new Promise<unknown>((resolve) => {
+        resource.once("firstCopyData", resolve);
+      });
+      // Own early failure before submission so it cannot become readiness.
+      const ready = Promise.race([
+        firstData,
+        outcome.then((error) => {
+          throw error;
+        }),
+      ]);
       try {
-        await blocker.query(
-          "LOCK TABLE migration_probe IN ACCESS EXCLUSIVE MODE",
-        );
+        blocker.query(resource);
+        const first = await ready;
+        assert.ok(Buffer.isBuffer(first));
+        assert.equal(first.toString("utf8"), `1\t3\t1\t${"x".repeat(8192)}\n`);
+        assert.equal(blocker.connection.stream.isPaused(), true);
+        assert.equal(resourceEnded, false);
         await assert.rejects(applyPendingMigrations(sql), /lock timeout/);
+        assert.deepEqual(await state(), committed);
       } finally {
-        await blocker.query("ROLLBACK");
+        let cancellationRequested = false;
+        try {
+          if (!resourceEnded) {
+            const cancelled = await sql`
+              SELECT pg_cancel_backend(${pid}) AS cancelled
+            `;
+            assert.deepEqual(Array.from(cancelled), [{ cancelled: true }]);
+            cancellationRequested = true;
+          }
+        } finally {
+          blocker.connection.stream.resume();
+          const error = await outcome;
+          // This query waits for the target's ReadyForQuery, including after
+          // an early native error. Its own idle ACK proves rollback and release.
+          const releaseACK = await blocker.query(
+            "SELECT id, value, annotation FROM migration_probe",
+          );
+          assert.equal(releaseACK.rowCount, 1);
+          assert.deepEqual(releaseACK.rows, [
+            { id: 1, value: 1, annotation: "applied" },
+          ]);
+          assert.equal(blocker.getTransactionStatus(), "I");
+          if (cancellationRequested) {
+            assert.ok(error instanceof DatabaseError);
+            assert.equal(error.code, "57014");
+          }
+        }
       }
     } finally {
       await blocker.end();

@@ -8,8 +8,8 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { ROUTES } from "../route-paths.ts";
 import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
+import { createDiscordOauthResultNotifier } from "./discord-oauth-message.ts";
 
 const reloadVersion$ = state(0);
 
@@ -34,7 +34,7 @@ const reloadDiscordOrg$ = command(({ set }) => {
 
 // Mutations stay pending until the card has the refreshed status, so the
 // previous server choice or connection never reappears after a save.
-const refreshDiscordOrg$ = command(
+export const refreshDiscordOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(reloadDiscordOrg$);
     await get(discordOrgData$);
@@ -79,7 +79,9 @@ export const startDiscordAuthorization$ = command(
     const closePopup = () => {
       popup.close();
     };
-    let showingResult = false;
+    let resultAvailable = false;
+    let resultNotifier:
+      ReturnType<typeof createDiscordOauthResultNotifier> | undefined;
     flowSignal.addEventListener("abort", closePopup, { once: true });
     return await withCleanup(
       (async () => {
@@ -104,6 +106,14 @@ export const startDiscordAuthorization$ = command(
             "Discord authorization did not return an attempt state",
           );
         }
+        resultNotifier = createDiscordOauthResultNotifier(
+          popup,
+          attemptState,
+          flowSignal,
+          () => {
+            flowSignal.removeEventListener("abort", closePopup);
+          },
+        );
         popup.location.href = result.body.authorizationUrl;
         // Callback verification alone cannot bind an account. Complete under
         // the current authenticated owner with the original browser's proof.
@@ -138,29 +148,19 @@ export const startDiscordAuthorization$ = command(
           flowSignal,
         );
         flowSignal.throwIfAborted();
-        // The original tab stays on Works; only the authorization tab moves
-        // to the result page, after the authenticated completion has settled.
-        const destination = new URL(
-          ROUTES.settingsDiscord,
-          window.location.origin,
-        );
-        destination.searchParams.set(
-          "status",
-          completed.ok ? "connected" : "error",
-        );
-        if (!popup.closed) {
-          popup.location.href = destination.toString();
-        }
-        showingResult = true;
-        flowSignal.removeEventListener("abort", closePopup);
+        // Let the consent page show either result in place. A document navigation
+        // would restart App bootstrap and flash its skeleton a second time.
+        resultAvailable = true;
+        resultNotifier.notify(completed.ok ? "connected" : "error");
         if (!completed.ok) {
           throw completed.error;
         }
         await set(refreshDiscordOrg$, flowSignal);
       })(),
       () => {
-        flowSignal.removeEventListener("abort", closePopup);
-        if (!showingResult) {
+        if (!resultAvailable) {
+          flowSignal.removeEventListener("abort", closePopup);
+          resultNotifier?.dispose();
           closePopup();
         }
       },
