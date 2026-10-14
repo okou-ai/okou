@@ -13,10 +13,7 @@ import {
   setSharedWorkerRealtimeBridge$,
 } from "../realtime.ts";
 import { clerk$, setupClerk$ } from "../auth.ts";
-import {
-  installMockedClerkBootstrap,
-  mockedClerk,
-} from "../../__tests__/mock-auth.ts";
+import { installMockedClerkBootstrap } from "../../__tests__/mock-auth.ts";
 import { initializeAppVersion$ } from "../app-version.ts";
 import { readClerkToken } from "../clerk-token.ts";
 import { setRootSignal$ } from "../root-signal.ts";
