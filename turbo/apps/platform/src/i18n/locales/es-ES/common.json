@@ -1952,6 +1952,25 @@
       "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
       "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
     },
+    "files": {
+      "connecting": "Conectando con los archivos…",
+      "empty": "Esta carpeta está vacía.",
+      "limit": "No se cargaron algunos archivos porque se alcanzó el límite del panel. Contrae carpetas o actualiza para continuar.",
+      "link": "Enlace",
+      "loading": "Cargando…",
+      "more": "Cargar más",
+      "noRun": "Los archivos están disponibles mientras haya una ejecución activa.",
+      "open": "Abrir archivos",
+      "other": "Otro",
+      "pending": "Los archivos estarán disponibles cuando comience la ejecución en cola.",
+      "readonly": "Archivos de solo lectura de la ejecución actual. Cerrar el panel libera la conexión.",
+      "refresh": "Actualizar",
+      "retry": "Reintentar",
+      "stale": "Esta lista cambió o caducó. Actualízala para continuar.",
+      "title": "Archivos",
+      "unavailable": "Los archivos no están disponibles. Inténtalo de nuevo.",
+      "updateRequired": "Esta ejecución no admite archivos. Inicia otra tras actualizar el entorno aislado."
+    },
     "forward": {
       "action": "Reenviar",
       "agents": "Agentes",

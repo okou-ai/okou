@@ -1952,6 +1952,25 @@
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
     },
+    "files": {
+      "connecting": "Connessione ai file…",
+      "empty": "Questa cartella è vuota.",
+      "limit": "Alcuni file non sono stati caricati perché è stato raggiunto il limite del pannello. Comprimi le cartelle o aggiorna per continuare.",
+      "link": "Collegamento",
+      "loading": "Caricamento…",
+      "more": "Carica altro",
+      "noRun": "I file sono disponibili durante un’esecuzione attiva.",
+      "open": "Apri file",
+      "other": "Altro",
+      "pending": "I file saranno disponibili all’avvio dell’esecuzione in coda.",
+      "readonly": "File di sola lettura dell’esecuzione corrente. Chiudendo il pannello si libera la connessione.",
+      "refresh": "Aggiorna",
+      "retry": "Riprova",
+      "stale": "Questo elenco è cambiato o è scaduto. Aggiorna per continuare.",
+      "title": "File",
+      "unavailable": "File non disponibili. Riprova.",
+      "updateRequired": "Questa esecuzione non supporta i file. Avvia una nuova esecuzione dopo l’aggiornamento della sandbox."
+    },
     "forward": {
       "action": "Inoltra",
       "agents": "Agenti",

@@ -1909,6 +1909,25 @@
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
     },
+    "files": {
+      "connecting": "Menghubungkan ke file…",
+      "empty": "Folder ini kosong.",
+      "limit": "Beberapa file tidak dimuat karena batas panel tercapai. Tutup folder atau segarkan untuk melanjutkan.",
+      "link": "Tautan",
+      "loading": "Memuat…",
+      "more": "Muat lebih banyak",
+      "noRun": "File tersedia selama proses berjalan aktif.",
+      "open": "Buka file",
+      "other": "Lainnya",
+      "pending": "File tersedia saat proses dalam antrean dimulai.",
+      "readonly": "File hanya baca dari proses saat ini. Menutup panel akan melepaskan koneksi.",
+      "refresh": "Segarkan",
+      "retry": "Coba lagi",
+      "stale": "Daftar ini berubah atau kedaluwarsa. Segarkan untuk melanjutkan.",
+      "title": "File",
+      "unavailable": "File tidak tersedia. Coba lagi.",
+      "updateRequired": "Proses ini tidak mendukung file. Mulai proses baru setelah sandbox diperbarui."
+    },
     "forward": {
       "action": "Teruskan",
       "agents": "Agen",

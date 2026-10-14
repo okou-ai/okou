@@ -1,6 +1,9 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
-import { animationFrame } from "signal-timers";
+import { command, computed, type Command, type Computed } from "ccstate";
 import { onRef } from "../utils.ts";
+import {
+  createFixedVirtualScrollSignals as createSidebarChatThreadDomSignals,
+  getFixedVirtualRange,
+} from "../fixed-virtual-list.ts";
 import {
   CHAT_THREAD_VIRTUAL_FALLBACK_VIEWPORT_HEIGHT,
   CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
@@ -20,9 +23,7 @@ import {
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 
-const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
-const SCROLL_VIEWPORT_LAYOUT_EVENT = "okou-sidebar-layout-change";
 
 export const unreadSidebarChatThreadList$ = computed(async (get) => {
   const threads = await get(unreadChatThreads$);
@@ -81,162 +82,9 @@ export interface SidebarChatThreadScrollSignals {
   >;
 }
 
-function emptyScrollMetrics(): SidebarChatThreadScrollMetrics {
-  return {
-    scrollTop: 0,
-    clientHeight: 0,
-  };
-}
-
-function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
-  const internalViewport$ = state<HTMLElement | null>(null);
-  const resizeScheduled$ = state(false);
-  const internalScrollMetrics$ =
-    state<SidebarChatThreadScrollMetrics>(emptyScrollMetrics());
-
-  const scrollViewport$ = computed((get) => {
-    return get(internalViewport$);
-  });
-  const scrollMetrics$ = computed((get) => {
-    return get(internalScrollMetrics$);
-  });
-  const isScrolled$ = computed((get) => {
-    return get(internalScrollMetrics$).scrollTop > 0;
-  });
-
-  const measureScrollViewport$ = command(
-    ({ get, set }, viewport: HTMLElement) => {
-      const metrics = {
-        scrollTop: viewport.scrollTop,
-        clientHeight: viewport.clientHeight,
-      };
-      const previous = get(internalScrollMetrics$);
-      if (
-        previous.scrollTop === metrics.scrollTop &&
-        previous.clientHeight === metrics.clientHeight
-      ) {
-        return;
-      }
-      set(internalScrollMetrics$, metrics);
-    },
-  );
-  const scheduleViewportMeasurement$ = command(
-    ({ get, set }, viewport: HTMLElement, signal: AbortSignal) => {
-      if (get(resizeScheduled$)) {
-        return;
-      }
-      set(resizeScheduled$, true);
-      // Layout refs and window resize events share one pending measurement.
-      // Read after the DOM commit, using the latest layout in this frame.
-      animationFrame(
-        () => {
-          set(resizeScheduled$, false);
-          set(measureScrollViewport$, viewport);
-        },
-        { signal },
-      );
-    },
-  );
-  const refreshScrollViewport$ = command(({ get }) => {
-    // A layout change is only a notification. The mounted viewport supplies
-    // the lifetime for the measurement, including when a sibling unmounts.
-    get(internalViewport$)?.dispatchEvent(
-      new Event(SCROLL_VIEWPORT_LAYOUT_EVENT),
-    );
-  });
-  const clearScrollViewport$ = command(
-    ({ get, set }, viewport: HTMLElement) => {
-      if (get(internalViewport$) !== viewport) {
-        return;
-      }
-      set(internalViewport$, null);
-      set(resizeScheduled$, false);
-      if (!restoreScrollPosition) {
-        set(internalScrollMetrics$, emptyScrollMetrics());
-      }
-    },
-  );
-  const setScrollViewport$ = onRef(
-    command(({ get, set }, viewport: HTMLElement, signal: AbortSignal) => {
-      if (restoreScrollPosition) {
-        viewport.scrollTop = get(internalScrollMetrics$).scrollTop;
-      }
-      set(internalViewport$, viewport);
-      set(resizeScheduled$, false);
-      set(measureScrollViewport$, viewport);
-      window.addEventListener(
-        "resize",
-        () => {
-          set(scheduleViewportMeasurement$, viewport, signal);
-        },
-        { signal },
-      );
-      viewport.addEventListener(
-        SCROLL_VIEWPORT_LAYOUT_EVENT,
-        () => {
-          set(scheduleViewportMeasurement$, viewport, signal);
-        },
-        { signal },
-      );
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(clearScrollViewport$, viewport);
-        },
-        { once: true },
-      );
-    }),
-  );
-  const setScrollMetrics$ = command(
-    ({ set }, metrics: SidebarChatThreadScrollMetrics) => {
-      set(internalScrollMetrics$, metrics);
-    },
-  );
-
-  return {
-    isScrolled$,
-    scrollViewport$,
-    scrollMetrics$,
-    setScrollViewport$,
-    setScrollMetrics$,
-    refreshScrollViewport$,
-  };
-}
-
 type SidebarChatThreadDomSignals = ReturnType<
   typeof createSidebarChatThreadDomSignals
 >;
-
-function getFixedVirtualRange({
-  itemCount,
-  scrollTop,
-  viewportHeight,
-  rowHeight,
-}: {
-  itemCount: number;
-  scrollTop: number;
-  viewportHeight: number;
-  rowHeight: number;
-}) {
-  const requestedFirstVisibleIndex = Math.floor(
-    Math.max(0, scrollTop) / rowHeight,
-  );
-  const visibleCount = Math.max(1, Math.ceil(viewportHeight / rowHeight));
-  const firstVisibleIndex = Math.min(
-    requestedFirstVisibleIndex,
-    Math.max(0, itemCount - visibleCount),
-  );
-  const startIndex = Math.max(
-    0,
-    firstVisibleIndex - CHAT_THREAD_VIRTUAL_OVERSCAN,
-  );
-  const endIndex = Math.min(
-    itemCount,
-    firstVisibleIndex + visibleCount + CHAT_THREAD_VIRTUAL_OVERSCAN,
-  );
-
-  return { startIndex, endIndex };
-}
 
 function createSidebarChatThreadViewportSignals(
   domSignals: SidebarChatThreadDomSignals,

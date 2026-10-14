@@ -4,6 +4,12 @@ import {
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
+import { authenticatedSessionKey$ } from "../auth.ts";
+import type { ChatEvent } from "./chat-event-types.ts";
+import {
+  createSandboxFilesSidebarSignals,
+  type SandboxFilesSidebarSignals,
+} from "./sandbox-files-sidebar.ts";
 
 import {
   createArtifactCatalogSignals,
@@ -185,6 +191,7 @@ export type ThreadSidebarTarget =
   | { readonly type: "artifact"; readonly source: ThreadSidebarArtifactSource }
   | { readonly type: "email-draft"; readonly signals: MailDraftSignals }
   | { readonly type: "browser" }
+  | { readonly type: "files" }
   | { readonly type: "automations" };
 
 export type ThreadSidebarOpenTarget = Exclude<
@@ -193,6 +200,7 @@ export type ThreadSidebarOpenTarget = Exclude<
 >;
 
 export interface ThreadSidebarSignals {
+  readonly files: SandboxFilesSidebarSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
   readonly openCatalogArtifact$: Command<Promise<void>, [string, AbortSignal]>;
@@ -230,8 +238,10 @@ export interface ThreadSidebarSignals {
 
 export function createThreadSidebarSignals(
   threadId: string,
+  chatEvents$: Computed<ChatEvent[]>,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<ThreadSidebarTarget | null>(null);
+  const sessionKey$ = state<string | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
@@ -247,19 +257,22 @@ export function createThreadSidebarSignals(
     diagram.open$,
   );
 
-  const startSession$ = command(({ set }, signal: AbortSignal): AbortSignal => {
-    signal.throwIfAborted();
-    set(diagram.dispose$);
-    const sessionSignal = set(resetSidebarSessionSignal$, signal);
-    sessionSignal.addEventListener(
-      "abort",
-      () => {
-        set(diagram.dispose$);
-      },
-      { once: true },
-    );
-    return sessionSignal;
-  });
+  const startSession$ = command(
+    ({ get, set }, signal: AbortSignal): AbortSignal => {
+      signal.throwIfAborted();
+      set(sessionKey$, get(authenticatedSessionKey$));
+      set(diagram.dispose$);
+      const sessionSignal = set(resetSidebarSessionSignal$, signal);
+      sessionSignal.addEventListener(
+        "abort",
+        () => {
+          set(diagram.dispose$);
+        },
+        { once: true },
+      );
+      return sessionSignal;
+    },
+  );
 
   const publishTarget$ = command(
     ({ get, set }, target: ThreadSidebarTarget): void => {
@@ -326,8 +339,16 @@ export function createThreadSidebarSignals(
   });
 
   return {
+    files: createSandboxFilesSidebarSignals(chatEvents$, close$),
     target$: computed((get) => {
-      return get(internalTarget$);
+      const target = get(internalTarget$);
+      if (
+        target?.type === "files" &&
+        (!get(sessionKey$) ||
+          get(sessionKey$) !== get(authenticatedSessionKey$))
+      )
+        return null;
+      return target;
     }),
     open$,
     openCatalogArtifact$,

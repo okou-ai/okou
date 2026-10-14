@@ -1916,6 +1916,25 @@
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
     },
+    "files": {
+      "connecting": "Connecting to files…",
+      "empty": "This folder is empty.",
+      "limit": "Some files could not be loaded because the panel limit was reached. Collapse folders or refresh to continue.",
+      "link": "Link",
+      "loading": "Loading…",
+      "more": "Load more",
+      "noRun": "Files are available while a run is active.",
+      "open": "Open files",
+      "other": "Other",
+      "pending": "Files will be available when the queued run starts.",
+      "readonly": "Read-only files from the current run. Closing this panel releases its connection.",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "stale": "This listing changed or expired. Refresh to continue.",
+      "title": "Files",
+      "unavailable": "Files are unavailable. Try again.",
+      "updateRequired": "This run does not support files. Start a new run after the sandbox is updated."
+    },
     "forward": {
       "action": "Forward",
       "agents": "Agents",

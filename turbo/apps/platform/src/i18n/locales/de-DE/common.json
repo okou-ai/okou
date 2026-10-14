@@ -1916,6 +1916,25 @@
       "sourcePartsHeading_one": "{{count}} Teil aus {{description}} zitiert",
       "sourcePartsHeading_other": "{{count}} Teile aus {{description}} zitiert"
     },
+    "files": {
+      "connecting": "Verbindung zu Dateien wird hergestellt…",
+      "empty": "Dieser Ordner ist leer.",
+      "limit": "Einige Dateien konnten wegen des Panel-Limits nicht geladen werden. Klappe Ordner zu oder aktualisiere die Ansicht.",
+      "link": "Link",
+      "loading": "Wird geladen…",
+      "more": "Mehr laden",
+      "noRun": "Dateien sind während eines aktiven Laufs verfügbar.",
+      "open": "Dateien öffnen",
+      "other": "Sonstige",
+      "pending": "Dateien sind verfügbar, sobald der wartende Lauf startet.",
+      "readonly": "Schreibgeschützte Dateien des aktuellen Laufs. Beim Schließen wird die Verbindung freigegeben.",
+      "refresh": "Aktualisieren",
+      "retry": "Erneut versuchen",
+      "stale": "Diese Liste wurde geändert oder ist abgelaufen. Aktualisiere sie.",
+      "title": "Dateien",
+      "unavailable": "Dateien sind nicht verfügbar. Versuche es erneut.",
+      "updateRequired": "Dieser Lauf unterstützt keine Dateien. Starte nach der Sandbox-Aktualisierung einen neuen Lauf."
+    },
     "forward": {
       "action": "Weiterleiten",
       "agents": "Agenten",
