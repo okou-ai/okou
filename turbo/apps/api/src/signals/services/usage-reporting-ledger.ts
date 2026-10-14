@@ -1,6 +1,5 @@
 import { and, asc, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { usageRecordKindSchema } from "@okouai/api-contracts/contracts/usage-record";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   nullableDriverValueDecoder,
   pgInt8ToSafeIntegerDecoder,
@@ -134,7 +133,6 @@ function memberUsageBreakdownQuery(
         .as("credits"),
     })
     .from(usage)
-    .leftJoin(agentRuns, eq(agentRuns.id, usage.runId))
     .where(eq(usage.orgId, orgId))
     .groupBy(usage.userId, kind, usage.kind, provider)
     .having(gt(sum(credits), sql`0`))

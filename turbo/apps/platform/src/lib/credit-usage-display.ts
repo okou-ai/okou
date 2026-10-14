@@ -5,7 +5,7 @@ import type { ModelCatalog } from "../signals/external/model-catalog.ts";
 
 /**
  * Run model names come only from the server catalog (`GET /api/model-catalog`).
- * Undefined while the catalog loads; rows then show the raw model ID.
+ * Undefined while the catalog loads; model rows then show a localized kind label.
  */
 type UsageModelCatalog = Pick<
   ModelCatalog,
@@ -159,7 +159,9 @@ function runModelDisplayName(
     return usageDisplayName();
   }
   if (!catalog) {
-    return model;
+    return i18n.t(($) => {
+      return $.usage.kinds.model;
+    });
   }
   const catalogModel = catalog.modelForIdentifier(model);
   return catalogModel ? catalog.displayName(catalogModel) : model;
@@ -269,9 +271,13 @@ export function buildCreditUsageDisplayRows(
     const parsed = parseUsageKind(entry.kind);
     const provider = parsed.provider ?? entry.provider;
     const managedKey = managedUsageRowKey(parsed.kind);
+    const identity =
+      parsed.kind === "model"
+        ? (catalog?.modelForIdentifier(provider.trim()) ?? provider)
+        : provider;
     const key = managedKey
       ? `kind:${managedKey}`
-      : `${parsed.kind}:${provider}`;
+      : `${parsed.kind}:${identity}`;
     const existing = rows.get(key);
     rows.set(key, {
       key,
