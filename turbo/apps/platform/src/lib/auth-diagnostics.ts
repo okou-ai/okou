@@ -58,6 +58,8 @@ interface AuthDiagnosticEvent {
     | "ably_auth_started"
     | "ably_auth_api_finished"
     | "ably_auth_callback"
+    | "ably_token_exchange_started"
+    | "ably_token_exchange_finished"
     | "ably_connection"
     | "ably_channel";
   readonly context?: AuthDiagnosticContext;
@@ -68,6 +70,7 @@ interface AuthDiagnosticEvent {
   readonly accepted?: boolean;
   readonly skipCache?: boolean;
   readonly requestId?: string;
+  readonly exchangeAttemptId?: string;
   readonly method?: string;
   readonly route?: string;
   readonly status?: number;
@@ -77,6 +80,7 @@ interface AuthDiagnosticEvent {
   readonly retryInMs?: number;
   readonly reasonCode?: number;
   readonly reasonStatusCode?: number;
+  readonly reason?: unknown;
   readonly scope?: "credential" | "user" | "org" | "run-output";
   readonly resumed?: boolean;
 }
@@ -107,6 +111,74 @@ function browserContext(
     "okou.auth.ios_like": browser.iosLike ? 1 : 0,
     "okou.auth.display_mode": browser.displayMode,
   };
+}
+
+function diagnosticProperty(value: unknown, property: string): unknown {
+  return typeof value === "object" && value !== null
+    ? Object.getOwnPropertyDescriptor(value, property)?.value
+    : undefined;
+}
+
+function diagnosticNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function diagnosticStatus(error: unknown): number | undefined {
+  const status = diagnosticNumber(diagnosticProperty(error, "statusCode"));
+  return status !== undefined && status >= 100 && status <= 599
+    ? status
+    : undefined;
+}
+
+function diagnosticErrorType(error: unknown): string {
+  const status = diagnosticStatus(error);
+  if (status === 408) {
+    return "http_408";
+  }
+  if (status !== undefined && status >= 500) {
+    return "http_5xx";
+  }
+  if (status !== undefined && status >= 400) {
+    return "http_4xx";
+  }
+  return "unknown";
+}
+
+/** Fixed numeric fields and allowlisted categories only. A bounded walk also
+ * handles cyclic provider causes without reading messages, stacks or bodies.
+ */
+function diagnosticReason(reason: unknown) {
+  return collectTemporaryAuthDiagnostic(now, () => {
+    if (reason === undefined || reason === null) {
+      return {};
+    }
+    let cause = diagnosticProperty(reason, "cause");
+    let depth = 0;
+    let leaf: unknown;
+    const visited = new Set<unknown>([reason]);
+    while (
+      typeof cause === "object" &&
+      cause !== null &&
+      !visited.has(cause) &&
+      depth < 4
+    ) {
+      visited.add(cause);
+      leaf = cause;
+      depth++;
+      cause = diagnosticProperty(cause, "cause");
+    }
+    return {
+      reason_code: diagnosticNumber(diagnosticProperty(reason, "code")),
+      reason_status_code: diagnosticStatus(reason),
+      reason_type: diagnosticErrorType(reason),
+      reason_cause_depth: depth,
+      reason_cause_code: diagnosticNumber(diagnosticProperty(leaf, "code")),
+      reason_cause_status_code: diagnosticStatus(leaf),
+      reason_cause_type: depth ? diagnosticErrorType(leaf) : undefined,
+    };
+  });
 }
 
 /** Passive point records: _time is the observed callback time, not its start.
@@ -145,6 +217,7 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
       token_attempt_id: context?.tokenAttemptId,
       provider_phase: context?.phase,
       http_request_id: event.requestId,
+      exchange_attempt_id: event.exchangeAttemptId,
       method: event.method,
       route: event.route,
       status: event.status,
@@ -155,6 +228,7 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
       reason_code: event.reasonCode,
       reason_status_code: event.reasonStatusCode,
       channel_scope: event.scope,
+      ...diagnosticReason(event.reason),
     };
     for (const [key, value] of Object.entries(fields)) {
       if (value !== undefined) {

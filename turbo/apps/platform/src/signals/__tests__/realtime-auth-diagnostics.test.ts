@@ -116,6 +116,12 @@ test.each([false, true])(
       code: 80_003,
       statusCode: 408,
       retryIn: 30_000,
+      cause: {
+        code: 50_003,
+        statusCode: 408,
+        message: "secret-token-exchange-message",
+        cause: { code: 40_170, statusCode: 403 },
+      },
     });
     context.mocks.ably.triggerConnectionState("connected");
     const renewed = await context.mocks.ably.triggerReauth();
@@ -137,6 +143,10 @@ test.each([false, true])(
           "okou.auth.retry_in_ms": 30_000,
           "okou.auth.reason_code": 80_003,
           "okou.auth.reason_status_code": 408,
+          "okou.auth.reason_cause_depth": 2,
+          "okou.auth.reason_cause_code": 40_170,
+          "okou.auth.reason_cause_status_code": 403,
+          "okou.auth.reason_cause_type": "http_4xx",
         }),
       }),
     );
@@ -200,6 +210,7 @@ test.each([false, true])(
       "org:test-org-123",
       "mock-signature",
       "mock-ably-key",
+      "secret-token-exchange-message",
     ]) {
       expect(payload).not.toContain(secret);
     }
