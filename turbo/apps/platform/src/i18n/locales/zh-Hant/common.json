@@ -556,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "簡報",
       "sharedConversation": "分享的對話",
+      "spreadsheet": "試算表",
       "text": "文字",
       "video": "影片"
     },
@@ -2060,9 +2061,11 @@
       "collapse": "收合",
       "copyLink": "複製連結",
       "empty": "此聊天中還沒有成果或連結",
+      "emptyLinks": "此聊天中暫無連結",
       "expand": "展開",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
+      "loadingLinks": "正在載入連結",
       "retry": "重試",
       "title": "聊天資源",
       "viewAll": "查看全部"

@@ -557,6 +557,7 @@
       "markdown": "Markdown",
       "presentation": "Präsentation",
       "sharedConversation": "Geteilte Unterhaltung",
+      "spreadsheet": "Tabelle",
       "text": "Text",
       "video": "Video"
     },
@@ -2068,9 +2069,11 @@
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
+      "emptyLinks": "Noch keine Links in diesem Chat",
       "expand": "Ausklappen",
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
+      "loadingLinks": "Links werden geladen",
       "retry": "Erneut versuchen",
       "title": "Chat-Ressourcen",
       "viewAll": "Alle anzeigen"

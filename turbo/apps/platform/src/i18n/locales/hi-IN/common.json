@@ -557,6 +557,7 @@
       "markdown": "Markdown",
       "presentation": "प्रस्तुति",
       "sharedConversation": "साझा बातचीत",
+      "spreadsheet": "स्प्रेडशीट",
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
@@ -2068,9 +2069,11 @@
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
       "empty": "इस चैट में अभी कोई आर्टिफ़ैक्ट या लिंक नहीं है",
+      "emptyLinks": "इस चैट में अभी कोई लिंक नहीं है",
       "expand": "विस्तार करें",
       "links": "लिंक",
       "loadFailed": "संसाधन लोड नहीं हो सके",
+      "loadingLinks": "लिंक लोड हो रहे हैं",
       "retry": "फिर कोशिश करें",
       "title": "चैट संसाधन",
       "viewAll": "सभी देखें"

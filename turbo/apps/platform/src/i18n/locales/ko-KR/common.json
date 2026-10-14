@@ -556,6 +556,7 @@
       "markdown": "마크다운",
       "presentation": "프레젠테이션",
       "sharedConversation": "공유된 대화",
+      "spreadsheet": "스프레드시트",
       "text": "텍스트",
       "video": "비디오"
     },
@@ -2060,9 +2061,11 @@
       "collapse": "접기",
       "copyLink": "링크 복사",
       "empty": "이 채팅에는 아직 아티팩트나 링크가 없습니다",
+      "emptyLinks": "이 채팅에는 아직 링크가 없습니다",
       "expand": "펼치기",
       "links": "링크",
       "loadFailed": "리소스를 불러오지 못했습니다",
+      "loadingLinks": "링크 불러오는 중",
       "retry": "다시 시도",
       "title": "채팅 리소스",
       "viewAll": "모두 보기"
