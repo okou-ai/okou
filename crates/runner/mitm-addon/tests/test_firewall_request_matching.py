@@ -2,7 +2,14 @@
 
 import urllib.parse
 
+import pytest
+
 import matching
+from tests.aws_sigv4_helpers import (
+    aws_sigv4_authorization,
+    aws_sigv4_header_auth_headers,
+    aws_sigv4_presigned_url,
+)
 from tests.firewall_helpers import grant_all, match_request_with_raw_firewalls, wrap_firewalls
 
 
@@ -54,7 +61,8 @@ class TestFirewallRequestMatching:
         assert result.params == {"owner": "octocat", "repo": "hello"}
         assert result.rule == "GET /repos/{owner}/{repo}"
 
-    def test_runtime_url_does_not_enter_global_parse_cache(self):
+    @pytest.mark.parametrize("indexed", [True, False])
+    def test_runtime_url_does_not_enter_global_parse_cache(self, indexed: bool):
         fw_configs = wrap_firewalls(
             [
                 {
@@ -67,6 +75,11 @@ class TestFirewallRequestMatching:
         )
         compiled = matching.compile_firewalls(fw_configs)
         assert compiled is not None
+        matcher = (
+            matching.match_compiled_firewall_request
+            if indexed
+            else matching._match_compiled_firewall_request_linear
+        )
 
         urllib.parse.urlsplit.cache_clear()
         try:
@@ -74,7 +87,7 @@ class TestFirewallRequestMatching:
             stable_cache = urllib.parse.urlsplit.cache_info()
             assert stable_cache.currsize > 0
 
-            result = matching.match_compiled_firewall_request(
+            result = matcher(
                 f"https://api.example.com/items/123?payload={'x' * 200_000}",
                 "GET",
                 compiled,
@@ -82,6 +95,112 @@ class TestFirewallRequestMatching:
             )
 
             assert isinstance(result, matching.FirewallAllow)
+            assert urllib.parse.urlsplit.cache_info() == stable_cache
+        finally:
+            urllib.parse.urlsplit.cache_clear()
+
+    @pytest.mark.parametrize("indexed", [True, False])
+    @pytest.mark.parametrize("presigned", [False, True])
+    @pytest.mark.parametrize(
+        ("query", "inspection_available", "allowed"),
+        [
+            pytest.param(
+                f"Action=DescribeInstances&Version=2016-11-15&payload={'x' * 60_000}",
+                True,
+                True,
+                id="allowed-large-query",
+            ),
+            pytest.param("Action=Describe%49nstances", True, True, id="encoded-action"),
+            pytest.param("%41ction=DescribeInstances", True, True, id="encoded-key"),
+            pytest.param(
+                "Action=DescribeInstances&Action=DescribeInstances",
+                True,
+                False,
+                id="duplicate-action",
+            ),
+            pytest.param(
+                "Action=DescribeInstances&Action=", True, False, id="duplicate-empty-action"
+            ),
+            pytest.param("Action=", True, False, id="empty-action"),
+            pytest.param("Version=2016-11-15", True, False, id="missing-action"),
+            pytest.param("Action=Describe+Instances", True, False, id="plus-action"),
+            pytest.param("Action=Describe%2BInstances", True, False, id="encoded-plus-action"),
+            pytest.param("Action=DescribeInstances", False, False, id="unavailable-inspection"),
+        ],
+    )
+    def test_aws_runtime_url_does_not_enter_global_parse_cache(
+        self,
+        indexed: bool,
+        presigned: bool,
+        query: str,
+        inspection_available: bool,
+        allowed: bool,
+    ) -> None:
+        rule = "POST / AWS sigv4=ec2 action=DescribeInstances"
+        fw_configs = wrap_firewalls(
+            [
+                {
+                    "base": "https://ec2.amazonaws.com",
+                    "auth": {
+                        "awsSigv4": {
+                            "accessKeyId": "${{ secrets.AWS_ACCESS_KEY_ID }}",
+                            "secretAccessKey": "${{ secrets.AWS_SECRET_ACCESS_KEY }}",
+                        }
+                    },
+                    "permissions": [{"name": "describe-instances", "rules": [rule]}],
+                }
+            ],
+            name="aws",
+        )
+        compiled = matching.compile_firewalls(fw_configs)
+        assert compiled is not None
+        matcher = (
+            matching.match_compiled_firewall_request
+            if indexed
+            else matching._match_compiled_firewall_request_linear
+        )
+        url = (
+            aws_sigv4_presigned_url("ec2.amazonaws.com", service="ec2", leading_query=query)
+            if presigned
+            else f"https://ec2.amazonaws.com/?{query}"
+        )
+        headers = (
+            ()
+            if presigned
+            else tuple(
+                aws_sigv4_header_auth_headers(
+                    host="ec2.amazonaws.com",
+                    authorization=aws_sigv4_authorization(service="ec2"),
+                )
+            )
+        )
+
+        urllib.parse.urlsplit.cache_clear()
+        try:
+            assert matching.firewall_base_config_is_valid("https://stable-config.example.com")
+            stable_cache = urllib.parse.urlsplit.cache_info()
+            assert stable_cache.currsize > 0
+
+            result = matcher(
+                url,
+                "POST",
+                compiled,
+                grant_all(fw_configs),
+                request_context=matching.FirewallRequestContext(
+                    headers=headers,
+                    aws_inspection_available=inspection_available,
+                ),
+            )
+
+            if allowed:
+                assert isinstance(result, matching.FirewallAllow)
+                assert result.name == "aws"
+                assert result.permission == "describe-instances"
+                assert result.rule == rule
+            else:
+                assert isinstance(result, matching.FirewallBlock)
+                assert result.reason == "unknown_endpoint"
+                assert result.permissions == ()
             assert urllib.parse.urlsplit.cache_info() == stable_cache
         finally:
             urllib.parse.urlsplit.cache_clear()
