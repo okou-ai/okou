@@ -29,11 +29,11 @@ function catalog(version: string, includeSlack: boolean) {
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
   artifact.catalogVersion = version;
-  if (!includeSlack) {
-    artifact.connectors = artifact.connectors.filter((connector) => {
-      return connector.slug !== "slack";
-    });
-  }
+  // This catalog-generation boundary needs only the connector whose grants
+  // change membership, rather than republishing the entire catalog three times.
+  artifact.connectors = artifact.connectors.filter((connector) => {
+    return includeSlack && connector.slug === "slack";
+  });
   return artifact;
 }
 
