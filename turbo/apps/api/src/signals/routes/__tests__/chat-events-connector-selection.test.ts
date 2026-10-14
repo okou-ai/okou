@@ -3,12 +3,10 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
-import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
-const runs = createRunsApi(context);
 const { api, chat, connectors, cancelChatRun, sessionHeaders } =
   createChatEventsFixture(context);
 function selectionsClient() {
@@ -129,40 +127,22 @@ describe("thread connector selection", () => {
     });
     expect(run.threadId).toBe(thread.id);
     const claimed = await claimChatRun(runnerGroup, run.runId);
-    const targets = [
-      {
-        kind: "builtin" as const,
-        connectorSlug: "openai",
-        sourceId: connection.id,
-      },
-      {
-        kind: "builtin" as const,
-        connectorSlug: "runtime",
-        sourceId: runtimeConnection.id,
-      },
-    ];
-    for (const target of targets) {
-      expect(claimed.claim.connectorRuntimeTargets).toContainEqual(
-        expect.objectContaining(target),
-      );
-    }
-    const synced = await own(() => {
-      return runs.syncConnectorRuntime(run.runId, { targets });
+    expect(claimed.claim.environment).toMatchObject({
+      OPENAI_TOKEN: "thread-selected-openai-key",
+      RUNTIME_API_KEY: "thread-runtime-key",
     });
     expect(
-      synced.map(({ target, state }) => {
-        return { target, state };
-      }),
-    ).toStrictEqual([
-      {
-        target: { kind: "builtin", connectorSlug: "openai" },
-        state: "available",
-      },
-      {
-        target: { kind: "builtin", connectorSlug: "runtime" },
-        state: "available",
-      },
-    ]);
+      claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
+    ).toMatchObject({
+      sourceType: "connector",
+      sourceId: connection.id,
+    });
+    expect(
+      claimed.claim.secretConnectorMetadataMap?.RUNTIME_API_KEY,
+    ).toMatchObject({
+      sourceType: "connector",
+      sourceId: runtimeConnection.id,
+    });
     await own(() => {
       return accept(
         selectionsClient().clear({
