@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.3...runner-supervisor-v0.13.4) (2026-10-14)
+
+
+### Refactoring
+
+* **runner-supervisor:** share terminal finalization completion ([#39930](https://github.com/okou-ai/okou/issues/39930)) ([d34c7bf](https://github.com/okou-ai/okou/commit/d34c7bf1279cd3175e8f089ca0118d5314e7fdcb))
+
 ## [0.13.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.2...runner-supervisor-v0.13.3) (2026-10-14)
 
 ## [0.13.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.1...runner-supervisor-v0.13.2) (2026-10-14)

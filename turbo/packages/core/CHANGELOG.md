@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.753.0](https://github.com/okou-ai/okou/compare/core-v8.752.2...core-v8.753.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive token and realtime auth diagnostics ([#39916](https://github.com/okou-ai/okou/issues/39916)) ([ba5b45a](https://github.com/okou-ai/okou/commit/ba5b45a6d899ac1c387c94babeeca1cd080b1a8a))
+
 ## [8.752.2](https://github.com/okou-ai/okou/compare/core-v8.752.1...core-v8.752.2) (2026-10-14)
 
 
