@@ -12,6 +12,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import homeStartupTelemetry from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/runner-home-startup-telemetry.json";
 
@@ -97,7 +98,7 @@ function successfulAxiomIngestStatus(ingested: number) {
   };
 }
 
-function collectorEvidence(stage: "initial" | "sample" | "cleanup") {
+function collectorEvidence(stage: "initial" | "sample" | "cleanup" | "tasks") {
   const fixture: unknown = JSON.parse(
     readFileSync(
       new URL(
@@ -1978,6 +1979,65 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
         );
       }
       expect(ingestRequests).toBe(2);
+    });
+  });
+
+  it("acknowledges owned managed-task OOM evidence and rejects invalid task paths", async () => {
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(`task OOM evidence ${randomUUID()}`);
+    await own(async () => {
+      const evidence = collectorEvidence("tasks");
+      let ingestRequests = 0;
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-task-oom-${randomUUID()}`);
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+          async ({ request }) => {
+            ingestRequests += 1;
+            return HttpResponse.json(
+              successfulAxiomIngestStatus(await ingestedEventCount(request)),
+            );
+          },
+        ),
+      );
+      const response = await api.requestAgentTelemetry(
+        { runId, oomEvidence: evidence },
+        headers,
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        success: true,
+        oomEvidenceVersion: 1,
+      });
+      const workload = evidence.groups[0].cgroup;
+      const nestedEvent = evidence.incidents[1]?.kernel_events[0];
+      assert(nestedEvent, "Expected a nested task collector kernel event");
+      const nestedVictim = nestedEvent.task_cgroup;
+      for (const path of [
+        `${workload}/tools/task-1/runtime`,
+        nestedVictim.replace(
+          "task-00000000-0000-0000-0000-000000000002",
+          "task-1",
+        ),
+        `${nestedVictim}/../runtime`,
+        nestedVictim.replace("exec-281-10-3", "exec-281-10-30"),
+      ]) {
+        for (const field of ["task_cgroup", "oom_cgroup"] as const) {
+          const altered = structuredClone(evidence);
+          const event = altered.incidents[1]?.kernel_events[0];
+          assert(event, "Expected a nested task collector kernel event");
+          event[field] = path;
+          await api.requestAgentTelemetryUnchecked(
+            { runId, oomEvidence: altered },
+            headers,
+            [400],
+          );
+        }
+      }
+      expect(ingestRequests).toBe(1);
     });
   });
 
