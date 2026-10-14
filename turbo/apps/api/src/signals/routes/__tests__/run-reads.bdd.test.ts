@@ -2484,6 +2484,56 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
+  it("retains settled startup paths after user cancellation and completion replay", async () => {
+    const actor = await entitledActor();
+    const { agentId } = await createThreadAgent(actor, "startup cancellation");
+
+    for (const sandboxStartupPath of ["blank", "cold"] as const) {
+      const run = await api.createThreadRun(actor, {
+        agentId,
+        prompt: `cancel ${sandboxStartupPath} startup`,
+      });
+      const claim = await api.claimRunnerJob(run.runId);
+      const headers = sandboxHeaders(claim.sandboxToken);
+
+      await api.requestCancelRun(actor, run.runId, [200]);
+      expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
+
+      const completion = await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          sandboxReuseResult: "poolMiss",
+          homeReuseResult: "cacheMiss",
+          sandboxStartupPath,
+        },
+        headers,
+        [200],
+      );
+      expect(completion.body).toStrictEqual({
+        success: true,
+        status: "failed",
+      });
+      const runner = await api.requestRunRunner(actor, run.runId, [200]);
+      expect(runner.body).toMatchObject({
+        sandboxReuseResult: "poolMiss",
+        homeReuseResult: "cacheMiss",
+        sandboxStartupPath,
+      });
+
+      const replay = await webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1 },
+        headers,
+        [200],
+      );
+      expect(replay.body).toStrictEqual(completion.body);
+      expect(
+        (await api.requestRunRunner(actor, run.runId, [200])).body,
+      ).toStrictEqual(runner.body);
+      expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
+    }
+  });
+
   it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
