@@ -675,6 +675,7 @@ fn validate_catalog_digest(value: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+    mod download_timeout;
     mod send_transport;
 
     use std::pin::Pin;
