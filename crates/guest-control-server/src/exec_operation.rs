@@ -2415,14 +2415,13 @@ fn exec_terminal_log_message_for_diagnostic(
         || split.is_actionable()
         || split.malformed_lines > 0;
 
-    // Mirror of the Guest Control Client rule: proven OOM evidence whose kernel
-    // records name only a separately contained tool leaf, rather than the
-    // agent's own containment domain, is informational.
-    let contained_tool_oom = split.has_proof()
-        && !split
-            .evidence
-            .as_ref()
-            .is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill);
+    // Mirror the Host's shared attribution rule; incomplete evidence must not
+    // downgrade an unproven or agent-domain OOM to an informational tool OOM.
+    let contained_tool_oom = split
+        .evidence
+        .as_ref()
+        .and_then(guest_contracts::oom_evidence::OomEvidence::classification)
+        == Some(guest_contracts::oom_evidence::OomClassification::ContainedToolOom);
     let clean_storage_download = slow
         && request.label == "storage-download"
         && request.lifecycle == ExecOperationLifecycle::OneShot
@@ -2452,6 +2451,13 @@ fn exec_terminal_log_message_for_diagnostic(
         .and_then(|evidence| uuid::Uuid::parse_str(&evidence.operation_id).ok())
     {
         message.push_str(&format!(" operation_id={operation_id}"));
+    }
+    if let Some(classification) = split
+        .evidence
+        .as_ref()
+        .and_then(guest_contracts::oom_evidence::OomEvidence::classification)
+    {
+        message.push_str(&format!(" oom_classification={}", classification.as_str()));
     }
     Some((level, message))
 }
@@ -3235,6 +3241,49 @@ mod tests {
         .unwrap();
         assert_eq!(level, "WARN");
         assert!(message.contains("terminal_reason=oom_evidence"));
+    }
+
+    #[test]
+    fn truncated_tool_records_with_runtime_counters_are_not_contained() {
+        use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+        let fixture: OomEvidence = serde_json::from_str(include_str!(
+            "../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+        ))
+        .unwrap();
+        let mut request = request(7, "private command must not be logged");
+        request.role = ExecProcessRole::Agent;
+        request.lifecycle = ExecOperationLifecycle::Supervised;
+        for (known_runtime_counter, expected) in
+            [(true, "agent_oom_kill"), (false, "unproven_containment")]
+        {
+            let mut evidence = fixture.clone();
+            if !known_runtime_counter {
+                evidence.groups[1].local_baseline.oom_kill = None;
+                for incident in &mut evidence.incidents {
+                    incident.groups[1].local_baseline.oom_kill = None;
+                }
+            }
+            let metadata = format!(
+                "{EVIDENCE_PREFIX}{}",
+                serde_json::to_string(&evidence).unwrap()
+            );
+            let (level, message) = exec_terminal_log_message_for_diagnostic(
+                &request,
+                Duration::ZERO,
+                ExecTermination::Exited { exit_code: 0 },
+                &BoundedDrainResult::default(),
+                &BoundedDrainResult::default(),
+                &metadata,
+            )
+            .unwrap();
+            assert_eq!(level, "WARN");
+            assert!(
+                message.contains(&format!("oom_classification={expected}")),
+                "{message}"
+            );
+            assert!(!message.contains("terminal_reason=contained_tool_oom"));
+            assert!(!message.contains(&request.command));
+        }
     }
 
     #[test]

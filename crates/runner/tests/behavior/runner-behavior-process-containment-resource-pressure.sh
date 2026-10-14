@@ -104,6 +104,39 @@ GLOBAL_REUSE_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$GLOBAL_REUSE_RESUL
 GLOBAL_REUSE_RUN_ID=$(jq -r '.run_id // empty' <<<"$GLOBAL_REUSE_JSON")
 [ -n "$GLOBAL_REUSE_RUN_ID" ] || fail "Guest-wide recovery omitted run ID"
 
+for TASK_SCOPE in workload guest; do
+  echo "--- Pressure: prefer nested managed tasks during ${TASK_SCOPE} OOM ---"
+  TASK_THREAD_ID=$(cat /proc/sys/kernel/random/uuid)
+  TASK_SESSION_ID="e2e-process-containment-task-${TASK_SCOPE}"
+  if [ "$TASK_SCOPE" = guest ]; then
+    TASK_OOM_PROMPT='@guest-wide-task-oom'
+    TASK_GUEST_WIDE=true
+  else
+    TASK_OOM_PROMPT='@managed-task-oom'
+    TASK_GUEST_WIDE=false
+  fi
+  if ! TASK_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+    --timeout 45 --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
+    --feature-flag sandboxReuse=true --prompt "$TASK_OOM_PROMPT"); then
+    printf '%s\n' "$TASK_RESULT" >&2
+    fail "nested task ${TASK_SCOPE} OOM did not preserve the main runtime"
+  fi
+  printf '%s\n' "$TASK_RESULT"
+  TASK_JSON=$(awk '/^\{/{line=$0} END{print line}' <<<"$TASK_RESULT")
+  TASK_RUN_ID=$(jq -r '.run_id // empty' <<<"$TASK_JSON")
+  [ -n "$TASK_RUN_ID" ] || fail "task OOM result omitted run ID"
+  TASK_LOG="/var/lib/vm0-runner/logs/system-stream-${TASK_RUN_ID}.log"
+  if ! sudo grep -E -q "nested-managed-task-oom-survived .*guest_wide=${TASK_GUEST_WIDE} .*reclaimed_bytes=[1-9][0-9]*" "$TASK_LOG"; then
+    sudo tail -n 80 "$TASK_LOG" >&2 || true
+    fail "task family retirement, memory reclamation or OOM scope was not verified"
+  fi
+  TASK_REUSE_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
+    --chat-thread-id "$TASK_THREAD_ID" --session-id "$TASK_SESSION_ID" \
+    --feature-flag sandboxReuse=true --prompt 'true') \
+    || fail "task OOM did not preserve subsequent session execution"
+  printf '%s\n' "$TASK_REUSE_RESULT"
+done
+
 echo "--- Pressure: runtime remains eligible without managed tools ---"
 if RUNTIME_OOM_RESULT=$(sudo "$BIN_DIR/runner" local submit --group "$GROUP" \
   --timeout 30 --prompt '@runtime-only-oom'); then

@@ -85,7 +85,7 @@ import json, os, pathlib, signal, subprocess, sys
 exec(os.environ["TASK_NESTED_SUPPORT"])
 relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
 assert relative.endswith("/runtime") and relative.count("/tools/task-") >= 2
-assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "0"
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 detached = subprocess.Popen(["/usr/bin/setsid", "/bin/bash", "-c", "trap '' TERM; while :; do sleep 1; done"],
                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -147,7 +147,7 @@ else:
     raise AssertionError("private startup FD leaked across exec")
 relative = pathlib.Path("/proc/self/cgroup").read_text().strip().removeprefix("0::")
 assert relative.endswith("/runtime") and "/tools/task-" in relative
-assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "0"
+assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 detached = subprocess.Popen(["/usr/bin/setsid", "/bin/bash", "-c", "trap '' TERM; while :; do sleep 1; done"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 command = ["/usr/local/bin/guest-tool-exec", "-c", "cat /proc/self/cgroup; cat /proc/self/oom_score_adj"]
@@ -500,7 +500,7 @@ for name in ("first", "second"):
         time.sleep(0.05)
     ready = json.loads(ready_path.read_text())
     assert ready["pid"] == int((state / "pid").read_text())
-    assert ready["score"] == "0"
+    assert ready["score"] == "1000"
     task_path = pathlib.Path("/sys/fs/cgroup" + ready["runtime"]).parent
     assert task_path.parent == main_runtime.parent / "tools"
     assert task_path.name.startswith("task-") and ready["runtime"].endswith("/runtime")
@@ -615,7 +615,7 @@ def pi_task(item):
     assert native["pid"] == item["pid"]
     relative = pathlib.Path(f"/proc/{item['pid']}/cgroup").read_text().strip()[3:]
     assert relative.endswith("/task-" + native["handle"] + "/runtime")
-    assert pathlib.Path(f"/proc/{item['pid']}/oom_score_adj").read_text().strip() == "0"
+    assert pathlib.Path(f"/proc/{item['pid']}/oom_score_adj").read_text().strip() == "1000"
     return registry, pathlib.Path("/sys/fs/cgroup" + relative).parent
 
 

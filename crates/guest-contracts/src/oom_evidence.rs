@@ -2,6 +2,8 @@
 
 mod containment;
 
+pub use containment::OomClassification;
+
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -211,7 +213,7 @@ fn incident_proves_oom(incident: &OomIncident) -> bool {
 /// empty capture candidate. Candidates remain useful for triage but are not
 /// themselves an operation failure.
 pub fn evidence_has_proof(evidence: &OomEvidence) -> bool {
-    evidence.incidents.iter().any(incident_proves_oom)
+    evidence.agent_domain_oom_kill() || evidence.incidents.iter().any(incident_proves_oom)
 }
 
 /// One terminal diagnostic separated into its actual diagnostic and the

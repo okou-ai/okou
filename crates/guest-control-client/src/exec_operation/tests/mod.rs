@@ -150,7 +150,11 @@ fn memory_snapshot(role: &str) -> guest_contracts::oom_evidence::MemorySnapshot 
     use guest_contracts::oom_evidence::{EvidenceStatus, MemoryEvents, MemorySnapshot};
     MemorySnapshot {
         role: role.to_string(),
-        cgroup: format!("/vm0-exec/exec-7-1-1/{role}"),
+        cgroup: if role == "workload" {
+            "/vm0-exec/exec-7-1-1/workload".to_string()
+        } else {
+            format!("/vm0-exec/exec-7-1-1/workload/{role}")
+        },
         inode: Some(4_096),
         status: EvidenceStatus::Available,
         current: Some(4_096),
@@ -160,12 +164,30 @@ fn memory_snapshot(role: &str) -> guest_contracts::oom_evidence::MemorySnapshot 
         anon: Some(2_048),
         file: Some(1_024),
         kernel: Some(512),
-        baseline: MemoryEvents::default(),
-        events: MemoryEvents::default(),
-        delta: MemoryEvents::default(),
-        local_baseline: MemoryEvents::default(),
-        local_events: MemoryEvents::default(),
-        local_delta: MemoryEvents::default(),
+        baseline: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
+        events: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
+        delta: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
+        local_baseline: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
+        local_events: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
+        local_delta: MemoryEvents {
+            oom_kill: Some(0),
+            ..Default::default()
+        },
     }
 }
 
@@ -194,6 +216,10 @@ fn oom_evidence_diagnostic_for(proof: bool, victim: &str) -> String {
     if proof {
         groups[0].delta.oom_kill = Some(1);
         groups[0].events.oom_kill = Some(1);
+        if victim == TOOL_LEAF_VICTIM {
+            groups[2].delta.oom_kill = Some(1);
+            groups[2].events.oom_kill = Some(1);
+        }
         kernel_events.push(KernelOomEvent {
             source: "guest".to_string(),
             sequence: 42,
@@ -1085,7 +1111,7 @@ fn clean_terminal_log_context(
         stream_overflowed: false,
         actionable_diagnostic: false,
         evidence_has_proof: false,
-        agent_domain_oom_kill: false,
+        classification: None,
         evidence_malformed: false,
         host_cancel_requested: false,
     }
@@ -1532,7 +1558,7 @@ fn exec_terminal_log_decision_warns_for_an_agent_domain_kill_on_any_exit() {
     for exit_code in [0, 1, 124] {
         let context = ExecTerminalLogContext {
             evidence_has_proof: true,
-            agent_domain_oom_kill: true,
+            classification: Some(guest_contracts::oom_evidence::OomClassification::AgentOomKill),
             ..clean_terminal_log_context(
                 ExecTerminalLogLifecycle::Supervised,
                 false,
@@ -1557,6 +1583,9 @@ fn exec_terminal_log_decision_informs_for_a_tool_only_kill_on_any_exit() {
     for exit_code in [0, 1, 124] {
         let context = ExecTerminalLogContext {
             evidence_has_proof: true,
+            classification: Some(
+                guest_contracts::oom_evidence::OomClassification::ContainedToolOom,
+            ),
             ..clean_terminal_log_context(
                 ExecTerminalLogLifecycle::Supervised,
                 false,
@@ -1572,6 +1601,22 @@ fn exec_terminal_log_decision_informs_for_a_tool_only_kill_on_any_exit() {
         );
         assert_eq!(decision.reason, ExecTerminalLogReason::ContainedToolOom);
     }
+}
+
+#[test]
+fn exec_terminal_log_decision_warns_when_oom_containment_is_unproven() {
+    let context = ExecTerminalLogContext {
+        evidence_has_proof: true,
+        classification: Some(guest_contracts::oom_evidence::OomClassification::UnprovenContainment),
+        ..clean_terminal_log_context(
+            ExecTerminalLogLifecycle::Supervised,
+            false,
+            ExecTermination::Exited { exit_code: 0 },
+        )
+    };
+    let decision = exec_terminal_log_decision(context).unwrap();
+    assert_eq!(decision.severity, ExecTerminalLogSeverity::Warn);
+    assert_eq!(decision.reason, ExecTerminalLogReason::OomEvidence);
 }
 
 #[test]
@@ -1887,6 +1932,46 @@ fn oom_classification_names_the_killed_cgroup_only_for_proven_evidence() {
         assert_eq!(events.len(), 1, "classification={expected}");
         assert_terminal_log_field(&events[0], "oom_classification", expected);
         assert_eq!(events[0].field_kinds["oom_classification"], "str");
+    }
+}
+
+#[test]
+fn incomplete_kernel_records_use_counter_proof_without_claiming_tool_containment() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    let fixture: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+    ))
+    .unwrap();
+    for (known_runtime_counter, expected) in
+        [(true, "agent_oom_kill"), (false, "unproven_containment")]
+    {
+        let mut evidence = fixture.clone();
+        if !known_runtime_counter {
+            evidence.groups[1].local_baseline.oom_kill = None;
+            for incident in &mut evidence.incidents {
+                incident.groups[1].local_baseline.oom_kill = None;
+            }
+        }
+        let metadata = format!(
+            "{EVIDENCE_PREFIX}{}",
+            serde_json::to_string(&evidence).unwrap()
+        );
+        let result = guest_control_proto::DecodedExecResult {
+            termination: ExecTermination::Exited { exit_code: 137 },
+            diagnostic: &metadata,
+            ..clean_terminal_result()
+        };
+        let events = capture_terminal_log_events_with_context(
+            ExecTerminalLogLifecycle::Supervised,
+            false,
+            &result,
+            false,
+            false,
+        );
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].level, Level::WARN);
+        assert_terminal_log_field(&events[0], "oom_classification", expected);
+        assert_terminal_log_field(&events[0], "terminal_reason", "oom_evidence");
     }
 }
 
