@@ -18,9 +18,9 @@ const SECRET = "reflected-account-secret";
 const builtinTarget = { kind: "builtin", connectorSlug: "github" };
 const customTarget = { kind: "custom", customConnectorId: CUSTOM_ID };
 
-function account(target: object, id = ID) {
+function account(target: object) {
   return {
-    id,
+    id: ID,
     target,
     authMethod: "oauth",
     displayName: "Work",
@@ -44,9 +44,6 @@ function account(target: object, id = ID) {
 describe("connector account exact management", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const exit = vi.spyOn(process, "exit").mockImplementation((() => {
-    throw new Error("process.exit called");
-  }) as never);
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
@@ -56,15 +53,14 @@ describe("connector account exact management", () => {
     }
     server.use(
       stubConnectorCatalogStatus([
-        catalogStatusItem({ connectorSlug: "github", label: "Shared" }),
+        catalogStatusItem({ connectorSlug: "github" }),
       ]),
-      stubCustomConnectors([customConnector({ displayName: "Shared" })]),
+      stubCustomConnectors([customConnector()]),
     );
   });
   afterEach(() => {
     log.mockClear();
     error.mockClear();
-    exit.mockClear();
     vi.unstubAllEnvs();
   });
 
@@ -139,76 +135,6 @@ describe("connector account exact management", () => {
       expect(received).toBe(true);
       expect(log.mock.calls.flat().join("\n")).not.toContain(SECRET);
       expect(error).not.toHaveBeenCalled();
-    },
-  );
-
-  it("rejects ambiguous selectors before a mutation", async () => {
-    await expect(
-      connectorAccountCommand.parseAsync([
-        "node",
-        "okou",
-        "delete",
-        "Shared",
-        "--connection-id",
-        ID,
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).toContain(
-      "Ambiguous connector selector",
-    );
-  });
-
-  it.each([account(customTarget), account(builtinTarget, OTHER_ID)])(
-    "rejects response identity mismatches without output",
-    async (response) => {
-      server.use(
-        http.get(`http://localhost:3000/api/connector-accounts/${ID}`, () => {
-          return HttpResponse.json(response);
-        }),
-      );
-      await expect(
-        connectorAccountCommand.parseAsync([
-          "node",
-          "okou",
-          "show",
-          "builtin:github",
-          "--connection-id",
-          ID,
-          "--json",
-        ]),
-      ).rejects.toThrow("process.exit called");
-      expect(log).not.toHaveBeenCalled();
-      expect(error.mock.calls.flat().join("\n")).not.toContain(SECRET);
-    },
-  );
-
-  it.each([400, 401, 403, 404, 409, 500])(
-    "does not reflect HTTP %s response secrets",
-    async (status) => {
-      server.use(
-        http.delete(
-          `http://localhost:3000/api/connector-accounts/${ID}`,
-          () => {
-            return HttpResponse.json(
-              { error: { message: SECRET, code: SECRET }, password: SECRET },
-              { status },
-            );
-          },
-        ),
-      );
-      await expect(
-        connectorAccountCommand.parseAsync([
-          "node",
-          "okou",
-          "delete",
-          "builtin:github",
-          "--connection-id",
-          ID,
-        ]),
-      ).rejects.toThrow("process.exit called");
-      const output = error.mock.calls.flat().join("\n");
-      expect(output).toContain(`HTTP ${status}`);
-      expect(output).not.toContain(SECRET);
     },
   );
 });

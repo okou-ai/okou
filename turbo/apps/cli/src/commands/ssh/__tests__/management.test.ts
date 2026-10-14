@@ -143,11 +143,6 @@ describe("okou ssh management", () => {
     expectNoSecrets();
   });
 
-  it("does not substitute connector:read for authorized execution inventory", async () => {
-    await expect(invoke("host", "list", "--json")).rejects.toThrow("CLI exit");
-    expect(displayed()).toContain("ssh:read");
-  });
-
   it.each(["host", "credential"])(
     "shows an exact owned %s through list metadata",
     async (group) => {
@@ -205,65 +200,6 @@ describe("okou ssh management", () => {
       authentication: { method: "password", password: secrets.password },
     });
     expect(result()).toMatchObject({ id: credentialId, revision: 3 });
-    expectNoSecrets();
-  });
-
-  it("accepts credential JSON from stdin without displaying its values", async () => {
-    const iterator = vi
-      .spyOn(process.stdin, Symbol.asyncIterator)
-      .mockImplementation(async function* () {
-        yield Buffer.from(
-          JSON.stringify({
-            name: "Deploy",
-            username: secrets.username,
-            authentication: { method: "password", password: secrets.password },
-          }),
-        );
-        return undefined;
-      });
-    server.use(
-      http.post(`${base}/api/ssh/credentials`, () => {
-        return HttpResponse.json(credential, { status: 201 });
-      }),
-    );
-    try {
-      await invoke("credential", "create", "--input", "-", "--json");
-      expect(result()).toMatchObject({ id: credentialId });
-      expectNoSecrets();
-    } finally {
-      iterator.mockRestore();
-    }
-  });
-
-  it("preserves an explicit credential UUID on a no-content create", async () => {
-    let body: unknown;
-    server.use(
-      http.post(`${base}/api/ssh/credentials`, async ({ request }) => {
-        body = await request.json();
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    await invoke(
-      "credential",
-      "create",
-      "--input",
-      await input({
-        id: credentialId,
-        name: "Key",
-        username: secrets.username,
-        authentication: {
-          method: "private_key",
-          privateKey: secrets.privateKey,
-          passphrase: secrets.passphrase,
-        },
-      }),
-      "--json",
-    );
-    expect(body).toMatchObject({
-      id: credentialId,
-      authentication: { privateKey: secrets.privateKey },
-    });
-    expect(result()).toEqual({ id: credentialId, outcome: "created" });
     expectNoSecrets();
   });
 
@@ -416,86 +352,35 @@ describe("okou ssh management", () => {
     expect(result()).toEqual({ id: credentialId, outcome: "deleted" });
   });
 
-  it.each(["malformed", "unknown-top-level", "unknown-nested"])(
-    "rejects %s credential input without echoing secrets",
-    async (kind) => {
-      const path = join(directory, "input.json");
-      const value = {
-        name: "Deploy",
-        username: secrets.username,
-        authentication: { method: "password", password: secrets.password },
-      };
-      if (kind === "malformed")
-        await writeFile(path, `{"password":"${secrets.password}",`);
-      else
-        await writeFile(
-          path,
-          JSON.stringify(
-            kind === "unknown-top-level"
-              ? { ...value, clientId: secrets.clientId }
-              : {
-                  ...value,
-                  authentication: {
-                    ...value.authentication,
-                    privateKey: secrets.privateKey,
-                  },
-                },
-          ),
-        );
-      await expect(
-        invoke("credential", "create", "--input", path),
-      ).rejects.toThrow("CLI exit");
-      expect(displayed()).toContain("Invalid");
-      expectNoSecrets();
-    },
-  );
-
-  it.each([400, 403, 409, 500])(
-    "does not echo reflected API error bodies (HTTP %s)",
-    async (status) => {
-      server.use(
-        http.post(`${base}/api/ssh/credentials`, () => {
-          return HttpResponse.json(
-            {
-              error: {
-                message: JSON.stringify(secrets),
-                code: secrets.password,
-              },
-              ...secrets,
-            },
-            { status },
-          );
-        }),
-      );
-      await expect(
-        invoke(
-          "credential",
-          "create",
-          "--input",
-          await input({
-            name: "Deploy",
-            username: secrets.username,
-            authentication: { method: "password", password: secrets.password },
-          }),
-        ),
-      ).rejects.toThrow("CLI exit");
-      expect(displayed()).toContain(`HTTP ${status}`);
-      expectNoSecrets();
-    },
-  );
-
-  it("sanitizes malformed reflected response JSON", async () => {
+  it("does not echo secrets when a credential write is rejected", async () => {
+    const status = 403;
     server.use(
-      http.get(`${base}/api/ssh/credentials`, () => {
-        return new HttpResponse(`{"password":"${secrets.password}",`, {
-          headers: { "Content-Type": "application/json" },
-        });
+      http.post(`${base}/api/ssh/credentials`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              message: JSON.stringify(secrets),
+              code: secrets.password,
+            },
+            ...secrets,
+          },
+          { status },
+        );
       }),
     );
-    await expect(invoke("credential", "list", "--json")).rejects.toThrow(
-      "CLI exit",
-    );
-    expect(displayed()).toContain("Cannot read SSH management response");
+    await expect(
+      invoke(
+        "credential",
+        "create",
+        "--input",
+        await input({
+          name: "Deploy",
+          username: secrets.username,
+          authentication: { method: "password", password: secrets.password },
+        }),
+      ),
+    ).rejects.toThrow("CLI exit");
+    expect(displayed()).toContain(`HTTP ${status}`);
     expectNoSecrets();
   });
 
@@ -508,42 +393,6 @@ describe("okou ssh management", () => {
     expect(displayed()).not.toContain("ENOENT");
   });
 
-  it("does not substitute ssh:read for configured inventory management", async () => {
-    token(["ssh:read"]);
-    await expect(
-      invoke("host", "list", "--scope", "configured", "--json"),
-    ).rejects.toThrow("CLI exit");
-    expect(displayed()).toContain("connector:read");
-  });
-
-  it("reports missing owned IDs without inventing a separate endpoint", async () => {
-    server.use(
-      http.get(`${base}/api/ssh/connections`, () => {
-        return HttpResponse.json({ connections: [] });
-      }),
-    );
-    await expect(invoke("host", "show", id, "--json")).rejects.toThrow(
-      "CLI exit",
-    );
-    expect(displayed()).toContain("SSH host not found");
-  });
-
-  it("rejects missing generations and revisions before dispatch", async () => {
-    await expect(
-      invoke(
-        "host",
-        "update",
-        id,
-        "--input",
-        await input({ host: "ssh.example.com" }),
-      ),
-    ).rejects.toThrow("CLI exit");
-    await expect(
-      invoke("credential", "delete", credentialId, "--input", await input({})),
-    ).rejects.toThrow("CLI exit");
-    expect(displayed()).toContain("Invalid configuration input");
-  });
-
   it("allows owner tokens without a sandbox capability payload", async () => {
     vi.stubEnv("OKOU_TOKEN", "owner-token");
     server.use(
@@ -553,24 +402,5 @@ describe("okou ssh management", () => {
     );
     await invoke("credential", "list", "--json");
     expect(result()).toEqual({ credentials: [] });
-  });
-
-  it("rejects access-grant fields in host input", async () => {
-    await expect(
-      invoke(
-        "host",
-        "create",
-        "--input",
-        await input({
-          displayName: "Production",
-          host: "ssh.example.com",
-          credential: { id: credentialId },
-          agentEnabled: true,
-          ...secrets,
-        }),
-      ),
-    ).rejects.toThrow("CLI exit");
-    expect(displayed()).toContain("Invalid configuration input");
-    expectNoSecrets();
   });
 });

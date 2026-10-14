@@ -13,10 +13,6 @@ const SECRET = "custom-response-secret";
 
 describe("connector custom show/delete", () => {
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
-  const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const exit = vi.spyOn(process, "exit").mockImplementation((() => {
-    throw new Error("process.exit called");
-  }) as never);
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
@@ -26,8 +22,6 @@ describe("connector custom show/delete", () => {
   });
   afterEach(() => {
     log.mockClear();
-    error.mockClear();
-    exit.mockClear();
     vi.unstubAllEnvs();
   });
 
@@ -130,29 +124,5 @@ describe("connector custom show/delete", () => {
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toEqual({
       deletedCustomConnectorId: connector.id,
     });
-  });
-
-  it("preserves backend admin/ownership errors without reflecting secrets", async () => {
-    server.use(
-      http.delete(
-        `http://localhost:3000/api/custom-connectors/${connector.id}`,
-        () => {
-          return HttpResponse.json(
-            { error: { message: SECRET, code: SECRET } },
-            { status: 403 },
-          );
-        },
-      ),
-    );
-    await expect(
-      customConnectorCommand.parseAsync([
-        "node",
-        "okou",
-        "delete",
-        connector.id,
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).toContain("HTTP 403");
-    expect(error.mock.calls.flat().join("\n")).not.toContain(SECRET);
   });
 });

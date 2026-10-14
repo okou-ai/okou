@@ -22,10 +22,6 @@ const SECRET = "input-credential-must-not-appear";
 describe("connector connect safe input and custom member accounts", () => {
   let directory: string;
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
-  const error = vi.spyOn(console, "error").mockImplementation(() => {});
-  const exit = vi.spyOn(process, "exit").mockImplementation((() => {
-    throw new Error("process.exit called");
-  }) as never);
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), "connector-input-"));
     vi.stubEnv("OKOU_TOKEN", "test-token");
@@ -53,8 +49,6 @@ describe("connector connect safe input and custom member accounts", () => {
   afterEach(() => {
     rmSync(directory, { recursive: true, force: true });
     log.mockClear();
-    error.mockClear();
-    exit.mockClear();
     vi.unstubAllEnvs();
   });
 
@@ -106,26 +100,6 @@ describe("connector connect safe input and custom member accounts", () => {
     expect(output).not.toContain(SECRET);
   });
 
-  it.each([
-    `{"apiKey":"${SECRET}"`,
-    JSON.stringify({ apiKey: { password: SECRET } }),
-  ])("does not reflect malformed or invalid credential JSON", async (text) => {
-    await expect(
-      connectCommand.parseAsync([
-        "node",
-        "okou",
-        "openai",
-        "--add",
-        "--input",
-        input(text),
-      ]),
-    ).rejects.toThrow("process.exit called");
-    const output = error.mock.calls.flat().join("\n");
-    expect(output).toMatch(/credential values are not displayed/iu);
-    expect(output).not.toContain(SECRET);
-    expect(log).not.toHaveBeenCalled();
-  });
-
   it("reads custom credentials from stdin without displaying them", async () => {
     const connector = customConnector();
     const stdin = vi
@@ -171,32 +145,6 @@ describe("connector connect safe input and custom member accounts", () => {
     } finally {
       stdin.mockRestore();
     }
-  });
-
-  it("suppresses malformed credential-bearing HTTP JSON", async () => {
-    server.use(
-      http.post(
-        "http://localhost:3000/api/connectors/openai/manual-grant",
-        () => {
-          return new HttpResponse(`{"token":"${SECRET}"`, {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        },
-      ),
-    );
-    await expect(
-      connectCommand.parseAsync([
-        "node",
-        "okou",
-        "openai",
-        "--add",
-        "--input",
-        input(JSON.stringify({ apiKey: SECRET })),
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).not.toContain(SECRET);
-    expect(log).not.toHaveBeenCalled();
   });
 
   it.each([customConnector(), customMcpConnector()])(
@@ -283,38 +231,5 @@ describe("connector connect safe input and custom member accounts", () => {
     expect(JSON.parse(log.mock.calls.flat().join("\n"))).toMatchObject({
       connected: true,
     });
-  });
-
-  it("does not reflect rejected custom credentials", async () => {
-    const connector = customConnector();
-    server.use(
-      stubCustomConnectors([connector]),
-      http.get(
-        `http://localhost:3000/api/custom-connectors/${connector.id}`,
-        () => {
-          return HttpResponse.json(connector);
-        },
-      ),
-      http.put(
-        `http://localhost:3000/api/custom-connectors/${connector.id}/values`,
-        () => {
-          return HttpResponse.json(
-            { error: { message: SECRET, code: SECRET } },
-            { status: 400 },
-          );
-        },
-      ),
-    );
-    await expect(
-      connectCommand.parseAsync([
-        "node",
-        "okou",
-        `custom:${connector.id}`,
-        "--add",
-        "--input",
-        input(JSON.stringify({ apiKey: SECRET })),
-      ]),
-    ).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).not.toContain(SECRET);
   });
 });

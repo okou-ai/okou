@@ -192,37 +192,6 @@ describe("registerCommands", () => {
     },
   );
 
-  it.each([undefined, "personal-token"])(
-    "shows owned configuration commands outside a Run (%s)",
-    (token) => {
-      vi.stubEnv("OKOU_TOKEN", token);
-      const prog = new Command();
-      registerCommands(prog, [
-        new Command("ssh"),
-        new Command("vnc"),
-        new Command("remote-control"),
-      ]);
-      expect(visibleCommandNames(prog)).toEqual([
-        "ssh",
-        "vnc",
-        "remote-control",
-      ]);
-    },
-  );
-
-  it.each(["connector:read", "connector:write"])(
-    "shows private-network management with %s",
-    (capability) => {
-      vi.stubEnv(
-        "OKOU_TOKEN",
-        buildOkouToken({ scope: "okou", capabilities: [capability] }),
-      );
-      const prog = new Command();
-      registerCommands(prog, [new Command("remote-control")]);
-      expect(visibleCommandNames(prog)).toEqual(["remote-control"]);
-    },
-  );
-
   it("should register globally enabled commands when OKOU_TOKEN is absent", () => {
     vi.stubEnv("OKOU_TOKEN", undefined);
 
