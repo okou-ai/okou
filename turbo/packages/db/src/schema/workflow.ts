@@ -108,6 +108,16 @@ export const workflows = pgTable(
           table.officialDefinitionName,
         )
         .where(sql`official_definition_name IS NOT NULL`),
+      // Both rollout definitions are one Morning Brief installation identity.
+      // At GA (#39591), remove this index after installations converge to
+      // morning-brief; the canonical Official definition index then suffices.
+      morningBriefOwnerAgentIdx: uniqueIndex(
+        "idx_workflows_morning_brief_owner_agent_unique",
+      )
+        .on(table.orgId, table.agentId, table.ownerUserId)
+        .where(
+          sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,
+        ),
       orgIdx: index("idx_workflows_org").on(table.orgId),
       ownerIdx: index("idx_workflows_org_owner").on(
         table.orgId,

@@ -1,10 +1,10 @@
-import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
+import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
-import { sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
 import type { MorningBriefMemberIdentity } from "./morning-brief-enrollment-data.service";
 
 /** Preserve the enrollment, visible default Agent, then oldest-installation precedence. */
@@ -20,7 +20,7 @@ export function morningBriefSelectedWorkflowSql(
       AND ${agents.orgId} = ${workflows.orgId}
     WHERE ${workflows.orgId} = ${owner.orgId} AND ${workflows.ownerUserId} = ${owner.userId}
       AND ${workflows.visibility} = 'private'
-      AND ${workflows.officialDefinitionName} = ${MORNING_BRIEF_OFFICIAL_DEFINITION_NAME}
+      AND ${inArray(workflows.officialDefinitionName, [...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES])}
     ORDER BY CASE WHEN ${workflows.id} = ${morningBriefEnrollments.workflowId} THEN 0
       WHEN ${workflows.agentId} = ${agents.id}
         AND (${agents.visibility} <> 'private' OR ${agents.owner} = ${owner.userId}) THEN 1

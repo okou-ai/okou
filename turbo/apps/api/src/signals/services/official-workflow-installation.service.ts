@@ -879,6 +879,10 @@ const insertInstallingWorkflow$ = command(
         isUniqueViolation(
           inserted.error,
           "idx_workflows_official_owner_agent_definition_unique",
+        ) ||
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_morning_brief_owner_agent_unique",
         )
       ) {
         return {

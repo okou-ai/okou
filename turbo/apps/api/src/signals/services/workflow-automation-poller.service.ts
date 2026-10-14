@@ -1,3 +1,5 @@
+import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
+import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
@@ -502,6 +504,7 @@ const launchClaimedDueRow$ = command(
             workflowId: claimed.workflowId,
             scheduledAnchorAt: args.scheduledAnchorAt,
             claimedAt: currentTime,
+            automationSnapshot: workflowAutomationSnapshot(claimed),
           }
         : undefined;
     const recordFailure = async (error: unknown) => {
@@ -678,7 +681,8 @@ export const executeDueWorkflowAutomations$ = command(
     };
 
     const expiryContext = { currentTime, expiryEnabled };
-    for (const row of rows) {
+    for (const original of rows) {
+      let row = original;
       if (await set(retireDepartedOwner$, expiryContext, row, signal)) {
         counters.skipped++;
         continue;
@@ -722,6 +726,22 @@ export const executeDueWorkflowAutomations$ = command(
         scheduledAnchorAt !== null &&
         (await set(isCanonicalMorningBriefAutomation$, row.automation, signal));
       signal.throwIfAborted();
+      if (journaled) {
+        const selected = await set(
+          selectDueMorningBriefWorkflow$,
+          {
+            automation: row.automation,
+            agentId: row.agentId,
+            workflowName: row.workflowName,
+          },
+          signal,
+        );
+        if (!selected) {
+          counters.skipped++;
+          continue;
+        }
+        row = { ...row, ...selected };
+      }
 
       const claimed = journaled
         ? row.automation
