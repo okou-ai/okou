@@ -49,7 +49,7 @@ import {
   type ResolvedConnectorActionMethod,
 } from "./connector-action-resolver.service";
 import {
-  builtinConnectorById,
+  readBuiltinConnectorById$,
   connectorConnectionWriteRejection,
   upsertBuiltinConnectorTokenConnection$,
 } from "./connector-data.service";
@@ -502,7 +502,7 @@ const authorizeExternalCodeSessionConnector$ = command(
 
 const completedExternalCodeSessionResponse$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -516,16 +516,17 @@ const completedExternalCodeSessionResponse$ = command(
         "Completed external-code session is missing its connector ID",
       );
     }
-    const connector = await get(
-      builtinConnectorById({
+    const connector = await set(
+      readBuiltinConnectorById$,
+      {
         orgId: args.orgId,
         userId: args.userId,
         connectorSlug: args.method.connectorSlug,
         connectorId: args.session.completedConnectorId,
         snapshot: args.method.snapshot,
-      }),
+      },
+      signal,
     );
-    signal.throwIfAborted();
     if (!connector) {
       throw new Error("Completed external-code connector not found");
     }

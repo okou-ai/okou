@@ -189,16 +189,21 @@ const getBuiltinConnectorListInner$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
-const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
+const builtinConnectorBySlugScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(builtinConnectorsBySlugContract.get));
-  const connector = await get(
-    builtinConnectorBySlug({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: params.connectorSlug,
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: params.connectorSlug,
+  };
+});
+const builtinConnectorBySlug$ = builtinConnectorBySlug(
+  builtinConnectorBySlugScope$,
+);
+
+const getBuiltinConnectorBySlugInner$ = computed(async (get) => {
+  const connector = await get(builtinConnectorBySlug$);
   if (!connector) {
     return notFound("Connector not found");
   }

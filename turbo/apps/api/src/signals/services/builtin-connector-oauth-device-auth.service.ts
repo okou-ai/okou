@@ -56,7 +56,7 @@ import {
   type ResolvedConnectorActionMethod,
 } from "./connector-action-resolver.service";
 import {
-  builtinConnectorById,
+  readBuiltinConnectorById$,
   connectorConnectionWriteRejection,
   commitBuiltinConnectorTokenConnection,
   finalizeBuiltinConnectorTokenConnection$,
@@ -815,7 +815,7 @@ const authorizeDeviceSessionConnector$ = command(
 
 const completedDeviceSessionResponse$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -829,16 +829,17 @@ const completedDeviceSessionResponse$ = command(
         "Completed OAuth device session is missing its connector ID",
       );
     }
-    const connector = await get(
-      builtinConnectorById({
+    const connector = await set(
+      readBuiltinConnectorById$,
+      {
         orgId: args.orgId,
         userId: args.userId,
         connectorSlug: args.method.connectorSlug,
         connectorId: args.session.completedConnectorId,
         snapshot: args.method.snapshot,
-      }),
+      },
+      signal,
     );
-    signal.throwIfAborted();
     if (!connector) {
       throw new Error("Completed OAuth connector not found");
     }
