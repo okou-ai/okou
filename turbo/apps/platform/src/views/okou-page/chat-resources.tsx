@@ -30,7 +30,7 @@ import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
-const RESOURCE_PREVIEW_LIMIT = 3;
+const RESOURCE_PREVIEW_LIMIT = 6;
 
 export function ChatResourcesButton({
   thread,

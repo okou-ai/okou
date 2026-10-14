@@ -199,11 +199,11 @@ async function setupOverflowResources(count: number) {
   return panel;
 }
 
-test("Show all three resources without an overflow control at the limit", async () => {
-  const panel = await setupOverflowResources(3);
+test("Show all six resources without an overflow control at the limit", async () => {
+  const panel = await setupOverflowResources(6);
   for (const name of ["Artifacts", "Links"]) {
     const section = within(panel).getByRole("region", { name });
-    expect(within(section).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(section).getAllByRole("listitem")).toHaveLength(6);
     expect(
       queryAllByRoleFast("button", section).find((button) => {
         return button.getAttribute("aria-label") === "View all";
@@ -216,7 +216,7 @@ test("Show all three resources without an overflow control at the limit", async 
 test.each(["Artifacts", "Links"] as const)(
   "Keep both previews bounded and open the complete %s list from its ellipsis",
   async (name) => {
-    const panel = await setupOverflowResources(4);
+    const panel = await setupOverflowResources(7);
     expect(
       within(panel)
         .getAllByRole("heading")
@@ -226,11 +226,11 @@ test.each(["Artifacts", "Links"] as const)(
     ).toStrictEqual(["Artifacts", "Links"]);
     for (const sectionName of ["Artifacts", "Links"]) {
       const section = within(panel).getByRole("region", { name: sectionName });
-      expect(within(section).getAllByRole("listitem")).toHaveLength(3);
+      expect(within(section).getAllByRole("listitem")).toHaveLength(6);
       expect(buttonNamed("View all", section)).toBeInTheDocument();
     }
-    expect(within(panel).queryByText("report-4.pdf")).not.toBeInTheDocument();
-    expect(within(panel).queryByText("Reference 4")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("report-7.pdf")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Reference 7")).not.toBeInTheDocument();
 
     const section = within(panel).getByRole("region", { name });
     const more = buttonNamed("View all", section);
@@ -239,7 +239,7 @@ test.each(["Artifacts", "Links"] as const)(
 
     const all = await screen.findByRole("complementary", { name });
     await within(all).findByText(
-      name === "Artifacts" ? "report-4.pdf" : "Reference 4",
+      name === "Artifacts" ? "report-7.pdf" : "Reference 7",
     );
     expect(
       within(all).queryByText(
@@ -256,7 +256,7 @@ test.each(["Artifacts", "Links"] as const)(
       }),
     ).toStrictEqual(
       name === "Links"
-        ? Array.from({ length: 4 }, (_, index) => {
+        ? Array.from({ length: 7 }, (_, index) => {
             return {
               href: `https://example.test/reference-${index + 1}`,
               target: "_blank",
@@ -268,11 +268,11 @@ test.each(["Artifacts", "Links"] as const)(
 );
 
 test("Keep the footer View all showing complete artifacts and links", async () => {
-  const panel = await setupOverflowResources(4);
+  const panel = await setupOverflowResources(7);
   click(within(panel).getByText("View all"));
   const all = await screen.findByRole("complementary", { name: "Resources" });
-  await within(all).findByText("report-4.pdf");
-  expect(within(all).getByText("Reference 4")).toBeInTheDocument();
+  await within(all).findByText("report-7.pdf");
+  expect(within(all).getByText("Reference 7")).toBeInTheDocument();
 });
 
 test("Open in the actual right gutter and preserve links while removing duplicates and output URLs", async () => {
