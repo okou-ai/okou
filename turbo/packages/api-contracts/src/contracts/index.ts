@@ -840,24 +840,6 @@ export {
   type WorkflowAutomationsContract,
 } from "./workflows";
 export {
-  officialWorkflowCatalogSummarySchema,
-  officialWorkflowCatalogDetailSchema,
-  officialWorkflowInstallRequestSchema,
-  officialWorkflowReconfigureRequestSchema,
-  officialWorkflowInstallationDefinitionSchema,
-  officialWorkflowInstallationResponseSchema,
-  officialWorkflowsContract,
-  officialWorkflowInstallationsContract,
-  type OfficialWorkflowCatalogSummary,
-  type OfficialWorkflowCatalogDetail,
-  type OfficialWorkflowInstallRequest,
-  type OfficialWorkflowReconfigureRequest,
-  type OfficialWorkflowInstallationDefinition,
-  type OfficialWorkflowInstallationResponse,
-  type OfficialWorkflowsContract,
-  type OfficialWorkflowInstallationsContract,
-} from "./official-workflows";
-export {
   userBuiltinConnectorsContract,
   userBuiltinConnectorEnabledSlugsSchema,
   type UserBuiltinConnectorEnabledSlugs,

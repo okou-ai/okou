@@ -33,7 +33,6 @@ export enum FeatureSwitchKey {
   LinkWallet = "linkWallet",
   Lab = "_lab",
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
-  OfficialWorkflows = "officialWorkflows",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",
   StabilityAiConnector = "stabilityAiConnector",

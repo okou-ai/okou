@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { createElement } from "react";
 import {
+  isMorningBriefDefinitionName,
   MORNING_BRIEF_PREFERENCES_FOCUS,
   MORNING_BRIEF_PREFERENCES_ROUTE,
   MORNING_BRIEF_PREFERENCES_SECTION,
@@ -13,10 +14,9 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import {
   currentWorkflowDetail$,
-  isMorningBriefWorkflow,
   resetWorkflowDetailUiState$,
 } from "./workflows-signals.ts";
-import { setOfficialWorkflowConfigurationForm$ } from "./official-workflows-signals.ts";
+import { ROUTES } from "../route-paths.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { resetConnectorAccountDialogs$ } from "../okou-page/settings/connector-account-dialogs.ts";
 import { cancelGoogleCalendarRecovery$ } from "./google-calendar-recovery.ts";
@@ -32,19 +32,24 @@ export const setupWorkflowDetailPage$ = command(
       { once: true },
     );
     set(resetConnectorAccountDialogs$);
-    set(setOfficialWorkflowConfigurationForm$, null);
     set(resetWorkflowDetailUiState$);
     const detail = await get(currentWorkflowDetail$);
     signal.throwIfAborted();
-    if (detail && isMorningBriefWorkflow(detail)) {
-      const searchParams = new URLSearchParams({
-        settings: MORNING_BRIEF_PREFERENCES_SECTION,
-        focus: MORNING_BRIEF_PREFERENCES_FOCUS,
-      });
-      set(detachedNavigateTo$, MORNING_BRIEF_PREFERENCES_ROUTE, {
-        searchParams,
-        replace: true,
-      });
+    // Official Workflows are system-managed: Morning Brief is configured in
+    // Settings, and no other Official Workflow has a user-facing page.
+    if (detail?.official) {
+      if (isMorningBriefDefinitionName(detail.official.definitionName)) {
+        const searchParams = new URLSearchParams({
+          settings: MORNING_BRIEF_PREFERENCES_SECTION,
+          focus: MORNING_BRIEF_PREFERENCES_FOCUS,
+        });
+        set(detachedNavigateTo$, MORNING_BRIEF_PREFERENCES_ROUTE, {
+          searchParams,
+          replace: true,
+        });
+      } else {
+        set(detachedNavigateTo$, ROUTES.workflows, { replace: true });
+      }
       return;
     }
     set(updatePage$, createElement(WorkflowDetailPage), "sidebar");
