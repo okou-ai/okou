@@ -245,6 +245,7 @@ async function isSameCurrentHandoff(
     hasTransportAuthority(current, currentTransport) &&
     hasKdcAuthority(current) &&
     sameKdc(current, initial) &&
+    current.createdAt === initial.createdAt &&
     (!isVncKerberosMethod(initial.authMethod) ||
       current.credentialRevision === initial.credentialRevision) &&
     current.generation === initial.generation &&
@@ -724,12 +725,15 @@ export const resolveRunnerVnc$ = command(
     { get, set },
     input: RunnerVncResolveRequest & { readonly runId: string },
     signal: AbortSignal,
-  ): Promise<RunnerVncResolveResponse> => {
+  ): Promise<{
+    readonly response: RunnerVncResolveResponse;
+    readonly createdAt: string | null;
+  }> => {
     const clerk = get(clerk$);
 
     const row = await set(currentRunnerVncAuthority$, input, signal);
     if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
@@ -738,7 +742,7 @@ export const resolveRunnerVnc$ = command(
       !hasKdcAuthority(row) ||
       !hasLiveKerberosTicket(row)
     ) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     const capability = selectedCapability(
       row,
@@ -746,17 +750,25 @@ export const resolveRunnerVnc$ = command(
       input.supportedProfiles,
     );
     if (!capability) {
-      return { outcome: "unsupported_profile" };
+      return { response: { outcome: "unsupported_profile" }, createdAt: null };
     }
     const security = storedRunnerSecurity(row, transport);
     const authentication = await decryptRunnerAuthentication(row, signal);
     if (authentication === null) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     const current = await set(currentRunnerVncAuthority$, input, signal);
     if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
-    return resolvedRunnerResponse(row, transport, security, authentication);
+    return {
+      response: resolvedRunnerResponse(
+        row,
+        transport,
+        security,
+        authentication,
+      ),
+      createdAt: row.createdAt,
+    };
   },
 );

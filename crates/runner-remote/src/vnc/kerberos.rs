@@ -247,6 +247,7 @@ pub(super) fn credential(
     let credentials =
         Credentials::new(initiator, target, source).map_err(|_| Failure::InvalidCredential)?;
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,

@@ -241,6 +241,7 @@ impl Run {
             },
         )?;
         let mut observation = super::observation::Attempt {
+            created_at: credential.created_at,
             generation: credential.generation,
             transport: credential.transport,
             kerberos: match &credential.authentication {

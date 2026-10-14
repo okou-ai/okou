@@ -70,6 +70,7 @@ pub(super) struct Authority {
 
 /// Consumed by one handshake; never cached, cloned or exposed to the guest.
 pub(super) struct Credential {
+    pub(super) created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
@@ -173,6 +174,7 @@ fn rsa_aes_credential(
     }
     .map_err(|_| Failure::InvalidCredential)?;
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,
@@ -273,6 +275,7 @@ fn apple_vnc_password_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,
@@ -310,6 +313,7 @@ fn apple_dh_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,
@@ -347,6 +351,7 @@ fn apple_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,
@@ -384,6 +389,7 @@ fn apple_rsa_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at: None,
         host,
         port,
         generation,
@@ -780,6 +786,10 @@ impl Authority {
         connection: Uuid,
         observation: super::observation::Observation,
     ) {
+        let Some(created_at) = observation.attempt.created_at else {
+            tracing::info!(run_id = %run, connection_id = %connection, "VNC observation report not confirmed");
+            return;
+        };
         let transport = |route| match route {
             Transport::Direct => ObservationRequestExpectedTransport::Direct,
             Transport::Ssh {
@@ -791,6 +801,7 @@ impl Authority {
             },
         };
         let request = ObservationRequest {
+            expected_created_at: created_at.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
             connection_id: connection.to_string(),
             runner_identity: ObservationRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
@@ -870,7 +881,7 @@ impl Authority {
         &self,
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
-    ) -> Result<T, Failure> {
+    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>), Failure> {
         let body = serde_json::to_value(body).map_err(|_| Failure::Authority)?;
         let request = self
             .http
@@ -888,6 +899,12 @@ impl Authority {
         {
             return Err(Failure::Authority);
         }
+        let created_at = response
+            .headers()
+            .get("x-vnc-connection-created-at")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&chrono::Utc));
         // A fixed capacity avoids leaving reallocated plaintext buffers behind.
         let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_API_BYTES));
         while let Some(chunk) = response.chunk().await.map_err(|_| Failure::Authority)? {
@@ -896,7 +913,9 @@ impl Authority {
             }
             bytes.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&bytes).map_err(|_| Failure::Authority)
+        serde_json::from_slice(&bytes)
+            .map(|body| (body, created_at))
+            .map_err(|_| Failure::Authority)
     }
 
     pub(super) async fn resolve(
@@ -1033,7 +1052,7 @@ impl Authority {
             },
             supported_profiles,
         };
-        let response = self
+        let (response, created_at) = self
             .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
@@ -1041,6 +1060,10 @@ impl Authority {
                 &request,
             )
             .await?;
+        let stamp = |mut credential: Credential| {
+            credential.created_at = created_at;
+            credential
+        };
         let (host, port, generation, server_name, transport, authentication, security) =
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),
@@ -1068,7 +1091,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedRsaAes {
                     host,
@@ -1086,7 +1110,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedAppleVncPassword {
                     host,
@@ -1104,7 +1129,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedAppleDh {
                     host,
@@ -1122,7 +1148,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedAppleSrp {
                     host,
@@ -1140,7 +1167,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedAppleRsaSrp {
                     host,
@@ -1158,7 +1186,8 @@ impl Authority {
                         authentication,
                         security,
                         supports_ssh,
-                    );
+                    )
+                    .map(stamp);
                 }
                 ResolveResponse::ResolvedTransport {
                     host,
@@ -1273,7 +1302,8 @@ impl Authority {
                 custom_roots(Zeroizing::new(ca_bundle))?
             }
         };
-        Ok(Credential {
+        Ok(stamp(Credential {
+            created_at: None,
             host,
             port,
             generation,
@@ -1293,7 +1323,7 @@ impl Authority {
                     }
                 }
             },
-        })
+        }))
     }
 
     pub(super) async fn check_kerberos(
@@ -1337,13 +1367,14 @@ impl Authority {
             ),
         };
         match self
-            .call(
+            .call::<CheckResponse>(
                 routes::check::route(routes::check::Params {
                     run_id: &run.to_string(),
                 }),
                 &request,
             )
             .await?
+            .0
         {
             CheckResponse::Valid => Ok(()),
             CheckResponse::Unavailable => Err(Failure::Unavailable),

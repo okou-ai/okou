@@ -3,7 +3,7 @@ use tokio::{io::DuplexStream, sync::oneshot};
 
 use super::{
     closed,
-    harness::{CONNECTION, Harness, read, send},
+    harness::{CONNECTION, Harness, read, resolved_response, send},
     mode,
     peer::{Event, Peer},
 };
@@ -20,8 +20,7 @@ struct PendingList {
 impl PendingList {
     async fn start(gate: RawHttpAction, subsequent_checks: usize, remaining_ms: u64) -> Self {
         let peer = Peer::new().await;
-        let resolved = json_response(
-            "200 OK",
+        let resolved = resolved_response(
             &json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"vnc_password","password":" secret "},

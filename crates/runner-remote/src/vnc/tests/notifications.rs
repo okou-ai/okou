@@ -142,8 +142,7 @@ async fn delivered_vnc_invalidation_is_connection_and_run_scoped_and_never_grant
 async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_a_session() {
     for during_check in [false, true] {
         let peer = Peer::new().await;
-        let resolved = json_response(
-            "200 OK",
+        let resolved = super::harness::resolved_response(
             &json!({
                 "outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},

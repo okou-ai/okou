@@ -40,6 +40,7 @@ export function VncAttention({
   readonly connections: readonly {
     readonly id: string;
     readonly generation: number;
+    readonly createdAt: string;
   }[];
 }) {
   const { t } = useTranslation();
@@ -51,6 +52,7 @@ export function VncAttention({
             return (
               observation.connectionId === connection.id &&
               observation.generation === connection.generation &&
+              observation.connectionCreatedAt === connection.createdAt &&
               observation.failureReason !== null
             );
           });
@@ -88,9 +90,11 @@ export function VncAttention({
 export function VncHostWarning({
   connectionId,
   generation,
+  createdAt,
 }: {
   readonly connectionId: string;
   readonly generation: number;
+  readonly createdAt: string;
 }) {
   const { t } = useTranslation();
   const status = useVncObservations();
@@ -98,7 +102,9 @@ export function VncHostWarning({
     status.kind === "available"
       ? status.observations.find((item) => {
           return (
-            item.connectionId === connectionId && item.generation === generation
+            item.connectionId === connectionId &&
+            item.generation === generation &&
+            item.connectionCreatedAt === createdAt
           );
         })
       : undefined;

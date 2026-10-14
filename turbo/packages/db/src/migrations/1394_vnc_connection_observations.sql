@@ -1,6 +1,7 @@
 CREATE TABLE "vnc_connection_observations" (
 	"connection_id" uuid PRIMARY KEY NOT NULL,
 	"generation" integer NOT NULL,
+	"connection_created_at" timestamp NOT NULL,
 	"observed_at" timestamp with time zone NOT NULL,
 	"failure_reason" varchar(64),
 	"ssh_generation" integer,

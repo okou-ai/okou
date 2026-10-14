@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use super::{Failure, authority::Transport, kerberos::Binding};
 
 pub(super) struct Attempt {
+    pub(super) created_at: Option<DateTime<Utc>>,
     pub(super) generation: i64,
     pub(super) transport: Transport,
     pub(super) kerberos: Option<Binding>,

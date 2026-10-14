@@ -160,7 +160,7 @@ describe("private Runner VNC authority", () => {
   /** Ordinary chat Runs use production launch and claim. */
   async function claimedFixture(
     options: { readonly defaultEnabled?: boolean } = {},
-  ): Promise<VncRuntimeFixture> {
+  ): Promise<VncRuntimeFixture & { readonly connectionCreatedAt: string }> {
     const bdd = createBddApi(context);
     const actor = bdd.user();
     if (!actor.orgId) {
@@ -198,12 +198,13 @@ describe("private Runner VNC authority", () => {
       ...running,
       agentId,
       connectionId: connection.body.id,
+      connectionCreatedAt: connection.body.createdAt,
       credentialId: requireVncCredentialId(connection.body),
     };
   }
 
   async function observe(
-    f: VncRuntimeFixture,
+    f: VncRuntimeFixture & { readonly connectionCreatedAt: string },
     overrides: Partial<RunnerVncObservationRequest> = {},
   ) {
     return (
@@ -215,6 +216,7 @@ describe("private Runner VNC authority", () => {
             connectionId: f.connectionId,
             runnerIdentity: f.runnerIdentity,
             expectedGeneration: 1,
+            expectedCreatedAt: f.connectionCreatedAt,
             expectedTransport: { type: "direct" },
             observedAt: "2026-10-14T00:00:00.000Z",
             failureReason: "authentication_failed",
@@ -245,6 +247,7 @@ describe("private Runner VNC authority", () => {
       {
         connectionId: f.connectionId,
         generation: 1,
+        connectionCreatedAt: f.connectionCreatedAt,
         observedAt: "2026-10-14T00:00:00.000Z",
         failureReason: "authentication_failed",
       },
@@ -281,6 +284,7 @@ describe("private Runner VNC authority", () => {
       {
         connectionId: f.connectionId,
         generation: 1,
+        connectionCreatedAt: f.connectionCreatedAt,
         observedAt: "2026-10-14T00:00:20.000Z",
         failureReason: null,
       },
@@ -331,6 +335,73 @@ describe("private Runner VNC authority", () => {
     });
   });
 
+  it("ignores delayed evidence when a deleted VNC ID is recreated", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    const handoff = await accept(
+      api.runner().resolve({
+        headers: vncRunnerHeaders,
+        params: { runId: f.runId },
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+          supportedProfiles: [...vncX509VncProfiles],
+        },
+      }),
+      [200],
+    );
+    expect(handoff.headers.get("x-vnc-connection-created-at")).toBe(
+      f.connectionCreatedAt,
+    );
+    expect(f.connectionCreatedAt).toMatch(/\.\d{6}Z$/u);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+    await accept(
+      api.connections().delete({
+        headers: vncSessionHeaders,
+        params: { connectionId: f.connectionId },
+        body: { expectedGeneration: 1 },
+      }),
+      [204],
+    );
+    const replacement = await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          ...vncConnectionBody(f.connectionId),
+          host: "new-desktop.example.com",
+        },
+      }),
+      [201],
+    );
+    expect(replacement.body.generation).toBe(1);
+    expect(replacement.body.createdAt).not.toBe(f.connectionCreatedAt);
+    await api.enableDefault(f, "vnc", f.connectionId);
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(
+      observe(f, { observedAt: "2026-10-14T00:00:10.000Z" }),
+    ).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(
+      observe(f, {
+        expectedCreatedAt: replacement.body.createdAt,
+        observedAt: "2026-10-14T00:00:05.000Z",
+        failureReason: null,
+      }),
+    ).resolves.toStrictEqual({ outcome: "recorded" });
+    await expect(
+      observe(f, { observedAt: "2026-10-14T00:00:20.000Z" }),
+    ).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(observations(f)).resolves.toStrictEqual([
+      {
+        connectionId: f.connectionId,
+        connectionCreatedAt: replacement.body.createdAt,
+        generation: 1,
+        observedAt: "2026-10-14T00:00:05.000Z",
+        failureReason: null,
+      },
+    ]);
+  });
+
   it("rejects secret-bearing and non-connection observation payloads without reflecting their values", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();
@@ -351,6 +422,7 @@ describe("private Runner VNC authority", () => {
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
           expectedGeneration: 1,
+          expectedCreatedAt: f.connectionCreatedAt,
           expectedTransport: { type: "direct" },
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: null,
@@ -499,6 +571,7 @@ describe("private Runner VNC authority", () => {
         {
           connectionId: f.connectionId,
           generation: 2,
+          connectionCreatedAt: f.connectionCreatedAt,
           observedAt: "2026-10-14T00:00:10.000Z",
           failureReason: null,
         },

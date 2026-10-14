@@ -207,6 +207,7 @@ test("VNC settings show a current-generation failure and its observation time", 
       observations: [
         {
           connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
           generation: host.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: failed ? "authentication_failed" : null,
@@ -250,41 +251,57 @@ test("VNC settings show a current-generation failure and its observation time", 
   expect(within(card).getByText("Configured")).toBeInTheDocument();
 });
 
-test("VNC settings do not render a previous configuration's failure as current", async () => {
-  mockSettings({
-    connections: [host, plainHost],
-    credentials: [credential, plainCredential],
-  });
-  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
-    return respond(200, {
-      observations: [
-        {
-          connectionId: host.id,
-          generation: host.generation - 1,
-          observedAt: "2026-10-14T00:00:00.000Z",
-          failureReason: "authentication_failed",
-        },
-        {
-          connectionId: plainHost.id,
-          generation: plainHost.generation,
-          observedAt: "2026-10-14T00:00:00.000Z",
-          failureReason: "network_failure",
-        },
-      ],
+test.each([
+  {
+    name: "generation",
+    generation: host.generation - 1,
+    createdAt: host.createdAt,
+  },
+  {
+    name: "creation instance",
+    generation: host.generation,
+    createdAt: "2026-08-01T00:00:00.000Z",
+  },
+])(
+  "VNC settings do not render a previous $name's failure as current",
+  async ({ generation, createdAt }) => {
+    mockSettings({
+      connections: [host, plainHost],
+      credentials: [credential, plainCredential],
     });
-  });
-  await page();
-  await screen.findByText("The connection transport failed.");
-  expect(screen.getAllByText("Configured")).toHaveLength(2);
-  expect(
-    screen.queryByText(
-      "Authentication or server identity verification failed.",
-    ),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.getByRole("status", { name: "1 VNC host needs attention" }),
-  ).toBeInTheDocument();
-});
+    context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: createdAt,
+            generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+          {
+            connectionId: plainHost.id,
+            connectionCreatedAt: plainHost.createdAt,
+            generation: plainHost.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "network_failure",
+          },
+        ],
+      });
+    });
+    await page();
+    await screen.findByText("The connection transport failed.");
+    expect(screen.getAllByText("Configured")).toHaveLength(2);
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "1 VNC host needs attention" }),
+    ).toBeInTheDocument();
+  },
+);
 
 test("VNC settings refresh observations when their SSH carrier changes", async () => {
   const data = mockSettings({
@@ -306,6 +323,7 @@ test("VNC settings refresh observations when their SSH carrier changes", async (
           ? [
               {
                 connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
                 generation: tunneledHost.generation,
                 observedAt: "2026-10-14T00:00:00.000Z",
                 failureReason: "authentication_failed",
@@ -372,6 +390,7 @@ test("A local SSH carrier reset invalidates retained VNC diagnostics before real
           ? [
               {
                 connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
                 generation: tunneledHost.generation,
                 observedAt: "2026-10-14T00:00:00.000Z",
                 failureReason: "authentication_failed",
@@ -428,12 +447,14 @@ test("VNC settings distinguish successful and unobserved hosts from failed hosts
       observations: [
         {
           connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
           generation: host.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: null,
         },
         {
           connectionId: failedHost.id,
+          connectionCreatedAt: failedHost.createdAt,
           generation: failedHost.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: "network_failure",
@@ -500,6 +521,7 @@ test("VNC settings retain the current owner's warning while observations refresh
         observations: [
           {
             connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
             generation: host.generation,
             observedAt: "2026-10-14T00:00:00.000Z",
             failureReason: refreshing ? null : "authentication_failed",
@@ -551,6 +573,7 @@ test("VNC settings never retain the previous owner's diagnostic warning", async 
         observations: [
           {
             connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
             generation: host.generation,
             observedAt: "2026-10-14T00:00:00.000Z",
             failureReason: "authentication_failed",
@@ -599,18 +622,21 @@ test("VNC settings summarize failed hosts and clear attention after recovery", a
       observations: [
         {
           connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
           generation: host.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: failed ? "authentication_failed" : null,
         },
         {
           connectionId: plainHost.id,
+          connectionCreatedAt: plainHost.createdAt,
           generation: plainHost.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: failed ? "network_failure" : null,
         },
         {
           connectionId: recoveredHost.id,
+          connectionCreatedAt: recoveredHost.createdAt,
           generation: recoveredHost.generation,
           observedAt: "2026-10-14T00:00:00.000Z",
           failureReason: null,

@@ -342,6 +342,7 @@ const checkResponseSchema = z.discriminatedUnion("outcome", [
 ]);
 
 const observationRequestSchema = checkRequestSchema.extend({
+  expectedCreatedAt: z.string().datetime(),
   observedAt: z.string().datetime(),
   failureReason: vncConnectionFailureReasonSchema.nullable(),
 });

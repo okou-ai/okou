@@ -22,6 +22,7 @@ export const vncConnectionFailureReasonSchema = z.enum([
 export const vncConnectionObservationSchema = z
   .object({
     connectionId: z.uuid(),
+    connectionCreatedAt: z.string().datetime(),
     generation: z.int().positive().max(2_147_483_647),
     observedAt: z.string().datetime(),
     failureReason: vncConnectionFailureReasonSchema.nullable(),

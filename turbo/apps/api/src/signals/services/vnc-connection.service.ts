@@ -37,6 +37,7 @@ import {
   validVncClientAuthentication,
 } from "./vnc-credential.service";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
+import { vncCreationTimestamp } from "./vnc-creation-timestamp.utils";
 import { isVncRsaAesSecurityType } from "@okouai/api-contracts/contracts/vnc-rsa-aes";
 import {
   isVncKerberosMethod,
@@ -79,10 +80,13 @@ const metadata = Object.freeze({
   kerberosRenewableLifetimeSeconds:
     vncConnections.kerberosRenewableLifetimeSeconds,
   generation: vncConnections.generation,
-  createdAt: vncConnections.createdAt,
+  createdAt: vncCreationTimestamp.as("vnc_created_at"),
   updatedAt: vncConnections.updatedAt,
 });
-type Metadata = Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>;
+type Metadata = Omit<
+  Pick<typeof vncConnections.$inferSelect, keyof typeof metadata>,
+  "createdAt"
+> & { readonly createdAt: string };
 type CredentialMetadata = Pick<
   typeof vncCredentials.$inferSelect,
   keyof typeof vncCredentialMetadata
@@ -244,7 +248,7 @@ function response(
         }),
     security: responseSecurity(row),
     generation: row.generation,
-    createdAt: row.createdAt.toISOString(),
+    createdAt: row.createdAt,
     updatedAt: row.updatedAt.toISOString(),
   });
 }

@@ -1,5 +1,5 @@
 {
-  "id": "b2bb5249-70eb-4d15-8469-56477e224b5f",
+  "id": "bbdaafdc-041d-441f-9046-41d018e07deb",
   "prevId": "f660268d-448c-4ad8-9401-d78bbe4d2dfb",
   "version": "7",
   "dialect": "postgresql",
@@ -33541,6 +33541,12 @@
         "generation": {
           "name": "generation",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "connection_created_at": {
+          "name": "connection_created_at",
+          "type": "timestamp",
           "primaryKey": false,
           "notNull": true
         },

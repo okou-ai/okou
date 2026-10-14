@@ -79,6 +79,9 @@ export const vncTypeBindings = [
           connectionId: ["Exact saved VNC UUID."],
           runnerIdentity: ["Winning official process identity."],
           expectedGeneration: ["Resolved VNC configuration generation."],
+          expectedCreatedAt: [
+            "Exact PostgreSQL creation instance, including microsecond precision.",
+          ],
           expectedTransport: ["Resolved RFB transport authority."],
           expectedKdcTransport: [
             "Independent online KDC transport, when applicable.",

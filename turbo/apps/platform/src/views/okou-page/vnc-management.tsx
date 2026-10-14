@@ -396,6 +396,7 @@ function VncHostCard({
       <VncHostWarning
         connectionId={connection.id}
         generation={connection.generation}
+        createdAt={connection.createdAt}
       />
       <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">

@@ -1589,6 +1589,8 @@ pub mod runners {
             /// Kerberos source revision, when applicable.
             #[serde(default, skip_serializing_if = "Option::is_none")]
             pub expected_credential_revision: Option<i64>,
+            /// Exact PostgreSQL creation instance, including microsecond precision.
+            pub expected_created_at: String,
             /// UTC connection-result time, not report delivery time.
             pub observed_at: String,
             /// Allow-listed connection failure, or null for recovery.

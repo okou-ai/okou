@@ -52,7 +52,10 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const { runId } = get(pathParamsOf(runnerVncContract.resolve));
   const result = await set(resolveRunnerVnc$, { runId, ...body.data }, signal);
-  return { status: 200 as const, body: result };
+  if (result.createdAt !== null) {
+    set(setResHeader$, "X-VNC-Connection-Created-At", result.createdAt);
+  }
+  return { status: 200 as const, body: result.response };
 });
 
 const check$ = command(async ({ get, set }, signal: AbortSignal) => {

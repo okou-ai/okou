@@ -12,6 +12,7 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { command, computed, type Computed } from "ccstate";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
+import { vncCreationTimestamp } from "./vnc-creation-timestamp.utils";
 import { db$, writeDb$ } from "../external/db";
 import {
   runThreadSshAccess,
@@ -33,6 +34,7 @@ export function createVncConnectionObservations(owner$: Computed<Owner>) {
     const rows = await get(db$)
       .select({
         connectionId: vncConnectionObservations.connectionId,
+        connectionCreatedAt: vncCreationTimestamp,
         generation: vncConnectionObservations.generation,
         observedAt: vncConnectionObservations.observedAt,
         failureReason: vncConnectionObservations.failureReason,
@@ -43,6 +45,10 @@ export function createVncConnectionObservations(owner$: Computed<Owner>) {
         and(
           eq(vncConnectionObservations.connectionId, vncConnections.id),
           eq(vncConnectionObservations.generation, vncConnections.generation),
+          eq(
+            vncConnectionObservations.connectionCreatedAt,
+            vncConnections.createdAt,
+          ),
         ),
       )
       .leftJoin(
@@ -112,6 +118,9 @@ function observationWriteSource(
     .select({
       connectionId: vncConnections.id,
       generation: vncConnections.generation,
+      connectionCreatedAt: sql`${vncConnections.createdAt}`
+        .mapWith(vncConnectionObservations.connectionCreatedAt)
+        .as("connection_created_at"),
       observedAt: sql`${observedAt.toISOString()}::timestamptz`
         .mapWith(vncConnectionObservations.observedAt)
         .as("observed_at"),
@@ -163,6 +172,10 @@ function observationWriteSource(
         eq(vncConnections.orgId, owner.orgId),
         eq(vncConnections.userId, owner.userId),
         eq(vncConnections.generation, input.expectedGeneration),
+        eq(
+          vncConnections.createdAt,
+          sql`${input.expectedCreatedAt}::timestamp`,
+        ),
         eq(agentRuns.id, input.runId),
         eq(agentRuns.status, "running"),
         eq(agentRuns.runnerId, input.runnerIdentity.runnerId),
@@ -260,6 +273,7 @@ export const recordVncConnectionObservation$ = command(
       .onConflictDoUpdate({
         target: vncConnectionObservations.connectionId,
         set: {
+          connectionCreatedAt: input.expectedCreatedAt,
           generation: input.expectedGeneration,
           observedAt,
           failureReason: input.failureReason,
@@ -268,29 +282,47 @@ export const recordVncConnectionObservation$ = command(
         },
         // An old-generation statement may finish after a new-generation writer.
         setWhere: or(
-          lt(vncConnectionObservations.generation, input.expectedGeneration),
+          lt(
+            vncConnectionObservations.connectionCreatedAt,
+            sql`${input.expectedCreatedAt}::timestamp`,
+          ),
           and(
-            eq(vncConnectionObservations.generation, input.expectedGeneration),
-            sshGeneration === null
-              ? isNull(vncConnectionObservations.sshGeneration)
-              : lte(vncConnectionObservations.sshGeneration, sshGeneration),
-            kdcSshGeneration === null
-              ? isNull(vncConnectionObservations.kdcSshGeneration)
-              : lte(
-                  vncConnectionObservations.kdcSshGeneration,
-                  kdcSshGeneration,
-                ),
+            eq(
+              vncConnectionObservations.connectionCreatedAt,
+              sql`${input.expectedCreatedAt}::timestamp`,
+            ),
             or(
-              sshGeneration !== null
-                ? lt(vncConnectionObservations.sshGeneration, sshGeneration)
-                : undefined,
-              kdcSshGeneration !== null
-                ? lt(
-                    vncConnectionObservations.kdcSshGeneration,
-                    kdcSshGeneration,
-                  )
-                : undefined,
-              lt(vncConnectionObservations.observedAt, observedAt),
+              lt(
+                vncConnectionObservations.generation,
+                input.expectedGeneration,
+              ),
+              and(
+                eq(
+                  vncConnectionObservations.generation,
+                  input.expectedGeneration,
+                ),
+                sshGeneration === null
+                  ? isNull(vncConnectionObservations.sshGeneration)
+                  : lte(vncConnectionObservations.sshGeneration, sshGeneration),
+                kdcSshGeneration === null
+                  ? isNull(vncConnectionObservations.kdcSshGeneration)
+                  : lte(
+                      vncConnectionObservations.kdcSshGeneration,
+                      kdcSshGeneration,
+                    ),
+                or(
+                  sshGeneration !== null
+                    ? lt(vncConnectionObservations.sshGeneration, sshGeneration)
+                    : undefined,
+                  kdcSshGeneration !== null
+                    ? lt(
+                        vncConnectionObservations.kdcSshGeneration,
+                        kdcSshGeneration,
+                      )
+                    : undefined,
+                  lt(vncConnectionObservations.observedAt, observedAt),
+                ),
+              ),
             ),
           ),
         ),
