@@ -3,7 +3,6 @@ import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
 import type {
   SandboxReuseResult,
   HomeReuseResult,
-  SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$, activityDetail$ } from "./activity-signals.ts";
@@ -16,7 +15,6 @@ interface ActivityRunner {
   runner: {
     sandboxReuseResult: SandboxReuseResult | null;
     homeReuseResult: HomeReuseResult | null;
-    sandboxStartupPath: SandboxStartupPath | null;
     runnerHostname: string | null;
     runnerVersion: string | null;
     runnerId: string | null;
@@ -42,7 +40,6 @@ export const activityRunner$ = computed(async (get) => {
     runner: {
       sandboxReuseResult: result.body.sandboxReuseResult,
       homeReuseResult: result.body.homeReuseResult ?? null,
-      sandboxStartupPath: result.body.sandboxStartupPath ?? null,
       runnerHostname: result.body.runnerHostname ?? null,
       runnerVersion: result.body.runnerVersion ?? null,
       runnerId: result.body.runnerId ?? null,

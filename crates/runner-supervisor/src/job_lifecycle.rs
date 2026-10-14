@@ -197,7 +197,6 @@ pub struct CompletionPayload {
     sandbox_id: SandboxId,
     reuse_result: SandboxReuseResult,
     home_reuse_result: Option<HomeReuseResult>,
-    sandbox_startup_path: Option<runner_types::types::SandboxStartupPath>,
     completion_auth: CompletionAuth,
 }
 
@@ -245,21 +244,12 @@ impl CompletionPayload {
             sandbox_id,
             reuse_result,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             completion_auth,
         }
     }
 
     pub fn with_home_reuse_result(mut self, home_reuse_result: Option<HomeReuseResult>) -> Self {
         self.home_reuse_result = home_reuse_result;
-        self
-    }
-
-    pub fn with_sandbox_startup_path(
-        mut self,
-        path: Option<runner_types::types::SandboxStartupPath>,
-    ) -> Self {
-        self.sandbox_startup_path = path;
         self
     }
 
@@ -332,7 +322,6 @@ impl CompletionPayload {
             sandbox_id,
             reuse_result,
             home_reuse_result,
-            sandbox_startup_path,
             completion_auth,
         } = self;
         let provider_completion_started = Instant::now();
@@ -346,7 +335,6 @@ impl CompletionPayload {
                     sandbox_id: Some(sandbox_id),
                     sandbox_reuse_result: Some(reuse_result),
                     home_reuse_result,
-                    sandbox_startup_path,
                 },
                 completion_auth,
             )

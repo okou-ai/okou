@@ -153,8 +153,6 @@
         "sandboxPrepareFallback": "Se encontró un directorio personal en caché, pero no pudo utilizarse después de preparar el sandbox.",
         "sandboxReusedDescription": "El directorio personal siguió disponible en el sandbox reutilizado.",
         "startup": "Inicio",
-        "startupBlank": "Sandbox precalentado",
-        "startupBlankDescription": "Se usó un sandbox vacío preparado con un directorio personal nuevo.",
         "startupCold": "Inicio en frío",
         "startupColdDescription": "Se prepararon un sandbox y un espacio de trabajo nuevos.",
         "startupHome": "Reutilización del directorio personal",

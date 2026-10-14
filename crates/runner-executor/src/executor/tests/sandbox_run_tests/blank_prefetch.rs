@@ -116,9 +116,15 @@ async fn blank_prefetch_retires_before_one_replacement_and_one_agent() {
         destroy.release_one();
         let (outcome, telemetry) = tokio::time::timeout(WAIT, task).await.unwrap().unwrap();
         assert_eq!(outcome.exit_code(), 0, "{:?}", outcome.error());
-        assert_eq!(
-            outcome.sandbox_startup_path,
-            Some(runner_types::types::SandboxStartupPath::Cold)
+        assert!(
+            telemetry
+                .pending_ops_with_runner_startup_snapshot()
+                .iter()
+                .any(|op| {
+                    op.action_type == "runner_agent_start_to_ready"
+                        && op.runner_startup_path
+                            == Some(runner_types::types::SandboxStartupPath::Cold)
+                })
         );
         let creates = overrides.create_configs();
         assert_eq!(creates.len(), 2);

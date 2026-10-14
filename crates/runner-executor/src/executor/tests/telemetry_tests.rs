@@ -1831,7 +1831,6 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     );
     assert_has_action(&telemetry, "sandbox_reuse_miss");
     assert_has_action(&telemetry, "sandbox_blank_pool_hit");
-    assert_eq!(outcome.sandbox_startup_path, Some(RunnerStartupPath::Blank));
     let startup = telemetry.pending_ops_with_runner_startup_snapshot();
     assert!(startup.iter().any(|operation| {
         operation.action_type == "runner_agent_start_to_ready"

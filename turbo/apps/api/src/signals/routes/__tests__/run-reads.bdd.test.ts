@@ -2410,31 +2410,11 @@ describe("RUN-04: agent run telemetry families", () => {
         name: "legacy no session ID",
         sandboxResult: "noSessionId",
         homeResult: undefined,
-        startupPath: undefined,
       },
       {
         name: "no reuse key",
         sandboxResult: "noReuseKey",
         homeResult: "reused",
-        startupPath: "home",
-      },
-      {
-        name: "exact sandbox",
-        sandboxResult: "reused",
-        homeResult: "sandboxReused",
-        startupPath: "sandbox",
-      },
-      {
-        name: "blank sandbox",
-        sandboxResult: "poolMiss",
-        homeResult: "cacheMiss",
-        startupPath: "blank",
-      },
-      {
-        name: "cold sandbox",
-        sandboxResult: "poolMiss",
-        homeResult: "cacheMiss",
-        startupPath: "cold",
       },
     ] as const;
 
@@ -2459,7 +2439,6 @@ describe("RUN-04: agent run telemetry families", () => {
           },
           sandboxReuseResult: scenario.sandboxResult,
           homeReuseResult: scenario.homeResult,
-          sandboxStartupPath: scenario.startupPath,
         },
         headers,
         [200],
@@ -2473,115 +2452,12 @@ describe("RUN-04: agent run telemetry families", () => {
       expect(runner.body).toStrictEqual({
         sandboxReuseResult: scenario.sandboxResult,
         homeReuseResult: scenario.homeResult ?? null,
-        ...(scenario.startupPath
-          ? { sandboxStartupPath: scenario.startupPath }
-          : {}),
         runnerHostname: null,
         runnerVersion: null,
         runnerId: expect.any(String),
         runnerHeartbeatGeneration: 1,
       });
     }
-  });
-
-  it("retains settled startup paths after user cancellation and completion replay", async () => {
-    const actor = await entitledActor();
-    const { agentId } = await createThreadAgent(actor, "startup cancellation");
-
-    for (const sandboxStartupPath of ["blank", "cold"] as const) {
-      const run = await api.createThreadRun(actor, {
-        agentId,
-        prompt: `cancel ${sandboxStartupPath} startup`,
-      });
-      const claim = await api.claimRunnerJob(run.runId);
-      const headers = sandboxHeaders(claim.sandboxToken);
-
-      await api.requestCancelRun(actor, run.runId, [200]);
-      expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
-
-      const completion = await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 1,
-          sandboxReuseResult: "poolMiss",
-          homeReuseResult: "cacheMiss",
-          sandboxStartupPath,
-        },
-        headers,
-        [200],
-      );
-      expect(completion.body).toStrictEqual({
-        success: true,
-        status: "failed",
-      });
-      const runner = await api.requestRunRunner(actor, run.runId, [200]);
-      expect(runner.body).toMatchObject({
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
-        sandboxStartupPath,
-      });
-
-      const replay = await webhooks.requestAgentComplete(
-        { runId: run.runId, exitCode: 1 },
-        headers,
-        [200],
-      );
-      expect(replay.body).toStrictEqual(completion.body);
-      expect(
-        (await api.requestRunRunner(actor, run.runId, [200])).body,
-      ).toStrictEqual(runner.body);
-      expect((await api.readRun(actor, run.runId)).status).toBe("cancelled");
-    }
-  });
-
-  it("rejects contradictory partial startup metadata before completion", async () => {
-    const actor = await entitledActor();
-    const { agentId } = await createThreadAgent(actor, "partial startup");
-    const run = await api.createThreadRun(actor, {
-      agentId,
-      prompt: "validate partial startup evidence",
-    });
-    const claim = await api.claimRunnerJob(run.runId);
-    const headers = sandboxHeaders(claim.sandboxToken);
-
-    for (const sandboxStartupPath of ["blank", "cold"] as const) {
-      const rejected = await webhooks.requestAgentComplete(
-        {
-          runId: run.runId,
-          exitCode: 1,
-          sandboxReuseResult: "reused",
-          sandboxStartupPath,
-        },
-        headers,
-        [400],
-      );
-      expectApiError(rejected.body);
-      expect(rejected.body.error.code).toBe("BAD_REQUEST");
-      expect(rejected.body.error.message).toMatch(/^sandboxStartupPath: /u);
-      expect((await api.readRun(actor, run.runId)).status).toBe("running");
-      const unclassified = await api.requestRunRunner(actor, run.runId, [200]);
-      mustOk(unclassified, "runner diagnostics after rejected completion");
-      expect(unclassified.body.sandboxStartupPath ?? null).toBeNull();
-    }
-
-    const completion = await webhooks.requestAgentComplete(
-      {
-        runId: run.runId,
-        exitCode: 1,
-        sandboxReuseResult: "poolMiss",
-        sandboxStartupPath: "cold",
-      },
-      headers,
-      [200],
-    );
-    expect(completion.body).toStrictEqual({ success: true, status: "failed" });
-    expect(
-      (await api.requestRunRunner(actor, run.runId, [200])).body,
-    ).toMatchObject({
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: null,
-      sandboxStartupPath: "cold",
-    });
   });
 
   it("reads fresh run context within the creation-time window after a cached miss", async () => {

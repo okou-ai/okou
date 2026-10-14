@@ -151,8 +151,6 @@
         "sandboxPrepareFallback": "找到了快取的主目錄，但沙箱準備完成後無法使用。",
         "sandboxReusedDescription": "主目錄在複用的沙箱中保持可用。",
         "startup": "啟動",
-        "startupBlank": "預熱沙箱",
-        "startupBlankDescription": "使用預先準備的空白沙箱和全新的主目錄。",
         "startupCold": "冷啟動",
         "startupColdDescription": "已準備全新的沙箱和工作區。",
         "startupHome": "主目錄複用",

@@ -1,1 +1,0 @@
-ALTER TABLE "agent_runs" ADD COLUMN "sandbox_startup_path" varchar(20);

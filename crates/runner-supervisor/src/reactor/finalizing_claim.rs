@@ -548,7 +548,6 @@ async fn complete_claimed_without_sandbox(
                 sandbox_id: None,
                 sandbox_reuse_result: reuse_result,
                 home_reuse_result: None,
-                sandbox_startup_path: None,
             },
             completion_auth,
         )

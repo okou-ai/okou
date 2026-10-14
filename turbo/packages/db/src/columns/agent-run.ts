@@ -13,7 +13,6 @@ import {
 } from "drizzle-orm/pg-core";
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
-import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { chatThreads } from "../schema/chat-thread";
 import { agents } from "../schema/agent";
 import { workflowAutomations } from "../schema/workflow";
@@ -84,10 +83,6 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     // Final home reuse outcome; retain the existing physical storage name.
     // Null means the runner did not reach a reliable decision.
     homeReuseResult: varchar("workspace_reuse_result", { length: 50 }),
-    // Null covers historical runs and startup failures before a settled choice.
-    sandboxStartupPath: varchar("sandbox_startup_path", {
-      length: 20,
-    }).$type<SandboxStartupPath>(),
     // Null identifies a historical claim without cancellation recovery.
     // Current claims initialize false; false/true records whether recovery
     // completion has been reported. The barrier is active only while the

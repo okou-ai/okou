@@ -1679,7 +1679,6 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         network_log_session: Some(network_log_session),
         home_image: None,
         home_reuse_result: Some(home_reuse_result),
-        sandbox_startup_path: Some(sandbox_startup_path),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }

@@ -1833,9 +1833,6 @@ pub struct CompleteRequest {
     /// Final home reuse outcome; absent when no reliable decision was reached.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub home_reuse_result: Option<HomeReuseResult>,
-    /// Actual startup resource after preparation and fallback settle.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sandbox_startup_path: Option<SandboxStartupPath>,
 }
 
 /// Outcome of the sandbox-reuse decision made at job dispatch time. `Reused`
@@ -1884,7 +1881,7 @@ pub enum HomeReuseResult {
     SandboxPrepareFallback,
 }
 
-pub use api_contracts::generated::types::webhooks::agent::complete::RequestSandboxStartupPath as SandboxStartupPath;
+pub use api_contracts::generated::types::runners::SandboxStartupPath;
 
 impl HomeReuseResult {
     /// Wire-format string, kept lockstep with the serde derive in tests.
@@ -2294,7 +2291,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert!(json.get("runId").is_some());
@@ -2319,7 +2315,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
         };
         let json = serde_json::to_value(&req).unwrap();
         assert_eq!(json["error"], "timeout");
@@ -2344,7 +2339,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
         };
 
         let json = serde_json::to_value(&req).unwrap();
@@ -2356,7 +2350,6 @@ mod tests {
     fn complete_request_with_reuse_fields() {
         let sid: SandboxId = "11111111-2222-3333-4444-555555555555".parse().unwrap();
         let req = CompleteRequest {
-            sandbox_startup_path: None,
             run_id: "550e8400-e29b-41d4-a716-446655440000"
                 .parse::<RunId>()
                 .unwrap(),

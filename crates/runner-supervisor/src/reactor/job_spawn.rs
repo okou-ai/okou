@@ -243,7 +243,6 @@ impl ExecutorInvocation {
                         network_log_session: None,
                         home_image: None,
                         home_reuse_result: None,
-                        sandbox_startup_path: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
                     },
@@ -333,7 +332,6 @@ impl FinalizationPhase {
             network_log_session,
             home_image,
             home_reuse_result: _,
-            sandbox_startup_path: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
         } = outcome;
@@ -669,8 +667,7 @@ pub(super) async fn run_job(
             reuse_result,
             completion_auth,
         )
-        .with_home_reuse_result(executor_result.outcome.home_reuse_result)
-        .with_sandbox_startup_path(executor_result.outcome.sandbox_startup_path);
+        .with_home_reuse_result(executor_result.outcome.home_reuse_result);
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
@@ -944,7 +941,6 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
-                sandbox_startup_path: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity,
             },
@@ -964,7 +960,6 @@ mod tests {
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
-                sandbox_startup_path: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },

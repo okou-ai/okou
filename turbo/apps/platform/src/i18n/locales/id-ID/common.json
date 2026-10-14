@@ -151,8 +151,6 @@
         "sandboxPrepareFallback": "Direktori home dalam cache ditemukan, tetapi tidak dapat digunakan setelah persiapan sandbox.",
         "sandboxReusedDescription": "Direktori home tetap tersedia di sandbox yang digunakan ulang.",
         "startup": "Startup",
-        "startupBlank": "Sandbox siap pakai",
-        "startupBlankDescription": "Sandbox kosong yang telah disiapkan digunakan dengan direktori home baru.",
         "startupCold": "Cold start",
         "startupColdDescription": "Sandbox dan workspace baru disiapkan.",
         "startupHome": "Penggunaan ulang direktori home",

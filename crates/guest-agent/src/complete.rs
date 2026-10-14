@@ -59,8 +59,6 @@ struct CompletePayload<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     home_reuse_result: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    sandbox_startup_path: Option<complete::RequestSandboxStartupPath>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     completion: Option<&'a complete::RequestCompletion>,
 }
 
@@ -127,7 +125,6 @@ pub async fn report_user_cancellation_for_run(
     sandbox_id: &str,
     sandbox_reuse_result: &str,
     home_reuse_result: &str,
-    sandbox_startup_path: Option<complete::RequestSandboxStartupPath>,
     last_event_sequence: Option<u32>,
 ) {
     if !http.has_api() {
@@ -142,7 +139,6 @@ pub async fn report_user_cancellation_for_run(
             sandbox_id,
             sandbox_reuse_result,
             home_reuse_result,
-            sandbox_startup_path,
             last_event_sequence,
         ),
         1,
@@ -176,7 +172,6 @@ fn payload_for_runtime<'a>(
         sandbox_id: as_optional(&config.sandbox_id),
         sandbox_reuse_result: as_optional(&config.sandbox_reuse_result),
         home_reuse_result: as_optional(&config.home_reuse_result),
-        sandbox_startup_path: config.sandbox_startup_path,
         completion,
     }
 }
@@ -187,7 +182,6 @@ fn metadata_free_payload_for_run<'a>(
     sandbox_id: &'a str,
     sandbox_reuse_result: &'a str,
     home_reuse_result: &'a str,
-    sandbox_startup_path: Option<complete::RequestSandboxStartupPath>,
     last_event_sequence: Option<u32>,
 ) -> CompletePayload<'a> {
     CompletePayload {
@@ -199,7 +193,6 @@ fn metadata_free_payload_for_run<'a>(
         sandbox_id: as_optional(sandbox_id),
         sandbox_reuse_result: as_optional(sandbox_reuse_result),
         home_reuse_result: as_optional(home_reuse_result),
-        sandbox_startup_path,
         completion: None,
     }
 }
@@ -229,7 +222,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -247,14 +239,12 @@ mod tests {
             sandbox_id: Some("abc"),
             sandbox_reuse_result: Some("reused"),
             home_reuse_result: Some("sandboxReused"),
-            sandbox_startup_path: Some(complete::RequestSandboxStartupPath::Sandbox),
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains(r#""sandboxId":"abc""#));
         assert!(json.contains(r#""sandboxReuseResult":"reused""#));
         assert!(json.contains(r#""homeReuseResult":"sandboxReused""#));
-        assert!(json.contains(r#""sandboxStartupPath":"sandbox""#));
     }
 
     #[test]
@@ -268,7 +258,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             completion: None,
         };
 
@@ -289,7 +278,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: Some("poolMiss"),
             home_reuse_result: None,
-            sandbox_startup_path: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -308,7 +296,6 @@ mod tests {
             sandbox_id: Some("sid"),
             sandbox_reuse_result: None,
             home_reuse_result: Some("cacheMiss"),
-            sandbox_startup_path: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();
@@ -334,7 +321,6 @@ mod tests {
             sandbox_id: None,
             sandbox_reuse_result: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             completion: None,
         };
         let json = serde_json::to_string(&payload).unwrap();

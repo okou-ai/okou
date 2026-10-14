@@ -909,7 +909,6 @@ async fn complete_claimed_failure(
                 sandbox_id: None,
                 sandbox_reuse_result: diagnostics.reuse_result,
                 home_reuse_result: None,
-                sandbox_startup_path: None,
             },
             completion_auth,
         )

@@ -151,8 +151,6 @@
         "sandboxPrepareFallback": "找到了缓存的主目录，但沙箱准备完成后无法使用。",
         "sandboxReusedDescription": "主目录在复用的沙箱中保持可用。",
         "startup": "启动",
-        "startupBlank": "预热沙箱",
-        "startupBlankDescription": "使用预先准备的空白沙箱和全新的主目录。",
         "startupCold": "冷启动",
         "startupColdDescription": "已准备全新的沙箱和工作区。",
         "startupHome": "主目录复用",

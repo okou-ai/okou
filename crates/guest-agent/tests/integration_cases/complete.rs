@@ -31,7 +31,6 @@ async fn cancellation_fallback_posts_full_payload_when_metadata_present() {
                 "sandboxId": TEST_SANDBOX_ID,
                 "sandboxReuseResult": TEST_SANDBOX_REUSE_RESULT,
                 "homeReuseResult": TEST_HOME_REUSE_RESULT,
-                "sandboxStartupPath": "sandbox",
             }));
         then.status(200).json_body(json!({
             "success": true,
@@ -45,7 +44,6 @@ async fn cancellation_fallback_posts_full_payload_when_metadata_present() {
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
         TEST_HOME_REUSE_RESULT,
-        Some(guest_contracts::sandbox_startup::SandboxStartupPath::Sandbox),
         Some(7),
     )
     .await;
@@ -79,7 +77,6 @@ async fn cancellation_fallback_omits_metadata_when_env_absent() {
         "",
         "",
         None,
-        None,
     )
     .await;
 
@@ -104,7 +101,6 @@ async fn cancellation_fallback_swallows_server_error() {
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
         TEST_HOME_REUSE_RESULT,
-        None,
         None,
     )
     .await;
@@ -135,7 +131,6 @@ async fn cancellation_fallback_swallows_4xx_auth_error() {
         TEST_SANDBOX_ID,
         TEST_SANDBOX_REUSE_RESULT,
         TEST_HOME_REUSE_RESULT,
-        None,
         None,
     )
     .await;

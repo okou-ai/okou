@@ -390,8 +390,6 @@ pub struct ExecuteOutcome {
     pub home_image: Option<HomeImageLease>,
     /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
-    /// Actual startup resource, absent before preparation settles.
-    pub sandbox_startup_path: Option<SandboxStartupPath>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -409,7 +407,6 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -429,7 +426,6 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -687,7 +683,6 @@ pub async fn execute_job_with_prepared_notifier(
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
-            sandbox_startup_path: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         },
@@ -718,7 +713,6 @@ pub async fn execute_job_with_prepared_notifier(
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
-                sandbox_startup_path: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
