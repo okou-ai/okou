@@ -1025,14 +1025,26 @@ export const deleteSshConnection$ = command(
       readonly orgId: string;
       readonly userId: string;
       readonly connectionId: string;
+      readonly expectedGeneration?: number;
     },
   ): Promise<SshConnectionResult<undefined>> => {
     const db = set(writeDb$);
     // The RESTRICT VNC FK rejects deleting a host used by a VNC connection.
+    // Temporary old session/App -> prepared API compatibility: the route alone
+    // admits an omitted generation for sessions. Remove in #40074 after #40073's
+    // App is live and its published version becomes the enforced client floor.
     const deletion = await settle(
-      db.delete(sshConnections).where(ownedSshConnection(args)).returning({
-        id: sshConnections.id,
-      }),
+      db
+        .delete(sshConnections)
+        .where(
+          and(
+            ownedSshConnection(args),
+            args.expectedGeneration === undefined
+              ? undefined
+              : eq(sshConnections.generation, args.expectedGeneration),
+          ),
+        )
+        .returning({ id: sshConnections.id }),
     );
     if (!deletion.ok) {
       if (isVncReferenceRestriction(deletion.error)) {
@@ -1041,7 +1053,15 @@ export const deleteSshConnection$ = command(
       throw deletion.error;
     }
     if (deletion.value.length === 0) {
-      return failure("notFound");
+      if (args.expectedGeneration === undefined) {
+        return failure("notFound");
+      }
+      const [remaining] = await db
+        .select({ id: sshConnections.id })
+        .from(sshConnections)
+        .where(ownedSshConnection(args))
+        .limit(1);
+      return failure(remaining ? "generationConflict" : "notFound");
     }
     await set(publishSshRuntimeInvalidation$, {
       orgId: args.orgId,

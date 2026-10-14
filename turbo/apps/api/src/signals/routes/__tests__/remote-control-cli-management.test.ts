@@ -110,6 +110,12 @@ function credentials() {
   );
 }
 
+function connections() {
+  return setupApp({ context, routes: sshConnectionsRoutes })(
+    sshConnectionsContract,
+  );
+}
+
 function credentialBody() {
   return {
     id: randomUUID(),
@@ -156,9 +162,7 @@ describe("remote control CLI management authorization", () => {
       revision: 1,
     });
     const host = await accept(
-      setupApp({ context, routes: sshConnectionsRoutes })(
-        sshConnectionsContract,
-      ).create({
+      connections().create({
         headers,
         body: {
           id: randomUUID(),
@@ -170,6 +174,17 @@ describe("remote control CLI management authorization", () => {
       [201],
     );
     expect(host.body.credentialId).toBe(created.body.id);
+    const omittedVersion = await accept(
+      connections().delete({
+        headers,
+        params: { connectionId: host.body.id },
+      }),
+      [400],
+    );
+    expect(omittedVersion.body.error.code).toBe("SSH_INVALID_INPUT");
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([host.body]);
     const updated = await accept(
       credentials().update({
         headers,
@@ -243,6 +258,58 @@ describe("remote control CLI management authorization", () => {
       [200],
     );
     expect(sessionListed.body.credentials).toStrictEqual([created.body]);
+  });
+
+  it("requires a device-approved PAT to supply the reviewed SSH host generation after feature admission", async () => {
+    useSecretKmsProbe();
+    const actor = owner();
+    await management(actor, true);
+    const headers = await personalHeaders(actor);
+    const credential = await accept(
+      credentials().create({ headers, body: credentialBody() }),
+      [201],
+    );
+    const host = await accept(
+      connections().create({
+        headers,
+        body: {
+          id: randomUUID(),
+          displayName: "Reviewed PAT host",
+          host: "ssh.example.com",
+          credential: { id: credential.body.id },
+        },
+      }),
+      [201],
+    );
+    const params = { connectionId: host.body.id };
+    const omitted = await accept(
+      connections().delete({ headers, params }),
+      [400],
+    );
+    expect(omitted.body.error.code).toBe("SSH_INVALID_INPUT");
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([host.body]);
+
+    await management(actor, false);
+    await accept(connections().delete({ headers, params }), [403]);
+    expect(
+      (await accept(connections().list({ headers: sessionHeaders }), [200]))
+        .body.connections,
+    ).toStrictEqual([host.body]);
+
+    await management(actor, true);
+    await accept(
+      connections().delete({
+        headers,
+        params,
+        body: { expectedGeneration: host.body.generation },
+      }),
+      [204],
+    );
+    expect(
+      (await accept(connections().list({ headers }), [200])).body.connections,
+    ).toStrictEqual([]);
   });
 
   it("keeps another organization member from accessing or modifying owned credentials", async () => {
