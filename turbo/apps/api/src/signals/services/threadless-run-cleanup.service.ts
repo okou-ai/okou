@@ -30,8 +30,7 @@ import { lockDeletionProtection } from "./threadless-run-protection.service";
 import { THREADLESS_RUN_PROTECTIONS } from "./threadless-run-protections";
 
 import {
-  deleteLockedRuns,
-  deleteRunConversations,
+  deleteLockedRunHistories,
   logCommittedConversationDeletion,
   releaseDeletedConversationReferences,
 } from "./conversation-history-deletion.service";
@@ -267,8 +266,7 @@ async function deleteIfStillEligible(
       return null;
     }
 
-    const removed = await deleteRunConversations(tx, [candidate.runId]);
-    await deleteLockedRuns(tx, [candidate.runId]);
+    const removed = await deleteLockedRunHistories(tx, [candidate.runId]);
     return await releaseDeletedConversationReferences(tx, removed);
   });
   if (receipt === null) {

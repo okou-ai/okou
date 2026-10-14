@@ -11,7 +11,11 @@ const bdd = createBddApi(context);
 const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 
-async function completedRun(actor: ApiTestUser, agentId?: string) {
+async function completedRun(
+  actor: ApiTestUser,
+  agentId?: string,
+  retainHistory = true,
+) {
   bdd.acceptAgentStorageWrites();
   runs.acceptStorageDownloads();
   runs.acceptTelemetryIngest();
@@ -36,7 +40,9 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   const completion = {
     cliAgentType: "claude-code" as const,
     cliAgentSessionId: run.runId,
-    cliAgentSessionHistoryHash: hash,
+    ...(retainHistory
+      ? { cliAgentSessionHistoryHash: hash }
+      : { cliAgentSessionHistoryDisposition: "unavailable" as const }),
   };
   await webhooks.requestAgentComplete(
     { runId: run.runId, exitCode: 0, completion },
@@ -49,14 +55,17 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   return { ...run, agentId: targetAgentId, hash, headers, completion };
 }
 
-test("deletes a completed Run with its Agent and rejects repeated deletion", async () => {
-  const actor = bdd.user();
-  const run = await completedRun(actor);
-  await bdd.requestDeleteAgent(actor, run.agentId, [204]);
-  const deleted = await runs.requestReadRun(actor, run.runId, [404]);
-  expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-  await bdd.requestDeleteAgent(actor, run.agentId, [404]);
-});
+test.each([true, false])(
+  "deletes a completed Run (retained history=%s) with its Agent",
+  async (retainHistory) => {
+    const actor = bdd.user();
+    const run = await completedRun(actor, undefined, retainHistory);
+    await bdd.requestDeleteAgent(actor, run.agentId, [204]);
+    const deleted = await runs.requestReadRun(actor, run.runId, [404]);
+    expect(deleted.body).toMatchObject({ error: { code: "NOT_FOUND" } });
+    await bdd.requestDeleteAgent(actor, run.agentId, [404]);
+  },
+);
 
 test.each(["user", "organization"] as const)(
   "rejects a completed Runner callback after a verified Clerk %s deletion",
@@ -80,3 +89,20 @@ test.each(["user", "organization"] as const)(
     });
   },
 );
+
+test("agent deletion preserves another Agent's completed Run and callback", async () => {
+  const actor = bdd.user();
+  const target = await completedRun(actor);
+  const survivor = await completedRun(actor);
+  await bdd.requestDeleteAgent(actor, target.agentId, [204]);
+  await expect(runs.readRun(actor, survivor.runId)).resolves.toMatchObject({
+    runId: survivor.runId,
+    status: "completed",
+  });
+  await webhooks.requestAgentComplete(
+    { runId: survivor.runId, exitCode: 0, completion: survivor.completion },
+    survivor.headers,
+    [200],
+  );
+  await bdd.requestDeleteAgent(actor, survivor.agentId, [204]);
+});
