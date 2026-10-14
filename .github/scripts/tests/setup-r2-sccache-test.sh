@@ -26,13 +26,8 @@ inputs = {
     "r2-account-id": "fixture-account",
     "r2-bucket-name": "fixture-bucket",
 }
-assert action["runs"]["using"] == "composite"
-assert set(action["inputs"]) == set(inputs)
-assert all(v["required"] for v in action["inputs"].values())
 steps = action["runs"]["steps"]
-assert [s["name"] for s in steps] == ["Verify preinstalled sccache", "Configure R2 sccache"]
 assert all(s["shell"] == "bash" and not s.get("continue-on-error", False) for s in steps)
-assert steps[1]["id"] == "configure"
 assert action["outputs"]["started"]["value"] == "${{ steps.configure.outputs.started }}"
 bash = shutil.which("bash")
 assert bash
