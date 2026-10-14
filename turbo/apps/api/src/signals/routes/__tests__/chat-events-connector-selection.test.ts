@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
 
 const context = testContext();
+const runs = createRunsApi(context);
 const { api, chat, connectors, cancelChatRun, sessionHeaders } =
   createChatEventsFixture(context);
 function selectionsClient() {
@@ -28,7 +30,7 @@ describe("thread connector selection", () => {
     await own(() => {
       return api.updateUserModelPreference(actor, "claude-fable-5-1");
     });
-    const connection = await own(() => {
+    const defaultConnection = await own(() => {
       return connectors.connectManualGrant(
         actor,
         "openai",
@@ -37,6 +39,29 @@ describe("thread connector selection", () => {
         agentId,
       );
     });
+    const connection = await own(() => {
+      return connectors.connectManualGrant(
+        actor,
+        "openai",
+        "api-token",
+        { apiKey: "thread-selected-openai-key" },
+        agentId,
+        { intent: "add", displayName: "Selected sibling" },
+      );
+    });
+    const accounts = await own(() => {
+      return connectors.listBuiltinConnectorAccounts(actor, "openai");
+    });
+    expect(
+      accounts.find((account) => {
+        return account.id === defaultConnection.id;
+      }),
+    ).toMatchObject({ isDefault: true });
+    expect(
+      accounts.find((account) => {
+        return account.id === connection.id;
+      }),
+    ).toMatchObject({ isDefault: false });
     const runtimeConnection = await own(() => {
       return connectors.connectManualGrant(
         actor,
@@ -104,6 +129,40 @@ describe("thread connector selection", () => {
     });
     expect(run.threadId).toBe(thread.id);
     const claimed = await claimChatRun(runnerGroup, run.runId);
+    const targets = [
+      {
+        kind: "builtin" as const,
+        connectorSlug: "openai",
+        sourceId: connection.id,
+      },
+      {
+        kind: "builtin" as const,
+        connectorSlug: "runtime",
+        sourceId: runtimeConnection.id,
+      },
+    ];
+    for (const target of targets) {
+      expect(claimed.claim.connectorRuntimeTargets).toContainEqual(
+        expect.objectContaining(target),
+      );
+    }
+    const synced = await own(() => {
+      return runs.syncConnectorRuntime(run.runId, { targets });
+    });
+    expect(
+      synced.map(({ target, state }) => {
+        return { target, state };
+      }),
+    ).toStrictEqual([
+      {
+        target: { kind: "builtin", connectorSlug: "openai" },
+        state: "available",
+      },
+      {
+        target: { kind: "builtin", connectorSlug: "runtime" },
+        state: "available",
+      },
+    ]);
     await own(() => {
       return accept(
         selectionsClient().clear({
