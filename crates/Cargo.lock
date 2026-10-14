@@ -2082,8 +2082,10 @@ dependencies = [
  "futures-util",
  "getrandom 0.4.3",
  "guest-contracts",
+ "libc",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "tokio-util",
  "uuid",
@@ -4822,6 +4824,7 @@ dependencies = [
 name = "sandbox-firecracker"
 version = "0.49.0"
 dependencies = [
+ "api-contracts",
  "async-trait",
  "base64 0.23.1",
  "clap",

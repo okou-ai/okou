@@ -16,6 +16,7 @@ use serde_json::{Value, json, value::RawValue};
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 mod duplex;
+mod filesystem;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires root, KVM, NBD and matching packaged rootfs/snapshot; run by metal CI"]
@@ -92,7 +93,8 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
-    let first_epoch = duplex::exercise(sandbox, &run, &registry).await?;
+    let first_epoch = duplex::exercise(sandbox, &run, &registry, None).await?;
+    let retired_cursor = first_epoch.cursor().to_owned();
     // The established duplex must not consume or block the independent RPC path.
     exercise_requests(sandbox, &run).await?;
     let stale = sandbox
@@ -120,7 +122,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     {
         return Err(io::Error::other("old Run duplex acceptor survived park/reassignment").into());
     }
-    let next_epoch = duplex::exercise(sandbox, &next_run, &registry).await?;
+    let next_epoch = duplex::exercise(sandbox, &next_run, &registry, Some(&retired_cursor)).await?;
     exercise_requests(sandbox, &next_run).await?;
     next_epoch.verify_provider_stop(sandbox).await?;
     println!(
