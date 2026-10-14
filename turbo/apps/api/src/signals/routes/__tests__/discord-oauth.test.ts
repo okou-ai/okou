@@ -464,6 +464,7 @@ async function finish(
   const landing = await verified(f, started, options);
   if (landing.searchParams.get("discord") !== "pending") {
     return {
+      stage: "callback" as const,
       status: "error" as const,
       error: landing.searchParams.get("discord_error"),
       httpStatus: 307,
@@ -472,6 +473,7 @@ async function finish(
   const approved = await approve(started, landing);
   if (approved.status !== 200) {
     return {
+      stage: "approval" as const,
       status: "error" as const,
       error: approved.body.error.code.toLowerCase(),
       httpStatus: approved.status,
@@ -479,8 +481,14 @@ async function finish(
   }
   const completed = await complete(started);
   return completed.status === 200
-    ? { status: completed.body.status, error: null, httpStatus: 200 }
+    ? {
+        stage: "completion" as const,
+        status: completed.body.status,
+        error: null,
+        httpStatus: 200,
+      }
     : {
+        stage: "completion" as const,
         status: "error" as const,
         error: completed.body.error.code.toLowerCase(),
         httpStatus: completed.status,
@@ -1086,9 +1094,38 @@ describe("Discord product OAuth", () => {
       finish(f, first),
       finish(f, second, { guildId: snowflake() }),
     ]);
+    const knownErrors = new Set([
+      "cancelled",
+      "unavailable",
+      "forbidden",
+      "provider_error",
+      "invalid_authorization",
+      "guild_unverified",
+      "bot_missing",
+      "invalid_state",
+      "discord_oauth_invalid_attempt",
+      "discord_not_configured",
+      "discord_oauth_unavailable",
+      "conflict",
+      "discord_oauth_failed",
+      "discord_oauth_approval_required",
+      "bad_request",
+    ]);
     expect(
       results.map((result) => {
         return result.status;
+      }),
+      JSON.stringify({
+        orgId: owner.orgId,
+        userId: owner.userId,
+        attempts: results.map((result, index) => {
+          return {
+            label: index === 0 ? "first" : "second",
+            stage: result.stage,
+            httpStatus: result.httpStatus,
+            error: knownErrors.has(result.error ?? "") ? result.error : null,
+          };
+        }),
       }),
     ).toStrictEqual(["connected", "connected"]);
     expect((await status(owner)).dmBindings).toHaveLength(1);
@@ -1216,9 +1253,38 @@ describe("Discord product OAuth", () => {
     const first = await start(actor, "install", f.guildId);
     const second = await start(actor, "install", f.guildId);
     const results = await Promise.all([finish(f, first), finish(f, second)]);
+    const knownErrors = new Set([
+      "cancelled",
+      "unavailable",
+      "forbidden",
+      "provider_error",
+      "invalid_authorization",
+      "guild_unverified",
+      "bot_missing",
+      "invalid_state",
+      "discord_oauth_invalid_attempt",
+      "discord_not_configured",
+      "discord_oauth_unavailable",
+      "conflict",
+      "discord_oauth_failed",
+      "discord_oauth_approval_required",
+      "bad_request",
+    ]);
     expect(
       results.map((result) => {
         return result.status;
+      }),
+      JSON.stringify({
+        orgId: actor.orgId,
+        userId: actor.userId,
+        attempts: results.map((result, index) => {
+          return {
+            label: index === 0 ? "first" : "second",
+            stage: result.stage,
+            httpStatus: result.httpStatus,
+            error: knownErrors.has(result.error ?? "") ? result.error : null,
+          };
+        }),
       }),
     ).toStrictEqual(["connected", "connected"]);
     expect((await status(actor)).isConnected).toBeTruthy();
