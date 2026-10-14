@@ -912,11 +912,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0403",
-      "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
-      "owner": "validatePermanentModelCatalogConstraints"
-    },
-    {
       "id": "TX-0411",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
       "owner": "<module>"
