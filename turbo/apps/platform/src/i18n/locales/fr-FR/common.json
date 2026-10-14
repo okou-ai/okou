@@ -2790,7 +2790,6 @@
         "workflow": "Workflow"
       },
       "importedLoadFailed": "Impossible de charger les modèles importés.",
-      "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",

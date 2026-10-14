@@ -4744,42 +4744,31 @@ function ImportedPresentationTemplateLibraryStatus({
   const templates = useLoadable(
     signals.template.importedPresentationTemplatePickerItems$,
   );
-  const lastResolvedTemplates = useLastResolved(
-    signals.template.importedPresentationTemplatePickerItems$,
-  );
   const realtime = useLoadable(
     signals.template.presentationTemplatesRealtimeReady$,
   );
   const retryCatalog = useSet(
     signals.template.retryImportedPresentationTemplates$,
   );
+  if (templates.state !== "hasError") {
+    return null;
+  }
   let message: string;
   let retry: (() => void) | undefined;
-  if (templates.state === "loading") {
-    if (lastResolvedTemplates?.length) {
-      return null;
-    }
+  if (realtime.state === "hasError") {
     message = t(($) => {
-      return $.chat.templates.importedLoading;
+      return $.chat.templates.importedUnavailable;
     });
-  } else if (templates.state === "hasError") {
-    if (realtime.state === "hasError") {
-      message = t(($) => {
-        return $.chat.templates.importedUnavailable;
-      });
-    } else {
-      message = t(($) => {
-        return $.chat.templates.importedLoadFailed;
-      });
-      retry = retryCatalog;
-    }
   } else {
-    return null;
+    message = t(($) => {
+      return $.chat.templates.importedLoadFailed;
+    });
+    retry = retryCatalog;
   }
   return (
     <div
       className="col-span-full flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
-      role={templates.state === "hasError" ? "alert" : "status"}
+      role="alert"
     >
       <span>{message}</span>
       {retry ? (

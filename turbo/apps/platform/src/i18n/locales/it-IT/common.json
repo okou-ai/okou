@@ -2790,7 +2790,6 @@
         "workflow": "Flusso di lavoro"
       },
       "importedLoadFailed": "Impossibile caricare i modelli caricati.",
-      "importedLoading": "Caricamento dei modelli caricati…",
       "importedUnavailable": "I modelli caricati sono temporaneamente non disponibili.",
       "previewTemplate": "Modello di anteprima {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",

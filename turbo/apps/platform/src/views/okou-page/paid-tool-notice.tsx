@@ -93,7 +93,7 @@ function PaidToolNoticeContent({
   readonly tools: readonly AvailablePaidToolId[];
 }) {
   const row = usePaidToolNoticeRow(tools);
-  if (!row) {
+  if (!row || row.kind === "pending") {
     return null;
   }
   return (

@@ -2790,7 +2790,6 @@
         "workflow": "Fluxo de trabalho"
       },
       "importedLoadFailed": "Não foi possível carregar os modelos enviados.",
-      "importedLoading": "Carregando modelos enviados…",
       "importedUnavailable": "Os modelos enviados estão temporariamente indisponíveis.",
       "previewTemplate": "Visualizar template {{title}}",
       "previewWebsite": "Visualizar template de site {{title}}",
