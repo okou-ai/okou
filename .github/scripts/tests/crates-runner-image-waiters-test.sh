@@ -26,16 +26,31 @@ end
 %w[runner-behavior-lane-a runner-behavior-lane-b runner-behavior-lane-c runner-behavior-lane-d].each do |name|
   raise "#{name} must depend only on selected target readiness" unless jobs.fetch(name).fetch("needs") == ["runner-test-prepare"]
 end
-%w[host-cpu-fairness-build guest-rpc-firecracker-build].each do |name|
+%w[host-cpu-fairness-build].each do |name|
   build = jobs.fetch(name)
   unless build.fetch("needs") == ["detect", "runner-host-groups"] &&
       build.dig("env", "TARGET_TRIPLE") == '${{ needs.runner-host-groups.outputs.selected-target }}'
     raise "#{name} must compile for the planned target without waiting for an image"
   end
 end
-unless jobs.fetch("guest-rpc-firecracker-test").fetch("needs") == ["runner-test-prepare", "guest-rpc-firecracker-build"]
-  raise "native RPC execution must wait for both the selected image and its test binary"
+fs_build = jobs.fetch("guest-rpc-firecracker-build")
+fs_test = jobs.fetch("guest-rpc-firecracker-test")
+unless fs_build.fetch("needs") == ["detect", "runner-host-groups"] &&
+    fs_build.dig("env", "TARGET_TRIPLE") == '${{ matrix.target }}' &&
+    fs_build.dig("strategy", "matrix", "include").include?("needs.runner-host-groups.outputs.matrix") &&
+    fs_test.dig("strategy", "matrix", "include") == fs_build.dig("strategy", "matrix", "include")
+  raise "filesystem compilation and execution must cover the same full architecture matrix"
 end
+unless %w[detect runner-host-groups runner-test-prepare guest-rpc-firecracker-build].all? { |owner| fs_test.fetch("needs").include?(owner) }
+  raise "filesystem acceptance must wait for its binary and image preparation"
+end
+fs_manifest = fs_test.fetch("steps").find { |step| step["id"] == "manifest" }
+unless fs_manifest.dig("env", "TARGET") == fs_test.dig("env", "TARGET_TRIPLE") &&
+    fs_manifest.dig("env", "SELECTED_HOST") == '${{ steps.selected-host.outputs.host }}' &&
+    fs_manifest.fetch("run") == ".github/scripts/runner/wait-runner-image.sh"
+  raise "each filesystem consumer must validate its matching host and manifest"
+end
+fs_pair = fs_build.fetch("steps").find { |step| step["env"]&.key?("NATIVE_MATRIX") }
 unless group_step.dig("env", "SELECTION_KEY") == '${{ needs.detect.outputs.runner-image-job-ref }}' &&
     select_step.dig("env", "EXPECTED_TARGET") == '${{ needs.runner-host-groups.outputs.selected-target }}' &&
     gate_step.dig("env", "RUNNER_IMAGE_NEEDED") == "${{ needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true' }}"
@@ -91,6 +106,7 @@ Dir.mktmpdir("crates-image-waiters", target) do |dir|
       outputs = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
       full = JSON.parse(outputs.fetch("matrix"))
       target = outputs.fetch("selected-target")
+      run_step(root, {"NATIVE_MATRIX" => JSON.generate(full)}, fs_pair.fetch("run"), success: full.length == 2)
       raise "one selected target must be covered by runner-test-prepare" unless full.count { |entry| entry.fetch("target") == target } == 1
       env["EXPECTED_TARGET"] = target
       env["GITHUB_OUTPUT"] = File.join(dir, "selected.out")

@@ -6,9 +6,11 @@ description = "Bounded native peer for the admitted sandbox application channel"
 
 [dependencies]
 api-contracts.workspace = true
+base64 = { workspace = true, features = ["std"] }
 guest-contracts.workspace = true
 futures-util = { workspace = true, features = ["std", "async-await"] }
 getrandom = { workspace = true, features = ["std"] }
+libc = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["rt", "net", "io-util", "sync", "time", "macros"] }
@@ -17,7 +19,7 @@ uuid = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util", "rt-multi-thread"] }
-base64 = { workspace = true, features = ["std"] }
+tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]
 workspace = true

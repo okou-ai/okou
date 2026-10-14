@@ -20,13 +20,18 @@ const DEADLINE: Duration = Duration::from_secs(5);
 pub(super) struct LiveEpoch {
     registration: Registration,
     idle: Channel,
+    cursor: String,
 }
 
 impl LiveEpoch {
+    pub(super) fn cursor(&self) -> &str {
+        &self.cursor
+    }
     pub(super) async fn retire(self) -> TestResult<()> {
         let Self {
             registration,
             mut idle,
+            ..
         } = self;
         let observer = idle.cancellation();
         // Match executor teardown: registration retirement precedes sandbox park.
@@ -49,6 +54,7 @@ impl LiveEpoch {
         let Self {
             registration,
             mut idle,
+            ..
         } = self;
         if idle.send(b"stopped").await.is_ok() {
             return Err(io::Error::other("stopped Guest still accepted data").into());
@@ -63,6 +69,7 @@ pub(super) async fn exercise(
     sandbox: &dyn Sandbox,
     run: &str,
     registry: &RunGuestChannels,
+    stale_cursor: Option<&str>,
 ) -> TestResult<LiveEpoch> {
     let run_id: RunId = run.parse()?;
     let registration = registry
@@ -94,6 +101,17 @@ pub(super) async fn exercise(
     let mut recovered =
         tokio::time::timeout(DEADLINE, registry.open_for_sandbox(run_id, sandbox.id())).await??;
     hello(&mut recovered).await?;
+    if let Some(cursor) = stale_cursor {
+        super::filesystem::reject_cursor(&mut recovered, cursor).await?;
+    }
+    let cursor = super::filesystem::exercise(
+        sandbox,
+        &mut recovered,
+        streams
+            .last_mut()
+            .ok_or_else(|| io::Error::other("missing retained fs stream"))?,
+    )
+    .await?;
     diagnostics(&mut recovered, &[], false).await?;
     let full_echo: Vec<u8> = (0..16384).map(|index| index as u8).collect();
     diagnostics(&mut recovered, &full_echo, true).await?;
@@ -110,14 +128,18 @@ pub(super) async fn exercise(
         .pop()
         .ok_or_else(|| io::Error::other("missing idle native stream"))?;
     drop(streams);
-    Ok(LiveEpoch { registration, idle })
+    Ok(LiveEpoch {
+        registration,
+        idle,
+        cursor,
+    })
 }
 
-async fn send(channel: &mut Channel, value: Value) -> TestResult<()> {
+pub(super) async fn send(channel: &mut Channel, value: Value) -> TestResult<()> {
     channel.send(&serde_json::to_vec(&value)?).await?;
     Ok(())
 }
-async fn receive(channel: &mut Channel) -> TestResult<Message> {
+pub(super) async fn receive(channel: &mut Channel) -> TestResult<Message> {
     let bytes = channel
         .recv()
         .await?
@@ -129,7 +151,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
         send(
             channel,
-            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1}}),
+            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1,"fs":1}}),
         )
         .await?;
         match receive(channel).await? {
@@ -142,6 +164,11 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
                 && result
                     .get("categories")
                     .and_then(|value| value.get("diagnostics"))
+                    .and_then(Value::as_u64)
+                    == Some(1)
+                && result
+                    .get("categories")
+                    .and_then(|value| value.get("fs"))
                     .and_then(Value::as_u64)
                     == Some(1) => {}
             _ => return Err(io::Error::other("packaged Guest hello mismatch").into()),

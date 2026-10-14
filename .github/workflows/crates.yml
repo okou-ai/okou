@@ -1439,15 +1439,20 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect, runner-host-groups]
     if: needs.detect.outputs.metal-job-ref != '' && needs.detect.outputs.crates-runner-consumer-needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.runner-host-groups.outputs.matrix || '[]') }}
     timeout-minutes: 15
     defaults:
       run:
         shell: bash
     outputs:
-      producer-attempt: ${{ steps.build.outputs.producer-attempt }}
+      producer-attempt-arm64: ${{ steps.producer.outputs.producer-attempt-arm64 }}
+      producer-attempt-x86_64: ${{ steps.producer.outputs.producer-attempt-x86_64 }}
     env:
       KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
-      TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
+      TARGET_TRIPLE: ${{ matrix.target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
       PRODUCER_ATTEMPT: ${{ github.run_attempt }}
@@ -1457,7 +1462,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
+          shared-key: ${{ matrix.target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache
@@ -1474,6 +1479,12 @@ jobs:
         id: build
         run: bash .github/scripts/runner/runner-native-test-artifact.sh build
 
+      - name: Require both filesystem acceptance architectures
+        env:
+          NATIVE_MATRIX: ${{ needs.runner-host-groups.outputs.matrix }}
+        run: |
+          jq -e '[.[].id] | sort == ["arm64", "x86_64"]' <<<"$NATIVE_MATRIX"
+
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
 
@@ -1485,6 +1496,14 @@ jobs:
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
         run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
+
+      # Matrix outputs must have distinct names: a partial rerun can leave the
+      # two architecture producers on different attempts.
+      - name: Record architecture producer attempt
+        id: producer
+        env:
+          NATIVE_ARCH: ${{ matrix.id }}
+        run: echo "producer-attempt-${NATIVE_ARCH}=${PRODUCER_ATTEMPT}" >> "$GITHUB_OUTPUT"
 
       - name: Save pinned Kerberos dependencies
         if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
@@ -1499,29 +1518,40 @@ jobs:
         uses: ./.github/actions/report-memory-peak
 
   guest-rpc-firecracker-test:
+    permissions:
+      actions: write
+      contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
-    needs: [runner-test-prepare, guest-rpc-firecracker-build]
-    timeout-minutes: 15
+    needs:
+      [
+        detect,
+        runner-host-groups,
+        runner-test-prepare,
+        guest-rpc-firecracker-build,
+      ]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.runner-host-groups.outputs.matrix || '[]') }}
+    timeout-minutes: 25
     defaults:
       run:
         shell: bash
     env:
-      TARGET_TRIPLE: ${{ needs.runner-test-prepare.outputs.target }}
+      TARGET_TRIPLE: ${{ matrix.target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
-      PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs.producer-attempt }}
+      PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs[format('producer-attempt-{0}', matrix.id)] }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
-      HOST: ${{ needs.runner-test-prepare.outputs.host }}
-      JOB_REF: ${{ needs.runner-test-prepare.outputs.job-ref }}
-      DEFAULT_ROOTFS_HASH: ${{ needs.runner-test-prepare.outputs.default-rootfs-hash }}
-      DEFAULT_SNAPSHOT_HASH: ${{ needs.runner-test-prepare.outputs.default-snapshot-hash }}
+      JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install AWS CLI
-        uses: ./.github/actions/setup-aws-cli
+      - name: Verify native acceptance tools
+        run: |
+          gh --version
+          aws --version
 
       - name: Download native test from R2
         env:
@@ -1539,12 +1569,41 @@ jobs:
         uses: ./.github/actions/setup-ssh-tunnel
         with:
           ssh-user: ${{ env.METAL_USER }}
-          ssh-hosts: ${{ env.HOST }}
+          ssh-hosts: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           ssh-key: ${{ secrets.AWS_METAL_RUNNER_SSH_KEY }}
           cf-access-client-id: ${{ secrets.CF_ACCESS_CLIENT_ID }}
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
-      - name: Verify packaged RPC and duplex over fresh and restored Firecracker
+      - name: Select matching filesystem acceptance host
+        id: selected-host
+        env:
+          AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
+          RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
+        run: |
+          HOSTS=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+          echo "hosts=${HOSTS}" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for matching pinned Guest image
+        id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.sha }}
+          LOOKUP_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          JOB_REF: ${{ needs.detect.outputs.runner-image-job-ref }}
+          METAL_HOSTS: ${{ steps.selected-host.outputs.hosts }}
+          SELECTED_HOST: ${{ steps.selected-host.outputs.host }}
+          TARGET: ${{ matrix.target }}
+          PROFILE: vm0/default
+          TIMEOUT_SECONDS: "1200"
+        run: .github/scripts/runner/wait-runner-image.sh
+
+      - name: Verify packaged RPC and filesystem over fresh and restored Firecracker
+        env:
+          HOST: ${{ steps.selected-host.outputs.host }}
+          DEFAULT_ROOTFS_HASH: ${{ steps.manifest.outputs.selected-rootfs-hash }}
+          DEFAULT_SNAPSHOT_HASH: ${{ steps.manifest.outputs.selected-snapshot-hash }}
         run: bash crates/sandbox-firecracker/tests/native/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:

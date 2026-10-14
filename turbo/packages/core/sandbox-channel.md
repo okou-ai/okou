@@ -127,6 +127,48 @@ policy. Generic message IDs supply none of those guarantees. Keep terminal
 resource-bearing results owned until their category can release or expire the
 resource; UI view invalidation must not silently orphan a returned cursor.
 
+## Native readonly filesystem role
+
+The packaged Guest now installs the complete fs v1 role alongside diagnostics.
+It captures the fixed `/home/user` root for each connection's first filesystem
+job; process HOME and cwd never select the browsing root. Descendants use raw
+basename tokens and Linux openat2 with BENEATH, NO_SYMLINKS, NO_MAGICLINKS and
+NO_XDEV. The home mount is established before the descendant mount boundary.
+Unavailable kernel semantics fail closed. Links and mount directories remain
+visible metadata; their expansion fails, and no file contents are opened.
+
+One post-fork worker owns filesystem execution for the whole Guest, with eight
+queued jobs and 256 KiB serialized request accounting (including active work).
+Admission never waits on the router. Physical work retains its connection owner;
+cancelled or abandoned queued work cannot start another lookup. At most eight
+live stream owners plus nine active/queued retired owners can retain filesystem
+state; weak maintenance tracking disappears with those owners. A stuck syscall
+can delay filesystem calls and expiry maintenance, but cannot block diagnostics
+or response routing. Cooperative deadlines do not force kernel cancellation.
+
+`fs/list` selects exactly a path or this connection's opaque cursor. Each listing
+has its own fd, seek offset, unread buffer and pending entry. Pages contain at
+most 128 entries and 48 KiB of complete response JSON, including both UUIDs.
+Enumeration, metadata and revalidation share 512 steps and a two-second
+cooperative processing budget. Eight cursors per connection expire after 30
+seconds without a successful continuation; `fs/list.close` explicitly releases
+one. Foreign, closed and expired handles return `cursor_expired`.
+
+Page boundaries preserve carryover until actual EOF; a non-null nextCursor
+denotes more work even for an empty page. Directory and ancestor identities and
+timestamps are checked before and after each page. Observed mutation or path
+replacement disposes that listing with `directory_changed`; refresh creates a
+new identity. This detects observed changes rather than promising an atomic
+filesystem snapshot. Display labels escape control, invalid UTF-8 and directional
+characters, while raw name tokens remain the only path input.
+
+Older diagnostics-only Guests do not advertise fs. Matching diagnostics remains
+usable; fs callers report unavailable until a matching complete role exists.
+The owning native suite checks matching pinned images on amd64 and ARM64,
+including mount rejection and cursor retirement/park/reuse. The existing public
+Node Run suite checks actual home/nested/paged fixtures and explicit release;
+the later product UI remains a separate slice.
+
 ## Evolution
 
 Common envelope/encoding/routing/identity/correlation changes increment
