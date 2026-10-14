@@ -1,170 +1,20 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import { readBoundedResponseText, safeJsonParse, settle } from "../utils";
+import {
+  readBoundedResponseText,
+  safeJsonParse,
+  settleIncludingAbort,
+} from "../utils";
+import {
+  linkRequestDiagnostic,
+  linkFailureDiagnostic,
+  linkSuccessDiagnostic,
+  linkDiagnosticMessage,
+  type LinkOperation,
+  type LinkRequestDiagnostic,
+} from "./link-wallet-diagnostics";
 import { walletSpendStatusSchema } from "@okouai/api-contracts/contracts/wallet";
-
-const L = logger("api:link-wallet");
-type LinkOperation =
-  | "oauth_exchange"
-  | "oauth_refresh"
-  | "oauth_revoke"
-  | "spend_create"
-  | "spend_read"
-  | "spend_cancel"
-  | "spend_approval";
-
-// Unknown provider strings can contain credentials or personal data.
-const providerErrorCodeSchema = z.enum([
-  "invalid_request",
-  "invalid_client",
-  "invalid_grant",
-  "unauthorized_client",
-  "unsupported_grant_type",
-  "invalid_scope",
-  "invalid_token",
-  "insufficient_scope",
-  "access_denied",
-  "temporarily_unavailable",
-  "server_error",
-]);
-const providerErrorSchema = z.object({
-  error: z.union([z.string(), z.object({ code: z.string().optional() })]),
-});
-const providerMessageSchema = z.object({
-  error: z
-    .union([
-      z.string(),
-      z.object({
-        message: z.string().optional(),
-      }),
-    ])
-    .optional(),
-  message: z.string().optional(),
-  error_description: z.string().optional(),
-});
-const providerRequestIdSchema = z.string().regex(/^req_[A-Za-z0-9]{1,80}$/);
-
-// Link can return only error.message. Emit fixed labels, never the provider's
-// free-form text: even authentication failures can echo the rejected credential.
-const providerAuthMessageReasons = [
-  [
-    "invalid_access_token",
-    /^(?:invalid (?:access|bearer|oauth) token|(?:access|bearer|oauth) token (?:is )?invalid)(?:[.:]|$)/,
-  ],
-  [
-    "access_token_expired",
-    /^(?:expired access token|access token (?:has |is )?expired)(?:[.:]|$)/,
-  ],
-  ["token_expired", /^expired token(?:[.:]|$)/],
-  [
-    "invalid_refresh_token",
-    /^(?:invalid refresh token|refresh token (?:is )?invalid)(?:[.:]|$)/,
-  ],
-  [
-    "missing_authorization",
-    /^(?:missing authorization header|no authorization header|authorization header is missing|missing access token)(?:[.:]|$)/,
-  ],
-  ["invalid_client_secret", /^invalid client secret(?:[.:]|$)/],
-  ["invalid_client", /^(?:invalid client|unknown client)(?:[.:]|$)/],
-  [
-    "invalid_api_key",
-    /^(?:invalid api key(?: provided)?|no valid api key provided)(?:[.:]|$)/,
-  ],
-  [
-    "insufficient_scope",
-    /^(?:insufficient scope|missing required scopes?|access token is missing required scopes?|insufficient permissions)(?:[.:]|$)/,
-  ],
-  [
-    "unauthorized",
-    /^(?:unauthorized|not authenticated|authentication required)(?:[.:]|$)/,
-  ],
-  ["access_denied", /^(?:access denied|permission denied|forbidden)(?:[.:]|$)/],
-] as const;
-
-function providerMessageDiagnostic(body: unknown) {
-  const parsed = providerMessageSchema.safeParse(body);
-  const error = parsed.success ? parsed.data.error : undefined;
-  const fields = [
-    ["error.message", typeof error === "object" ? error.message : undefined],
-    ["message", parsed.success ? parsed.data.message : undefined],
-    [
-      "error_description",
-      parsed.success ? parsed.data.error_description : undefined,
-    ],
-    ["error", typeof error === "string" ? error : undefined],
-  ] as const;
-  const field = fields.find(([, value]) => {
-    return value !== undefined;
-  });
-  if (!field) {
-    return {
-      providerMessageSource: "unavailable",
-      providerMessageReason: "unavailable",
-    };
-  }
-  const normalized = field[1]?.trim().toLowerCase().replaceAll("_", " ");
-  const reason = providerAuthMessageReasons.find(([, pattern]) => {
-    return normalized !== undefined && pattern.test(normalized);
-  })?.[0];
-  return {
-    providerMessageSource: field[0],
-    providerMessageReason: reason ?? "unrecognized",
-  };
-}
-
-function providerErrorCode(body: unknown, response: Response): string {
-  const parsed = providerErrorSchema.safeParse(body);
-  const error = parsed.success ? parsed.data.error : undefined;
-  const candidate = typeof error === "string" ? error : error?.code;
-  const code = providerErrorCodeSchema.safeParse(candidate);
-  if (code.success) {
-    return code.data;
-  }
-  const challenge = response.headers
-    .get("www-authenticate")
-    ?.match(/\berror="([a-z_]+)"/i)?.[1];
-  const challengeCode = providerErrorCodeSchema.safeParse(challenge);
-  if (challengeCode.success) {
-    return challengeCode.data;
-  }
-  return candidate === undefined && challenge === undefined
-    ? "unavailable"
-    : "unrecognized";
-}
-
-async function providerFailure(response: Response, operation: LinkOperation) {
-  const read = await settle(readBoundedResponseText(response, 16 * 1024));
-  const body =
-    read.ok && read.value.kind === "text"
-      ? safeJsonParse(read.value.text)
-      : undefined;
-  const requestId = providerRequestIdSchema.safeParse(
-    response.headers.get("request-id") ?? response.headers.get("x-request-id"),
-  );
-  const contentType = z
-    .enum([
-      "application/json",
-      "application/problem+json",
-      "text/html",
-      "text/plain",
-    ])
-    .safeParse(response.headers.get("content-type")?.split(";")[0]?.trim());
-  const diagnostic = {
-    diagnosticId: randomUUID(),
-    operation,
-    providerStatus: response.status,
-    providerErrorCode: providerErrorCode(body, response),
-    ...providerMessageDiagnostic(body),
-    providerRequestId: requestId.success ? requestId.data : null,
-    responseType: contentType.success ? contentType.data : "unrecognized",
-    responseBodyRead: read.ok ? read.value.kind : "unreadable",
-  };
-  L.warn("Link wallet provider request failed", diagnostic);
-  return diagnostic;
-}
 
 export class LinkWalletError extends Error {
   constructor(
@@ -208,20 +58,25 @@ export const linkCredentialsSchema = z.object({
   expiresAt: z.number().int(),
 });
 
-export function linkActionUrl(value: string): string {
+function isLinkActionUrl(value: string): boolean {
   const parsed = z.url().safeParse(value);
-  if (parsed.success) {
-    const url = new URL(parsed.data);
-    if (
-      url.protocol === "https:" &&
-      !url.username &&
-      !url.password &&
-      (url.hostname === "link.com" ||
-        url.hostname.endsWith(".link.com") ||
-        url.hostname === "hooks.stripe.com")
-    ) {
-      return value;
-    }
+  if (!parsed.success) {
+    return false;
+  }
+  const url = new URL(parsed.data);
+  return (
+    url.protocol === "https:" &&
+    !url.username &&
+    !url.password &&
+    (url.hostname === "link.com" ||
+      url.hostname.endsWith(".link.com") ||
+      url.hostname === "hooks.stripe.com")
+  );
+}
+
+export function linkActionUrl(value: string): string {
+  if (isLinkActionUrl(value)) {
+    return value;
   }
   throw new LinkWalletError(
     502,
@@ -261,40 +116,116 @@ export const linkSpendSchema = z.object({
 });
 export type LinkSpend = z.infer<typeof linkSpendSchema>;
 
+interface LinkResponse {
+  readonly response: Response;
+  readonly diagnostic: LinkRequestDiagnostic;
+}
+
 async function linkFetch(
   url: string,
   options: RequestInit,
+  diagnostic: LinkRequestDiagnostic,
   signal: AbortSignal,
-): Promise<Response> {
-  const result = await settle(
+): Promise<LinkResponse> {
+  const timeout = AbortSignal.timeout(15_000);
+  const result = await settleIncludingAbort(
     fetch(url, {
       ...options,
       redirect: "error",
-      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+      signal: AbortSignal.any([signal, timeout]),
     }),
-    signal,
   );
-  signal.throwIfAborted();
   if (!result.ok) {
+    const failure = linkFailureDiagnostic(diagnostic, {
+      stage: "transport",
+      transportError: result.error,
+      transportReason: signal.aborted
+        ? "cancelled"
+        : timeout.aborted
+          ? "timeout"
+          : "network",
+    });
+    signal.throwIfAborted();
     throw new LinkWalletError(
       502,
       "WALLET_PROVIDER_UNAVAILABLE",
-      "Link is unavailable; do not assume the operation failed or create a replacement purchase",
+      `Link is unavailable; do not assume the operation failed or create a replacement purchase ${linkDiagnosticMessage(failure)}`,
     );
   }
-  return result.value;
+  signal.throwIfAborted();
+  return { response: result.value, diagnostic };
+}
+
+async function readLinkResponse(link: LinkResponse, signal: AbortSignal) {
+  const read = await settleIncludingAbort(
+    readBoundedResponseText(
+      link.response,
+      link.response.ok ? 128 * 1024 : 16 * 1024,
+    ),
+  );
+  signal.throwIfAborted();
+  const body =
+    read.ok && read.value.kind === "text"
+      ? safeJsonParse(read.value.text)
+      : undefined;
+  return {
+    body,
+    providerText:
+      !link.response.ok &&
+      link.response.headers.get("content-type")?.split(";")[0]?.trim() ===
+        "text/plain" &&
+      read.ok &&
+      read.value.kind === "text"
+        ? read.value.text
+        : undefined,
+    transportError: read.ok ? undefined : read.error,
+    responseBodyRead: !read.ok
+      ? "unreadable"
+      : read.value.kind === "too_large"
+        ? "too_large"
+        : body === undefined
+          ? "invalid_json"
+          : "json",
+  };
+}
+
+function invalidResponse(
+  link: LinkResponse,
+  message: string,
+  details: {
+    stage: "response_body" | "response_schema" | "scope" | "action_url";
+    responseBodyRead?: string;
+    issues?: readonly z.core.$ZodIssue[];
+    transportError?: unknown;
+  },
+) {
+  const failure = linkFailureDiagnostic(link.diagnostic, {
+    responseBodyRead: "json",
+    ...details,
+    response: link.response,
+  });
+  return new LinkWalletError(
+    502,
+    "WALLET_INVALID_RESPONSE",
+    `${message} ${linkDiagnosticMessage(failure)}`,
+  );
 }
 
 async function responseJson(
-  response: Response,
-  operation: LinkOperation,
+  link: LinkResponse,
+  signal: AbortSignal,
 ): Promise<unknown> {
-  if (!response.ok) {
-    const diagnostic = await providerFailure(response, operation);
+  const read = await readLinkResponse(link, signal);
+  if (!link.response.ok) {
+    const diagnostic = linkFailureDiagnostic(link.diagnostic, {
+      stage: "http",
+      response: link.response,
+      ...read,
+    });
     const reconnect = ["invalid_token", "invalid_grant"].includes(
       diagnostic.providerErrorCode,
     );
-    const authRejected = response.status === 401;
+    const authRejected = link.response.status === 401;
     const message = reconnect
       ? "Reconnect your Link wallet"
       : authRejected
@@ -307,18 +238,17 @@ async function responseJson(
         : authRejected
           ? "WALLET_PROVIDER_AUTH_REJECTED"
           : "WALLET_PROVIDER_ERROR",
-      `${message} (operation: ${operation}; HTTP ${response.status}; provider: ${diagnostic.providerErrorCode}; message source: ${diagnostic.providerMessageSource}; reason: ${diagnostic.providerMessageReason}; reference: ${diagnostic.diagnosticId})`,
+      `${message} ${linkDiagnosticMessage(diagnostic)}`,
     );
   }
-  const result = await settle(response.json() as Promise<unknown>);
-  if (!result.ok) {
-    throw new LinkWalletError(
-      502,
-      "WALLET_INVALID_RESPONSE",
-      "Link returned an invalid response",
-    );
+  if (read.body === undefined) {
+    throw invalidResponse(link, "Link returned an invalid response", {
+      stage: "response_body",
+      responseBodyRead: read.responseBodyRead,
+      transportError: read.transportError,
+    });
   }
-  return result.value;
+  return read.body;
 }
 
 export async function linkTokenRequest(
@@ -326,7 +256,22 @@ export async function linkTokenRequest(
   signal: AbortSignal,
 ) {
   const config = linkWalletConfig();
-  const response = await linkFetch(
+  const diagnostic = linkRequestDiagnostic(
+    params.grant_type === "refresh_token" ? "oauth_refresh" : "oauth_exchange",
+    [
+      config.clientId,
+      config.clientSecret,
+      config.publishableKey,
+      ...Object.entries(params)
+        .filter(([key]) => {
+          return key !== "grant_type";
+        })
+        .map(([, value]) => {
+          return value;
+        }),
+    ],
+  );
+  const link = await linkFetch(
     "https://login.link.com/auth/token",
     {
       method: "POST",
@@ -340,26 +285,37 @@ export async function linkTokenRequest(
         ...params,
       }),
     },
+    diagnostic,
     signal,
   );
-  const parsed = linkTokenSchema.safeParse(
-    await responseJson(
-      response,
-      params.grant_type === "refresh_token"
-        ? "oauth_refresh"
-        : "oauth_exchange",
-    ),
-  );
-  if (
-    !parsed.success ||
-    !parsed.data.scope.split(/[ ,]+/).includes("payment_methods.agentic")
-  ) {
+  const parsed = linkTokenSchema.safeParse(await responseJson(link, signal));
+  if (!parsed.success) {
+    throw invalidResponse(link, "Link returned an invalid OAuth response", {
+      stage: "response_schema",
+      issues: parsed.error.issues,
+    });
+  }
+  const scopes = parsed.data.scope.split(/[ ,]+/);
+  if (!scopes.includes("payment_methods.agentic")) {
+    const failure = linkFailureDiagnostic(diagnostic, {
+      stage: "scope",
+      response: link.response,
+      responseBodyRead: "json",
+      scopes: {
+        paymentScopeGranted: false,
+        userinfoScopeGranted: scopes.includes("userinfo:read"),
+      },
+    });
     throw new LinkWalletError(
       403,
       "WALLET_SCOPE_REQUIRED",
-      "Link payment authorization was not granted",
+      `Link payment authorization was not granted ${linkDiagnosticMessage(failure)}`,
     );
   }
+  linkSuccessDiagnostic(diagnostic, link.response, {
+    paymentScopeGranted: true,
+    userinfoScopeGranted: scopes.includes("userinfo:read"),
+  });
   return parsed.data;
 }
 
@@ -368,7 +324,13 @@ export async function revokeLinkToken(
   signal: AbortSignal,
 ): Promise<void> {
   const config = linkWalletConfig();
-  const response = await linkFetch(
+  const diagnostic = linkRequestDiagnostic("oauth_revoke", [
+    token,
+    config.clientId,
+    config.clientSecret,
+    config.publishableKey,
+  ]);
+  const link = await linkFetch(
     "https://login.link.com/auth/revoke",
     {
       method: "POST",
@@ -383,26 +345,92 @@ export async function revokeLinkToken(
         token_type_hint: "refresh_token",
       }),
     },
+    diagnostic,
     signal,
   );
-  if (!response.ok) {
-    const diagnostic = await providerFailure(response, "oauth_revoke");
+  if (!link.response.ok) {
+    const read = await readLinkResponse(link, signal);
+    const failure = linkFailureDiagnostic(diagnostic, {
+      stage: "http",
+      response: link.response,
+      ...read,
+    });
     throw new LinkWalletError(
       502,
       "WALLET_REVOCATION_INCOMPLETE",
-      `Wallet access is disabled locally; Link revocation must be retried (reference: ${diagnostic.diagnosticId})`,
+      `Wallet access is disabled locally; Link revocation must be retried ${linkDiagnosticMessage(failure)}`,
     );
   }
+  linkSuccessDiagnostic(diagnostic, link.response);
+}
+
+function validateSpend(link: LinkResponse, value: unknown): LinkSpend {
+  const parsed = linkSpendSchema.safeParse(value);
+  if (!parsed.success) {
+    throw invalidResponse(link, "Link returned an invalid spend request", {
+      stage: "response_schema",
+      issues: parsed.error.issues,
+    });
+  }
+  const nextUrl =
+    parsed.data.status_details?.requires_action?.next_action.action_url;
+  for (const url of [parsed.data.approval_url, nextUrl]) {
+    if (url && !isLinkActionUrl(url)) {
+      throw invalidResponse(link, "Link returned an invalid action URL", {
+        stage: "action_url",
+      });
+    }
+  }
+  linkSuccessDiagnostic(link.diagnostic, link.response);
+  return parsed.data;
 }
 
 export async function linkSpendRequest(
   token: string,
-  path: string,
-  method: "GET" | "POST",
-  body: Record<string, unknown> | undefined,
+  request: {
+    readonly path: string;
+    readonly method: "GET" | "POST";
+    readonly body?: Record<string, unknown>;
+    readonly intentId: string;
+  },
   signal: AbortSignal,
 ): Promise<LinkSpend> {
-  const response = await linkFetch(
+  const { path, method, body, intentId } = request;
+  const operation: LinkOperation =
+    path === ""
+      ? "spend_create"
+      : method === "GET"
+        ? "spend_read"
+        : "spend_cancel";
+  const diagnostic = linkRequestDiagnostic(
+    operation,
+    [
+      token,
+      ...Object.entries(body ?? {})
+        .filter(([key]) => {
+          return [
+            "merchant_name",
+            "merchant_url",
+            "context",
+            "idempotency_key",
+          ].includes(key);
+        })
+        .flatMap(([, value]) => {
+          return typeof value === "string" ? [value] : [];
+        }),
+    ],
+    intentId,
+    operation === "spend_create" && body
+      ? {
+          amount: z.number().parse(body.amount),
+          currency: z.literal("usd").parse(body.currency),
+          test: z.boolean().parse(body.test),
+          contextLength: z.string().parse(body.context).length,
+          expiresAt: z.number().parse(body.expires_at),
+        }
+      : undefined,
+  );
+  const link = await linkFetch(
     `https://api.link.com/spend_requests${path}`,
     {
       method,
@@ -412,69 +440,67 @@ export async function linkSpendRequest(
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     },
+    diagnostic,
     signal,
   );
-  if (response.status === 409 && method === "POST" && path === "") {
-    // Link may report an idempotent replay as a duplicate object rather than 200.
-    // Apply the same secret-dropping projection; never create another intent.
-    const duplicateBody = await settle(response.json() as Promise<unknown>);
-    if (duplicateBody.ok) {
-      const duplicate = z
-        .object({
-          error: z.object({ duplicate_spend_request: linkSpendSchema }),
-        })
-        .safeParse(duplicateBody.value);
-      if (duplicate.success) {
-        return duplicate.data.error.duplicate_spend_request;
-      }
+  if (link.response.status === 409 && method === "POST" && path === "") {
+    // Recover only the same provider intent; never silently create another.
+    const read = await readLinkResponse(link, signal);
+    const duplicate = z
+      .object({ error: z.object({ duplicate_spend_request: linkSpendSchema }) })
+      .safeParse(read.body);
+    if (duplicate.success) {
+      return validateSpend(link, duplicate.data.error.duplicate_spend_request);
     }
+    const failure = linkFailureDiagnostic(diagnostic, {
+      stage: "http",
+      response: link.response,
+      ...read,
+      issues: duplicate.error.issues,
+    });
     throw new LinkWalletError(
       409,
       "WALLET_CREATION_UNCERTAIN",
-      "The existing purchase intent could not be recovered; do not create a replacement purchase",
+      `The existing purchase intent could not be recovered; do not create a replacement purchase ${linkDiagnosticMessage(failure)}`,
     );
   }
-  const operation =
-    path === ""
-      ? "spend_create"
-      : method === "GET"
-        ? "spend_read"
-        : "spend_cancel";
-  const parsed = linkSpendSchema.safeParse(
-    await responseJson(response, operation),
-  );
-  if (!parsed.success) {
-    throw new LinkWalletError(
-      502,
-      "WALLET_INVALID_RESPONSE",
-      "Link returned an invalid spend request",
-    );
-  }
-  return parsed.data;
+  return validateSpend(link, await responseJson(link, signal));
 }
 
 export async function requestLinkApproval(
   token: string,
   id: string,
+  intentId: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const response = await linkFetch(
+  const diagnostic = linkRequestDiagnostic(
+    "spend_approval",
+    [token, id],
+    intentId,
+  );
+  const link = await linkFetch(
     `https://api.link.com/spend_requests/${encodeURIComponent(id)}/request_approval`,
     {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     },
+    diagnostic,
     signal,
   );
   const parsed = z
     .object({ id: z.literal(id), approval_link: z.string() })
-    .safeParse(await responseJson(response, "spend_approval"));
+    .safeParse(await responseJson(link, signal));
   if (!parsed.success) {
-    throw new LinkWalletError(
-      502,
-      "WALLET_INVALID_RESPONSE",
-      "Link returned an invalid approval response",
-    );
+    throw invalidResponse(link, "Link returned an invalid approval response", {
+      stage: "response_schema",
+      issues: parsed.error.issues,
+    });
   }
-  return linkActionUrl(parsed.data.approval_link);
+  if (!isLinkActionUrl(parsed.data.approval_link)) {
+    throw invalidResponse(link, "Link returned an invalid action URL", {
+      stage: "action_url",
+    });
+  }
+  linkSuccessDiagnostic(diagnostic, link.response);
+  return parsed.data.approval_link;
 }
