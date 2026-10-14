@@ -726,10 +726,11 @@ function createAutomaticRefreshCommand(
         return;
       }
       const next = new Map(get(graph.directories$));
-      if (
-        typeof fresh === "string" ||
-        !withinBudget(new Map(next).set(key, fresh))
-      ) {
+      const orphaned =
+        typeof fresh === "string"
+          ? []
+          : pruneRefreshedDescendants(next.set(key, fresh), fresh);
+      if (typeof fresh === "string" || !withinBudget(next)) {
         if (typeof fresh !== "string" && fresh.cursor) {
           await set(
             cursors.close$,
@@ -753,8 +754,6 @@ function createAutomaticRefreshCommand(
         }
         return;
       }
-      next.set(key, fresh);
-      const orphaned = pruneRefreshedDescendants(next, fresh);
       set(graph.directories$, next);
       set(graph.virtual.reconcileFocus$);
       for (const child of orphaned) {
