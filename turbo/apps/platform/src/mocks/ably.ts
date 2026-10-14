@@ -31,6 +31,7 @@ type AuthCallback = (
 ) => void;
 
 interface MockErrorInfo {
+  readonly cause?: unknown;
   readonly code?: number;
   readonly message?: string;
   readonly statusCode?: number;
@@ -744,6 +745,7 @@ export function triggerAblyConnectionState(
   state: "connected" | "disconnected" | "suspended",
   options: {
     readonly channelName?: string;
+    readonly cause?: unknown;
     readonly code?: number;
     readonly message?: string;
     readonly retryIn?: number;
@@ -768,6 +770,7 @@ export function triggerAblyConnectionState(
   activeRealtime?.transitionTo(
     state,
     {
+      cause: options.cause,
       code: options.code,
       message: options.message,
       statusCode: options.statusCode,

@@ -25,6 +25,7 @@ import { apiClientRuntime$ } from "./api-client-runtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { createAblyAuthCallback } from "../lib/ably-auth.ts";
+import { createAblyAuthDiagnosticScope } from "../lib/ably-auth-diagnostics.ts";
 import {
   createDeferredPromise,
   detach,
@@ -862,6 +863,7 @@ const connectRealtimeClient$ = command(
       ...get(apiClientRuntime$).authDiagnosticContext,
       realtimeInstanceId: createAuthDiagnosticId(),
     };
+    const authDiagnosticScope = createAblyAuthDiagnosticScope(diagnostic);
     const ably = createAblyRealtime(
       {
         // See lib/ably-auth.ts for why every invocation must fetch a fresh
@@ -872,12 +874,12 @@ const connectRealtimeClient$ = command(
               authDiagnosticContext,
             });
           },
-          diagnostic,
+          authDiagnosticScope,
           signal,
         ),
         autoConnect: true,
       },
-      diagnostic,
+      authDiagnosticScope,
       signal,
     );
 

@@ -21,6 +21,32 @@ export function collectTemporaryAuthDiagnostic<T>(
   }
 }
 
+/** Observe settlement without replacing the operation's promise, value or
+ * rejection. Both observer branches resolve even when clock/collection fails.
+ */
+export function observeTemporaryAuthPromise<T>(
+  promise: Promise<T>,
+  readTimestamp: () => number,
+  observe: (
+    result:
+      | { readonly ok: true; readonly value: T }
+      | { readonly ok: false; readonly error: unknown },
+  ) => void,
+): Promise<void> {
+  return promise.then(
+    (value) => {
+      collectTemporaryAuthDiagnostic(readTimestamp, () => {
+        observe({ ok: true, value });
+      });
+    },
+    (error: unknown) => {
+      collectTemporaryAuthDiagnostic(readTimestamp, () => {
+        observe({ ok: false, error });
+      });
+    },
+  );
+}
+
 /** Owns expiry and best-effort delivery for these temporary Axiom records. */
 export function recordTemporaryAuthFailure(
   timestamp: number,

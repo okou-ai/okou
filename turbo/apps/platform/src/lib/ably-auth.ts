@@ -6,6 +6,7 @@ import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { detach, Reason, throwIfAbort } from "../signals/utils.ts";
 import { accept } from "./accept.ts";
+import type { AblyAuthDiagnosticScope } from "./ably-auth-diagnostics.ts";
 import {
   createAuthDiagnosticId,
   recordAuthDiagnostic,
@@ -48,12 +49,12 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  */
 export function createAblyAuthCallback(
   createClient: (diagnostic: AuthDiagnosticContext) => RealtimeTokenClient,
-  diagnostic: AuthDiagnosticContext,
+  scope: AblyAuthDiagnosticScope,
   signal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
     const invocation: AuthDiagnosticContext = {
-      ...diagnostic,
+      ...scope.context,
       ablyAuthId: createAuthDiagnosticId(),
     };
     const measurement = startAuthDiagnosticMeasurement();
@@ -64,6 +65,8 @@ export function createAblyAuthCallback(
     });
     detach(
       (async () => {
+        let previousContext: AuthDiagnosticContext | undefined;
+        let enteredCallback = false;
         // eslint-disable-next-line no-restricted-syntax -- bridging Ably's node-style auth callback into our promise-based `accept()` helper; justified per eslint.config.js "If genuinely needed (JSON.parse, clipboard, polling), add an inline eslint-disable with justification"
         try {
           const client = createClient(invocation);
@@ -91,6 +94,12 @@ export function createAblyAuthCallback(
             stage: "ably_auth_callback",
             context: invocation,
           });
+          // The SDK enters its exchange plugin synchronously inside callback.
+          // Restore this scope even if the SDK callback throws or re-enters;
+          // each request captures its own context before awaiting any I/O.
+          previousContext = scope.callbackContext;
+          scope.callbackContext = invocation;
+          enteredCallback = true;
           callback(null, res.body);
         } catch (error) {
           // Preserve Ably's existing callback-after-close suppression.
@@ -106,6 +115,10 @@ export function createAblyAuthCallback(
             error instanceof Error ? error.message : String(error),
             null,
           );
+        } finally {
+          if (enteredCallback) {
+            scope.callbackContext = previousContext;
+          }
         }
       })(),
       Reason.DomCallback,
