@@ -223,7 +223,10 @@ export function pendingWorkflowScheduleTickCondition(args: {
     eq(chatAutomationContext.automationId, args.automationId),
     or(
       isNull(chatAutomationContext.eventType),
-      ne(chatAutomationContext.eventType, "manual"),
+      and(
+        ne(chatAutomationContext.eventType, "manual"),
+        ne(chatAutomationContext.eventType, "morning-brief-debug"),
+      ),
     ),
     ne(chatEvents.id, args.eventId),
     notExists(

@@ -1224,7 +1224,7 @@ impl Authority {
         })
     }
 
-    pub(super) async fn check_kerberos(
+    pub(super) async fn check(
         &self,
         run: RunId,
         connection: uuid::Uuid,

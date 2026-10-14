@@ -2,7 +2,7 @@ import { automationEventTypeSchema } from "@okouai/api-contracts/contracts/workf
 import { z } from "zod";
 
 export const workflowAutomationEventTypeSchema = automationEventTypeSchema.or(
-  z.enum(["schedule", "manual"]),
+  z.enum(["schedule", "manual", "morning-brief-debug"]),
 );
 
 export type WorkflowAutomationEventType = z.infer<
@@ -429,6 +429,9 @@ export const TRIGGER_RENDERERS: Readonly<
           : `once in ${timezone}`;
     return `schedule fired at ${stringField(payload, "firedAt")} (${recurrence}).`;
   },
+  "morning-brief-debug": (payload) => {
+    return `one-off Morning Brief requested from Debug at ${stringField(payload, "requestedAt")}.`;
+  },
   manual: (payload) => {
     return `manual run requested at ${stringField(payload, "requestedAt")}.`;
   },
@@ -585,6 +588,9 @@ const DISPLAY_MESSAGE_RENDERERS: Readonly<
     return "A signed webhook request was received.";
   },
   schedule: scheduleDisplayMessage,
+  "morning-brief-debug": () => {
+    return "A one-off Morning Brief was requested from Debug.";
+  },
   manual: () => {
     return "A manual run of this workflow was requested.";
   },
@@ -651,6 +657,7 @@ export const EVENT_NOTES: Readonly<
   "webhook-received": WEBHOOK_NOTES,
   schedule: NO_NOTES,
   manual: NO_NOTES,
+  "morning-brief-debug": NO_NOTES,
 };
 
 const AGENT_EVENT_CONTEXT: Readonly<
@@ -704,6 +711,8 @@ export const EVENT_POLICY: Readonly<
   "webhook-received": EVENT_SOURCE_POLICY,
   schedule: SCHEDULE_POLICY,
   manual: MANUAL_POLICY,
+  // Debug never owns or changes the regular schedule occurrence.
+  "morning-brief-debug": { recordLastRunId: false, recordLastRunAt: false },
 };
 
 /**

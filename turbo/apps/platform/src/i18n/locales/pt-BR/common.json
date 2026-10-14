@@ -1546,7 +1546,6 @@
     "agentSuggestions": {
       "existingThread": "Conversa existente",
       "label": "Sugestões",
-      "loadFailed": "Não foi possível carregar as sugestões.",
       "newThread": "Nova conversa com Okou",
       "origin": "Do seu resumo matinal",
       "showAll_one": "Ver todas ({{count}})",
@@ -4973,26 +4972,22 @@
           "title": "Armazenamento do IndexedDB",
           "unavailable": "O armazenamento do IndexedDB não está disponível."
         },
-        "morningBriefEmail": {
-          "checkStatus": "Verificar status da entrega",
-          "description": "Envie uma amostra fixa ao e-mail da sua conta usando o modelo Morning Brief. Isso não executa um Agent nem altera sua programação.",
-          "reasons": {
-            "delivery-failed": "A entrega falhou. Uma tentativa anterior pode ter sido aceita pelo provedor.",
-            "expired": "A entrega expirou. Uma tentativa anterior pode ter sido aceita pelo provedor.",
-            "no-email": "Ignorado: sua conta não tem um endereço de e-mail.",
-            "suppressed": "Ignorado: a entrega ao e-mail da sua conta está bloqueada.",
-            "unsubscribed": "Ignorado: sua conta cancelou a assinatura das atualizações por e-mail."
-          },
-          "requestFailed": "A solicitação não foi concluída. A nova tentativa reutiliza a mesma solicitação para evitar um e-mail duplicado.",
+        "morningBrief": {
+          "checkStatus": "Verificar status",
+          "description": "Execute uma vez o fluxo ativado da sua conta. Ele pode atualizar sugestões e enviar um email real. Seu horário diário não muda.",
+          "openChat": "Abrir conversa",
+          "requestFailed": "A solicitação não terminou. A nova tentativa usa a mesma solicitação para evitar execuções duplicadas.",
           "retry": "Tentar novamente",
-          "send": "Enviar e-mail de teste",
-          "sendAnother": "Enviar outro e-mail de teste",
-          "sending": "Enviando…",
+          "run": "Executar resumo",
+          "runAgain": "Executar outro resumo",
+          "starting": "Iniciando…",
           "status": {
-            "queued": "Na fila de entrega. Verifique o status antes de enviar outra amostra.",
-            "sent": "Aceito pelo provedor de e-mail. Verifique a caixa de entrada e o spam; a entrega na caixa de entrada não foi confirmada."
+            "completed": "O resumo foi concluído.",
+            "failed": "O resumo falhou. Abra a conversa para ver os detalhes.",
+            "queued": "Na fila. Abra a conversa para acompanhar o resumo.",
+            "running": "O resumo está em execução."
           },
-          "title": "E-mail de teste do Morning Brief"
+          "title": "Resumo da manhã"
         },
         "openrouterPreset": {
           "description": "Aplica-se às novas execuções de Auto e Okou 1.0 integrado em toda a organização. As execuções existentes não mudam.",

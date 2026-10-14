@@ -15,6 +15,11 @@ const load = name => JSON.parse(execFileSync("yq", ["-o=json", ".",
   path.join(root, ".github/workflows", name)], { encoding: "utf8" }));
 const caller = load("runner-image.yml");
 const branch = caller.jobs.build;
+const identity = caller.jobs.prepare.steps.find(step => step.id === "identity");
+assert.equal(identity.env.HEAD_SHA, "${{ github.sha }}",
+  "runner builds must use the immutable event revision");
+assert.equal(identity.env.PRODUCER_HEAD_SHA, "${{ github.event.pull_request.head.sha || github.sha }}",
+  "provenance must distinguish the Actions API head from the build merge revision");
 
 // This assertion fails against the pre-change production workflow, including
 // the mixed hit/miss case where a cached target waited for another compiler.

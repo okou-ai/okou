@@ -380,8 +380,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("root");
         let normal_child = root.join("normal");
-        std::fs::create_dir_all(&normal_child).unwrap();
-        std::fs::write(normal_child.join("inside.bin"), vec![1u8; 4096]).unwrap();
+        let nested_child = normal_child.join("nested");
+        std::fs::create_dir_all(&nested_child).unwrap();
+        let direct_file = root.join("direct.bin");
+        let normal_file = normal_child.join("inside.bin");
+        let nested_file = nested_child.join("nested.bin");
+        std::fs::write(&direct_file, vec![1u8; 4096]).unwrap();
+        std::fs::write(&normal_file, vec![2u8; 8192]).unwrap();
+        std::fs::write(&nested_file, vec![3u8; 16384]).unwrap();
+        let descendants = [
+            normal_child,
+            nested_child,
+            direct_file,
+            normal_file,
+            nested_file,
+        ];
+        let expected_bytes = || {
+            descendants
+                .iter()
+                .map(|path| std::fs::symlink_metadata(path).unwrap().blocks() * 512)
+                .sum::<u64>()
+        };
 
         let outside = dir.path().join("outside");
         std::fs::create_dir_all(&outside).unwrap();
@@ -391,8 +410,18 @@ mod tests {
         let symlink_bytes = std::fs::symlink_metadata(&link).unwrap().blocks() * 512;
 
         let (with_symlink, _) = dir_stats(&root).await;
+        assert_eq!(
+            with_symlink,
+            expected_bytes() + symlink_bytes,
+            "dir_stats should count every ordinary descendant and the symlink entry, excluding the root and symlink target"
+        );
         std::fs::remove_file(&link).unwrap();
         let (without_symlink, _) = dir_stats(&root).await;
+        assert_eq!(
+            without_symlink,
+            expected_bytes(),
+            "dir_stats should count every ordinary descendant after removing the symlink"
+        );
 
         assert_eq!(
             with_symlink,
@@ -427,12 +456,17 @@ mod tests {
 
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("root");
+        let mut expected_bytes = 0u64;
+        let contents = [1u8; 4096];
         for directory_index in 0..DIRECTORY_COUNT {
             let child = root.join(format!("dir-{directory_index}"));
             std::fs::create_dir_all(&child).unwrap();
             for file_index in 0..FILES_PER_DIRECTORY {
-                std::fs::File::create(child.join(format!("file-{file_index}"))).unwrap();
+                let file = child.join(format!("file-{file_index}"));
+                std::fs::write(&file, contents).unwrap();
+                expected_bytes += std::fs::symlink_metadata(&file).unwrap().blocks() * 512;
             }
+            expected_bytes += std::fs::symlink_metadata(&child).unwrap().blocks() * 512;
         }
         let expected_mtime = std::fs::symlink_metadata(&root)
             .unwrap()
@@ -447,6 +481,10 @@ mod tests {
         )
         .await;
 
+        assert_eq!(
+            stats.size, expected_bytes,
+            "collect_dir_stats should count every file and descendant directory, excluding the root"
+        );
         assert_eq!(task_submissions.load(Ordering::Relaxed), 1);
         assert_eq!(stats.mtime, expected_mtime);
         assert!(stats.root_metadata.is_some());

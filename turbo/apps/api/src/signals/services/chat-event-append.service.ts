@@ -48,7 +48,7 @@ function conflictClause(conflict: ChatEventAppendConflict): SQL {
  * positions; a SQL error rolls allocation back together with the insert.
  * An optional input predicate runs before counts or reservations are produced.
  */
-export function appendCanonicalChatEventsSql(
+export function canonicalChatEventAppendCtes(
   values: readonly PreparedChatEventRow[],
   conflict: ChatEventAppendConflict,
   inputEligibility?: SQL,
@@ -81,7 +81,7 @@ export function appendCanonicalChatEventsSql(
   )`
     : sql.empty();
   return sql`
-    WITH input AS MATERIALIZED (
+    input AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
         id uuid, "chatThreadId" uuid, "runId" uuid, "revokesEventId" uuid,
         "eventType" text, payload jsonb, "modelSelection" jsonb, "failureReason" text,
@@ -121,6 +121,17 @@ export function appendCanonicalChatEventsSql(
       RETURNING id, created_at, seq_id, run_event_sequence_number
     )
     ${relationAttribution}
+  `;
+}
+
+/** Standalone append; compound writers reuse the same allocation and insertion. */
+export function appendCanonicalChatEventsSql(
+  values: readonly PreparedChatEventRow[],
+  conflict: ChatEventAppendConflict,
+  inputEligibility?: SQL,
+): SQL {
+  return sql`
+    WITH ${canonicalChatEventAppendCtes(values, conflict, inputEligibility)}
     SELECT inserted.id, inserted.created_at::text AS "createdAt",
       inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
     FROM inserted

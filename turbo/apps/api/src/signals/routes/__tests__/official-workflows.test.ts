@@ -1,3 +1,8 @@
+import { notificationsContract } from "@okouai/api-contracts/contracts/notifications";
+import { notificationsRoutes } from "../notifications";
+import { mockClerkUsers } from "./helpers/clerk-users";
+import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
+import { debugMorningBriefRoutes } from "../debug-morning-brief";
 import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-watches";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import {
@@ -3104,6 +3109,392 @@ describe("Morning Brief suggestion instruction rollout", () => {
       });
     },
   );
+});
+
+describe("Debug Morning Brief", () => {
+  function debugClient() {
+    return setupApp({ context, routes: debugMorningBriefRoutes })(
+      debugMorningBriefContract,
+    );
+  }
+  async function enabledBrief() {
+    const { actor } = await prepareBriefMember();
+    await initializeBriefMember(actor, "Asia/Shanghai");
+    await selectPersonalDefaultModel(actor);
+    await accept(
+      morningBriefPreferenceClient().update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    if (!actor.orgId) {
+      throw new Error("Expected a workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.OkouDebug]: true },
+    );
+    const [installation] = await listMorningBriefInstallations(actor);
+    if (!installation) {
+      throw new Error("Expected Morning Brief");
+    }
+    const [automation] = await readMorningBriefAutomations(
+      actor,
+      installation.id,
+    );
+    if (!automation) {
+      throw new Error("Expected a daily schedule");
+    }
+    return { actor, installation, automation };
+  }
+  it.each([false, true])(
+    "executes the selected Official skill with suggestions enabled=%s, deduplicates retries and preserves the daily schedule",
+    async (enabled) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        const { actor, installation, automation } = await enabledBrief();
+        if (!actor.orgId) {
+          throw new Error("Expected a workspace");
+        }
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: enabled },
+        );
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        const requestId = randomUUID();
+        const requestHeaders = authHeaders(actor);
+        const submissions = await Promise.all(
+          Array.from({ length: enabled ? 1 : 4 }, () => {
+            return accept(
+              debugClient().run({
+                headers: requestHeaders,
+                body: { requestId: requestId.toUpperCase() },
+              }),
+              [200],
+            );
+          }),
+        );
+        const requested = submissions[0];
+        if (!requested) {
+          throw new Error("Expected an accepted Debug request");
+        }
+        for (const submission of submissions) {
+          expect(submission.body).toMatchObject({
+            requestId,
+            chatThreadId: requested.body.chatThreadId,
+          });
+        }
+        expect(requested.body).toMatchObject({ requestId, status: "queued" });
+        const retryHeaders = authHeaders(actor);
+        const replayed = await Promise.all(
+          Array.from({ length: 3 }, () => {
+            return debugClient().run({
+              headers: retryHeaders,
+              body: { requestId },
+            });
+          }),
+        );
+        for (const replay of replayed) {
+          expect(replay).toMatchObject({
+            status: 200,
+            body: { requestId, chatThreadId: requested.body.chatThreadId },
+          });
+        }
+        await flushWaitUntilForTest();
+        const receipt = await accept(
+          debugClient().get({
+            headers: authHeaders(actor),
+            params: { id: requestId },
+          }),
+          [200],
+        );
+        const runId = receipt.body.runId;
+        if (!runId) {
+          throw new Error("Expected a real Agent Run");
+        }
+        expect(
+          (
+            await accept(
+              debugClient().run({
+                headers: authHeaders(actor),
+                body: { requestId },
+              }),
+              [200],
+            )
+          ).body,
+        ).toStrictEqual(receipt.body);
+        const claim = await runs.claimRunnerJob(runId);
+        const name = enabled ? "internal-test-morning-brief" : "morning-brief";
+        mockEnv("RESEND_API_KEY", "test-key");
+        mockEnv("RESEND_FROM_DOMAIN", "okou.io");
+        mockClerkUsers(context, [
+          {
+            id: actor.userId,
+            primaryEmailAddressId: "primary",
+            emailAddresses: [{ id: "primary", emailAddress: actor.email }],
+          },
+        ]);
+        const notification = await accept(
+          setupApp({ context, routes: notificationsRoutes })(
+            notificationsContract,
+          ).mail({
+            headers: { authorization: `Bearer ${okouTokenFromClaim(claim)}` },
+            body: {
+              kind: "morning-brief",
+              to: "me",
+              subject: "Debug Morning Brief",
+              text: "Verified briefing.",
+              idempotencyKey: `debug-brief:${requestId}`,
+            },
+          }),
+          [200],
+        );
+        expect(notification.body).toMatchObject({
+          status: "queued",
+          deduplicated: false,
+        });
+        expect(claim.prompt.split("\n")[0]).toBe(`/${name}`);
+        expect(claim.prompt).toContain("morning-brief-debug");
+        expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
+        expect(
+          capturedOfficialSkill(claim.storageManifest, name).includes(
+            "okou suggestion list --json",
+          ),
+        ).toBe(enabled);
+        expect(
+          (await readMorningBriefAutomations(actor, installation.id))[0],
+        ).toMatchObject({
+          id: automation.id,
+          nextRunAt: automation.nextRunAt,
+          enabled: true,
+          schedule: automation.schedule,
+        });
+        if (enabled) {
+          await createChatEventsFixture(context).completeChatRunOk(runId, {
+            authorization: `Bearer ${claim.sandboxToken}`,
+          });
+        } else {
+          await webhooks.requestAgentComplete(
+            { runId, exitCode: 1, error: "Debug brief finished" },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+        }
+        await flushWaitUntilForTest();
+        expect(
+          (
+            await accept(
+              debugClient().get({
+                headers: authHeaders(actor),
+                params: { id: requestId },
+              }),
+              [200],
+            )
+          ).body,
+        ).toMatchObject({ runId, status: enabled ? "completed" : "failed" });
+        expect(
+          (await readMorningBriefAutomations(actor, installation.id))[0],
+        ).toMatchObject({
+          nextRunAt: automation.nextRunAt,
+          enabled: true,
+        });
+      });
+    },
+  );
+  it("preserves a scheduled occurrence queued behind a Debug run", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor, installation, automation } = await enabledBrief();
+      if (!automation.nextRunAt) {
+        throw new Error("Expected a daily anchor");
+      }
+      // Cross the due boundary without expiring the Debug run's sandbox JWT.
+      mockNow(new Date(new Date(automation.nextRunAt).getTime() - 60_000));
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      const requestId = randomUUID();
+      const requested = await accept(
+        debugClient().run({ headers: authHeaders(actor), body: { requestId } }),
+        [200],
+      );
+      await flushWaitUntilForTest();
+      const receipt = await accept(
+        debugClient().get({
+          headers: authHeaders(actor),
+          params: { id: requestId },
+        }),
+        [200],
+      );
+      const debugRunId = receipt.body.runId;
+      if (!debugRunId || !automation.nextRunAt) {
+        throw new Error("Expected a debug run and daily anchor");
+      }
+      const debugClaim = await runs.claimRunnerJob(debugRunId);
+      await withMockNowForTest(new Date(automation.nextRunAt), async () => {
+        await executeAutomationCron();
+        await flushWaitUntilForTest();
+        expect(
+          (await readMorningBriefAutomations(actor, installation.id))[0]
+            ?.nextRunAt,
+        ).toBeNull();
+        await webhooks.requestAgentComplete(
+          {
+            runId: debugRunId,
+            exitCode: 1,
+            error: "Debug finished before scheduled run",
+          },
+          { authorization: `Bearer ${debugClaim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const pending = (
+          await readMorningBriefAutomations(actor, installation.id)
+        )[0];
+        expect(pending?.nextRunAt).toBeNull();
+        const scheduledRunId = await launchedAutomationRunId(
+          actor,
+          requested.body.chatThreadId,
+        );
+        if (!scheduledRunId || scheduledRunId === debugRunId) {
+          throw new Error("Expected the queued scheduled run");
+        }
+        const scheduledClaim = await runs.claimRunnerJob(scheduledRunId);
+        await createChatEventsFixture(context).completeChatRunOk(
+          scheduledRunId,
+          { authorization: `Bearer ${scheduledClaim.sandboxToken}` },
+        );
+        await flushWaitUntilForTest();
+        const settled = (
+          await readMorningBriefAutomations(actor, installation.id)
+        )[0];
+        expect(settled?.nextRunAt).not.toBeNull();
+        expect(settled?.enabled).toBeTruthy();
+      });
+    });
+  });
+  it("requires a signed-in session and Okou Debug", async () => {
+    const anonymous = await accept(
+      debugClient().run({ body: { requestId: randomUUID() } }),
+      [401],
+    );
+    expect(anonymous.status).toBe(401);
+    await accept(debugClient().get({ params: { id: randomUUID() } }), [401]);
+    const { actor } = await enabledBrief();
+    if (!actor.orgId) {
+      throw new Error("Expected a workspace");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...actor, orgId: actor.orgId },
+      { [FeatureSwitchKey.OkouDebug]: false },
+    );
+    await accept(
+      debugClient().run({
+        headers: authHeaders(actor),
+        body: { requestId: randomUUID() },
+      }),
+      [403],
+    );
+    await accept(
+      debugClient().get({
+        headers: authHeaders(actor),
+        params: { id: randomUUID() },
+      }),
+      [403],
+    );
+  });
+  it("does not enable a paused schedule or consume an in-flight scheduled occurrence", async () => {
+    await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+      const { actor, installation, automation } = await enabledBrief();
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await accept(
+        debugClient().run({
+          headers: authHeaders(actor),
+          body: { requestId: randomUUID() },
+        }),
+        [409],
+      );
+      expect(
+        (await readMorningBriefAutomations(actor, installation.id))[0]?.enabled,
+      ).toBeFalsy();
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers: authHeaders(actor),
+          body: { enabled: true },
+        }),
+        [200],
+      );
+      const runnerGroup = runs.configureRunnerGroup();
+      runs.acceptStorageDownloads();
+      await runs.heartbeatRunner(runnerGroup);
+      const fired = await fireOfficialSchedule(actor, automation);
+      const claim = await runs.claimRunnerJob(fired.runId);
+      onTestFinished(async () => {
+        await webhooks.requestAgentComplete(
+          { runId: fired.runId, exitCode: 1, error: "Scheduled brief cleanup" },
+          { authorization: `Bearer ${claim.sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+      });
+      await accept(
+        debugClient().run({
+          headers: authHeaders(actor),
+          body: { requestId: randomUUID() },
+        }),
+        [409],
+      );
+      expect(
+        (await readMorningBriefAutomations(actor, installation.id))[0]
+          ?.nextRunAt,
+      ).toBeNull();
+    });
+  });
+  it("scopes request receipts to their member and workspace", async () => {
+    const { actor } = await enabledBrief();
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    await runs.heartbeatRunner(runnerGroup);
+    const requestId = randomUUID();
+    await accept(
+      debugClient().run({ headers: authHeaders(actor), body: { requestId } }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    const { actor: other } = await enabledBrief();
+    await accept(
+      debugClient().get({
+        headers: authHeaders(other),
+        params: { id: requestId },
+      }),
+      [404],
+    );
+    await accept(
+      debugClient().run({ headers: authHeaders(other), body: { requestId } }),
+      [409],
+    );
+    expect(
+      (
+        await accept(
+          debugClient().get({
+            headers: authHeaders(actor),
+            params: { id: requestId },
+          }),
+          [200],
+        )
+      ).body.requestId,
+    ).toBe(requestId);
+  });
 });
 
 describe("Morning Brief workflow selection", () => {

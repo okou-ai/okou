@@ -1171,6 +1171,77 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
+  it("admits only one concurrent image request into the last run slot", async () => {
+    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    await fixture.run(async () => {
+      const requestUrls: string[] = [];
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          requestUrls.push(request.url);
+          return HttpResponse.json(
+            falQueueHandle(`last-slot-${requestUrls.length}`),
+          );
+        }),
+      );
+      const app = createImageIoTestApp();
+      const path = "/api/image-io/generate";
+      const request = {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({ prompt: "a pending run image" }),
+      };
+      const generationIds: string[] = [];
+      for (let submission = 0; submission < 2; submission++) {
+        const response = await fixture.request(app, path, request);
+        expect(response.status).toBe(202);
+        generationIds.push(
+          readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          ),
+        );
+      }
+      expect(new Set(generationIds).size).toBe(2);
+      expect(requestUrls).toHaveLength(2);
+
+      // Both public requests belong to the fixture before either is awaited.
+      const firstContender = fixture.request(app, path, request);
+      const secondContender = fixture.request(app, path, request);
+      const responses = await Promise.all([firstContender, secondContender]);
+      expect(
+        responses.map((response) => {
+          return response.status;
+        }),
+      ).toStrictEqual(expect.arrayContaining([202, 429]));
+      for (const response of responses) {
+        if (response.status === 202) {
+          const generationId = readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          );
+          expect(generationIds).not.toContain(generationId);
+        } else {
+          expect(response.status).toBe(429);
+          await expect(response.json()).resolves.toMatchObject({
+            error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+          });
+        }
+      }
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+
+      const limited = await fixture.request(app, path, request);
+      expect(limited.status).toBe(429);
+      await expect(limited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+    });
+  });
+
   it("reuses one completed run image slot without releasing another on callback replay", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);

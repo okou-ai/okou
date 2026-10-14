@@ -1,4 +1,4 @@
-import { useGet, useSet, useLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -520,9 +520,12 @@ export function ComposerTaskChips({
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
-  const items = useLoadable(visibleAgentSuggestions$);
+  // Suggestions joins the row only once the pool has resolved with items. A
+  // pending or failed read would add a tab and a placeholder that vanish again
+  // whenever the pool turns out empty; a refresh keeps the last resolved pool.
+  const items = useLastLoadable(visibleAgentSuggestions$);
   const showSuggestions =
-    suggestionsEnabled && (items.state !== "hasData" || items.data.length > 0);
+    suggestionsEnabled && items.state === "hasData" && items.data.length > 0;
   const current = useGet(signals.taskChips.task$);
   const selected =
     current === "suggestions" && !showSuggestions

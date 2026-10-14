@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.5...sandbox-firecracker-v0.48.6) (2026-10-14)
+
+
+### Documentation
+
+* **rust:** correct balloon settle extension bounds ([#39994](https://github.com/okou-ai/okou/issues/39994)) ([8944c6e](https://github.com/okou-ai/okou/commit/8944c6eee4d77a8625ecc4d1dbcb5e29b62be53a))
+
 ## [0.48.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.4...sandbox-firecracker-v0.48.5) (2026-10-14)
 
 

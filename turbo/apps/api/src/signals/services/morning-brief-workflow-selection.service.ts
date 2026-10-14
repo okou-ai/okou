@@ -52,7 +52,7 @@ export const selectedMorningBriefDefinition$ = command(
   },
 );
 
-/** Select before consuming the existing schedule; preserve installation and thread identities. */
+/** Select before a schedule or Debug trigger; preserve installation and thread identities. */
 export const selectDueMorningBriefWorkflow$ = command(
   async (
     { set },

@@ -2722,11 +2722,15 @@ impl Sandbox for FirecrackerSandbox {
     // requests balloon inflation to reclaim guest memory. It makes a bounded
     // settle attempt before pausing vCPUs to eliminate idle CPU overhead
     // (timer ticks, kernel scheduling). Settling may finish at the target,
-    // within tolerance, under guest memory pressure, at the deadline (with at
-    // most one bounded progress grace period), or after a non-fatal stats
-    // error. Reusable outcomes then request target zero and wait for physical
-    // deflation before pausing. Severe memory retention is instead reported
-    // as paused but non-reusable for destruction. An exact-successor handoff
+    // within tolerance, under guest memory pressure, at the deadline, or after
+    // a non-fatal stats error. The initial five-second wait may receive repeated
+    // five-second progress extensions when a severe deficit shows recent
+    // progress at the current target with sufficient guest memory reserve,
+    // capped by `BALLOON_SETTLE_MAX_TIMEOUT` (30 seconds). This bounds inflation
+    // settling only, not preparation, deflation, or pause. Reusable outcomes
+    // then request target zero and wait for physical deflation before pausing.
+    // Severe memory retention is instead reported as paused but non-reusable
+    // for destruction. An exact-successor handoff
     // may skip inflation or interrupt settling/deflation: it completes the
     // target-zero request and transfers the still-running, fenced sandbox
     // without pausing. The guest balloon driver needs running vCPUs throughout
