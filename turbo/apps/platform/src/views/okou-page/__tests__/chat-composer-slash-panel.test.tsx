@@ -91,6 +91,16 @@ function flyout(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-flyout"]');
 }
 
+/**
+ * A workflow row is named by its token; the description after it is not part
+ * of what identifies the row.
+ */
+function slashRowLabel(button: HTMLElement): string | undefined {
+  const label =
+    button.querySelector('[data-slot="slash-workflow-name"]') ?? button;
+  return label.textContent?.replace(/\s+/gu, " ").trim();
+}
+
 function querySlashButton(name: string): HTMLElement | null {
   const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
   for (const surface of surfaces) {
@@ -100,7 +110,7 @@ function querySlashButton(name: string): HTMLElement | null {
     const match = queryAllByRoleFast("button", surface).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
-        candidate.textContent?.replace(/\s+/gu, " ").trim() === name
+        slashRowLabel(candidate) === name
       );
     });
     if (match) {
@@ -140,7 +150,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
 
   // A deck cover really is a slide, so it still asks for the 16:9 box.
   const deckCover = detailPane()?.querySelector("img");
-  expect(deckCover?.getAttribute("src")).toContain("height=158");
+  expect(deckCover?.getAttribute("src")).toContain("height=234");
 
   await user.hover(slashButton("Illustration"));
   await waitFor(() => {
@@ -157,7 +167,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
   const cover = pane.querySelector("img");
   // Width only: passing a 16:9 height too made the transform fit a portrait
   // style inside it, so the card received a picture far smaller than it paints.
-  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).toContain("width=416");
   expect(cover?.getAttribute("src")).not.toContain("height=");
   // The tile declares the catalog's own ratio rather than a shared one, which
   // is what stops the artwork being cropped.
@@ -379,9 +389,7 @@ function slashMenuButtonNames(): (string | undefined)[] {
     .filter((button) => {
       return !button.closest('[data-slot="slash-template-detail"]');
     })
-    .map((button) => {
-      return button.textContent?.trim();
-    });
+    .map(slashRowLabel);
 }
 
 test.each(COMPOSER_PATHS)(
@@ -403,6 +411,10 @@ test.each(COMPOSER_PATHS)(
         "Browse all templates",
       ]);
     });
+    // The composer-wide menu says what each workflow does after its name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
+      `/${WORKFLOW_NAME} Query Axiom for RED metrics`,
+    );
     expect(
       queryAllByRoleFast(
         "button",
@@ -683,5 +695,9 @@ test.each(COMPOSER_PATHS)(
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     expect(detailPane()).toHaveAttribute("data-category", "slides");
     expect(flyout()).toHaveAccessibleName("Presentation");
+    // The 260px menu has no room for a description beside the name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).not.toHaveTextContent(
+      "Query Axiom for RED metrics",
+    );
   },
 );
