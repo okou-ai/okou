@@ -345,11 +345,13 @@ async function setupEditedDraftTemplate(
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(2);
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(editor);
-  await user.paste(" /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await enterCreateMode(mode, menu);
+  const taskChoices = await screen.findByRole("group", {
+    name: "Choose a task",
+  });
+  click(button(CREATE_MODE_ROWS[mode].task, taskChoices));
+  await waitFor(() => {
+    expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
+  });
 
   const firstChip = composerInlineTemplates()[0];
   if (!firstChip) {

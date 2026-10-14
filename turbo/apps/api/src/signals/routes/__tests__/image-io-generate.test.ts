@@ -512,33 +512,31 @@ async function createClaimedImageRun(
   await run(() => {
     return useImageModel(fixture, imageModel);
   });
-  // Normal Pro activation grants 20,000 credits before the separate purchase.
+  // Normal Pro activation grants 20,000 credits before an optional purchase.
   await expect(
     run(() => {
       return orgCredits(fixture);
     }),
   ).resolves.toBe(20_000);
   const initialCredits = 20_000 + credits;
-  // Agent creation and the separate credit purchase share an already active Pro
-  // owner, but neither depends on the other's result. Settle both before cleanup.
+  // Use the genuine agent created by paid onboarding. An optional credit
+  // purchase is independent of this read; settle both before cleanup.
   const [agent, purchase] = await Promise.allSettled([
     run(() => {
-      return chat.bdd.createAgent(actor, {
-        displayName: "BDD chat messages agent",
-        description: "Exercises the web chat send route.",
-        visibility: "private",
-      });
+      return chat.bdd.readOnboardingStatus(actor);
     }),
-    run(() => {
-      return purchaseToolCredits(context, actor, {
-        credits,
-        customerId,
-        invoiceId: `in_image_${randomUUID()}`,
-        onExternalStateReady: (restore) => {
-          restoreSetupExternalState = restore;
-        },
-      });
-    }),
+    credits === 0
+      ? Promise.resolve()
+      : run(() => {
+          return purchaseToolCredits(context, actor, {
+            credits,
+            customerId,
+            invoiceId: `in_image_${randomUUID()}`,
+            onExternalStateReady: (restore) => {
+              restoreSetupExternalState = restore;
+            },
+          });
+        }),
   ] as const);
   if (agent.status === "rejected") {
     throw agent.reason;
@@ -546,7 +544,10 @@ async function createClaimedImageRun(
   if (purchase.status === "rejected") {
     throw purchase.reason;
   }
-  const { agentId } = agent.value;
+  const agentId = agent.value.defaultAgentId;
+  if (!agentId) {
+    throw new Error("Expected paid onboarding to create the image Run's agent");
+  }
   restoreSetupExternalState = undefined;
   await expect(
     run(() => {
@@ -1364,7 +1365,7 @@ describe("POST /api/image-io/generate", () => {
 
   it("keeps the run lifetime limit after fifty successful image generations", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
-    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    const fixture = await createFundedImageRun("gpt-image-1", 0);
     await fixture.run(async () => {
       const requestUrls: string[] = [];
       const requestUrlsByGenerationId = new Map<string, string>();
@@ -1413,7 +1414,7 @@ describe("POST /api/image-io/generate", () => {
         ],
         prompt: "A small robot paints a sunflower.",
       };
-      // The funded fixture already verifies its 30,000-credit starting balance.
+      // The Pro fixture already verifies its sufficient starting balance.
       const generationIds = new Set<string>();
       // Finish each three-request wave before the next, respecting the genuine
       // concurrency limit. Drain callback work once for the whole owned wave.
