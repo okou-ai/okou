@@ -207,10 +207,15 @@ async fn typed_home_observations_continue_while_ingest_is_held() {
     .await;
     let (layer, guard) = init_with_base_url(&server.url(), "synthetic-token", "test").unwrap();
     let observations = layer.home_observations();
-    observations.observe(HomeObservation::new(
-        HomeKind::Publication,
-        HomeOutcome::Published,
-    ));
+    // Trigger the size-based flush instead of racing the five-second fixture
+    // deadline against the dispatcher's five-second interval. Its initial tick
+    // may flush part of this batch; verify the full history across both requests.
+    for _ in 0..BATCH_SIZE {
+        observations.observe(HomeObservation::new(
+            HomeKind::Publication,
+            HomeOutcome::Published,
+        ));
+    }
     let first = server.next_request("first typed home fact").await;
     observations.observe(HomeObservation::new(
         HomeKind::Preservation,
@@ -223,8 +228,25 @@ async fn typed_home_observations_continue_while_ingest_is_held() {
         .await;
     let first: Value = serde_json::from_str(first.split_once("\r\n\r\n").unwrap().1).unwrap();
     let second: Value = serde_json::from_str(second.split_once("\r\n\r\n").unwrap().1).unwrap();
-    assert_eq!(first[0]["outcome"], "published");
-    assert_eq!(second[0]["outcome"], "retained");
+    let first = first.as_array().unwrap();
+    let second = second.as_array().unwrap();
+    assert!(first.iter().all(|event| event["outcome"] == "published"));
+    assert_eq!(first.len() + second.len(), BATCH_SIZE + 1);
+    assert_eq!(
+        first
+            .iter()
+            .chain(second)
+            .filter(|event| event["outcome"] == "published")
+            .count(),
+        BATCH_SIZE,
+    );
+    assert_eq!(
+        second
+            .iter()
+            .filter(|event| event["outcome"] == "retained")
+            .count(),
+        1,
+    );
     server.assert_finished().await;
 }
 
