@@ -22,6 +22,7 @@ pub fn execution_context_for_test(run_id: RunId) -> ExecutionContext {
         cli_agent_type: String::new(),
         real_agent_in_preview: None,
         api_start_time: None,
+        is_first_run: None,
         user_timezone: None,
         capture_network_bodies: None,
         firewalls: None,

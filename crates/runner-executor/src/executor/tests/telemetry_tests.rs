@@ -41,6 +41,7 @@ use crate::telemetry::{
     RunnerResourceBudgetLeaseCountBucket, RunnerResourceBudgetOccupancy,
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
+use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
@@ -1746,9 +1747,84 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 }
 
 #[tokio::test]
+async fn execute_job_publishes_first_run_startup_without_api_start_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_executor_config(dir.path()).await;
+    let server = startup_telemetry_server().await;
+    config.http = startup_telemetry_client(&server);
+    let mut context = minimal_context();
+    context.is_first_run = Some(true);
+    assert!(context.api_start_time.is_none());
+    let factory = MockSandboxFactory::new();
+    let (outcome, telemetry) = execute_job(
+        &factory,
+        context,
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::NoReuseKey,
+        },
+        &config,
+        &default_params(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    assert!(outcome.failure.is_none());
+    assert_startup_observation(telemetry, server, "cold", true).await;
+    let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
+    sandbox.stop().await.unwrap();
+    factory.destroy(sandbox).await;
+}
+
+async fn startup_telemetry_server() -> RawHttpTestServer {
+    let response = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    RawHttpTestServer::spawn(vec![
+        RawHttpAction::Respond(response.to_vec()),
+        RawHttpAction::Respond(response.to_vec()),
+    ])
+    .await
+}
+
+fn startup_telemetry_client(server: &RawHttpTestServer) -> HttpClient {
+    HttpClient::new(HttpClientConfig {
+        api_url: server.url(),
+        vercel_bypass: None,
+        client_session_id: "startup-observation-test".into(),
+        runner_version: "test",
+    })
+    .unwrap()
+}
+
+async fn assert_startup_observation(
+    telemetry: JobTelemetry,
+    server: RawHttpTestServer,
+    path: &str,
+    is_first_run: bool,
+) {
+    telemetry.flush().await;
+    let mut startup = Vec::new();
+    for request in server.assert_finished_with_requests().await {
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        for operation in body["sandboxOperations"].as_array().unwrap() {
+            assert_eq!(operation["is_first_run"], is_first_run);
+            if operation["action_type"] == "runner_sandbox_startup" {
+                startup.push(operation.clone());
+            }
+        }
+    }
+    assert_eq!(startup.len(), 1);
+    assert_eq!(startup[0]["runner_startup_path"], path);
+    assert_eq!(startup[0]["success"], true);
+    assert_eq!(startup[0]["home_reuse_result"], "notConfigured");
+}
+
+#[tokio::test]
 async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
+    let mut config = test_executor_config(dir.path()).await;
+    let server = startup_telemetry_server().await;
+    config.http = startup_telemetry_client(&server);
     let params = default_params();
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(MockSandboxFactory::new()));
     let sandbox_id = SandboxId::new_v4();
@@ -1804,13 +1880,15 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     let cancel = tokio_util::sync::CancellationToken::new();
     let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_claim();
     pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
+    let mut context = minimal_context();
+    context.is_first_run = Some(false);
     let (outcome, telemetry) = execute_job_reuse_with_hooks(
         crate::executor::ReusedSandboxDispatch {
             factory: &MockSandboxFactory::new(),
             idle_sandbox,
             reuse_result: SandboxReuseResult::PoolMiss,
         },
-        minimal_context(),
+        context,
         &config,
         &params,
         RunCancellationSignals::from_hard_token(cancel),
@@ -1846,6 +1924,7 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");
+    assert_startup_observation(telemetry, server, "blank", false).await;
 
     let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
     sandbox.stop().await.unwrap();

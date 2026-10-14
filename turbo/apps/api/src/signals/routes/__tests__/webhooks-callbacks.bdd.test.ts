@@ -2202,7 +2202,13 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
           {
             ...body,
             sandboxOperations: body.sandboxOperations.map((operation) => {
-              return { ...operation, runner_startup_path: startupPath };
+              return {
+                ...operation,
+                runner_startup_path: startupPath,
+                is_first_run: false,
+                reuse_key: `thread:${runId}`,
+                home_reuse_result: "cacheMiss",
+              };
             }),
           },
           headers,
