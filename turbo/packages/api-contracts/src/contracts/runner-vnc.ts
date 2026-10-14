@@ -23,6 +23,16 @@ const c = initContract();
 
 const generationSchema = z.int().positive().max(2_147_483_647);
 
+/** VNC-only eviction; an explicit null selects every VNC connection in the Run. */
+export const runnerVncInvalidateSchema = z
+  .object({
+    runId: z.uuid(),
+    connectionId: z.uuid().nullable(),
+  })
+  .strict();
+
+export type RunnerVncInvalidate = z.infer<typeof runnerVncInvalidateSchema>;
+
 const sshTransportSnapshotSchema = z
   .object({
     type: z.literal("ssh"),

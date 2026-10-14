@@ -2196,8 +2196,15 @@
     {
       "idx": 1391,
       "version": "7",
-      "when": 1791947756945,
-      "tag": "1391_remove_home_task_recommendations",
+      "when": 1791948420937,
+      "tag": "1391_discord_account_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 1392,
+      "version": "7",
+      "when": 1791950634555,
+      "tag": "1392_remove_home_task_recommendations",
       "breakpoints": true
     }
   ]

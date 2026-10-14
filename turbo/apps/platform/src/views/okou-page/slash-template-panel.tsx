@@ -174,7 +174,7 @@ function SlashTemplateDetailPane({
       className={cn(
         "h-full overflow-hidden",
         embedded
-          ? "w-[320px] max-w-1/2 shrink-0 border-l border-border/60"
+          ? "w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
           : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
       )}
       role={embedded ? "region" : undefined}
@@ -353,6 +353,7 @@ function SlashPanelWorkflowList({
   markedIndex,
   selectedIndex,
   reversed,
+  describe,
   onPreview,
   onSelect,
   workflowOptionId,
@@ -361,6 +362,8 @@ function SlashPanelWorkflowList({
   readonly loading: boolean;
   readonly selectedIndex: number;
   readonly reversed: boolean;
+  /** The composer-wide menu has room for a description after each name. */
+  readonly describe: boolean;
   /** Relative to this list; negative while no row carries the mark. */
   readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
@@ -422,10 +425,20 @@ function SlashPanelWorkflowList({
                 className="shrink-0 text-muted-foreground"
                 aria-hidden
               />
-              <SlashWorkflowName
-                workflow={workflow}
-                className="min-w-0 flex-1 text-[13px]"
-              />
+              {/*
+                One line that truncates as a whole: the name comes first, so the
+                description is what the ellipsis eats. The space keeps the two
+                apart in the row's accessible name.
+              */}
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                <SlashWorkflowName workflow={workflow} />
+                {describe && workflow.description && (
+                  <>
+                    {" "}
+                    <span className="ml-1">{workflow.description}</span>
+                  </>
+                )}
+              </span>
             </button>
           );
         },
@@ -664,6 +677,7 @@ export function SlashTemplatePanel({
       markedIndex={markedIndex - categories.length}
       selectedIndex={selectedIndex - categories.length}
       reversed={reverseWorkflows}
+      describe={anchored}
       onPreview={(index) => {
         onPreview(categories.length + index);
       }}

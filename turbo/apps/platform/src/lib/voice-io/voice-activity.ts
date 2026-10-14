@@ -44,10 +44,10 @@ export async function analyzeVoiceActivity(
   ort.env.wasm.proxy = false;
   ort.env.wasm.wasmPaths = {
     mjs: platformStaticAssetUrl(
-      `${ASSET_PATH}ort-wasm-simd-threaded-1.23.2-90a557d15c02.mjs`,
+      `${ASSET_PATH}ort-wasm-simd-threaded-1.30.0-e13f7f94fc51.mjs`,
     ),
     wasm: platformStaticAssetUrl(
-      `${ASSET_PATH}ort-wasm-simd-threaded-1.23.2-45eaee27761a.wasm`,
+      `${ASSET_PATH}ort-wasm-simd-threaded-1.30.0-3398c10d07d2.wasm`,
     ),
   };
   const model = await Silero.new(ort, async () => {

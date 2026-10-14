@@ -36,6 +36,9 @@ pub const CANONICAL_SANDBOX_REUSE_RESULT_ENV: &str = "OKOU_SANDBOX_REUSE_RESULT"
 /// Wire value for the runner's final home-reuse decision.
 pub const CANONICAL_HOME_REUSE_RESULT_ENV: &str = "OKOU_HOME_REUSE_RESULT";
 
+/// Wire value for the actual sandbox startup resource after preparation settles.
+pub const CANONICAL_SANDBOX_STARTUP_PATH_ENV: &str = "OKOU_SANDBOX_STARTUP_PATH";
+
 /// Logical run-payload field name for the user prompt.
 pub const PROMPT_RUN_PAYLOAD_FIELD: &str = "OKOU_PROMPT";
 
@@ -554,6 +557,7 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     CANONICAL_SANDBOX_ID_ENV,
     CANONICAL_SANDBOX_REUSE_RESULT_ENV,
     CANONICAL_HOME_REUSE_RESULT_ENV,
+    CANONICAL_SANDBOX_STARTUP_PATH_ENV,
     CANONICAL_API_START_TIME_ENV,
     PI_SESSION_ID_ENV,
     PI_LAUNCH_CONFIG_ENV,

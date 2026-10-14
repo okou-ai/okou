@@ -79,18 +79,18 @@ async function credentialPage() {
   await screen.findByText("No saved VNC credentials.");
 }
 
-function replaceSession() {
+function refreshSession(id = "vnc-session-original") {
   const clerk = context.mocks.clerk();
   act(() => {
     clerk.user(owner, {
-      id: "vnc-session-replacement",
+      id,
       token: "replacement-token",
     });
     clerk.stateChanged();
   });
 }
 
-test("A same-owner session replacement preserves the password and focus and saves with the current session", async () => {
+test("A same-session token refresh preserves the password and focus and saves with the current token", async () => {
   mockEmptySettings();
   const requests: unknown[] = [];
   context.mocks.api(
@@ -107,7 +107,7 @@ test("A same-owner session replacement preserves the password and focus and save
   const dialog = await openCredential("Original session login");
   const secret = within(dialog).getByLabelText("VNC password");
   await userEvent.click(secret);
-  replaceSession();
+  refreshSession();
   const current = await screen.findByRole("dialog", { name: "Add credential" });
   expect(within(current).getByLabelText("Credential name")).toHaveValue(
     "Original session login",
@@ -129,6 +129,25 @@ test("A same-owner session replacement preserves the password and focus and save
     },
   ]);
   expect(secret).toHaveValue("");
+});
+
+test("A same-owner session replacement closes the form and cannot revive its password", async () => {
+  mockEmptySettings();
+  await credentialPage();
+  const dialog = await openCredential("Old session draft");
+  const secret = within(dialog).getByLabelText("VNC password");
+  refreshSession("vnc-session-replacement");
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(secret).toHaveValue("");
+  refreshSession("vnc-session-original");
+  const fresh = await openCredential("New draft");
+  expect(within(fresh).getByLabelText("Credential name")).toHaveValue(
+    "New draft",
+  );
+  expect(within(fresh).getByLabelText("VNC password")).toHaveValue(" pwd ");
+  expect(within(fresh).queryByText("Old session draft")).toBeNull();
 });
 
 test("Returning to an owner never revives an abandoned uncertain credential draft", async () => {

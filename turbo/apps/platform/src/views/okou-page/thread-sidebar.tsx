@@ -14,6 +14,7 @@ import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coo
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
+  ThreadResourceSection,
   ThreadSidebarTarget,
 } from "../../signals/chat-page/thread-sidebar.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
@@ -43,12 +44,17 @@ const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
  * Open the thread's artifacts list and refresh its first page. Entry buttons
  * and the detail's Back action share this hook so the list is current on open.
  */
-export function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
+export function useOpenThreadArtifacts(
+  thread: ChatPanelSignals,
+  section?: ThreadResourceSection,
+): () => void {
   const open = useSet(openThreadArtifacts$);
   const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
-    open(thread);
-    reloadArtifacts();
+    open(thread, section);
+    if (section !== "links") {
+      reloadArtifacts();
+    }
   };
 }
 
@@ -130,17 +136,28 @@ function ThreadSidebarHeader({
   );
 }
 
-function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
+function ThreadArtifactsPanel({
+  thread,
+  section,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly section?: ThreadResourceSection;
+}) {
   const { t } = useTranslation();
   const resourcesEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
-  const title = resourcesEnabled
-    ? t(($) => {
-        return $.chat.resources.title;
-      })
-    : t(($) => {
-        return $.artifacts.sidebar.panelTitle;
-      });
+  const title =
+    section === "links"
+      ? t(($) => {
+          return $.chat.resources.links;
+        })
+      : resourcesEnabled && section === undefined
+        ? t(($) => {
+            return $.chat.resources.title;
+          })
+        : t(($) => {
+            return $.artifacts.sidebar.panelTitle;
+          });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -163,7 +180,7 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
     catalogLoadable.data.nextCursor !== null;
 
   const handleScroll = (event: ReactUIEvent<HTMLElement>) => {
-    if (!hasMore) {
+    if (section === "links" || !hasMore) {
       return;
     }
     const viewport = event.currentTarget;
@@ -199,45 +216,49 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
-        {resourcesEnabled && (
+        {resourcesEnabled && section === undefined && (
           <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
             {t(($) => {
               return $.artifacts.sidebar.panelTitle;
             })}
           </h3>
         )}
-        {artifacts === null ? (
-          catalogLoadable.state === "hasError" ? (
-            <ArtifactCatalogError
-              pending={retryLoadable.state === "loading"}
-              onRetry={() => {
+        {section !== "links" &&
+          (artifacts === null ? (
+            catalogLoadable.state === "hasError" ? (
+              <ArtifactCatalogError
+                pending={retryLoadable.state === "loading"}
+                onRetry={() => {
+                  detach(
+                    retryCatalog(pageSignal),
+                    Reason.DomCallback,
+                    "thread artifacts sidebar retry",
+                  );
+                }}
+              />
+            ) : (
+              <ArtifactCatalogSkeleton />
+            )
+          ) : artifacts.length === 0 ? (
+            <ArtifactCatalogEmpty />
+          ) : (
+            <ArtifactCatalogGrid
+              artifacts={artifacts}
+              onOpen={(artifactId) => {
                 detach(
-                  retryCatalog(pageSignal),
+                  openCatalogArtifact(artifactId, pageSignal),
                   Reason.DomCallback,
-                  "thread artifacts sidebar retry",
+                  "thread artifact catalog preview",
                 );
               }}
             />
-          ) : (
-            <ArtifactCatalogSkeleton />
-          )
-        ) : artifacts.length === 0 ? (
-          <ArtifactCatalogEmpty />
-        ) : (
-          <ArtifactCatalogGrid
-            artifacts={artifacts}
-            onOpen={(artifactId) => {
-              detach(
-                openCatalogArtifact(artifactId, pageSignal),
-                Reason.DomCallback,
-                "thread artifact catalog preview",
-              );
-            }}
-          />
-        )}
-        {resourcesEnabled && (
-          <div className="mt-4">
-            <ChatResourceLinks thread={thread} />
+          ))}
+        {resourcesEnabled && section !== "artifacts" && (
+          <div className={section === undefined ? "mt-4" : undefined}>
+            <ChatResourceLinks
+              thread={thread}
+              showHeading={section === undefined}
+            />
           </div>
         )}
       </div>
@@ -435,7 +456,7 @@ export function ThreadSidebarSlot({
 }) {
   switch (target.type) {
     case "artifacts": {
-      return <ThreadArtifactsPanel thread={thread} />;
+      return <ThreadArtifactsPanel thread={thread} section={target.section} />;
     }
     case "artifact": {
       return <ThreadArtifactDetail thread={thread} source={target.source} />;

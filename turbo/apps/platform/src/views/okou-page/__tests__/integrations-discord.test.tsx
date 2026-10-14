@@ -26,7 +26,6 @@ const context = testContext();
 function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   return {
     isAvailable: true,
-    isInstalled: true,
     isConnected: true,
     isAdmin: false,
     guildId: "123456789012345678",
@@ -74,20 +73,18 @@ test.each([
   {
     name: "configured admin without a server",
     data: { isAdmin: true },
-    message: "Install Okou to your Discord server, then connect your account.",
-    action: "Install to Discord",
+    message: "Connect your Discord account through official browser consent.",
+    action: "Connect",
   },
   {
     name: "member without a server",
     data: { isAdmin: false },
-    message:
-      "Ask an organization admin to install Okou to your Discord server.",
-    action: null,
+    message: "Connect your Discord account through official browser consent.",
+    action: "Connect",
   },
   {
     name: "member without a verified connection",
     data: {
-      isInstalled: true,
       guildId: "123456789012345678",
       guildName: "Design team",
     },
@@ -99,7 +96,6 @@ test.each([
     return respond(
       200,
       status({
-        isInstalled: false,
         isConnected: false,
         guildId: null,
         guildName: null,
@@ -159,7 +155,6 @@ test.each(["install", "connect"] as const)(
   async (flow) => {
     let current = status({
       isAdmin: flow === "install",
-      isInstalled: flow === "connect",
       isConnected: false,
       discordUserId: null,
       ...(flow === "install" ? { guildId: null, guildName: null } : {}),
@@ -193,41 +188,29 @@ test.each(["install", "connect"] as const)(
         completeCredentials = request.credentials;
         current = {
           ...current,
-          isInstalled: true,
           guildId: "123456789012345678",
           guildName: "Verified team",
-          isConnected: flow === "connect",
-          discordUserId: flow === "connect" ? "234567890123456789" : null,
+          isConnected: true,
+          discordUserId: "234567890123456789",
         };
         return respond(200, {
-          status: flow === "install" ? "installed" : "connected",
+          status: "connected",
         });
       },
     );
     await setupDiscordPage();
     await expect(
       screen.findByText(
-        flow === "install"
-          ? "Install Okou to your Discord server, then connect your account."
-          : "Connect your Discord account through official browser consent.",
+        "Connect your Discord account through official browser consent.",
       ),
     ).resolves.toBeInTheDocument();
     const card = getIntegrationCard("Discord");
-    click(
-      getAction(
-        "button",
-        flow === "install" ? "Install to Discord" : "Connect",
-        card,
-      ),
-    );
+    click(getAction("button", "Connect", card));
     await waitFor(() => {
       expect(popup.location.href).toBe(authorizationUrl);
     });
     expect(opened.calls[0]?.url).toBe("about:blank");
-    expect(requestBody).toStrictEqual({
-      flow,
-      ...(flow === "connect" ? { guildId: current.guildId } : {}),
-    });
+    expect(requestBody).toStrictEqual({});
     expect(authorization).toMatch(/^Bearer /u);
     expect(query).toBe("");
     expect(credentials).toBe("include");
@@ -238,11 +221,7 @@ test.each(["install", "connect"] as const)(
     expect(popup.location.href).not.toContain(completionToken);
     popup.close();
     await expect(
-      screen.findByText(
-        flow === "connect"
-          ? "Connected to Discord"
-          : "Connect your Discord account through official browser consent.",
-      ),
+      screen.findByText("Connected to Discord"),
     ).resolves.toBeInTheDocument();
     expect(completeBody).toStrictEqual({
       state: attemptState,
@@ -251,26 +230,17 @@ test.each(["install", "connect"] as const)(
     expect(completeAuthorization).toMatch(/^Bearer /u);
     expect(completeCredentials).toBe("include");
     await waitFor(() => {
-      const outcome =
-        flow === "connect"
-          ? getAction("link", "Open Discord")
-          : getAction("button", "Connect", card);
+      const outcome = getAction("link", "Open Discord");
       expect(outcome).toBeInTheDocument();
       expect(outcome).not.toBeDisabled();
     });
-    expect(window.location.pathname).toBe(
-      flow === "connect" ? "/settings/discord" : "/works",
-    );
+    expect(window.location.pathname).toBe("/settings/discord");
     const params = new URLSearchParams(window.location.search);
-    expect(params.get("status")).toBe(flow === "connect" ? "connected" : null);
-    expect(params.get("workspace")).toBe(
-      flow === "connect" ? "Verified team" : null,
-    );
+    expect(params.get("status")).toBe("connected");
+    expect(params.get("workspace")).toBe("Verified team");
     expect(
       queryAction("link", "Open Discord")?.getAttribute("href") ?? null,
-    ).toBe(
-      flow === "connect" ? "discord://-/channels/123456789012345678" : null,
-    );
+    ).toBe("discord://-/channels/123456789012345678");
   },
 );
 
@@ -775,15 +745,12 @@ test("A connected member sees server and context limits and can disconnect", asy
   });
   await setupDiscordPage();
 
-  await expect(
-    screen.findByText("Connected (Design team)"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   expect(
     within(card).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
   expect(within(card).getByText(/Limited context:/u)).toBeInTheDocument();
-  click(getAction("button", "More Discord options", card));
   expect(queryAction("button", "Remove Discord")).toBeNull();
   click(getAction("button", "Disconnect Discord"));
 
@@ -813,12 +780,7 @@ test("A failed disconnect preserves the connection and allows retry", async () =
     return respond(200, { ok: true });
   });
   await setupDiscordPage();
-  await expect(
-    screen.findByText("Connected (Design team)"),
-  ).resolves.toBeInTheDocument();
-  click(
-    getAction("button", "More Discord options", getIntegrationCard("Discord")),
-  );
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   click(getAction("button", "Disconnect Discord"));
 
   await expect(
@@ -837,69 +799,15 @@ test("A failed disconnect preserves the connection and allows retry", async () =
   ).resolves.toBeInTheDocument();
 });
 
-test("An admin confirms server removal and can retry a failed removal", async () => {
-  let current = status({
-    isAdmin: true,
-    isConnected: false,
-    discordUserId: null,
-    contextMode: "full",
-  });
-  let denied = true;
+test("A connected admin has only their account disconnect action", async () => {
   context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
-    return respond(200, current);
+    return respond(200, status({ isAdmin: true }));
   });
-  context.mocks.api(
-    integrationsDiscordContract.disconnect,
-    ({ query, respond }) => {
-      if (query.action !== "uninstall") {
-        throw new Error("Server removal must request the admin action");
-      }
-      if (denied) {
-        return respond(403, {
-          error: { code: "FORBIDDEN", message: "Discord removal denied" },
-        });
-      }
-      current = {
-        ...current,
-        isInstalled: false,
-        guildId: null,
-        guildName: null,
-      };
-      return respond(200, { ok: true });
-    },
-  );
   await setupDiscordPage();
-  await expect(
-    screen.findByText(
-      "Connect your Discord account through official browser consent.",
-    ),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByText(/Limited context:/u)).not.toBeInTheDocument();
-  click(
-    getAction("button", "More Discord options", getIntegrationCard("Discord")),
-  );
-  click(getAction("button", "Remove Discord"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Remove Discord from this organization?",
-  });
-  expect(dialog).toHaveAccessibleDescription(
-    "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
-  );
-  click(getAction("button", "Uninstall", dialog));
-
-  await expect(
-    screen.findByText("Discord removal denied"),
-  ).resolves.toBeInTheDocument();
-  expect(dialog).toBeInTheDocument();
-  denied = false;
-  await waitFor(() => {
-    return expect(getAction("button", "Uninstall", dialog)).toBeEnabled();
-  });
-  click(getAction("button", "Uninstall", dialog));
-  await expect(
-    screen.findByText(/Install Okou to your Discord server/u),
-  ).resolves.toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const card = getIntegrationCard("Discord");
+  expect(getAction("button", "Disconnect Discord", card)).toBeEnabled();
+  expect(queryAction("button", "Remove Discord", card)).toBeNull();
+  expect(queryAction("button", "Install to Discord", card)).toBeNull();
 });
 
 test("Discord status converges after a connection change from another surface", async () => {
@@ -923,9 +831,7 @@ test("Discord status converges after a connection change from another surface", 
     guildName: "Updated team",
   };
   context.mocks.ably.trigger("discord:changed");
-  await expect(
-    screen.findByText("Connected (Updated team)"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   expect(
     within(getIntegrationCard("Discord")).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
@@ -933,14 +839,13 @@ test("Discord status converges after a connection change from another surface", 
   current = {
     ...current,
     isConnected: false,
-    isInstalled: false,
     guildId: null,
     guildName: null,
     discordUserId: null,
   };
   context.mocks.ably.trigger("discord:changed");
   await expect(
-    screen.findByText(/Install Okou to your Discord server/u),
+    screen.findByText(/Connect your Discord account/u),
   ).resolves.toBeInTheDocument();
   expect(
     queryAction(
@@ -996,7 +901,7 @@ test.each([false, true])(
     const card = await screen.findByRole("region", { name: "Discord" });
     expect(within(card).getByText(description)).toBeInTheDocument();
     const connection = isConnected
-      ? within(card).getByText("Connected (Design team)")
+      ? within(card).getByText("Connected")
       : getAction("button", "Connect", card);
     expect(connection).toBeInTheDocument();
     expect(connection).not.toBeDisabled();
@@ -1008,7 +913,7 @@ test.each([false, true])(
 
     refreshReady.resolve();
     await expect(
-      within(card).findByText("Connected (Updated team)"),
+      within(card).findByText("Connected"),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -1054,9 +959,7 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
 
   statusReady.resolve();
   await page.ready;
-  await expect(
-    screen.findByText("Connected (Design team)"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   expect(skeleton).toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
   expect(
@@ -1077,9 +980,7 @@ test("A status error hides stale controls and recovers when returning to Works",
     return respond(200, status());
   });
   await setupDiscordPage();
-  await expect(
-    screen.findByText("Connected (Design team)"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   denied = true;
   context.mocks.ably.trigger("discord:changed");
@@ -1112,14 +1013,14 @@ test("A status error hides stale controls and recovers when returning to Works",
   click(getAction("link", "Where Okou works"));
   const recoveredCard = await screen.findByRole("region", { name: "Discord" });
   await expect(
-    within(recoveredCard).findByText("Connected (Design team)"),
+    within(recoveredCard).findByText("Connected"),
   ).resolves.toBeInTheDocument();
   expect(
     within(recoveredCard).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
 });
 
-test("Direct messages require an explicit server choice and a failed save keeps the prior choice", async () => {
+test("Direct messages require an explicit workspace choice and a failed save keeps the prior choice", async () => {
   const first = "e0000000-0000-4000-a000-000000000001";
   const second = "e0000000-0000-4000-a000-000000000002";
   let current = status({
@@ -1128,11 +1029,13 @@ test("Direct messages require an explicit server choice and a failed save keeps 
         connectionId: first,
         guildId: "123456789012345678",
         guildName: "Design team",
+        workspaceName: "Design team",
       },
       {
         connectionId: second,
         guildId: "345678901234567890",
-        guildName: "Operations",
+        guildName: "Operations server",
+        workspaceName: "Operations",
       },
     ],
   });
@@ -1154,16 +1057,16 @@ test("Direct messages require an explicit server choice and a failed save keeps 
   );
   await setupDiscordPage();
   const select = await screen.findByRole("combobox", {
-    name: "Default server for direct messages",
+    name: "Default workspace for Discord",
   });
-  expect(select).toHaveTextContent("Choose a server");
+  expect(select).toHaveTextContent("Choose a workspace");
   click(select);
   click(await screen.findByRole("option", { name: "Operations" }));
 
   await expect(
     screen.findByText("Discord choice denied"),
   ).resolves.toBeInTheDocument();
-  expect(select).toHaveTextContent("Choose a server");
+  expect(select).toHaveTextContent("Choose a workspace");
   denied = false;
   await waitFor(() => {
     expect(select).toBeEnabled();
@@ -1173,7 +1076,7 @@ test("Direct messages require an explicit server choice and a failed save keeps 
   await waitFor(() => {
     expect(
       screen.getByRole("combobox", {
-        name: "Default server for direct messages",
+        name: "Default workspace for Discord",
       }),
     ).toHaveTextContent("Operations");
   });
@@ -1183,7 +1086,7 @@ test("Direct messages require an explicit server choice and a failed save keeps 
   await waitFor(() => {
     expect(
       screen.getByRole("combobox", {
-        name: "Default server for direct messages",
+        name: "Default workspace for Discord",
       }),
     ).toHaveTextContent("Design team");
   });
@@ -1193,7 +1096,7 @@ test.each([
   {
     name: "successful refresh",
     refreshError: false,
-    refreshMessage: "Connected (Updated team)",
+    refreshMessage: "Connected",
   },
   {
     name: "failed refresh and recovery",
@@ -1216,11 +1119,13 @@ test.each([
           connectionId: first,
           guildId: "123456789012345678",
           guildName: "Design team",
+          workspaceName: "Design team",
         },
         {
           connectionId: second,
           guildId: "345678901234567890",
-          guildName: "Operations",
+          guildName: "Operations server",
+          workspaceName: "Operations",
         },
       ],
     });
@@ -1253,7 +1158,7 @@ test.each([
     );
     await setupDiscordPage();
     const initialSelect = await screen.findByRole("combobox", {
-      name: "Default server for direct messages",
+      name: "Default workspace for Discord",
     });
     click(initialSelect);
     click(await screen.findByRole("option", { name: "Operations" }));
@@ -1264,10 +1169,10 @@ test.each([
     denyRefresh = refreshError;
     context.mocks.ably.trigger("discord:changed");
     await refreshStarted.promise;
-    expect(screen.getByText("Connected (Design team)")).toBeInTheDocument();
+    expect(screen.getByText("Connected")).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", {
-        name: "Default server for direct messages",
+        name: "Default workspace for Discord",
       }),
     ).toBeDisabled();
     refreshReady.resolve();
@@ -1278,11 +1183,9 @@ test.each([
       denyRefresh = false;
       context.mocks.ably.trigger("discord:changed");
     }
-    await expect(
-      screen.findByText("Connected (Updated team)"),
-    ).resolves.toBeInTheDocument();
+    await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
     const select = screen.getByRole("combobox", {
-      name: "Default server for direct messages",
+      name: "Default workspace for Discord",
     });
     expect(select).toBeDisabled();
     expect(select).toHaveTextContent("Design team");
@@ -1292,7 +1195,7 @@ test.each([
     saveReady.resolve();
     await waitFor(() => {
       const saved = screen.getByRole("combobox", {
-        name: "Default server for direct messages",
+        name: "Default workspace for Discord",
       });
       expect(saved).toBeEnabled();
       expect(saved).toHaveTextContent("Operations");
@@ -1305,7 +1208,7 @@ test.each([
     name: "admin",
     data: { isAdmin: true },
     connected: true,
-    actions: ["Disconnect Discord", "Remove Discord"],
+    actions: ["Disconnect Discord"],
   },
   {
     name: "connected member",
@@ -1332,13 +1235,17 @@ test.each([
 
     await expect(
       screen.findByText(
-        "Discord is temporarily unavailable. Existing connections are kept.",
+        connected
+          ? "Discord is temporarily unavailable. Existing connections are kept."
+          : "Discord is not configured for this organization yet.",
       ),
     ).resolves.toBeInTheDocument();
     const card = getIntegrationCard("Discord");
     expect(
       within(card).queryByText(
-        "Discord is not configured for this organization yet.",
+        connected
+          ? "Discord is not configured for this organization yet."
+          : "Discord is temporarily unavailable. Existing connections are kept.",
       ),
     ).toBeNull();
     expect(within(card).queryByText(/Limited context:/u)).toBeNull();
@@ -1346,7 +1253,7 @@ test.each([
       within(card).queryAllByText(/^Connected(?: \(.+\))?$/u),
     ).toHaveLength(connected ? 1 : 0);
     const menu = queryAction("button", "More Discord options", card);
-    expect(menu === null).toBe(actions.length === 0);
+    expect(menu).toBeNull();
     if (menu) {
       click(menu);
     }
@@ -1358,7 +1265,7 @@ test.each([
   },
 );
 
-test("Saving a DM server stays pending until the refreshed choice arrives", async () => {
+test("Saving a Discord workspace stays pending until the refreshed choice arrives", async () => {
   const first = "e0000000-0000-4000-a000-000000000001";
   const second = "e0000000-0000-4000-a000-000000000002";
   const refreshStarted = context.mocks.deferred<void>();
@@ -1370,11 +1277,13 @@ test("Saving a DM server stays pending until the refreshed choice arrives", asyn
         connectionId: first,
         guildId: "123456789012345678",
         guildName: "Design team",
+        workspaceName: "Design team",
       },
       {
         connectionId: second,
         guildId: "345678901234567890",
-        guildName: "Operations",
+        guildName: "Operations server",
+        workspaceName: "Operations",
       },
     ],
   });
@@ -1401,20 +1310,20 @@ test("Saving a DM server stays pending until the refreshed choice arrives", asyn
   await setupDiscordPage();
   click(
     await screen.findByRole("combobox", {
-      name: "Default server for direct messages",
+      name: "Default workspace for Discord",
     }),
   );
   click(await screen.findByRole("option", { name: "Operations" }));
 
   await refreshStarted.promise;
   const pending = screen.getByRole("combobox", {
-    name: "Default server for direct messages",
+    name: "Default workspace for Discord",
   });
   expect(pending).toBeDisabled();
   refreshReady.resolve();
   await waitFor(() => {
     const saved = screen.getByRole("combobox", {
-      name: "Default server for direct messages",
+      name: "Default workspace for Discord",
     });
     expect(saved).toBeEnabled();
     expect(saved).toHaveTextContent("Operations");
@@ -1443,12 +1352,7 @@ test("Disconnecting stays pending until the refreshed status arrives", async () 
     return respond(200, { ok: true });
   });
   await setupDiscordPage();
-  await expect(
-    screen.findByText("Connected (Design team)"),
-  ).resolves.toBeInTheDocument();
-  click(
-    getAction("button", "More Discord options", getIntegrationCard("Discord")),
-  );
+  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
   click(getAction("button", "Disconnect Discord"));
 
   await refreshStarted.promise;

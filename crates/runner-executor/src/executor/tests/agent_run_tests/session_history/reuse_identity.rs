@@ -138,6 +138,7 @@ async fn assert_finalized_final_identity_helper_failure_falls_back(
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -234,6 +235,7 @@ async fn run_in_sandbox_skips_finalized_final_session_history_restore() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -323,6 +325,7 @@ async fn run_in_sandbox_drops_finalized_identity_when_agent_is_cancelled() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -403,6 +406,7 @@ async fn run_in_sandbox_drops_finalized_identity_when_agent_exits_nonzero() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -542,6 +546,7 @@ async fn run_in_sandbox_restores_when_finalized_final_identity_helper_reports_mi
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -643,6 +648,7 @@ async fn run_in_sandbox_restores_when_finalized_final_identity_helper_exec_error
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -762,6 +768,7 @@ async fn run_in_sandbox_restores_when_skip_verified_identity_mismatches_request(
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -891,6 +898,7 @@ async fn run_in_sandbox_records_mismatch_fallback_and_restores_prestarted_histor
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
                 home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -1004,6 +1012,7 @@ async fn run_in_sandbox_records_requested_larger_prefix_outcomes_without_changin
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
                 home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -1121,6 +1130,7 @@ async fn run_in_sandbox_records_missing_idle_identity_reuse_fallback() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -1214,6 +1224,7 @@ async fn reused_sandbox_fallback_materializes_prune_eligible_codex_zstd_as_raw()
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,

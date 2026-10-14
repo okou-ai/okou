@@ -1,5 +1,5 @@
 {
-  "id": "625c2d38-7e05-4a69-b65e-80e10137258f",
+  "id": "0df81351-4de5-468a-8e4e-e78a49680991",
   "prevId": "87832660-d247-4bbb-b64b-89bf82168d21",
   "version": "7",
   "dialect": "postgresql",
@@ -12470,6 +12470,16 @@
             "state_hash"
           ]
         },
+        "uq_discord_oauth_account_owner": {
+          "name": "uq_discord_oauth_account_owner",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "user_id",
+            "verified_discord_user_id",
+            "org_id"
+          ]
+        },
         "uq_discord_oauth_grant_owner": {
           "name": "uq_discord_oauth_grant_owner",
           "nullsNotDistinct": false,
@@ -12512,6 +12522,12 @@
         "guild_id": {
           "name": "guild_id",
           "type": "varchar(255)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -12574,15 +12590,21 @@
         }
       },
       "foreignKeys": {
-        "discord_org_connections_guild_id_discord_org_installations_guild_id_fk": {
-          "name": "discord_org_connections_guild_id_discord_org_installations_guild_id_fk",
+        "fk_discord_connection_account_grant": {
+          "name": "fk_discord_connection_account_grant",
           "tableFrom": "discord_org_connections",
-          "tableTo": "discord_org_installations",
+          "tableTo": "discord_oauth_states",
           "columnsFrom": [
-            "guild_id"
+            "oauth_grant_id",
+            "user_id",
+            "discord_user_id",
+            "org_id"
           ],
           "columnsTo": [
-            "guild_id"
+            "id",
+            "user_id",
+            "verified_discord_user_id",
+            "org_id"
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
@@ -12609,6 +12631,22 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "uq_discord_connections_org_sender": {
+          "name": "uq_discord_connections_org_sender",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "discord_user_id"
+          ]
+        },
+        "uq_discord_connections_org_user": {
+          "name": "uq_discord_connections_org_user",
+          "nullsNotDistinct": false,
+          "columns": [
+            "org_id",
+            "user_id"
+          ]
+        },
         "uq_discord_org_connections_guild_sender": {
           "name": "uq_discord_org_connections_guild_sender",
           "nullsNotDistinct": false,
@@ -16308,6 +16346,139 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.home_task_recommendations": {
+      "name": "home_task_recommendations",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entries": {
+          "name": "entries",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "generated_at": {
+          "name": "generated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "input_digest": {
+          "name": "input_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_refresh_at": {
+          "name": "next_refresh_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_requested_at": {
+          "name": "last_requested_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "claim_expires_at": {
+          "name": "claim_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "home_task_recommendations_refresh_idx": {
+          "name": "home_task_recommendations_refresh_idx",
+          "columns": [
+            {
+              "expression": "next_refresh_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_requested_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "home_task_recommendations_agent_id_agents_id_fk": {
+          "name": "home_task_recommendations_agent_id_agents_id_fk",
+          "tableFrom": "home_task_recommendations",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "home_task_recommendations_user_id_org_id_agent_id_pk": {
+          "name": "home_task_recommendations_user_id_org_id_agent_id_pk",
+          "columns": [
+            "user_id",
+            "org_id",
+            "agent_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "home_task_recommendations_entries_bound": {
+          "name": "home_task_recommendations_entries_bound",
+          "value": "jsonb_typeof(\"home_task_recommendations\".\"entries\") = 'array' AND jsonb_array_length(\"home_task_recommendations\".\"entries\") <= 3 AND octet_length(\"home_task_recommendations\".\"entries\"::text) <= 8192"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.hosted_deployments": {

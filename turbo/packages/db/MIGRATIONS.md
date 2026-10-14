@@ -60,6 +60,12 @@ expired transition validator must be deleted.
   serving/rollback APIs have drained; promote surviving invariants to the
   permanent suite before retiring this transition validator.
 
+- `scripts/test-discord-account-connections.ts` protects the account-connection
+  migration: existing IDs, routes, preferences, and consent survive the ownership
+  backfill; every account requires organization ownership; bot removal does not
+  revoke accounts. Keep it until the migration ships. `test-discord-grants-permanent.ts` retains
+  account-consent ownership and scoped revocation checks on the current schema.
+
 ### Retired invitation transition validators
 
 The #32575 cleanup removes the invitation transition validators and frozen

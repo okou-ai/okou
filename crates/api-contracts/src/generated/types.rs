@@ -8,6 +8,23 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
+    /// Actual sandbox startup resource after preparation settles.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    pub enum SandboxStartupPath {
+        /// An exact retained sandbox and home.
+        #[serde(rename = "sandbox")]
+        Sandbox,
+        /// A new sandbox with a cached home image.
+        #[serde(rename = "home")]
+        Home,
+        /// A prepared tenant-free sandbox with a fresh home.
+        #[serde(rename = "blank")]
+        Blank,
+        /// A new sandbox with a fresh home.
+        #[serde(rename = "cold")]
+        Cold,
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.
@@ -1460,6 +1477,16 @@ pub mod runners {
             /// Saved connection configuration generation changed.
             #[serde(rename = "configuration_changed")]
             ConfigurationChanged,
+        }
+
+        /// VNC-only authority eviction, never an authorization grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct InvalidateNotification {
+            /// Affected active Run UUID.
+            pub run_id: String,
+            /// Affected VNC connection UUID, or explicit null for every VNC connection in the Run.
+            pub connection_id: Option<String>,
         }
 
         /// Immutable winning official Runner process.

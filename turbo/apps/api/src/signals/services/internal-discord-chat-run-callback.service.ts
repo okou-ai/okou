@@ -6,7 +6,7 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
 import { db$, type Db } from "../external/db";
@@ -53,19 +53,18 @@ const currentDestinationAccess$ = command(
     const db = get(db$);
     const [connection] = await db
       .select({
-        guildId: discordOrgConnections.guildId,
         discordUserId: discordOrgConnections.discordUserId,
       })
       .from(discordOrgConnections)
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
       .where(
         and(
           eq(discordOrgConnections.id, destination.connectionId),
           eq(discordOrgConnections.userId, destination.userId),
-          eq(discordOrgInstallations.orgId, destination.orgId),
+          eq(discordOauthStates.orgId, destination.orgId),
         ),
       )
       .limit(1);
@@ -105,7 +104,6 @@ const currentDestinationAccess$ = command(
       {
         orgId: destination.orgId,
         userId: destination.userId,
-        guildId: connection.guildId,
         channelId: destination.channelId,
         createThread: destination.routeId !== null,
       },
@@ -227,7 +225,6 @@ export const sendDiscordChatReply$ = command(
           )
           .where(
             and(
-              eq(discordOrgConnections.guildId, binding.guildId),
               eq(
                 discordChatThreadRoutes.destinationChannelId,
                 request.target.channelId,
@@ -298,7 +295,7 @@ export const sendDiscordIngressNotice$ = command(
           .select({
             messageId: discordChatIngress.messageId,
             userId: discordOrgConnections.userId,
-            orgId: discordOrgInstallations.orgId,
+            orgId: discordOauthStates.orgId,
           })
           .from(discordChatIngress)
           .innerJoin(
@@ -306,8 +303,8 @@ export const sendDiscordIngressNotice$ = command(
             eq(discordOrgConnections.id, discordChatIngress.connectionId),
           )
           .innerJoin(
-            discordOrgInstallations,
-            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+            discordOauthStates,
+            eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
           )
           .where(
             and(

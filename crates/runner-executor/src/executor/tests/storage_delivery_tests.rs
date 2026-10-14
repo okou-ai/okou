@@ -1032,6 +1032,7 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
         &context,
         &fixture.config,
         crate::executor::agent_run::RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: runner_types::types::SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

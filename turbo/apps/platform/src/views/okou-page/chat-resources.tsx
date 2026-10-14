@@ -6,7 +6,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Package } from "lucide-react";
+import { Ellipsis, Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -29,6 +29,8 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
+
+const RESOURCE_PREVIEW_LIMIT = 6;
 
 export function ChatResourcesButton({
   thread,
@@ -214,6 +216,8 @@ function ChatResourcesBody({
   const { t } = useTranslation();
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
+  const openArtifacts = useOpenThreadArtifacts(thread, "artifacts");
+  const openLinks = useOpenThreadArtifacts(thread, "links");
   const setOpen = useSet(thread.resources.setOpen$);
   const data = content.state === "hasData" ? content.data : null;
   return (
@@ -246,19 +250,46 @@ function ChatResourcesBody({
                   })}
                 </h3>
                 <ul className="m-0 list-none p-0">
-                  {data.artifacts.map((file) => {
-                    return (
-                      <ResourceOutputRow
-                        key={file.id}
-                        file={file}
-                        threadId={thread.threadId}
-                      />
-                    );
-                  })}
+                  {data.artifacts
+                    .slice(0, RESOURCE_PREVIEW_LIMIT)
+                    .map((file) => {
+                      return (
+                        <ResourceOutputRow
+                          key={file.id}
+                          file={file}
+                          threadId={thread.threadId}
+                        />
+                      );
+                    })}
                 </ul>
+                {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
+                  <Button
+                    variant="quiet"
+                    iconSize="lg"
+                    className="h-7 w-full justify-start rounded-lg px-2"
+                    aria-label={t(($) => {
+                      return $.chat.resources.viewAll;
+                    })}
+                    onClick={() => {
+                      setOpen(false);
+                      openArtifacts();
+                    }}
+                  >
+                    <Ellipsis size={20} />
+                  </Button>
+                )}
               </section>
             )}
-            <ChatResourceLinks thread={thread} />
+            <ChatResourceLinks
+              thread={thread}
+              preview={{
+                limit: RESOURCE_PREVIEW_LIMIT,
+                onViewAll: () => {
+                  setOpen(false);
+                  openLinks();
+                },
+              }}
+            />
             {data.artifacts.length === 0 && data.links.length === 0 && (
               <p className="px-2 py-4 text-sm text-muted-foreground">
                 {t(($) => {

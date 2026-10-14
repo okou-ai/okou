@@ -32,7 +32,7 @@ export async function validatePermanentDiscordFoundation(
     query: string,
     values: readonly unknown[],
     code: string | RegExp,
-    constraint: string,
+    constraint: string | RegExp,
   ) {
     await assert.rejects(client.query(query, [...values]), {
       code,
@@ -67,11 +67,11 @@ export async function validatePermanentDiscordFoundation(
       "uq_discord_org_installations_org",
     );
     await rejectWrite(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
-       VALUES ($1, 'unowned-sender', 'unowned-user', $2)`,
-      [guildA, randomUUID()],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+       VALUES ($1, 'unowned-sender', 'unowned-user', $2, $3)`,
+      [guildA, randomUUID(), orgA],
       "23503",
-      "fk_discord_connection_oauth_grant",
+      /^fk_discord_connection_(?:oauth|account)_grant$/u,
     );
     await client.query(
       `WITH consent AS (
@@ -80,9 +80,9 @@ export async function validatePermanentDiscordFoundation(
          FROM (VALUES ($1::uuid, $4::text, $10::text, $2::text, $3::text),
                       ($5, $7, $10, $2, $6), ($8, $4, $11, $9, $3), ($12, $7, $11, $9, $3))
            AS evidence(id, user_id, org_id, guild_id, sender_id)
-         RETURNING id, user_id, verified_guild_id, verified_discord_user_id
-       ) INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id, oauth_grant_id)
-         SELECT id, verified_guild_id, verified_discord_user_id, user_id, id FROM consent WHERE id <> $12`,
+         RETURNING id, user_id, org_id, verified_guild_id, verified_discord_user_id
+       ) INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+         SELECT id, verified_guild_id, verified_discord_user_id, user_id, id, org_id FROM consent WHERE id <> $12`,
       [
         connections[0],
         guildA,
@@ -99,18 +99,18 @@ export async function validatePermanentDiscordFoundation(
       ],
     );
     await rejectWrite(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
-       VALUES ($1, $2, 'another-user', $3)`,
-      [guildA, senderA, connections[0]],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+       VALUES ($1, $2, 'another-user', $3, $4)`,
+      [guildA, senderA, connections[0], orgA],
       "23505",
-      "uq_discord_org_connections_guild_sender",
+      /^uq_discord_(?:org_connections_guild|connections_org)_sender$/u,
     );
     await rejectWrite(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
-       VALUES ($1, 'another-sender', $2, $3)`,
-      [guildA, userA, connections[0]],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+       VALUES ($1, 'another-sender', $2, $3, $4)`,
+      [guildA, userA, connections[0], orgA],
       "23505",
-      "uq_discord_org_connections_guild_user",
+      /^uq_discord_(?:org_connections_guild|connections_org)_user$/u,
     );
     await rejectWrite(
       `UPDATE discord_org_connections SET user_id = $1 WHERE id = $2`,
@@ -308,11 +308,17 @@ export async function validatePermanentDiscordFoundation(
     assert.equal(await countIds("discord_org_connections", connections), 2);
     assert.equal(await countIds("discord_chat_ingress", ingress), 2);
 
-    // Guild uninstall removes that guild's owned descendants, preserving another guild.
+    // Removing the bot's legacy server record does not revoke account connections.
     await client.query(
       "DELETE FROM discord_org_installations WHERE guild_id = $1",
       [guildA],
     );
+    assert.equal(await countIds("discord_org_connections", connections), 2);
+    assert.equal(await countIds("discord_chat_thread_routes", routes), 2);
+    // Explicit personal consent revocation still removes only its owned descendants.
+    await client.query("DELETE FROM discord_oauth_states WHERE id = $1", [
+      connections[1],
+    ]);
     assert.equal(await countIds("discord_org_connections", connections), 1);
     assert.equal(await countIds("discord_chat_thread_routes", routes), 1);
     assert.equal(await countIds("discord_chat_ingress", ingress), 1);
@@ -335,18 +341,18 @@ export async function validatePermanentDiscordFoundation(
     assert.equal(await countIds("discord_org_connections", connections), 1);
     // Ownership remains reserved by the surviving other-guild connection.
     await rejectWrite(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
-      [guildB, senderA, userB, replacementGrant],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id) VALUES ($1, $2, $3, $4, $5)`,
+      [guildB, senderA, userB, replacementGrant, orgB],
       "23505",
-      "uq_discord_org_connections_guild_sender",
+      /^uq_discord_(?:org_connections_guild|connections_org)_sender$/u,
     );
     await client.query("DELETE FROM discord_org_connections WHERE id = $1", [
       connections[2],
     ]);
     // Deleting the last actual connection releases authority in that same write.
     await client.query(
-      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
-      [guildB, senderA, userB, replacementGrant],
+      `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id) VALUES ($1, $2, $3, $4, $5)`,
+      [guildB, senderA, userB, replacementGrant, orgB],
     );
     assert.deepEqual(
       (

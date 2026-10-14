@@ -28,6 +28,11 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["runners"],
+    rustTypeName: "SandboxStartupPath",
+    direction: "request",
+  },
+  {
     rustModulePath: ["sandbox_channel"],
     rustTypeName: "Message",
     direction: "request",
@@ -70,6 +75,11 @@ const expectedBindings = [
   {
     rustModulePath: ["runners", "wss"],
     rustTypeName: "ConsumeResponse",
+    direction: "response",
+  },
+  {
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "InvalidateNotification",
     direction: "response",
   },
   ...["Resolve", "Check"].flatMap((name) => {

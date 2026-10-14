@@ -95,15 +95,14 @@ function createDiscordBindingAccess(
       };
     }
     const binding = await get(binding$);
-    if (
-      !binding ||
-      (identity.guildId !== undefined && binding.guildId !== identity.guildId)
-    ) {
+    if (!binding) {
       return { kind: "denied", response: discordUnavailable() };
     }
     return {
       kind: "allowed",
-      binding,
+      binding: identity.guildId
+        ? { ...binding, guildId: identity.guildId }
+        : binding,
       botToken: config.botToken,
       applicationId: config.applicationId,
     };
@@ -158,6 +157,7 @@ export function discordConversationAccess(
     }
     const access = await resolveDiscordProviderAccess({
       ...current.binding,
+      guildId: input.guildId,
       botToken: current.botToken,
       channelId: input.channelId,
       mode: input.mode,
@@ -168,6 +168,10 @@ export function discordConversationAccess(
     if (input.mode === "write" || access.channel.type === 1) {
       return {
         ...current,
+        binding: {
+          ...current.binding,
+          guildId: access.channel.guild_id ?? current.binding.guildId,
+        },
         channel: access.channel,
         messageContentEnabled: false,
       };
@@ -177,6 +181,10 @@ export function discordConversationAccess(
       ? capability
       : {
           ...current,
+          binding: {
+            ...current.binding,
+            guildId: access.channel.guild_id ?? current.binding.guildId,
+          },
           channel: access.channel,
           messageContentEnabled: capability.enabled,
         };
@@ -205,6 +213,7 @@ export const requireDiscordConversationAccess$ = command(
     const access = await resolveDiscordProviderAccess(
       {
         ...current.binding,
+        guildId: args.guildId,
         botToken: current.botToken,
         channelId: args.channelId,
         mode: args.mode,
@@ -219,6 +228,10 @@ export const requireDiscordConversationAccess$ = command(
     if (args.mode === "write" || access.channel.type === 1) {
       return {
         ...current,
+        binding: {
+          ...current.binding,
+          guildId: access.channel.guild_id ?? current.binding.guildId,
+        },
         channel: access.channel,
         messageContentEnabled: false,
       };
@@ -232,6 +245,10 @@ export const requireDiscordConversationAccess$ = command(
     }
     return {
       ...current,
+      binding: {
+        ...current.binding,
+        guildId: access.channel.guild_id ?? current.binding.guildId,
+      },
       channel: access.channel,
       messageContentEnabled: application.data.messageContentEnabled,
     };

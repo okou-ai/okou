@@ -19,6 +19,7 @@ import {
   sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
   homeReuseResultSchema,
+  sandboxStartupPathSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -864,10 +865,8 @@ const sandboxOperationDownloadSourceSchema = z
   .optional();
 
 export const runnerStartupPathSchema = z.enum([
-  "sandbox",
+  ...sandboxStartupPathSchema.options,
   "workspace",
-  "home",
-  "cold",
 ]);
 
 export type RunnerStartupPath = z.infer<typeof runnerStartupPathSchema>;

@@ -35,11 +35,9 @@ import {
 import { getDiscordAppConfig } from "./discord-config";
 import {
   discordDmBinding,
-  discordGuildUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 import { sendDiscordAdmissionNotice$ } from "./discord-admission-notice.service";
-import { uninstallDiscordGuild$ } from "./discord-gateway-lifecycle.service";
 
 const L = logger("DiscordGateway");
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -136,29 +134,18 @@ const handleDiscordMessage$ = command(
     if (message.guild_id) {
       // Ordinary guild chatter must not reach the identity provider: a
       // failure there would stall the relay's ordered delivery for everyone.
-      // Discord's bot user ID is its application ID, including before an
-      // Okou workspace installation has been completed.
+      // Discord's bot user ID is its application ID, including before the
+      // sender connects their Okou account.
       if (!hasDiscordBotMention(message, envelope.applicationId)) {
         return ignored("no-explicit-mention");
       }
     }
-    let selection: DiscordVerifiedBinding | null;
-    let noticeKind: "not-connected" | "selection-required" = "not-connected";
-    if (message.guild_id) {
-      selection = await get(
-        discordGuildUserBinding({
-          guildId: message.guild_id,
-          discordUserId: message.author.id,
-        }),
-      );
-    } else {
-      const result = await get(discordDmBinding(message.author.id));
-      signal.throwIfAborted();
-      selection = result.kind === "connected" ? result.binding : null;
-      if (result.kind !== "connected") {
-        noticeKind = result.kind;
-      }
-    }
+    const result = await get(discordDmBinding(message.author.id));
+    signal.throwIfAborted();
+    const selection: DiscordVerifiedBinding | null =
+      result.kind === "connected" ? result.binding : null;
+    const noticeKind =
+      result.kind === "connected" ? "not-connected" : result.kind;
     signal.throwIfAborted();
     if (!selection) {
       const noticeSignal = AbortSignal.timeout(30_000);
@@ -267,17 +254,9 @@ export const handleDiscordGateway$ = command(
       if (guild.data.unavailable) {
         return ignored("guild-unavailable");
       }
-      const outcome = await set(
-        uninstallDiscordGuild$,
-        {
-          applicationId: config.applicationId,
-          guildId: guild.data.id,
-          eventId: envelope.eventId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return Response.json({ ok: true, outcome });
+      // Account consent survives a server removal. Provider access is checked
+      // against the actual destination before every read, run and delivery.
+      return ignored("guild-removed");
     }
 
     return await set(

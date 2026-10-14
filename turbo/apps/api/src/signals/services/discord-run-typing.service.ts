@@ -235,7 +235,11 @@ const currentTypingAccess$ = command(
     }
     const current = await set(
       requireDiscordBinding$,
-      { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: args.target.guildId ?? undefined,
+      },
       signal,
     );
     signal.throwIfAborted();

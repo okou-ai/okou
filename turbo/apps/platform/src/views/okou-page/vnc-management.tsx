@@ -121,7 +121,7 @@ function VncProfileLabel({ profile }: { readonly profile: VncProfile }) {
   return null;
 }
 
-function VncAuthenticationLabel({
+export function VncAuthenticationLabel({
   method,
 }: {
   readonly method: VncAuthMethod;
@@ -246,7 +246,7 @@ function VncRebindWarning({
   );
 }
 
-function VncHostProfileDetails({
+export function VncHostProfileDetails({
   connection,
 }: {
   readonly connection: VncConnectionResponse;

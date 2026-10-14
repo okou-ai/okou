@@ -26,6 +26,7 @@ import {
 } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactRun,
+  artifactSummary,
   buttonNamed,
   mockArtifactConversation,
   NAVIGATION_ARTIFACT_THREAD_ID,
@@ -150,6 +151,129 @@ function resourceState() {
     visible: resourcePanel() !== null,
   };
 }
+
+async function setupOverflowResources(count: number) {
+  installResourceGeometry(480);
+  context.mocks.browser.matchMedia(true);
+  const catalog = Array.from({ length: count }, (_, index) => {
+    return artifactSummary(
+      `e0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+      "file",
+      `report-${index + 1}.pdf`,
+    );
+  });
+  mockArtifactConversation(context, {
+    catalog,
+    artifactRuns: () => {
+      return catalog.map((artifact, index) => {
+        return artifactRun({
+          artifactId: artifact.id,
+          fileId: `b0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+          filename: artifact.title,
+          contentType: "application/pdf",
+          url: `https://files.example.test/report-${index + 1}.pdf`,
+        });
+      });
+    },
+    chatEvents: [
+      {
+        id: "resources-overflow",
+        role: "assistant",
+        content: catalog
+          .map((_, index) => {
+            return `[Reference ${index + 1}](https://example.test/reference-${index + 1})`;
+          })
+          .join(" "),
+        runId: "resources-run",
+        createdAt: "2026-09-01T10:00:01Z",
+      },
+    ],
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatResourcePanel]: true },
+  });
+  const panel = await screen.findByRole("region", { name: "Resources" });
+  await within(panel).findByText("Reference 1");
+  return panel;
+}
+
+test("Show all six resources without an overflow control at the limit", async () => {
+  const panel = await setupOverflowResources(6);
+  for (const name of ["Artifacts", "Links"]) {
+    const section = within(panel).getByRole("region", { name });
+    expect(within(section).getAllByRole("listitem")).toHaveLength(6);
+    expect(
+      queryAllByRoleFast("button", section).find((button) => {
+        return button.getAttribute("aria-label") === "View all";
+      }),
+    ).toBeUndefined();
+  }
+  expect(buttonNamed("View all", panel)).toBeInTheDocument();
+});
+
+test.each(["Artifacts", "Links"] as const)(
+  "Keep both previews bounded and open the complete %s list from its ellipsis",
+  async (name) => {
+    const panel = await setupOverflowResources(7);
+    expect(
+      within(panel)
+        .getAllByRole("heading")
+        .map((heading) => {
+          return heading.textContent;
+        }),
+    ).toStrictEqual(["Artifacts", "Links"]);
+    for (const sectionName of ["Artifacts", "Links"]) {
+      const section = within(panel).getByRole("region", { name: sectionName });
+      expect(within(section).getAllByRole("listitem")).toHaveLength(6);
+      expect(buttonNamed("View all", section)).toBeInTheDocument();
+    }
+    expect(within(panel).queryByText("report-7.pdf")).not.toBeInTheDocument();
+    expect(within(panel).queryByText("Reference 7")).not.toBeInTheDocument();
+
+    const section = within(panel).getByRole("region", { name });
+    const more = buttonNamed("View all", section);
+    more.focus();
+    await userEvent.keyboard("{Enter}");
+
+    const all = await screen.findByRole("complementary", { name });
+    await within(all).findByText(
+      name === "Artifacts" ? "report-7.pdf" : "Reference 7",
+    );
+    expect(
+      within(all).queryByText(
+        name === "Artifacts" ? "Reference 1" : "report-1.pdf",
+      ),
+    ).not.toBeInTheDocument();
+    expect(buttonNamed(`Close ${name.toLowerCase()}`, all)).toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("link", all).map((link) => {
+        return {
+          href: link.getAttribute("href"),
+          target: link.getAttribute("target"),
+        };
+      }),
+    ).toStrictEqual(
+      name === "Links"
+        ? Array.from({ length: 7 }, (_, index) => {
+            return {
+              href: `https://example.test/reference-${index + 1}`,
+              target: "_blank",
+            };
+          })
+        : [],
+    );
+  },
+);
+
+test("Keep the footer View all showing complete artifacts and links", async () => {
+  const panel = await setupOverflowResources(7);
+  click(within(panel).getByText("View all"));
+  const all = await screen.findByRole("complementary", { name: "Resources" });
+  await within(all).findByText("report-7.pdf");
+  expect(within(all).getByText("Reference 7")).toBeInTheDocument();
+});
 
 test("Open in the actual right gutter and preserve links while removing duplicates and output URLs", async () => {
   await setupResources();

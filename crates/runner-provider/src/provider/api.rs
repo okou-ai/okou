@@ -1037,33 +1037,16 @@ impl JobProvider for ApiProvider {
                     let will_retry = retryable && attempt < MAX_ATTEMPTS;
 
                     if will_retry {
-                        if matches!(
-                            &e,
-                            ProviderError::ApiTransport(error)
-                                if error.failure_kind == ApiFailureKind::Timeout
-                        ) {
-                            info!(
-                                run_id = %run_id,
-                                error = %e,
-                                attempt,
-                                max_attempts = MAX_ATTEMPTS,
-                                will_retry,
-                                status,
-                                failure_kind,
-                                "completion report failed, retrying"
-                            );
-                        } else {
-                            warn!(
-                                run_id = %run_id,
-                                error = %e,
-                                attempt,
-                                max_attempts = MAX_ATTEMPTS,
-                                will_retry,
-                                status,
-                                failure_kind,
-                                "completion report failed, retrying"
-                            );
-                        }
+                        info!(
+                            run_id = %run_id,
+                            error = %e,
+                            attempt,
+                            max_attempts = MAX_ATTEMPTS,
+                            will_retry,
+                            status,
+                            failure_kind,
+                            "completion report failed, retrying"
+                        );
                         tokio::time::sleep(RETRY_DELAY).await;
                         continue;
                     }
@@ -6964,6 +6947,27 @@ mod tests {
 
                 completion.await;
                 server.assert_finished().await;
+
+                let events = captured.entries();
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| {
+                            event.level == Level::INFO
+                                && event.fields.get("message").is_some_and(|message| {
+                                    message == "completion report failed, retrying"
+                                })
+                        })
+                        .count(),
+                    success_attempt - 1,
+                    "{events:#?}"
+                );
+                assert!(
+                    events
+                        .iter()
+                        .all(|event| event.level != Level::WARN && event.level != Level::ERROR),
+                    "successful completion retries should not emit warnings or errors: {events:#?}"
+                );
             }
         }
     }
@@ -7019,6 +7023,27 @@ mod tests {
 
             completion.await;
             server.assert_finished().await;
+
+            let events = captured.entries();
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| {
+                        event.level == Level::INFO
+                            && event.fields.get("message").is_some_and(|message| {
+                                message == "completion report failed, retrying"
+                            })
+                    })
+                    .count(),
+                2,
+                "reset_connection={reset_connection}; events={events:#?}"
+            );
+            assert!(
+                events
+                    .iter()
+                    .all(|event| event.level != Level::WARN && event.level != Level::ERROR),
+                "successful completion retries should not emit warnings or errors: {events:#?}"
+            );
         }
     }
 
@@ -7224,13 +7249,24 @@ mod tests {
             3,
             "three failed requests should produce three provider events: {events:#?}"
         );
-        let retry_event = captured_event(&events, "completion report failed, retrying");
-        assert_eq!(retry_event.level, Level::WARN);
-        assert_eq!(event_field(retry_event, "attempt"), "1");
-        assert_eq!(event_field(retry_event, "max_attempts"), "3");
-        assert_eq!(event_field(retry_event, "will_retry"), "true");
-        assert_eq!(event_field(retry_event, "status"), "500");
-        assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
+        let retry_events: Vec<_> = events
+            .iter()
+            .filter(|event| {
+                event
+                    .fields
+                    .get("message")
+                    .is_some_and(|message| message == "completion report failed, retrying")
+            })
+            .collect();
+        assert_eq!(retry_events.len(), 2);
+        for (index, retry_event) in retry_events.iter().enumerate() {
+            assert_eq!(retry_event.level, Level::INFO);
+            assert_eq!(event_field(retry_event, "attempt"), (index + 1).to_string());
+            assert_eq!(event_field(retry_event, "max_attempts"), "3");
+            assert_eq!(event_field(retry_event, "will_retry"), "true");
+            assert_eq!(event_field(retry_event, "status"), "500");
+            assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
+        }
 
         let final_event = captured_event(&events, "failed to report completion after retry");
         assert_eq!(final_event.level, Level::ERROR);

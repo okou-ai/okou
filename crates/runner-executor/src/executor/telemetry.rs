@@ -20,7 +20,7 @@ use crate::telemetry::{
     RunnerResourceBudgetOccupancy, RunnerStartupPath,
 };
 use runner_provider::ApiClaimTiming;
-use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
 static INVALID_API_START_TIME_WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -705,17 +705,10 @@ pub(super) fn record_api_startup_boundaries(
     context: &ExecutionContext,
     telemetry: &mut JobTelemetry,
     sandbox_reuse_result: SandboxReuseResult,
-    home_reuse_result: HomeReuseResult,
+    runner_startup_path: RunnerStartupPath,
     shell_started_at: Instant,
     agent_ready_at: Instant,
 ) {
-    let runner_startup_path = if sandbox_reuse_result == SandboxReuseResult::Reused {
-        RunnerStartupPath::Sandbox
-    } else if home_reuse_result == HomeReuseResult::Reused {
-        RunnerStartupPath::Home
-    } else {
-        RunnerStartupPath::Cold
-    };
     let observed_at = Instant::now();
     let observed_ms = chrono::Utc::now().timestamp_millis().max(0) as u64;
     if let Some(duration) = api_latency_duration_at(

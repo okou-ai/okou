@@ -322,6 +322,17 @@ function KerberosKdcFields({
           })}
         </SelectContent>
       </Select>
+      {editor.kdcSshConnectionId &&
+        hosts.state === "hasData" &&
+        !hosts.data?.some((host) => {
+          return host.id === editor.kdcSshConnectionId;
+        }) && (
+          <p role="alert" className="text-sm text-muted-foreground">
+            {t(($) => {
+              return $.vnc.transport.selectionUnavailable;
+            })}
+          </p>
+        )}
       <Input
         name="kdcSshConnectionId"
         type="hidden"

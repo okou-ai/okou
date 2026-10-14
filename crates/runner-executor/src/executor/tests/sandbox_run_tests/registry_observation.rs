@@ -78,9 +78,23 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
                     &context,
                     &config,
                     RunStart {
+                        sandbox_startup_path: match kind {
+                            IdleSandboxKind::Exact => {
+                                runner_types::types::SandboxStartupPath::Sandbox
+                            }
+                            IdleSandboxKind::Blank => {
+                                runner_types::types::SandboxStartupPath::Blank
+                            }
+                        },
                         restore_guest_state: true,
-                        reuse_result: SandboxReuseResult::Reused,
-                        home_reuse_result: HomeReuseResult::SandboxReused,
+                        reuse_result: match kind {
+                            IdleSandboxKind::Exact => SandboxReuseResult::Reused,
+                            IdleSandboxKind::Blank => SandboxReuseResult::PoolMiss,
+                        },
+                        home_reuse_result: match kind {
+                            IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
+                            IdleSandboxKind::Blank => HomeReuseResult::NotConfigured,
+                        },
                         prev_storage: None,
                     },
                     &mut telemetry,

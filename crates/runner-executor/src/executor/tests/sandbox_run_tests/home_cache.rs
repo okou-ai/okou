@@ -176,6 +176,15 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
 
         assert_eq!(outcome.exit_code(), 0);
         assert!(outcome.home_image.is_none());
+        assert!(
+            telemetry
+                .pending_ops_with_runner_startup_snapshot()
+                .iter()
+                .any(|op| {
+                    op.action_type == "runner_agent_start_to_ready"
+                        && op.runner_startup_path == Some(RunnerStartupPath::Cold)
+                })
+        );
         let configs = overrides.create_configs();
         assert_eq!(configs.len(), 2);
         assert_eq!(
@@ -783,6 +792,15 @@ async fn execute_inner_immediate_lock_policy_still_consumes_available_cache() {
 
     assert_eq!(outcome.exit_code(), 0);
     assert_eq!(outcome.home_reuse_result, Some(HomeReuseResult::Reused),);
+    assert!(
+        telemetry
+            .pending_ops_with_runner_startup_snapshot()
+            .iter()
+            .any(|op| {
+                op.action_type == "runner_agent_start_to_ready"
+                    && op.runner_startup_path == Some(RunnerStartupPath::Home)
+            })
+    );
     let configs = overrides.create_configs();
     assert_eq!(configs.len(), 1);
     assert_eq!(
@@ -848,6 +866,15 @@ async fn execute_inner_records_home_cache_lock_busy_prepare_telemetry() {
     assert_eq!(outcome.exit_code(), 0);
     let configs = overrides.create_configs();
     assert_eq!(outcome.home_reuse_result, Some(HomeReuseResult::LockBusy),);
+    assert!(
+        telemetry
+            .pending_ops_with_runner_startup_snapshot()
+            .iter()
+            .any(|op| {
+                op.action_type == "runner_agent_start_to_ready"
+                    && op.runner_startup_path == Some(RunnerStartupPath::Cold)
+            })
+    );
     assert_eq!(configs.len(), 1);
     assert_eq!(
         configs[0].home_drive,

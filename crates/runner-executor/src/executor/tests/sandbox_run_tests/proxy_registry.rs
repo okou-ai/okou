@@ -292,6 +292,7 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: true,
                 reuse_result: runner_types::types::SandboxReuseResult::Reused,
                 home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -393,6 +394,7 @@ async fn execute_inner_proxy_unregister_failure_marks_successful_run_failed() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

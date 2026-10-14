@@ -105,7 +105,6 @@ test("removes a departed member's binding only in the affected organization", as
     [200],
   );
   expect(peerStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     discordUserId: peerBinding.discordUserId,
   });
@@ -114,7 +113,6 @@ test("removes a departed member's binding only in the affected organization", as
     [200],
   );
   expect(elsewhereStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     dmSelectionConnectionId: null,
   });
@@ -123,7 +121,7 @@ test("removes a departed member's binding only in the affected organization", as
   ]);
 });
 
-test("preserves a shared OAuth installation and peers after installer account erasure while releasing the erased sender", async () => {
+test("preserves peers after account erasure while releasing the erased sender", async () => {
   configureDiscordApp();
   const installer = actor();
   const peer = actor({ orgId: installer.orgId });
@@ -148,7 +146,7 @@ test("preserves a shared OAuth installation and peers after installer account er
     await accept(
       discordClient(peer).disconnect({
         headers: authHeaders(),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200, 404],
     );
@@ -169,7 +167,6 @@ test("preserves a shared OAuth installation and peers after installer account er
     [200],
   );
   expect(peerStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     guildId: binding.guildId,
     discordUserId: peerBinding.discordUserId,
@@ -189,7 +186,6 @@ test("preserves a shared OAuth installation and peers after installer account er
     [200],
   );
   expect(reclaimedStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     discordUserId: binding.discordUserId,
   });
@@ -221,7 +217,7 @@ test("releases an erased organization's guild and sender through the provider li
     await accept(
       discordClient(successor).disconnect({
         headers: authHeaders(),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200, 404],
     );
@@ -240,7 +236,6 @@ test("releases an erased organization's guild and sender through the provider li
     [200],
   );
   expect(otherStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     guildId: otherBinding.guildId,
     discordUserId: otherBinding.discordUserId,
@@ -260,7 +255,6 @@ test("releases an erased organization's guild and sender through the provider li
     [200],
   );
   expect(replacementStatus.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     guildId: binding.guildId,
     discordUserId: binding.discordUserId,
