@@ -4973,26 +4973,22 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
-        "morningBriefEmail": {
-          "checkStatus": "Vérifier l’état de livraison",
-          "description": "Envoyez un exemple fixe à l’adresse de votre compte avec le modèle Morning Brief. Cela n’exécute aucun Agent et ne modifie pas votre planning.",
-          "reasons": {
-            "delivery-failed": "La livraison a échoué. Une tentative précédente a peut-être été acceptée par le fournisseur.",
-            "expired": "Le délai de livraison a expiré. Une tentative précédente a peut-être été acceptée par le fournisseur.",
-            "no-email": "Ignoré : votre compte n’a pas d’adresse e-mail.",
-            "suppressed": "Ignoré : la livraison à l’adresse de votre compte est bloquée.",
-            "unsubscribed": "Ignoré : votre compte est désabonné des mises à jour par e-mail."
-          },
-          "requestFailed": "La demande n’a pas abouti. Une nouvelle tentative réutilise la même demande pour éviter un doublon.",
-          "retry": "Réessayer l’e-mail de test",
-          "send": "Envoyer l’e-mail de test",
-          "sendAnother": "Envoyer un autre e-mail de test",
-          "sending": "Envoi en cours…",
+        "morningBrief": {
+          "checkStatus": "Vérifier le statut",
+          "description": "Exécute une fois le workflow activé de ton compte. Il peut actualiser les suggestions et envoyer un véritable e-mail. Ton horaire quotidien reste inchangé.",
+          "openChat": "Ouvrir la conversation",
+          "requestFailed": "La demande n’a pas abouti. Réessayer utilise la même demande pour éviter une exécution en double.",
+          "retry": "Réessayer",
+          "run": "Lancer le brief",
+          "runAgain": "Lancer un autre brief",
+          "starting": "Démarrage…",
           "status": {
-            "queued": "En attente de livraison. Vérifiez l’état avant d’envoyer un autre exemple.",
-            "sent": "Accepté par le fournisseur d’e-mail. Vérifiez votre boîte de réception et les indésirables ; l’arrivée dans la boîte n’est pas confirmée."
+            "completed": "Le brief est terminé.",
+            "failed": "Le brief a échoué. Ouvre la conversation pour voir les détails.",
+            "queued": "En attente. Ouvre la conversation pour suivre le brief.",
+            "running": "Le brief est en cours."
           },
-          "title": "E-mail de test Morning Brief"
+          "title": "Brief du matin"
         },
         "openrouterPreset": {
           "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",

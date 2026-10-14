@@ -14,7 +14,7 @@ import { BuildInfoBlock } from "../build-info-block.tsx";
 import { OpenrouterPresetSettings } from "../openrouter-preset-settings.tsx";
 import { IndexedDbDiagnosticsBlock } from "../indexeddb-diagnostics-block.tsx";
 import { WelcomeThreadCard } from "../welcome-thread-card.tsx";
-import { MorningBriefTestEmailCard } from "../morning-brief-test-email-card.tsx";
+import { MorningBriefRunCard } from "../morning-brief-run-card.tsx";
 
 const CAPTURE_RUN_COUNT = 3;
 
@@ -82,7 +82,7 @@ export function DebugSection() {
       <BuildInfoBlock />
       <OpenrouterPresetSettings />
       <WelcomeThreadCard />
-      <MorningBriefTestEmailCard />
+      <MorningBriefRunCard />
       <IndexedDbDiagnosticsBlock />
       <CaptureNetworkBodiesBlock />
     </div>
