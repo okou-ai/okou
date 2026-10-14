@@ -275,32 +275,13 @@ export const runNetworkLogsContract = c.router({
 const runRunnerResponseSchema = z.object({
   sandboxReuseResult: sandboxReuseResultSchema.nullable(),
   homeReuseResult: homeReuseResultSchema.nullable().optional(),
-  sandboxStartupPath: sandboxStartupPathSchema.nullable().optional(),
+  sandboxStartupPath: sandboxStartupPathSchema.nullable(),
   runnerHostname: runnerHostnameSchema.nullable().optional(),
   runnerVersion: runnerVersionSchema.nullable().optional(),
   runnerId: z.uuid().nullable().optional(),
   runnerHeartbeatGeneration: runnerHeartbeatGenerationSchema
     .nullable()
     .optional(),
-});
-
-export const runStartupContract = c.router({
-  getStartup: {
-    method: "GET",
-    path: "/api/runs/:id/startup",
-    headers: authHeadersSchema,
-    pathParams: z.object({ id: z.uuid("Run ID must be a valid UUID") }),
-    responses: {
-      200: z.object({
-        sandboxStartupPath: sandboxStartupPathSchema.nullable(),
-      }),
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary: "Get the observed settled sandbox startup path",
-  },
 });
 
 export const runRunnerContract = c.router({
@@ -325,9 +306,6 @@ export const runRunnerContract = c.router({
 // Inferred types from Zod schemas
 export type RunContextResponse = z.infer<typeof runContextResponseSchema>;
 export type RunRunnerResponse = z.infer<typeof runRunnerResponseSchema>;
-export type RunStartupResponse = z.infer<
-  (typeof runStartupContract.getStartup.responses)[200]
->;
 
 // Type exports
 export type RunsByIdContract = typeof runsByIdContract;
@@ -337,4 +315,3 @@ export type RunAgentEventsContract = typeof runAgentEventsContract;
 export type RunContextContract = typeof runContextContract;
 export type RunNetworkLogsContract = typeof runNetworkLogsContract;
 export type RunRunnerContract = typeof runRunnerContract;
-export type RunStartupContract = typeof runStartupContract;

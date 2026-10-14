@@ -1,9 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import {
   runAgentEventsContract,
   runRunnerContract,
-  runStartupContract,
   type RunRunnerResponse,
 } from "@okouai/api-contracts/contracts/run-routes";
 import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
@@ -25,8 +24,6 @@ interface ActivityFixture {
   readonly status: LogStatus;
   readonly framework?: string | null;
   readonly runner: RunRunnerResponse;
-  readonly startupPath?: SandboxStartupPath | null;
-  readonly startupUnavailable?: boolean;
 }
 
 function logDetail(
@@ -89,21 +86,6 @@ function mockActivities(
     }
     return respond(200, fixture.runner);
   });
-  context.mocks.api(runStartupContract.getStartup, ({ params, respond }) => {
-    const fixture = fixtures[params.id];
-    if (!fixture) {
-      throw new Error("Missing activity fixture for " + params.id);
-    }
-    if (fixture.startupUnavailable) {
-      return respond(403, {
-        error: {
-          code: "FORBIDDEN",
-          message: "Startup diagnostics unavailable",
-        },
-      });
-    }
-    return respond(200, { sandboxStartupPath: fixture.startupPath ?? null });
-  });
 }
 
 function setupRunnerPage(runId: string): Promise<void> {
@@ -149,6 +131,7 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       runner: {
         sandboxReuseResult: "reused",
         homeReuseResult: "sandboxReused",
+        sandboxStartupPath: "sandbox",
         runnerHostname: "prod-1.aws.vm3.ai",
         runnerVersion: "0.168.14",
         runnerId: "b0000000-0000-4000-a000-000000000001",
@@ -161,6 +144,7 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       runner: {
         sandboxReuseResult: "reused",
         homeReuseResult: "sandboxReused",
+        sandboxStartupPath: "sandbox",
         runnerHostname: "prod-2.aws.vm3.ai",
         runnerVersion: "0.168.14",
         runnerId: "b0000000-0000-4000-a000-000000000002",
@@ -172,6 +156,7 @@ test("Runner diagnostics identify the exact environment used for an activity", a
       framework: "pi",
       runner: {
         sandboxReuseResult: "reused",
+        sandboxStartupPath: "sandbox",
         runnerHostname: "prod-3.aws.vm3.ai",
       },
     },
@@ -190,7 +175,6 @@ test("Runner diagnostics identify the exact environment used for an activity", a
   expectRunnerAttribute("Runner ID", "b0000000-0000-4000-a000-000000000001");
   expectRunnerAttribute("Generation", "7");
   expect(screen.getByText("Sandbox reuse")).toBeInTheDocument();
-  expect(screen.getAllByText("Reused")).toHaveLength(2);
 
   navigateToRunner(secondRunId);
 
@@ -212,53 +196,35 @@ test("Runner diagnostics identify the exact environment used for an activity", a
   expect(screen.queryByText("prod-2.aws.vm3.ai")).not.toBeInTheDocument();
 });
 
-test("Runner diagnostics explain how the activity environment started", async () => {
+test("Runner diagnostics display each persisted startup path", async () => {
   const cases = [
     {
       runId: "a0000000-0000-4000-a000-000000000306",
-      sandboxReuseResult: "reused",
-      homeReuseResult: "sandboxReused",
-      startupPath: "sandbox",
+      path: "sandbox",
       label: "Sandbox reuse",
       description: "The sandbox and its workspace were reused.",
     },
     {
       runId: "a0000000-0000-4000-a000-000000000307",
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "reused",
-      startupPath: "home",
+      path: "home",
       label: "Home reuse",
       description: "A fresh sandbox restored a cached home directory.",
     },
     {
       runId: "a0000000-0000-4000-a000-000000000308",
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "cacheMiss",
-      startupPath: "cold",
+      path: "cold",
       label: "Cold start",
       description: "A fresh sandbox and workspace were prepared.",
     },
     {
       runId: "a0000000-0000-4000-a000-000000000309",
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "cacheMiss",
-      startupPath: "blank",
+      path: "blank",
       label: "Blank start",
       description: "A prepared sandbox started with a fresh home directory.",
     },
-    {
-      runId: "a0000000-0000-4000-a000-000000000310",
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "sandboxPrepareFallback",
-      startupPath: "cold",
-      label: "Cold start",
-      description: "A fresh sandbox and workspace were prepared.",
-    },
   ] as const satisfies readonly {
     runId: string;
-    sandboxReuseResult: RunRunnerResponse["sandboxReuseResult"];
-    homeReuseResult: RunRunnerResponse["homeReuseResult"];
-    startupPath: SandboxStartupPath;
+    path: SandboxStartupPath;
     label: string;
     description: string;
   }[];
@@ -269,10 +235,10 @@ test("Runner diagnostics explain how the activity environment started", async ()
           entry.runId,
           {
             status: "completed",
-            startupPath: entry.startupPath,
             runner: {
-              sandboxReuseResult: entry.sandboxReuseResult,
-              homeReuseResult: entry.homeReuseResult,
+              sandboxStartupPath: entry.path,
+              sandboxReuseResult: "poolMiss",
+              homeReuseResult: "cacheMiss",
             },
           } satisfies ActivityFixture,
         ];
@@ -295,49 +261,13 @@ test("Runner diagnostics explain how the activity environment started", async ()
   }
 });
 
-test.each([
-  {
-    runner: { sandboxReuseResult: "reused", homeReuseResult: "sandboxReused" },
-    label: "Sandbox reuse",
-  },
-  {
-    runner: { sandboxReuseResult: "poolMiss", homeReuseResult: "reused" },
-    label: "Home reuse",
-  },
-  {
-    runner: { sandboxReuseResult: "poolMiss", homeReuseResult: "cacheMiss" },
-    label: "Unknown",
-  },
-  {
-    runner: {
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "sandboxPrepareFallback",
-    },
-    label: "Unknown",
-  },
-  {
-    runner: { sandboxReuseResult: null, homeReuseResult: null },
-    label: "Unknown",
-  },
-] as const)(
-  "Missing startup evidence preserves only proven $label attribution",
-  async ({ runner, label }) => {
-    const runId = "a0000000-0000-4000-a000-000000000311";
-    mockActivities({ [runId]: { status: "completed", runner } });
-    await setupRunnerPage(runId);
-    await expect(
-      within(getStartupCard()).findByText(label),
-    ).resolves.toBeInTheDocument();
-  },
-);
-
-test("Runner metadata remains visible when startup diagnostics fail", async () => {
+test("Runner metadata remains visible when the startup path is unreported", async () => {
   const runId = "a0000000-0000-4000-a000-000000000312";
   mockActivities({
     [runId]: {
       status: "completed",
-      startupUnavailable: true,
       runner: {
+        sandboxStartupPath: null,
         sandboxReuseResult: "poolMiss",
         homeReuseResult: "cacheMiss",
         runnerHostname: "available-runner",
@@ -351,13 +281,16 @@ test("Runner metadata remains visible when startup diagnostics fail", async () =
   expect(within(getStartupCard()).getByText("Unknown")).toBeInTheDocument();
 });
 
-test("Settled startup evidence is visible before completion metadata is saved", async () => {
+test("The persisted startup path is visible before completion metadata is saved", async () => {
   const runId = "a0000000-0000-4000-a000-000000000315";
   mockActivities({
     [runId]: {
       status: "running",
-      startupPath: "home",
-      runner: { sandboxReuseResult: null, runnerHostname: "running-runner" },
+      runner: {
+        sandboxStartupPath: "home",
+        sandboxReuseResult: null,
+        runnerHostname: "running-runner",
+      },
     },
   });
   await setupRunnerPage(runId);
@@ -369,51 +302,52 @@ test("Settled startup evidence is visible before completion metadata is saved", 
   ).resolves.toBeInTheDocument();
 });
 
-test("Startup evidence loads independently and does not carry over between activities", async () => {
+test("Runner diagnostics do not carry over while the next activity's request is pending", async () => {
   const firstRunId = "a0000000-0000-4000-a000-000000000313";
   const nextRunId = "a0000000-0000-4000-a000-000000000314";
-  const startupRequested = context.mocks.deferred<void>();
-  const releaseStartup = context.mocks.deferred<void>();
+  const runnerRequested = context.mocks.deferred<void>();
+  const releaseRunner = context.mocks.deferred<void>();
+  const firstRunner = {
+    sandboxStartupPath: "blank",
+    sandboxReuseResult: "poolMiss",
+    homeReuseResult: "cacheMiss",
+    runnerHostname: "blank-runner",
+  } as const satisfies RunRunnerResponse;
+  const nextRunner = {
+    sandboxStartupPath: "cold",
+    sandboxReuseResult: "poolMiss",
+    homeReuseResult: "cacheMiss",
+    runnerHostname: "cold-runner",
+  } as const satisfies RunRunnerResponse;
   mockActivities({
-    [firstRunId]: {
-      status: "completed",
-      startupPath: "blank",
-      runner: {
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
-        runnerHostname: "blank-runner",
-      },
-    },
-    [nextRunId]: {
-      status: "completed",
-      runner: {
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
-        runnerHostname: "cold-runner",
-      },
-    },
+    [firstRunId]: { status: "completed", runner: firstRunner },
+    [nextRunId]: { status: "completed", runner: nextRunner },
   });
   context.mocks.api(
-    runStartupContract.getStartup,
+    runRunnerContract.getRunner,
     async ({ params, respond }) => {
       if (params.id === firstRunId) {
-        return respond(200, { sandboxStartupPath: "blank" });
+        return respond(200, firstRunner);
       }
-      startupRequested.resolve();
-      await releaseStartup.promise;
-      return respond(200, { sandboxStartupPath: "cold" });
+      runnerRequested.resolve();
+      await releaseRunner.promise;
+      return respond(200, nextRunner);
     },
   );
   await setupRunnerPage(firstRunId);
   await expect(
     within(getStartupCard()).findByText("Blank start"),
   ).resolves.toBeInTheDocument();
+
   navigateToRunner(nextRunId);
-  await startupRequested.promise;
+
+  await runnerRequested.promise;
+  await waitFor(() => {
+    expect(screen.queryByText("Blank start")).not.toBeInTheDocument();
+    expect(screen.queryByText("blank-runner")).not.toBeInTheDocument();
+  });
+  releaseRunner.resolve();
   await expect(screen.findByText("cold-runner")).resolves.toBeInTheDocument();
-  expect(within(getStartupCard()).getByText("Unknown")).toBeInTheDocument();
-  expect(screen.queryByText("Blank start")).not.toBeInTheDocument();
-  releaseStartup.resolve();
   await expect(
     within(getStartupCard()).findByText("Cold start"),
   ).resolves.toBeInTheDocument();

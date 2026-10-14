@@ -16,7 +16,6 @@ import {
   organizationTier,
 } from "../services/agent-runs.service";
 import type { RouteEntry } from "../route-entry";
-import { runStartupRoutes } from "./run-startup";
 
 const runReadAuth = {
   requireOrganization: true,
@@ -68,7 +67,6 @@ const getRunQueueInner$ = computed(async (get) => {
 });
 
 export const runsRoutes: readonly RouteEntry[] = [
-  ...runStartupRoutes,
   {
     route: runsQueueContract.getQueue,
     handler: authRoute(runReadAuth, getRunQueueInner$),

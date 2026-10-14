@@ -713,23 +713,6 @@ async function queryAxiomDirect<T = Record<string, unknown>>(
   return mapAxiomMatches<T>(result);
 }
 
-export interface AxiomQueryRequest {
-  readonly apl: string;
-  readonly options?: QueryAxiomOptions;
-}
-
-/** Connect query inputs derived by the owning read graph before evaluation. */
-export function queryAxiomFor(
-  request$: Computed<Promise<AxiomQueryRequest | null>>,
-): Computed<Promise<readonly Record<string, unknown>[]>> {
-  return computed(async (get) => {
-    const request = await get(request$);
-    return request === null
-      ? []
-      : queryAxiomDirect(request.apl, request.options);
-  });
-}
-
 export function queryAxiom<T = Record<string, unknown>>(
   apl: string,
   options?: QueryAxiomOptions,

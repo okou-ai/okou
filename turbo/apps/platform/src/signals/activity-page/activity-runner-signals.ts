@@ -1,12 +1,6 @@
 import { computed } from "ccstate";
-import {
-  runRunnerContract,
-  runStartupContract,
-} from "@okouai/api-contracts/contracts/run-routes";
-import type {
-  SandboxReuseResult,
-  HomeReuseResult,
-} from "@okouai/api-contracts/contracts/runner-primitives";
+import { runRunnerContract } from "@okouai/api-contracts/contracts/run-routes";
+import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import { apiClient$ } from "../api-client.ts";
 import { currentRunId$, activityDetail$ } from "./activity-signals.ts";
 import { accept } from "../../lib/accept.ts";
@@ -16,8 +10,7 @@ interface ActivityRunner {
   runId: string;
   status: LogStatus;
   runner: {
-    sandboxReuseResult: SandboxReuseResult | null;
-    homeReuseResult: HomeReuseResult | null;
+    sandboxStartupPath: SandboxStartupPath | null;
     runnerHostname: string | null;
     runnerVersion: string | null;
     runnerId: string | null;
@@ -41,30 +34,11 @@ export const activityRunner$ = computed(async (get) => {
     runId,
     status: detail.status,
     runner: {
-      sandboxReuseResult: result.body.sandboxReuseResult,
-      homeReuseResult: result.body.homeReuseResult ?? null,
+      sandboxStartupPath: result.body.sandboxStartupPath,
       runnerHostname: result.body.runnerHostname ?? null,
       runnerVersion: result.body.runnerVersion ?? null,
       runnerId: result.body.runnerId ?? null,
       runnerHeartbeatGeneration: result.body.runnerHeartbeatGeneration ?? null,
     },
   } satisfies ActivityRunner;
-});
-
-export const activityRunnerStartup$ = computed(async (get) => {
-  const runId = get(currentRunId$);
-  const detail = await get(activityDetail$);
-  if (!runId || !detail || detail.id !== runId) {
-    return null;
-  }
-  const result = await accept(
-    get(apiClient$)(runStartupContract).getStartup({
-      params: { id: runId },
-    }),
-    [200],
-  );
-  return {
-    runId,
-    sandboxStartupPath: result.body.sandboxStartupPath,
-  };
 });
