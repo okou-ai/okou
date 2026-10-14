@@ -1470,9 +1470,18 @@ async fn cached_reuse_validation_failure_keeps_home_cache_hidden() {
 
 #[tokio::test]
 async fn cached_reuse_invalid_resume_session_keeps_existing_home_cache_hidden() {
+    for is_first_run in [Some(false), None] {
+        assert_invalid_resume_session_publication_attribution(is_first_run).await;
+    }
+}
+
+async fn assert_invalid_resume_session_publication_attribution(is_first_run: Option<bool>) {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded = RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone())
+        .with_first_run(Some(true))
+        .with_telemetry(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let params = JobParams {
@@ -1485,6 +1494,8 @@ async fn cached_reuse_invalid_resume_session_keeps_existing_home_cache_hidden() 
 
     let raw_session_id = "../invalid-resume";
     let mut ctx = minimal_context();
+    ctx.is_first_run = is_first_run;
+    let run_id = ctx.run_id;
     set_reuse_and_session_identity(&mut ctx, raw_session_id, r#"{"type":"init"}"#);
 
     let cancel = tokio_util::sync::CancellationToken::new();
@@ -1520,6 +1531,32 @@ async fn cached_reuse_invalid_resume_session_keeps_existing_home_cache_hidden() 
         checkout.result(),
         HomeCacheCheckoutResult::LockBusy,
         "invalid resume sessions must not release the hidden cache baseline before finalization can promote or invalidate the live home"
+    );
+    assert!(
+        !reuse_outcome
+            .home_image
+            .unwrap()
+            .promote(
+                run_id,
+                HomeCacheTerminalStatus::NonzeroExit,
+                "2026-06-01T00:00:02.000Z".into(),
+                &crate::storage_fingerprints::StorageFingerprints::default(),
+            )
+            .await
+            .unwrap(),
+        "the mock sandbox has no new live image to publish"
+    );
+    let publication: Vec<_> = recorded
+        .events()
+        .into_iter()
+        .filter(|fact| fact.kind == HomeKind::Publication && fact.run_id == Some(run_id))
+        .collect();
+    assert_eq!(publication.len(), 1);
+    assert_eq!(publication[0].outcome, HomeOutcome::Skipped);
+    assert_eq!(publication[0].reason.as_deref(), Some("source_unavailable"));
+    assert_eq!(
+        publication[0].is_first_run, is_first_run,
+        "early validation failure must not attribute this Run to the previous producer"
     );
 }
 
