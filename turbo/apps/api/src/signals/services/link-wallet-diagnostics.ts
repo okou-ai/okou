@@ -25,7 +25,6 @@ export interface LinkRequestDiagnostic {
     currency: "usd";
     test: boolean;
     contextLength: number;
-    expiresAt: number;
   };
 }
 
@@ -229,6 +228,8 @@ const providerParameters: readonly string[] = Object.freeze([
   "token_type",
   "id",
   "status",
+  "created_at",
+  "updated_at",
   "approval_url",
   "approval_link",
   "status_details",
@@ -337,7 +338,10 @@ export function linkFailureDiagnostic(
     readonly body?: unknown;
     readonly providerText?: string;
     readonly responseBodyRead?: string;
-    readonly issues?: readonly z.core.$ZodIssue[];
+    readonly issues?: readonly {
+      readonly path: readonly PropertyKey[];
+      readonly code: string;
+    }[];
     readonly transportReason?: "timeout" | "network" | "cancelled";
     readonly transportError?: unknown;
     readonly scopes?: {

@@ -168,6 +168,8 @@ function spendProvider(input: WalletCreateSpend) {
     return {
       id,
       status,
+      created_at: "2026-10-14T00:00:00Z",
+      updated_at: "2026-10-14T00:00:00Z",
       amount,
       currency: input.currency,
       merchant_name: input.merchantName,
@@ -177,7 +179,14 @@ function spendProvider(input: WalletCreateSpend) {
     };
   };
   server.use(
-    http.post("https://api.link.com/spend_requests", () => {
+    http.post("https://api.link.com/spend_requests", async ({ request }) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      if ("expires_at" in body) {
+        return HttpResponse.json(
+          { error: { message: "expires_at is not supported for this client" } },
+          { status: 400 },
+        );
+      }
       return HttpResponse.json(wire());
     }),
     http.get(`https://api.link.com/spend_requests/${id}`, ({ request }) => {
@@ -829,6 +838,8 @@ test("recovers a lost creation response with the same provider idempotency key a
   const wire = {
     id: providerId,
     status: "pending_approval",
+    created_at: "2026-10-14T00:00:00Z",
+    updated_at: "2026-10-14T00:00:00Z",
     amount: input.amount,
     currency: input.currency,
     merchant_name: input.merchantName,
@@ -874,6 +885,35 @@ test("fails closed for a non-Link action URL instead of exposing a phishing link
     [502],
   );
   expect(denied.status).toBe(502);
+});
+
+test("reports SDK response validation without exposing provider values and keeps the intent recoverable", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  provider.payload({ created_at: { value: "private-provider-fixture" } });
+
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [502],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_INVALID_RESPONSE");
+  expect(rejected.body.error.message).toContain("stage: response_schema");
+  expect(rejected.body.error.message).toContain("created_at:invalid_type");
+  expect(rejected.body.error.message).toMatch(/reference: [\da-f-]{36}/);
+  expect(JSON.stringify(rejected.body)).not.toContain(
+    "private-provider-fixture",
+  );
+
+  provider.payload({});
+  const recovered = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  expect(recovered.body.intentId).toBe(input.intentId);
+  expect(recovered.body.status).toBe("pending_approval");
 });
 
 test.each([null, 503, 401] as const)(

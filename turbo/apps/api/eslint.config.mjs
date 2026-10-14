@@ -31,6 +31,7 @@ const isolatedDependencies = [
   "@clerk",
   "@slack",
   "@smithy",
+  "@stripe/link-sdk",
   "stripe",
 ];
 

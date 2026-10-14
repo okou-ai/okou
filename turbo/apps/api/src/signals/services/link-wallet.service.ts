@@ -728,8 +728,7 @@ export const createWalletSpend$ = command(
     const remote = await linkSpendRequest(
       access.token,
       {
-        path: "",
-        method: "POST",
+        operation: "spend_create",
         intentId: existing.intentId,
         body: {
           idempotency_key: `okou_wallet_${existing.id}`,
@@ -741,7 +740,6 @@ export const createWalletSpend$ = command(
           credential_type: "card",
           request_approval: true,
           test: existing.test,
-          expires_at: Math.floor(existing.expiresAt.getTime() / 1000),
           totals: [
             { type: "total", display_text: "Total", amount: existing.amount },
           ],
@@ -828,8 +826,8 @@ const readProviderSpend$ = command(
     let remote = await linkSpendRequest(
       access.token,
       {
-        path: `/${encodeURIComponent(row.providerSpendId)}`,
-        method: "GET",
+        operation: "spend_read",
+        id: row.providerSpendId,
         intentId: row.intentId,
       },
       signal,
@@ -848,8 +846,8 @@ const readProviderSpend$ = command(
       remote = await linkSpendRequest(
         access.token,
         {
-          path: `/${encodeURIComponent(row.providerSpendId)}/cancel`,
-          method: "POST",
+          operation: "spend_cancel",
+          id: row.providerSpendId,
           intentId: row.intentId,
         },
         signal,

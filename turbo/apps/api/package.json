@@ -40,6 +40,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sentry/node": "^10.73.0",
     "@slack/web-api": "^7.13.0",
+    "@stripe/link-sdk": "^0.13.2",
     "@t3-oss/env-core": "^0.13.11",
     "@vercel/functions": "^3.4.4",
     "@vercel/oidc": "^3.2.1",
