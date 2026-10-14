@@ -3,6 +3,9 @@ import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifa
 import {
   ChevronRight,
   File,
+  FileText,
+  Music,
+  Table2,
   Image,
   Presentation,
   MessagesSquare,
@@ -42,8 +45,10 @@ import { emptyArtifactImg } from "../okou-page/platform-assets.ts";
 import {
   FilePreviewIcon,
   getFilePreviewAccentClass,
-  getFilePreviewIconMeta,
 } from "../okou-page/file-preview-icon.tsx";
+import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
+import type { ArtifactKind } from "../../signals/chat-page/artifact-card-signals.ts";
+import { officeFilePreviewKind } from "../okou-page/office-file-preview.ts";
 
 // Distance from the bottom of the scroll container at which the next page is
 // requested. The signal layer deduplicates repeated requests for one cursor.
@@ -65,10 +70,20 @@ const ARTIFACT_KIND_OPTIONS: readonly ArtifactCatalogKind[] = [
   "file",
 ];
 
-function artifactKindIcon(kind: ArtifactCatalogKind, size: number): ReactNode {
+type ArtifactDisplayKind =
+  ArtifactCatalogKind | ArtifactKind | "document" | "spreadsheet";
+
+function artifactGalleryKind(artifact: CatalogArtifact): ArtifactDisplayKind {
+  return artifact.kind === "file"
+    ? (officeFilePreviewKind(artifact.title) ??
+        classifyChatAttachment({ filename: artifact.title }))
+    : artifact.kind;
+}
+
+function artifactKindIcon(kind: ArtifactDisplayKind, size: number): ReactNode {
   return kind === "presentation" ? (
     <Presentation size={size} />
-  ) : kind === "hosted-site" ? (
+  ) : kind === "hosted-site" || kind === "html" ? (
     <Globe size={size} />
   ) : kind === "image" ? (
     <Image size={size} />
@@ -78,19 +93,58 @@ function artifactKindIcon(kind: ArtifactCatalogKind, size: number): ReactNode {
     <User size={size} />
   ) : kind === "shared-thread" ? (
     <MessagesSquare size={size} />
+  ) : kind === "audio" ? (
+    <Music size={size} />
+  ) : kind === "csv" || kind === "json" || kind === "spreadsheet" ? (
+    <Table2 size={size} />
+  ) : kind === "document" ||
+    kind === "markdown" ||
+    kind === "pdf" ||
+    kind === "text" ? (
+    <FileText size={size} />
   ) : (
     <File size={size} />
   );
 }
 
-function useArtifactKindLabel(kind: ArtifactCatalogKind): string {
+function useArtifactKindLabel(kind: ArtifactDisplayKind): string {
   const { t } = useTranslation();
+  if (kind === "csv" || kind === "spreadsheet") {
+    return t(($) => {
+      return $.artifacts.kinds.spreadsheet;
+    });
+  }
+  if (kind === "markdown") {
+    return t(($) => {
+      return $.artifacts.kinds.markdown;
+    });
+  }
+  if (kind === "pdf" || kind === "document") {
+    return t(($) => {
+      return $.artifacts.kinds.document;
+    });
+  }
+  if (kind === "text") {
+    return t(($) => {
+      return $.artifacts.kinds.text;
+    });
+  }
+  if (kind === "json") {
+    return t(($) => {
+      return $.artifacts.kinds.data;
+    });
+  }
+  if (kind === "audio") {
+    return t(($) => {
+      return $.artifacts.kinds.audio;
+    });
+  }
   const kindLabel =
     kind === "presentation"
       ? t(($) => {
           return $.artifacts.kinds.presentation;
         })
-      : kind === "hosted-site"
+      : kind === "hosted-site" || kind === "html"
         ? t(($) => {
             return $.artifacts.kinds.hostedSite;
           })
@@ -227,8 +281,9 @@ function ArtifactCatalogCard({
   readonly appearance: ArtifactCatalogAppearance;
 }) {
   const { t } = useTranslation();
-  const kindLabel = useArtifactKindLabel(artifact.kind);
   const gallery = appearance === "gallery";
+  const displayKind = gallery ? artifactGalleryKind(artifact) : artifact.kind;
+  const kindLabel = useArtifactKindLabel(displayKind);
   const scrollArtifactCardIntoViewRef = useSet(scrollArtifactCardIntoViewRef$);
   const thumbnailLoadable = useLastLoadable(artifact.thumbnailUrl$);
   const thumbnailUrl =
@@ -323,10 +378,8 @@ function ArtifactCatalogCard({
         </span>
         {gallery && (
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span aria-hidden>{artifactKindIcon(artifact.kind, 14)}</span>
-            {artifact.kind === "file"
-              ? getFilePreviewIconMeta(artifact.title).label
-              : kindLabel}
+            <span aria-hidden>{artifactKindIcon(displayKind, 14)}</span>
+            {kindLabel}
           </span>
         )}
       </span>
