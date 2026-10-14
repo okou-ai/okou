@@ -85,8 +85,8 @@ export type SlashTemplatePreviewCategory =
   "slides" | "illustration" | "website";
 
 /**
- * Covers render two across the slash pane, 204px each under the thread's 900px
- * composer, so they are requested at 2x that.
+ * Covers render two across the 400px slash pane, about 180px each, and 200px
+ * wide in the website shelf, so they are requested at 2x the wider of the two.
  */
 const SLASH_TEMPLATE_COVER_SIZE = { width: 416, height: 234 } as const;
 

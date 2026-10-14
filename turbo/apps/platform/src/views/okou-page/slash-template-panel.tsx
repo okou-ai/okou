@@ -169,16 +169,12 @@ function SlashTemplateDetailPane({
 }) {
   const previews = slashTemplatePreviews(category);
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
-  // Embedded, the pane takes half the menu: 450px under the thread's 900px
-  // composer. Between about 360 and 420 the third row of deck covers ends
-  // flush with the bottom edge, so the wall reads as finished instead of
-  // scrolling; at half it is cut about two-thirds of the way down.
   return (
     <div
       className={cn(
         "h-full overflow-hidden",
         embedded
-          ? "w-1/2 shrink-0 border-l border-border/60"
+          ? "w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
           : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
       )}
       role={embedded ? "region" : undefined}
