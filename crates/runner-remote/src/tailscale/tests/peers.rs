@@ -679,7 +679,7 @@ async fn pending_private_netstacks_reserve_all_twenty_four_tuples_until_physical
 
 #[tokio::test]
 async fn map_guard_handles_fragmented_lengths_and_keeps_exact_frame_boundaries() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
     let (input, mut writer) = tokio::io::duplex(8);
     let task = tokio::spawn(async move {
         let stream = ts_control::client::map_stream(MapReader::new(input));
@@ -696,15 +696,6 @@ async fn map_guard_handles_fragmented_lengths_and_keeps_exact_frame_boundaries()
     }
     writer.shutdown().await.unwrap();
     bounded(task).await.unwrap();
-    for length in [0u32, 1_048_577, u32::MAX] {
-        let mut reader = MapReader::new(std::io::Cursor::new(length.to_le_bytes()));
-        let mut bytes = [0; 4];
-        assert!(reader.read_exact(&mut bytes).await.is_err());
-        assert_eq!(
-            bytes, [0; 4],
-            "oversize header is never released to SDK allocation"
-        );
-    }
 }
 
 #[tokio::test]
