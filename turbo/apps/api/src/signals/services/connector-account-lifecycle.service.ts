@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 
 import {
   connectorAccountTargetKey,
@@ -289,102 +289,111 @@ async function loadConnectorAccountRows(
     .limit(args.limit ?? 2_147_483_647);
 }
 
-async function loadConnectorAccountSummaryGroups(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
+function connectorAccountSummaryGroups(
+  owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
 ) {
-  const tokenExpired = sql`CASE WHEN ${and(
-    isNotNull(connectors.tokenExpiresAt),
-    lte(connectors.tokenExpiresAt, sql`clock_timestamp()`),
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  const hasAccessToken = sql`CASE WHEN ${isNotNull(
-    accessTokenSecret.id,
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  const hasRefreshToken = sql`CASE WHEN ${isNotNull(
-    refreshTokenSecret.id,
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  const hasAutomaticOAuthBinding = sql`CASE WHEN ${isNotNull(
-    customConnectorAccountOauthBindings.connectorAccountId,
-  )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
-  return await db
-    .select({
-      connectorSlug: connectors.connectorSlug,
-      customConnectorId: connectors.customConnectorId,
-      authMethod: connectors.authMethod,
-      automaticAuthType: connectors.automaticAuthType,
-      storageVersion: connectors.storageVersion,
-      needsReconnect: connectors.needsReconnect,
-      definitionAuthMode: orgCustomConnectors.authMode,
-      definitionMcpTransport: orgCustomConnectors.mcpTransport,
-      definitionStorageVersion: orgCustomConnectors.storageVersion,
-      providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
-      tokenExpired,
-      hasAccessToken,
-      hasRefreshToken,
-      hasAutomaticOAuthBinding,
-      accountCount: count(),
-    })
-    .from(connectors)
-    .leftJoin(
-      orgCustomConnectors,
-      and(
-        eq(orgCustomConnectors.id, connectors.customConnectorId),
-        eq(orgCustomConnectors.orgId, connectors.orgId),
-      ),
-    )
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .leftJoin(
-      accessTokenSecret,
-      and(
-        eq(accessTokenSecret.connectorId, connectors.id),
-        eq(accessTokenSecret.name, "access_token"),
-      ),
-    )
-    .leftJoin(
-      refreshTokenSecret,
-      and(
-        eq(refreshTokenSecret.connectorId, connectors.id),
-        eq(refreshTokenSecret.name, "refresh_token"),
-      ),
-    )
-    .leftJoin(
-      customConnectorAccountOauthBindings,
-      and(
-        eq(
-          customConnectorAccountOauthBindings.connectorAccountId,
-          connectors.id,
+  return computed(async (get) => {
+    const args = get(owner$);
+    const db = get(db$);
+    const tokenExpired = sql`CASE WHEN ${and(
+      isNotNull(connectors.tokenExpiresAt),
+      lte(connectors.tokenExpiresAt, sql`clock_timestamp()`),
+    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
+    const hasAccessToken = sql`CASE WHEN ${isNotNull(
+      accessTokenSecret.id,
+    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
+    const hasRefreshToken = sql`CASE WHEN ${isNotNull(
+      refreshTokenSecret.id,
+    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
+    const hasAutomaticOAuthBinding = sql`CASE WHEN ${isNotNull(
+      customConnectorAccountOauthBindings.connectorAccountId,
+    )} THEN TRUE ELSE FALSE END`.mapWith(pgBooleanDecoder);
+    return await db
+      .select({
+        connectorSlug: connectors.connectorSlug,
+        customConnectorId: connectors.customConnectorId,
+        authMethod: connectors.authMethod,
+        automaticAuthType: connectors.automaticAuthType,
+        storageVersion: connectors.storageVersion,
+        needsReconnect: connectors.needsReconnect,
+        definitionAuthMode: orgCustomConnectors.authMode,
+        definitionMcpTransport: orgCustomConnectors.mcpTransport,
+        definitionStorageVersion: orgCustomConnectors.storageVersion,
+        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+        tokenExpired,
+        hasAccessToken,
+        hasRefreshToken,
+        hasAutomaticOAuthBinding,
+        accountCount: count(),
+      })
+      .from(connectors)
+      .leftJoin(
+        orgCustomConnectors,
+        and(
+          eq(orgCustomConnectors.id, connectors.customConnectorId),
+          eq(orgCustomConnectors.orgId, connectors.orgId),
         ),
-        eq(
-          customConnectorAccountOauthBindings.customConnectorId,
-          orgCustomConnectors.id,
+      )
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
         ),
-      ),
-    )
-    .where(
-      and(eq(connectors.orgId, args.orgId), eq(connectors.userId, args.userId)),
-    )
-    .groupBy(
-      connectors.connectorSlug,
-      connectors.customConnectorId,
-      connectors.authMethod,
-      connectors.automaticAuthType,
-      connectors.storageVersion,
-      connectors.needsReconnect,
-      orgCustomConnectors.authMode,
-      orgCustomConnectors.mcpTransport,
-      orgCustomConnectors.storageVersion,
-      orgCustomConnectorOauthConfigs.providerAdapter,
-      tokenExpired,
-      hasAccessToken,
-      hasRefreshToken,
-      hasAutomaticOAuthBinding,
-    );
+      )
+      .leftJoin(
+        accessTokenSecret,
+        and(
+          eq(accessTokenSecret.connectorId, connectors.id),
+          eq(accessTokenSecret.name, "access_token"),
+        ),
+      )
+      .leftJoin(
+        refreshTokenSecret,
+        and(
+          eq(refreshTokenSecret.connectorId, connectors.id),
+          eq(refreshTokenSecret.name, "refresh_token"),
+        ),
+      )
+      .leftJoin(
+        customConnectorAccountOauthBindings,
+        and(
+          eq(
+            customConnectorAccountOauthBindings.connectorAccountId,
+            connectors.id,
+          ),
+          eq(
+            customConnectorAccountOauthBindings.customConnectorId,
+            orgCustomConnectors.id,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+        ),
+      )
+      .groupBy(
+        connectors.connectorSlug,
+        connectors.customConnectorId,
+        connectors.authMethod,
+        connectors.automaticAuthType,
+        connectors.storageVersion,
+        connectors.needsReconnect,
+        orgCustomConnectors.authMode,
+        orgCustomConnectors.mcpTransport,
+        orgCustomConnectors.storageVersion,
+        orgCustomConnectorOauthConfigs.providerAdapter,
+        tokenExpired,
+        hasAccessToken,
+        hasRefreshToken,
+        hasAutomaticOAuthBinding,
+      );
+  });
 }
 
 async function customTargetIsVisible(
@@ -589,7 +598,7 @@ function projectConnection(
 }
 
 type ConnectorAccountSummaryGroup = Awaited<
-  ReturnType<typeof loadConnectorAccountSummaryGroups>
+  ReturnType<ReturnType<typeof connectorAccountSummaryGroups>["read"]>
 >[number];
 
 function projectSummaryGroup(
@@ -680,53 +689,176 @@ function projectSummaryGroup(
   };
 }
 
-export async function listConnectorAccountSummaries(
-  db: ReadonlyDb,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<readonly ConnectorAccountSummary[]> {
-  const now = nowDate();
-  const [groups, defaultRows] = await Promise.all([
-    loadConnectorAccountSummaryGroups(db, args),
-    loadConnectorAccountRows(db, { ...args, defaultOnly: true }),
-  ]);
-  // Every default account belongs to a group, so the groups name every
-  // builtin connector this projection reads.
-  const snapshot = await loadConnectorAccountAuthLookup(db, groups);
-  const defaultConnections = new Map<string, ConnectorAccountConnection>();
-  for (const row of defaultRows) {
-    const connection = projectConnection(row, snapshot, now);
-    if (connection) {
-      defaultConnections.set(
-        connectorAccountTargetKey(connection.target),
-        connection,
-      );
-    }
-  }
-  const summaries = new Map<string, ConnectorAccountSummary>();
-  for (const group of groups) {
-    const projected = projectSummaryGroup(group, snapshot, now);
-    if (!projected) {
-      continue;
-    }
-    const targetKey = connectorAccountTargetKey(projected.target);
-    const current = summaries.get(targetKey) ?? {
-      target: projected.target,
-      accountCount: 0,
-      attentionCount: 0,
-      defaultConnection: defaultConnections.get(targetKey) ?? null,
-    };
-    summaries.set(targetKey, {
-      ...current,
-      accountCount: current.accountCount + group.accountCount,
-      attentionCount:
-        current.attentionCount +
-        (projected.needsAttention ? group.accountCount : 0),
+function connectorAccountSummaryAuthLookup(
+  groups$: ReturnType<typeof connectorAccountSummaryGroups>,
+): Computed<Promise<ConnectorRuntimeAuthLookup | null>> {
+  return computed(async (get) => {
+    const rows = await get(groups$);
+    const db = get(db$);
+    const connectorSlugs = rows.flatMap((row) => {
+      const slug = connectorSlugSchema.safeParse(row.connectorSlug);
+      return slug.success ? [slug.data] : [];
     });
-  }
-  return [...summaries.values()].sort((left, right) => {
-    const leftKey = JSON.stringify(left.target);
-    const rightKey = JSON.stringify(right.target);
-    return leftKey.localeCompare(rightKey);
+    if (connectorSlugs.length === 0) {
+      return null;
+    }
+    const result = await settle(
+      (async () => {
+        const catalogRows = await db
+          .select({
+            current: {
+              schemaVersion: connectorCatalog.schemaVersion,
+              hash: connectorCatalog.hash,
+            },
+            entry: connectorCatalogCompatibilityColumns,
+          })
+          .from(connectorCatalog)
+          .leftJoin(
+            connectorCatalogEntries,
+            connectorCatalogSlugJoin(connectorSlugs),
+          )
+          .where(connectorCatalogCurrentWhere());
+        // Account projections are presentation and single-item reads: a stored
+        // account whose connector has no entry is omitted (404 for one item).
+        const source = connectorCatalogSlugSourceFromRows(
+          catalogRows.map((row) => {
+            return {
+              ...row,
+              entry:
+                row.entry === null
+                  ? null
+                  : materializeConnectorCatalogCompatibilityRow(row.entry),
+            };
+          }),
+          connectorSlugs,
+        );
+        return materializeConnectorRuntimeAuthLookup(source);
+      })(),
+    );
+    if (result.ok) {
+      return result.value;
+    }
+    if (!isConnectorCatalogUnavailableError(result.error)) {
+      throw result.error;
+    }
+    log.warn(
+      "Connector catalog unavailable while resolving account lifecycle",
+      {
+        error: result.error,
+      },
+    );
+    return null;
+  });
+}
+
+export function connectorAccountSummaries(
+  owner$: Computed<{ readonly orgId: string; readonly userId: string }>,
+): Computed<Promise<readonly ConnectorAccountSummary[]>> {
+  const groups$ = connectorAccountSummaryGroups(owner$);
+  const authLookup$ = connectorAccountSummaryAuthLookup(groups$);
+
+  return computed(async (get) => {
+    const args = get(owner$);
+    const db = get(db$);
+    const now = nowDate();
+    const [groups, defaultRows] = await Promise.all([
+      get(groups$),
+      db
+        .select(accountSelection())
+        .from(connectors)
+        .leftJoin(
+          orgCustomConnectors,
+          and(
+            eq(orgCustomConnectors.id, connectors.customConnectorId),
+            eq(orgCustomConnectors.orgId, connectors.orgId),
+          ),
+        )
+        .leftJoin(
+          orgCustomConnectorOauthConfigs,
+          and(
+            eq(
+              orgCustomConnectorOauthConfigs.connectorId,
+              orgCustomConnectors.id,
+            ),
+            eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+          ),
+        )
+        .leftJoin(
+          accessTokenSecret,
+          and(
+            eq(accessTokenSecret.connectorId, connectors.id),
+            eq(accessTokenSecret.name, "access_token"),
+          ),
+        )
+        .leftJoin(
+          refreshTokenSecret,
+          and(
+            eq(refreshTokenSecret.connectorId, connectors.id),
+            eq(refreshTokenSecret.name, "refresh_token"),
+          ),
+        )
+        .leftJoin(
+          customConnectorAccountOauthBindings,
+          and(
+            eq(
+              customConnectorAccountOauthBindings.connectorAccountId,
+              connectors.id,
+            ),
+            eq(
+              customConnectorAccountOauthBindings.customConnectorId,
+              orgCustomConnectors.id,
+            ),
+          ),
+        )
+        .where(
+          and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.isDefault, true),
+          ),
+        )
+        .orderBy(desc(connectors.createdAt), desc(connectors.id))
+        .limit(2_147_483_647),
+    ]);
+    // Every default account belongs to a group, so the groups name every
+    // builtin connector this projection reads.
+    const snapshot = await get(authLookup$);
+    const defaultConnections = new Map<string, ConnectorAccountConnection>();
+    for (const row of defaultRows) {
+      const connection = projectConnection(row, snapshot, now);
+      if (connection) {
+        defaultConnections.set(
+          connectorAccountTargetKey(connection.target),
+          connection,
+        );
+      }
+    }
+    const summaries = new Map<string, ConnectorAccountSummary>();
+    for (const group of groups) {
+      const projected = projectSummaryGroup(group, snapshot, now);
+      if (!projected) {
+        continue;
+      }
+      const targetKey = connectorAccountTargetKey(projected.target);
+      const current = summaries.get(targetKey) ?? {
+        target: projected.target,
+        accountCount: 0,
+        attentionCount: 0,
+        defaultConnection: defaultConnections.get(targetKey) ?? null,
+      };
+      summaries.set(targetKey, {
+        ...current,
+        accountCount: current.accountCount + group.accountCount,
+        attentionCount:
+          current.attentionCount +
+          (projected.needsAttention ? group.accountCount : 0),
+      });
+    }
+    return [...summaries.values()].sort((left, right) => {
+      const leftKey = JSON.stringify(left.target);
+      const rightKey = JSON.stringify(right.target);
+      return leftKey.localeCompare(rightKey);
+    });
   });
 }
 
