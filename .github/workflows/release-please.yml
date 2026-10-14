@@ -598,6 +598,9 @@ jobs:
           fi
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Download canonical Desktop app
         id: desktop-app
         env:
@@ -1678,7 +1681,7 @@ jobs:
           /tmp/awscli/aws/install
           aws --version
 
-          # AWS CLI 2.38 defaults to CRT, whose R2 downloads can fail signing.
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
           aws configure set s3.preferred_transfer_client classic
 
       - name: Prepare standalone App Worker production deployment
