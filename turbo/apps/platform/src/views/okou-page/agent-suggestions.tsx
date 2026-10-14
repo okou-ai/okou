@@ -37,6 +37,12 @@ const SUGGESTION_CARD = [
   // the next card arriving rather than as text swapping in place.
   "motion-safe:animate-composer-panel-in",
 ].join(" ");
+/**
+ * The pager stays focusable at either end, so a keyboard user who pages onto
+ * the first or last card keeps focus on the button they pressed. `:disabled`
+ * no longer matches such a button, so its disabled look is restated here.
+ */
+const PAGER = "data-disabled:pointer-events-none data-disabled:opacity-50";
 /** One sliver per card waiting behind this one, up to two. */
 const DECK_EDGE =
   "pointer-events-none absolute h-10 rounded-xl border border-border bg-card";
@@ -124,7 +130,9 @@ export function AgentSuggestions() {
               variant="quiet"
               size="icon-xs"
               showTooltip
+              focusableWhenDisabled
               disabled={index === 0}
+              className={PAGER}
               aria-label={t(($) => {
                 return $.chat.agentSuggestions.previous;
               })}
@@ -139,7 +147,9 @@ export function AgentSuggestions() {
               variant="quiet"
               size="icon-xs"
               showTooltip
+              focusableWhenDisabled
               disabled={index === items.length - 1}
+              className={PAGER}
               aria-label={t(($) => {
                 return $.chat.agentSuggestions.next;
               })}

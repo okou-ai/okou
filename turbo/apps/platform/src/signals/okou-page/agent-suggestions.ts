@@ -37,7 +37,7 @@ export const agentSuggestionIndex$ = computed((get) => {
   return get(index$);
 });
 export const showAgentSuggestion$ = command(({ set }, index: number) => {
-  set(index$, Math.max(0, index));
+  set(index$, index);
 });
 const agentSuggestions$ = computed(async (get) => {
   get(revision$);
