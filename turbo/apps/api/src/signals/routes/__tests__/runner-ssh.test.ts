@@ -1,4 +1,3 @@
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createClaimedSshRuntimeApi } from "./helpers/claimed-ssh-runtime";
 import { inlineSshKey } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
@@ -487,20 +486,14 @@ beforeEach(() => {
 
 function createPublicHostApi() {
   const selectedRuns = createPublicRemoteAccessRunApi(context);
-  const selectedOwners = new Map<string, Owner>();
   async function cleanupSelectedRuns() {
     await selectedRuns.cleanup();
-    for (const owner of selectedOwners.values()) {
-      await deletePublicWorkspace(context, createBddApi(context).user(owner));
-    }
-    selectedOwners.clear();
   }
   async function publicHostRun(defaultEnabled = true) {
     const owner = {
       orgId: `org_ssh_public_${randomUUID()}`,
       userId: `user_ssh_public_${randomUUID()}`,
     };
-    selectedOwners.set(owner.orgId, owner);
     const run = await selectedRuns.start(owner);
     const claimed = await selectedRuns.claim(run, runnerHeaders);
     authenticate(owner);
@@ -531,9 +524,6 @@ function createPublicHostApi() {
     runtime: publicHostRun,
     cleanup: cleanupSelectedRuns,
     runs: selectedRuns,
-    trackOwner(owner: Owner) {
-      selectedOwners.set(owner.orgId, owner);
-    },
   };
 }
 const selected = createPublicHostApi();
@@ -1327,7 +1317,6 @@ describe("official Runner SSH authority", () => {
     expect((await list(foreign))[0]?.learnedHostKey).toBeNull();
     // Same user, different organization must not grant access.
     const hiddenOwner = { ...f, orgId: `org_hidden_${randomUUID()}` };
-    selected.trackOwner(hiddenOwner);
     authenticate(hiddenOwner);
     const hidden = await accept(
       config().create({

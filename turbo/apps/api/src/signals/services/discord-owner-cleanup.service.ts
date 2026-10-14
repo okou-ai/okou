@@ -48,32 +48,3 @@ export const deleteDiscordOrgData$ = command(
     signal.throwIfAborted();
   },
 );
-
-export const deleteDiscordUserData$ = command(
-  async ({ set }, userId: string, signal: AbortSignal): Promise<void> => {
-    signal.throwIfAborted();
-    const db = set(writeDb$);
-    const revoked = db
-      .$with("revoked_discord_account_grants")
-      .as(
-        db
-          .delete(discordOauthStates)
-          .where(eq(discordOauthStates.userId, userId))
-          .returning({ id: discordOauthStates.id }),
-      );
-    // Every installation has genuine organization-owned consent. Native RI
-    // clears installer metadata, including children committed while we waited,
-    // without revoking the shared guild or surviving members' personal grants.
-    await db
-      .with(revoked)
-      .update(discordOrgGrants)
-      .set({ initiatedByUserId: null })
-      .where(
-        and(
-          eq(discordOrgGrants.initiatedByUserId, userId),
-          gte(db.select({ count: count() }).from(revoked), 0),
-        ),
-      );
-    signal.throwIfAborted();
-  },
-);

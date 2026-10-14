@@ -10,7 +10,6 @@ import {
   now,
 } from "../../../lib/time";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createBddApi } from "./helpers/api-bdd";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import { randomUUID } from "node:crypto";
@@ -95,6 +94,10 @@ const {
   createSubscriptionOrg,
   createPublicBillingOrg,
 } = createBillingCheckoutFixture();
+
+beforeEach(async () => {
+  await setupApp({ context, routes: billingCheckoutRoutes, isolatePg: true });
+});
 
 describe("legacy subscription usage pack migration", () => {
   interface LegacyMigrationFixture extends SubscriptionFixture {
@@ -418,12 +421,6 @@ describe("legacy subscription usage pack migration", () => {
           : [],
       },
     );
-    onTestFinished(() => {
-      return deletePublicWorkspace(
-        context,
-        createBddApi(context).user(fixture),
-      );
-    });
     const result: LegacyMigrationFixture = {
       ...fixture,
       customerId,
@@ -1462,12 +1459,6 @@ describe("legacy subscription usage pack migration", () => {
     const fixture = await createSubscriptionOrg({
       tier: "pro",
       periodEndUnix: period.end,
-    });
-    onTestFinished(() => {
-      return deletePublicWorkspace(
-        context,
-        createBddApi(context).user(fixture),
-      );
     });
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
@@ -3074,14 +3065,6 @@ describe("usage pack allocation management", () => {
             end: currentSecond() + 15 * 86_400,
           },
         };
-        if (!lifecycle) {
-          onTestFinished(() => {
-            return deletePublicWorkspace(
-              context,
-              createBddApi(context).user(fixture),
-            );
-          });
-        }
         const quantities = new Map<string, number>();
         for (const allocation of allocations) {
           const priceId = priceIdForManagedUsagePack(allocation.usagePackUsd);

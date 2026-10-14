@@ -1,5 +1,4 @@
 import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import {
@@ -146,13 +145,7 @@ async function deletePublicTeamsAdmissionFixture(
   });
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
-  if (owned.defaultAgentId) {
-    await bdd.requestReadAgent(actor, owned.defaultAgentId, [404]);
-  }
-  expect(
-    (await reads.requestListLogs(actor, { limit: 50 }, [200])).body.data,
-  ).toStrictEqual([]);
-  // Production retains UUID-owned billing history after organization deletion.
+  // Clerk deletion stops active work without purging UUID-owned resources.
 }
 
 const TEAMS_BOT_PATH = "http://api.test/api/webhooks/teams/bot";
@@ -2763,11 +2756,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       await authOrgApi.updateAgentMetadata(actor, defaultAgentId, {
         visibility: "public",
       });
-      const ownedRuns = publicRunOwner(context, actor, {
-        afterRuns: async () => {
-          await deletePublicWorkspace(context, actor);
-        },
-      });
+      const ownedRuns = publicRunOwner(context, actor);
       await runsApi.grantProEntitlement(actor);
       await runsApi.ensurePersonalSubscriptionModel(actor, {
         model: "claude-fable-5-1",
@@ -3103,7 +3092,6 @@ describe("POST /api/webhooks/teams/bot", () => {
     const ownedRuns = publicRunOwner(context, actor, {
       afterRuns: async () => {
         await removeTeamsForTest(context.signal, fixture);
-        await deletePublicWorkspace(context, actor);
       },
     });
     await ownedRuns.run(async () => {

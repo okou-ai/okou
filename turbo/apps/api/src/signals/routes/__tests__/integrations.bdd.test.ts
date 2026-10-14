@@ -1,6 +1,5 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
   captureIntegrationInputUploads,
@@ -4568,9 +4567,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.configureSlackAppMocks();
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
-    onTestFinished(async () => {
-      await deletePublicWorkspace(context, actor);
-    });
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(null);
     await integrations.connectSlackUser(actor, {
@@ -4755,11 +4751,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("replies with canonical run-creation errors for Slack messages", async () => {
     const actor = bdd.user();
-    const owner = publicRunOwner(context, actor, {
-      afterRuns: async () => {
-        await deletePublicWorkspace(context, actor);
-      },
-    });
+    const owner = publicRunOwner(context, actor);
     await owner.run(async () => {
       bdd.acceptAgentStorageWrites();
       integrations.configureSlackAppMocks();

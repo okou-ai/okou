@@ -3,7 +3,6 @@ import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import {
@@ -897,11 +896,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
           return deleteFeatureSwitchesForUser(context, { ...actor, orgId });
         });
       }
-    }
-    for (const actor of organizations.values()) {
-      await settle(() => {
-        return deletePublicWorkspace(context, actor);
-      });
     }
     if (errors.length === 1) {
       throw errors[0];

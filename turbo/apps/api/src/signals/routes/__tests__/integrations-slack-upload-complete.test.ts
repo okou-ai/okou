@@ -807,51 +807,6 @@ describe("POST /api/integrations/slack/upload-file/complete", () => {
     expect(after.artifacts).toHaveLength(1);
   });
 
-  it("does not revive a canonical file erased while storage verification is pending", async () => {
-    const fixture = createUploadFixture();
-    const upload = await pendingCanonicalUpload(fixture);
-    const started = createDeferredPromise<void>(context.signal);
-    const release = createDeferredPromise<void>(context.signal);
-    onTestFinished(() => {
-      if (!release.settled()) {
-        release.resolve(undefined);
-      }
-    });
-    const send = context.mocks.s3.send.getMockImplementation();
-    if (!send) {
-      throw new Error("Expected the external object storage mock");
-    }
-    context.mocks.s3.send.mockImplementation(async (command, ...args) => {
-      if (command instanceof HeadObjectCommand) {
-        started.resolve(undefined);
-        await release.promise;
-      }
-      return await send(command, ...args);
-    });
-    const pending = fixture.run(() => {
-      return accept(
-        setupApp({ context, routes: integrationsSlackUploadMaterializeRoutes })(
-          integrationsSlackUploadMaterializeContract,
-        ).materialize(upload.request),
-        [404],
-      );
-    });
-    await started.promise;
-    await fixture.cancelRun(actorFor(upload.actor), upload.actor.runId);
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "user.deleted",
-      data: { id: upload.actor.userId },
-    });
-    await fixture.run(() => {
-      return webhooks.requestClerkWebhook("{}", {}, [200]);
-    });
-    await flushWaitUntilForTest();
-    release.resolve(undefined);
-    const result = await pending;
-    expect(result.body.error.code).toBe("NOT_FOUND");
-  });
-
   it("returns 401 when no auth token is provided", async () => {
     const fixture = createUploadFixture();
 

@@ -1,4 +1,3 @@
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
@@ -257,11 +256,7 @@ async function createTelegramPostFixture(
     orgId: actor.orgId,
     userId: actor.userId,
     composeId: defaultAgentId,
-    runs: publicRunOwner(context, actor, {
-      afterRuns: async () => {
-        await deletePublicWorkspace(context, actor);
-      },
-    }),
+    runs: publicRunOwner(context, actor),
     telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
     webhookSecret: OFFICIAL_WEBHOOK_SECRET,
     ...(options.linkOfficial === true

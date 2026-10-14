@@ -198,19 +198,8 @@ export function createPublicFirewallFixture(
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
     }
-    for (const agentId of agentIds) {
-      await createBddApi(context).requestReadAgent(actor, agentId, [404]);
-    }
-    expect(
-      (
-        await createRunReadsApi(context).requestListLogs(
-          actor,
-          { limit: 50 },
-          [200],
-        )
-      ).body.data,
-    ).toStrictEqual([]);
-    // Production retains UUID-owned billing history after organization deletion.
+    // Clerk deletion stops active work; UUID-owned history, agents, connections,
+    // storage, billing, caches, local identities and tokens remain retained.
   });
 
   return {

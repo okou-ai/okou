@@ -544,7 +544,7 @@ test("publishes the exact owned memory bytes committed by a genuine Runner claim
   });
 });
 
-test("does not publish an export removed by signed organization deletion during multipart completion", async () => {
+test("publishes an export retained through signed organization deletion during multipart completion", async () => {
   const owner = actor();
   const secret = `whsec_${Buffer.from("export-publication-deletion-key").toString("base64")}`;
   let removed = false;
@@ -585,20 +585,20 @@ test("does not publish an export removed by signed organization deletion during 
   await startExport(fixture, owner);
   await process(fixture);
   expect(removed).toBeTruthy();
-  // Organization deletion preserves this user. Observe with their surviving
-  // no-org session, rather than resurrecting a deleted account credential.
+  // The surviving user can still observe their export with a no-org session.
   createRouteMocks(context).clerk.session(owner.userId, null);
-  const missing = await accept(
+  const retained = await accept(
     fixture.app(userExportContract).get({ headers }),
     [200],
   );
-  expect(missing.body.job).toBeNull();
+  expect(retained.body.job).toMatchObject({ status: "completed" });
+  expect(retained.body.job?.downloadUrl).toBeTruthy();
   await process(fixture);
   const replay = await accept(
     fixture.app(userExportContract).get({ headers }),
     [200],
   );
-  expect(replay.body.job).toBeNull();
+  expect(replay.body.job).toStrictEqual(retained.body.job);
 });
 
 function assertExportPageBoundaries(

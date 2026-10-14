@@ -1,5 +1,4 @@
 import { createPublicRemoteAccessRunApi } from "./helpers/public-remote-access-run";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -93,16 +92,11 @@ function check(
 
 describe("private Runner VNC authority", () => {
   const selectedRuns = createPublicRemoteAccessRunApi(context);
-  const selectedOwners = new Map<string, { orgId: string; userId: string }>();
   const claimedRunCleanups: (() => Promise<void>)[] = [];
 
   // Cancel owned Runs while the parent context still owns its signal and mocks.
   afterEach(async () => {
     await selectedRuns.cleanup();
-    for (const owner of selectedOwners.values()) {
-      await deletePublicWorkspace(context, createBddApi(context).user(owner));
-    }
-    selectedOwners.clear();
     for (const cleanup of claimedRunCleanups.splice(0)) {
       await cleanup();
       await flushWaitUntilForTest();
@@ -2700,7 +2694,6 @@ describe("private Runner VNC authority", () => {
       orgId: `org_vnc_public_${randomUUID()}`,
       userId: `user_vnc_public_${randomUUID()}`,
     };
-    selectedOwners.set(owner.orgId, owner);
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.VncAccess]: true,
     });

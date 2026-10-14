@@ -10,7 +10,6 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createRunsApi } from "./api-bdd-runs";
 import { captureConnectorExternalState } from "./public-connector-actor";
 import { publicRunOwner } from "./public-run-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 
 /** Reuse one real, owned Runner claim per caller within the current case. */
 export function createClaimedRunCredentials(context: TestContext) {
@@ -59,10 +58,9 @@ export function createClaimedRunCredentials(context: TestContext) {
       workspaces.set(identity.orgId, ownedWorkspace);
       workspace = ownedWorkspace;
       // Registered before all Run owners: reverse-order teardown releases
-      // every actor's claims before deleting their shared organization.
-      onTestFinished(async () => {
+      // every actor's claims before restoring the shared external mocks.
+      onTestFinished(() => {
         ownedWorkspace.restore();
-        await deletePublicWorkspace(context, ownedWorkspace.actor);
       });
     }
     const ownedWorkspace = workspace;

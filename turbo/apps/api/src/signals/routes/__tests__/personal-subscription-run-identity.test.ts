@@ -955,7 +955,7 @@ describe("personal subscription run identity", () => {
     "organization.deleted",
     "organizationMembership.deleted",
   ] as const)(
-    "keeps %s as a hard revocation for a retained subscription",
+    "%s stops the active Run from using a retained subscription",
     async (eventType) => {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
@@ -984,6 +984,8 @@ describe("personal subscription run identity", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
+      // Observe with the already-issued sandbox credential: terminal Run
+      // refusal does not require erasing the captured account or its token.
       const denied = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${claim.sandboxToken}` },
         authBody(claim, f.type),

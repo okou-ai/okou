@@ -177,16 +177,6 @@
       "owner": "deleteChatThreadContent$"
     },
     {
-      "id": "TX-0098",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deleteClerkUserLifecycleData$"
-    },
-    {
-      "id": "TX-0099",
-      "file": "turbo/apps/api/src/signals/services/clerk-agent-lifecycle.service.ts",
-      "owner": "deleteClerkOrganizationLifecycleData$"
-    },
-    {
       "id": "TX-0104",
       "file": "turbo/apps/api/src/signals/services/cloudflare-access.service.ts",
       "owner": "updateCloudflareAccessConfig$"
@@ -767,19 +757,9 @@
       "owner": "applyVisibleAgentGrantRows"
     },
     {
-      "id": "TX-0319",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "cancelOrgRuns"
-    },
-    {
       "id": "TX-0320",
       "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
       "owner": "cancelUserRuns"
-    },
-    {
-      "id": "TX-0321",
-      "file": "turbo/apps/api/src/signals/services/webhooks-clerk-cleanup.service.ts",
-      "owner": "deleteClerkStorageReferences"
     },
     {
       "id": "TX-0324",

@@ -33,10 +33,7 @@ export async function hasCurrentVncMembership(
   return false;
 }
 
-type VncCleanupScope =
-  | { readonly kind: "user"; readonly userId: string }
-  | { readonly kind: "organization"; readonly orgId: string }
-  | (VncOwner & { readonly kind: "owner" });
+type VncCleanupScope = VncOwner & { readonly kind: "owner" };
 
 /** Erase VNC connections before their RESTRICT-referenced credentials. */
 export const eraseVncOwnerData$ = command(
@@ -46,24 +43,14 @@ export const eraseVncOwnerData$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const connectionCondition =
-      scope.kind === "user"
-        ? eq(vncConnections.userId, scope.userId)
-        : scope.kind === "organization"
-          ? eq(vncConnections.orgId, scope.orgId)
-          : and(
-              eq(vncConnections.orgId, scope.orgId),
-              eq(vncConnections.userId, scope.userId),
-            );
-    const credentialCondition =
-      scope.kind === "user"
-        ? eq(vncCredentials.userId, scope.userId)
-        : scope.kind === "organization"
-          ? eq(vncCredentials.orgId, scope.orgId)
-          : and(
-              eq(vncCredentials.orgId, scope.orgId),
-              eq(vncCredentials.userId, scope.userId),
-            );
+    const connectionCondition = and(
+      eq(vncConnections.orgId, scope.orgId),
+      eq(vncConnections.userId, scope.userId),
+    );
+    const credentialCondition = and(
+      eq(vncCredentials.orgId, scope.orgId),
+      eq(vncCredentials.userId, scope.userId),
+    );
     const removedConnections = db
       .$with("removed_vnc_connections")
       .as(

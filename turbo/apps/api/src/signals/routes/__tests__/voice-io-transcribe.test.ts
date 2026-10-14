@@ -33,7 +33,6 @@ import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 import { server } from "../../../mocks/server";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import {
@@ -233,18 +232,8 @@ async function cleanupFundedVoiceActor(owned: FundedVoiceActor): Promise<void> {
   await webhooks.requestClerkWebhook("{}", {}, [200]);
   await flushWaitUntilForTest();
 
-  // Public deletion removes the wallet and member Memory. Production retains
-  // immutable billing history and voice daily counts under these unique IDs.
-  await expect(voiceCredits(owned.actor)).resolves.toBe(0);
-  expect(
-    (
-      await createRunReadsApi(context).requestListLogs(
-        owned.actor,
-        { limit: 50 },
-        [200],
-      )
-    ).body.data,
-  ).toStrictEqual([]);
+  // Clerk deletion stops active work; wallets, Memory, billing history and
+  // voice daily counts remain retained under these unique IDs.
 }
 
 async function publicVoiceActor({

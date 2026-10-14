@@ -150,20 +150,6 @@ async function expectSingleOnboardingGrant(
   ]);
 }
 
-async function deleteOrganization(orgId: string): Promise<void> {
-  const webhooks = createWebhookCallbackApi(context);
-  webhooks.configureClerkWebhookSecret();
-  context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
-    data: [],
-  });
-  webhooks.verifyNextClerkWebhook({
-    type: "organization.deleted",
-    data: { id: orgId },
-  });
-  await webhooks.requestClerkWebhook("{}", {}, [200]);
-  await flushWaitUntilForTest();
-}
-
 function joinPendingRequest(
   pending: Promise<unknown>,
   release: () => void,
@@ -643,67 +629,5 @@ describe("default Agent bootstrap", () => {
     await expect(readDefaultId(api)).resolves.toBe(agentId);
     await expectInstructions(api, agentId, SEED_INSTRUCTIONS);
     await expectSingleOnboardingGrant(api);
-  });
-
-  it("does not adopt or erase a replacement generation when an older upload fails late", async () => {
-    const orgId = authenticateAdmin();
-    const upload = pausedSeedUpload(orgId);
-    const api = clients();
-    const pending = api.status.getStatus({ headers });
-    joinPendingRequest(pending, () => {
-      upload.release("success");
-    });
-    const losingArchiveKey = await upload.started;
-    const firstAgentId = await readDefaultId(api);
-    await deleteOrganization(orgId);
-    const deleted = await accept(api.agents.list({ headers }), [200]);
-    expect(deleted.body).toStrictEqual([]);
-
-    // Recreate through the same lazy production bootstrap, not by replacing
-    // database rows. Its canonical Storage has a new UUID/prefix.
-    const replacementId = await readDefaultId(api);
-    expect(replacementId).not.toBe(firstAgentId);
-    const edited = "Replacement generation's edited instructions.";
-    await accept(
-      api.instructions.update({
-        headers,
-        params: { id: replacementId },
-        body: { content: edited },
-      }),
-      [200],
-    );
-    const billingBeforeLateFailure = await accept(
-      api.billing.get({ headers }),
-      [200],
-    );
-    // The durable onboarding receipt prevents a recreated external org identity
-    // from earning a second personal grant or refilling the first one.
-    expect(billingBeforeLateFailure.body.credits).toBe(0);
-    expect(billingBeforeLateFailure.body.creditGrants).toStrictEqual([]);
-    await expectSingleOnboardingGrant(api);
-    const personalBeforeLateFailure = await accept(
-      api.usagePack.get({ headers }),
-      [200],
-    );
-    upload.release("failure");
-    expect((await pending).status).toBe(200);
-    expect(upload.storage.hasObject(losingArchiveKey)).toBeFalsy();
-    await expect(readDefaultId(api)).resolves.toBe(replacementId);
-    await expectInstructions(api, replacementId, edited);
-    const billingAfterLateFailure = await accept(
-      api.billing.get({ headers }),
-      [200],
-    );
-    expect(billingAfterLateFailure.body.credits).toBe(0);
-    expect(billingAfterLateFailure.body.creditGrants).toStrictEqual(
-      billingBeforeLateFailure.body.creditGrants,
-    );
-    const personalAfterLateFailure = await accept(
-      api.usagePack.get({ headers }),
-      [200],
-    );
-    expect(personalAfterLateFailure.body).toStrictEqual(
-      personalBeforeLateFailure.body,
-    );
   });
 });

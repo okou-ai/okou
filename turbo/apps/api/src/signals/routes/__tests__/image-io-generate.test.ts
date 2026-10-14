@@ -49,7 +49,6 @@ import { createPublicImageMember } from "./helpers/public-image-member";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { chargePublicSeoUsage } from "./helpers/public-seo-charge";
 import { purchaseToolCredits } from "./helpers/public-tool-actor";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 
 const context = testContext();
 
@@ -475,9 +474,6 @@ async function createClaimedImageRun(
       if (errors.length > 1) {
         throw new AggregateError(errors, "Image provider cleanup failed");
       }
-    },
-    afterRuns: () => {
-      return deletePublicWorkspace(context, actor);
     },
   });
   function run<T>(operation: () => Promise<T>): Promise<T> {

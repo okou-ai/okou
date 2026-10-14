@@ -655,14 +655,14 @@ describe("GET /api/artifacts/catalog", () => {
   it.each(["user", "organization"] as const)(
     "preserves unrelated files after %s deletion of an artifact owner",
     async (kind) => {
-      const owner = await catalogActor("Independent artifact erasure owner");
+      const owner = await catalogActor("Independent artifact retention owner");
       const outsider = await catalogActor(
-        "Independent artifact erasure outsider",
+        "Independent artifact retention outsider",
       );
       const objectStorage = chatCallbacks.acceptChatObjectStorage();
       const uploaded = await uploadFile({
         owner,
-        prompt: "publish a report before account erasure",
+        prompt: "publish a report before the Clerk deletion event",
         filename: "account-report.txt",
         contentType: "text/plain",
         objectStorage,
@@ -1319,9 +1319,9 @@ describe("shared thread routes", () => {
     const afterOrgDeletionResponse = await sharedThreadTestApp().request(
       `/api/shared-threads/${first.id}`,
     );
-    expect(afterOrgDeletionResponse.status).toBe(404);
-    const afterOrgDeletion = asRecord(await afterOrgDeletionResponse.json());
-    expect(asRecord(afterOrgDeletion.error).code).toBe("NOT_FOUND");
+    expect(afterOrgDeletionResponse.status).toBe(200);
+    const afterOrgDeletion = await afterOrgDeletionResponse.json();
+    expect(afterOrgDeletion).toStrictEqual(publicSnapshot.body);
   }, 180_000);
 
   it("allows API creation while the entry feature switch is disabled", async () => {

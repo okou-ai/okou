@@ -124,13 +124,7 @@ export function createPublicChatAdmissionFixture(context: TestContext) {
     });
     await webhooks.requestClerkWebhook("{}", {}, [200]);
     await flushWaitUntilForTest();
-    for (const agentId of agentIds) {
-      await bdd.requestReadAgent(actor, agentId, [404]);
-    }
-    expect(
-      (await reads.requestListLogs(actor, { limit: 50 }, [200])).body.data,
-    ).toStrictEqual([]);
-    // Production retains the UUID-owned immutable billing history.
+    // Clerk deletion stops active work without purging UUID-owned resources.
   });
 
   return {

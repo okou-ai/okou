@@ -141,6 +141,19 @@ test("creator deletion preserves shared Access and another member's SSH host", a
   await webhook("user.deleted", creator.userId);
 
   mocks.clerk.session(member.userId, member.orgId, "org:member");
+  await accept(
+    configs().create({
+      headers,
+      query,
+      body: {
+        id: personal.id,
+        scope: "personal",
+        name: "Cannot claim retained creator gateway",
+        credentials: { clientId: "peer-id", clientSecret: "peer-secret" },
+      },
+    }),
+    [409],
+  );
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
   ).toMatchObject([{ id: shared.id, scope: "organization" }]);
@@ -149,22 +162,43 @@ test("creator deletion preserves shared Access and another member's SSH host", a
   ).toContainEqual(expect.objectContaining({ id: host.id }));
 });
 
-test("organization deletion removes shared Access after its member SSH references", async () => {
+test("organization deletion retains shared Access identities without granting a foreign owner access", async () => {
   useSecretKmsProbe();
   const creator = await owner();
   const shared = await createShared();
-  const member = await owner(creator.orgId, "member");
+  await owner(creator.orgId, "member");
   await createHost(shared.id);
+  const survivor = await owner();
+  const ownConfig = await createShared();
+  const ownHost = await createHost(ownConfig.id);
 
   await webhook("organization.deleted", creator.orgId);
 
-  mocks.clerk.session(member.userId, member.orgId, "org:member");
+  mocks.clerk.session(survivor.userId, survivor.orgId, "org:admin");
+  await accept(
+    configs().create({
+      headers,
+      query,
+      body: {
+        id: shared.id,
+        scope: "organization",
+        name: "Cannot claim retained foreign gateway",
+        credentials: { clientId: "foreign-id", clientSecret: "foreign-secret" },
+      },
+    }),
+    [409],
+  );
   expect(
     (await accept(configs().list({ headers, query }), [200])).body.configs,
-  ).toStrictEqual([]);
+  ).toStrictEqual([
+    {
+      ...ownConfig,
+      sshHosts: [{ id: ownHost.id, displayName: ownHost.displayName }],
+    },
+  ]);
   expect(
     (await accept(hosts().list({ headers }), [200])).body.connections,
-  ).toStrictEqual([]);
+  ).toStrictEqual([ownHost]);
 });
 
 test("admin conversion retains the config and hosts while other owners must rebind", async () => {

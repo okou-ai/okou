@@ -14,12 +14,10 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { settleIncludingAbort } from "../../utils";
@@ -109,7 +107,6 @@ async function readSlackStatus(
 }
 
 function createDeleteFixture() {
-  const actors: ApiTestUser[] = [];
   const installations: string[] = [];
   let accepted = captureConnectorExternalState(context);
   let previous: (() => void) | undefined;
@@ -131,31 +128,6 @@ function createDeleteFixture() {
           return slackOrgs.uninstallWorkspace(teamId);
         });
       }
-      const workspaces = new Map(
-        actors
-          .filter((actor) => {
-            return actor.orgId !== null;
-          })
-          .map((actor) => {
-            return [actor.orgId, actor];
-          }),
-      );
-      for (const actor of workspaces.values()) {
-        await cleanup(() => {
-          return deletePublicWorkspace(context, actor);
-        });
-      }
-      for (const actor of actors) {
-        await cleanup(async () => {
-          const webhooks = createWebhookCallbackApi(context);
-          webhooks.configureClerkWebhookSecret();
-          webhooks.verifyNextClerkWebhook({
-            type: "user.deleted",
-            data: { id: actor.userId },
-          });
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-        });
-      }
       await cleanup(flushWaitUntilForTest);
       if (errors.length > 0) {
         throw new AggregateError(errors, "Slack DELETE fixture cleanup failed");
@@ -170,9 +142,7 @@ function createDeleteFixture() {
     },
   );
   function user(options: Parameters<typeof bdd.user>[0] = {}) {
-    const actor = bdd.user(options);
-    actors.push(actor);
-    return actor;
+    return bdd.user(options);
   }
   function run<T>(operation: () => Promise<T>): Promise<T> {
     return owner.run(async () => {

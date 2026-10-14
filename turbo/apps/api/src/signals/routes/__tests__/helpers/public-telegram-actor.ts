@@ -14,7 +14,6 @@ import { server } from "../../../../mocks/server";
 import { integrationsTelegramRoutes } from "../../integrations-telegram";
 import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
 import { publicRunOwner } from "./public-run-owner";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
 import { createRouteMocks } from "./route-test";
 
@@ -122,10 +121,7 @@ export function createPublicTelegramActor(
           });
         }
       });
-      const workspace = await settleIncludingAbort(() => {
-        return deletePublicWorkspace(context, actor);
-      });
-      const errors = [link, features, workspace].flatMap((result) => {
+      const errors = [link, features].flatMap((result) => {
         return result.ok ? [] : [result.error];
       });
       if (errors.length === 1) {

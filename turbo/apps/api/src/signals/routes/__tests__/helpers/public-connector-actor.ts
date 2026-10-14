@@ -18,7 +18,6 @@ import { createBddApi } from "./api-bdd";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
 import { captureSessionStorageMocks } from "./prepared-session-history";
-import { deletePublicWorkspace } from "./public-workspace-cleanup";
 
 function captureExternalMock<T extends (...args: never[]) => unknown>(
   mock: Mock<T>,
@@ -158,14 +157,9 @@ export function createPublicConnectorActor(
       const resources = await settleIncludingAbort(() => {
         return options.beforeWorkspaceCleanup?.() ?? Promise.resolve();
       });
-      const workspace = await settleIncludingAbort(() => {
-        return deletePublicWorkspace(context, actor);
+      const errors = [drained, features, resources].flatMap((result) => {
+        return result.ok ? [] : [result.error];
       });
-      const errors = [drained, features, resources, workspace].flatMap(
-        (result) => {
-          return result.ok ? [] : [result.error];
-        },
-      );
       if (errors.length === 1) {
         throw errors[0];
       }

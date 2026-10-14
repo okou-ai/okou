@@ -304,34 +304,6 @@ export async function loadStoredBuiltinConnectorRuntimeSnapshot(
   return null;
 }
 
-/** Own the accepted-catalog read used by local lifecycle cleanup. */
-export const loadStoredBuiltinConnectorRuntimeSnapshot$ = command(
-  async (
-    { set },
-    connectorSlugs: readonly ConnectorSlug[],
-    signal: AbortSignal,
-  ): Promise<ConnectorRuntimeSelection | null> => {
-    const result = await settle(
-      loadConnectorRuntimeSlugSelection(set(writeDb$), { connectorSlugs }),
-      signal,
-    );
-    signal.throwIfAborted();
-    if (result.ok) {
-      return result.value;
-    }
-    if (!isConnectorCatalogUnavailableError(result.error)) {
-      throw result.error;
-    }
-    log.warn(
-      "Connector catalog unavailable while resolving stored connectors",
-      {
-        error: result.error,
-      },
-    );
-    return null;
-  },
-);
-
 /**
  * Loads only the catalog entries for the given stored connectors from the
  * immutable entries, instead of decoding the full catalog. Empty stored
@@ -1075,7 +1047,6 @@ interface DeleteBuiltinConnectorLocalStateArgs {
   readonly userId: string;
   readonly connectorSlug: string;
   readonly sourceId: string;
-  readonly snapshot?: ConnectorRuntimeSelection | null;
 }
 
 interface PendingConnectorAutomationCleanup {
@@ -1310,16 +1281,6 @@ const prepareDeletedConnectorWatches$ = command(
   },
 );
 
-/** A caller-provided snapshot, including an unavailable `null`, is reused. */
-async function deletionRuntimeSnapshot(
-  db: ReadonlyDb,
-  args: DeleteBuiltinConnectorLocalStateArgs,
-): Promise<ConnectorRuntimeSelection | null> {
-  return args.snapshot === undefined
-    ? await loadStoredBuiltinConnectorRuntimeSnapshot(db, [args.connectorSlug])
-    : args.snapshot;
-}
-
 export const deleteBuiltinConnectorLocalState$ = command(
   async (
     { get, set },
@@ -1327,7 +1288,9 @@ export const deleteBuiltinConnectorLocalState$ = command(
     signal: AbortSignal,
   ): Promise<DeleteBuiltinConnectorLocalStateResult> => {
     const writeDb = set(writeDb$);
-    const snapshot = await deletionRuntimeSnapshot(get(db$), args);
+    const snapshot = await loadStoredBuiltinConnectorRuntimeSnapshot(get(db$), [
+      args.connectorSlug,
+    ]);
     signal.throwIfAborted();
     const featureSwitchOverrides =
       snapshot === null

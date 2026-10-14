@@ -31,7 +31,6 @@ import {
   type ApiTestUser,
 } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
-import { mockClerkMembership } from "./helpers/api-bdd-clerk";
 import { ClerkTransportTestError } from "./helpers/clerk-transport-error";
 
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -193,7 +192,6 @@ async function fundActorWithSubscription(
     storageBucket: env("R2_USER_STORAGES_BUCKET_NAME"),
     kmsKeyId: env("SECRETS_KMS_KEY_ID"),
   };
-  let cliToken: string | undefined;
   const owner = createFixtureOperationOwner(async () => {
     const outcome = await settleIncludingAbort(
       (async () => {
@@ -209,21 +207,8 @@ async function fundActorWithSubscription(
           });
           await webhooks.requestClerkWebhook("{}", {}, [200]);
           await flushWaitUntilForTest();
-          if (cliToken) {
-            mockClerkMembership(context, actor, "org:admin");
-            const revoked = await rawScrapeRequest(
-              null,
-              {
-                url: "https://example.com/page",
-                format: "markdown",
-                mode: "standard",
-              },
-              { authHeaders: { authorization: `Bearer ${cliToken}` } },
-            );
-            expect(revoked.status).toBe(401);
-            await flushWaitUntilForTest();
-          }
-          // Anonymous unapproved challenges retain their public 900-second expiry.
+          // Clerk deletion does not revoke issued tokens. Unique user IDs keep
+          // retained tokens isolated; anonymous challenges expire after 900 seconds.
         }
         if (!cleanupResult.ok) {
           throw cleanupResult.error;
@@ -235,7 +220,7 @@ async function fundActorWithSubscription(
     }
   });
   await owner.run(async () => {
-    cliToken = await options.createCliTokenBeforeFunding?.();
+    await options.createCliTokenBeforeFunding?.();
     await bootstrapOnboarding(actor);
     await expect(credits(actor)).resolves.toBe(0);
 

@@ -993,7 +993,7 @@ test("does not delete the org before its Stripe refund succeeds", async () => {
   ).not.toHaveBeenCalled();
 });
 
-test("retries refunds on redelivery before cleaning a Clerk-deleted org", async () => {
+test("retries refunds on redelivery while retaining Clerk-deleted org billing history", async () => {
   const deletionTimestamp = 1_800_000_000;
   const periodStart = deletionTimestamp - 500;
   const periodEnd = deletionTimestamp + 500;
@@ -1086,5 +1086,5 @@ test("retries refunds on redelivery before cleaning a Clerk-deleted org", async 
   expect(
     (await createBillingMediaApi(context).readBillingStatus(actor))
       .hasSubscription,
-  ).toBeFalsy();
+  ).toBeTruthy();
 });
