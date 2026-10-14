@@ -233,20 +233,9 @@ export function projectPiMemoryStage1Evidence(args: {
   return boundStage1Evidence(rows);
 }
 
-export function projectPiMemoryChatStage1Evidence(args: {
-  readonly input: unknown;
-  readonly threadId: string;
-  readonly sourceRunId: string;
-  readonly lastSeqId: number;
-}): PiMemoryStage1Evidence[] {
-  const input = piMemoryChatInputSchema.parse(args.input);
-  if (
-    input.threadId !== args.threadId ||
-    input.sourceRunId !== args.sourceRunId ||
-    input.lastSeqId !== args.lastSeqId
-  ) {
-    throw new Error("Memory Chat source identity mismatch");
-  }
+function settledMemoryChatRevocations(
+  input: ReturnType<typeof piMemoryChatInputSchema.parse>,
+): ReadonlySet<string> {
   let previous = 0;
   const revoked = new Set<string>();
   let completed = false;
@@ -269,6 +258,24 @@ export function projectPiMemoryChatStage1Evidence(args: {
   }
   if (previous > input.lastSeqId || !completed)
     throw new Error("Memory Chat source is not settled");
+  return revoked;
+}
+
+export function projectPiMemoryChatStage1Evidence(args: {
+  readonly input: unknown;
+  readonly threadId: string;
+  readonly sourceRunId: string;
+  readonly lastSeqId: number;
+}): PiMemoryStage1Evidence[] {
+  const input = piMemoryChatInputSchema.parse(args.input);
+  if (
+    input.threadId !== args.threadId ||
+    input.sourceRunId !== args.sourceRunId ||
+    input.lastSeqId !== args.lastSeqId
+  ) {
+    throw new Error("Memory Chat source identity mismatch");
+  }
+  const revoked = settledMemoryChatRevocations(input);
   const rows: PiMemoryStage1Evidence[] = [];
   for (const event of input.events) {
     if (revoked.has(event.id)) continue;
@@ -277,7 +284,9 @@ export function projectPiMemoryChatStage1Evidence(args: {
         event.payload?.userMessage,
       );
       const text = message.parts
-        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .flatMap((part) => {
+          return part.type === "text" ? [part.text] : [];
+        })
         .join("\n")
         .trim();
       if (text && !isRuntimeOrMemoryFeedback(text))

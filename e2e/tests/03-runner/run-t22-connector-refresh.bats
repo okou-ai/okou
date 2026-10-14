@@ -102,7 +102,7 @@ EOF
     public_surfaces+="$first_run_response"$'\n'
     local first_session_id
     first_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$first_run_response")
 
     # Both outcomes share a prefix so transport failures surface before the
@@ -200,7 +200,7 @@ EOF
     public_surfaces+="$updated_run_response"$'\n'
     local updated_session_id
     updated_session_id=$(jq -er \
-        '.result.agentSessionId | select(type == "string" and length > 0)' \
+        '.result.frameworkSessionId | select(type == "string" and length > 0)' \
         <<<"$updated_run_response")
     [[ "$updated_session_id" == "$first_session_id" ]]
 

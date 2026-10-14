@@ -680,7 +680,7 @@ runner_chat_steer() {
     run_response="$(runner_wait_for_run "$run_id" "$run_timeout")" || return 1
     if ! jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<< "$run_response" >/dev/null; then
         echo "# Completed steered run did not contain a session id: $run_response" >&2
         return 1
@@ -698,7 +698,7 @@ runner_chat_steer() {
         --arg runId "$run_id" \
         --arg threadId "$thread_id" \
         --arg steerEventId "$steer_event_id" \
-        --arg sessionId "$(jq -er '.result.agentSessionId' <<< "$run_response")" \
+        --arg sessionId "$(jq -er '.result.frameworkSessionId' <<< "$run_response")" \
         '{
             runId: $runId,
             threadId: $threadId,
@@ -737,7 +737,7 @@ runner_chat_send_after_completion() {
     run_response="$(runner_wait_for_run "$run_id" "$run_timeout")" || return 1
     if ! jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<< "$run_response" >/dev/null; then
         echo "# Completed successor run did not contain a session id: $run_response" >&2
         return 1
@@ -752,7 +752,7 @@ runner_chat_send_after_completion() {
     jq -cn \
         --arg runId "$run_id" \
         --arg threadId "$thread_id" \
-        --arg sessionId "$(jq -er '.result.agentSessionId' <<< "$run_response")" \
+        --arg sessionId "$(jq -er '.result.frameworkSessionId' <<< "$run_response")" \
         '{
             runId: $runId,
             threadId: $threadId,
@@ -779,7 +779,7 @@ _runner_chat_execute() {
     run_response="$(runner_wait_for_run "$run_id")" || return 1
     if ! jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<< "$run_response" >/dev/null; then
         echo "# Completed run did not contain a session id: $run_response" >&2
         return 1
@@ -796,7 +796,7 @@ _runner_chat_execute() {
     jq -cn \
         --arg runId "$run_id" \
         --arg threadId "$resolved_thread_id" \
-        --arg sessionId "$(jq -er '.result.agentSessionId' <<< "$run_response")" \
+        --arg sessionId "$(jq -er '.result.frameworkSessionId' <<< "$run_response")" \
         '{
             runId: $runId,
             threadId: $threadId,

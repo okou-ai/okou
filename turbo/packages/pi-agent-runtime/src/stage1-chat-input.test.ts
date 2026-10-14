@@ -94,9 +94,11 @@ describe("Memory-owned settled Chat input", () => {
       ...row(1, "run.completed", null),
       chatThreadId: sourceRunId,
     };
-    expect(() => project([foreign])).toThrow("ordering mismatch");
-    expect(() =>
-      project([row(1, "output.message", { content: "Still running" })]),
-    ).toThrow("not settled");
+    expect(() => {
+      return project([foreign]);
+    }).toThrow("ordering mismatch");
+    expect(() => {
+      return project([row(1, "output.message", { content: "Still running" })]);
+    }).toThrow("not settled");
   });
 });

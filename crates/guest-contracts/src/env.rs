@@ -796,6 +796,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "hello".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -813,6 +814,7 @@ mod tests {
 
         assert_eq!(json["prompt"], "hello");
         assert_eq!(json["appendSystemPrompt"], "system");
+        assert_eq!(json["nativeContinuation"], "{}");
         assert_eq!(json["secretValues"], "secret");
         assert_eq!(json["disallowedTools"], "WebFetch");
         assert_eq!(json["featureFlags"], r#"{"flag":true}"#);
@@ -834,6 +836,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "prompt".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -852,6 +855,10 @@ mod tests {
         assert_eq!(
             fields,
             [
+                RunPayloadField {
+                    name: "nativeContinuation",
+                    value: "{}"
+                },
                 RunPayloadField {
                     name: PROMPT_RUN_PAYLOAD_FIELD,
                     value: "prompt"
