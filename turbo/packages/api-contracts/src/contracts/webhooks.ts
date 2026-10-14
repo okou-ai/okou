@@ -405,37 +405,43 @@ const webhookCompleteBodySchema = z
   })
   .superRefine((body, context) => {
     const homeResult = body.homeReuseResult;
-    if (homeResult === undefined) {
-      return;
-    }
     const sandboxResult = body.sandboxReuseResult;
-    const coherentSandboxReuse =
-      sandboxResult === "reused" && homeResult === "sandboxReused";
-    const coherentSandboxMiss =
-      sandboxResult !== undefined &&
-      currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
-      homeResult !== "sandboxReused";
-    if (!coherentSandboxReuse && !coherentSandboxMiss) {
-      context.addIssue({
-        code: "custom",
-        path: ["homeReuseResult"],
-        message: "home reuse result does not match sandbox reuse result",
-      });
+    if (homeResult !== undefined) {
+      const coherentSandboxReuse =
+        sandboxResult === "reused" && homeResult === "sandboxReused";
+      const coherentSandboxMiss =
+        sandboxResult !== undefined &&
+        currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
+        homeResult !== "sandboxReused";
+      if (!coherentSandboxReuse && !coherentSandboxMiss) {
+        context.addIssue({
+          code: "custom",
+          path: ["homeReuseResult"],
+          message: "home reuse result does not match sandbox reuse result",
+        });
+      }
     }
     const startupPath = body.sandboxStartupPath;
-    if (
-      startupPath !== undefined &&
-      ((startupPath === "sandbox" && !coherentSandboxReuse) ||
-        (startupPath === "home" &&
-          (!coherentSandboxMiss || homeResult !== "reused")) ||
+    if (startupPath !== undefined) {
+      const matchesSandbox =
+        sandboxResult === undefined ||
+        (startupPath === "sandbox"
+          ? sandboxResult === "reused"
+          : sandboxResult !== "reused");
+      const matchesHome =
+        homeResult === undefined ||
+        (startupPath === "sandbox" && homeResult === "sandboxReused") ||
+        (startupPath === "home" && homeResult === "reused") ||
         ((startupPath === "blank" || startupPath === "cold") &&
-          (!coherentSandboxMiss || homeResult === "reused")))
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["sandboxStartupPath"],
-        message: "startup path does not match sandbox and home reuse results",
-      });
+          homeResult !== "reused" &&
+          homeResult !== "sandboxReused");
+      if (!matchesSandbox || !matchesHome) {
+        context.addIssue({
+          code: "custom",
+          path: ["sandboxStartupPath"],
+          message: "startup path does not match sandbox and home reuse results",
+        });
+      }
     }
   });
 

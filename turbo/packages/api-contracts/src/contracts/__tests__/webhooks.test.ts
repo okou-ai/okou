@@ -905,6 +905,51 @@ describe("agent completion reuse outcomes", () => {
     ).toBe(false);
   });
 
+  it("validates supplied startup evidence when home metadata is absent", () => {
+    for (const [sandboxStartupPath, sandboxReuseResult] of [
+      ["sandbox", "reused"],
+      ["home", "poolMiss"],
+      ["blank", "poolMiss"],
+      ["cold", "poolMiss"],
+      ["cold", "noSessionId"],
+    ] as const) {
+      expect(
+        webhookCompleteContract.complete.body.parse({
+          ...baseBody,
+          sandboxStartupPath,
+          sandboxReuseResult,
+        }).sandboxStartupPath,
+      ).toBe(sandboxStartupPath);
+    }
+    for (const sandboxStartupPath of [
+      "sandbox",
+      "home",
+      "blank",
+      "cold",
+    ] as const) {
+      expect(
+        webhookCompleteContract.complete.body.parse({
+          ...baseBody,
+          sandboxStartupPath,
+        }).sandboxStartupPath,
+      ).toBe(sandboxStartupPath);
+    }
+    for (const [sandboxStartupPath, sandboxReuseResult] of [
+      ["sandbox", "poolMiss"],
+      ["home", "reused"],
+      ["blank", "reused"],
+      ["cold", "reused"],
+    ] as const) {
+      expect(
+        webhookCompleteContract.complete.body.safeParse({
+          ...baseBody,
+          sandboxStartupPath,
+          sandboxReuseResult,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("rejects missing, legacy, or contradictory sandbox context", () => {
     const incoherentBodies = [
       { homeReuseResult: "cacheMiss" },

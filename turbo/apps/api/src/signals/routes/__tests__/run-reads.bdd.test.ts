@@ -2534,6 +2534,56 @@ describe("RUN-04: agent run telemetry families", () => {
     }
   });
 
+  it("rejects contradictory partial startup metadata before completion", async () => {
+    const actor = await entitledActor();
+    const { agentId } = await createThreadAgent(actor, "partial startup");
+    const run = await api.createThreadRun(actor, {
+      agentId,
+      prompt: "validate partial startup evidence",
+    });
+    const claim = await api.claimRunnerJob(run.runId);
+    const headers = sandboxHeaders(claim.sandboxToken);
+
+    for (const sandboxStartupPath of ["blank", "cold"] as const) {
+      const rejected = await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          sandboxReuseResult: "reused",
+          sandboxStartupPath,
+        },
+        headers,
+        [400],
+      );
+      expectApiError(rejected.body);
+      expect(rejected.body.error.code).toBe("BAD_REQUEST");
+      expect(rejected.body.error.message).toMatch(/^sandboxStartupPath: /u);
+      expect((await api.readRun(actor, run.runId)).status).toBe("running");
+      const unclassified = await api.requestRunRunner(actor, run.runId, [200]);
+      mustOk(unclassified, "runner diagnostics after rejected completion");
+      expect(unclassified.body.sandboxStartupPath ?? null).toBeNull();
+    }
+
+    const completion = await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        sandboxReuseResult: "poolMiss",
+        sandboxStartupPath: "cold",
+      },
+      headers,
+      [200],
+    );
+    expect(completion.body).toStrictEqual({ success: true, status: "failed" });
+    expect(
+      (await api.requestRunRunner(actor, run.runId, [200])).body,
+    ).toMatchObject({
+      sandboxReuseResult: "poolMiss",
+      homeReuseResult: null,
+      sandboxStartupPath: "cold",
+    });
+  });
+
   it("reads fresh run context within the creation-time window after a cached miss", async () => {
     const actor = await entitledActor();
     await api.ensurePersonalSubscriptionModel(actor);
