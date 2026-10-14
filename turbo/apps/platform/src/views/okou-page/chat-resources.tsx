@@ -33,6 +33,7 @@ import {
 } from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
+import { ChatRelationships } from "./chat-relations.tsx";
 
 const RESOURCE_PREVIEW_LIMIT = 3;
 
@@ -72,7 +73,10 @@ function ChatResourcesButtonInner({
   const resources = thread.resources;
   const requestedOpen = useLastResolved(resources.open$) ?? false;
   const content = useLastLoadable(resources.content$);
+  const relationsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
   const ready =
+    relationsEnabled ||
     content.state === "hasError" ||
     (content.state === "hasData" &&
       content.data !== null &&
@@ -229,10 +233,13 @@ function ChatResourcesBody({
   const expanded = useGet(thread.resources.expandedSections$);
   const toggleSection = useSet(thread.resources.toggleSection$);
   const setOpen = useSet(thread.resources.setOpen$);
+  const relationsEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatRelations];
   const data = content.state === "hasData" ? content.data : null;
   return (
     <>
-      <div className="min-h-0 overflow-y-auto p-3">
+      <div className="min-h-0 space-y-4 overflow-y-auto p-3">
+        <ChatRelationships thread={thread} />
         {content.state === "hasError" ? (
           <div className="flex flex-col items-center gap-2 py-4 text-sm text-muted-foreground">
             <p>
@@ -246,7 +253,10 @@ function ChatResourcesBody({
               })}
             </Button>
           </div>
-        ) : data ? (
+        ) : data &&
+          (!relationsEnabled ||
+            data.artifacts.length > 0 ||
+            data.links.length > 0) ? (
           <div className="space-y-4">
             {data.artifacts.length > 0 && (
               <section
@@ -295,31 +305,36 @@ function ChatResourcesBody({
                 },
               }}
             />
-            {data.artifacts.length === 0 && data.links.length === 0 && (
-              <p className="px-2 py-4 text-sm text-muted-foreground">
-                {t(($) => {
-                  return $.chat.resources.empty;
-                })}
-              </p>
-            )}
+            {!relationsEnabled &&
+              data.artifacts.length === 0 &&
+              data.links.length === 0 && (
+                <p className="px-2 py-4 text-sm text-muted-foreground">
+                  {t(($) => {
+                    return $.chat.resources.empty;
+                  })}
+                </p>
+              )}
           </div>
         ) : null}
       </div>
-      <div className="shrink-0 border-t border-border/60 p-2">
-        <Button
-          variant="quiet"
-          size="sm"
-          className="w-full justify-start"
-          onClick={() => {
-            setOpen(false);
-            openAll();
-          }}
-        >
-          {t(($) => {
-            return $.chat.resources.viewAll;
-          })}
-        </Button>
-      </div>
+      {(content.state === "hasError" ||
+        (data && (data.artifacts.length > 0 || data.links.length > 0))) && (
+        <div className="shrink-0 border-t border-border/60 p-2">
+          <Button
+            variant="quiet"
+            size="sm"
+            className="w-full justify-start"
+            onClick={() => {
+              setOpen(false);
+              openAll();
+            }}
+          >
+            {t(($) => {
+              return $.chat.resources.viewAll;
+            })}
+          </Button>
+        </div>
+      )}
     </>
   );
 }

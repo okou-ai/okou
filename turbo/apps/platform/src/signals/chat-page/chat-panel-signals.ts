@@ -1,3 +1,4 @@
+import type { ChatRelationSignals } from "./chat-relations.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
@@ -200,6 +201,7 @@ export interface ChatPanelSignals {
   readonly pin: ChatThreadPinSignals;
   readonly locator: ChatConversationLocatorSignals;
   readonly resources: ChatResourceSignals;
+  readonly relations: ChatRelationSignals;
   // -- Thread-owned automation resources -----------------------------------
   readonly headerAutomations: HeaderAutomationSignals;
   // -- Thread-owned utility sidebar -----------------------------------------
