@@ -3794,6 +3794,32 @@
       "connected": "{{connector}} terhubung"
     }
   },
+  "documentTemplates": {
+    "back": "Kembali ke templat",
+    "categories": {
+      "all": "Semua",
+      "business-record": "Catatan bisnis",
+      "contract": "Kontrak",
+      "creative-brief": "Brief kreatif",
+      "guide": "Panduan",
+      "invoice": "Faktur",
+      "letter": "Surat",
+      "report": "Laporan",
+      "resume": "CV",
+      "service-agreement": "Perjanjian layanan"
+    },
+    "empty": "Tidak ada templat yang cocok",
+    "filter": "Kategori dokumen",
+    "imageError": "Pratinjau tidak tersedia",
+    "page": "Halaman {{page}}",
+    "preview": "Pratinjau {{title}}",
+    "reset": "Hapus filter",
+    "retry": "Coba lagi",
+    "search": "Cari dokumen",
+    "title": "Dokumen",
+    "use": "Gunakan templat",
+    "useNamed": "Gunakan {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Coba lagi"

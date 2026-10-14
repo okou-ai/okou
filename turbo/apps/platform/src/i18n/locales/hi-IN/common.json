@@ -3814,6 +3814,32 @@
       "connected": "{{connector}} कनेक्ट हुआ"
     }
   },
+  "documentTemplates": {
+    "back": "टेम्पलेट पर वापस जाएँ",
+    "categories": {
+      "all": "सभी",
+      "business-record": "व्यावसायिक रिकॉर्ड",
+      "contract": "अनुबंध",
+      "creative-brief": "क्रिएटिव ब्रीफ़",
+      "guide": "गाइड",
+      "invoice": "इनवॉइस",
+      "letter": "पत्र",
+      "report": "रिपोर्ट",
+      "resume": "रिज़्यूमे",
+      "service-agreement": "सेवा समझौता"
+    },
+    "empty": "कोई मेल खाता टेम्पलेट नहीं",
+    "filter": "दस्तावेज़ श्रेणी",
+    "imageError": "पूर्वावलोकन उपलब्ध नहीं है",
+    "page": "पृष्ठ {{page}}",
+    "preview": "{{title}} का पूर्वावलोकन",
+    "reset": "फ़िल्टर हटाएँ",
+    "retry": "फिर से कोशिश करें",
+    "search": "दस्तावेज़ खोजें",
+    "title": "दस्तावेज़",
+    "use": "टेम्पलेट इस्तेमाल करें",
+    "useNamed": "{{title}} इस्तेमाल करें"
+  },
   "global": {
     "actions": {
       "tryAgain": "पुनः प्रयास करें"

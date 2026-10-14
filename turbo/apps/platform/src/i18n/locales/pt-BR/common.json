@@ -3875,6 +3875,32 @@
       "connected": "{{connector}} conectado"
     }
   },
+  "documentTemplates": {
+    "back": "Voltar aos modelos",
+    "categories": {
+      "all": "Todos",
+      "business-record": "Registros comerciais",
+      "contract": "Contrato",
+      "creative-brief": "Briefing criativo",
+      "guide": "Guias",
+      "invoice": "Fatura",
+      "letter": "Cartas",
+      "report": "Relatórios",
+      "resume": "Currículos",
+      "service-agreement": "Acordo de serviços"
+    },
+    "empty": "Nenhum modelo correspondente",
+    "filter": "Categoria do documento",
+    "imageError": "Prévia indisponível",
+    "page": "Página {{page}}",
+    "preview": "Visualizar {{title}}",
+    "reset": "Limpar filtros",
+    "retry": "Tentar novamente",
+    "search": "Buscar documentos",
+    "title": "Documento",
+    "use": "Usar modelo",
+    "useNamed": "Usar {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Tentar novamente"

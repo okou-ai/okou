@@ -3814,6 +3814,32 @@
       "connected": "{{connector}} verbunden"
     }
   },
+  "documentTemplates": {
+    "back": "Zurück zu Vorlagen",
+    "categories": {
+      "all": "Alle",
+      "business-record": "Geschäftsunterlagen",
+      "contract": "Vertrag",
+      "creative-brief": "Kreativbriefing",
+      "guide": "Handbücher",
+      "invoice": "Rechnung",
+      "letter": "Briefe",
+      "report": "Berichte",
+      "resume": "Lebensläufe",
+      "service-agreement": "Dienstleistungsvertrag"
+    },
+    "empty": "Keine passenden Vorlagen",
+    "filter": "Dokumentkategorie",
+    "imageError": "Vorschau nicht verfügbar",
+    "page": "Seite {{page}}",
+    "preview": "Vorschau: {{title}}",
+    "reset": "Filter zurücksetzen",
+    "retry": "Erneut versuchen",
+    "search": "Dokumentvorlagen suchen",
+    "title": "Dokument",
+    "use": "Vorlage verwenden",
+    "useNamed": "{{title}} verwenden"
+  },
   "global": {
     "actions": {
       "tryAgain": "Erneut versuchen"

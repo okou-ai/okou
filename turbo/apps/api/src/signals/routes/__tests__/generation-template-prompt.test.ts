@@ -1,3 +1,4 @@
+import { DOCUMENT_TEMPLATE_PACKAGE } from "@okouai/core/document-template-items";
 import { describe, expect, it } from "vitest";
 import {
   ILLUSTRATION_TEMPLATE_ITEMS,
@@ -471,5 +472,60 @@ describe("buildGenerationTemplatePrompt", () => {
       status: "invalid",
       message: "Unknown website template",
     });
+  });
+});
+
+describe("built-in document template context", () => {
+  it("pulls the pinned document package without confusing it with HTML docs-design", () => {
+    const result = buildGenerationTemplatePrompt({
+      type: "document",
+      selection: { documentTemplateId: "document-template:creative-brief" },
+    });
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") {
+      throw new Error("Expected document guidance");
+    }
+    expect(result.prompt).toContain(
+      `okou resource pull ${DOCUMENT_TEMPLATE_PACKAGE.resourceId}`,
+    );
+    expect(result.prompt).toContain(DOCUMENT_TEMPLATE_PACKAGE.sha256);
+    expect(result.prompt).toContain("document-creative-brief/SKILL.md");
+    expect(result.prompt).toContain("editable Word and PDF");
+    expect(result.prompt).not.toContain("docs-design");
+    expect(result.prompt).not.toContain("okou host");
+  });
+
+  it("rejects an unknown document instead of silently choosing another template", () => {
+    expect(
+      buildGenerationTemplatePrompt({
+        type: "document",
+        selection: { documentTemplateId: "document-template:missing" },
+      }),
+    ).toStrictEqual({
+      status: "invalid",
+      message: "Unknown document template",
+    });
+  });
+
+  it("preserves the order and scope of multiple document references", () => {
+    const result = buildGenerationTemplatesPrompt([
+      {
+        type: "document",
+        selection: { documentTemplateId: "document-template:creative-brief" },
+      },
+      {
+        type: "document",
+        selection: { documentTemplateId: "document-template:simple-invoice" },
+      },
+    ]);
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") {
+      throw new Error("Expected document guidance");
+    }
+    expect(result.prompt).toContain("## Template #1 (document)");
+    expect(result.prompt).toContain("## Template #2 (document)");
+    expect(
+      result.prompt.indexOf("document-creative-brief/SKILL.md"),
+    ).toBeLessThan(result.prompt.indexOf("document-simple-invoice/SKILL.md"));
   });
 });

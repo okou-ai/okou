@@ -3,6 +3,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
@@ -125,6 +126,13 @@ export function createRunTemplates(
       get(presentations$),
       get(mounted$),
     ]);
+    const templateError = documentTemplateAvailabilityError(
+      selection?.templates ?? [],
+      await get(features$),
+    );
+    if (templateError) {
+      return templateError;
+    }
     const guidance = buildGenerationTemplatesPrompt(
       selection?.templates ?? [],
       {
@@ -146,4 +154,24 @@ export function createRunTemplates(
       }),
     };
   });
+}
+
+function documentTemplateAvailabilityError(
+  templates: readonly GenerationTemplateRequest[],
+  features: FeatureSwitchContext,
+): RunTemplatesResult | undefined {
+  if (
+    templates.some((template) => {
+      return template.type === "document";
+    }) &&
+    !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features)
+  ) {
+    return {
+      error: {
+        code: "FORBIDDEN",
+        message: "Built-in document templates are not enabled",
+      },
+    };
+  }
+  return undefined;
 }

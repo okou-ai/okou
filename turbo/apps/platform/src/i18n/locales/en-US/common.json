@@ -3806,6 +3806,32 @@
       "connected": "{{connector}} connected"
     }
   },
+  "documentTemplates": {
+    "back": "Back to templates",
+    "categories": {
+      "all": "All",
+      "business-record": "Business records",
+      "contract": "Contract",
+      "creative-brief": "Creative brief",
+      "guide": "Guides",
+      "invoice": "Invoice",
+      "letter": "Letters",
+      "report": "Reports",
+      "resume": "Resumes",
+      "service-agreement": "Service agreement"
+    },
+    "empty": "No matching templates",
+    "filter": "Document category",
+    "imageError": "Preview unavailable",
+    "page": "Page {{page}}",
+    "preview": "Preview {{title}}",
+    "reset": "Clear filters",
+    "retry": "Retry",
+    "search": "Search documents",
+    "title": "Document",
+    "use": "Use template",
+    "useNamed": "Use {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Try again"

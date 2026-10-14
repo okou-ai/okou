@@ -25,6 +25,20 @@ function client() {
 }
 
 describe("registry resource download", () => {
+  it("rejects a document archive digest that does not match the pinned bundle", async () => {
+    const response = await accept(
+      client().download({
+        headers: authHeaders(),
+        query: {
+          id: "template:document-builtins-v1",
+          expectedSha256: "f".repeat(64),
+        },
+      }),
+      [404],
+    );
+    expect(response.body.error.code).toBe("NOT_FOUND");
+    expect(response.body.error.message).toContain("not private-pullable");
+  });
   it("keeps non-presentation resources off the current-template route", async () => {
     const response = await accept(
       client().downloadPresentationTemplate({

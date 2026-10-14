@@ -15,6 +15,7 @@ import {
   findPresentationRunbookResource,
   findTemplate,
   findWebsiteTemplateResource,
+  findDocumentTemplateResource,
   type RegistryEntry,
 } from "@okouai/core/resource-registry";
 
@@ -51,7 +52,8 @@ export function findRegistryResourceForPull(
       findImageStyle(candidate) ??
       findPresentationReverseTemplateResource(candidate) ??
       findPresentationRunbookResource(candidate) ??
-      findWebsiteTemplateResource(candidate);
+      findWebsiteTemplateResource(candidate) ??
+      findDocumentTemplateResource(candidate);
     if (entry) {
       return entry;
     }

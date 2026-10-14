@@ -1440,6 +1440,75 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, sent.runId);
   }, 60_000);
 
+  it("rejects Document templates while disabled and injects their pinned resource after enablement", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    if (!actor.orgId) {
+      throw new Error("Expected a chat organization");
+    }
+    const template: GenerationTemplateRequest = {
+      type: "document",
+      selection: { documentTemplateId: "document-template:simple-invoice" },
+    };
+    const clientEventId = randomUUID();
+    const response = await chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        clientEventId,
+        prompt: "Prepare my invoice",
+        userMessage: userMessageWithTemplate("Prepare my invoice", template),
+      },
+      [201],
+    );
+    if (response.status !== 201) {
+      throw new Error("Expected the input to enqueue before pick");
+    }
+    const rejected = await waitForThreadMessages(
+      actor,
+      response.body.threadId,
+      (events) => {
+        return events.some((event) => {
+          return (
+            event.eventType === "input.rejected" &&
+            event.revokesEventId === clientEventId
+          );
+        });
+      },
+    );
+    expect(rejected.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "output.error",
+        content: "Built-in document templates are not enabled",
+      }),
+    );
+    expect(
+      rejected.events.some((event) => {
+        return event.runId !== undefined;
+      }),
+    ).toBeFalsy();
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      {
+        [FeatureSwitchKey.BuiltinDocumentTemplates]: true,
+      },
+    );
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "Prepare my invoice",
+      template,
+    });
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.appendSystemPrompt).toContain(
+      "okou resource pull template:document-builtins-v1",
+    );
+    expect(run.appendSystemPrompt).toContain(
+      "document-simple-invoice/SKILL.md",
+    );
+    await cancelChatRun(actor, sent.runId);
+  }, 60_000);
+
   it("rejects unknown generation template selections", async () => {
     const actor = bdd.user();
     bdd.acceptAgentStorageWrites();

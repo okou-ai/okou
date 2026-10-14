@@ -6683,6 +6683,11 @@ function generationTemplateTypeLabel(
     return null;
   }
   switch (generationTemplateKind(value)) {
+    case "document": {
+      return i18n.t(($) => {
+        return $.documentTemplates.title;
+      });
+    }
     case "avatar": {
       return i18n.t(($) => {
         return $.artifacts.templates.avatar;

@@ -3794,6 +3794,32 @@
       "connected": "{{connector}} 연결됨"
     }
   },
+  "documentTemplates": {
+    "back": "템플릿으로 돌아가기",
+    "categories": {
+      "all": "전체",
+      "business-record": "업무 기록",
+      "contract": "계약서",
+      "creative-brief": "크리에이티브 브리프",
+      "guide": "가이드",
+      "invoice": "청구서",
+      "letter": "서신",
+      "report": "보고서",
+      "resume": "이력서",
+      "service-agreement": "서비스 계약"
+    },
+    "empty": "일치하는 템플릿이 없습니다",
+    "filter": "문서 분류",
+    "imageError": "미리 보기를 사용할 수 없습니다",
+    "page": "{{page}} 페이지",
+    "preview": "{{title}} 미리 보기",
+    "reset": "필터 초기화",
+    "retry": "다시 시도",
+    "search": "문서 템플릿 검색",
+    "title": "문서",
+    "use": "템플릿 사용",
+    "useNamed": "{{title}} 사용"
+  },
   "global": {
     "actions": {
       "tryAgain": "다시 시도"

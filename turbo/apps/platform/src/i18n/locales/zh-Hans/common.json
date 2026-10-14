@@ -3794,6 +3794,32 @@
       "connected": "{{connector}}已连接"
     }
   },
+  "documentTemplates": {
+    "back": "返回模板列表",
+    "categories": {
+      "all": "全部",
+      "business-record": "收据与报价",
+      "contract": "合同",
+      "creative-brief": "创意简报",
+      "guide": "手册与讲义",
+      "invoice": "发票",
+      "letter": "商务信函",
+      "report": "报告",
+      "resume": "简历",
+      "service-agreement": "服务协议"
+    },
+    "empty": "没有匹配的模板",
+    "filter": "文档分类",
+    "imageError": "预览暂不可用",
+    "page": "第 {{page}} 页",
+    "preview": "预览 {{title}}",
+    "reset": "清除筛选",
+    "retry": "重试",
+    "search": "搜索文档模板",
+    "title": "文档",
+    "use": "使用模板",
+    "useNamed": "使用 {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "重试"

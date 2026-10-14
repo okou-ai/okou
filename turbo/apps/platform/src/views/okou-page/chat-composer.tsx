@@ -1,3 +1,8 @@
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
+import {
+  DocumentTemplatePickerPane,
+  DocumentTemplatePreviewPage,
+} from "./document-template-picker-pane.tsx";
 import { Combobox } from "@base-ui/react/combobox";
 import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
@@ -135,6 +140,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  FileText,
   Globe,
   Image as ImageIcon,
   Layers,
@@ -3473,8 +3479,12 @@ function IllustrationTemplateCard({
 function resolveTemplatePickerCategory(
   category: string | null,
   customTemplatesEnabled: boolean,
+  documentTemplatesEnabled: boolean,
 ): string {
   switch (category) {
+    case "document": {
+      return documentTemplatesEnabled ? category : "slides";
+    }
     case "custom": {
       return customTemplatesEnabled ? category : "slides";
     }
@@ -3495,11 +3505,13 @@ function resolveTemplatePickerCategory(
 function TemplatePickerCategoryNav({
   selectedCategory,
   customTemplatesEnabled,
+  documentTemplatesEnabled,
   onChange,
   onReopenCustom,
 }: {
   selectedCategory: string;
   customTemplatesEnabled: boolean;
+  documentTemplatesEnabled: boolean;
   onChange: (value: string) => void;
   onReopenCustom: () => void;
 }) {
@@ -3530,6 +3542,17 @@ function TemplatePickerCategoryNav({
       }),
       Icon: Presentation,
     },
+    ...(documentTemplatesEnabled
+      ? [
+          {
+            value: "document",
+            label: t(($) => {
+              return $.documentTemplates.title;
+            }),
+            Icon: FileText,
+          },
+        ]
+      : []),
     {
       value: "website",
       label: t(($) => {
@@ -5391,7 +5414,11 @@ function TemplatePickerDialog({
     importedTemplateItems.find((item) => {
       return item.template.id === importedPreviewId;
     }) ?? null;
-  const isPreviewing = Boolean(previewItem ?? importedPreviewItem);
+  const documentPreview = useGet(signals.template.documentPreview$);
+  const closeDocumentPreview = useSet(signals.template.closeDocumentPreview$);
+  const isPreviewing = Boolean(
+    previewItem ?? importedPreviewItem ?? documentPreview,
+  );
   const dialogContentClassName = cn(
     "gap-0 overflow-hidden p-0 focus:outline-none focus-visible:outline-none focus-visible:ring-0",
     "flex flex-col",
@@ -5416,6 +5443,7 @@ function TemplatePickerDialog({
   const selectedCategory = resolveTemplatePickerCategory(
     category,
     customTemplatesEnabled,
+    features[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const showTemplatePickerSearch = selectedCategory === "workflow";
 
@@ -5452,6 +5480,7 @@ function TemplatePickerDialog({
 
   const completeTemplatePickerClose = () => {
     clearPresentationPreviews();
+    closeDocumentPreview();
     resetImportedTemplatePicker();
     resetCustomTemplatePicker();
     setPresentationGridScrollTop(0);
@@ -5541,6 +5570,10 @@ function TemplatePickerDialog({
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) {
+          if (documentPreview !== undefined) {
+            closeDocumentPreview();
+            return;
+          }
           if (importedPreviewItem !== null) {
             closeImportedPreview();
             return;
@@ -5598,6 +5631,9 @@ function TemplatePickerDialog({
               <TemplatePickerCategoryNav
                 selectedCategory={selectedCategory}
                 customTemplatesEnabled={customTemplatesEnabled}
+                documentTemplatesEnabled={
+                  features[FeatureSwitchKey.BuiltinDocumentTemplates] === true
+                }
                 onChange={handleCategoryChange}
                 onReopenCustom={resetCustomTemplatePickerView}
               />
@@ -5608,7 +5644,8 @@ function TemplatePickerDialog({
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <TemplatePaidToolNotice category={selectedCategory} />
-                {selectedCategory !== "custom" ? (
+                {selectedCategory !== "custom" &&
+                selectedCategory !== "document" ? (
                   <div
                     className={cn(
                       "relative h-[68px] shrink-0 items-center px-6 pr-14",
@@ -5639,6 +5676,13 @@ function TemplatePickerDialog({
                   onSelectImportedPresentation={
                     handleSelectImportedPresentation
                   }
+                  onSelectDocument={(item) => {
+                    onChange({
+                      type: "document",
+                      selection: { documentTemplateId: item.id },
+                    });
+                    closeTemplatePicker();
+                  }}
                   onSelectCustom={handleSelectCustom}
                   onPreviewPresentation={handlePreview}
                   onPreviewImportedPresentation={handlePreviewImported}
@@ -5655,7 +5699,19 @@ function TemplatePickerDialog({
             </Tabs>
           </div>
         ) : null}
-        {previewItem ? (
+        {documentPreview ? (
+          <DocumentTemplatePreviewPage
+            signals={signals}
+            item={documentPreview}
+            onSelect={(item) => {
+              onChange({
+                type: "document",
+                selection: { documentTemplateId: item.id },
+              });
+              closeTemplatePicker();
+            }}
+          />
+        ) : previewItem ? (
           <TemplatePreviewPage
             item={previewItem}
             onBack={() => {
@@ -5694,6 +5750,7 @@ function TemplatePickerCategoryContent({
   onSelectPresentation,
   onSelectImportedPresentation,
   onSelectCustom,
+  onSelectDocument,
   onPreviewPresentation,
   onPreviewImportedPresentation,
   onImported,
@@ -5722,6 +5779,9 @@ function TemplatePickerCategoryContent({
   ) => void;
   onSelectImportedPresentation: (template: PresentationTemplateSummary) => void;
   onSelectCustom: (template: UserTemplateCatalogEntry) => void;
+  onSelectDocument: (
+    item: import("@okouai/core/document-template-items").DocumentTemplateItem,
+  ) => void;
   onPreviewPresentation: (
     item: PresentationTemplateItem,
     slideIndex?: number,
@@ -5740,6 +5800,14 @@ function TemplatePickerCategoryContent({
   onSelectWorkflow: (item: WorkflowTemplateItem) => void;
   runtime: TemplatePreviewRuntime;
 }) {
+  if (selectedCategory === "document") {
+    return (
+      <DocumentTemplatePickerPane
+        signals={signals}
+        onSelect={onSelectDocument}
+      />
+    );
+  }
   if (selectedCategory === "custom") {
     return (
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
@@ -5892,6 +5960,12 @@ function selectedComposerTemplateAttachment(
   importedTemplates: readonly PresentationTemplateSummary[] = [],
   customTemplates: readonly UserTemplateCatalogEntry[] = [],
 ): ComposerTemplateAttachment | undefined {
+  if (value?.type === "document") {
+    const item = findDocumentTemplateItem(value.selection.documentTemplateId);
+    return item
+      ? { type: "document", title: item.title, category: "document" }
+      : undefined;
+  }
   if (value?.type === "custom") {
     return customTemplateAttachment(
       value.selection.userTemplateId,
@@ -5986,6 +6060,7 @@ function useTemplatePickerTrigger(signals: ComposerSignals) {
   const selectedCategory = resolveTemplatePickerCategory(
     templateMode === "presentation" ? "slides" : (templateMode ?? category),
     customTemplatesEnabled,
+    pickerFeatures[FeatureSwitchKey.BuiltinDocumentTemplates] === true,
   );
   const prewarm = () => {
     prewarmTemplatePreviewImages(

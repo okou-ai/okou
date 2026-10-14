@@ -3794,6 +3794,32 @@
       "connected": "{{connector}}已連線"
     }
   },
+  "documentTemplates": {
+    "back": "返回範本清單",
+    "categories": {
+      "all": "全部",
+      "business-record": "收據與報價",
+      "contract": "合約",
+      "creative-brief": "創意簡報",
+      "guide": "手冊與講義",
+      "invoice": "發票",
+      "letter": "商務信函",
+      "report": "報告",
+      "resume": "履歷",
+      "service-agreement": "服務協議"
+    },
+    "empty": "沒有符合的範本",
+    "filter": "文件分類",
+    "imageError": "預覽暫時無法使用",
+    "page": "第 {{page}} 頁",
+    "preview": "預覽 {{title}}",
+    "reset": "清除篩選",
+    "retry": "重試",
+    "search": "搜尋文件範本",
+    "title": "文件",
+    "use": "使用範本",
+    "useNamed": "使用 {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "重試"

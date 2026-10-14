@@ -3875,6 +3875,32 @@
       "connected": "{{connector}} conectado"
     }
   },
+  "documentTemplates": {
+    "back": "Volver a las plantillas",
+    "categories": {
+      "all": "Todas",
+      "business-record": "Registros comerciales",
+      "contract": "Contrato",
+      "creative-brief": "Brief creativo",
+      "guide": "Guías",
+      "invoice": "Factura",
+      "letter": "Cartas",
+      "report": "Informes",
+      "resume": "Currículums",
+      "service-agreement": "Acuerdo de servicios"
+    },
+    "empty": "No hay plantillas coincidentes",
+    "filter": "Categoría de documento",
+    "imageError": "Vista previa no disponible",
+    "page": "Página {{page}}",
+    "preview": "Vista previa de {{title}}",
+    "reset": "Borrar filtros",
+    "retry": "Reintentar",
+    "search": "Buscar documentos",
+    "title": "Documento",
+    "use": "Usar plantilla",
+    "useNamed": "Usar {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Reintentar"

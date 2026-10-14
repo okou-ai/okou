@@ -1,3 +1,4 @@
+import { DOCUMENT_TEMPLATE_PACKAGE } from "@okouai/core/document-template-items";
 import { computed } from "ccstate";
 import { registryResourceDownloadContract } from "@okouai/api-contracts/contracts/registry-resources";
 import {
@@ -9,6 +10,7 @@ import {
   findSkill,
   findTemplate,
   findWebsiteTemplateResource,
+  findDocumentTemplateResource,
   type RegistryEntry,
 } from "@okouai/core/resource-registry";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
@@ -208,6 +210,16 @@ function resolvePrivateRegistryResourceArchive(
   expectedSha256: string,
   defaultSha256: string,
 ): PrivateRegistryResourceArchive | undefined {
+  if (
+    id === DOCUMENT_TEMPLATE_PACKAGE.resourceId &&
+    expectedSha256 === defaultSha256
+  ) {
+    return {
+      storageName: `registry-resource@${id}`,
+      versionId: DOCUMENT_TEMPLATE_PACKAGE.versionId,
+      sha256: expectedSha256,
+    };
+  }
   const websiteVersionId = resolveWebsiteTemplateArchiveVersionId(
     id,
     expectedSha256,
@@ -249,7 +261,8 @@ function findRegistryResource(id: string): RegistryEntry | undefined {
     findImageStyle(id) ??
     findPresentationReverseTemplateResource(id) ??
     findPresentationRunbookResource(id) ??
-    findWebsiteTemplateResource(id)
+    findWebsiteTemplateResource(id) ??
+    findDocumentTemplateResource(id)
   );
 }
 

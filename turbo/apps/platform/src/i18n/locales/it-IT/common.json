@@ -3875,6 +3875,32 @@
       "connected": "{{connector}} connesso"
     }
   },
+  "documentTemplates": {
+    "back": "Torna ai modelli",
+    "categories": {
+      "all": "Tutti",
+      "business-record": "Documenti commerciali",
+      "contract": "Contratto",
+      "creative-brief": "Brief creativo",
+      "guide": "Guide",
+      "invoice": "Fattura",
+      "letter": "Lettere",
+      "report": "Rapporti",
+      "resume": "Curriculum",
+      "service-agreement": "Accordo di servizi"
+    },
+    "empty": "Nessun modello corrispondente",
+    "filter": "Categoria del documento",
+    "imageError": "Anteprima non disponibile",
+    "page": "Pagina {{page}}",
+    "preview": "Anteprima di {{title}}",
+    "reset": "Cancella filtri",
+    "retry": "Riprova",
+    "search": "Cerca documenti",
+    "title": "Documento",
+    "use": "Usa modello",
+    "useNamed": "Usa {{title}}"
+  },
   "global": {
     "actions": {
       "tryAgain": "Riprova"

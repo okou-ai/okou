@@ -1,3 +1,7 @@
+import {
+  findDocumentTemplateItem,
+  DOCUMENT_TEMPLATE_PACKAGE,
+} from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   buildPresentationRunbookInstructionLines,
@@ -79,7 +83,13 @@ interface CustomGenerationTemplateInput {
   readonly selection: { readonly userTemplateId: string };
 }
 
+interface DocumentGenerationTemplateInput {
+  readonly type: "document";
+  readonly selection: { readonly documentTemplateId: string };
+}
+
 type GenerationTemplateInput =
+  | DocumentGenerationTemplateInput
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | IllustrationGenerationTemplateInput
@@ -131,6 +141,9 @@ export function buildGenerationTemplatePrompt(
   }
   if (generationTemplate.type === "workflow") {
     return buildWorkflowGenerationTemplatePrompt(generationTemplate);
+  }
+  if (generationTemplate.type === "document") {
+    return buildDocumentGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "website") {
     return buildWebsiteGenerationTemplatePrompt(generationTemplate);
@@ -457,6 +470,35 @@ function buildIllustrationGenerationTemplatePrompt(
       `- ${sourceInstruction}`,
       '- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.',
       "- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.",
+    ].join("\n"),
+  };
+}
+
+function buildDocumentGenerationTemplatePrompt(
+  selection: DocumentGenerationTemplateInput,
+): GenerationTemplatePromptResult {
+  const item = findDocumentTemplateItem(selection.selection.documentTemplateId);
+  if (!item) {
+    return { status: "invalid", message: "Unknown document template" };
+  }
+  const pkg = DOCUMENT_TEMPLATE_PACKAGE;
+  const root = `./generated/resources/${pkg.slug}`;
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming("a document"),
+      "Selected built-in document template:",
+      `- Template: ${item.title} (${item.id})`,
+      `- Purpose: ${item.category}`,
+      `- Package resource: ${pkg.resourceId}`,
+      `- Archive SHA-256: ${pkg.sha256}`,
+      `- Pull: okou resource pull ${pkg.resourceId} --dir ./generated/resources`,
+      `- Read ${root}/${item.slug}/SKILL.md and the bundled provenance before authoring.`,
+      "- Use the existing office-files skill to build editable Word and PDF from the same content; follow the user's requested delivery format.",
+      "- Render and inspect every page. The preview is an example, not user-provided content.",
+      "- Preserve this template's section structure and layout. Never invent parties, signatures, payment details, tax rates, or legal jurisdiction.",
+      "- Keep unknown business and legal fields as explicit placeholders. Calculate invoice totals from the supplied line items.",
+      "- Deliver files through okou web upload-file. This selection does not request Google Docs, Google Sheets, or Google Drive delivery.",
     ].join("\n"),
   };
 }
