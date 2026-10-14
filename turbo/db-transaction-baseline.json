@@ -877,11 +877,6 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0371",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock"
-    },
-    {
       "id": "TX-0376",
       "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
       "owner": "validateConnectorCatalogColumnContract"
