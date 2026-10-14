@@ -1751,7 +1751,7 @@
       "useForFutureChats": "향후 채팅에도 사용",
       "workflows": {
         "loading": "워크플로 로딩 중...",
-        "showAll": "모든 워크플로 표시",
+        "showAllCount": "{{total}}개 모두 표시",
         "title": "워크플로"
       }
     },

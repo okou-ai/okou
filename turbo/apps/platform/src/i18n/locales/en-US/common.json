@@ -1754,7 +1754,7 @@
       "useForFutureChats": "Use this for future chats",
       "workflows": {
         "loading": "Loading workflows...",
-        "showAll": "Show all workflows",
+        "showAllCount": "Show all {{total}}",
         "title": "Workflows"
       }
     },

@@ -4,14 +4,13 @@
 import type { ComponentProps } from "react";
 import {
   ChevronRight,
-  Ellipsis,
   Globe,
   Image,
   LayoutGrid,
   Presentation,
   Route,
 } from "lucide-react";
-import { Button, cn, useMediaQuery } from "@okouai/ui";
+import { cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -36,7 +35,6 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 // Four single-line rows fit within 128px, leaving room for both section
 // headings, creation categories and the footer in the 380px overview.
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
-export const SLASH_PANEL_EXPAND_WORKFLOWS_ID = "expand-workflows";
 
 // The row the pointer or the keyboard has marked. Pointing at Browse all takes
 // the mark off it, so the only fill in the index is the one under the pointer,
@@ -379,15 +377,36 @@ function SlashPanelWorkflowSection({
   const visibleWorkflows = hasCollapsedWorkflows
     ? workflows.slice(0, SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT)
     : workflows;
-  const expandMarked =
-    listProps.markedIndex === SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;
   return (
     <div>
-      <SectionLabel>
-        {t(($) => {
-          return $.chat.composer.workflows.title;
-        })}
-      </SectionLabel>
+      {/*
+        Showing the rest is an action on the section, so it sits on the
+        section's own line instead of taking a row of its own. The keyboard
+        never stops on it: arrowing past the last visible workflow reveals the
+        rest, so this control only serves the pointer.
+      */}
+      <div className="flex items-center justify-between">
+        <SectionLabel>
+          {t(($) => {
+            return $.chat.composer.workflows.title;
+          })}
+        </SectionLabel>
+        {hasCollapsedWorkflows && (
+          <button
+            type="button"
+            aria-expanded={false}
+            className="mr-1 rounded-md px-2 pt-2.5 pb-1 text-xs text-muted-foreground/50 transition-colors hover:text-foreground"
+            onClick={onExpandWorkflows}
+          >
+            {t(
+              ($) => {
+                return $.chat.composer.workflows.showAllCount;
+              },
+              { total: workflows.length },
+            )}
+          </button>
+        )}
+      </div>
       <div
         className={
           hasCollapsedWorkflows ? "max-h-32 overflow-hidden" : undefined
@@ -395,29 +414,6 @@ function SlashPanelWorkflowSection({
       >
         <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
       </div>
-      {hasCollapsedWorkflows && (
-        <div className="px-1">
-          <Button
-            variant="quiet"
-            id={listProps.workflowOptionId(SLASH_PANEL_EXPAND_WORKFLOWS_ID)}
-            className={cn(
-              "w-full justify-start rounded-lg px-2",
-              expandMarked && SLASH_ROW_MARKED,
-            )}
-            data-active={expandMarked ? "true" : undefined}
-            aria-label={t(($) => {
-              return $.chat.composer.workflows.showAll;
-            })}
-            aria-expanded={false}
-            onMouseMove={() => {
-              listProps.onPreview(SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT);
-            }}
-            onClick={onExpandWorkflows}
-          >
-            <Ellipsis size={16} aria-hidden />
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

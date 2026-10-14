@@ -1751,7 +1751,7 @@
       "useForFutureChats": "今後のチャットでも使用",
       "workflows": {
         "loading": "ワークフローを読み込んでいます...",
-        "showAll": "すべてのワークフローを表示",
+        "showAllCount": "すべて表示（{{total}}）",
         "title": "ワークフロー"
       }
     },

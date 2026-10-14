@@ -1751,7 +1751,7 @@
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
       "workflows": {
         "loading": "Memuat alur kerja...",
-        "showAll": "Tampilkan semua alur kerja",
+        "showAllCount": "Tampilkan semua {{total}}",
         "title": "Alur kerja"
       }
     },

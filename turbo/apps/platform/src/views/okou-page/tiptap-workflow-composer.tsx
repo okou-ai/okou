@@ -33,7 +33,6 @@ import {
 import {
   SlashTemplatePanel,
   SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
-  SLASH_PANEL_EXPAND_WORKFLOWS_ID,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -177,6 +176,8 @@ interface ComposerKeyDownContext {
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
   readonly scrollSuggestionIntoView: (index: number) => void;
+  /** The row keyboard navigation should land on when it arrives at `index`. */
+  readonly revealSuggestion: (index: number, direction: 1 | -1) => number;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }
 
@@ -265,8 +266,9 @@ function handleComposerKeyDownCapture(
       direction,
     );
     if (next !== undefined) {
-      context.setSelectedSuggestionIndex(next);
-      context.scrollSuggestionIntoView(next);
+      const target = context.revealSuggestion(next, direction);
+      context.setSelectedSuggestionIndex(target);
+      context.scrollSuggestionIntoView(target);
     }
     return true;
   }
@@ -505,8 +507,8 @@ function selectSlashSuggestionRow(
   actions: SuggestionRowActions,
 ): void {
   if (index === rows.expandIndex) {
-    // The ellipsis occupies the first hidden workflow's index. Activating
-    // it reveals that row and keeps keyboard selection at the same position.
+    // The collapsed overview keeps the first hidden workflow's index.
+    // Activating it reveals that row and keeps keyboard selection there.
     actions.expandWorkflows();
     return;
   }
@@ -545,9 +547,6 @@ function suggestionRowScrollTarget(
   index: number,
   rows: SuggestionRows,
 ): { readonly id: string } | undefined {
-  if (index === rows.expandIndex) {
-    return { id: SLASH_PANEL_EXPAND_WORKFLOWS_ID };
-  }
   const head = suggestionHeadRow(index, rows);
   return head === undefined
     ? rows.workflows[index - rows.headCount]
@@ -656,6 +655,18 @@ function useComposerSuggestionMenu({
     }
   }
 
+  // The collapsed overview has no row for its hidden workflows, only a slot
+  // in the navigation order. Arriving there reveals them: coming down past the
+  // last visible workflow lands on the first one revealed, and coming up from
+  // the categories lands on the last workflow, the row just above them.
+  function revealSuggestion(index: number, direction: 1 | -1): number {
+    if (!showWorkflows || index !== rows.expandIndex) {
+      return index;
+    }
+    expandWorkflows();
+    return direction > 0 ? index : rows.headCount + rows.workflows.length - 1;
+  }
+
   function handleKeyDown(event: KeyboardEvent): boolean {
     return handleComposerKeyDownCapture(event, {
       composer,
@@ -668,6 +679,7 @@ function useComposerSuggestionMenu({
       closeSuggestionMenu: close,
       selectSuggestion,
       scrollSuggestionIntoView,
+      revealSuggestion,
       onKeyDown,
     });
   }

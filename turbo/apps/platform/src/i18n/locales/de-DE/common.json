@@ -1754,7 +1754,7 @@
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
       "workflows": {
         "loading": "Workflows werden geladen...",
-        "showAll": "Alle Workflows anzeigen",
+        "showAllCount": "Alle {{total}} anzeigen",
         "title": "Workflows"
       }
     },

@@ -1751,7 +1751,7 @@
       "useForFutureChats": "以後的對話都用這個",
       "workflows": {
         "loading": "正在載入工作流…",
-        "showAll": "顯示全部工作流程",
+        "showAllCount": "顯示全部 {{total}} 個",
         "title": "工作流"
       }
     },

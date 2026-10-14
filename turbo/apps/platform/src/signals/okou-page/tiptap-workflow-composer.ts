@@ -2960,8 +2960,9 @@ function createSlashWorkflowExpansionSignals(
       return range !== null && range === get(expandedSlashRange$);
     }),
     expandSlashWorkflows$: command(({ get, set }) => {
-      // The ellipsis leaves the DOM after activation. Return focus to the
-      // editor, which owns suggestion keyboard navigation, before removing it.
+      // The show-all control leaves the DOM after activation. Return focus to
+      // the editor, which owns suggestion keyboard navigation, before removing
+      // it.
       editor.view.focus();
       set(expandedSlashRange$, get(activeSlashRange$));
     }),
