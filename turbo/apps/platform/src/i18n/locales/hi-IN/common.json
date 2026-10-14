@@ -2743,7 +2743,6 @@
         "workflow": "वर्कफ़्लो"
       },
       "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
-      "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",

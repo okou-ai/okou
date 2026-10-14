@@ -2732,7 +2732,6 @@
         "workflow": "Alur kerja"
       },
       "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
-      "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",

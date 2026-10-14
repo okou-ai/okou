@@ -2732,7 +2732,6 @@
         "workflow": "工作流"
       },
       "importedLoadFailed": "无法加载已上传的模板。",
-      "importedLoading": "正在加载已上传的模板…",
       "importedUnavailable": "已上传的模板暂时不可用。",
       "previewTemplate": "预览模板 {{title}}",
       "previewWebsite": "预览网站模板 {{title}}",

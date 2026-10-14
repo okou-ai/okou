@@ -2743,7 +2743,6 @@
         "workflow": "Workflow"
       },
       "importedLoadFailed": "Hochgeladene Vorlagen konnten nicht geladen werden.",
-      "importedLoading": "Hochgeladene Vorlagen werden geladen…",
       "importedUnavailable": "Hochgeladene Vorlagen sind vorübergehend nicht verfügbar.",
       "previewTemplate": "Vorschauvorlage {{title}}",
       "previewWebsite": "Vorschau der Website-Vorlage {{title}}",

@@ -2743,7 +2743,6 @@
         "workflow": "Workflow"
       },
       "importedLoadFailed": "Couldn't load uploaded templates.",
-      "importedLoading": "Loading uploaded templates…",
       "importedUnavailable": "Uploaded templates are temporarily unavailable.",
       "previewTemplate": "Preview template {{title}}",
       "previewWebsite": "Preview website template {{title}}",
