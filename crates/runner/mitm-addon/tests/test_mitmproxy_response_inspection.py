@@ -65,8 +65,15 @@ class _ResponsePeerLayer(layer.Layer):
         pytest.param(True, "model-sse", id="cancel-hook-model-sse"),
     ],
 )
+@pytest.mark.parametrize("split_first_chunk", [False, True], ids=["whole-gzip", "gzip-prefix"])
 async def test_native_read_loop_waits_for_inspection_and_hook_completion(
-    real_flow, tmp_path, sync_usage_executor, usage_webhook_api, cancel_inspection, response_kind
+    real_flow,
+    tmp_path,
+    sync_usage_executor,
+    usage_webhook_api,
+    cancel_inspection,
+    response_kind,
+    split_first_chunk,
 ):
     if response_kind == "x":
         flow = make_x_pipeline_flow(
@@ -83,6 +90,10 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         second_wire = gzip.compress(model_sse_terminal("anthropic", 10_001))
         expected_first_work = 10_000
     assert len(first_wire) < 65_535
+    # A gzip header alone produces no decoded row/event. The reader assembles
+    # these explicit chunks; TCP is free to split or coalesce either write.
+    first_chunks = [first_wire[:10], first_wire[10:]] if split_first_chunk else [first_wire]
+    wire_chunks = [*first_chunks, second_wire]
 
     def observed_work():
         if response_kind == "x":
@@ -97,6 +108,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
     terminal_done = loop.create_future()
     received = bytearray()
     read_sizes: list[int] = []
+    returned_sizes: list[int] = []
 
     async def provider(_reader, writer):
         try:
@@ -122,10 +134,14 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
     class ProviderReader(asyncio.StreamReader):
         async def read(self, n=-1):
+            read_index = len(read_sizes)
             read_sizes.append(n)
-            if len(read_sizes) == 2:
-                # The second chunk is already available; the production read
-                # loop must not request it until all first-chunk work finishes.
+            assert not response_streaming.has_pending_response_inspection(flow)
+            if split_first_chunk and read_index == 1:
+                assert observed_work() == 0
+            if read_index == len(first_chunks):
+                # The heartbeat releases the second member during inspection.
+                # Its read must wait for all first-member work or cancellation.
                 if cancel_inspection:
                     if response_kind == "x":
                         assert flow.metadata[metadata_keys.X_JSON_STATE]["body_parsed"] is False
@@ -133,14 +149,13 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
                         assert observed_work() <= 8
                 else:
                     assert observed_work() == expected_first_work
-            data = await super().read(n)
-            if len(read_sizes) == 1:
-
-                def observe_pulse():
-                    heartbeat.set_result((len(read_sizes), observed_work()))
-                    pulse.set()
-
-                loop.call_soon(observe_pulse)
+            if read_index < len(wire_chunks):
+                chunk_size = len(wire_chunks[read_index])
+                assert chunk_size <= n
+                data = await super().readexactly(chunk_size)
+            else:
+                data = await super().read(n)
+            returned_sizes.append(len(data))
             return data
 
     with (
@@ -161,10 +176,25 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
 
         class Handler(ConnectionHandler):
             async def handle_hook(self, hook):
-                if cancel_inspection and isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
-                    task = asyncio.current_task()
-                    assert task is not None
-                    loop.call_soon(task.cancel)
+                if isinstance(hook, mitmproxy_compat.ResponseInspectionHook):
+
+                    def observe_pulse():
+                        heartbeat.set_result(
+                            (
+                                len(read_sizes),
+                                observed_work(),
+                                response_streaming.has_pending_response_inspection(flow),
+                            )
+                        )
+                        pulse.set()
+
+                    # Queue inside the hook so only yielding inspection lets
+                    # this callback observe pending work before the next read.
+                    loop.call_soon(observe_pulse)
+                    if cancel_inspection:
+                        task = asyncio.current_task()
+                        assert task is not None
+                        loop.call_soon(task.cancel)
                 await addon_context.master.addons.invoke_addon(mitm_addon, hook)
                 if isinstance(hook, HttpResponseHook):
                     terminal_done.set_result(None)
@@ -202,10 +232,12 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
             await provider_done
             await client_done
 
-    reads_at_pulse, rows_at_pulse = await heartbeat
-    assert reads_at_pulse == 1
+    reads_at_pulse, rows_at_pulse, pending_at_pulse = await heartbeat
+    assert reads_at_pulse == len(first_chunks)
     assert 0 < rows_at_pulse <= 8
-    assert read_sizes == [65535, 65535, 65535]
+    assert pending_at_pulse is True
+    assert read_sizes == [65535] * (len(wire_chunks) + 1)
+    assert returned_sizes == [*(len(chunk) for chunk in wire_chunks), 0]
     assert received == first_wire + second_wire
     if cancel_inspection:
         assert webhook.usage_events() == []
@@ -226,6 +258,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         assert webhook.usage_events() == []
     assert flow.response is not None
     assert flow.response.stream is False
+    assert not response_streaming.has_pending_response_inspection(flow)
 
 
 @pytest.mark.parametrize("cancel_point", ["cooperative-drain", "paused-hook", "socket-read"])
