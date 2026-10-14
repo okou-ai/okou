@@ -2,7 +2,8 @@ import { command } from "ccstate";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { ApiError } from "../../lib/api-error.ts";
-import { navigateTo$, pathname$, replaceSearchParams$ } from "../route.ts";
+import { updateDocumentTitle$ } from "../document-title.ts";
+import { replacePathSilently$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { settle } from "../utils.ts";
 import {
@@ -60,15 +61,14 @@ export const connectDiscordAccount$ = command(
     if (data.guildId) {
       params.set("guild_id", data.guildId);
     }
-    if (get(pathname$) === ROUTES.settingsDiscordInstall) {
-      await set(
-        navigateTo$,
-        ROUTES.settingsDiscord,
-        { searchParams: params },
-        signal,
-      );
-    } else {
-      set(replaceSearchParams$, params);
-    }
+    // Both entry points use the same page. Preserve its operation lifetime so
+    // a queued result can still reach a consent tab that is finishing bootstrap.
+    set(replacePathSilently$, ROUTES.settingsDiscord, undefined, params);
+    set(
+      updateDocumentTitle$,
+      i18n.t(($) => {
+        return $.works.discord.connectTitle;
+      }),
+    );
   },
 );

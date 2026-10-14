@@ -9,7 +9,10 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { replaceSearchParams$ } from "../route.ts";
 import { bestEffort, onDomEventFn, settle } from "../utils.ts";
 import { refreshDiscordOrg$ } from "./discord.ts";
-import { discordOauthCompletionSchema } from "./discord-oauth-message.ts";
+import {
+  discordOauthResultSchema,
+  type DiscordOauthResult,
+} from "./discord-oauth-message.ts";
 
 type DiscordApprovalProof = z.infer<typeof discordOauthContract.approve.body>;
 
@@ -65,24 +68,25 @@ export const captureDiscordApprovalFragment$ = command(
 );
 
 const showDiscordApprovalResult$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    // Completion can reach this tab before its approval response has settled.
-    const request = get(approvalRequest$);
-    if (!request) {
-      return;
-    }
-    await bestEffort(request, signal);
+  async (
+    { set },
+    status: DiscordOauthResult["status"],
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
-    if (!get(approvalSucceeded$)) {
-      return;
-    }
-    // Keep the checking card visible until the authenticated status is ready.
-    // The connection view owns a failed read; the message is not status data.
-    await bestEffort(set(refreshDiscordOrg$, signal), signal);
-    signal.throwIfAborted();
-    set(approvalSucceeded$, false);
+    // A terminal result consumes this attempt. Its approval response may still
+    // be in flight, and must not overwrite the result or offer an obsolete retry.
+    set(approvalProof$, null);
     set(approvalRequest$, null);
-    set(replaceSearchParams$, new URLSearchParams({ status: "connected" }));
+    set(approvalSucceeded$, status === "connected");
+    if (status === "connected") {
+      // Keep the checking card visible until the authenticated status is ready.
+      // The connection view owns a failed read; the message is not status data.
+      await bestEffort(set(refreshDiscordOrg$, signal), signal);
+      signal.throwIfAborted();
+    }
+    set(approvalSucceeded$, false);
+    set(replaceSearchParams$, new URLSearchParams({ status }));
   },
 );
 
@@ -104,18 +108,22 @@ export const ownDiscordApprovalRoute$ = command(
       return;
     }
     // The listener is ready before approval allows the original tab to finish.
-    const onCompleted = onDomEventFn((event: MessageEvent<unknown>) => {
+    const onResult = onDomEventFn((event: MessageEvent<unknown>) => {
       if (event.origin !== window.location.origin || event.source !== opener) {
         return;
       }
-      const message = discordOauthCompletionSchema.safeParse(event.data);
+      const message = discordOauthResultSchema.safeParse(event.data);
       if (!message.success || message.data.state !== attemptState) {
         return;
       }
-      window.removeEventListener("message", onCompleted);
-      return set(showDiscordApprovalResult$, signal);
+      window.removeEventListener("message", onResult);
+      return set(showDiscordApprovalResult$, message.data.status, signal);
     });
-    window.addEventListener("message", onCompleted, { signal });
+    window.addEventListener("message", onResult, { signal });
+    opener.postMessage(
+      { type: "discord-oauth-ready", state: attemptState },
+      window.location.origin,
+    );
   },
 );
 
@@ -123,6 +131,9 @@ const verifyDiscordAuthorization$ = command(
   async ({ get, set }, proof: DiscordApprovalProof, signal: AbortSignal) => {
     await get(runtimeAuthenticatedIdentity$);
     signal.throwIfAborted();
+    if (get(approvalProof$) !== proof) {
+      return;
+    }
     const client = get(apiClient$)(discordOauthContract);
     await accept(
       client.approve({
@@ -133,6 +144,9 @@ const verifyDiscordAuthorization$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (get(approvalProof$) !== proof) {
+      return;
+    }
     set(approvalProof$, null);
     set(approvalSucceeded$, true);
     // Keep the authorization tab open while the original tab completes with
