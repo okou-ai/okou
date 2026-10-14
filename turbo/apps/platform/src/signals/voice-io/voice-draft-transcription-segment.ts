@@ -63,9 +63,6 @@ function segmentBody(
       overlapDurationSeconds: file ? options.overlapDurationSeconds : 0,
     }),
   );
-  if (context.lastAssistantMessage) {
-    body.append("lastAssistantMessage", context.lastAssistantMessage);
-  }
   if (context.editorContext) {
     body.append("editorContext", JSON.stringify(context.editorContext));
   }

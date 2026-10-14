@@ -64,9 +64,6 @@ export const polishVoiceDraft$ = command(
         requestPolish$,
         {
           segments,
-          ...(progress.context.lastAssistantMessage
-            ? { lastAssistantMessage: progress.context.lastAssistantMessage }
-            : {}),
         },
         signal,
       );

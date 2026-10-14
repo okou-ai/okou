@@ -112,15 +112,11 @@ function audioFile(marker: number, durationSeconds = 1): File {
 
 function form(
   files: readonly File[],
-  reference?: string,
   editorContext?: VoiceIoEditorContext,
 ): FormData {
   const data = new FormData();
   for (const file of files) {
     data.append("file", file);
-  }
-  if (reference !== undefined) {
-    data.append("lastAssistantMessage", reference);
   }
   if (editorContext !== undefined) {
     data.append("editorContext", JSON.stringify(editorContext));
@@ -642,7 +638,6 @@ describe("voice input routing and reference context", () => {
     async (durationSeconds) => {
       const owner = await publicVoiceActor();
       await owner.run(async () => {
-        const reference = "The current release is called Project Nebula.";
         const editorContext = {
           before: "Please review Project Nebula\n",
           selected: "the previous scope",
@@ -676,11 +671,7 @@ describe("voice input routing and reference context", () => {
         const response = await accept(
           client().segment({
             headers: { authorization: "Bearer clerk-session" },
-            body: form(
-              [audioFile(1, durationSeconds)],
-              reference,
-              editorContext,
-            ),
+            body: form([audioFile(1, durationSeconds)], editorContext),
           }),
           [200],
         );
@@ -720,10 +711,8 @@ describe("voice input routing and reference context", () => {
             return part.inlineData ? "audio" : "text";
           }),
         ).toStrictEqual(["audio", "text"]);
-        expect(parts[1]?.text).toContain(reference);
-        expect(parts[1]?.text).toContain(
-          JSON.stringify({ lastAssistantMessage: reference, editorContext }),
-        );
+        expect(parts[1]?.text).not.toContain("lastAssistantMessage");
+        expect(parts[1]?.text).toContain(JSON.stringify({ editorContext }));
         expect(providerRequest.systemInstruction.parts[0]?.text).not.toContain(
           editorContext.before,
         );
@@ -766,17 +755,6 @@ describe("voice input routing and reference context", () => {
       });
     },
   );
-
-  it("rejects oversized reference context", async () => {
-    const owner = await publicVoiceActor();
-    await owner.run(async () => {
-      const oversized = await client().segment({
-        headers: { authorization: "Bearer clerk-session" },
-        body: form([audioFile(1)], "x".repeat(8001)),
-      });
-      expect(oversized.status).toBe(400);
-    });
-  });
 });
 
 function segmentForm(
@@ -785,7 +763,7 @@ function segmentForm(
   totalDurationSeconds: number,
   overlapDurationSeconds = 0,
 ): FormData {
-  const data = form(files, "Use LaunchPad for this release.");
+  const data = form(files);
   data.set(
     "options",
     JSON.stringify({
@@ -1000,7 +978,6 @@ describe("POST /api/voice-io/transcribe/segment", () => {
         }),
       );
       const body = segmentForm([audioFile(1)], scenario.previous ?? "", 1);
-      body.set("lastAssistantMessage", secret);
       body.set(
         "editorContext",
         JSON.stringify({

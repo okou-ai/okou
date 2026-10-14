@@ -364,8 +364,6 @@ describe("POST /api/voice-io/polish", () => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           segments: ["um ship the nebula release Friday", "no Monday"],
-          lastAssistantMessage:
-            "The Project Nebula release is scheduled for Friday.",
         },
       }),
       [200],
@@ -398,8 +396,6 @@ describe("POST /api/voice-io/polish", () => {
             {
               text: JSON.stringify({
                 segments: ["um ship the nebula release Friday", "no Monday"],
-                lastAssistantMessage:
-                  "The Project Nebula release is scheduled for Friday.",
               }),
             },
           ],

@@ -8,13 +8,6 @@ const c = initContract();
 
 export const VOICE_IO_POLISH_MAX_TEXT_CHARS = 262_144;
 
-const assistantReferenceSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(VOICE_IO_POLISH_MAX_TEXT_CHARS)
-  .optional();
-
 export const voiceIoPolishSegmentsRequestSchema = z
   .object({
     segments: z
@@ -31,7 +24,6 @@ export const voiceIoPolishSegmentsRequestSchema = z
           ) <= VOICE_IO_POLISH_MAX_TEXT_CHARS
         );
       }, "Voice segments exceed the total text limit"),
-    lastAssistantMessage: assistantReferenceSchema,
   })
   .strict();
 

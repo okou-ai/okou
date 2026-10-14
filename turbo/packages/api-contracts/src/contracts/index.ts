@@ -1577,7 +1577,6 @@ export {
 export {
   voiceIoTranscribeContract,
   voiceIoTranscribeSegmentResponseSchema,
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   type VoiceIoTranscribeContract,
   type VoiceIoTranscribeSegmentResponse,
 } from "./voice-io-transcribe";

@@ -1,5 +1,4 @@
 import {
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS,
   voiceIoTranscribeSegmentOptionsSchema,
   voiceIoTranscribeContract,
@@ -60,21 +59,6 @@ function audioFiles(formData: FormData): readonly File[] | null {
   return entries as readonly File[];
 }
 
-function lastAssistantReference(formData: FormData): string | undefined | null {
-  const value = formData.get("lastAssistantMessage");
-  if (value === null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return null;
-  }
-  const reference = value.trim();
-  if (!reference || reference.length > VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS) {
-    return null;
-  }
-  return reference;
-}
-
 function editorReference(
   formData: FormData,
 ): VoiceIoEditorContext | undefined | null {
@@ -104,10 +88,6 @@ function parseVoiceDraftForm(formData: FormData) {
   if (files.length > 1) {
     return badRequest("Voice segments must contain at most one audio file");
   }
-  const reference = lastAssistantReference(formData);
-  if (reference === null) {
-    return badRequest("Invalid last assistant message");
-  }
   const editorContext = editorReference(formData);
   if (editorContext === null) {
     return badRequest("Invalid editor context");
@@ -125,7 +105,7 @@ function parseVoiceDraftForm(formData: FormData) {
     }
   }
 
-  return { files, segment, reference, editorContext };
+  return { files, segment, editorContext };
 }
 
 async function validateVoiceDraftDuration(
@@ -203,7 +183,7 @@ const voiceIoTranscribeHandler$ = command(
     if ("status" in parsed) {
       return parsed;
     }
-    const { files, segment, reference, editorContext } = parsed;
+    const { files, segment, editorContext } = parsed;
     const duration = await validateVoiceDraftDuration(files, segment, signal);
     signal.throwIfAborted();
     if ("status" in duration) {
@@ -226,7 +206,6 @@ const voiceIoTranscribeHandler$ = command(
       files,
       audioDurationSeconds,
       debug: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext),
-      ...(reference === undefined ? {} : { lastAssistantMessage: reference }),
       ...(editorContext === undefined ? {} : { editorContext }),
     };
     const result = await set(

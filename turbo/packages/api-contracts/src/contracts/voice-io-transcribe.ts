@@ -7,7 +7,6 @@ import { voiceIoQuotaErrorSchema } from "./voice-io-quota";
 
 const c = initContract();
 
-export const VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS = 8_000;
 export const VOICE_IO_TRANSCRIBE_MAX_PREVIOUS_CHARS = 1_000;
 export const VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS = 1_000;
 export const VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS = 75;
@@ -37,7 +36,6 @@ export const voiceIoEditorContextSchema = z
 export type VoiceIoEditorContext = z.infer<typeof voiceIoEditorContextSchema>;
 
 export interface VoiceIoTranscribeContext {
-  readonly lastAssistantMessage?: string;
   readonly editorContext?: VoiceIoEditorContext;
   readonly previousTranscript?: string;
 }
