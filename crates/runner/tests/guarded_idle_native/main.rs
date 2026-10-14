@@ -501,6 +501,7 @@ async fn exercise_retirement(
                 history: continuation::SEED.to_vec(),
                 original: run_id,
                 continued: false,
+                require_bound_history: false,
             })
             .await;
         let mut prepared = match result {
@@ -513,7 +514,7 @@ async fn exercise_retirement(
         };
         original_exit = prepared.exit_code;
         storage_fingerprints = prepared.storage.clone();
-        session_identity = Some(prepared.identity.clone());
+        session_identity = prepared.identity.clone();
         first_lease = Some(lease);
         let backing = prepared
             .sandbox

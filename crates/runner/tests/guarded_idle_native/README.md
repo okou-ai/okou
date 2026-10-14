@@ -310,6 +310,13 @@ metadata, export/freeze, original positive backing wait, saved-home continuation
 and joined continued saving. The actual process checks the original full prefix
 and 64 KiB home payload.
 
+Nonzero execution must retain complete history/home data and withhold reusable
+session identity, matching Executor's success-only finalization contract. Its
+first successful continuation therefore restores the complete supplied history
+without a prior cache history binding; that successful assignment must produce a
+new verified identity. The next assignment must consume the resulting bound
+history, and joined saving must preserve the final verified cache identity.
+
 After saving the first continuation, a second Executor assignment reopens that
 image and checks the entire continued history and original home again. Its own
 fresh final identity goes through required saving, so validation preserves a
@@ -342,7 +349,7 @@ The original lease has a non-owning test-support witness which survives an atomi
 one-for-one same-shape substitution. An unrelated reservation cannot replace it.
 Production builds allocate no witness and change no memory policy or protocol.
 
-Default Crates CI runs the ordinary Rust wrapper and nine real-file/CLI report
+Default Crates CI runs the ordinary Rust wrapper and ten real-file/CLI report
 regressions, the resource-budget lifetime/transfer regressions, and the synthetic
 peer's complete-history prepare/upload/completion round trip through its separate
 Guest and loopback Host listeners. Actual KVM/NBD

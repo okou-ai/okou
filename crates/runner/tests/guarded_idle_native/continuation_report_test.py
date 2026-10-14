@@ -46,13 +46,15 @@ class ContinuationReportTests(unittest.TestCase):
                         "seed_history_bytes":len(continuation.SEED),"original_history_sha256":"3"*64,
                         "original_history_bytes":len(continuation.SEED)+256,
                         "exit_code":1 if case.startswith("ContinuationNonzero-") else 0,
+                        "final_identity_verified":not case.startswith("ContinuationNonzero-"),
+                        "reusable_identity_withheld_after_nonzero":case.startswith("ContinuationNonzero-"),
                         "original_full_lease_witness":True}
             condition = {"policy":policy,"available_bytes":32*gib,"age_ns":2,"read_duration_ns":1,
                          "allocated":[2,4096,1],"profile_can_fit":case.startswith(("ContinuationReplacement-","ContinuationRestore-","ContinuationAged-"))}
             continued = {**base,"continued_run_id":next_run,"continued_sandbox_id":str(uuid.uuid4()),
                          "restored_history_sha256":"3"*64,"restored_history_bytes":len(continuation.SEED)+256,
                          "continued_history_sha256":"4"*64,"continued_history_bytes":len(continuation.SEED)+512,
-                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":True}
+                         "exit_code":0,"home_cache_hit":True,"history_proof_bound":not case.startswith("ContinuationNonzero-")}
             saved = {"required_cleanup_joined":True,"complete_continued_bytes_restored":True,
                      "verified_final_identity_preserved":True}
             clocks = (events[0]["monotonic_ns"]+3,events[0]["monotonic_ns"]+6,
@@ -147,6 +149,17 @@ class ContinuationReportTests(unittest.TestCase):
         self.setUp()
         self.events[3]["evidence"]["full_logical_lease"]=[2,2048,1]
         with self.assertRaises(ValueError): self.validate()
+
+    def test_nonzero_withholds_identity_until_successful_continuation(self):
+        for phase, key, value in (("original_executor_completed", "final_identity_verified", True),
+                                  ("original_executor_completed", "reusable_identity_withheld_after_nonzero", False),
+                                  ("continued_executor_completed", "history_proof_bound", True),
+                                  ("continued_executor_completed", "final_identity_verified", False)):
+            with self.subTest(phase=phase, key=key):
+                self.setUp()
+                event = next(e for e in self.witnesses if e["case"] == "ContinuationNonzero-fresh" and e["phase"] == phase)
+                event["evidence"][key] = value
+                with self.assertRaises(ValueError): self.validate()
 
     def test_collector_failure_intervention_and_unknown_windows_are_rejected(self):
         self.collector["cleanup_intervened"]=True

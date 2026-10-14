@@ -89,16 +89,20 @@ def validate(directory):
                 or type(original.get("seed_history_bytes")) is not int
                 or original["seed_history_bytes"] != len(SEED)):
             raise ValueError("continuation changed the complete original input")
-        for proof in (original, continued):
+        expected_exit = 1 if case.startswith("ContinuationNonzero-") else 0
+        for proof, verified in ((original, expected_exit == 0), (continued, True)):
             if (proof.get("original_home_sha256") != home_hash
                     or type(proof.get("original_home_bytes")) is not int
                     or proof["original_home_bytes"] != 65536
+                    or proof.get("final_identity_verified") is not verified
                     or any(proof.get(k) is not True for k in (
-                        "final_identity_verified", "full_original_prefix_verified",
+                        "full_original_prefix_verified",
                         "preparation_observed_by_native_process"))):
                 raise ValueError("native original bytes/preparation/final identity incomplete")
         if original.get("original_full_lease_witness") is not True:
             raise ValueError("native original lease custody missing")
+        if original.get("reusable_identity_withheld_after_nonzero") is not (expected_exit != 0):
+            raise ValueError("nonzero native execution did not withhold reusable identity")
         size = original.get("original_history_bytes")
         final_size = continued.get("continued_history_bytes")
         if (type(size) is not int or size <= len(SEED)
@@ -108,11 +112,10 @@ def validate(directory):
                 or digest(original.get("original_history_sha256")) != digest(continued.get("restored_history_sha256"))
                 or not digest(continued.get("continued_history_sha256"))):
             raise ValueError("complete original/continued history was truncated or mismatched")
-        expected_exit = 1 if case.startswith("ContinuationNonzero-") else 0
         if (type(original.get("exit_code")) is not int or original["exit_code"] != expected_exit
                 or type(continued.get("exit_code")) is not int or continued["exit_code"] != 0
                 or continued.get("home_cache_hit") is not True
-                or continued.get("history_proof_bound") is not True
+                or continued.get("history_proof_bound") is not (expected_exit == 0)
                 or saved != {"required_cleanup_joined": True, "complete_continued_bytes_restored": True,
                              "verified_final_identity_preserved": True}):
             raise ValueError("native continuation/required saving did not positively complete")

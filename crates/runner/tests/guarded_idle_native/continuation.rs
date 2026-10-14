@@ -58,7 +58,7 @@ const HISTORY_PATH: &str = "/home/user/.codex/sessions/2026/06/04/rollout-2026-0
 pub struct Prepared {
     pub sandbox: Box<dyn Sandbox>,
     pub home: HomeImageLease,
-    pub identity: RestoredSessionIdentity,
+    pub identity: Option<RestoredSessionIdentity>,
     pub history: Vec<u8>,
     pub storage: StorageFingerprints,
     pub exit_code: i32,
@@ -82,6 +82,7 @@ pub struct Execution<'a> {
     pub history: Vec<u8>,
     pub original: RunId,
     pub continued: bool,
+    pub require_bound_history: bool,
 }
 
 pub struct Saving<'a> {
@@ -246,6 +247,7 @@ impl Fixture {
             history,
             original,
             continued,
+            require_bound_history,
         } = request;
         let mut request = operations.request(inputs.replacement_plan()?)?;
         let permit = request.try_grant().await?;
@@ -268,7 +270,7 @@ impl Fixture {
                     session_history_restore_plan: executor::SessionHistoryRestorePlan::Default,
                 },
             ).await;
-            let checked: TestResult<(Vec<u8>, RestoredSessionIdentity)> = async {
+            let checked: TestResult<(Vec<u8>, Option<RestoredSessionIdentity>)> = async {
                 let expected_exit = if !continued && this.nonzero {1} else {0};
                 if outcome.exit_code()!=expected_exit || !outcome.sandbox_reuse_disposition.is_eligible() {
                     return Err(io::Error::other(format!("native Executor did not positively finish: {:?} {:?}", outcome.failure, outcome.sandbox_reuse_disposition)).into());
@@ -287,11 +289,16 @@ impl Fixture {
                 if !complete.starts_with(&history) {
                     return Err(io::Error::other("native continuation lost complete original history bytes").into());
                 }
-                let identity = outcome.restored_session_identity.as_ref().ok_or_else(|| io::Error::other("native final verified session identity missing"))?;
-                let verification = identity.final_metadata_verification().ok_or_else(|| io::Error::other("native final identity has no verifier provenance"))?;
-                if verification.history_hash!=digest(&complete) || verification.history_size_bytes!=complete.len() as u64
-                    || verification.session_id_hash!=digest(THREAD.as_bytes()) {
-                    return Err(io::Error::other("native final identity does not bind complete bytes/thread").into());
+                let identity = outcome.restored_session_identity.as_ref();
+                if expected_exit == 0 {
+                    let identity = identity.ok_or_else(|| io::Error::other("native final verified session identity missing"))?;
+                    let verification = identity.final_metadata_verification().ok_or_else(|| io::Error::other("native final identity has no verifier provenance"))?;
+                    if verification.history_hash!=digest(&complete) || verification.history_size_bytes!=complete.len() as u64
+                        || verification.session_id_hash!=digest(THREAD.as_bytes()) {
+                        return Err(io::Error::other("native final identity does not bind complete bytes/thread").into());
+                    }
+                } else if identity.is_some() {
+                    return Err(io::Error::other("failed native execution returned a reusable session identity").into());
                 }
                 let probe_path = format!("/home/user/native-continuation-{run}.json");
                 let probe = fixture::exec(&**sandbox, &format!("cat {}", quote_shell_arg(&probe_path))).await?;
@@ -300,7 +307,7 @@ impl Fixture {
                 if probe != json!({"thread":THREAD,"prefix_sha256":digest(&history),"prefix_bytes":history.len(),"home_sha256":digest(&home)}) {
                     return Err(io::Error::other("native process did not observe original full prepared data").into());
                 }
-                Ok((complete, identity.clone()))
+                Ok((complete, identity.cloned()))
             }.await;
             let (history, identity) = match checked {
                 Ok(value) => value,
@@ -317,7 +324,7 @@ impl Fixture {
                 this.case.retain(outcome);
                 return Err(io::Error::other("native home lease disappeared").into());
             };
-            if continued && (!home.is_cache_hit() || home.history_proof_binding().is_none()) {
+            if continued && (!home.is_cache_hit() || home.history_proof_binding().is_some() != require_bound_history) {
                 this.case.retain(sandbox); this.case.retain(home);
                 return Err(io::Error::other("native continuation did not use verified saved home/history").into());
             }
@@ -332,7 +339,8 @@ impl Fixture {
             "seed_history_sha256":digest(SEED),"seed_history_bytes":SEED.len(),
             "original_history_sha256":digest(&prepared.history),"original_history_bytes":prepared.history.len(),
             "original_home_sha256":digest(&fixture::home_payload(run)),"original_home_bytes":fixture::PAYLOAD_BYTES,
-            "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,
+            "exit_code":prepared.exit_code,"final_identity_verified":prepared.identity.is_some(),
+            "reusable_identity_withheld_after_nonzero":prepared.exit_code != 0 && prepared.identity.is_none(),"full_original_prefix_verified":true,
             "preparation_observed_by_native_process":true,"original_full_lease_witness":true,
         }))?;
         Ok(())
@@ -359,6 +367,7 @@ impl Fixture {
                     history: history.clone(),
                     original: request.original,
                     continued: true,
+                    require_bound_history: !self.nonzero || generation != 0,
                 })
                 .await;
             let prepared = match result {
@@ -380,7 +389,7 @@ impl Fixture {
                         "continued_history_sha256":digest(&prepared.history),"continued_history_bytes":prepared.history.len(),
                         "original_home_sha256":digest(&fixture::home_payload(request.original)),"original_home_bytes":fixture::PAYLOAD_BYTES,
                         "exit_code":prepared.exit_code,"final_identity_verified":true,"full_original_prefix_verified":true,
-                        "preparation_observed_by_native_process":true,"home_cache_hit":true,"history_proof_bound":true,
+                        "preparation_observed_by_native_process":true,"home_cache_hit":true,"history_proof_bound":prepared.home.history_proof_binding().is_some(),
                     }))?;
                 }
                 Ok(())
@@ -430,14 +439,20 @@ impl Fixture {
             self.case.retain(lease);
             return Err(error);
         }
-        let identity = prepared.identity.clone();
+        let Some(identity) = prepared.identity.clone() else {
+            self.case.retain(prepared);
+            self.case.retain(lease);
+            return Err(
+                io::Error::other("successful native saving has no verified identity").into(),
+            );
+        };
         let storage = prepared.storage.clone();
         let promotion = prepared
             .home
             .into_promotion_context(HomeImagePromotionRequest {
                 run_id: run,
                 sandbox_id: id,
-                restored_session_identity: Some(&prepared.identity),
+                restored_session_identity: Some(&identity),
                 terminal_status: HomeCacheTerminalStatus::Success,
                 completed_at: chrono::Utc::now().to_rfc3339(),
                 storage_fingerprints: prepared.storage,
