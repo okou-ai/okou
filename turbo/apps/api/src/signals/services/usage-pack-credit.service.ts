@@ -165,11 +165,11 @@ export const getSpendableUsagePackCredits$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly at?: Date;
+      readonly at: Date;
     },
   ): Promise<number> => {
     const db = get(db$);
-    const at = args.at ?? nowDate();
+    const at = args.at;
     const [row] = await db
       .select({
         total:
