@@ -339,3 +339,55 @@ async fn teardown_joins_routine_gc_before_releasing_its_owner_lock() {
     assert!(capacity_holder.metadata().unwrap().len() > 0);
     assert_stopped_status(&env).await;
 }
+
+#[tokio::test]
+async fn dropping_reactor_retains_routine_gc_owner_until_completion() {
+    let (mut config, env) = mock_run_config(test_profiles(), 2, 4096, 1);
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Semaphore::new(0));
+    let paths = RunnerPaths::new(env._temp_dir.path().join("cache-runner"));
+    let capacity_path =
+        runner_host::paths::home_image_cache_capacity_lock_path(&paths.base_dir().join("locks"));
+    let routine_path =
+        runner_host::paths::home_image_cache_routine_gc_lock_path(&paths.base_dir().join("locks"));
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(
+        HomeImageCache::new(paths)
+            .with_routine_gc_test_gate(Arc::clone(&entered), Arc::clone(&release)),
+    );
+    let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_home_cache_gc_rx = Some(receiver);
+    let mut reactor = Box::pin(run(config));
+    tokio::select! {
+        result = &mut reactor => panic!("reactor exited during startup: {result:?}"),
+        () = wait_discover_entered(&env, Duration::from_secs(5)) => {}
+    }
+    trigger.send(()).unwrap();
+    tokio::select! {
+        result = &mut reactor => panic!("reactor exited before GC: {result:?}"),
+        result = tokio::time::timeout(Duration::from_secs(2), entered.notified()) => {
+            result.expect("routine GC must reach the routine-lock-held gate");
+        }
+    }
+    assert_eq!(std::fs::metadata(&capacity_path).unwrap().len(), 0);
+
+    drop(reactor);
+    assert!(matches!(
+        runner_host::lock::try_acquire_or_busy(routine_path.clone())
+            .await
+            .unwrap(),
+        runner_host::lock::TryLock::Busy
+    ));
+    release.add_permits(1);
+
+    // Completion must commit the real filesystem marker even after the
+    // reactor and its observation owner are gone.
+    let _routine_holder = tokio::time::timeout(
+        Duration::from_secs(5),
+        runner_host::lock::acquire(routine_path),
+    )
+    .await
+    .expect("detached GC must finish and release its owner lock")
+    .unwrap();
+    let capacity_holder = runner_host::lock::acquire(capacity_path).await.unwrap();
+    assert!(capacity_holder.metadata().unwrap().len() > 0);
+}
