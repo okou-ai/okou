@@ -23,6 +23,8 @@ _CHECK_SCRIPT = _ADDON_ROOT / "scripts" / "check-flow-metadata-keys.py"
 _CLI_TIMEOUT_SECONDS = 30
 _COMPLEX_STAR_ARGS_TIMEOUT_SECONDS = 2
 _COMPLEX_STAR_ARGS_BRANCH_COUNT = 24
+_NESTED_FINALLY_TIMEOUT_SECONDS = 2
+_NESTED_FINALLY_DEPTH = 24
 
 
 def _fixture_text(*names: str) -> str:
@@ -267,6 +269,59 @@ def test_registered_flow_metadata_guard_flags_direct_literals(tmp_path):
 
     assert _normalized_violations(source_path, violations) == _expected_lines(
         "violations.expected.py312.txt"
+    )
+
+
+@pytest.mark.parametrize("loop_exit", [None, "break", "continue"])
+def test_check_flow_metadata_keys_cli_bounds_same_alias_nested_finally(tmp_path, loop_exit):
+    addon_root = tmp_path / "mitm-addon"
+    check_script = _copy_linter_scripts(addon_root)
+    src_root = addon_root / "src"
+    src_root.mkdir()
+    (src_root / "flow_metadata_keys.py").write_text(
+        'SANDBOX_RUN_ID = "sandbox_run_id"\n', encoding="utf-8"
+    )
+    lines = ["def exercise(flow, rows, condition):"]
+    starting_indent = 1
+    if loop_exit is not None:
+        lines.append("    for _ in rows:")
+        starting_indent += 1
+    for level in range(_NESTED_FINALLY_DEPTH):
+        indent = "    " * (starting_indent + level)
+        lines.extend(
+            [
+                f"{indent}try:",
+                f"{indent}    metadata = flow.metadata",
+                f"{indent}    may_raise()",
+            ]
+        )
+        if loop_exit is not None and level == 0:
+            lines.extend([f"{indent}    if condition:", f"{indent}        {loop_exit}"])
+        lines.extend([f"{indent}    metadata = {{}}", f"{indent}finally:"])
+    indent = "    " * (starting_indent + _NESTED_FINALLY_DEPTH)
+    lines.append(f'{indent}metadata["sandbox_run_id"] = "run-1"')
+    (src_root / "nested_finally.py").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    result = _run_check_script(
+        check_script, addon_root, tmp_path, timeout_seconds=_NESTED_FINALLY_TIMEOUT_SECONDS
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == (
+        f"src/nested_finally.py:{len(lines)}: "
+        "use metadata_keys.SANDBOX_RUN_ID for flow.metadata access\n"
+    )
+    assert result.stderr == ""
+
+
+def test_registered_flow_metadata_guard_preserves_nested_finally_transfers(tmp_path):
+    source_path = tmp_path / "nested_finally_flow.py"
+    _write_python_source(source_path, "nested_finally_flow.base.py.txt")
+
+    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
+
+    assert _normalized_violations(source_path, violations) == _expected_lines(
+        "nested_finally_flow.expected.txt"
     )
 
 

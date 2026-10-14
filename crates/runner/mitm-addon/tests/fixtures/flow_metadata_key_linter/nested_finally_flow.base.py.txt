@@ -1,0 +1,187 @@
+def normal_exit_rebinds(flow):
+    try:
+        metadata = flow.metadata
+        may_raise()
+        metadata = {}
+    finally:
+        try:
+            may_raise()
+        finally:
+            metadata = {}
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def normal_exit_creates_alias(flow):
+    try:
+        metadata = flow.metadata
+        may_raise()
+        metadata = {}
+    finally:
+        try:
+            may_raise()
+        finally:
+            metadata = flow.metadata
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def suppressed_finally_failure_retains_alias(flow, manager):
+    metadata = {}
+    with manager:
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                metadata = flow.metadata
+                may_raise()
+                metadata = {}
+            finally:
+                may_raise()
+        metadata = {}
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def finally_failure_without_aliases_reaches_handler(flow):
+    metadata = {}
+    try:
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                pass
+            finally:
+                metadata = {}
+                may_raise()
+    except Exception:
+        metadata = flow.metadata
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def break_finally_rebinds(flow, rows, condition):
+    metadata = {}
+    for _ in rows:
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                if condition:
+                    break
+            finally:
+                metadata = {}
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def break_finally_creates_alias(flow, rows, condition):
+    metadata = {}
+    for _ in rows:
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                if condition:
+                    break
+            finally:
+                metadata = flow.metadata
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def continue_finally_rebinds(flow, rows, condition):
+    metadata = {}
+    for _ in rows:
+        metadata["sandbox_run_id"] = "run-1"
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                if condition:
+                    continue
+            finally:
+                metadata = {}
+
+
+def continue_finally_creates_alias(flow, rows, condition):
+    metadata = {}
+    for _ in rows:
+        metadata["sandbox_run_id"] = "run-1"
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                if condition:
+                    continue
+            finally:
+                metadata = flow.metadata
+
+
+def finally_return_overrides_break(flow, rows, condition):
+    metadata = {}
+    for _ in rows:
+        try:
+            metadata = flow.metadata
+            may_raise()
+            metadata = {}
+        finally:
+            try:
+                if condition:
+                    break
+            finally:
+                metadata = {}
+                return None
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def cached_finally_failure_is_suppressible(flow, manager):
+    try:
+        metadata = flow.metadata
+        may_raise()
+        metadata = {}
+    finally:
+        with manager:
+            try:
+                metadata = {}
+            finally:
+                metadata = flow.metadata
+                may_raise()
+                metadata = {}
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def cached_finally_break_reaches_loop_exit(flow, rows):
+    try:
+        metadata = flow.metadata
+        may_raise()
+        metadata = {}
+    finally:
+        for _ in rows:
+            try:
+                metadata = {}
+            finally:
+                metadata = flow.metadata
+                break
+    metadata["sandbox_run_id"] = "run-1"
+
+
+def cached_finally_continue_reaches_backedge(flow, rows):
+    try:
+        metadata = flow.metadata
+        may_raise()
+        metadata = {}
+    finally:
+        for _ in rows:
+            try:
+                metadata = {}
+            finally:
+                metadata = flow.metadata
+                continue
+    metadata["sandbox_run_id"] = "run-1"
