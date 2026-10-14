@@ -21,6 +21,7 @@ class NativeReportTests(unittest.TestCase):
         self.artifacts = {
             "source_sha": "a" * 40, "test_binary_sha256": "b" * 64,
             "firecracker_sha256": "c" * 64, "kernel_sha256": "d" * 64,
+            "snapshot_id": "native-fixture",
             "rootfs_sha256": "e" * 64, "snapshot_files": {name: "f" * 64 for name in (
                 "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete")},
             "policy_sha256": "1" * 64,
@@ -96,6 +97,18 @@ class NativeReportTests(unittest.TestCase):
         self.events[0]["evidence"] = {"artifacts": {"source_sha": "c" * 40}}
         with self.assertRaisesRegex(ValueError, "artifact/input identity mismatch"):
             self.validate()
+
+    def test_wrong_snapshot_creation_identity_is_refused(self):
+        changed = dict(self.artifacts, snapshot_id="different-native-fixture")
+        self.events[0]["evidence"] = {"artifacts": changed}
+        with self.assertRaisesRegex(ValueError, "artifact/input identity mismatch"):
+            self.validate()
+
+    def test_snapshot_identity_cannot_escape_its_runtime_directory(self):
+        for invalid in ("..", "../foreign", "", "a" * 71):
+            self.artifacts["snapshot_id"] = invalid
+            with self.assertRaisesRegex(ValueError, "invalid native snapshot creation identity"):
+                self.validate()
 
     def test_cleanup_intervention_cannot_prove_native_completion(self):
         self.collector["cleanup_intervened"] = True

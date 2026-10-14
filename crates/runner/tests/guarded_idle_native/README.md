@@ -158,22 +158,36 @@ capacity savings, restored session/history correctness, or the parent P3d corpus
 exact and all-inventory retirement, caller-owned cancellation, speculative guest
 restore failure, and parked/running finalizing cancellation, each with fresh boot
 and the matching snapshot. It preserves the complete older fixture above.
-Every case writes a 64 KiB home payload, saves it through the real owner, restores
-and verifies its digest, and checks removal of the predecessor private runtime.
+Every case writes a 64 KiB home payload containing its original run identity,
+saves it through the real owner, restores and verifies its digest, and checks
+removal of the predecessor private runtime.
 
 Compile this test with `OKOU_TEST_BUILD_SOURCE_SHA` set to the exact checked-out
 commit. Prepare an immutable copy of the matching rootfs, kernel and Firecracker
 under a new experiment root; never use an existing Runner workspace. The ignored
 `prepare_native_terminal_snapshot` test creates a new matching snapshot directory
-using these explicit inputs. Supply its artifact identity as
-`OKOU_TEST_RPC_SNAPSHOT_HASH`; the fixture also requires `OKOU_TEST_IDLE_ROOTFS_HASH`.
+using these explicit inputs. Supply a new invocation-owned snapshot ID in
+`OKOU_TEST_RPC_SNAPSHOT_HASH` before preparation and retain that exact value for
+restore. The provider encodes this ID into the vsock bind path; replacing it with
+a digest of the resulting files creates an incompatible restore path. File
+digests are recorded separately. The fixture also requires
+`OKOU_TEST_IDLE_ROOTFS_HASH`.
 The rootfs must contain the current Guest programs and initialization settings.
 An older packaged Guest can boot while failing the current control handshake;
 prepare the image through the existing source-derived Guest build and rootfs
 customization flow rather than relaxing the connection or data checks.
 
+Select the executable from Cargo's `compiler-artifact` JSON for the
+`guarded_idle_native` target with `profile.test` set, requiring exactly one
+non-null executable. A dependency/profile change can change the executable's
+filename; never reuse a previous filename or hash a different test binary.
+For large rootfs and snapshot files, compile with
+`--config 'profile.local.package.sha2.opt-level=3'` so their cryptographic
+preflight fits the bounded collector's workload. Record that build option in the
+experiment metadata; it does not establish a calibrated memory envelope.
+
 `OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
-`test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`,
+`test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
 `snapshot_files` (filename to SHA-256) and `policy_sha256`. All hashes are lower-case
 hexadecimal. The test verifies the compiled source value and hashes its actual
 executable and supplied artifacts before starting a VM. Preserve the source
@@ -202,6 +216,10 @@ the native test binary. P1 deliberately removes the caller's environment. Put
 `native_terminal_artifacts` in its metadata, containing the manifest plus
 `profile: {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384}` and
 `required_fixture_tail_bytes: 67108864`.
+The owned driver must also explicitly supply the standard system-tool PATH,
+including `/usr/sbin` and `/sbin` for the provider's iptables, conntrack and sysctl
+prerequisites. Keep the collector's environment isolation intact; do not inherit
+the caller's credentials or substitute fake provider commands.
 
 ```sh
 "$OWNED_NATIVE_TEST_BINARY" \

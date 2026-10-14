@@ -71,13 +71,16 @@ def validate(directory):
     expected = collector["metadata"]["native_terminal_artifacts"]
     if not isinstance(expected, dict) or set(expected) != {
             "source_sha", "test_binary_sha256", "firecracker_sha256", "kernel_sha256",
-            "rootfs_sha256", "snapshot_files", "policy_sha256", "profile",
+            "rootfs_sha256", "snapshot_id", "snapshot_files", "policy_sha256", "profile",
             "required_fixture_tail_bytes"}:
         raise ValueError("incomplete native artifact manifest")
     if not isinstance(expected["source_sha"], str) or not re.fullmatch(r"[0-9a-f]{40}", expected["source_sha"]):
         raise ValueError("invalid native source identity")
     hashes = [expected[k] for k in (
         "test_binary_sha256", "firecracker_sha256", "kernel_sha256", "rootfs_sha256", "policy_sha256")]
+    if not isinstance(expected["snapshot_id"], str) or not re.fullmatch(
+            r"[A-Za-z0-9_.-]{1,70}", expected["snapshot_id"]) or expected["snapshot_id"] in (".", ".."):
+        raise ValueError("invalid native snapshot creation identity")
     snapshot = expected["snapshot_files"]
     if not isinstance(snapshot, dict) or not {
             "snapshot.bin", "memory.bin", "cow.img", "cow.img.bitmap", ".snapshot-complete"

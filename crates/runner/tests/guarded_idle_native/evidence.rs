@@ -24,6 +24,7 @@ pub struct Artifacts {
     pub firecracker_sha256: String,
     pub kernel_sha256: String,
     pub rootfs_sha256: String,
+    pub snapshot_id: String,
     pub snapshot_files: std::collections::BTreeMap<String, String>,
     pub policy_sha256: String,
 }
@@ -50,6 +51,9 @@ impl Artifacts {
             verify_file(Path::new(&std::env::var(name)?), expected)?;
         }
         let snapshot = std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?;
+        if std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")? != value.snapshot_id {
+            return Err(io::Error::other("native snapshot creation identity mismatch").into());
+        }
         let output = sandbox_firecracker::SnapshotOutputPaths::new(snapshot.clone().into());
         for path in output
             .required_artifacts()
@@ -88,6 +92,7 @@ impl Artifacts {
             "firecracker_sha256": self.firecracker_sha256,
             "kernel_sha256": self.kernel_sha256,
             "rootfs_sha256": self.rootfs_sha256,
+            "snapshot_id": self.snapshot_id,
             "snapshot_files": self.snapshot_files,
             "policy_sha256": self.policy_sha256,
             "profile": {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384},

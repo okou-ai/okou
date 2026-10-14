@@ -149,7 +149,7 @@ async fn prepare_native_terminal_snapshot() -> TestResult<()> {
         );
     }
     sandbox_firecracker::create_snapshot(sandbox::SnapshotCreateConfig {
-        id: format!("native39824-{}", uuid::Uuid::new_v4()),
+        id: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
         binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
         kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
         rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
