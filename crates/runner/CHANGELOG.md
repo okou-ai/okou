@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.231.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.8...runner-rs-v0.231.9) (2026-10-14)
+
+
+### Performance Improvements
+
+* **python:** avoid caching x request urls ([#40015](https://github.com/okou-ai/okou/issues/40015)) ([c203f7b](https://github.com/okou-ai/okou/commit/c203f7bbf289fb6ce0c1eb69848464b30790f4ee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.7...runner-rs-v0.231.8) (2026-10-14)
 
 ### Release Dependencies

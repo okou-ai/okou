@@ -9,6 +9,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.734.0](https://github.com/okou-ai/okou/compare/api-v1.733.5...api-v1.734.0) (2026-10-14)
+
+
+### Features
+
+* add link payment credential retrieval to wallet cli ([#40016](https://github.com/okou-ai/okou/issues/40016)) ([6844864](https://github.com/okou-ai/okou/commit/6844864ee67b12e4d95967214a6487f454fa82c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.559.0
+    * @okouai/core bumped to 8.754.0
+    * @okouai/db bumped to 1.337.1
+    * @okouai/pi-agent-runtime bumped to 1.49.33
+
 ## [1.733.5](https://github.com/okou-ai/okou/compare/api-v1.733.4...api-v1.733.5) (2026-10-14)
 
 
