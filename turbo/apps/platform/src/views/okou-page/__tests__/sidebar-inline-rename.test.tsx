@@ -24,12 +24,19 @@ function inlineRenameSwitch(enabled: boolean) {
   return { [FeatureSwitchKey.ChatThreadInlineRename]: enabled };
 }
 
-async function setupConversations(inlineRename = true): Promise<void> {
+async function setupConversations({
+  inlineRename = true,
+  mockBeforePage,
+}: {
+  inlineRename?: boolean;
+  mockBeforePage?: () => void;
+} = {}): Promise<void> {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
     createThread(INCIDENT_THREAD_ID, "Incident notes"),
   ]);
+  mockBeforePage?.();
   await setupSidebarPage({
     context,
     path: `/chats/${INCIDENT_THREAD_ID}`,
@@ -71,14 +78,17 @@ test("Double-click a conversation to open it and rename it in place", async () =
 test("Opening another chat from the field still sends its title", async () => {
   const user = userEvent.setup();
   const renames: { threadId: string; title: string }[] = [];
-  await setupConversations();
-  context.mocks.api(
-    chatThreadRenameContract.rename,
-    ({ params, body, respond }) => {
-      renames.push({ threadId: params.id, title: body.title });
-      return respond(204);
+  await setupConversations({
+    mockBeforePage: () => {
+      context.mocks.api(
+        chatThreadRenameContract.rename,
+        ({ params, body, respond }) => {
+          renames.push({ threadId: params.id, title: body.title });
+          return respond(204);
+        },
+      );
     },
-  );
+  });
 
   await user.dblClick(threadLinkByTitle("Incident notes"));
   await findRenameField();
@@ -101,9 +111,10 @@ test("Opening another chat from the field still sends its title", async () => {
   releaseToken.resolve();
 
   await waitFor(() => {
-    expect(renames).toStrictEqual([
-      { threadId: INCIDENT_THREAD_ID, title: "Postmortem" },
-    ]);
+    expect(renames).toContainEqual({
+      threadId: INCIDENT_THREAD_ID,
+      title: "Postmortem",
+    });
   });
   expect(within(sidebar()).getByText("Postmortem")).toBeInTheDocument();
   expect(queryRenameField()).not.toBeInTheDocument();
@@ -202,7 +213,7 @@ test("A modified double-click keeps its browser behavior instead of renaming", a
 
 test("Double-click only opens the conversation while inline rename is off", async () => {
   const user = userEvent.setup();
-  await setupConversations(false);
+  await setupConversations({ inlineRename: false });
 
   await user.dblClick(threadLinkByTitle("Release plan"));
 

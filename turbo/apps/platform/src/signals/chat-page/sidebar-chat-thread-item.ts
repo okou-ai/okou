@@ -126,7 +126,7 @@ function createInlineRenameSignals(
               if (!input.isConnected) {
                 detach(
                   set(commitInlineRename$, input.value, rootSignal),
-                  Reason.Deferred,
+                  Reason.DomCallback,
                 );
               }
             });
