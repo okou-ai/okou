@@ -382,7 +382,7 @@ export function TemplateDetailAccess({
     return (
       <p className="flex items-start gap-2 text-sm text-muted-foreground">
         <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0">{state}</span>
+        <span className="min-w-0 text-balance">{state}</span>
       </p>
     );
   }
@@ -391,14 +391,18 @@ export function TemplateDetailAccess({
       <DropdownMenuTrigger
         disabled={disabled}
         aria-label={triggerLabel}
-        className="-mx-2 flex min-h-9 w-[calc(100%+1rem)] items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 data-[popup-open]:bg-state-hover data-[popup-open]:text-foreground"
+        className="-mx-2 flex min-h-9 w-[calc(100%+1rem)] items-start gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 data-[popup-open]:bg-state-hover data-[popup-open]:text-foreground"
       >
-        <Icon size={16} className="shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1">{state}</span>
-        <ChevronDown size={14} className="shrink-0" aria-hidden="true" />
+        <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 flex-1 text-balance">{state}</span>
+        <ChevronDown
+          size={14}
+          className="mt-[3px] shrink-0"
+          aria-hidden="true"
+        />
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        align="start"
+        align="end"
         side="bottom"
         sideOffset={6}
         className="w-[19rem] p-1.5"
