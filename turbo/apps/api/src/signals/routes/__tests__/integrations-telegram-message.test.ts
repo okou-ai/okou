@@ -1,6 +1,6 @@
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
@@ -154,7 +154,9 @@ describe("POST /api/integrations/telegram/message", () => {
   });
 });
 
-function publicMessageActors(telegramIds: readonly [number, number]) {
+function publicMessageActors() {
+  const firstTelegramId = randomInt(1, 2 ** 48) * 2;
+  const telegramIds = [firstTelegramId, firstTelegramId + 1] as const;
   expect(telegramIds.every(Number.isSafeInteger)).toBeTruthy();
   expect(telegramIds[0]).not.toBe(telegramIds[1]);
   const appUrl = "https://telegram-message.test";
@@ -204,9 +206,7 @@ function publicMessageActors(telegramIds: readonly [number, number]) {
 
 describe("official Telegram self delivery", () => {
   it("rejects an unlinked public actor without sending through another actor's link", async () => {
-    const { a, b, telegramPosts } = publicMessageActors([
-      123_456_001, 123_456_002,
-    ]);
+    const { a, b, telegramPosts } = publicMessageActors();
     await a.onboard();
     await b.onboard();
     await a.link(a.telegramUserId);
@@ -253,9 +253,7 @@ describe("official Telegram self delivery", () => {
   });
 
   it("resolves serial public self messages for distinct actors in A-B-A order", async () => {
-    const { a, b, telegramPosts } = publicMessageActors([
-      123_456_003, 123_456_004,
-    ]);
+    const { a, b, telegramPosts } = publicMessageActors();
     const telegramA = a.telegramUserId;
     const telegramB = b.telegramUserId;
     await a.onboard();
