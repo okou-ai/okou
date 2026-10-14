@@ -56,7 +56,10 @@ function setupModels(): void {
   });
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
     return respond(200, [
-      composerWorkflow(WORKFLOW_NAME, "Query Axiom for RED metrics"),
+      composerWorkflow(
+        WORKFLOW_NAME,
+        "Query Axiom for RED metrics, latency percentiles, and error rates.",
+      ),
       composerWorkflow(SECOND_WORKFLOW_NAME, "Check Axiom service status"),
       composerWorkflow(THIRD_WORKFLOW_NAME, "Inspect Axiom traces"),
     ]);
@@ -411,9 +414,13 @@ test.each(COMPOSER_PATHS)(
         "Browse all templates",
       ]);
     });
-    // The composer-wide menu says what each workflow does after its name.
+    // The composer-wide menu says what each workflow does after its name, in
+    // the description's first clause only.
     expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
       `/${WORKFLOW_NAME} Query Axiom for RED metrics`,
+    );
+    expect(slashButton(`/${WORKFLOW_NAME}`)).not.toHaveTextContent(
+      "latency percentiles",
     );
     expect(
       queryAllByRoleFast(
