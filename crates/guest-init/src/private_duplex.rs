@@ -25,8 +25,13 @@ impl Drop for WorkerCount {
 /// for host activation; no per-sandbox pool of speculative guest workers.
 pub(super) fn run() {
     // PID2 has already forked. One worker serves all activated connection epochs.
-    let Ok(filesystem) = guest_channel_server::Filesystem::new() else {
-        return;
+    let filesystem = loop {
+        match guest_channel_server::Filesystem::new() {
+            Ok(filesystem) => break filesystem,
+            // Match the acceptor's owned resource-recovery loop. A temporary
+            // thread shortage must not permanently remove the application port.
+            Err(_) => std::thread::sleep(RETRY),
+        }
     };
     let active = Arc::new(AtomicUsize::new(0));
     loop {

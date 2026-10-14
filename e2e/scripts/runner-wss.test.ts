@@ -307,6 +307,10 @@ test("current Guest schema supports reverse RPC, immediate notice and post-repla
   );
   try {
     await client.connect();
+    await assert.rejects(
+      client.list({ path: [] }),
+      /Filesystem role unavailable/,
+    );
     await client.diagnostics();
     await client.rejectReplay();
     await client.diagnostics();

@@ -1482,7 +1482,7 @@ jobs:
         env:
           NATIVE_MATRIX: ${{ needs.runner-host-groups.outputs.matrix }}
         run: |
-          jq -e '[.[].target] | sort == ["aarch64-unknown-linux-musl", "x86_64-unknown-linux-musl"]' <<<"$NATIVE_MATRIX"
+          jq -e '[.[].id] | sort == ["arm64", "x86_64"]' <<<"$NATIVE_MATRIX"
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -1516,7 +1516,13 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
-    needs: [detect, runner-host-groups, guest-rpc-firecracker-build]
+    needs:
+      [
+        detect,
+        runner-host-groups,
+        runner-test-prepare,
+        guest-rpc-firecracker-build,
+      ]
     strategy:
       fail-fast: false
       matrix:
@@ -1581,6 +1587,7 @@ jobs:
           SELECTED_HOST: ${{ steps.selected-host.outputs.host }}
           TARGET: ${{ matrix.target }}
           PROFILE: vm0/default
+          TIMEOUT_SECONDS: "1200"
         run: .github/scripts/runner/wait-runner-image.sh
 
       - name: Verify packaged RPC and filesystem over fresh and restored Firecracker

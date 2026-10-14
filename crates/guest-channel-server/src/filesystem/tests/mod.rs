@@ -391,6 +391,56 @@ fn id(n: u64) -> String {
 }
 
 #[tokio::test]
+async fn cancelled_peer_releases_its_observation_before_physical_filesystem_work_unwinds() {
+    let home = tempfile::tempdir().unwrap();
+    tree(home.path(), 300);
+    let filesystem = Filesystem::start(home.path().into()).unwrap();
+    let active = owner(&filesystem);
+    let (entered, waiting) = oneshot::channel();
+    let (release, gate) = mpsc::sync_channel(1);
+    active.hooks.lock().unwrap().after_read = Some(Box::new(move || {
+        entered.send(()).unwrap();
+        gate.recv_timeout(Duration::from_secs(5)).unwrap();
+    }));
+    let weak = Arc::downgrade(&active);
+    let mut fixture = PeerFixture::new(Arc::new(HomeFiles {
+        filesystem: filesystem.clone(),
+        owner: Some(Arc::clone(&active)),
+    }))
+    .await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    tokio::time::timeout(Duration::from_secs(5), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), fixture.close())
+        .await
+        .unwrap();
+    assert!(active.closed());
+    drop(active);
+    assert!(
+        weak.upgrade().is_some(),
+        "Physical work must keep the retired owner alive"
+    );
+    assert_eq!(filesystem.owners.available_permits(), RETAINED_OWNERS - 1);
+    let replacement = owner(&filesystem);
+    let resumed = filesystem
+        .enqueue(
+            Arc::clone(&replacement),
+            decode_params(Operation::FsList, json!({"path":[]})).unwrap(),
+        )
+        .unwrap();
+    release.send(()).unwrap();
+    let page = resumed.await.unwrap().unwrap();
+    decode_result(Operation::FsList, page).unwrap();
+    assert!(
+        weak.upgrade().is_none(),
+        "Abandoned work must release state after its physical boundary unwinds"
+    );
+    assert_eq!(filesystem.owners.available_permits(), RETAINED_OWNERS - 1);
+}
+
+#[tokio::test]
 async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bounded() {
     let home = tempfile::tempdir().unwrap();
     tree(home.path(), 300);
