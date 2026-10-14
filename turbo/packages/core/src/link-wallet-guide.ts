@@ -1,5 +1,10 @@
 export const LINK_WALLET_GUIDE = `# Link Wallet: Consent, Approval and Payment Credentials
 
+When the user asks Okou to buy something, pay a merchant, or complete checkout
+on their behalf, consider using Link Wallet even if they do not mention Link or
+a wallet. Follow the account consent and per-purchase approval flow below before
+using an available payment tool to complete the purchase.
+
 Use native okou wallet commands, not link-cli, the Stripe merchant connector,
 raw Link API calls, or environment-variable tokens. Client credentials and user
 OAuth tokens belong only to the Okou API server.
