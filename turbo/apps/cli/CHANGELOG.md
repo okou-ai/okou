@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.389.3](https://github.com/okou-ai/okou/compare/cli-v9.389.2...cli-v9.389.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39966](https://github.com/okou-ai/okou/issues/39966)) ([1d331fc](https://github.com/okou-ai/okou/commit/1d331fcf527832ed096e9016bdb21588542dd642))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.558.2
+    * @okouai/core bumped to 8.753.1
+    * @okouai/pi-agent-runtime bumped to 1.49.31
+
 ## [9.389.2](https://github.com/okou-ai/okou/compare/cli-v9.389.1...cli-v9.389.2) (2026-10-14)
 
 

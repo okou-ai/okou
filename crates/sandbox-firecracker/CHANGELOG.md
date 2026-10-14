@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.48.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.4...sandbox-firecracker-v0.48.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
 ## [0.48.4](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.3...sandbox-firecracker-v0.48.4) (2026-10-14)
 
 ## [0.48.3](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.2...sandbox-firecracker-v0.48.3) (2026-10-14)
