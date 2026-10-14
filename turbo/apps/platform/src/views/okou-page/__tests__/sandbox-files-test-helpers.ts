@@ -8,7 +8,13 @@ import {
 import { runnerWssTicketsContract } from "@okouai/api-contracts/contracts/runner-wss-tickets";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   click,
   queryAllByRoleFast,
@@ -68,10 +74,6 @@ export function filesButton(
   }
   return button;
 }
-export function filesPanel(): HTMLElement {
-  return screen.getByRole("region", { name: "Files" });
-}
-
 export async function setupFilesPage(
   context: TestContext,
   options: {
@@ -323,7 +325,10 @@ export async function loadMoreFiles(panel: HTMLElement): Promise<void> {
     expectEnabled(control);
     return control;
   });
-  click(more);
+  await act(() => {
+    click(more);
+    return Promise.resolve();
+  });
   await waitFor(
     () => {
       expectEnabledOrRemoved(more);

@@ -20,7 +20,7 @@ test("Encoded metadata reaches its limit before the entry count and releases the
           ? Number(request.params.cursor.slice(5))
           : 0;
       return listing(
-        Array.from({ length: 8 }, (_unused, index) => {
+        Array.from({ length: 11 }, (_unused, index) => {
           return {
             ...entry(`file-${page}-${index}`),
             displayName: `file-${String(page).padStart(3, "0")}-${index} ${"界".repeat(1355)}`,
@@ -36,11 +36,15 @@ test("Encoded metadata reaches its limit before the entry count and releases the
   });
   const message =
     "Some files could not be loaded because the panel limit was reached. Collapse folders or refresh to continue.";
-  // Every page is within the public 48 KiB response budget; retained UTF-8
+  // Eleven entries fill the public 48 KiB response budget without exceeding it;
+  // retained UTF-8
   // metadata exceeds 4 MiB well before 4096 entries. Stop on observable removal.
   for (
     let page = 1;
-    page < 140 && !within(panel).queryByText(message);
+    page < 110 &&
+    !Array.from(panel.querySelectorAll('[role="status"]')).some((status) => {
+      return status.textContent === message;
+    });
     page++
   ) {
     await loadMoreFiles(panel);
