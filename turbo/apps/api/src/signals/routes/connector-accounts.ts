@@ -16,11 +16,11 @@ import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
 import {
   connectorAccountDeletionImpact,
+  connectorAccountSummaries,
   getConnectorAccount,
   isConnectorAccountDefaultConflict,
   listConnectorAccountsByIds,
   listConnectorAccountsForTarget,
-  listConnectorAccountSummaries,
   renameConnectorAccount$,
   setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
@@ -126,9 +126,10 @@ const inspectInner$ = computed(async (get) => {
   };
 });
 
+const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+
 const summariesInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const summaries = await listConnectorAccountSummaries(get(db$), auth);
+  const summaries = await get(accountSummaries$);
   return { status: 200 as const, body: { summaries: [...summaries] } };
 });
 
