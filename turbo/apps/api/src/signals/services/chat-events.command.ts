@@ -1,3 +1,4 @@
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
@@ -1318,6 +1319,7 @@ const createdSendThreadSelection = Object.freeze({
 });
 
 interface NormalSendInput {
+  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
   readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
@@ -1334,6 +1336,8 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
   return {
     thread,
     event,
+    relationSource:
+      args.auth.tokenType === "agent" ? input.agentRunSource : null,
     queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
     existingPlan: existing && {
       ...existing,
@@ -1402,6 +1406,38 @@ function normalSendGetStartedSql(args: NormalSendArgs, sourceEventId: string) {
     : undefined;
 }
 
+function normalSendRelationValues(
+  args: NormalSendArgs,
+  input: ReturnType<typeof normalSendInputPlan>,
+  inserted: { readonly id: string; readonly createdAt: Date },
+): (typeof chatRelations.$inferInsert)[] {
+  const { thread, relationSource: source } = input;
+  if (!source || source.threadId === thread.threadId) {
+    return [];
+  }
+  const relation = {
+    orgId: args.orgId,
+    userId: args.userId,
+    sourceChatThreadId: source.threadId,
+    targetChatThreadId: thread.threadId,
+    sourceRunId: source.runId,
+    createdAt: inserted.createdAt,
+  };
+  return [
+    ...(thread.kind === "new"
+      ? [{ ...relation, type: "created" as const }]
+      : []),
+    { ...relation, type: "message", messageEventId: inserted.id },
+  ];
+}
+
+function missingNormalSendInput(thread: SendThread): null {
+  if (thread.kind === "new") {
+    throw new NewThreadSendCollision("input");
+  }
+  return null;
+}
+
 const appendNormalSendInput$ = command(
   async (
     { set },
@@ -1439,12 +1475,13 @@ const appendNormalSendInput$ = command(
         await tx.execute(insert),
       );
       if (!inserted) {
-        if (thread.kind === "new") {
-          throw new NewThreadSendCollision("input");
-        }
-        return null;
+        return missingNormalSendInput(thread);
       }
       const contextInsert = chatEventContextInsertSql(event);
+      const relations = normalSendRelationValues(args, input, inserted);
+      if (relations.length > 0) {
+        await tx.insert(chatRelations).values(relations);
+      }
       if (contextInsert) {
         await tx.execute(contextInsert);
       }
@@ -1864,14 +1901,8 @@ export const sendNormalEvent$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const {
-      authorized,
-      agentRunSource,
-      catalog,
-      orgModels,
-      modelBootstrap,
-      context,
-    } = prepared;
+    const { authorized, catalog, orgModels, modelBootstrap, context } =
+      prepared;
     const resolvedThread = await set(
       resolveSendThread$,
       {
@@ -1920,14 +1951,19 @@ export const sendNormalEvent$ = command(
       args,
       thread.threadId,
       modelSelection,
-      agentRunSource,
+      prepared.agentRunSource,
     );
     const enqueued = await settle(
       (async () => {
         const committed = await set(
           appendNormalSendInput$,
           args,
-          normalSendInputPlan(args, { thread, event, attachFileMetadata }),
+          normalSendInputPlan(args, {
+            thread,
+            event,
+            attachFileMetadata,
+            agentRunSource: prepared.agentRunSource,
+          }),
           signal,
         );
         if (committed === null) {
