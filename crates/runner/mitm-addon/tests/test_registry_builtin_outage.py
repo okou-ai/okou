@@ -334,7 +334,7 @@ async def test_rebuild_uses_one_catalog_probe_even_if_path_changes_after_it(
 
 
 async def test_registry_updates_and_open_failures_override_equal_catalog_failure(
-    tmp_path, mitm_ctx, real_flow
+    tmp_path, mitm_ctx, real_flow, headers
 ):
     registry_path, cache_path = _write_outage_files(tmp_path)
     cache_path.unlink()
@@ -362,7 +362,11 @@ async def test_registry_updates_and_open_failures_override_equal_catalog_failure
             },
         )
         denied = real_flow(
-            with_response=False, client_ip="10.200.0.3", host="api.example.com", path="/items"
+            with_response=False,
+            client_ip="10.200.0.3",
+            host="api.example.com",
+            path="/items",
+            request_headers=headers(("Host", "api.example.com"), ("Content-Length", "0")),
         )
         await _request_pair(denied)
         assert denied.response is not None
@@ -380,7 +384,11 @@ async def test_registry_updates_and_open_failures_override_equal_catalog_failure
         assert unavailable.response.json()["error"] == "registry_unavailable"
         saved_path.rename(registry_path)
         recovered = real_flow(
-            with_response=False, client_ip="10.200.0.3", host="api.example.com", path="/items"
+            with_response=False,
+            client_ip="10.200.0.3",
+            host="api.example.com",
+            path="/items",
+            request_headers=headers(("Host", "api.example.com"), ("Content-Length", "0")),
         )
         await _request_pair(recovered)
         assert recovered.response is not None

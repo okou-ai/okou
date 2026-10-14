@@ -949,6 +949,7 @@ async def test_platform_mcp_denial_applies_only_to_selected_exact_owner(
                 "X-Okou-Connector-Intent",
                 _PLATFORM_MCP_CUSTOM_CONNECTOR_ID if intent_state == "selected" else "wrong",
             ),
+            ("Content-Length", "0"),
         ),
     )
 
