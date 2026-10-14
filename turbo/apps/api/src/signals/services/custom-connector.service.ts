@@ -69,6 +69,7 @@ import {
   customConnectorDefinitionConnectedAccount,
   customConnectorConnectedConnections,
   loadCurrentCustomConnectorStoredValues,
+  customConnectorRuntimeStorageSnapshot,
   customConnectorValueMarkers,
   type CustomConnectorCredentialAccess,
   type CustomConnectorCredentialValueMarker,
@@ -3369,36 +3370,46 @@ export async function loadCustomConnectorRuntimeData(
       memberConnectorIdsByCustomConnectorId:
         args.memberConnectorIdsByCustomConnectorId,
     });
-    const valuesByConnectorId = new Map<
-      string,
-      CustomConnectorStoredValueRow[]
-    >();
-    for (const value of runtimeStorage.values) {
-      const values = valuesByConnectorId.get(value.connectorId) ?? [];
-      values.push(value);
-      valuesByConnectorId.set(value.connectorId, values);
+    return customConnectorRuntimeDataFromRows(connectorRows, runtimeStorage);
+  });
+}
+
+export function customConnectorRuntimeDataFromRows(
+  connectorRows: readonly {
+    readonly connector: CustomConnectorDefinitionRow;
+    readonly oauthConfig: CustomConnectorOAuthConfigRow | null;
+  }[],
+  runtimeStorage: ReturnType<typeof customConnectorRuntimeStorageSnapshot>,
+) {
+  const valuesByConnectorId = new Map<
+    string,
+    CustomConnectorStoredValueRow[]
+  >();
+  for (const value of runtimeStorage.values) {
+    const values = valuesByConnectorId.get(value.connectorId) ?? [];
+    values.push(value);
+    valuesByConnectorId.set(value.connectorId, values);
+  }
+  return connectorRows.map((row) => {
+    const connector = normaliseCustomConnectorRow(
+      row.connector,
+      row.oauthConfig,
+    );
+    const credentialAccess = runtimeStorage.accesses.get(connector.id);
+    if (!credentialAccess) {
+      throw new Error("Expected custom connector credential access");
     }
-    return connectorRows.map((row) => {
-      const connector = normaliseCustomConnectorRow(
-        row.connector,
-        row.oauthConfig,
-      );
-      const credentialAccess = runtimeStorage.accesses.get(connector.id);
-      if (!credentialAccess) {
-        throw new Error("Expected custom connector credential access");
-      }
-      const declaredFields = new Set(
-        connector.fields.map((field) => {
-          return customConnectorValueMarkerKey(field);
-        }),
-      );
-      const values = (valuesByConnectorId.get(connector.id) ?? []).filter(
-        (value) => {
-          return declaredFields.has(customConnectorValueMarkerKey(value));
-        },
-      );
-      return { connector, values, credentialAccess };
-    });
+    const declaredFields = new Set(
+      connector.fields.map((field) => {
+        return customConnectorValueMarkerKey(field);
+      }),
+    );
+    const values = (valuesByConnectorId.get(connector.id) ?? []).filter(
+      (value) => {
+        return declaredFields.has(customConnectorValueMarkerKey(value));
+      },
+    );
+    return { connector, values, credentialAccess };
   });
 }
 

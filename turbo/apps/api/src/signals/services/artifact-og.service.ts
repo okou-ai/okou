@@ -6,8 +6,6 @@ import {
   artifactHtmlMetadata,
   GENERIC_ARTIFACT_DESCRIPTION,
 } from "@okouai/core/artifact-og";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ArtifactOgTarget } from "@okouai/api-contracts/contracts/artifact-og";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
 import { hostedDeployments, hostedSites } from "@okouai/db/runtime/hosted-site";
@@ -15,6 +13,7 @@ import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import type { HostedSiteManifest } from "@okouai/db/jsonb-contracts/hosted-site";
 import { env } from "../../lib/env";
 import { apiBackendUrl } from "../../lib/api-backend-url";
+import { SLACK_PREVIEW_IMAGE_HEIGHT } from "../../lib/slack-preview-image";
 import { db$ } from "../external/db";
 import {
   downloadHostedSitesS3Buffer,
@@ -23,7 +22,6 @@ import {
   S3ObjectSizeLimitError,
 } from "../external/s3";
 import { settle } from "../utils";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   artifactReferenceRecord$,
   type SharedThreadArtifactReference,
@@ -51,18 +49,6 @@ interface OgSource {
   readonly html?: ImageSource;
   readonly image?: ImageSource;
 }
-
-const artifactPreviewsEnabled$ = command(
-  async ({ set }, orgId: string, ownerId: string, signal: AbortSignal) => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      orgId,
-      ownerId,
-      signal,
-    );
-    return isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, context);
-  },
-);
 
 function hostedBucket(): string {
   const bucket = env("R2_HOSTED_SITES_BUCKET_NAME");
@@ -130,9 +116,6 @@ const hostedOgSource$ = command(
       return null;
     }
     const d = row.deployment;
-    if (!(await set(artifactPreviewsEnabled$, d.orgId, d.userId, signal))) {
-      return null;
-    }
     const allowed = await set(
       authorizeHostedSiteDelivery$,
       {
@@ -187,11 +170,6 @@ const snapshotOgSource$ = command(
     }
     if (owner.orgId === null) {
       throw new Error("Shared artifact snapshot has no owner organization");
-    }
-    if (
-      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
-    ) {
-      return null;
     }
     const snapshot = await set(sharedThreadArtifactSnapshot$, record, signal);
     if (!snapshot) {
@@ -255,10 +233,7 @@ const referenceOgSource$ = command(
       return null;
     }
     const owner = await set(publicArtifactShareIdentity$, target, signal);
-    if (
-      !owner ||
-      !(await set(artifactPreviewsEnabled$, owner.orgId, owner.userId, signal))
-    ) {
+    if (!owner) {
       return null;
     }
     const published = await set(
@@ -302,7 +277,7 @@ const referenceOgSource$ = command(
   },
 );
 
-/** Each resolver gates its owner's switch before loading OG policy or content. */
+/** Each resolver verifies publication authority before exposing OG content. */
 const authorizedOgSource$ = command(
   async ({ set }, target: ArtifactOgTarget, signal: AbortSignal) => {
     return target.kind === "host"
@@ -411,8 +386,10 @@ export const artifactOgImage$ = command(
     }
     image.rotate();
     if (variant === "slack") {
-      // Slack image blocks use the intrinsic dimensions, not CSS sizing.
-      image.resize({ height: 200, withoutEnlargement: true });
+      image.resize({
+        height: SLACK_PREVIEW_IMAGE_HEIGHT,
+        withoutEnlargement: true,
+      });
     }
     const normalized = await image.png().toBuffer();
     signal.throwIfAborted();

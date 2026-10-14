@@ -4,6 +4,9 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Button, FullscreenPanel } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { ChatResourceLinks } from "./chat-resource-links.tsx";
 
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -11,6 +14,7 @@ import { openThreadArtifacts$ } from "../../signals/chat-page/thread-sidebar-coo
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import type {
   ThreadSidebarArtifactSource,
+  ThreadResourceSection,
   ThreadSidebarTarget,
 } from "../../signals/chat-page/thread-sidebar.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
@@ -40,12 +44,17 @@ const ARTIFACT_AUTO_LOAD_THRESHOLD_PX = 800;
  * Open the thread's artifacts list and refresh its first page. Entry buttons
  * and the detail's Back action share this hook so the list is current on open.
  */
-export function useOpenThreadArtifacts(thread: ChatPanelSignals): () => void {
+export function useOpenThreadArtifacts(
+  thread: ChatPanelSignals,
+  section?: ThreadResourceSection,
+): () => void {
   const open = useSet(openThreadArtifacts$);
   const reloadArtifacts = useSet(thread.sidebar.artifactCatalog.reload$);
   return () => {
-    open(thread);
-    reloadArtifacts();
+    open(thread, section);
+    if (section !== "links") {
+      reloadArtifacts();
+    }
   };
 }
 
@@ -127,8 +136,28 @@ function ThreadSidebarHeader({
   );
 }
 
-function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
+function ThreadArtifactsPanel({
+  thread,
+  section,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly section?: ThreadResourceSection;
+}) {
   const { t } = useTranslation();
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const title =
+    section === "links"
+      ? t(($) => {
+          return $.chat.resources.links;
+        })
+      : resourcesEnabled && section === undefined
+        ? t(($) => {
+            return $.chat.resources.title;
+          })
+        : t(($) => {
+            return $.artifacts.sidebar.panelTitle;
+          });
   const sidebar = thread.sidebar;
   const catalogLoadable = useLastLoadable(sidebar.artifactCatalog.catalog$);
   const fullscreen = useGet(sidebar.fullscreen$);
@@ -151,7 +180,7 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
     catalogLoadable.data.nextCursor !== null;
 
   const handleScroll = (event: ReactUIEvent<HTMLElement>) => {
-    if (!hasMore) {
+    if (section === "links" || !hasMore) {
       return;
     }
     const viewport = event.currentTarget;
@@ -174,15 +203,11 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
       className={
         fullscreen ? "h-viewport max-h-viewport min-h-viewport" : undefined
       }
-      aria-label={t(($) => {
-        return $.artifacts.sidebar.panelTitle;
-      })}
+      aria-label={title}
       data-testid="thread-sidebar-artifacts"
     >
       <ThreadSidebarHeader
-        title={t(($) => {
-          return $.artifacts.sidebar.panelTitle;
-        })}
+        title={title}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
         onClose={close}
@@ -191,34 +216,50 @@ function ThreadArtifactsPanel({ thread }: { thread: ChatPanelSignals }) {
         onScroll={handleScroll}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
       >
-        {artifacts === null ? (
-          catalogLoadable.state === "hasError" ? (
-            <ArtifactCatalogError
-              pending={retryLoadable.state === "loading"}
-              onRetry={() => {
+        {resourcesEnabled && section === undefined && (
+          <h3 className="px-2 pb-2 text-xs font-medium text-muted-foreground">
+            {t(($) => {
+              return $.artifacts.sidebar.panelTitle;
+            })}
+          </h3>
+        )}
+        {section !== "links" &&
+          (artifacts === null ? (
+            catalogLoadable.state === "hasError" ? (
+              <ArtifactCatalogError
+                pending={retryLoadable.state === "loading"}
+                onRetry={() => {
+                  detach(
+                    retryCatalog(pageSignal),
+                    Reason.DomCallback,
+                    "thread artifacts sidebar retry",
+                  );
+                }}
+              />
+            ) : (
+              <ArtifactCatalogSkeleton />
+            )
+          ) : artifacts.length === 0 ? (
+            <ArtifactCatalogEmpty />
+          ) : (
+            <ArtifactCatalogGrid
+              artifacts={artifacts}
+              onOpen={(artifactId) => {
                 detach(
-                  retryCatalog(pageSignal),
+                  openCatalogArtifact(artifactId, pageSignal),
                   Reason.DomCallback,
-                  "thread artifacts sidebar retry",
+                  "thread artifact catalog preview",
                 );
               }}
             />
-          ) : (
-            <ArtifactCatalogSkeleton />
-          )
-        ) : artifacts.length === 0 ? (
-          <ArtifactCatalogEmpty />
-        ) : (
-          <ArtifactCatalogGrid
-            artifacts={artifacts}
-            onOpen={(artifactId) => {
-              detach(
-                openCatalogArtifact(artifactId, pageSignal),
-                Reason.DomCallback,
-                "thread artifact catalog preview",
-              );
-            }}
-          />
+          ))}
+        {resourcesEnabled && section !== "artifacts" && (
+          <div className={section === undefined ? "mt-4" : undefined}>
+            <ChatResourceLinks
+              thread={thread}
+              showHeading={section === undefined}
+            />
+          </div>
         )}
       </div>
     </FullscreenPanel>
@@ -415,7 +456,7 @@ export function ThreadSidebarSlot({
 }) {
   switch (target.type) {
     case "artifacts": {
-      return <ThreadArtifactsPanel thread={thread} />;
+      return <ThreadArtifactsPanel thread={thread} section={target.section} />;
     }
     case "artifact": {
       return <ThreadArtifactDetail thread={thread} source={target.source} />;

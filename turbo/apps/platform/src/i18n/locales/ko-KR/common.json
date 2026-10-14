@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}}장",
       "importedSlides_other": "{{count}}장",
       "importFile": "템플릿 가져오기",
+      "importImage": "내 이미지 가져오기",
+      "importImageHint": "스타일로 저장",
       "multiAccent": "다중 악센트",
       "nextSlide": "다음 슬라이드 미리보기",
       "noMatches": "일치하는 항목 없음",
@@ -654,6 +656,7 @@
       "selectWorkflow": "워크플로 템플릿 선택 {{title}}",
       "showVariant": "변형 보기 {{variantNumber}}",
       "singleAccent": "단일 악센트",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 슬라이드 미리보기",
       "slideThumbnail": "{{title}} 슬라이드 {{slideNumber}} 미리보기",
       "template": "템플릿",
@@ -1515,6 +1518,15 @@
       },
       "viewAgentProfile": "에이전트 프로필 보기"
     },
+    "agentSuggestions": {
+      "existingThread": "기존 대화",
+      "label": "제안",
+      "loadFailed": "제안을 불러올 수 없습니다.",
+      "newThread": "Okou와 새 대화",
+      "origin": "모닝 브리프에서",
+      "showAll_other": "전체 {{count}}개 보기",
+      "showLess": "접기"
+    },
     "attachments": {
       "attach": "첨부",
       "fileTooLarge": "{{filename}} 파일이 1GB 제한을 초과했습니다",
@@ -1756,6 +1768,7 @@
       "workflows": {
         "empty": "일치하는 워크플로가 없습니다",
         "loading": "워크플로 로딩 중...",
+        "showAll": "모든 워크플로 표시",
         "title": "워크플로"
       }
     },
@@ -2045,6 +2058,15 @@
       "retry": "다시 시도",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
+    },
+    "resources": {
+      "copyLink": "링크 복사",
+      "empty": "이 채팅에는 아직 아티팩트나 링크가 없습니다",
+      "links": "링크",
+      "loadFailed": "리소스를 불러오지 못했습니다",
+      "retry": "다시 시도",
+      "title": "채팅 리소스",
+      "viewAll": "모두 보기"
     },
     "run": {
       "collapseWorkHistory": "작업 기록 접기",
@@ -2371,6 +2393,7 @@
       "tasks": {
         "image": "이미지",
         "presentation": "슬라이드",
+        "suggestions": "제안",
         "visualization": "시각화",
         "website": "웹사이트",
         "workflow": "워크플로"
@@ -2797,6 +2820,14 @@
       "transcribing": "전사 중",
       "transcriptionFailed": "음성 전사 실패. 다시 시도하세요."
     },
+    "walletAction": {
+      "approveButton": "검토",
+      "approveTitle": "구매 검토",
+      "connectButton": "승인",
+      "connectTitle": "Link 지갑 승인",
+      "continueButton": "계속",
+      "continueTitle": "Link에서 계속"
+    },
     "workflows": {
       "named": "워크플로 {{title}}",
       "open": "워크플로 {{title}} 열기"
@@ -2959,6 +2990,7 @@
       "genericLabel": "커넥터",
       "githubLabel": "GitHub",
       "invalidUrl": "잘못된 커넥터 콜백 URL입니다.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -5282,17 +5314,6 @@
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"
   },
-  "subscriptionLinking": {
-    "connect": "구독 연결",
-    "description": "기존 ChatGPT 또는 Claude 구독을 {{brandName}}에 연결하세요.",
-    "dismiss": "구독 안내 닫기",
-    "hint": "ChatGPT / Claude를 구독 중이신가요?",
-    "limits": "사용 가능한 기능과 사용 한도는 구독에 따라 다릅니다.",
-    "manage": "AI 구독 관리",
-    "menuConnect": "AI 구독 연결",
-    "menuLoading": "AI 구독",
-    "title": "구독 연결"
-  },
   "tailscale": {
     "add": "Tailscale 추가",
     "addressHelp": "등록된 Tailnet 피어의 IP, 전체 호스트 이름 또는 짧은 이름을 사용하세요. SSH 로그인과 호스트 키 검증은 여전히 필요합니다.",
@@ -5540,9 +5561,17 @@
     },
     "save": "저장",
     "saveRecovery": {
+      "deleteHelp": "삭제하기 전에 저장된 정보를 확인하세요. 이 작업은 버전만 선택합니다. 삭제는 별도로 확인하세요.",
+      "incompatible": "인증 방식이 변경되었습니다. 이 대화 상자를 닫고 자격 증명을 다시 열어 현재 방식을 수정하세요.",
+      "keepChanges": "이 버전으로 내 변경 사항 유지",
+      "keepDeletion": "이 버전으로 삭제 진행",
+      "keepHelp": "이 내용을 확인한 뒤 초안을 유지하고 이 버전을 기준으로 저장하세요. 인증 및 신뢰 설정은 유지됩니다.",
+      "latest": "현재 저장된 내용",
       "resourceIdConflict": "리소스를 만들지 못했습니다. 이 창을 닫고 다시 시도하세요.",
       "review": "설정을 새로고침했습니다. 이 창을 닫고 현재 내용을 확인한 후 다시 시도하세요.",
-      "uncertain": "저장 결과를 확인할 수 없어 원래 입력을 잠갔습니다. 같은 요청을 다시 시도하거나 닫고 새로고침하여 저장된 설정을 확인하세요."
+      "unavailable": "이 리소스를 더 이상 사용할 수 없습니다. 대화 상자를 닫고 설정을 새로고침한 뒤 다시 시도하세요.",
+      "uncertain": "저장 결과를 확인할 수 없어 원래 입력을 잠갔습니다. 같은 요청을 다시 시도하거나 닫고 새로고침하여 저장된 설정을 확인하세요.",
+      "version": "버전 {{version}}"
     },
     "saving": "저장 중…",
     "security": {
@@ -6347,29 +6376,29 @@
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
       "accountSetup": "Discord 공식 브라우저 인증을 통해 계정을 연결하세요.",
-      "adminSetup": "Discord 서버에 Okou를 설치한 다음 계정을 연결하세요.",
-      "approvalConfirmed": "이 탭을 닫으면 Works에서 연결이 완료됩니다.",
+      "approvalConfirmed": "이 탭을 닫으면 원래 탭에서 연결이 완료됩니다.",
       "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
-      "authorizationError": "Discord 인증을 완료하지 못했습니다. 이 카드에서 다시 시도하세요.",
+      "authorizationError": "Discord 인증을 완료하지 못했습니다. 다시 시도하세요.",
       "authorizing": "인증 중…",
       "browserConsent": "Discord 창에서 인증을 완료하세요. 이 페이지는 자동으로 업데이트됩니다.",
-      "chooseDmServer": "서버 선택",
+      "chooseWorkspace": "워크스페이스 선택",
+      "connectDescription": "Discord 계정을 연결하여 에이전트와 대화하세요.",
+      "connectedTitle": "Discord에 연결됨",
+      "connectingTitle": "Discord 연결 중",
+      "connectTitle": "Discord 연결",
+      "defaultWorkspace": "Discord 기본 워크스페이스",
       "description": "서버에서 Okou를 멘션하거나 봇에게 다이렉트 메시지를 보내세요.",
       "disconnect": "Discord 연결 해제",
-      "dmServer": "다이렉트 메시지용 기본 서버",
-      "install": "Discord에 설치",
+      "invalidLink": "이 Discord 연결 링크는 유효하지 않습니다. Discord에서 새 링크를 여세요.",
       "limitedContext": "컨텍스트 제한: Okou가 일반 채널 메시지를 받지 못할 수 있습니다. Okou를 멘션하고 필요한 세부 정보를 함께 알려 주세요.",
-      "memberSetup": "조직 관리자에게 Discord 서버에 Okou를 설치해 달라고 요청하세요.",
-      "moreOptions": "Discord 추가 옵션",
-      "pendingConsent": "이 탭에는 인증 증명이 없습니다. 탭을 닫고 원래 Works 탭에서 인증을 다시 시작하세요.",
+      "open": "Discord 열기",
+      "openInBrowser": "브라우저에서 열기",
+      "pendingConsent": "이 탭을 닫고 원래 탭에서 연결을 다시 시작하세요.",
       "popupBlocked": "Discord 인증을 위해 팝업을 허용한 다음 다시 시도하세요.",
       "retry": "다시 시도",
       "suspended": "Discord를 일시적으로 사용할 수 없습니다. 기존 연결은 유지됩니다.",
       "title": "Discord",
-      "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다.",
-      "uninstall": "Discord 제거",
-      "uninstallDescription": "이 조직의 모든 구성원의 Discord 연결이 해제됩니다. 다른 조직의 연결은 유지됩니다.",
-      "uninstallTitle": "이 조직에서 Discord를 제거할까요?"
+      "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다."
     },
     "documentTitle": "작업",
     "feishuConnected": "Feishu가 성공적으로 연결되었습니다",

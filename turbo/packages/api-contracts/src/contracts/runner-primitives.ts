@@ -51,6 +51,16 @@ export const homeReuseResultSchema = z.enum([
 
 export type HomeReuseResult = z.infer<typeof homeReuseResultSchema>;
 
+/** Actual sandbox/home resource after startup preparation and fallback settle. */
+export const sandboxStartupPathSchema = z.enum([
+  "sandbox",
+  "home",
+  "blank",
+  "cold",
+]);
+
+export type SandboxStartupPath = z.infer<typeof sandboxStartupPathSchema>;
+
 export const runnerHeartbeatGenerationSchema = z
   .number()
   .int()

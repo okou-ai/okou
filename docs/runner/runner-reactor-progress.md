@@ -80,6 +80,30 @@ a completion observer cannot release that lease. Accepting runtimes must retain
 these owners through their explicit reconciliation boundary before dependent
 teardown.
 
+Supplied-policy ordinary pool batches, replacement and aged retirement adopt
+the same mandatory cleanup owner before yielding. A completed result alone does
+not release its original full lease: batches claim and release it explicitly,
+while aged replenishment claims it for new preparation. Dropped observers and
+required saving failures retain the original resources, home context and lease
+in the joined activation registry. Aged preemption releases CPU admission while
+joining required saving; it releases the logical lease only after proven cleanup,
+independently of a held status publication.
+
+Required saving keeps its home-reclamation CPU permit when pre-exit work fails.
+Other required cleanups wait while healthy holders can finish. If every permit
+is instead held by retained failed owners, waiting cleanup returns no progress
+with its original resource, data and lease intact. Joined shutdown can then
+expose all retained owners; neither a timeout nor false exit proof releases CPU
+custody to obtain progress. Explicit owner reconciliation releases the retained
+permit and makes that capacity available again.
+
+Logical eviction still transfers full-profile leases synchronously through atomic
+substitution, without waiting for old backing exit. Its accepted resource owner
+records that explicit transfer and uses the same mandatory saving engine. Only
+completed physical custody is released; failed saving stays recoverable through
+the activation registry without retaining or releasing the replacement lease.
+This transfer grants no physical memory credit.
+
 The supplied-policy speculative component keeps a
 `GuardedSpeculativeAdmission` outside preparation/rollback observation futures.
 Its actual provider claim is accepted by the joined Supervisor tracker before
@@ -168,6 +192,31 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
+Publication gives observed capacity contention a bounded asynchronous retry
+before staging, while retaining its entry lock. A capacity owner must never wait
+for an entry lock. This retry has a separate budget from startup's short entry
+wait and immediate-fallback policy. Proven guest exit releases healthy
+reclamation CPU permits before publication, but the entry and applicable logical
+lease remain owned until their cleanup contract completes. Waiting can therefore
+affect same-key checkout, resource-limited blank refill and joined shutdown; its
+contention deadline does not bound filesystem I/O.
+
+Checkout protects and examines the requested entry before considering disk
+pressure, with the existing short entry wait or immediate fallback. It never
+acquires capacity or runs a whole-cache GC on startup. A valid Move seed can be
+consumed by same-filesystem rename even below the reserve; periodic maintenance
+owns reclamation. A pressure miss may therefore fail promptly until maintenance
+frees space.
+
+Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
+cache publication. Firecracker queries the actual destination filesystem before
+fresh creation, Copy or EXDEV copy. Sparse seeds need their allocated bytes plus
+metadata headroom, while fresh images conservatively need their logical size.
+Refusal precedes image truncation, copying and source removal. Pristine retries
+retain the reserve policy. This is an observed allocation check, not a reservation
+against other writers or a guarantee about future guest growth. Same-filesystem
+rename still performs ordinary filesystem I/O and can fail.
+
 Successful routine completion emits `entry_count` (the unlocked candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
 excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
@@ -178,6 +227,25 @@ production cold-start savings or wall-clock performance guarantees. The ignored
 local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production
 `statvfs` latency or pressure collection.
+
+## Optional snapshot IO
+
+Supplied-policy optional consumers share the pressure controller's current
+observation state and global cadence through a restricted capability bound to
+its original physical-memory authority. Notifications carry no cached
+permission. Revalidate an opportunity after outside-lock admission waits;
+Critical/Unknown/stale/wave/stop transitions revoke the original offer even
+after a later recovery. No pressure-state lock survives IO or provider work.
+
+The concrete prefetch owner moves the physical operation and tracking token
+into accepted blocking reads. Dropped receivers/coordinators cannot make its
+drain finish while that producer remains active. Shutdown cancels future
+optional work and joins actual IO before dependent cache/factory teardown.
+Positive phase settlement still requires a fresh fenced observation; producer
+loss retains uncertainty. Cancellation, completed reads and declared file bounds
+are not resident-cache, released-byte or production memory-saving proof.
+
+- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
 
 ## Other retained work
 

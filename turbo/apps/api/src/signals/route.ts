@@ -1,5 +1,6 @@
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
+import { suggestionsRoutes } from "./routes/suggestions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -151,7 +152,6 @@ import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
-import { onboardingWorkflowConnectorsRoutes } from "./routes/onboarding-workflow-connectors";
 import { orgDeleteRoutes } from "./routes/org-delete";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgLogoRoutes } from "./routes/org-logo";
@@ -298,6 +298,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...suggestionsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -390,7 +391,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...onboardingSourcesRoutes,
-  ...onboardingWorkflowConnectorsRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,
   ...orgLogoRoutes,

@@ -866,6 +866,7 @@ test("Toggle network-body capture in Debug settings", async () => {
     pinnedAgentIds: [],
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault: true,
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,

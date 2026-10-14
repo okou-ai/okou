@@ -87,8 +87,8 @@ export const customTemplateCatalog$ = computed(
 
 /**
  * Read the catalog once, when a selection needs it. The composer resolves a
- * chosen template here instead of subscribing while it renders, so startup and
- * a closed picker neither request the catalog nor refetch it on invalidation.
+ * chosen template here instead of subscribing while it renders. The picker
+ * and the presentation/image task shelves subscribe only while shown.
  */
 export const loadCustomTemplateCatalog$ = command(
   async (
@@ -266,7 +266,14 @@ export const openCustomTemplateDetail$ = computed(
     }
     get(catalogVersion$);
     const client = get(apiClient$)(userTemplatesContract);
-    const result = await accept(client.get({ params: { templateId } }), [200]);
+    // A delete notification can revalidate the detail before its dialog closes.
+    // Load failures already have an inline retry; do not toast a stale preview.
+    const result = await accept(
+      client.get({ params: { templateId } }),
+      [200],
+      undefined,
+      { showErrorToast: false },
+    );
     return result.body;
   },
 );

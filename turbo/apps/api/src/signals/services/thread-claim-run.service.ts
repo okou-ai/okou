@@ -81,6 +81,7 @@ import { logger } from "../../lib/log";
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { type Db, db$, type ReadonlyDb, writeDb$ } from "../external/db";
+import { storageIndexKey } from "./storage-index.service";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -227,7 +228,7 @@ import { formatIntegrationRunError$ } from "./integration-run-errors.service";
 import type { InternalRunCallbackKind } from "./internal-run-callback";
 import {
   type MemorySummaryProjectionReadInput,
-  memorySummaryProjectionReadResult,
+  createMemorySummaryProjectionRead,
   type MemorySummaryProjectionReadResult,
 } from "./memory-summary-projection.service";
 
@@ -262,7 +263,6 @@ import { isStaffOrg } from "@okouai/core/staff-org";
 import {
   getInstructionsStorageName,
   MEMORY_ARTIFACT_NAME,
-  VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import type {
   AgentRunFullLaunchSnapshot,
@@ -284,12 +284,9 @@ import {
 
 import { chatNetworkBodyCaptures } from "@okouai/db/schema/chat-network-body-capture";
 
-import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
-import { storages, storageVersions } from "@okouai/db/schema/storage";
-
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import {
   PI_AGENT_RUNTIME_VERSION,
@@ -302,7 +299,6 @@ import {
   eq,
   inArray,
   isNotNull,
-  ne,
   notExists,
   sql,
   type SQL,
@@ -651,7 +647,6 @@ function buildWorkflowAutomationQueuedLaunchMaterial(args: {
       args.automation,
       args.agentId,
       args.chatThreadId,
-      args.workflowName,
     ),
     ...EVENT_POLICY[eventType],
     allowClaimedOnceScheduleAutomation: args.automation.scheduleType === "once",
@@ -982,7 +977,6 @@ function buildWorkflowAutomationCallbacks(
   automation: AutomationRow,
   agentId: string,
   chatThreadId: string,
-  workflowName: string,
 ): InternalRunCallbackInput[] {
   const callbacks: InternalRunCallbackInput[] = [];
   if (automation.kind === "schedule") {
@@ -1005,15 +999,6 @@ function buildWorkflowAutomationCallbacks(
         },
       });
     }
-  }
-  if (automation.officialResultEmailEnabled === true) {
-    callbacks.push({
-      internalKind: "workflow-automation:result-email",
-      payload: {
-        automationId: automation.id,
-        workflowName,
-      },
-    });
   }
   callbacks.push({
     internalKind: "chat",
@@ -3304,54 +3289,61 @@ export function createThreadClaimRunObjects(
       return selection.kind === "projection" ? selection.input : undefined;
     },
   );
+  // The memory HEAD and the Pi gate are known before the Run plan, so the
+  // projection for that identity is read alongside storage preparation.
+  const earlyProjectionInput$ = computed(
+    async (get): Promise<MemorySummaryProjectionReadInput | undefined> => {
+      if (!(await get(resourceAllowed$))) {
+        return undefined;
+      }
+      const [selection, features, storage] = await Promise.all([
+        get(threadContext.subscriptionSelection$),
+        get(bootstrap.featureSwitches$),
+        get(threadContext.storage$),
+      ]);
+      if (
+        "status" in selection ||
+        !selection.piExecution ||
+        !isFeatureEnabled(FeatureSwitchKey.PiMemory, features)
+      ) {
+        return undefined;
+      }
+      const memory = storage.index.get(
+        storageIndexKey(
+          bootstrap.orgId,
+          bootstrap.userId,
+          MEMORY_ARTIFACT_NAME,
+        ),
+      );
+      return memory?.headVersion
+        ? {
+            args: {
+              orgId: bootstrap.orgId,
+              userId: bootstrap.userId,
+              memoryStorageId: memory.storageId,
+              storageVersionId: memory.headVersion.id,
+            },
+          }
+        : undefined;
+    },
+  );
+  const earlyMemorySummaryProjection$ = createMemorySummaryProjectionRead(
+    earlyProjectionInput$,
+  );
+  const canonicalMemorySummaryProjection$ =
+    createMemorySummaryProjectionRead(projectionInput$);
   const memorySummaryProjectionRead$ = computed(
     async (get): Promise<MemorySummaryProjectionReadResult | null> => {
-      const input = await get(projectionInput$);
+      const [input, earlyInput] = await Promise.all([
+        get(projectionInput$),
+        get(earlyProjectionInput$),
+      ]);
       if (!input) {
         return null;
       }
-      const { args } = input;
-      const db = get(db$);
-      const [row] = await db
-        .select({
-          storageId: storages.id,
-          storageOrgId: storages.orgId,
-          storageUserId: storages.userId,
-          storageName: storages.name,
-          projectionStatus: memorySummaryProjections.status,
-          content: memorySummaryProjections.content,
-          sourceHash: memorySummaryProjections.sourceHash,
-          sourceSize: memorySummaryProjections.sourceSize,
-          tokenCount: memorySummaryProjections.tokenCount,
-        })
-        .from(storages)
-        .innerJoin(
-          storageVersions,
-          and(
-            eq(storageVersions.storageId, storages.id),
-            eq(storageVersions.id, args.storageVersionId),
-          ),
-        )
-        .leftJoin(
-          memorySummaryProjections,
-          and(
-            eq(memorySummaryProjections.memoryStorageId, storages.id),
-            eq(memorySummaryProjections.storageVersionId, storageVersions.id),
-            eq(memorySummaryProjections.orgId, args.orgId),
-            eq(memorySummaryProjections.userId, args.userId),
-          ),
-        )
-        .where(
-          and(
-            eq(storages.id, args.memoryStorageId),
-            eq(storages.orgId, args.orgId),
-            eq(storages.userId, args.userId),
-            eq(storages.name, MEMORY_ARTIFACT_NAME),
-            ne(storages.userId, VOLUME_ORG_USER_ID),
-          ),
-        )
-        .limit(1);
-      return memorySummaryProjectionReadResult(input, row);
+      return earlyInput && sameMemoryProjectionIdentity(earlyInput, input)
+        ? get(earlyMemorySummaryProjection$)
+        : get(canonicalMemorySummaryProjection$);
     },
   );
   const piMemoryRecallProjection$ = memorySummaryProjectionRead$;
@@ -3650,6 +3642,9 @@ export function createThreadClaimRunObjects(
         set(prepareRunnerInput$, signal),
         get(preparedStorage$),
         get(piLaunchResources$),
+        // Start the Pi memory projection read with storage preparation; its
+        // failure surfaces through Pi launch resources when it is used.
+        settle(get(earlyMemorySummaryProjection$)),
       ]);
       signal.throwIfAborted();
       if (!input || isRouteError(input)) {
@@ -4398,6 +4393,18 @@ function canonicalPiMemoryMount<
 
 type AgentRunRecord = AgentRunRequestAgent;
 
+function sameMemoryProjectionIdentity(
+  left: MemorySummaryProjectionReadInput,
+  right: MemorySummaryProjectionReadInput,
+): boolean {
+  return (
+    left.args.orgId === right.args.orgId &&
+    left.args.userId === right.args.userId &&
+    left.args.memoryStorageId === right.args.memoryStorageId &&
+    left.args.storageVersionId === right.args.storageVersionId
+  );
+}
+
 // --- Thread-private implementation: launch persistence ---
 
 interface AgentExecutionRequestObservation {
@@ -4663,6 +4670,7 @@ function launchRunValues(
     userId: args.userId,
     orgId: args.orgId,
     status: args.status,
+    agentId: args.resolved.agentId,
     creditAdmitted: args.creditAdmitted,
     prompt: args.body.prompt,
     appendSystemPrompt: args.body.appendSystemPrompt ?? null,

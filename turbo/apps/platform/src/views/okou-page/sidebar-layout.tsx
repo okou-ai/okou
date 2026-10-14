@@ -15,6 +15,8 @@ import {
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Menu, Package, Share2, UserPlus } from "lucide-react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import type { RouteKey } from "../../signals/route-paths.ts";
 import { Button, Sheet, SheetTrigger, cn, useMediaQuery } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
@@ -66,6 +68,7 @@ import {
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
+import { ChatResourcesButton } from "./chat-resources.tsx";
 import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
@@ -119,11 +122,17 @@ function InviteButtonLeaf() {
 }
 
 function MobileArtifactsButtonInner({ thread }: { thread: ChatPanelSignals }) {
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const sidebarTarget = useGet(thread.sidebar.target$);
   const reloadArtifacts = useSet(thread.reloadArtifacts$);
   const openThreadArtifacts = useOpenThreadArtifacts(thread);
   const { t } = useTranslation();
   const open = sidebarTarget?.type === "artifacts";
+
+  if (resourcesEnabled) {
+    return <ChatResourcesButton thread={thread} />;
+  }
 
   return (
     <Button
@@ -278,6 +287,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
+      <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
   );
@@ -524,6 +534,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         </WorkspaceInset>
       )}
     </div>,
+    { measureWidth: true },
   );
 }
 

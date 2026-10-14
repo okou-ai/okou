@@ -203,7 +203,7 @@ class RuntimeInputs(unittest.TestCase):
         # Public non-loadable ELF/header data models preflight only. No source
         # build, native program, signature, authentication or PNG is invented.
         baseline = self.full_private_inputs()
-        recipe = qemu_gssapi.REPO / '.github/scripts/prepare-qemu-gssapi-fixture.py'
+        recipe = qemu_gssapi.REPO / 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'
         pins = qemu_gssapi.runpy.run_path(str(recipe))
         binary = self.runtime / 'usr/bin/qemu-system-x86_64'
         binary.write_bytes((self.runtime / 'usr/bin/public-header.canary').read_bytes())

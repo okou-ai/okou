@@ -983,7 +983,7 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         | request_classification.BrowserAllow
         | request_classification.FirewallPolicyAllow
         | request_classification.Allow,
-    ) and request_classification.should_stream_capture_request(classification):
+    ) and request_classification.should_stream_request(classification):
         if classification.kind == "api_allow" and not _admit_platform_api_request(flow):
             _restore_request_headers_probe_metadata(flow, metadata_snapshot)
             return None
@@ -991,7 +991,10 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
             connector_diagnostics.record_allow_context(flow, classification)
         request_classification.cache_classification(flow, classification)
         _start_request_timing(flow)
-        request_streaming.configure_request_stream(flow)
+        request_streaming.configure_request_stream(
+            flow,
+            capture_body=bool(classification.sandbox_info.get("captureNetworkBodies", False)),
+        )
         return None
 
     if (

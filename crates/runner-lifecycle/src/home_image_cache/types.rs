@@ -1,4 +1,4 @@
-use super::MIN_FREE_BYTES_FLOOR;
+use super::HOME_IMAGE_SPACE_RESERVE;
 use crate::storage_fingerprints::StorageFingerprints;
 use runner_types::ids::RunId;
 use serde::{Deserialize, Serialize};
@@ -174,7 +174,7 @@ impl CacheBudget {
         Self {
             max_cache_bytes,
             target_after_gc_bytes: max_cache_bytes.saturating_mul(75) / 100,
-            min_free_bytes: (stats.total_bytes.saturating_mul(10) / 100).max(MIN_FREE_BYTES_FLOOR),
+            min_free_bytes: HOME_IMAGE_SPACE_RESERVE.bytes_for_capacity(stats.total_bytes),
         }
     }
 }

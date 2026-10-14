@@ -14,6 +14,7 @@ import {
   PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
 } from "./pi-memory-phase2-usage.service";
 import type { ThreadlessRunProtection } from "./threadless-run-protection.service";
+import { publishedPiMemoryPhase2RunProtection } from "./pi-memory-phase2-lifecycle";
 
 /**
  * Keeps exact live Phase 2 maintenance leases, and recently completed
@@ -27,6 +28,7 @@ export const piMemoryPhase2ThreadlessRunProtection: Readonly<ThreadlessRunProtec
         currentTime.getTime() - PI_MEMORY_PHASE2_USAGE_DRAIN_MS,
       );
       return [
+        notExists(publishedPiMemoryPhase2RunProtection()),
         notExists(
           new QueryBuilder()
             .select({ memoryStorageId: piMemoryPhase2Jobs.memoryStorageId })

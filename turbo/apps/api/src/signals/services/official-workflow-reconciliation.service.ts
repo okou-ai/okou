@@ -31,9 +31,9 @@ import { orgMembersMetadata } from "@okouai/db/schema/org-members-metadata";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import {
   officialWorkflowAutomationIdentities,
-  workflowAutomations,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 
@@ -98,7 +98,6 @@ import type {
 } from "./official-workflow-reconciliation.types";
 import {
   buildOfficialAutomationPatch,
-  legacyResultEmailEnabled,
   officialAutomationRestorePatch,
   refreshOfficialAutomationPatch,
   resolveOfficialWorkflowBlueprintForReconciliation,
@@ -399,8 +398,7 @@ function sameAutomationBaseline(
     expected.officialReconciliationStatus ===
       current.officialReconciliationStatus &&
     expected.enabled === current.enabled &&
-    expected.officialIntendedEnabled === current.officialIntendedEnabled &&
-    expected.officialResultEmailEnabled === current.officialResultEmailEnabled
+    expected.officialIntendedEnabled === current.officialIntendedEnabled
   );
 }
 
@@ -430,8 +428,7 @@ function sameAutomationConfigurationBaseline(
     isDeepStrictEqual(
       expected.officialParameterBindings,
       current.officialParameterBindings,
-    ) &&
-    expected.officialResultEmailEnabled === current.officialResultEmailEnabled
+    )
   );
 }
 
@@ -1885,7 +1882,6 @@ function createInput(
             blueprintKey: resolved.blueprint.key,
             appliedFingerprint: resolved.blueprint.fingerprint,
             parameterBindings: resolved.bindings,
-            resultEmailEnabled: legacyResultEmailEnabled(resolved.blueprint),
             automationId: options.automationId,
             installationState: "installed" as const,
             intendedEnabled: options.intendedEnabled ?? false,
@@ -2415,7 +2411,6 @@ interface DormantMaterializationOwnershipArgs {
   readonly automationId: string;
   readonly bindings: readonly OfficialWorkflowParameterBinding[];
   readonly intendedEnabled: boolean;
-  readonly resultEmailEnabled: boolean;
 }
 
 function dormantMaterializationRows(
@@ -2441,7 +2436,6 @@ function dormantMaterializationRows(
     automation.officialAppliedFingerprint !== args.fingerprint ||
     automation.officialReconciliationStatus === null ||
     automation.officialIntendedEnabled !== args.intendedEnabled ||
-    automation.officialResultEmailEnabled !== args.resultEmailEnabled ||
     !isDeepStrictEqual(automation.officialParameterBindings, args.bindings)
   ) {
     return null;
@@ -2895,7 +2889,6 @@ function dormantMaterializationOwnershipArgs(
     blueprintKey: args.blueprint.key,
     fingerprint: args.blueprint.fingerprint,
     activeDefinitionOnly: args.activeDefinitionOnly,
-    resultEmailEnabled: legacyResultEmailEnabled(args.blueprint),
     ...materialization,
   };
 }
@@ -3590,8 +3583,7 @@ const reconcileReservedDormantMaterialization$ = command(
       automation.officialBlueprintKey === null ||
       automation.officialAppliedFingerprint === null ||
       automation.officialParameterBindings === null ||
-      automation.officialIntendedEnabled === null ||
-      automation.officialResultEmailEnabled === null
+      automation.officialIntendedEnabled === null
     ) {
       return {
         kind: "retry",
@@ -3617,7 +3609,6 @@ const reconcileReservedDormantMaterialization$ = command(
           automationId: automation.id,
           bindings: automation.officialParameterBindings,
           intendedEnabled: automation.officialIntendedEnabled,
-          resultEmailEnabled: automation.officialResultEmailEnabled,
         },
         signal,
       );

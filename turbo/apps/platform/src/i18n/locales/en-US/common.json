@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slides",
       "importFile": "Import template",
+      "importImage": "Import your own",
+      "importImageHint": "Save as a style",
       "multiAccent": "Multi-accent",
       "nextSlide": "Preview next slide",
       "noMatches": "No matches",
@@ -655,6 +657,7 @@
       "selectWorkflow": "Select workflow template {{title}}",
       "showVariant": "Show variant {{variantNumber}}",
       "singleAccent": "Single-accent",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} slide preview",
       "slideThumbnail": "{{title}} slide {{slideNumber}} preview",
       "template": "Template",
@@ -1516,6 +1519,16 @@
       },
       "viewAgentProfile": "View agent profile"
     },
+    "agentSuggestions": {
+      "existingThread": "Existing conversation",
+      "label": "Suggestions",
+      "loadFailed": "Suggestions could not be loaded.",
+      "newThread": "New conversation with Okou",
+      "origin": "From your Morning Brief",
+      "showAll_one": "View all {{count}}",
+      "showAll_other": "View all {{count}}",
+      "showLess": "Show fewer"
+    },
     "attachments": {
       "attach": "Attach",
       "fileTooLarge": "{{filename}} exceeds the 1 GB limit",
@@ -1759,6 +1772,7 @@
       "workflows": {
         "empty": "No matching workflows",
         "loading": "Loading workflows...",
+        "showAll": "Show all workflows",
         "title": "Workflows"
       }
     },
@@ -2053,6 +2067,15 @@
       "retry": "Retry",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
+    },
+    "resources": {
+      "copyLink": "Copy link",
+      "empty": "No artifacts or links in this chat yet",
+      "links": "Links",
+      "loadFailed": "Could not load resources",
+      "retry": "Try again",
+      "title": "Resources",
+      "viewAll": "View all"
     },
     "run": {
       "collapseWorkHistory": "Collapse work history",
@@ -2382,6 +2405,7 @@
       "tasks": {
         "image": "Image",
         "presentation": "Presentation",
+        "suggestions": "Suggestions",
         "visualization": "Visualization",
         "website": "Website",
         "workflow": "Workflow"
@@ -2808,6 +2832,14 @@
       "transcribing": "Transcribing",
       "transcriptionFailed": "Voice transcription failed. Try again."
     },
+    "walletAction": {
+      "approveButton": "Review",
+      "approveTitle": "Review purchase",
+      "connectButton": "Authorize",
+      "connectTitle": "Authorize Link wallet",
+      "continueButton": "Continue",
+      "continueTitle": "Continue in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Open workflow {{title}}"
@@ -2970,6 +3002,7 @@
       "genericLabel": "Connector",
       "githubLabel": "GitHub",
       "invalidUrl": "Invalid connector callback URL.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -5298,17 +5331,6 @@
     "unavailable": "SSH access is not available for this account.",
     "username": "SSH username"
   },
-  "subscriptionLinking": {
-    "connect": "Connect subscription",
-    "description": "Use your existing ChatGPT or Claude subscription with {{brandName}}.",
-    "dismiss": "Dismiss subscription hint",
-    "hint": "Already have ChatGPT or Claude?",
-    "limits": "Availability and usage limits depend on your subscription.",
-    "manage": "Manage AI subscriptions",
-    "menuConnect": "Connect AI subscription",
-    "menuLoading": "AI subscriptions",
-    "title": "Connect your subscription"
-  },
   "tailscale": {
     "add": "Add Tailscale",
     "addressHelp": "Use a registered tailnet peer IP, full hostname or short name. SSH login and host-key verification are still required.",
@@ -5558,9 +5580,17 @@
     },
     "save": "Save",
     "saveRecovery": {
+      "deleteHelp": "Review these saved details before deleting. This action only selects the version; confirm deletion separately.",
+      "incompatible": "The authentication method changed. Close this dialog and reopen the credential to edit the current method.",
+      "keepChanges": "Keep my changes with this version",
+      "keepDeletion": "Use this version for deletion",
+      "keepHelp": "Review these details, then keep your draft and save it against this version. Your authentication and trust choices will be kept.",
+      "latest": "Current saved details",
       "resourceIdConflict": "This resource could not be created. Close this dialog and try again.",
       "review": "The configuration has been refreshed. Close this dialog and review the current details before trying again.",
-      "uncertain": "The save result is unknown. Your original draft is locked. Retry the same request or close and refresh to check the saved configuration."
+      "unavailable": "This resource is no longer available. Close this dialog and refresh the configuration before trying again.",
+      "uncertain": "The save result is unknown. Your original draft is locked. Retry the same request or close and refresh to check the saved configuration.",
+      "version": "Version {{version}}"
     },
     "saving": "Saving…",
     "security": {
@@ -6365,29 +6395,29 @@
     "connectedWithDetail": "Connected ({{detail}})",
     "discord": {
       "accountSetup": "Connect your Discord account through official browser consent.",
-      "adminSetup": "Install Okou to your Discord server, then connect your account.",
-      "approvalConfirmed": "Close this tab to finish connecting in Works.",
+      "approvalConfirmed": "Close this tab to finish connecting in the original tab.",
       "approvalFailed": "Approval failed. Sign in with the original Okou account and organization, or restart authorization.",
-      "authorizationError": "Discord authorization could not be completed. Try again from this card.",
+      "authorizationError": "Discord authorization could not be completed. Try again.",
       "authorizing": "Authorizing…",
       "browserConsent": "Complete authorization in the Discord window. This page will update automatically.",
-      "chooseDmServer": "Choose a server",
+      "chooseWorkspace": "Choose a workspace",
+      "connectDescription": "Connect your Discord account to chat with your agent.",
+      "connectedTitle": "Connected to Discord",
+      "connectingTitle": "Connecting to Discord",
+      "connectTitle": "Connect to Discord",
+      "defaultWorkspace": "Default workspace for Discord",
       "description": "Mention Okou in a server or send the bot a direct message.",
       "disconnect": "Disconnect Discord",
-      "dmServer": "Default server for direct messages",
-      "install": "Install to Discord",
+      "invalidLink": "This Discord connection link is invalid. Open a new link from Discord.",
       "limitedContext": "Limited context: Okou may not receive ordinary channel messages. Mention Okou and include the details it needs.",
-      "memberSetup": "Ask an organization admin to install Okou to your Discord server.",
-      "moreOptions": "More Discord options",
-      "pendingConsent": "This tab has no authorization proof. Close it and restart authorization from the original Works tab.",
+      "open": "Open Discord",
+      "openInBrowser": "Open in browser",
+      "pendingConsent": "Close this tab and restart the connection from the original tab.",
       "popupBlocked": "Allow popups to authorize Discord, then try again.",
       "retry": "Retry",
       "suspended": "Discord is temporarily unavailable. Existing connections are kept.",
       "title": "Discord",
-      "unconfigured": "Discord is not configured for this organization yet.",
-      "uninstall": "Remove Discord",
-      "uninstallDescription": "This disconnects everyone in this organization from Discord. Other organizations keep their connections.",
-      "uninstallTitle": "Remove Discord from this organization?"
+      "unconfigured": "Discord is not configured for this organization yet."
     },
     "documentTitle": "Works",
     "feishuConnected": "Feishu connected successfully",

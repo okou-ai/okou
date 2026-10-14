@@ -6,7 +6,6 @@ import {
   uuid,
   varchar,
   text,
-  jsonb,
   timestamp,
   index,
   check,
@@ -15,8 +14,6 @@ import {
 import { sql } from "drizzle-orm";
 
 import { registerAgentRunReferences } from "./agent-run-reference";
-
-import type { AgentSessionStorageMounts } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
 /**
  * Agent Runs table
@@ -333,11 +330,6 @@ export const agentSessions = pgTable(
     ...agentSessionColumns(() => {
       return conversations.id;
     }),
-    // Migration-owned compatibility under #39310. New runtime writers omit it;
-    // the empty array keeps supported old continuation readers from seeing NULL.
-    storageMounts: jsonb("storage_mounts")
-      .$type<AgentSessionStorageMounts>()
-      .default(sql`'[]'::jsonb`),
   },
   (table) => {
     return [

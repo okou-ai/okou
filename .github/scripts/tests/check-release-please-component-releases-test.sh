@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECK_RELEASES="${SCRIPT_DIR}/check-release-please-component-releases.sh"
+CHECK_RELEASES="${SCRIPT_DIR}/checks/check-release-please-component-releases.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 

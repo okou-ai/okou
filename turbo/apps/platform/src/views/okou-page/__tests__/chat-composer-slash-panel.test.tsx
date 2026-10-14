@@ -30,6 +30,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
 
 const WORKFLOW_NAME = "axiom-red";
 const SECOND_WORKFLOW_NAME = "axiom-status";
@@ -90,6 +91,16 @@ function flyout(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-flyout"]');
 }
 
+/**
+ * A workflow row is named by its token; the description after it is not part
+ * of what identifies the row.
+ */
+function slashRowLabel(button: HTMLElement): string | undefined {
+  const label =
+    button.querySelector('[data-slot="slash-workflow-name"]') ?? button;
+  return label.textContent?.replace(/\s+/gu, " ").trim();
+}
+
 function querySlashButton(name: string): HTMLElement | null {
   const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
   for (const surface of surfaces) {
@@ -99,7 +110,7 @@ function querySlashButton(name: string): HTMLElement | null {
     const match = queryAllByRoleFast("button", surface).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
-        candidate.textContent?.replace(/\s+/gu, " ").trim() === name
+        slashRowLabel(candidate) === name
       );
     });
     if (match) {
@@ -139,7 +150,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
 
   // A deck cover really is a slide, so it still asks for the 16:9 box.
   const deckCover = detailPane()?.querySelector("img");
-  expect(deckCover?.getAttribute("src")).toContain("height=158");
+  expect(deckCover?.getAttribute("src")).toContain("height=234");
 
   await user.hover(slashButton("Illustration"));
   await waitFor(() => {
@@ -156,7 +167,7 @@ test("Illustration covers keep their own proportion; decks keep the 16:9 tile", 
   const cover = pane.querySelector("img");
   // Width only: passing a 16:9 height too made the transform fit a portrait
   // style inside it, so the card received a picture far smaller than it paints.
-  expect(cover?.getAttribute("src")).toContain("width=280");
+  expect(cover?.getAttribute("src")).toContain("width=416");
   expect(cover?.getAttribute("src")).not.toContain("height=");
   // The tile declares the catalog's own ratio rather than a shared one, which
   // is what stops the artwork being cropped.
@@ -378,32 +389,49 @@ function slashMenuButtonNames(): (string | undefined)[] {
     .filter((button) => {
       return !button.closest('[data-slot="slash-template-detail"]');
     })
-    .map((button) => {
-      return button.textContent?.trim();
-    });
+    .map(slashRowLabel);
 }
 
 test.each(COMPOSER_PATHS)(
-  "Composer-anchored slash suggestions at %s default to the bottom candidate and navigate visually",
+  "Composer-anchored slash suggestions at %s open without selecting a candidate and navigate visually",
   async (path) => {
+    // Below `sm` the start page docks its composer to the floor like a thread.
+    context.mocks.browser.matchMedia(false);
     const user = userEvent.setup();
     await openSlashMenu("", true, path);
     const editor = await findComposerEditor();
     await waitFor(() => {
       expect(slashMenuButtonNames()).toStrictEqual([
-        `/${THIRD_WORKFLOW_NAME}`,
-        `/${SECOND_WORKFLOW_NAME}`,
         `/${WORKFLOW_NAME}`,
+        `/${SECOND_WORKFLOW_NAME}`,
+        `/${THIRD_WORKFLOW_NAME}`,
         "Website",
         "Illustration",
         "Presentation",
         "Browse all templates",
       ]);
     });
-    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    // The composer-wide menu says what each workflow does after its name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveTextContent(
+      `/${WORKFLOW_NAME} Query Axiom for RED metrics`,
+    );
+    expect(
+      queryAllByRoleFast(
+        "button",
+        screen.getByTestId("slash-workflow-menu"),
+      ).filter((button) => {
+        return button.dataset.active === "true";
+      }),
+    ).toHaveLength(0);
+    expect(detailPane()).toBeNull();
     expect(editor).toHaveFocus();
 
     await user.keyboard("{ArrowDown}");
+    expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+    await user.keyboard("{ArrowDown>5/}");
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     await user.keyboard("{ArrowUp}");
     expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
@@ -414,15 +442,83 @@ test.each(COMPOSER_PATHS)(
   },
 );
 
-test("Composer-anchored slash suggestions keep the strongest match at the bottom and reset on a new query", async () => {
+test.each([
+  {
+    path: `/agents/${AGENT_ID}/chat`,
+    side: "bottom",
+    names: [
+      "Presentation",
+      "Illustration",
+      "Website",
+      `/${WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${THIRD_WORKFLOW_NAME}`,
+      "Browse all templates",
+    ],
+    awayFromComposer: "{ArrowDown}",
+  },
+  {
+    path: `/chats/${THREAD_ID}`,
+    side: "top",
+    names: [
+      `/${WORKFLOW_NAME}`,
+      `/${SECOND_WORKFLOW_NAME}`,
+      `/${THIRD_WORKFLOW_NAME}`,
+      "Website",
+      "Illustration",
+      "Presentation",
+      "Browse all templates",
+    ],
+    awayFromComposer: "{ArrowUp}",
+  },
+])(
+  "Composer-anchored slash suggestions at $path open on the $side side from the centred start page breakpoint",
+  async ({ path, side, names, awayFromComposer }) => {
+    context.mocks.browser.matchMedia((query) => {
+      return query === START_PAGE_CENTRED_MEDIA_QUERY;
+    });
+    const user = userEvent.setup();
+    await openSlashMenu("", true, path);
+    await waitFor(() => {
+      expect(slashMenuButtonNames()).toStrictEqual(names);
+    });
+    expect(screen.getByTestId("slash-workflow-menu")).toHaveAttribute(
+      "data-side",
+      side,
+    );
+    await user.keyboard(awayFromComposer);
+    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
+    await user.keyboard(awayFromComposer);
+    expect(slashButton("Illustration")).toHaveAttribute("data-active", "true");
+  },
+);
+
+test("Composer-anchored keyboard navigation crosses from categories into workflows", async () => {
+  await openSlashMenu("", true);
+  await waitFor(() => {
+    return slashButton(`/${WORKFLOW_NAME}`);
+  });
+  const user = userEvent.setup();
+  await user.keyboard("{ArrowUp>4/}");
+  expect(slashButton(`/${THIRD_WORKFLOW_NAME}`)).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+  await user.keyboard("{Tab}");
+  const editor = await findComposerEditor();
+  expect(editor).toHaveTextContent(`Draft /${THIRD_WORKFLOW_NAME}`);
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+});
+
+async function openManyWorkflows(): Promise<HTMLElement> {
   setupModels();
   context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
-    return respond(200, [
-      composerWorkflow("daily-axi", "Substring match"),
-      composerWorkflow("a-x-i", "Fuzzy match"),
-      composerWorkflow("axiom-red", "Prefix match"),
-      composerWorkflow("axi", "Exact match"),
-    ]);
+    return respond(
+      200,
+      Array.from({ length: 12 }, (_, index) => {
+        return composerWorkflow(`daily-${String(index + 1)}`, "Daily workflow");
+      }),
+    );
   });
   mockChatLifecycle(context, { threadId: THREAD_ID });
   await setupPage({
@@ -431,48 +527,80 @@ test("Composer-anchored slash suggestions keep the strongest match at the bottom
     featureSwitches: { [FeatureSwitchKey.ComposerAnchoredSuggestions]: true },
   });
   const editor = await findComposerEditor();
-  await fill(editor, "Draft /axi");
-  await screen.findByTestId("slash-workflow-menu");
+  await fill(editor, "Draft /");
   await waitFor(() => {
-    expect(slashMenuButtonNames()).toStrictEqual([
-      "/a-x-i",
-      "/daily-axi",
-      "/axiom-red",
-      "/axi",
-      "Browse all templates",
-    ]);
+    expect(slashButton("Show all workflows")).toBeInTheDocument();
   });
-  expect(slashButton("/axi")).toHaveAttribute("data-active", "true");
+  return editor;
+}
+
+test("The workflow overview expands without losing the token or its selectable workflows", async () => {
   const user = userEvent.setup();
-  await user.keyboard("{ArrowUp}{ArrowUp}");
-  expect(slashButton("/daily-axi")).toHaveAttribute("data-active", "true");
-  await fill(editor, "Draft /axiom");
-  await waitFor(() => {
-    expect(slashButton("/axiom-red")).toHaveAttribute("data-active", "true");
-  });
-  await user.keyboard("{Enter}");
-  await waitFor(() => {
-    expect(editor).toHaveTextContent("Draft /axiom-red");
-  });
-  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  const editor = await openManyWorkflows();
+  expect(querySlashButton("/daily-9")).toBeNull();
+  expect(slashButton("Website")).toBeInTheDocument();
+  expect(slashButton("Browse all templates")).toBeInTheDocument();
+
+  await user.click(slashButton("Show all workflows"));
+
   expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent("Draft /");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  await user.click(slashButton("/daily-12"));
+  expect(editor).toHaveTextContent("Draft /daily-12");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
 });
 
-test("Composer-anchored keyboard navigation crosses from categories into workflows", async () => {
-  await openSlashMenu("", true);
-  await waitFor(() => {
-    return slashButton(`/${WORKFLOW_NAME}`);
-  });
+test("Keyboard navigation keeps workflows collapsed until the ellipsis is activated", async () => {
   const user = userEvent.setup();
-  await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
-  expect(slashButton(`/${WORKFLOW_NAME}`)).toHaveAttribute(
+  const editor = await openManyWorkflows();
+
+  await user.keyboard("{ArrowDown>5/}");
+
+  expect(slashButton("Show all workflows")).toHaveAttribute(
     "data-active",
     "true",
   );
-  await user.keyboard("{Tab}");
-  const editor = await findComposerEditor();
-  expect(editor).toHaveTextContent(`Draft /${WORKFLOW_NAME}`);
+  expect(slashButton("Show all workflows")).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(querySlashButton("/daily-2")).toBeNull();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent(/^Draft \/$/);
+
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Website")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("/daily-2")).toBeNull();
+  await user.keyboard("{ArrowUp>2/}");
+  expect(slashButton("/daily-12")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("Show all workflows")).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+
+  await user.keyboard("{Enter}");
+  expect(slashButton("/daily-2")).toHaveAttribute("data-active", "true");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveTextContent(/^Draft \/$/);
+  await user.keyboard("{ArrowDown}");
+  expect(slashButton("/daily-3")).toHaveAttribute("data-active", "true");
+  await user.keyboard("{Enter}");
+  expect(editor).toHaveTextContent("Draft /daily-3");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+
+  await fill(editor, "Draft /");
+  await user.keyboard("{Escape}");
+  expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  await fill(editor, "Draft /");
+  expect(slashButton("Show all workflows")).toBeInTheDocument();
+  expect(querySlashButton("/daily-9")).toBeNull();
+
+  await fill(editor, "Draft /daily");
+  expect(querySlashButton("Show all workflows")).toBeNull();
+  expect(slashButton("/daily-12")).toBeInTheDocument();
 });
 
 test.each(COMPOSER_PATHS)(
@@ -483,12 +611,14 @@ test.each(COMPOSER_PATHS)(
     });
     await openSlashMenu("", true, path);
     const menu = screen.getByTestId("slash-workflow-menu");
+    expect(detailPane()).toBeNull();
+    const user = userEvent.setup();
+    await user.keyboard("{ArrowUp}");
     expect(
       within(menu).getByRole("region", { name: "Presentation" }),
     ).toBeInTheDocument();
     expect(flyout()).toBeNull();
 
-    const user = userEvent.setup();
     await user.keyboard("{ArrowUp}");
     expect(
       within(menu).getByRole("region", { name: "Illustration" }),
@@ -526,6 +656,9 @@ test.each(COMPOSER_PATHS)(
       return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
     });
     await openSlashMenu("", true, path);
+    expect(detailPane()).toBeNull();
+    const user = userEvent.setup();
+    await user.keyboard("{ArrowUp}");
     await waitFor(() => {
       expect(detailPane()).toHaveAttribute("data-category", "slides");
     });
@@ -537,7 +670,6 @@ test.each(COMPOSER_PATHS)(
     });
     expect(flyout()).toBeNull();
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    const user = userEvent.setup();
     await user.click(slashButton("Illustration"));
     await screen.findByRole("dialog");
     expect(tabByText("Illustration")).toHaveAttribute("aria-selected", "true");
@@ -563,5 +695,9 @@ test.each(COMPOSER_PATHS)(
     expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
     expect(detailPane()).toHaveAttribute("data-category", "slides");
     expect(flyout()).toHaveAccessibleName("Presentation");
+    // The 260px menu has no room for a description beside the name.
+    expect(slashButton(`/${WORKFLOW_NAME}`)).not.toHaveTextContent(
+      "Query Axiom for RED metrics",
+    );
   },
 );

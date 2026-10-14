@@ -7,13 +7,11 @@ import {
   artifactSharesContract,
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import {
   click,
   setupPage,
-  startPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -66,7 +64,7 @@ const canonical = artifactReferencePath(deploymentId, "index.html");
 const organizationUrl = `https://app.okou.ai${artifactReferencePath(shareId, "index.html")}`;
 const publicUrl = `https://${"b".repeat(24)}.okou.app/`;
 
-async function openArtifact({ enabled = true }: { enabled?: boolean } = {}) {
+async function openArtifact() {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Private report" })],
@@ -90,6 +88,10 @@ async function openArtifact({ enabled = true }: { enabled?: boolean } = {}) {
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL(
+        "?download=1",
+        `https://pv-${"a".repeat(48)}.okou.app/`,
+      ).href,
       url: `https://pv-${"a".repeat(48)}.okou.app/`,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "index.html",
@@ -100,7 +102,6 @@ async function openArtifact({ enabled = true }: { enabled?: boolean } = {}) {
   await setupPage({
     context,
     path: "/artifacts",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: enabled },
   });
   click(await findArtifactAction("Private report"));
   await screen.findByTestId("artifact-dialog-site-frame");
@@ -283,40 +284,6 @@ test("status errors do not treat an owner as a recipient", async () => {
     within(choices).getByText("Anyone in your organization"),
   ).toBeInTheDocument();
   expect(within(choices).queryByText(/Acme/u)).not.toBeInTheDocument();
-});
-
-test("the shared rollout switch keeps the private share menu hidden", async () => {
-  await openArtifact({ enabled: false });
-  expect(queryAction("button", "Share")).toBeUndefined();
-});
-
-test("an authorized link preserves its fragment and navigates straight to isolated content", async () => {
-  const path = artifactReferencePath(shareId, "index.html");
-  const redirect = vi
-    .spyOn(window.location, "replace")
-    .mockImplementation(() => {});
-  const temporary = `https://ps-${"c".repeat(48)}.okou.app/`;
-  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
-    return respond(200, {
-      url: temporary,
-      expiresAt: "2099-01-01T00:00:00Z",
-      filename: "index.html",
-      contentType: "text/html",
-      target: { kind: "html", id: deploymentId },
-    });
-  });
-  await startPage({
-    context,
-    path: `${path}#slide-2`,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
-  });
-  await waitFor(() => {
-    return expect(redirect).toHaveBeenCalledWith(`${temporary}#slide-2`);
-  });
-  // The background identity bridge can exist without loading a document.
-  // Artifact handoff must navigate instead of embedding any content.
-  expect(document.querySelector("iframe[src], iframe[srcdoc]")).toBeNull();
 });
 
 test("denied links display no artifact metadata or content", async () => {

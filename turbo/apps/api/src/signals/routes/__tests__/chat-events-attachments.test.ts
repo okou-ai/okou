@@ -280,6 +280,58 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelChatRun(actor, sent.runId);
   }, 90_000);
 
+  it("lists the agents and chat threads the message links", async () => {
+    const { actor, agentId } = await entitledChatActor();
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+
+    const referencedAgentId = randomUUID();
+    const referencedThreadId = randomUUID();
+    const referencedThread = {
+      type: "chat_thread",
+      threadId: referencedThreadId,
+      titleSnapshot: 'Q3 "launch" plan',
+    } as const;
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "text", text: "Ask " },
+        {
+          type: "agent",
+          agentId: referencedAgentId,
+          nameSnapshot: "Research Scout",
+        },
+        { type: "text", text: " to summarize " },
+        referencedThread,
+        {
+          type: "feedback",
+          quote: "Draft",
+          note: [{ type: "text", text: "Compare with " }, referencedThread],
+        },
+      ],
+    };
+
+    const sent = await sendChatRun(actor, {
+      agentId,
+      prompt: "legacy fallback",
+      userMessage,
+    });
+
+    const run = await api.readRun(actor, sent.runId);
+    expect(run.appendSystemPrompt).toContain(
+      [
+        "# Referenced Agents and Threads",
+        "",
+        "The current message links:",
+        `- Agent "Research Scout": AGENT_ID=${referencedAgentId}`,
+        `- Chat thread "Q3 \\"launch\\" plan": CHAT_THREAD_ID=${referencedThreadId}`,
+        "",
+        "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
+      ].join("\n"),
+    );
+
+    await cancelChatRun(actor, sent.runId);
+  }, 90_000);
+
   it("projects referenced passages without requiring every feedback note", async () => {
     const { actor, agentId } = await entitledChatActor();
     chatCallbacks.failIfChatCallbackRouteIsFetched();
@@ -312,6 +364,9 @@ describe("CHAT-02: generation templates and attachments", () => {
 
     const run = await api.readRun(actor, sent.runId);
     expect(run.prompt).toBe(prompt);
+    expect(run.appendSystemPrompt).not.toContain(
+      "# Referenced Agents and Threads",
+    );
 
     const messages = await waitForThreadMessages(
       actor,
@@ -870,130 +925,125 @@ describe("CHAT-02: generation templates and attachments", () => {
     90_000,
   );
 
-  it.each([false, true])(
-    "renders generation template guidance with artifact previews enabled=%s",
-    async (artifactPreviewsEnabled) => {
-      const { actor: owner, agentId } = await entitledChatActor();
-      if (!owner.orgId) {
-        throw new Error("Expected an organization");
-      }
-      const actor = { ...owner, orgId: owner.orgId };
-      if (artifactPreviewsEnabled) {
-        await updateFeatureSwitchesForUser(context, actor, {
-          [FeatureSwitchKey.ArtifactPreviews]: true,
-        });
-      }
-      chatCallbacks.failIfChatCallbackRouteIsFetched();
-      // Pinned by slug because the assertions below quote this runbook by name.
-      const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
-        return item.slug === "playful-launch-presentation";
-      });
-      if (!template) {
-        throw new Error("Expected a registered presentation runbook item");
-      }
-      const colorSystemId = template.colorSystemId;
-      if (!colorSystemId) {
-        throw new Error(
-          "Expected the presentation template to have a color system",
-        );
-      }
+  it("includes cover capture and publishing guidance for templates and revisions", async () => {
+    const { actor: owner, agentId } = await entitledChatActor();
+    if (!owner.orgId) {
+      throw new Error("Expected an organization");
+    }
+    const actor = { ...owner, orgId: owner.orgId };
+    chatCallbacks.failIfChatCallbackRouteIsFetched();
+    // Pinned by slug because the assertions below quote this runbook by name.
+    const template = PRESENTATION_TEMPLATE_PICKER_ITEMS.find((item) => {
+      return item.slug === "playful-launch-presentation";
+    });
+    if (!template) {
+      throw new Error("Expected a registered presentation runbook item");
+    }
+    const colorSystemId = template.colorSystemId;
+    if (!colorSystemId) {
+      throw new Error(
+        "Expected the presentation template to have a color system",
+      );
+    }
 
-      const presentation = await sendChatRun(actor, {
-        agentId,
-        prompt: "make a launch deck",
-        template: {
-          type: "presentation",
-          selection: {
-            colorSystemId,
-            templateId: template.templateId,
-          },
+    const presentation = await sendChatRun(actor, {
+      agentId,
+      prompt: "make a launch deck",
+      template: {
+        type: "presentation",
+        selection: {
+          colorSystemId,
+          templateId: template.templateId,
         },
-      });
-      const presentationRun = await api.readRun(actor, presentation.runId);
-      expect(presentationRun.prompt).toBe(
-        "make a launch deck\n\n[Template #1: Presentation template (presentation)]",
-      );
-      const presentationPrompt = presentationRun.appendSystemPrompt ?? "";
-      expect(presentationPrompt).toMatch(
-        /# Current User Info[\s\S]+# Current Integration[\s\S]+# Inline Templates[\s\S]+# Built-in image model[\s\S]+# Restricted Explicit Content/,
-      );
-      expect(presentationPrompt.match(/^# .+$/gm)?.at(-1)).toBe(
-        "# Restricted Explicit Content",
-      );
-      expect(presentationPrompt.includes("okou host screenshot")).toBe(
-        artifactPreviewsEnabled,
-      );
-      expect(presentationPrompt.includes(" --preview ")).toBe(
-        artifactPreviewsEnabled,
-      );
-      expect(presentationPrompt).toContain("# Inline Templates");
-      expect(presentationPrompt).toContain(
-        "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
-      );
-      expect(presentationPrompt).not.toContain("Selected design system");
-      expect(presentationPrompt).toContain(
-        `okou resource pull ${template.templateId}-runbook --dir ./generated/resources`,
-      );
-      const colorToken = colorSystemId
-        .replace("color-system:", "")
-        .replaceAll("-", "_");
-      expect(presentationPrompt).toContain(`Color system token: ${colorToken}`);
-      expect(presentationPrompt).toContain(
-        "./generated/resources/playful-launch/SKILL.md",
-      );
-      expect(presentationPrompt).toContain(
-        "Keep all slides and visible content in index.html; render the first slide without JavaScript",
-      );
-      expect(presentationPrompt).toContain("--artifact-kind presentation-html");
-      expect(presentationPrompt).not.toContain(
-        "okou generate presentation --design-system",
-      );
-      expect(presentationPrompt).not.toContain("- Artifact type: presentation");
-      await cancelChatRun(actor, presentation.runId);
+      },
+    });
+    const presentationRun = await api.readRun(actor, presentation.runId);
+    expect(presentationRun.prompt).toBe(
+      "make a launch deck\n\n[Template #1: Presentation template (presentation)]",
+    );
+    const presentationPrompt = presentationRun.appendSystemPrompt ?? "";
+    expect(presentationPrompt).toMatch(
+      /# Current User Info[\s\S]+# Current Integration[\s\S]+# Inline Templates[\s\S]+# Built-in image model[\s\S]+# Restricted Explicit Content/,
+    );
+    expect(presentationPrompt.match(/^# .+$/gm)?.at(-1)).toBe(
+      "# Restricted Explicit Content",
+    );
+    expect(presentationPrompt).toContain("okou host screenshot");
+    expect(presentationPrompt).toContain(" --preview ");
+    expect(presentationPrompt).toContain("# Inline Templates");
+    expect(presentationPrompt).toContain(
+      "Selected presentation template: Playful Launch Presentation (template:html-ppt-playful-launch)",
+    );
+    expect(presentationPrompt).not.toContain("Selected design system");
+    expect(presentationPrompt).toContain(
+      `okou resource pull ${template.templateId}-runbook --dir ./generated/resources`,
+    );
+    const colorToken = colorSystemId
+      .replace("color-system:", "")
+      .replaceAll("-", "_");
+    expect(presentationPrompt).toContain(`Color system token: ${colorToken}`);
+    expect(presentationPrompt).toContain(
+      "./generated/resources/playful-launch/SKILL.md",
+    );
+    expect(presentationPrompt).toContain(
+      "Keep all slides and visible content in index.html; render the first slide without JavaScript",
+    );
+    expect(presentationPrompt).toContain("--artifact-kind presentation-html");
+    expect(presentationPrompt).not.toContain(
+      "okou generate presentation --design-system",
+    );
+    expect(presentationPrompt).not.toContain("- Artifact type: presentation");
+    await cancelChatRun(actor, presentation.runId);
 
-      const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
-      if (!websiteTemplate) {
-        throw new Error("Expected a registered website template");
-      }
-      const website = await sendChatRun(actor, {
-        agentId,
-        prompt: "make a campaign landing page",
-        template: {
-          type: "website",
-          selection: { websiteTemplateId: websiteTemplate.id },
-        },
-      });
-      const websiteRun = await api.readRun(actor, website.runId);
-      const websitePrompt = websiteRun.appendSystemPrompt ?? "";
-      expect(websitePrompt.includes("okou host screenshot")).toBe(
-        artifactPreviewsEnabled,
-      );
-      expect(websitePrompt.includes(" --preview ")).toBe(
-        artifactPreviewsEnabled,
-      );
-      expect(websitePrompt).toContain("# Inline Templates");
-      expect(websitePrompt).toContain(
-        `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
-      );
-      expect(websitePrompt).toContain(
-        "okou resource pull template:black-slabs --dir ./generated/resources",
-      );
-      expect(websitePrompt).toContain(
-        "Image workflow: use supplied images first;",
-      );
-      expect(websitePrompt).toMatch(
-        /run `okou generate image-batch start <manifest\.tsv> <state-dir>`/,
-      );
-      expect(websitePrompt).toMatch(
-        /with `okou generate image-batch wait <state-dir>`/,
-      );
-      expect(websitePrompt).not.toContain("tools/generate-images.mjs");
-      expect(websitePrompt).not.toContain("resolve-images.mjs");
-      expect(websitePrompt).not.toContain("render.mjs");
-      await cancelChatRun(actor, website.runId);
-    },
-    90_000,
-  );
+    const revision = await sendChatRun(actor, {
+      agentId,
+      threadId: presentation.threadId,
+      prompt: "Revise the deck and publish the updated HTML",
+    });
+    const revisionPrompt =
+      (await api.readRun(actor, revision.runId)).appendSystemPrompt ?? "";
+    expect(revisionPrompt).not.toContain("# Inline Templates");
+    expect(revisionPrompt).toContain("okou host screenshot");
+    expect(revisionPrompt).toContain("previewImageUrl");
+    await cancelChatRun(actor, revision.runId);
+
+    const websiteTemplate = WEBSITE_TEMPLATE_ITEMS[0];
+    if (!websiteTemplate) {
+      throw new Error("Expected a registered website template");
+    }
+    const website = await sendChatRun(actor, {
+      agentId,
+      prompt: "make a campaign landing page",
+      template: {
+        type: "website",
+        selection: { websiteTemplateId: websiteTemplate.id },
+      },
+    });
+    const websiteRun = await api.readRun(actor, website.runId);
+    const websitePrompt = websiteRun.appendSystemPrompt ?? "";
+    expect(websitePrompt).toContain("okou host screenshot");
+    expect(websitePrompt).toContain(" --preview ");
+    expect(websitePrompt).toContain("# Inline Templates");
+    expect(websitePrompt).toContain(
+      `Template: ${websiteTemplate.title} (${websiteTemplate.id})`,
+    );
+    expect(websitePrompt).toContain(
+      "okou resource pull template:black-slabs --dir ./generated/resources",
+    );
+    expect(websitePrompt).toContain(
+      "Image workflow: use supplied images first;",
+    );
+    expect(websitePrompt).toMatch(
+      /run `okou generate image-batch start <manifest\.tsv> <state-dir>`/,
+    );
+    expect(websitePrompt).toMatch(
+      /with `okou generate image-batch wait <state-dir>`/,
+    );
+    expect(websitePrompt).not.toContain("tools/generate-images.mjs");
+    expect(websitePrompt).not.toContain("resolve-images.mjs");
+    expect(websitePrompt).not.toContain("render.mjs");
+    await cancelChatRun(actor, website.runId);
+  }, 90_000);
 
   it("uses R2 for archive-backed styles", async () => {
     const { actor, agentId } = await entitledChatActor();

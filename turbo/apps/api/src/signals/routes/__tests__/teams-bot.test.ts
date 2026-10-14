@@ -11,6 +11,7 @@ import {
 } from "node:crypto";
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { teamsBotContract } from "@okouai/api-contracts/contracts/teams-bot";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -973,15 +974,18 @@ function teamsPersonalThreadMessageActivity(args: {
   });
 }
 
-async function setupConnectedTeamsBotActor(): Promise<{
+async function setupConnectedTeamsBotActor(
+  ownedFixture?: TeamsConnectFixture,
+): Promise<{
   readonly fixture: TeamsConnectFixture;
   readonly actor: ReturnType<typeof authOrgApi.user>;
   readonly runnerGroup: string;
   readonly outboundRequests: TeamsOutboundRequests;
+  readonly defaultAgentId: string;
 }> {
-  const fixture = await trackTeamsFixture(
-    Promise.resolve(teamsConnectFixture()),
-  );
+  const fixture =
+    ownedFixture ??
+    (await trackTeamsFixture(Promise.resolve(teamsConnectFixture())));
   const actor = authOrgApi.user({
     userId: fixture.userId,
     orgId: fixture.orgId,
@@ -1014,7 +1018,13 @@ async function setupConnectedTeamsBotActor(): Promise<{
   await flushWaitUntilForTest();
   await connectTeamsFixture(fixture);
 
-  return { fixture, actor, runnerGroup, outboundRequests };
+  return {
+    fixture,
+    actor,
+    runnerGroup,
+    outboundRequests,
+    defaultAgentId: defaultAgent.body.agentId,
+  };
 }
 
 describe("POST /api/webhooks/teams/bot", () => {
@@ -1726,6 +1736,54 @@ describe("POST /api/webhooks/teams/bot", () => {
       },
     });
     expect(outboundRequests[0]?.body).not.toHaveProperty("text");
+  });
+
+  it("asks for a message when a personal Teams message is blank", async () => {
+    const fixture = await trackedBotFixture();
+    const activityId = teamsFixtureExternalId(
+      fixture,
+      "activity-blank-personal",
+    );
+    botFrameworkHandlers();
+    const outboundRequests = teamsOutboundHandlers(SERVICE_URL);
+    const client = setupApp({ context, routes: teamsBotRoutes })(
+      teamsBotContract,
+    );
+
+    const response = await accept(
+      client.post({
+        extraHeaders: { authorization: `Bearer ${teamsToken()}` },
+        body: teamsPersonalMessageActivity({
+          fixture,
+          id: activityId,
+          text: " \n\t ",
+        }),
+      }),
+      [200],
+    );
+
+    expect(response.body).toMatchObject({
+      ok: true,
+      activity: {
+        kind: "message",
+        conversationType: "personal",
+        text: "",
+        mentionsRecipient: false,
+        attachments: [],
+      },
+    });
+    expect(response.body).not.toHaveProperty("dispatch");
+    await flushWaitUntilForTest();
+    expect(outboundRequests).toHaveLength(1);
+    expect(outboundRequests[0]).toMatchObject({
+      conversationId: `a:personal-${fixture.teamsUserId}`,
+      activityId,
+      body: {
+        type: "message",
+        text: "Please include a message for Nova.",
+        replyToId: activityId,
+      },
+    });
   });
 
   it("downloads Teams channel reference attachments through Graph", async () => {
@@ -3036,99 +3094,127 @@ describe("POST /api/webhooks/teams/bot", () => {
   );
 
   it("includes recent Teams personal messages in the run context", async () => {
-    const { fixture, actor, runnerGroup, outboundRequests } =
-      await setupConnectedTeamsBotActor();
-    const personalChatId = `19:${teamsFixtureExternalId(
-      fixture,
-      "personal-test",
-    )}@unq.gbl.spaces`;
-    const currentActivityId = teamsFixtureExternalId(
-      fixture,
-      "activity-personal-thread-current",
-    );
-    const graphRequests = teamsGraphHistoryHandlers({
-      fixture,
-      teamsAppId: BOT_APP_ID,
-      personalChatId,
-      chatMessages: [
-        {
-          id: currentActivityId,
-          text: "continue this private task",
-          createdDateTime: "2026-06-30T09:13:00.000Z",
-          senderId: fixture.teamsUserId,
-        },
-        {
-          id: teamsFixtureExternalId(
-            fixture,
-            "activity-personal-thread-prior-reply",
-          ),
-          text: "the target is staging",
-          createdDateTime: "2026-06-30T09:12:00.000Z",
-          senderId: fixture.teamsUserId,
-        },
-        {
-          id: teamsFixtureExternalId(
-            fixture,
-            "activity-unrelated-personal-root",
-          ),
-          text: "unrelated private task",
-          createdDateTime: "2026-06-30T09:11:00.000Z",
-          senderId: fixture.teamsUserId,
-        },
-        {
-          id: teamsFixtureExternalId(fixture, "activity-personal-thread-root"),
-          text: "remember the private deployment target",
-          createdDateTime: "2026-06-30T09:10:00.000Z",
-          senderId: fixture.teamsUserId,
-        },
-      ],
-      channelMessages: [],
-      threadRoots: {},
-      threadReplies: {},
+    const fixture = teamsConnectFixture();
+    const actor = authOrgApi.user({
+      userId: fixture.userId,
+      orgId: fixture.orgId,
+      orgRole: "org:admin",
     });
-    outboundRequests.splice(0, outboundRequests.length);
-
-    const response = await postTeamsActivity({
-      activity: {
-        ...teamsPersonalMessageActivity({
-          fixture,
-          id: currentActivityId,
-          text: "continue this private task",
-        }),
-        channelData: {
-          tenant: {
-            id: fixture.teamsTenantId,
-            name: fixture.teamsTenantName,
-          },
-        },
+    const ownedRuns = publicRunOwner(context, actor, {
+      afterRuns: async () => {
+        await removeTeamsForTest(context.signal, fixture);
+        await deletePublicWorkspace(context, actor);
       },
-      token: teamsToken(),
     });
-    expect(response.status).toBe(200);
-    const body = await readTeamsBotResponseAndFlush(response);
-    expect(body).not.toHaveProperty("dispatch");
-    const runId = await runIdForPrompt(actor, "continue this private task");
-    await runsApi.heartbeatRunner(runnerGroup);
-    const claim = await runsApi.claimRunnerJob(runId);
-    const threadContext = promptSection(
-      claim.appendSystemPrompt ?? "",
-      "# Microsoft Teams Thread Context",
-    );
+    await ownedRuns.run(async () => {
+      const { runnerGroup, outboundRequests, defaultAgentId } =
+        await setupConnectedTeamsBotActor(fixture);
+      const personalChatId = `19:${teamsFixtureExternalId(
+        fixture,
+        "personal-test",
+      )}@unq.gbl.spaces`;
+      const currentActivityId = teamsFixtureExternalId(
+        fixture,
+        "activity-personal-thread-current",
+      );
+      const graphRequests = teamsGraphHistoryHandlers({
+        fixture,
+        teamsAppId: BOT_APP_ID,
+        personalChatId,
+        chatMessages: [
+          {
+            id: currentActivityId,
+            text: "continue this private task",
+            createdDateTime: "2026-06-30T09:13:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+          {
+            id: teamsFixtureExternalId(
+              fixture,
+              "activity-personal-thread-prior-reply",
+            ),
+            text: "the target is staging",
+            createdDateTime: "2026-06-30T09:12:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+          {
+            id: teamsFixtureExternalId(
+              fixture,
+              "activity-unrelated-personal-root",
+            ),
+            text: "unrelated private task",
+            createdDateTime: "2026-06-30T09:11:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+          {
+            id: teamsFixtureExternalId(
+              fixture,
+              "activity-personal-thread-root",
+            ),
+            text: "remember the private deployment target",
+            createdDateTime: "2026-06-30T09:10:00.000Z",
+            senderId: fixture.teamsUserId,
+          },
+        ],
+        channelMessages: [],
+        threadRoots: {},
+        threadReplies: {},
+      });
+      outboundRequests.splice(0, outboundRequests.length);
 
-    expect(claim.prompt).toBe("continue this private task");
-    expect(threadContext).toContain("remember the private deployment target");
-    expect(threadContext).toContain("the target is staging");
-    expect(threadContext).toContain("unrelated private task");
-    expect(threadContext).not.toContain("continue this private task");
-    expect(graphRequests).toContain(
-      `personal-installed-apps:${fixture.teamsAadObjectId}`,
-    );
-    expect(graphRequests).toContain(
-      `personal-app-chat:${fixture.teamsAadObjectId}`,
-    );
-    expect(graphRequests).toContain(`chat-messages:${personalChatId}`);
+      const response = await accept(
+        setupApp({ context, routes: teamsBotRoutes })(teamsBotContract).post({
+          extraHeaders: { authorization: `Bearer ${teamsToken()}` },
+          body: {
+            ...teamsPersonalMessageActivity({
+              fixture,
+              id: currentActivityId,
+              text: "continue this private task",
+            }),
+            channelData: {
+              tenant: {
+                id: fixture.teamsTenantId,
+                name: fixture.teamsTenantName,
+              },
+            },
+          },
+        }),
+        [200],
+      );
+      expect(response.status).toBe(200);
+      await flushWaitUntilForTest();
+      expect(response.body).not.toHaveProperty("dispatch");
+      const runId = await runIdForPrompt(actor, "continue this private task");
+      const listed = await listActiveRuns(actor, 20);
+      expect(listed.runs).toContainEqual(
+        expect.objectContaining({
+          id: runId,
+          prompt: "continue this private task",
+          agentId: defaultAgentId,
+        }),
+      );
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await ownedRuns.claim(runId);
+      const threadContext = promptSection(
+        claim.appendSystemPrompt ?? "",
+        "# Microsoft Teams Thread Context",
+      );
 
-    await runsApi.requestCancelRun(actor, runId, [200]);
+      expect(claim.prompt).toBe("continue this private task");
+      expect(threadContext).toContain("remember the private deployment target");
+      expect(threadContext).toContain("the target is staging");
+      expect(threadContext).toContain("unrelated private task");
+      expect(threadContext).not.toContain("continue this private task");
+      expect(graphRequests).toContain(
+        `personal-installed-apps:${fixture.teamsAadObjectId}`,
+      );
+      expect(graphRequests).toContain(
+        `personal-app-chat:${fixture.teamsAadObjectId}`,
+      );
+      expect(graphRequests).toContain(`chat-messages:${personalChatId}`);
+
+      await runsApi.requestCancelRun(actor, runId, [200]);
+    });
   });
 
   it("includes Teams thread computer use host bindings in queued agent tokens", async () => {

@@ -19,6 +19,7 @@ import type {
   PersistedAttachment,
   UserMessageDocument,
   ImageAnnotation,
+  ComposerDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { parseArtifactReference } from "@okouai/api-contracts/contracts/artifact-references";
@@ -26,6 +27,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   messageDocumentToPrompt,
+  prependMessageDocument,
   type EditorDocumentSnapshot,
   type RestoredDraftState,
 } from "./user-message-document-codec.ts";
@@ -539,6 +541,7 @@ export interface DraftSignals {
   setInput$: Command<void, [string]>;
   appendInput$: Command<void, [string]>;
   prependRecommendation$: Command<void, [string]>;
+  prependComposerDraft$: Command<Promise<void>, [ComposerDraft, AbortSignal]>;
   recommendationHandoff$: Computed<{
     readonly needsRemoteMerge: boolean;
   } | null>;
@@ -971,16 +974,74 @@ function mergeRecommendationDocument(
         }
       : null);
   if (remoteDocument) {
-    return {
-      version: 1,
-      parts: [
-        ...localDocument.parts,
-        { type: "text", text: "\n\n" },
-        ...remoteDocument.parts,
-      ],
-    };
+    return prependMessageDocument(localDocument, remoteDocument);
   }
   return restored.attachments.length > 0 ? localDocument : null;
+}
+
+function createComposerDraftPrepend(
+  {
+    draftInput,
+    draftDocument,
+    internalGenerationTemplate$,
+    internalAttachments$,
+    seed$,
+  }: {
+    draftInput: ReturnType<typeof createDraftInputSignals>;
+    draftDocument: ReturnType<typeof createDraftDocumentSignals>;
+    internalGenerationTemplate$: State<GenerationTemplateRequest | undefined>;
+    internalAttachments$: State<ChatAttachment[]>;
+    clear$: Command<void, []>;
+    seed$: Command<Promise<boolean>, [DraftSeed, AbortSignal]>;
+  },
+  recommendationHandoffState$: State<{
+    readonly needsRemoteMerge: boolean;
+  } | null>,
+) {
+  return command(
+    async ({ get, set }, value: ComposerDraft, signal: AbortSignal) => {
+      if (!value.draftUserMessage) {
+        return;
+      }
+      const hadLocalDraft =
+        get(draftInput.hasLocalInput$) ||
+        get(internalGenerationTemplate$) !== undefined ||
+        get(internalAttachments$).length > 0;
+      const current =
+        set(draftDocument.readEditorDocument$)?.toMessageDocument({
+          selectedTemplate: get(internalGenerationTemplate$),
+        }) ??
+        set(draftDocument.peekRestoredUserMessage$) ??
+        (get(draftInput.input$).trim()
+          ? {
+              version: 1 as const,
+              parts: [{ type: "text" as const, text: get(draftInput.input$) }],
+            }
+          : null);
+      const document = prependMessageDocument(value.draftUserMessage, current);
+      const content = messageDocumentToPrompt(document);
+      if (content === null) {
+        throw new Error("Invalid suggestion composer document");
+      }
+      const prior = get(recommendationHandoffState$);
+      set(recommendationHandoffState$, {
+        needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
+      });
+      await set(
+        seed$,
+        {
+          content,
+          userMessage: document,
+          generationTemplate: get(internalGenerationTemplate$),
+          attachments: [
+            ...get(internalAttachments$),
+            ...(value.draftAttachments ?? []).map(createRestoredAttachment),
+          ],
+        },
+        signal,
+      );
+    },
+  );
 }
 
 function createRecommendationHandoffSignals({
@@ -1037,6 +1098,17 @@ function createRecommendationHandoffSignals({
       needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
     });
   });
+  const prependComposerDraft$ = createComposerDraftPrepend(
+    {
+      draftInput,
+      draftDocument,
+      internalGenerationTemplate$,
+      internalAttachments$,
+      clear$,
+      seed$,
+    },
+    recommendationHandoffState$,
+  );
   const finishRecommendationHandoff$ = command(
     async (
       { get, set },
@@ -1098,6 +1170,7 @@ function createRecommendationHandoffSignals({
     recommendationHandoff$,
     clearWithRecommendationHandoff$,
     prependRecommendation$,
+    prependComposerDraft$,
     finishRecommendationHandoff$,
   };
 }
@@ -1205,6 +1278,7 @@ export function createDraftSignals(): DraftSignals {
     recommendationHandoff$,
     clearWithRecommendationHandoff$,
     prependRecommendation$,
+    prependComposerDraft$,
     finishRecommendationHandoff$,
   } = createRecommendationHandoffSignals({
     draftInput,
@@ -1218,6 +1292,7 @@ export function createDraftSignals(): DraftSignals {
   return {
     ...draftInput,
     prependRecommendation$,
+    prependComposerDraft$,
     recommendationHandoff$,
     finishRecommendationHandoff$,
     takeRestoredUserMessage$: draftDocument.takeRestoredUserMessage$,

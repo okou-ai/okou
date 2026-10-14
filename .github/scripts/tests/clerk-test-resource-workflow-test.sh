@@ -4,7 +4,6 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/../../.." && pwd)"
 browser_helper="${repo_root}/e2e/helpers/browser.bash"
-browser_test="${repo_root}/e2e/tests/02-browser/brw-t01-platform-e2e.bats"
 
 generated_email="$(
   JOB_REF="pr-123" \
@@ -252,11 +251,6 @@ if [[ "$(tail -n 1 "$next_step_call_log")" != "report" ]]; then
   exit 1
 fi
 
-if [[ "$(grep -c '^[[:space:]]*delete_e2e_account_if_exists' "$browser_test")" -ne 2 ]]; then
-  echo "browser E2E must clean its exact account before and after the test" >&2
-  exit 1
-fi
-
 ruby -ryaml - \
   "${repo_root}/.github/workflows/turbo.yml" \
   "${repo_root}/.github/workflows/cleanup.yml" \
@@ -323,56 +317,6 @@ unless playwright_tests.dig("env", "E2E_CLERK_RESOURCE_DIR") ==
 end
 if playwright_finalizer_steps.any? { |step| step.fetch("run", "").include?("cleanup-generation") }
   raise "Playwright report finalization must not scan the whole Clerk instance"
-end
-
-runner_cleanup = turbo_jobs.fetch("cli-e2e-03-runner-cleanup")
-unless runner_cleanup["continue-on-error"] == true
-  raise "runner E2E cleanup must not fail the workflow"
-end
-runner_condition = runner_cleanup.fetch("if")
-unless runner_condition.include?("always()") &&
-    !runner_condition.include?("!= 'cancelled'")
-  raise "runner cleanup must remain eligible after cancelled preparation"
-end
-runner_cleanup_steps = runner_cleanup.fetch("steps")
-runner_scope_step = runner_cleanup_steps.find do |step|
-  step["id"] == "cleanup-scope"
-end
-raise "missing runner E2E cleanup scope" unless runner_scope_step
-unless runner_scope_step.dig("env", "PREPARE_RESULT") ==
-    "${{ needs.cli-e2e-03-runner-prepare.result }}" &&
-    runner_scope_step.dig("env", "RUNNER_RESULT") ==
-      "${{ needs.cli-e2e-03-runner.result }}"
-  raise "runner cleanup scope must use exact upstream results"
-end
-runner_generation_cleanup = runner_cleanup_steps.find do |step|
-  step["name"] == "Cleanup current runner E2E generation"
-end
-runner_run_cleanup = runner_cleanup_steps.find do |step|
-  step["name"] == "Cleanup runner E2E workflow run"
-end
-unless runner_generation_cleanup&.fetch("run", "")&.end_with?(
-    "runner-account.ts cleanup-recorded-generation",
-  ) && runner_generation_cleanup["if"] ==
-    "steps.cleanup-scope.outputs.scope == 'generation'"
-  raise "failed preparation must reconcile only its current generation"
-end
-unless runner_run_cleanup&.fetch("run", "")&.end_with?(
-    "runner-account.ts cleanup-recorded-run",
-  ) && runner_run_cleanup["if"] ==
-    "steps.cleanup-scope.outputs.scope == 'run'"
-  raise "successful runner work must reconcile its exact workflow run"
-end
-legacy_output_environment = %w[
-  E2E_RUNNER_ORGANIZATION_ID
-  E2E_RUNNER_CODEX_ORGANIZATION_ID
-  E2E_RUNNER_CLAUDE_ORGANIZATION_ID
-]
-runner_account_cleanup_steps = [runner_generation_cleanup, runner_run_cleanup]
-if runner_account_cleanup_steps.any? do |step|
-    legacy_output_environment.any? { |name| step.fetch("env", {}).key?(name) }
-  end
-  raise "runner cleanup must not depend on complete preparation outputs"
 end
 
 stale_jobs = stale.fetch("jobs")

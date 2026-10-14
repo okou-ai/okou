@@ -96,14 +96,14 @@ async function mcpThread(actor: ApiTestUser, threadId: string) {
         accept: "application/json, text/event-stream",
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
         "MCP-Method": "tools/call",
-        "MCP-Name": "get_chat_thread",
+        "MCP-Name": "get_chat_thread_list",
       },
       body: {
         jsonrpc: "2.0",
         id: 1,
         method: "tools/call",
         params: {
-          name: "get_chat_thread",
+          name: "get_chat_thread_list",
           arguments: {},
           _meta: {
             "io.modelcontextprotocol/protocolVersion": MCP_PROTOCOL_VERSION,

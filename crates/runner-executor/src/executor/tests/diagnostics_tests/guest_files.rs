@@ -16,9 +16,9 @@ use runner_types::ids::RunId;
 #[tokio::test]
 async fn read_guest_error_file_returns_content() {
     let sandbox = MockSandbox::new("test");
-    sandbox.push_read_file_result(Ok(Some(b"checkpoint error: disk full".to_vec())));
+    sandbox.push_read_file_result(Ok(Some(b"transcript error: disk full".to_vec())));
     let msg = read_guest_error_file(&sandbox, RunId::from(uuid::Uuid::nil())).await;
-    assert_eq!(msg.as_deref(), Some("checkpoint error: disk full"));
+    assert_eq!(msg.as_deref(), Some("transcript error: disk full"));
     let calls = sandbox.read_file_calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(

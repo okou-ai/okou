@@ -1,21 +1,19 @@
 // The slash panel indexes creation types and workflows. Composer-anchored menus
 // embed desktop previews on the right; the legacy menu uses a separate flyout.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
-import type { Ref } from "react";
+import type { ComponentProps, Ref } from "react";
 import {
   ChevronRight,
+  Ellipsis,
   Globe,
   Image,
   LayoutGrid,
   Presentation,
   Route,
 } from "lucide-react";
-import { cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
+import { Button, cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import {
-  scrollSlashWorkflowIntoView,
-  SlashWorkflowName,
-} from "./slash-workflow.tsx";
+import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerSlashWorkflowMatch } from "../../signals/okou-page/workflow-composer-domain.ts";
@@ -35,13 +33,24 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
   website: Globe,
 } as const satisfies Record<SlashTemplateCategory, typeof Presentation>;
 
+// Four single-line rows fit within 128px, leaving room for both section
+// headings, creation categories and the footer in the 380px overview.
+export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
+export const SLASH_PANEL_EXPAND_WORKFLOWS_ID = "expand-workflows";
+
 interface SlashTemplatePanelProps {
   readonly menuRef: Ref<HTMLDivElement>;
   /** Already filtered by the typed slash query. */
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
+  readonly collapseWorkflows: boolean;
+  readonly onExpandWorkflows: () => void;
+  /** The menu spans the composer and embeds the preview beside its rows. */
+  readonly anchored: boolean;
+  /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
+  readonly reverseWorkflows: boolean;
   /** Categories precede workflows in the editor's shared suggestion index. */
   readonly selectedIndex: number;
   /** The row the pointer is previewing, or null while the keyboard leads. */
@@ -165,7 +174,7 @@ function SlashTemplateDetailPane({
       className={cn(
         "h-full overflow-hidden",
         embedded
-          ? "w-[320px] max-w-1/2 shrink-0 border-l border-border/60"
+          ? "w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
           : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
       )}
       role={embedded ? "region" : undefined}
@@ -322,12 +331,29 @@ function SlashTemplateDetailFlyout({
   );
 }
 
+// Keep this ref stable: pointer previews must not re-scroll the keyboard's
+// selected row while the user browses an expanded workflow list.
+function scrollSelectedSlashOptionOnMount(
+  option: HTMLButtonElement | null,
+): (() => void) | undefined {
+  if (!option) {
+    return;
+  }
+  const frame = window.requestAnimationFrame(() => {
+    option.scrollIntoView?.({ block: "nearest" });
+  });
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}
+
 function SlashPanelWorkflowList({
   workflows,
   loading,
   markedIndex,
   selectedIndex,
   reversed,
+  describe,
   onPreview,
   onSelect,
   workflowOptionId,
@@ -336,6 +362,8 @@ function SlashPanelWorkflowList({
   readonly loading: boolean;
   readonly selectedIndex: number;
   readonly reversed: boolean;
+  /** The composer-wide menu has room for a description after each name. */
+  readonly describe: boolean;
   /** Relative to this list; negative while no row carries the mark. */
   readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
@@ -374,9 +402,7 @@ function SlashPanelWorkflowList({
               id={workflowOptionId(workflow.id)}
               ref={
                 reversed && selectedIndex === index
-                  ? () => {
-                      scrollSlashWorkflowIntoView(workflow);
-                    }
+                  ? scrollSelectedSlashOptionOnMount
                   : undefined
               }
               type="button"
@@ -399,13 +425,80 @@ function SlashPanelWorkflowList({
                 className="shrink-0 text-muted-foreground"
                 aria-hidden
               />
-              <SlashWorkflowName
-                workflow={workflow}
-                className="min-w-0 flex-1 text-[13px]"
-              />
+              {/*
+                One line that truncates as a whole: the name comes first, so the
+                description is what the ellipsis eats. The space keeps the two
+                apart in the row's accessible name.
+              */}
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                <SlashWorkflowName workflow={workflow} />
+                {describe && workflow.description && (
+                  <>
+                    {" "}
+                    <span className="ml-1">{workflow.description}</span>
+                  </>
+                )}
+              </span>
             </button>
           );
         },
+      )}
+    </div>
+  );
+}
+
+function SlashPanelWorkflowSection({
+  collapseWorkflows,
+  onExpandWorkflows,
+  workflows,
+  ...listProps
+}: ComponentProps<typeof SlashPanelWorkflowList> &
+  Pick<SlashTemplatePanelProps, "collapseWorkflows" | "onExpandWorkflows">) {
+  const { t } = useTranslation();
+  const hasCollapsedWorkflows =
+    collapseWorkflows &&
+    workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;
+  const visibleWorkflows = hasCollapsedWorkflows
+    ? workflows.slice(0, SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT)
+    : workflows;
+  const expandMarked =
+    listProps.markedIndex === SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;
+  return (
+    <div>
+      <SectionLabel>
+        {t(($) => {
+          return $.chat.composer.workflows.title;
+        })}
+      </SectionLabel>
+      <div
+        className={
+          hasCollapsedWorkflows ? "max-h-32 overflow-hidden" : undefined
+        }
+      >
+        <SlashPanelWorkflowList {...listProps} workflows={visibleWorkflows} />
+      </div>
+      {hasCollapsedWorkflows && (
+        <div className="px-1">
+          <Button
+            variant="quiet"
+            id={listProps.workflowOptionId(SLASH_PANEL_EXPAND_WORKFLOWS_ID)}
+            className={cn(
+              "w-full justify-start rounded-lg px-2",
+              expandMarked && "bg-state-selected hover:bg-state-selected-hover",
+            )}
+            data-active={expandMarked ? "true" : undefined}
+            aria-label={t(($) => {
+              return $.chat.composer.workflows.showAll;
+            })}
+            aria-expanded={false}
+            onMouseMove={() => {
+              listProps.onPreview(SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT);
+            }}
+            onClick={onExpandWorkflows}
+          >
+            <Ellipsis size={16} aria-hidden />
+          </Button>
+        </div>
       )}
     </div>
   );
@@ -415,6 +508,7 @@ function SlashPanelCategoryList({
   categories,
   markedIndex,
   selectedIndex,
+  anchored,
   reversed,
   onPreview,
   onSelectCategory,
@@ -423,13 +517,14 @@ function SlashPanelCategoryList({
   SlashTemplatePanelProps,
   | "categories"
   | "selectedIndex"
+  | "anchored"
   | "reversed"
   | "onPreview"
   | "onSelectCategory"
   | "categoryOptionId"
 > & { readonly markedIndex: number }) {
   const { t } = useTranslation();
-  if (reversed && categories.length === 0) {
+  if (anchored && categories.length === 0) {
     return null;
   }
   return (
@@ -453,9 +548,7 @@ function SlashPanelCategoryList({
                 id={categoryOptionId(category)}
                 ref={
                   reversed && selectedIndex === index
-                    ? () => {
-                        scrollSlashWorkflowIntoView({ id: category });
-                      }
+                    ? scrollSelectedSlashOptionOnMount
                     : undefined
                 }
                 type="button"
@@ -490,27 +583,27 @@ function SlashPanelCategoryList({
 }
 
 function SlashPanelBrowseAll({
-  reversed,
+  anchored,
   onBrowseAll,
-}: Pick<SlashTemplatePanelProps, "reversed" | "onBrowseAll">) {
+}: Pick<SlashTemplatePanelProps, "anchored" | "onBrowseAll">) {
   const { t } = useTranslation();
   return (
     <div
       className={
-        reversed ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
+        anchored ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
       }
     >
       <button
         type="button"
         className={cn(
           "flex h-8 max-w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
-          reversed
+          anchored
             ? "gap-2 text-[13px] text-muted-foreground hover:text-foreground"
             : "w-full justify-between text-sm text-foreground",
         )}
         onClick={onBrowseAll}
       >
-        {reversed && (
+        {anchored && (
           <span className="flex size-4 shrink-0 items-center justify-center">
             <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
           </span>
@@ -520,7 +613,7 @@ function SlashPanelBrowseAll({
             return $.chat.composer.slashPanel.browseAll;
           })}
         </span>
-        {!reversed && (
+        {!anchored && (
           <ChevronRight
             size={16}
             className="shrink-0 text-muted-foreground"
@@ -537,7 +630,11 @@ export function SlashTemplatePanel({
   categories,
   workflows,
   workflowsLoading,
+  collapseWorkflows,
+  onExpandWorkflows,
+  anchored,
   reversed,
+  reverseWorkflows,
   selectedIndex,
   previewIndex,
   onPreview,
@@ -549,7 +646,6 @@ export function SlashTemplatePanel({
   workflowOptionId,
   categoryOptionId,
 }: SlashTemplatePanelProps) {
-  const { t } = useTranslation();
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Keep the mark on the previewed row while the pointer crosses into its
   // flyout. Keyboard navigation or leaving both cards restores the keyboard
@@ -564,6 +660,7 @@ export function SlashTemplatePanel({
       categories={categories}
       markedIndex={markedIndex}
       selectedIndex={selectedIndex}
+      anchored={anchored}
       reversed={reversed}
       onPreview={onPreview}
       onSelectCategory={onSelectCategory}
@@ -571,38 +668,35 @@ export function SlashTemplatePanel({
     />
   );
   const workflowSection = (
-    <div key="workflows">
-      <SectionLabel>
-        {t(($) => {
-          return $.chat.composer.workflows.title;
-        })}
-      </SectionLabel>
-      <SlashPanelWorkflowList
-        workflows={workflows}
-        loading={workflowsLoading}
-        markedIndex={markedIndex - categories.length}
-        selectedIndex={selectedIndex - categories.length}
-        reversed={reversed}
-        onPreview={(index) => {
-          onPreview(categories.length + index);
-        }}
-        onSelect={onSelectWorkflow}
-        workflowOptionId={workflowOptionId}
-      />
-    </div>
+    <SlashPanelWorkflowSection
+      key="workflows"
+      workflows={workflows}
+      loading={workflowsLoading}
+      collapseWorkflows={collapseWorkflows}
+      onExpandWorkflows={onExpandWorkflows}
+      markedIndex={markedIndex - categories.length}
+      selectedIndex={selectedIndex - categories.length}
+      reversed={reverseWorkflows}
+      describe={anchored}
+      onPreview={(index) => {
+        onPreview(categories.length + index);
+      }}
+      onSelect={onSelectWorkflow}
+      workflowOptionId={workflowOptionId}
+    />
   );
   const browseAll = (
-    <SlashPanelBrowseAll reversed={reversed} onBrowseAll={onBrowseAll} />
+    <SlashPanelBrowseAll anchored={anchored} onBrowseAll={onBrowseAll} />
   );
   return (
     <div
       className={cn(
         "flex min-h-0 w-full overflow-hidden",
-        reversed ? "flex-row" : "h-full flex-col",
+        anchored ? "flex-row" : "h-full flex-col",
         // Reserve preview space while categories are available so hovering a
         // workflow cannot move the menu under the pointer. Filtered workflow
         // results and mobile menus only claim the height their rows need.
-        reversed &&
+        anchored &&
           isDesktop &&
           categories.length > 0 &&
           "h-[min(380px,var(--available-height))]",
@@ -619,26 +713,26 @@ export function SlashTemplatePanel({
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {/*
-          Make and Workflows scroll as one list. Scrolling only the workflows
-          left a row sliced in half under a pinned section label, and hid that
-          the two groups are one index.
+          The compact overview keeps both section labels and Make in view.
+          Expanding Workflows restores the shared scroller so every row remains
+          reachable without introducing a nested scrolling region.
         */}
         <div className="min-h-0 flex-1 overflow-y-auto pb-1">
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}
-          {reversed && browseAll}
+          {anchored && browseAll}
         </div>
-        {!reversed && browseAll}
+        {!anchored && browseAll}
       </div>
-      {detailCategory !== null && reversed && isDesktop && (
+      {detailCategory !== null && anchored && isDesktop && (
         <SlashTemplateDetailPane
           embedded
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
         />
       )}
-      {detailCategory !== null && !reversed && (
+      {detailCategory !== null && !anchored && (
         <SlashTemplateDetailFlyout
           menuRef={menuRef}
           onClose={onClose}

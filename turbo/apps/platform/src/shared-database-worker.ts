@@ -4,7 +4,7 @@ import { createDebugLoggers } from "./lib/debug-loggers.ts";
 import { logger } from "./signals/log.ts";
 import { SharedDatabaseMessagePortServer } from "./shared-database/message-port-server.ts";
 import { initSharedDatabaseWorkerSentry } from "./shared-database/worker-sentry.ts";
-import { requestTokenFromLatestConnection$ } from "./shared-database/worker-context.ts";
+import { requestTokenFromTabs$ } from "./shared-database/worker-context.ts";
 import { bootstrapWorker$ } from "./shared-database/worker-signals.ts";
 import type { DebugLoggers } from "./types/global-method.ts";
 
@@ -43,7 +43,7 @@ function main(): void {
   store.set(
     bootstrapWorker$,
     (signal) => {
-      return store.set(requestTokenFromLatestConnection$, signal);
+      return store.set(requestTokenFromTabs$, signal);
     },
     workerSignal,
   );

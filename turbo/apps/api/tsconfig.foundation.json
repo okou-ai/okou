@@ -66,6 +66,7 @@
     "src/signals/services/pending-launch-tail-plan.ts",
     "src/signals/services/pi-memory-phase2-input-revision.ts",
     "src/signals/services/pi-memory-phase2-job.service.ts",
+    "src/signals/services/pi-memory-phase2-lifecycle.ts",
     "src/signals/services/pi-memory-phase2-maintenance.service.ts",
     "src/signals/services/pi-memory-stage1-admission-plan.ts",
     "src/signals/services/pi-memory-stage1-selection-plan.ts",
@@ -317,7 +318,6 @@
     "src/signals/services/artifact-catalog.service.ts",
     "src/signals/services/artifact-delivery.service.ts",
     "src/signals/services/artifact-preview-url.service.ts",
-    "src/signals/services/artifact-preview.service.ts",
     "src/signals/services/artifact-realtime.service.ts",
     "src/signals/services/artifact-reference.service.ts",
     "src/signals/services/artifact-storage.service.ts",
@@ -340,6 +340,7 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
+    "src/signals/services/remote-runtime-wakeup.service.ts",
     "src/signals/services/uploaded-artifact.service.ts"
   ],
   "exclude": ["node_modules", "dist"],

@@ -19,7 +19,7 @@ import {
 } from "@okouai/core/storage-names";
 import { memorySummaryProjections } from "@okouai/db/schema/memory-summary-projection";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { command } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, asc, count, eq, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { Parser } from "tar";
@@ -939,6 +939,61 @@ export interface MemorySummaryProjectionReadResult {
   readonly input: MemorySummaryProjectionReadInput;
   readonly ready: ReadyMemorySummaryProjection | null;
   readonly unavailableReason?: "missing" | "invalid";
+}
+
+/** The memory summary projection for one exact memory storage version. */
+export function createMemorySummaryProjectionRead(
+  input$: Computed<Promise<MemorySummaryProjectionReadInput | undefined>>,
+) {
+  return computed(
+    async (get): Promise<MemorySummaryProjectionReadResult | null> => {
+      const input = await get(input$);
+      if (!input) {
+        return null;
+      }
+      const { args } = input;
+      const [row] = await get(db$)
+        .select({
+          storageId: storages.id,
+          storageOrgId: storages.orgId,
+          storageUserId: storages.userId,
+          storageName: storages.name,
+          projectionStatus: memorySummaryProjections.status,
+          content: memorySummaryProjections.content,
+          sourceHash: memorySummaryProjections.sourceHash,
+          sourceSize: memorySummaryProjections.sourceSize,
+          tokenCount: memorySummaryProjections.tokenCount,
+        })
+        .from(storages)
+        .innerJoin(
+          storageVersions,
+          and(
+            eq(storageVersions.storageId, storages.id),
+            eq(storageVersions.id, args.storageVersionId),
+          ),
+        )
+        .leftJoin(
+          memorySummaryProjections,
+          and(
+            eq(memorySummaryProjections.memoryStorageId, storages.id),
+            eq(memorySummaryProjections.storageVersionId, storageVersions.id),
+            eq(memorySummaryProjections.orgId, args.orgId),
+            eq(memorySummaryProjections.userId, args.userId),
+          ),
+        )
+        .where(
+          and(
+            eq(storages.id, args.memoryStorageId),
+            eq(storages.orgId, args.orgId),
+            eq(storages.userId, args.userId),
+            eq(storages.name, MEMORY_ARTIFACT_NAME),
+            ne(storages.userId, VOLUME_ORG_USER_ID),
+          ),
+        )
+        .limit(1);
+      return memorySummaryProjectionReadResult(input, row);
+    },
+  );
 }
 
 export function memorySummaryProjectionReadResult(

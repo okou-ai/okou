@@ -50,6 +50,7 @@ test.each(["upload", "restored private"] as const)(
       const url = resolvedUrl;
       resolvedUrl = NEXT_URL;
       return respond(200, {
+        downloadUrl: new URL("?download=1", url).href,
         url,
         expiresAt: "2026-09-13T00:00:00.000Z",
         publicUrl: source === "restored private" ? null : PUBLIC_URL,

@@ -52,6 +52,7 @@ function mockPrivateImage() {
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await authorized.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", ORIGINAL_IMAGE_URL).href,
       url: ORIGINAL_IMAGE_URL,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "chart.png",
@@ -143,6 +144,7 @@ test("Thread video cards wait for their authorized poster", async () => {
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await authorized.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", ORIGINAL_IMAGE_URL).href,
       url: ORIGINAL_IMAGE_URL,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "poster.jpg",

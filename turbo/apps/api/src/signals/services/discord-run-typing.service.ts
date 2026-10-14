@@ -226,6 +226,7 @@ const currentTypingAccess$ = command(
   ): Promise<{
     readonly botToken: string;
     readonly accessKey: string;
+    readonly channelId: string;
   } | null> => {
     const route = await findDiscordChatRoute(db, args);
     signal.throwIfAborted();
@@ -234,7 +235,11 @@ const currentTypingAccess$ = command(
     }
     const current = await set(
       requireDiscordBinding$,
-      { orgId: args.orgId, userId: args.userId, guildId: args.target.guildId },
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        guildId: args.target.guildId ?? undefined,
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -247,20 +252,21 @@ const currentTypingAccess$ = command(
     ) {
       return null;
     }
+    const channelId = route.destinationChannelId ?? route.channelId;
     const accessKey = [
       current.binding.connectionId,
       current.binding.discordUserId,
       args.target.guildId,
-      args.target.channelId,
+      channelId,
     ].join(":");
     if (liveEntry(typingAccessTable(), accessKey)) {
-      return { botToken: current.botToken, accessKey };
+      return { botToken: current.botToken, accessKey, channelId };
     }
     const access = await resolveDiscordProviderAccess(
       {
         ...current.binding,
         botToken: current.botToken,
-        channelId: args.target.channelId,
+        channelId,
         mode: "write",
       },
       signal,
@@ -274,7 +280,7 @@ const currentTypingAccess$ = command(
       accessKey,
       now() + TYPING_ACCESS_REUSE_MS,
     );
-    return { botToken: current.botToken, accessKey };
+    return { botToken: current.botToken, accessKey, channelId };
   },
 );
 
@@ -315,7 +321,7 @@ const refreshDiscordRunTyping$ = command(
     await sendTypingOnce(
       {
         botToken: access.botToken,
-        channelId: args.target.channelId,
+        channelId: access.channelId,
         accessKey: access.accessKey,
       },
       signal,

@@ -37,6 +37,7 @@ mod guest_state;
 mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
+mod session_history_attribution;
 mod session_history_cpu;
 mod session_history_download;
 mod session_history_restore_plan;
@@ -169,7 +170,9 @@ use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::{HomePaths, LogPaths};
 use runner_provider::http::HttpClient;
-use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::{
+    ExecutionContext, HomeReuseResult, SandboxReuseResult, SandboxStartupPath,
+};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
     let run_id = run_id.to_string();
@@ -918,6 +921,10 @@ pub async fn execute_job_reuse_with_hooks(
                     home_reuse_result: match kind {
                         IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
                         IdleSandboxKind::Blank => blank_home_reuse_result(&context, config),
+                    },
+                    sandbox_startup_path: match kind {
+                        IdleSandboxKind::Exact => SandboxStartupPath::Sandbox,
+                        IdleSandboxKind::Blank => SandboxStartupPath::Blank,
                     },
                     prev_storage: (kind == IdleSandboxKind::Exact).then_some(&prev_storage),
                 },

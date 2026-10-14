@@ -21,7 +21,7 @@ impl BatchFixture {
         (incoming, home)
     }
 
-    async fn insert(
+    pub(super) async fn insert(
         &self,
         incoming: &mut IdlePoolIncoming,
     ) -> Result<IdlePoolInsertionResult, MemoryOperationError> {
@@ -69,12 +69,17 @@ impl BatchFixture {
     }
 }
 
-async fn complete(task: &mut GuardedIdleCleanupTask) -> RetainedIdleDestroyResult {
-    tokio::time::timeout(WAIT, task.join())
+async fn complete(task: &mut GuardedActivationCleanupTask) -> BudgetLease {
+    let outcome = tokio::time::timeout(WAIT, task.join())
         .await
         .unwrap()
         .unwrap()
-        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        outcome,
+        runner_lifecycle::idle_pool::ActivationCleanupOutcome::Completed { .. }
+    ));
+    task.take_completed_lease().unwrap()
 }
 
 #[tokio::test]
@@ -89,8 +94,6 @@ async fn same_key_replacement_preserves_incoming_and_saves_the_original_complete
     new.assert_active_bytes().await;
     old.confirm_exit();
     let result = complete(started.retirement.as_mut().unwrap()).await;
-    assert_eq!(result.outcome, DestroyOutcome::Completed);
-    assert!(result.home_cache_promoted);
     old.assert_cached_bytes().await;
     drop(result);
     assert_eq!(fixture.budget.allocated(), (2, 2048, 1));

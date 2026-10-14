@@ -4,7 +4,7 @@ import {
   googleFormsWatchStates,
 } from "@okouai/db/schema/google-forms-event";
 import { sql } from "drizzle-orm";
-import type { workflowAutomations } from "@okouai/db/schema/workflow";
+import type { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 
 type FormsCursorSource = Pick<
   typeof workflowAutomations.$inferSelect,
@@ -56,7 +56,11 @@ export function googleFormsCursorMustReset(
   );
 }
 
-/** Build publication SQL for a structure change while its automation row is owned. */
+/**
+ * Publish a prepared source while its automation row is owned. Callers delete
+ * incompatible/closed intervals first; an existing same-source cursor retains
+ * delivery progress even when watch preparation sees newer responses.
+ */
 export function googleFormsCursorPublicationStatement(
   automation: FormsCursorSource & { readonly id: string },
   seedCursor: string | null,
@@ -88,7 +92,6 @@ export function googleFormsCursorPublicationStatement(
       AND ${googleFormsWatchStates.formId} = ${config.form.id}
     ON CONFLICT (automation_id) DO UPDATE
       SET watch_state_id = excluded.watch_state_id,
-        last_seen_submitted_time = excluded.last_seen_submitted_time,
         updated_at = excluded.updated_at
     RETURNING automation_id
   `;

@@ -466,18 +466,6 @@ function teamsGraphPromptFiles(
   });
 }
 
-async function installationForTenant(
-  db: Db,
-  tenantId: string,
-): Promise<TeamsInstallation | undefined> {
-  const [installation] = await db
-    .select()
-    .from(teamsOrgInstallations)
-    .where(eq(teamsOrgInstallations.teamsTenantId, tenantId))
-    .limit(1);
-  return installation;
-}
-
 async function connectionForTeamsUser(
   db: Db,
   tenantId: string,
@@ -524,18 +512,6 @@ async function connectionForTeamsUser(
   return connection;
 }
 
-async function resolveDefaultComposeId(
-  db: Db,
-  orgId: string,
-): Promise<string | null> {
-  const [metadata] = await db
-    .select({ defaultAgentId: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  return metadata?.defaultAgentId ?? null;
-}
-
 async function sendTeamsRunStartIndicator(
   args: {
     readonly activity: TeamsMessageActivity;
@@ -570,30 +546,25 @@ async function sendTeamsRunStartIndicator(
   await bestEffort(indicator, signal);
 }
 
-async function getWorkspaceAgent(
-  db: Db,
-  composeId: string,
-  orgId: string,
-): Promise<TeamsAgent | undefined> {
-  const [agent] = await db
-    .select({
-      id: agents.id,
-      name: agents.name,
-      displayName: agents.displayName,
-    })
-    .from(agents)
-    .where(and(eq(agents.id, composeId), eq(agents.orgId, orgId)))
-    .limit(1);
-  return agent;
-}
-
-async function getVisibleWorkspaceAgent(args: {
+async function resolveEffectiveCompose(args: {
   readonly db: Db;
-  readonly composeId: string;
-  readonly orgId: string;
   readonly userId: string;
-}): Promise<TeamsAgent | undefined> {
-  const [agent] = await args.db
+  readonly orgId: string;
+}): Promise<EffectiveComposeResolution> {
+  const db = args.db;
+  const orgId = args.orgId;
+  const [metadata] = await db
+    .select({ defaultAgentId: orgMetadata.defaultAgentId })
+    .from(orgMetadata)
+    .where(eq(orgMetadata.orgId, orgId))
+    .limit(1);
+  const defaultAgentId = metadata?.defaultAgentId ?? null;
+  if (!defaultAgentId) {
+    return { status: "not_configured" };
+  }
+  const configuredAgentDb = args.db;
+  const configuredAgentOrgId = args.orgId;
+  const [configuredDefaultAgent] = await configuredAgentDb
     .select({
       id: agents.id,
       name: agents.name,
@@ -602,38 +573,33 @@ async function getVisibleWorkspaceAgent(args: {
     .from(agents)
     .where(
       and(
-        eq(agents.id, args.composeId),
-        eq(agents.orgId, args.orgId),
-        or(eq(agents.visibility, "public"), eq(agents.owner, args.userId)),
+        eq(agents.id, defaultAgentId),
+        eq(agents.orgId, configuredAgentOrgId),
       ),
     )
     .limit(1);
-  return agent;
-}
-
-async function resolveEffectiveCompose(args: {
-  readonly db: Db;
-  readonly userId: string;
-  readonly orgId: string;
-}): Promise<EffectiveComposeResolution> {
-  const defaultAgentId = await resolveDefaultComposeId(args.db, args.orgId);
-  if (!defaultAgentId) {
-    return { status: "not_configured" };
-  }
-  const configuredDefaultAgent = await getWorkspaceAgent(
-    args.db,
-    defaultAgentId,
-    args.orgId,
-  );
   if (!configuredDefaultAgent) {
     return { status: "not_found" };
   }
-  const visibleDefaultAgent = await getVisibleWorkspaceAgent({
-    db: args.db,
-    composeId: defaultAgentId,
-    orgId: args.orgId,
-    userId: args.userId,
-  });
+  const visibleAgentDb = args.db;
+  const visibleComposeId = defaultAgentId;
+  const visibleOrgId = args.orgId;
+  const visibleUserId = args.userId;
+  const [visibleDefaultAgent] = await visibleAgentDb
+    .select({
+      id: agents.id,
+      name: agents.name,
+      displayName: agents.displayName,
+    })
+    .from(agents)
+    .where(
+      and(
+        eq(agents.id, visibleComposeId),
+        eq(agents.orgId, visibleOrgId),
+        or(eq(agents.visibility, "public"), eq(agents.owner, visibleUserId)),
+      ),
+    )
+    .limit(1);
   if (!visibleDefaultAgent) {
     return { status: "not_accessible" };
   }
@@ -1360,7 +1326,6 @@ const persistTeamsChatMessage$ = command(
   async (
     { set },
     args: {
-      readonly db: Db;
       readonly activity: TeamsMessageActivity;
       readonly installation: BoundTeamsInstallation;
       readonly connection: TeamsConnection;
@@ -1537,11 +1502,10 @@ const runAgentForTeams$ = command(
       "nested",
       nowDate().getTime(),
     );
-    const db = set(writeDb$);
+    set(writeDb$);
     const persisted = await set(
       persistTeamsChatMessage$,
       {
-        db,
         activity: args.activity,
         installation: args.installation,
         connection: args.connection,
@@ -1878,10 +1842,15 @@ export const dispatchTeamsMessageToAgent$ = command(
     }
 
     const db = set(writeDb$);
-    const installation =
-      args.installation ??
-      (await installationForTenant(db, activity.tenantId)) ??
-      null;
+    let installation = args.installation ?? null;
+    if (installation === null) {
+      const tenantId = activity.tenantId;
+      [installation = null] = await db
+        .select()
+        .from(teamsOrgInstallations)
+        .where(eq(teamsOrgInstallations.teamsTenantId, tenantId))
+        .limit(1);
+    }
     signal.throwIfAborted();
 
     if (!installation?.orgId) {

@@ -52,6 +52,9 @@ function acceptList(kinds: readonly UserTemplateKind[]): string {
  */
 export const PRESENTATION_TEMPLATE_IMPORT_ACCEPT = acceptList(["presentation"]);
 
+/** The Image shelf imports only still images into the custom style catalog. */
+export const IMAGE_TEMPLATE_IMPORT_ACCEPT = acceptList(["illustration"]);
+
 /**
  * The Custom pane's import action, which publishes to the user template catalog.
  *

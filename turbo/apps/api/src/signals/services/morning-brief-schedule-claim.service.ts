@@ -10,7 +10,8 @@ import {
   type MorningBriefScheduleClaimSettlement,
 } from "@okouai/db/schema/morning-brief-schedule-claim";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, asc, desc, eq, exists, gt, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";

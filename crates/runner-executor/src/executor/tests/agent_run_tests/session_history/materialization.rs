@@ -35,7 +35,7 @@ fn zstd_bytes(raw: &[u8]) -> Vec<u8> {
 #[tokio::test]
 async fn zstd_sources_restore_both_frameworks_at_all_sizes_and_fail_before_spawn_on_bad_hash() {
     for repeats in [1, 320_000] {
-        let history = b"{\"type\":\"message\",\"content\":\"synthetic checkpoint history\"}\n"
+        let history = b"{\"type\":\"message\",\"content\":\"synthetic native CLI history\"}\n"
             .repeat(repeats);
         let source = zstd::encode_all(history.as_slice(), 3).unwrap();
         let expected: [u8; 32] = Sha256::digest(&history).into();
@@ -71,6 +71,7 @@ async fn zstd_sources_restore_both_frameworks_at_all_sizes_and_fail_before_spawn
                     &ctx,
                     &config,
                     RunStart {
+                        sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                         restore_guest_state: false,
                         reuse_result: SandboxReuseResult::PoolMiss,
                         home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -208,6 +209,7 @@ async fn run_in_sandbox_materializes_resume_session_history_ref_before_restore()
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -307,6 +309,7 @@ async fn unverifiable_home_candidates_use_owned_authoritative_restore_after_prep
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Home,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::Reused,
@@ -378,6 +381,7 @@ async fn run_in_sandbox_records_gzip_session_history_download_encoding() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -490,6 +494,7 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -509,6 +514,20 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         "/home/user/.claude/projects/-home-user-workspace/sess-zstd-ref-123.jsonl"
     );
     assert_eq!(writes[0].content, history);
+    let attribution_ops = telemetry.pending_ops_snapshot();
+    for action in [
+        "session_history_download_attempt",
+        "session_history_download_attribution",
+    ] {
+        assert_eq!(
+            attribution_ops
+                .iter()
+                .filter(|op| op.0 == action && op.1)
+                .count(),
+            1,
+            "expected one successful {action} observation"
+        );
+    }
     let ops = telemetry.pending_ops_with_session_history_metadata_snapshot();
     assert_successful_action_with_session_history_metadata(
         &ops,
@@ -625,6 +644,7 @@ async fn run_in_sandbox_uses_prestarted_session_history_materializer() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -734,6 +754,7 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -821,6 +842,7 @@ async fn run_in_sandbox_records_completed_prestarted_materializer_failure() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

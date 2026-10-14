@@ -2,15 +2,14 @@
 
 use crate::resource_budget::BudgetLease;
 
-use super::super::IdleDestroyResult;
-use super::super::entry::{HomePromotionPolicy, IdleSandboxMetadata, IdleSandboxResources};
-use super::super::retirement::run_retirement_payload;
+use super::super::activation_cleanup::{IdleActivationOwner, run_cleanup};
+use super::super::entry::{IdleSandboxMetadata, IdleSandboxResources};
 use super::*;
 
 /// Accepted physical cleanup and the original full-profile logical lease.
 /// Transferring this lease grants no physical memory credit.
 pub struct IdlePoolSubstitutionStarted {
-    pub task: MemoryOperationTask<IdleDestroyResult>,
+    pub cleanup: AcceptedActivationCleanup,
     pub budget_lease: BudgetLease,
 }
 
@@ -80,37 +79,58 @@ impl IdlePoolRetirement {
             candidate,
             live,
             tail,
+            operations,
+            envelope,
         } = self.detach(pool)?;
         let (resource, budget_lease) = SubstitutionResource::split(entry);
+        let retained = RetainedActivationCleanup::new();
         match live.spawn_retirement(
             tail,
-            (resource, context, candidate),
-            |live, tail, (resource, context, candidate)| {
-                run_retirement_payload(
+            (
+                resource,
+                retained.clone(),
+                candidate,
+                operations,
+                envelope,
+                context,
+            ),
+            |live, tail, (resource, retained, candidate, operations, envelope, context)| async move {
+                let mut owner = Box::new(IdleActivationOwner::after_substitution(
+                    resource.resources,
+                    resource.metadata,
+                    resource.retirement_backing,
+                ));
+                owner.accept_substitution(operations, envelope);
+                run_cleanup(
                     live,
                     tail,
                     (
-                        resource
-                            .resources
-                            .into_destroy_payload(HomePromotionPolicy::Promote),
-                        context,
+                        owner,
+                        retained,
                         candidate.backing.process,
                         candidate.backing.identity,
+                        context,
                     ),
                 )
+                .await
             },
         ) {
             Ok(task) => {
                 pool.bump_revision();
-                Ok(IdlePoolSubstitutionStarted { task, budget_lease })
+                Ok(IdlePoolSubstitutionStarted {
+                    cleanup: AcceptedActivationCleanup::new(task, retained),
+                    budget_lease,
+                })
             }
             Err(failure) => {
-                let (resource, _, candidate) = failure.payload;
+                let (resource, _, candidate, operations, envelope, _) = failure.payload;
                 Err(DetachedRetirement {
                     entry: resource.restore(budget_lease),
                     candidate,
                     live: failure.live,
                     tail: failure.tail,
+                    operations,
+                    envelope,
                 }
                 .restore(pool, failure.error))
             }

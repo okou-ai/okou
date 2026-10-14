@@ -1,10 +1,10 @@
 import { command } from "ccstate";
-import { emailOutbox } from "@okouai/db/schema/email-outbox";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { orgCache } from "@okouai/db/schema/org-cache";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { users } from "@okouai/db/schema/user";
-import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
+import { and, count, eq, gte, inArray, not, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -14,7 +14,7 @@ import {
   type ClerkOrganizationMembership,
 } from "../external/clerk";
 import { listAllOrganizationMemberships } from "../external/clerk-organization-lists";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   buildOneClickUnsubscribeUrl,
@@ -59,13 +59,64 @@ function membershipUserId(
   return membership.publicUserData?.userId;
 }
 
+// Cache replacement is uninterrupted; the original owner checks cancellation
+// only after the write commits.
+const replaceOrgMemberCache$ = command(
+  async (
+    { set },
+    orgId: string,
+    rows: readonly OrgMemberCacheRow[],
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    if (rows.length === 0) {
+      await db.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
+      return;
+    }
+
+    const refreshedMembers = db.$with("refreshed_members").as(
+      db
+        .insert(orgMembersCache)
+        .values([...rows])
+        .onConflictDoUpdate({
+          target: [orgMembersCache.orgId, orgMembersCache.userId],
+          set: {
+            role: sql`excluded.role`,
+            cachedAt: sql`excluded.cached_at`,
+          },
+        })
+        .returning({ userId: orgMembersCache.userId }),
+    );
+    const userIds = rows.map((row) => {
+      return row.userId;
+    });
+    // COUNT consumes the whole UPSERT even at zero rows. Exclude the complete
+    // input cohort, keeping both mutations disjoint and the array one binding.
+    // Cleanup uses this statement's snapshot; unrelated rows inserted during
+    // an UPSERT wait may survive without receiving a fresh cachedAt.
+    await db
+      .with(refreshedMembers)
+      .delete(orgMembersCache)
+      .where(
+        and(
+          eq(orgMembersCache.orgId, orgId),
+          not(
+            sql`${orgMembersCache.userId} = ANY(${sql.param(userIds)}::text[])`,
+          ),
+          gte(
+            db.select({ refreshedMembers: count() }).from(refreshedMembers),
+            0,
+          ),
+        ),
+      );
+  },
+);
+
 const refreshOrgMemberCache$ = command(async function refreshOrgMemberCache(
   { set },
   orgId: string,
   memberships: readonly OrganizationMembership[],
   signal: AbortSignal,
 ): Promise<void> {
-  const db = set(writeDb$);
   const cachedAt = nowDate();
   const rowsByUserId = new Map<string, OrgMemberCacheRow>();
   for (const membership of memberships) {
@@ -87,36 +138,7 @@ const refreshOrgMemberCache$ = command(async function refreshOrgMemberCache(
   }
   const rows = [...rowsByUserId.values()];
 
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0121; new non-billing transactions are prohibited.
-  await db.transaction(async (tx) => {
-    if (rows.length > 0) {
-      await tx
-        .insert(orgMembersCache)
-        .values(rows)
-        .onConflictDoUpdate({
-          target: [orgMembersCache.orgId, orgMembersCache.userId],
-          set: {
-            role: sql`excluded.role`,
-            cachedAt: sql`excluded.cached_at`,
-          },
-        });
-
-      await tx.delete(orgMembersCache).where(
-        and(
-          eq(orgMembersCache.orgId, orgId),
-          notInArray(
-            orgMembersCache.userId,
-            rows.map((row) => {
-              return row.userId;
-            }),
-          ),
-        ),
-      );
-      return;
-    }
-
-    await tx.delete(orgMembersCache).where(eq(orgMembersCache.orgId, orgId));
-  });
+  await set(replaceOrgMemberCache$, orgId, rows);
   signal.throwIfAborted();
 });
 
@@ -200,39 +222,6 @@ const resolveRecipients$ = command(
   },
 );
 
-async function suppressedEmailKeys(
-  db: Db,
-  emails: readonly string[],
-): Promise<Set<string>> {
-  if (emails.length === 0) {
-    return new Set();
-  }
-
-  const lowerEmails = emails.map((email) => {
-    return email.toLowerCase();
-  });
-  const rows = await db
-    .select({ emailAddress: emailSuppressions.emailAddress })
-    .from(emailSuppressions)
-    .where(inArray(sql`lower(${emailSuppressions.emailAddress})`, lowerEmails));
-
-  return new Set(
-    rows.map((row) => {
-      return row.emailAddress.toLowerCase();
-    }),
-  );
-}
-
-async function orgDisplayName(db: Db, orgId: string): Promise<string> {
-  const [cached] = await db
-    .select({ name: orgCache.name })
-    .from(orgCache)
-    .where(eq(orgCache.orgId, orgId))
-    .limit(1);
-  const name = cached?.name.trim();
-  return name || "Your organization";
-}
-
 export const enqueueCreditLowBalanceAlert$ = command(
   async (
     { get, set },
@@ -259,12 +248,30 @@ export const enqueueCreditLowBalanceAlert$ = command(
     }
 
     const recipients = await set(resolveRecipients$, userIds, signal);
-    const suppressed = await suppressedEmailKeys(
-      db,
-      recipients.map((recipient) => {
-        return recipient.email;
-      }),
-    );
+    const emails = recipients.map((recipient) => {
+      return recipient.email;
+    });
+    const suppressed = await (async (): Promise<Set<string>> => {
+      if (emails.length === 0) {
+        return new Set();
+      }
+
+      const lowerEmails = emails.map((email) => {
+        return email.toLowerCase();
+      });
+      const rows = await db
+        .select({ emailAddress: emailSuppressions.emailAddress })
+        .from(emailSuppressions)
+        .where(
+          inArray(sql`lower(${emailSuppressions.emailAddress})`, lowerEmails),
+        );
+
+      return new Set(
+        rows.map((row) => {
+          return row.emailAddress.toLowerCase();
+        }),
+      );
+    })();
     signal.throwIfAborted();
 
     const deliverableRecipients = recipients.filter((recipient) => {
@@ -277,7 +284,16 @@ export const enqueueCreditLowBalanceAlert$ = command(
       return;
     }
 
-    const orgName = await orgDisplayName(db, args.orgId);
+    const orgId = args.orgId;
+    const orgName = await (async () => {
+      const [cached] = await db
+        .select({ name: orgCache.name })
+        .from(orgCache)
+        .where(eq(orgCache.orgId, orgId))
+        .limit(1);
+      const name = cached?.name.trim();
+      return name || "Your organization";
+    })();
     signal.throwIfAborted();
     const billingUrl = billingCreditsUrl();
 

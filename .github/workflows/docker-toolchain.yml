@@ -48,7 +48,7 @@ jobs:
           CHECKOUT_REF: ${{ github.ref }}
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          BASE_REF=$(.github/scripts/checks/changed-base-ref.sh)
           if git diff --quiet "$BASE_REF" HEAD -- docker/toolchain/; then
             echo "toolchain-changed=false" >> "$GITHUB_OUTPUT"
           else

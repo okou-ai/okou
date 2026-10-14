@@ -1093,6 +1093,8 @@ describe("POST /api/user-templates", () => {
       });
       activeRuns.add(runId);
       const { claim } = await chatEvents.claimChatRun(runnerGroup, runId);
+      expect(claim.appendSystemPrompt).toContain("okou host screenshot");
+      expect(claim.appendSystemPrompt).toContain("previewImageUrl");
       const mount = expectCanonicalStorageManifest(
         claim.storageManifest,
       )?.storageMounts.find((candidate) => {

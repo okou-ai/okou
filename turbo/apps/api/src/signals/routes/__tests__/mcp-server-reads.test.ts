@@ -122,8 +122,9 @@ describe("thin MCP Web adapters", () => {
           "cancel_run",
           "get_chat_activity_summary",
           "get_chat_indicators",
+          "get_chat_input_status",
           "get_chat_messages",
-          "get_chat_thread",
+          "get_chat_thread_list",
           "list_agents",
           "list_models",
           "rename_chat_thread",
@@ -180,6 +181,48 @@ describe("thin MCP Web adapters", () => {
           },
         },
       });
+      expect(search.inputSchema.properties?.since).toMatchObject({
+        type: "string",
+        format: "date-time",
+        description: expect.stringContaining("Inclusive lower bound"),
+      });
+      expect(search.description).toContain("2026-10-12T08:02:50Z");
+      expect(search.description).toContain("index updates asynchronously");
+      const validateSearchInput = validator.getValidator(
+        search.inputSchema as JsonSchemaType,
+      );
+      for (const since of [
+        "2026-10-12T08:02:50Z",
+        "2026-10-12T16:02:50.123+08:00",
+      ]) {
+        expect(
+          validateSearchInput({ keyword: "search", since }).valid,
+        ).toBeTruthy();
+      }
+      for (const since of [
+        1_791_792_170,
+        1_791_792_170_000,
+        "1791792170000",
+        "2026-10-12T08:02:50",
+        "2026-10-12T08:02:50.0001Z",
+      ]) {
+        expect(
+          validateSearchInput({ keyword: "search", since }).valid,
+        ).toBeFalsy();
+      }
+      const searched = await sdk.callTool({
+        name: "search_chat_messages",
+        arguments: {
+          keyword: `sdk-time-${randomUUID()}`,
+          since: "2026-10-12T08:02:50Z",
+        },
+      });
+      expect(searched.isError).not.toBeTruthy();
+      expect(
+        mcpChatSearchContract.search.responses[200].parse(
+          searched.structuredContent,
+        ),
+      ).toStrictEqual({ results: [] });
       const searchThreadId = randomUUID();
       const searchHit = {
         threadId: searchThreadId,
@@ -275,7 +318,7 @@ describe("thin MCP Web adapters", () => {
         /nextContentCursor|olderCursor|around|waitMs|inputRef|effectiveModel/,
       );
       const listed = await sdk.callTool({
-        name: "get_chat_thread",
+        name: "get_chat_thread_list",
         arguments: {},
       });
       expect(listed.isError).not.toBeTruthy();
@@ -317,7 +360,7 @@ describe("thin MCP Web adapters", () => {
         }),
       );
       const lifecycle = await sdk.callTool({
-        name: "get_chat_thread",
+        name: "get_chat_thread_list",
         arguments: {},
       });
       expect(lifecycle.isError).not.toBeTruthy();
@@ -632,7 +675,7 @@ describe("thin MCP Web adapters", () => {
     const sent = await send(f, "lifecycle aggregate");
     await flushWaitUntilForTest();
     const page = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     const snapshot = await mcp.web(f.token(), "/api/chat-threads/snapshot");
     const events = await mcp.web(f.token(), "/api/chat-threads/events");
@@ -657,7 +700,7 @@ describe("thin MCP Web adapters", () => {
     }
     const next = mcpGetChatThreadOutputSchema.parse(
       body(
-        await mcp.call(f.token(), "get_chat_thread", {
+        await mcp.call(f.token(), "get_chat_thread_list", {
           sinceSeqId: last.seqId,
         }),
       ),
@@ -705,7 +748,7 @@ describe("thin MCP Web adapters", () => {
       ]),
     });
     const lifecycle = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     expect(lifecycle.events).toContainEqual(
       expect.objectContaining({ eventId, kind: "model_selection_updated" }),
@@ -766,7 +809,11 @@ describe("thin MCP Web adapters", () => {
 
   it("preserves Web search filters, empty results and activity-summary behavior", async () => {
     const f = await fixture();
-    const query = { keyword: "plain keyword", agentId: f.agentId, since: 1 };
+    const query = {
+      keyword: "plain keyword",
+      agentId: f.agentId,
+      since: "1970-01-01T00:00:00.001Z",
+    };
     const web = await mcp.web(
       f.token(),
       `/api/chat/search?keyword=plain%20keyword&agentId=${f.agentId}&since=1`,
@@ -871,7 +918,7 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("NOT_FOUND");
     const list = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     expect(
       list.events.some((event) => {

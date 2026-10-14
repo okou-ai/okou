@@ -259,7 +259,7 @@ jobs:
         env:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           METAL_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
-        run: .github/scripts/discover-runner-pr-namespaces.sh
+        run: .github/scripts/runner/discover-runner-pr-namespaces.sh
 
       - name: Select closed runner PRs
         if: steps.check.outputs.should-cleanup == 'true'
@@ -346,8 +346,8 @@ jobs:
             # Cleanup every runner resource in the PR namespace.
             JOB_REF="pr-${PR_NUMBER}"
             export JOB_REF PR_NUMBER
-            if ! "$GITHUB_WORKSPACE/.github/scripts/with-runner-lifecycle-lock.sh" \
-              "$GITHUB_WORKSPACE/.github/scripts/cleanup-pr-runner-namespace.sh"; then
+            if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
+              "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
               echo "::warning::PR runner cleanup failed for pr-${PR_NUMBER}"
               PR_FAILED=1
             fi

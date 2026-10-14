@@ -28,6 +28,12 @@ export function createStorageSignals(
     return storage().getItem(key);
   });
 
+  // Commands that merge browser-owned data need the latest value, including
+  // writes from other tabs that do not invalidate this graph's cached read.
+  const readFresh$ = command(() => {
+    return storage().getItem(key);
+  });
+
   const set$ = command(({ set }, value: string) => {
     set(registeredKeys$, (registeredKeys) => {
       if (registeredKeys?.has(key)) {
@@ -51,5 +57,5 @@ export function createStorageSignals(
     });
   });
 
-  return Object.freeze({ get$, set$, clear$ });
+  return Object.freeze({ get$, readFresh$, set$, clear$ });
 }

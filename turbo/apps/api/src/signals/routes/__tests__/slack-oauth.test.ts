@@ -6,7 +6,7 @@ import { billingStatusRoutes } from "../billing-status";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { createStore } from "ccstate";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
@@ -20,6 +20,7 @@ import { slackOauthRoutes } from "../slack-oauth";
 import { createRouteMocks } from "./helpers/route-test";
 import {
   createPublicSlackOrgApi,
+  type PublicSlackOrgFixture,
   type PublicSlackOrgOptions,
   uniqueSlackUserId,
 } from "./helpers/slack-public-install";
@@ -28,6 +29,8 @@ import { integrationsSlackRoutes } from "../integrations-slack";
 import { slackConnectContract } from "@okouai/api-contracts/contracts/slack-connect";
 import { slackConnectRoutes } from "../slack-connect";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
+import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 
 const context = testContext();
 const store = createStore();
@@ -397,6 +400,104 @@ describe("Slack OAuth API routes", () => {
   });
 
   describe("GET /api/slack/oauth/connect", () => {
+    it("isolates installation and signed identity across successive requests", async () => {
+      const installations: PublicSlackOrgFixture[] = [];
+      const owner = createFixtureOperationOwner(async () => {
+        for (const installation of installations) {
+          await slackOrgs.uninstallWorkspace(installation.slackWorkspaceId);
+        }
+      });
+      async function install() {
+        return await owner.run(async () => {
+          const fixture = await slackOrgs.installOrg({ withConnection: true });
+          installations.push(fixture);
+          await flushWaitUntilForTest();
+          applyOAuthTestEnv();
+          return fixture;
+        });
+      }
+      const first = await install();
+      const second = await install();
+      const missing = unseededIdentity();
+      const client = setupApp({
+        context,
+        routes: slackOauthRoutes,
+        baseUrl: "https://incoming.example",
+      })(slackOauthContract);
+
+      await withMockNowForTest(1_700_000_000_000, async () => {
+        for (const { identity, installed } of [
+          { identity: first, installed: true },
+          { identity: second, installed: true },
+          { identity: missing, installed: false },
+          { identity: first, installed: true },
+        ]) {
+          const response = await owner.run(() => {
+            return accept(
+              client.connect({
+                query: {
+                  orgId: identity.orgId,
+                  userId: identity.userId,
+                  prompt: "connect this workspace",
+                },
+              }),
+              [307, 404],
+            );
+          });
+          if (!installed) {
+            expect(response.status).toBe(404);
+            expect(response.body).toStrictEqual({
+              error: "No Slack workspace installed for this organization",
+            });
+            continue;
+          }
+          expect(response.status).toBe(307);
+          expect(response.headers.get("cache-control")).toBe("no-store");
+          const location = response.headers.get("location");
+          if (!location) {
+            throw new Error("Expected the Slack authorization redirect");
+          }
+          const authorization = new URL(location);
+          expect(authorization.origin + authorization.pathname).toBe(
+            "https://slack.com/oauth/v2/authorize",
+          );
+          const state = authorization.searchParams.get("state");
+          if (!state) {
+            throw new Error("Expected the signed connect state");
+          }
+          expect(Object.fromEntries(authorization.searchParams)).toStrictEqual({
+            client_id: "test-slack-client-id",
+            user_scope: "identity.basic",
+            redirect_uri:
+              "https://api.okou.ai/api/integrations/slack/oauth/callback",
+            team: identity.slackWorkspaceId,
+            state,
+          });
+          const [payload, signature, extra] = state.split(".");
+          if (!payload || !signature || extra) {
+            throw new Error("Expected exactly one state payload and signature");
+          }
+          expect(
+            JSON.parse(Buffer.from(payload, "base64url").toString()),
+          ).toStrictEqual({
+            orgId: identity.orgId,
+            userId: identity.userId,
+            flow: "connect",
+            reinstall: false,
+            prompt: "connect this workspace",
+            issuedAt: 1_700_000_000,
+            redirectUri:
+              "https://api.okou.ai/api/integrations/slack/oauth/callback",
+          });
+          expect(signature).toBe(
+            createHmac("sha256", OAUTH_STATE_SIGNING_KEY)
+              .update(`slack-oauth-state-v1:${payload}`)
+              .digest("base64url"),
+          );
+        }
+      });
+    });
+
     it("redirects to Slack OAuth with team and connect state", async () => {
       const fixture = await installPublicOrg();
 

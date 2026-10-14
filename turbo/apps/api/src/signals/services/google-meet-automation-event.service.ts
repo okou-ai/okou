@@ -4,10 +4,10 @@ import {
   googleWorkspaceProcessedEvents,
 } from "@okouai/db/schema/google-workspace-event";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { OAuth2Client } from "google-auth-library";

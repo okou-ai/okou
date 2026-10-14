@@ -1,5 +1,6 @@
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import {
   chatEventsContract,
   chatThreadEventsContract,
@@ -59,6 +60,7 @@ const toolContracts: ReadonlySet<AppRoute> = Object.freeze(
     chatThreadEventsContract.rows,
     mcpChatSearchContract.search,
     chatThreadActivitySummaryContract.summarize,
+    chatInputStatusContract.get,
     chatEventsContract.send,
     chatThreadRenameContract.rename,
     chatThreadModelSelectionContract.update,

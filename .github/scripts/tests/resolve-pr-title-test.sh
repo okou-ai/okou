@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/resolve-pr-title.sh"
+script="${repo_root}/.github/scripts/checks/resolve-pr-title.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 fake_bin="${tmp_dir}/bin"

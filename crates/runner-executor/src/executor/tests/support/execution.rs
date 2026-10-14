@@ -77,6 +77,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_timeouts(
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -105,6 +106,7 @@ pub(in crate::executor::tests) fn spawn_run_in_sandbox_test_with_cancellation(
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

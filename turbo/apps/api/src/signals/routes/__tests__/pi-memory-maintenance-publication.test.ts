@@ -1,22 +1,29 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import {
   cronConsolidatePiMemoryPhase2Contract,
+  cronCleanupSandboxesContract,
   cronExtractPiMemoryStage1Contract,
 } from "@okouai/api-contracts/contracts/cron";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
-import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
+import {
+  AGENT_EXECUTION_TIMEOUT_SECONDS,
+  CANCELLATION_RECOVERY_STALE_AFTER_MS,
+  RUNNER_CANCELLATION_RECOVERY_GRACE_MS,
+  PI_MEMORY_ROOT,
+} from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockEnv } from "../../../lib/env";
+import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now, nowDate } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
+import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";
 import { cronConsolidatePiMemoryPhase2Routes } from "../cron-consolidate-pi-memory-phase2";
 import { cronExtractPiMemoryStage1Routes } from "../cron-extract-pi-memory-stage1";
 import {
@@ -60,7 +67,7 @@ function maintenanceInput(claim: Claim) {
   return { maintenance, memory: memory[0] };
 }
 
-async function prepareMaintenance() {
+async function prepareMaintenance(options: { independentOwner?: true } = {}) {
   mockNow(now());
   mockEnv("PI_MEMORY_BACKGROUND_WORKERS_ENABLED", "true");
   // These production operators are this case's explicitly scoped system boundary.
@@ -95,6 +102,39 @@ async function prepareMaintenance() {
       [FeatureSwitchKey.PiMemory]: true,
     },
   );
+  const peerActor = options.independentOwner
+    ? await chat.entitledChatActor({ orgId: actor.actor.orgId })
+    : undefined;
+  if (peerActor) {
+    await chat.configureSubscriptionPiModel(peerActor.actor);
+    await updateFeatureSwitchesForUser(
+      context,
+      { ...peerActor.actor, orgId: actor.actor.orgId },
+      { [FeatureSwitchKey.PiMemory]: true },
+    );
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", actor.runnerGroup);
+  }
+  const runnerIdentity = { runnerId: randomUUID(), heartbeatGeneration: 1 };
+  let snapshotSequence = 0;
+  async function heartbeatRunner(runningCount = 0) {
+    await runs.requestHeartbeatRunner(true, [200], {
+      group: actor.runnerGroup,
+      runnerId: runnerIdentity.runnerId,
+      snapshotSequence: ++snapshotSequence,
+      maxConcurrent: 2,
+      runningCount,
+      allocatedVcpu: runningCount * 2,
+      allocatedMemoryMb: runningCount * 2048,
+    });
+  }
+  async function claimOrdinaryRun(runId: string, runningCount = 0) {
+    await heartbeatRunner(runningCount);
+    const claim = await runs.claimRunnerJob(runId, { runnerIdentity });
+    return {
+      claim,
+      sandboxHeaders: { authorization: `Bearer ${claim.sandboxToken}` },
+    };
+  }
   chat.mockPiResourceArchiveDownloads();
   const objects = chat.mockPiObjectStore();
   server.use(
@@ -126,7 +166,7 @@ async function prepareMaintenance() {
     prompt,
     model: "gpt-6-luna",
   });
-  const sourceClaim = await chat.claimChatRun(actor.runnerGroup, source.runId);
+  const sourceClaim = await claimOrdinaryRun(source.runId);
   await chat.completeSandboxFirstPiRun({
     actor: actor.actor,
     run: source,
@@ -136,6 +176,27 @@ async function prepareMaintenance() {
     answer: "I will use focused public API tests.",
   });
 
+  const peerSource = peerActor
+    ? await chat.sendChatRun(peerActor.actor, {
+        agentId: peerActor.agentId,
+        prompt,
+        model: "gpt-6-luna",
+      })
+    : undefined;
+  const peerSourceClaim = peerSource
+    ? await claimOrdinaryRun(peerSource.runId)
+    : undefined;
+  if (peerActor && peerSource && peerSourceClaim) {
+    await chat.completeSandboxFirstPiRun({
+      actor: peerActor.actor,
+      run: peerSource,
+      claim: peerSourceClaim,
+      historyObjects: objects,
+      prompt,
+      answer: "I will use focused public API tests.",
+    });
+  }
+
   // A later ordinary Thread requests the next UTC day's selection. The genuine
   // source has now been idle for more than six hours; no rows are backdated.
   mockNow(now() + 24 * 60 * 60 * 1000);
@@ -144,10 +205,7 @@ async function prepareMaintenance() {
     prompt: "Start another Thread after the source has become idle.",
     model: "gpt-6-luna",
   });
-  const triggerClaim = await chat.claimChatRun(
-    actor.runnerGroup,
-    trigger.runId,
-  );
+  const triggerClaim = await claimOrdinaryRun(trigger.runId);
   await webhooks.requestAgentComplete(
     {
       runId: trigger.runId,
@@ -158,6 +216,24 @@ async function prepareMaintenance() {
     [200],
   );
   await flushWaitUntilForTest();
+  if (peerActor) {
+    const peerTrigger = await chat.sendChatRun(peerActor.actor, {
+      agentId: peerActor.agentId,
+      prompt: "Request the next day's selection",
+      model: "gpt-6-luna",
+    });
+    const peerClaim = await claimOrdinaryRun(peerTrigger.runId);
+    await webhooks.requestAgentComplete(
+      {
+        runId: peerTrigger.runId,
+        exitCode: 1,
+        error: "No source history for this Thread",
+      },
+      peerClaim.sandboxHeaders,
+      [200],
+    );
+    await flushWaitUntilForTest();
+  }
 
   server.use(
     http.post("https://openrouter.ai/api/v1/chat/completions", () => {
@@ -214,7 +290,7 @@ async function prepareMaintenance() {
   );
   expect(extracted.body).toMatchObject({
     success: true,
-    succeeded: 1,
+    succeeded: peerActor ? 2 : 1,
     terminalFailure: 0,
     retryableFailure: 0,
   });
@@ -228,8 +304,8 @@ async function prepareMaintenance() {
     failed: 0,
     stale: 0,
   });
-  async function claimMaintenance() {
-    await runs.heartbeatRunner(actor.runnerGroup);
+  async function claimMaintenance(runningCount = 0) {
+    await heartbeatRunner(runningCount);
     const polled = await runs.pollRunner(actor.runnerGroup);
     const job = polled.body.job;
     if (!job) {
@@ -237,29 +313,43 @@ async function prepareMaintenance() {
         "Expected the maintenance job discovered through Runner poll",
       );
     }
-    const claim = await runs.claimRunnerJob(job.runId);
+    const claim = await runs.claimRunnerJob(job.runId, { runnerIdentity });
     const { maintenance, memory } = maintenanceInput(claim);
+    const isPeer =
+      peerSource &&
+      maintenance.selected.some((selected) => {
+        return selected.sourceRunId === peerSource.runId;
+      });
+    const selectedActor = isPeer && peerActor ? peerActor : actor;
+    const selectedSource = isPeer && peerSource ? peerSource : source;
+    const selectedClaim =
+      isPeer && peerSourceClaim ? peerSourceClaim : sourceClaim;
     expect(maintenance.selected).toContainEqual(
       expect.objectContaining({
-        sourceRunId: source.runId,
-        piSessionId: sourceClaim.claim.piSessionId,
+        sourceRunId: selectedSource.runId,
+        piSessionId: selectedClaim.claim.piSessionId,
         rawMemory: "This user prefers focused public API tests.",
       }),
     );
     const sourceMemory = expectCanonicalStorageManifest(
-      sourceClaim.claim.storageManifest,
+      selectedClaim.claim.storageManifest,
     )?.storageMounts.find((mount) => {
       return mount.name === "memory";
     });
     expect(memory.storageId).toBe(sourceMemory?.storageId);
     expect(claim.piSessionId).toBe(job.runId);
-    const readable = await runs.requestReadRun(actor.actor, job.runId, [200]);
+    const readable = await runs.requestReadRun(
+      selectedActor.actor,
+      job.runId,
+      [200],
+    );
     expect(readable.body).toMatchObject({
       runId: job.runId,
       status: "running",
       source: { model: "okou-memory" },
     });
     return {
+      ...selectedActor,
       runId: job.runId,
       claim,
       headers: { authorization: `Bearer ${claim.sandboxToken}` },
@@ -268,7 +358,14 @@ async function prepareMaintenance() {
     };
   }
   const maintenance = await claimMaintenance();
-  return { ...actor, stage2, claimMaintenance, ...maintenance };
+  return {
+    ...actor,
+    stage2,
+    claimMaintenance,
+    claimOrdinaryRun,
+    heartbeatRunner,
+    ...maintenance,
+  };
 }
 
 type Maintenance = Awaited<ReturnType<typeof prepareMaintenance>>;
@@ -367,10 +464,11 @@ async function completeMaintenance(
   run: Pick<Maintenance, "runId" | "headers" | "memory">,
   versionId: string,
   concurrent = false,
+  exitCode = 0,
 ) {
   const body = {
     runId: run.runId,
-    exitCode: 0,
+    exitCode,
     completion: {
       cliAgentType: "pi" as const,
       cliAgentSessionId: run.runId,
@@ -403,15 +501,19 @@ async function completeMaintenance(
 }
 
 async function observeMemory(
-  run: Pick<Maintenance, "actor" | "agentId" | "runnerGroup">,
+  run: Pick<
+    Maintenance,
+    "actor" | "agentId" | "runnerGroup" | "claimOrdinaryRun"
+  >,
   expectedContent?: string,
+  runningCount = 0,
 ) {
   const ordinary = await chat.sendChatRun(run.actor, {
     agentId: run.agentId,
     prompt: "Observe the current memory",
     model: "gpt-6-luna",
   });
-  const claimed = await chat.claimChatRun(run.runnerGroup, ordinary.runId);
+  const claimed = await run.claimOrdinaryRun(ordinary.runId, runningCount);
   const memory = expectCanonicalStorageManifest(
     claimed.claim.storageManifest,
   )?.storageMounts.find((mount) => {
@@ -445,15 +547,19 @@ async function observeMemory(
 }
 
 async function publishOrdinaryMemory(
-  run: Pick<Maintenance, "actor" | "agentId" | "runnerGroup">,
+  run: Pick<
+    Maintenance,
+    "actor" | "agentId" | "runnerGroup" | "claimOrdinaryRun"
+  >,
   content: string,
+  runningCount = 0,
 ) {
   const ordinary = await chat.sendChatRun(run.actor, {
     agentId: run.agentId,
     prompt: "Publish a newer owned memory",
     model: "gpt-6-luna",
   });
-  const claimed = await chat.claimChatRun(run.runnerGroup, ordinary.runId);
+  const claimed = await run.claimOrdinaryRun(ordinary.runId, runningCount);
   const memory = expectCanonicalStorageManifest(
     claimed.claim.storageManifest,
   )?.storageMounts.find((mount) => {
@@ -749,7 +855,16 @@ describe("Genuine Pi maintenance publication results", () => {
       [200],
     );
     expect(waiting.body).toMatchObject({ claimed: 0, noWork: 1 });
+    // The genuine Runner's late first recovery output fixes the failed Run's
+    // result. Terminal status without this output must not admit another Run.
     mockNow(now() + 61 * 60 * 1000);
+    await expectBlocked(run);
+    await completeMaintenance(
+      run,
+      run.maintenance.claimedBaseVersionId,
+      false,
+      1,
+    );
     const retry = await accept(
       run.stage2.consolidate({ headers: cronHeaders() }),
       [200],
@@ -880,4 +995,410 @@ describe("Genuine Pi maintenance publication results", () => {
       );
     },
   );
+});
+
+async function cleanupMaintenance() {
+  return await accept(
+    setupApp({ context, routes: cronCleanupSandboxesRoutes })(
+      cronCleanupSandboxesContract,
+    ).cleanup({ headers: cronHeaders() }),
+    [200],
+  );
+}
+
+async function expectBlocked(run: Maintenance) {
+  const responses = await Promise.all([
+    run.stage2.consolidate({ headers: cronHeaders() }),
+    run.stage2.consolidate({ headers: cronHeaders() }),
+  ]);
+  for (const response of responses) {
+    const admitted = await accept(Promise.resolve(response), [200]);
+    expect(admitted.body).toMatchObject({ claimed: 0, noWork: 1 });
+  }
+  const pending = await runs.pollRunner(run.runnerGroup);
+  expect(pending.body.job).toBeNull();
+}
+
+describe("Serial private Pi maintenance", () => {
+  it("renews one live attempt without starving another owner's claimable memory", async () => {
+    const run = await prepareMaintenance({ independentOwner: true });
+    const admitted = await accept(
+      run.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(admitted.body).toMatchObject({ claimed: 1, failed: 0 });
+    const independent = await run.claimMaintenance(1);
+    expect(independent.actor.userId).not.toBe(run.actor.userId);
+    expect(independent.memory.storageId).not.toBe(run.memory.storageId);
+    const output = await publish(independent);
+    await completeMaintenance(independent, output.versionId);
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+    const first = await publish(run);
+    await completeMaintenance(run, first.versionId);
+  });
+
+  it.each(["published", "no-diff"])(
+    "retains an active %s result while an independent owner progresses",
+    async (outcome) => {
+      const run = await prepareMaintenance({ independentOwner: true });
+      const first = await publish(
+        run,
+        outcome === "published" ? "First serial memory.\n" : undefined,
+      );
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+      await publishOrdinaryMemory(run, "First queued owned update.\n", 1);
+      const ordinary = await publishOrdinaryMemory(
+        run,
+        "Latest queued owned update.\n",
+        1,
+      );
+      const independentAdmission = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(independentAdmission.body).toMatchObject({
+        claimed: 1,
+        failed: 0,
+      });
+      const independent = await run.claimMaintenance(1);
+      expect(independent.actor.userId).not.toBe(run.actor.userId);
+      expect(independent.memory.storageId).not.toBe(run.memory.storageId);
+      const independentOutput = await publish(
+        independent,
+        "Independent owner's memory.\n",
+      );
+      await completeMaintenance(independent, independentOutput.versionId);
+      await expectBlocked(run);
+      await webhooks.requestAgentHeartbeat(
+        { runId: run.runId },
+        run.headers,
+        [200],
+      );
+      await cleanupMaintenance();
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+      const prepared = await webhooks.requestAgentStoragePrepare(
+        first,
+        run.headers,
+        [200],
+      );
+      expect(prepared.body).toMatchObject({
+        versionId: first.versionId,
+        existing: true,
+      });
+      const replay = await webhooks.requestAgentStorageCommit(
+        first,
+        run.headers,
+        [200],
+      );
+      expect(replay.body).toMatchObject({
+        versionId: first.versionId,
+        deduplicated: true,
+      });
+      const completed = await completeMaintenance(
+        run,
+        run.maintenance.claimedBaseVersionId,
+        true,
+      );
+      const original = await runs.readRun(run.actor, run.runId);
+      expect(original).toMatchObject({
+        status: "completed",
+        result: { storageOutputs: [{ version: first.versionId }] },
+      });
+      const admitted = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(admitted.body).toMatchObject({ claimed: 1, failed: 0 });
+      const next = await run.claimMaintenance();
+      expect(next.actor.userId).toBe(run.actor.userId);
+      expect(next.maintenance.claimedBaseVersionId).toBe(ordinary.versionId);
+      expect(next.maintenance.claimedRevision).toBeGreaterThan(
+        run.maintenance.claimedRevision,
+      );
+      const later = await publish(next, "Later serial maintenance memory.\n");
+      await completeMaintenance(next, later.versionId);
+      await webhooks.requestAgentComplete(completed.body, run.headers, [200]);
+      await webhooks.requestAgentStorageCommit(first, run.headers, [200]);
+      await webhooks.requestAgentComplete(completed.body, next.headers, [401]);
+      await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+        original,
+      );
+      expect(
+        (await observeMemory(run, "Later serial maintenance memory.\n")).memory
+          .versionId,
+      ).toBe(later.versionId);
+      mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
+      await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
+    },
+  );
+
+  it.each(["failed", "cancelled"])(
+    "keeps a published %s Run's first recovery output and later exact replay",
+    async (status) => {
+      const run = await prepareMaintenance();
+      const first = await publish(run, "Accepted before terminal fallback.\n");
+      if (status === "failed") {
+        await webhooks.requestAgentComplete(
+          {
+            runId: run.runId,
+            exitCode: 1,
+            error: "Runner fallback without outputs",
+          },
+          run.headers,
+          [200],
+        );
+      } else {
+        await runs.requestCancelRun(run.actor, run.runId, [200]);
+      }
+      await flushWaitUntilForTest();
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe(status);
+      await publishOrdinaryMemory(
+        run,
+        "New owned memory while recovery is pending.\n",
+      );
+      await expectBlocked(run);
+      const recovered = await completeMaintenance(
+        run,
+        run.maintenance.claimedBaseVersionId,
+        false,
+        1,
+      );
+      const original = await runs.readRun(run.actor, run.runId);
+      expect(original).toMatchObject({
+        status,
+        result: { storageOutputs: [{ version: first.versionId }] },
+      });
+      const dispatched = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(dispatched.body).toMatchObject({ claimed: 1, failed: 0 });
+      const next = await run.claimMaintenance();
+      const latest = await publish(next, "New maintenance after recovery.\n");
+      await completeMaintenance(next, latest.versionId);
+      await webhooks.requestAgentComplete(recovered.body, run.headers, [200]);
+      await webhooks.requestAgentComplete(
+        {
+          ...recovered.body,
+          completion: {
+            ...recovered.body.completion,
+            artifactSnapshots: [
+              {
+                name: run.memory.name,
+                mountPath: run.memory.mountPath,
+                version: latest.versionId,
+              },
+            ],
+          },
+        },
+        run.headers,
+        [400],
+      );
+      await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+        original,
+      );
+      expect(
+        (await observeMemory(run, "New maintenance after recovery.\n")).memory
+          .versionId,
+      ).toBe(latest.versionId);
+    },
+  );
+
+  it("closes a published Run's output authority only after the real heartbeat timeout transition", async () => {
+    const run = await prepareMaintenance();
+    const first = await publish(run, "Accepted before heartbeat silence.\n");
+    await publishOrdinaryMemory(
+      run,
+      "Owned memory queued behind the silent Run.\n",
+      1,
+    );
+    await expectBlocked(run);
+    await webhooks.requestAgentHeartbeat(
+      { runId: run.runId },
+      run.headers,
+      [200],
+    );
+    mockNow(now() + 2 * 60 * 1000 + 1000);
+    await cleanupMaintenance();
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("timeout");
+    const dispatched = await accept(
+      run.stage2.consolidate({ headers: cronHeaders() }),
+      [200],
+    );
+    expect(dispatched.body).toMatchObject({ claimed: 1, failed: 0 });
+    const next = await run.claimMaintenance();
+    const latest = await publish(next, "Memory after authoritative timeout.\n");
+    await completeMaintenance(next, latest.versionId);
+    const late = await completeMaintenance(run, first.versionId);
+    expect(late.response.body).toMatchObject({ status: "failed" });
+    expect(
+      (await observeMemory(run, "Memory after authoritative timeout.\n")).memory
+        .versionId,
+    ).toBe(latest.versionId);
+  });
+  it.each(["failed", "cancelled"])(
+    "waits for actual deletion of an unrecovered %s Run",
+    async (status) => {
+      const run = await prepareMaintenance();
+      const first = await publish(
+        run,
+        "Accepted before unrecovered terminal failure.\n",
+      );
+      if (status === "cancelled") {
+        await runs.requestCancelRun(run.actor, run.runId, [200]);
+      }
+      await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          error: "Runner fallback has no recovery output",
+        },
+        run.headers,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe(status);
+      const ordinary = await publishOrdinaryMemory(
+        run,
+        "Queued owned memory survives terminal cleanup.\n",
+      );
+      await expectBlocked(run);
+      // Use the existing private usage/cleanup lifetime; time alone still cannot
+      // admit B. Only the authenticated cleanup's actual Run deletion closes A.
+      mockNow(
+        now() +
+          AGENT_EXECUTION_TIMEOUT_SECONDS * 1000 +
+          CANCELLATION_RECOVERY_STALE_AFTER_MS +
+          1000,
+      );
+      await expectBlocked(run);
+      await cleanupMaintenance();
+      await runs.requestReadRun(run.actor, run.runId, [404]);
+      await webhooks.requestAgentComplete(
+        { runId: run.runId, exitCode: 1 },
+        run.headers,
+        [404],
+      );
+      await webhooks.requestAgentStorageCommit(first, run.headers, [404]);
+      const admitted = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(admitted.body).toMatchObject({ claimed: 1, failed: 0 });
+      const next = await run.claimMaintenance();
+      expect(next.maintenance.claimedBaseVersionId).toBe(ordinary.versionId);
+      const latest = await publish(
+        next,
+        "Maintenance after actual terminal deletion.\n",
+      );
+      await completeMaintenance(next, latest.versionId);
+      expect(
+        (
+          await observeMemory(
+            run,
+            "Maintenance after actual terminal deletion.\n",
+          )
+        ).memory.versionId,
+      ).toBe(latest.versionId);
+    },
+  );
+  it.each([124, 137])(
+    "retains accepted output across an authenticated Runner exit %s report",
+    async (exitCode) => {
+      const run = await prepareMaintenance();
+      const first = await publish(
+        run,
+        "Accepted before the Runner failure report.\n",
+      );
+      await publishOrdinaryMemory(
+        run,
+        "Queued memory behind the execution lifetime.\n",
+        1,
+      );
+      // This is the existing two-hour execution budget plus the supervisor's
+      // 90-second finalization allowance and ten-second terminal wait. Passing
+      // the budget alone neither reports termination nor admits another Run.
+      mockNow(
+        now() +
+          AGENT_EXECUTION_TIMEOUT_SECONDS * 1000 +
+          RUNNER_CANCELLATION_RECOVERY_GRACE_MS +
+          10_000,
+      );
+      await expectBlocked(run);
+      await webhooks.requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode,
+          error:
+            exitCode === 124
+              ? "Runner reports its execution timeout"
+              : "Runner reports a killed agent process",
+          ...(exitCode === 124
+            ? { failureReason: "execution_timeout" as const }
+            : {}),
+        },
+        run.headers,
+        [200],
+      );
+      await flushWaitUntilForTest();
+      expect((await runs.readRun(run.actor, run.runId)).status).toBe("failed");
+      await expectBlocked(run);
+      const recovered = await completeMaintenance(
+        run,
+        run.maintenance.claimedBaseVersionId,
+        false,
+        exitCode,
+      );
+      expect(
+        (await runs.readRun(run.actor, run.runId)).result?.storageOutputs,
+      ).toContainEqual(expect.objectContaining({ version: first.versionId }));
+      const admitted = await accept(
+        run.stage2.consolidate({ headers: cronHeaders() }),
+        [200],
+      );
+      expect(admitted.body).toMatchObject({ claimed: 1, failed: 0 });
+      const next = await run.claimMaintenance();
+      const latest = await publish(
+        next,
+        "Memory after the Runner recovery output.\n",
+      );
+      await completeMaintenance(next, latest.versionId);
+      await webhooks.requestAgentComplete(recovered.body, run.headers, [200]);
+      expect(
+        (await observeMemory(run, "Memory after the Runner recovery output.\n"))
+          .memory.versionId,
+      ).toBe(latest.versionId);
+    },
+  );
+  it("does not turn missing publication proof into a successful launch-base output", async () => {
+    const run = await prepareMaintenance();
+    await webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "pi",
+          cliAgentSessionId: run.runId,
+          cliAgentSessionHistoryDisposition: "unavailable",
+          artifactSnapshots: [
+            {
+              name: run.memory.name,
+              mountPath: run.memory.mountPath,
+              version: run.maintenance.claimedBaseVersionId,
+            },
+          ],
+        },
+      },
+      run.headers,
+      [400],
+    );
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+    await completeMaintenance(
+      run,
+      run.maintenance.claimedBaseVersionId,
+      false,
+      1,
+    );
+    expect((await runs.readRun(run.actor, run.runId)).status).toBe("failed");
+  });
 });

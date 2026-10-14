@@ -11,10 +11,7 @@ import type { BuiltInGenerationResponse } from "@okouai/api-contracts/contracts/
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import { publishBuiltInGenerationChanged } from "../external/realtime";
-import {
-  privateArtifactCreationEnabled$,
-  artifactFileReference,
-} from "./private-artifact-storage.service";
+import { artifactFileReference } from "./private-artifact-storage.service";
 
 const ACTIVE_BUILT_IN_GENERATION_STATUSES = ["queued", "running"] as const;
 
@@ -38,7 +35,6 @@ interface CreateImageGenerationJobArgs {
   readonly userId: string;
   readonly runId: string | undefined;
   readonly request: Record<string, unknown>;
-  readonly privateArtifacts?: boolean;
 }
 
 interface BuiltInGenerationRequestInternal {
@@ -290,14 +286,6 @@ async function publishJobSafely(job: BuiltInGenerationJobRow): Promise<void> {
 
 export const createImageGenerationJob$ = command(
   async ({ set }, args: CreateImageGenerationJobArgs, signal: AbortSignal) => {
-    const privateArtifacts =
-      args.privateArtifacts ??
-      (await set(
-        privateArtifactCreationEnabled$,
-        args.orgId,
-        args.userId,
-        signal,
-      ));
     signal.throwIfAborted();
     const writeDb = set(writeDb$);
     const [job] = await writeDb
@@ -312,7 +300,7 @@ export const createImageGenerationJob$ = command(
         billingContext: args.runId === undefined ? "runless" : "run",
         request: builtInGenerationRequestWithInternal(args.request, {
           ...readBuiltInGenerationRequestInternal(args.request),
-          privateArtifacts,
+          privateArtifacts: true,
         }),
       })
       .returning({ id: builtInGenerationJobs.id });
@@ -320,7 +308,7 @@ export const createImageGenerationJob$ = command(
     if (!job) {
       throw new Error("Failed to create built-in generation job");
     }
-    return { id: job.id, privateArtifacts };
+    return { id: job.id, privateArtifacts: true };
   },
 );
 

@@ -20,7 +20,7 @@ export async function getArtifactSharingAvailability(): Promise<{
   if (response.status !== 200) {
     handleError(
       response,
-      "--visibility requires privateArtifacts and an API that supports private creation. Start a new run after enabling the feature.",
+      "--visibility requires an API that supports private creation. Start a new run.",
     );
   }
   return response.body;

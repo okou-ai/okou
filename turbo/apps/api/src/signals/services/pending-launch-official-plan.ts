@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { asc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
-import { workflows, workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { OfficialWorkflowAcceptedDefinition } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 import { conflict } from "../../lib/error";
 import {

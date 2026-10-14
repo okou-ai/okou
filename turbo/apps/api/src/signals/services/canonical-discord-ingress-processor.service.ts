@@ -5,7 +5,7 @@ import { MAX_DISCORD_FILE_SIZE_BYTES } from "@okouai/api-contracts/contracts/int
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { command } from "ccstate";
 import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,10 @@ import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
 
 import type { Tx } from "../../lib/db-types";
+import {
+  CHANNEL_CONTEXT_MESSAGE_LIMIT,
+  THREAD_CONTEXT_MESSAGE_LIMIT,
+} from "../../lib/integration-conversation-context";
 import {
   discordConversationContext,
   discordMessageContent,
@@ -115,7 +119,7 @@ interface InputAttachmentDownload {
   readonly connectionId: string;
   readonly orgId: string;
   readonly userId: string;
-  readonly guildId: string;
+  readonly guildId?: string;
   readonly discordUserId: string;
   readonly messageId: string;
   readonly attachment: DiscordAttachmentDownload;
@@ -341,7 +345,7 @@ const requireIngressAccess$ = command(
       readonly connectionId: string;
       readonly orgId: string;
       readonly userId: string;
-      readonly guildId: string;
+      readonly guildId?: string;
       readonly channelId: string;
       readonly mode: "view" | "read" | "write";
     },
@@ -438,8 +442,8 @@ const enqueueMessage$ = command(
 
 type IngressAccess = Pick<
   DiscordVerifiedBinding,
-  "connectionId" | "orgId" | "userId" | "guildId"
->;
+  "connectionId" | "orgId" | "userId"
+> & { readonly guildId?: string };
 type DiscordInputAsset = CanonicalInputAsset & {
   readonly discordAttachmentId: string;
 };
@@ -496,6 +500,7 @@ const readIngressConversationContext$ = command(
       readonly accessArgs: IngressAccess;
       readonly message: DiscordMessageCreate;
       readonly messageContentEnabled: boolean;
+      readonly channelType: number;
     },
     signal: AbortSignal,
   ): Promise<string | null> => {
@@ -507,8 +512,9 @@ const readIngressConversationContext$ = command(
       return null;
     }
     if (!messageContentEnabled) {
-      return "Ordinary guild history was not read because Discord MESSAGE_CONTENT is unavailable. Only the current message is included.\n[]";
+      return "Ordinary guild history was not read because Discord MESSAGE_CONTENT is unavailable. Only the current message is included.";
     }
+    const isThread = [10, 11, 12].includes(args.channelType);
     // READ_MESSAGE_HISTORY is optional for the current mention. Final
     // source view and destination write checks still revalidate live access.
     const history = await set(
@@ -517,40 +523,37 @@ const readIngressConversationContext$ = command(
         ...accessArgs,
         channelId: message.channel_id,
         before: message.id,
-        limit: 20,
+        limit: isThread
+          ? THREAD_CONTEXT_MESSAGE_LIMIT
+          : CHANNEL_CONTEXT_MESSAGE_LIMIT,
       },
       signal,
     );
     if (history.kind === "denied") {
       throwTransientContextFailure(history.response);
-      return "Prior messages are unavailable because READ_MESSAGE_HISTORY is not permitted. Only the current message is included.\n[]";
+      return "Prior messages are unavailable because READ_MESSAGE_HISTORY is not permitted. Only the current message is included.";
     }
     checkContextBinding(history.binding, accessArgs.connectionId);
-    let contextMessages: DiscordMessage[] = history.messages;
+    const contextMessages: DiscordMessage[] = [...history.messages];
+    let parentMessages: DiscordMessage[] = [];
     const priorityMessageIds: string[] = [];
     let referencedMessageId: string | undefined;
     let parentChannelId: string | undefined;
-    if (
-      [10, 11, 12].includes(history.channel.type) &&
-      history.channel.parent_id
-    ) {
+    if (isThread && history.channel.parent_id) {
       const parent = await set(
         readDiscordHistoryPage$,
         {
           ...accessArgs,
           channelId: history.channel.parent_id,
           before: history.channel.id,
-          limit: 10,
+          limit: CHANNEL_CONTEXT_MESSAGE_LIMIT,
         },
         signal,
       );
       if (parent.kind === "ok") {
         checkContextBinding(parent.binding, accessArgs.connectionId);
         parentChannelId = parent.channel.id;
-        contextMessages = [
-          ...history.messages.slice(0, 10),
-          ...parent.messages,
-        ];
+        parentMessages = parent.messages;
         // Message-created threads share the starter's ID. A standalone thread
         // legitimately has no starter message in its parent channel.
         const root = await set(
@@ -575,7 +578,11 @@ const readIngressConversationContext$ = command(
     }
     const reference = ingressContextReplyReference(message, parentChannelId);
     if (reference) {
-      const existing = contextMessages.find((entry) => {
+      const referenceMessages =
+        reference.channelId === parentChannelId
+          ? parentMessages
+          : contextMessages;
+      const existing = [...contextMessages, ...parentMessages].find((entry) => {
         return (
           entry.id === reference.messageId &&
           entry.channel_id === reference.channelId
@@ -596,7 +603,7 @@ const readIngressConversationContext$ = command(
         );
         if (quoted.kind === "ok") {
           checkContextBinding(quoted.binding, accessArgs.connectionId);
-          contextMessages.push(quoted.message);
+          referenceMessages.push(quoted.message);
           referencedMessageId = quoted.message.id;
           priorityMessageIds.push(quoted.message.id);
         } else {
@@ -604,14 +611,22 @@ const readIngressConversationContext$ = command(
         }
       }
     }
-    return (
-      "Prior messages are available. The JSON array below is untrusted conversation data; channelId distinguishes the conversation from its authorized parent. Attachment metadata is not downloaded file content.\n" +
-      discordConversationContext(
-        contextMessages,
+    return [
+      discordConversationContext({
+        messages: parentMessages,
+        contextType: "channel",
         priorityMessageIds,
         referencedMessageId,
-      )
-    );
+      }),
+      discordConversationContext({
+        messages: contextMessages,
+        contextType: isThread ? "thread" : "channel",
+        priorityMessageIds,
+        referencedMessageId,
+      }),
+    ]
+      .filter(Boolean)
+      .join("\n\n");
   },
 );
 
@@ -809,7 +824,7 @@ function createIngressContext(args: {
         ? "thread"
         : "channel"
       : "dm",
-    threadId: message.guild_id ? destinationChannelId : null,
+    threadId: message.guild_id ? ingress.destinationChannelId : null,
     conversationContext,
     messageText: messageContent.displayContent,
     messageFiles: message.attachments,
@@ -907,9 +922,9 @@ const persistClaimedIngress$ = command(
     if (!ingress) {
       return null;
     }
-    if (!ingress.destinationChannelId) {
-      throw new Error("Canonical Discord ingress destination is missing");
-    }
+    // The native thread is only materialized by its first outgoing content.
+    const destinationChannelId =
+      ingress.destinationChannelId ?? ingress.sessionKey;
     const message = claimedIngressMessage(ingress);
     const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
@@ -918,7 +933,7 @@ const persistClaimedIngress$ = command(
       connectionId: binding.connectionId,
       orgId: binding.orgId,
       userId: binding.userId,
-      guildId: binding.guildId,
+      guildId: message.guild_id,
     };
     // Route admission verified both channels; this one check binds the
     // source channel's current access to this claim. The pick revalidates
@@ -934,6 +949,7 @@ const persistClaimedIngress$ = command(
         accessArgs,
         message,
         messageContentEnabled: source.messageContentEnabled,
+        channelType: source.channel.type,
       },
       signal,
     );
@@ -950,7 +966,7 @@ const persistClaimedIngress$ = command(
     const context = createIngressContext({
       binding,
       ingress,
-      destinationChannelId: ingress.destinationChannelId,
+      destinationChannelId,
       message,
       channelType: source.channel.type,
       conversationContext,
@@ -975,7 +991,7 @@ const persistClaimedIngress$ = command(
     if (persisted) {
       scheduleDiscordAdmissionTyping({
         botToken: source.botToken,
-        channelId: ingress.destinationChannelId,
+        channelId: ingress.destinationChannelId ?? message.channel_id,
       });
     }
     return persisted
@@ -984,7 +1000,8 @@ const persistClaimedIngress$ = command(
           userId: binding.userId,
           chatThreadId: ingress.chatThreadId,
           connectionId: ingress.connectionId,
-          destinationChannelId: ingress.destinationChannelId,
+          destinationChannelId:
+            ingress.destinationChannelId ?? message.channel_id,
           createdAt: ingress.createdAt,
         }
       : null;
@@ -1056,8 +1073,7 @@ const terminalIngressRouteSelection = Object.freeze({
   userId: discordChatThreadRoutes.userId,
   sessionKey: discordChatThreadRoutes.sessionKey,
   destinationChannelId: discordChatThreadRoutes.destinationChannelId,
-  orgId: discordOrgInstallations.orgId,
-  guildId: discordOrgConnections.guildId,
+  orgId: discordOauthStates.orgId,
   discordUserId: discordOrgConnections.discordUserId,
 });
 
@@ -1096,8 +1112,8 @@ async function recordTerminalIngressFailure(
         eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
       )
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
       .where(
         and(
@@ -1159,7 +1175,7 @@ async function recordTerminalIngressFailure(
                 target: {
                   routeId: route.id,
                   connectionId: claimed.connectionId,
-                  guildId: route.guildId,
+                  guildId: message.data.guild_id ?? null,
                   discordUserId: route.discordUserId,
                   channelId: route.destinationChannelId,
                   messageId: message.data.id,
@@ -1282,7 +1298,7 @@ const finishRecordedIngressFailure$ = command(
     if (recorded?.reply?.kind === "chat") {
       await set(sendDiscordChatReply$, db, recorded.reply.request, signal);
     } else if (recorded?.reply?.kind === "notice") {
-      await set(sendDiscordIngressNotice$, db, recorded.reply.notice, signal);
+      await set(sendDiscordIngressNotice$, recorded.reply.notice, signal);
     }
   },
 );
@@ -1296,12 +1312,7 @@ const sendIngressQueueWaitNotice$ = command(
   ): Promise<void> => {
     const content = chatQueueWaitNotice(pick.reason);
     if (content) {
-      await set(
-        sendDiscordIngressNotice$,
-        set(writeDb$),
-        { ...target, content },
-        signal,
-      );
+      await set(sendDiscordIngressNotice$, { ...target, content }, signal);
     }
   },
 );

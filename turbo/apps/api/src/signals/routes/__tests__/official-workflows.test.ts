@@ -1,3 +1,4 @@
+import { cronRenewGoogleFormsWatchesRoutes } from "../cron-renew-google-forms-watches";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import {
   createChatEventsFixture,
@@ -6,7 +7,6 @@ import {
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { claimBudgetRun } from "./helpers/public-autonomy-budget";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -17,6 +17,7 @@ import {
 import {
   cronExecuteWorkflowAutomationsContract,
   cronOfficialWorkflowCatalogContract,
+  cronRenewGoogleFormsWatchesContract,
 } from "@okouai/api-contracts/contracts/cron";
 import { logsListContract } from "@okouai/api-contracts/contracts/logs";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -47,7 +48,16 @@ import {
 } from "@okouai/core/storage-names";
 
 import { http, HttpResponse } from "msw";
-import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
+import {
+  createHash,
+  generateKeyPairSync,
+  randomUUID,
+  sign as signData,
+} from "node:crypto";
+import { createApp } from "../../../app-factory";
+import { webhooksGoogleFormsRoutes } from "../webhooks-google-forms";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -104,7 +114,6 @@ const runs = createRunsApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const chat = createChatFilesBddApi(context);
 const mocks = createRouteMocks(context);
-const publicResults = createPublicAutomationResultEmailApi(context);
 const CRON_SECRET = "official-workflow-installation-cron-secret";
 const GMAIL_TOPIC_NAME =
   "projects/vm0-ai-488909/topics/official-workflow-gmail-events";
@@ -150,7 +159,7 @@ function catalog(
   };
 }
 
-function scheduledBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function scheduledBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "daily",
     parameters: [
@@ -176,11 +185,10 @@ function scheduledBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       },
       autonomyBudget: 4,
     },
-    runtime: { resultEmail },
   };
 }
 
-function loopBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function loopBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "pulse",
     parameters: [
@@ -204,11 +212,10 @@ function loopBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       },
       autonomyBudget: { parameter: "autonomy-budget" },
     },
-    runtime: { resultEmail },
   };
 }
 
-function onceBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function onceBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "one-shot",
     parameters: [
@@ -238,7 +245,6 @@ function onceBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
         atTime: { parameter: "at-time" },
       },
     },
-    runtime: { resultEmail },
   };
 }
 
@@ -251,7 +257,6 @@ function gmailBlueprint(): OfficialWorkflowBlueprint {
       eventType: "gmail-new-message",
       eventConfig: { provider: "gmail", event: "new_message" },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -275,7 +280,6 @@ function gmailLabelBlueprint(): OfficialWorkflowBlueprint {
         labelName: { parameter: "label-name" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -296,7 +300,6 @@ function googleFormsBlueprint(
       },
       autonomyBudget,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -316,7 +319,6 @@ function googleMeetBlueprint(
       },
       autonomyBudget,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -341,7 +343,6 @@ function notionBlueprint(): OfficialWorkflowBlueprint {
       },
       autonomyBudget: 4,
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -569,7 +570,6 @@ function structureTransitionScheduleBlueprint(
       kind: "schedule",
       schedule: { type: "loop", intervalSeconds },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -595,7 +595,6 @@ function structureTransitionGmailBlueprint(
               labelName: "Follow Up",
             },
           },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -614,7 +613,6 @@ function structureTransitionCalendarBlueprint(
         calendarId: "primary",
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -676,7 +674,7 @@ function configureOfficialCalendarWatchMock() {
   return recorder;
 }
 
-function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
+function webhookBlueprint(): OfficialWorkflowBlueprint {
   return {
     key: "webhook-trigger",
     parameters: [],
@@ -684,7 +682,6 @@ function webhookBlueprint(resultEmail = false): OfficialWorkflowBlueprint {
       kind: "event",
       eventType: "webhook-received",
     },
-    runtime: { resultEmail },
   };
 }
 
@@ -714,7 +711,6 @@ function evolvedScheduledBlueprint(): OfficialWorkflowBlueprint {
       },
       autonomyBudget: { parameter: "autonomy-budget" },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -777,7 +773,6 @@ function pulseOnceBlueprint(atTime: string): OfficialWorkflowBlueprint {
         atTime: { parameter: "at-time" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -802,7 +797,6 @@ function evolvedGmailLabelBlueprint(): OfficialWorkflowBlueprint {
         labelName: { parameter: "next-label-name" },
       },
     },
-    runtime: { resultEmail: false },
   };
 }
 
@@ -826,6 +820,16 @@ function activeDefinition(
       order: 1,
       marketingCopy: "Official catalog entry.",
     },
+  };
+}
+
+/** A published schema v3 Blueprint: a fingerprint and no runtime settings. */
+function publishedBlueprint(key: string) {
+  return {
+    key,
+    parameters: expect.any(Array),
+    desiredState: expect.any(Object),
+    fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
   };
 }
 
@@ -859,7 +863,6 @@ function connectorDoctorDefinition(): ActiveDefinition {
           cronExpression: "0 9 * * 1",
         },
       },
-      runtime: { resultEmail: false },
     },
   ]);
 }
@@ -1295,7 +1298,7 @@ async function installOfficialWorkflowLifecycleScenario(
   await syncCatalog(
     catalog([
       activeDefinition(definitionName, [
-        scheduledBlueprint(true),
+        scheduledBlueprint(),
         onceBlueprint(),
         loopBlueprint(),
       ]),
@@ -1310,9 +1313,6 @@ async function installOfficialWorkflowLifecycleScenario(
     throw new Error("Expected organization-scoped lifecycle actor");
   }
   const { agentId } = await workflowBdd.createAgent(actor);
-  onTestFinished(async () => {
-    await publicResults.cleanup(actor);
-  });
   const headers = authHeaders(actor);
   await setOfficialWorkflowsEnabled(actor, true);
   const installBody = {
@@ -1398,6 +1398,780 @@ async function ordinaryDelegationScenario() {
 
 beforeEach(() => {
   mockEnv("CRON_SECRET", CRON_SECRET);
+});
+
+describe("Official Forms system configuration pause", () => {
+  it.each([
+    [false, false, "none"],
+    [true, false, "none"],
+    [true, true, "none"],
+    [false, false, "watch creation interruption"],
+    [false, false, "late stop success"],
+    [false, false, "late stop failure"],
+    [false, false, "late renew success"],
+    [false, false, "late renew failure"],
+    [false, false, "manual stop during recovery"],
+    [false, false, "source replacement during recovery"],
+    [false, false, "access revocation"],
+    [false, false, "account removal"],
+  ] as const)(
+    "retains same-source backlog after a genuine system configuration pause, shared watch=%s, provider interruption=%s, interleaving=%s",
+    async (sharedWatch, interrupted, interleaving) => {
+      installCatalogStorageFixture();
+      const suffix = randomUUID().replaceAll("-", "").slice(0, 10);
+      const definitionName = "forms-system-pause-" + suffix;
+      const startedAt = now();
+      mockNow(startedAt);
+      const responseTime = (minutes: number) => {
+        // Preserve Google's microseconds while advancing the application phases.
+        return new Date(startedAt + minutes * 60 * 1000)
+          .toISOString()
+          .replace("Z", "456Z");
+      };
+      const responseDuringPause = responseTime(10);
+      const resumeBaseline = responseDuringPause;
+      let responseAfterPause = responseTime(16);
+      let seed = responseTime(0);
+      let pending = false;
+      let failResumeSeed = false;
+      let watchId = "";
+      const watchIds = new Map<
+        string,
+        { readonly formId: string; readonly expireTime: string }
+      >();
+      let seedInterleaving: (() => Promise<void>) | null = null;
+      let failCreateOnRecovery = false;
+      let stopInterleaving: (() => Promise<void>) | null = null;
+      let renewInterleaving: (() => Promise<void>) | null = null;
+      const providerKeys = generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const providerIssuedAt = Math.floor(now() / 1000);
+      const push = async (formId: string, watchId: string) => {
+        const encode = (value: unknown) => {
+          return Buffer.from(JSON.stringify(value)).toString("base64url");
+        };
+        const issuedAt = providerIssuedAt;
+        const jwtBody =
+          encode({ alg: "RS256", kid: "forms-system-key", typ: "JWT" }) +
+          "." +
+          encode({
+            aud: GOOGLE_FORMS_PUSH_AUDIENCE,
+            email: GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT,
+            email_verified: true,
+            exp: issuedAt + 600,
+            iat: issuedAt,
+            iss: "https://accounts.google.com",
+            sub: "genuine-provider-fixture",
+          });
+        const token =
+          jwtBody +
+          "." +
+          signData(
+            "RSA-SHA256",
+            Buffer.from(jwtBody),
+            providerKeys.privateKey,
+          ).toString("base64url");
+        const response = await createApp({
+          signal: context.signal,
+          routes: webhooksGoogleFormsRoutes,
+        }).request("/api/webhooks/google-forms", {
+          method: "POST",
+          headers: {
+            authorization: "Bearer " + token,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            message: {
+              messageId: randomUUID(),
+              attributes: {
+                formId,
+                watchId,
+                eventType: "RESPONSES",
+              },
+            },
+          }),
+        });
+        expect(response.status).toBe(200);
+        return (await response.json()) as unknown;
+      };
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_TOPIC_NAME",
+        GOOGLE_FORMS_TOPIC_NAME,
+      );
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_PUSH_AUDIENCE",
+        GOOGLE_FORMS_PUSH_AUDIENCE,
+      );
+      mockOptionalEnv(
+        "GOOGLE_FORMS_PUBSUB_PUSH_SERVICE_ACCOUNT_EMAIL",
+        GOOGLE_FORMS_PUSH_SERVICE_ACCOUNT,
+      );
+      mockOptionalEnv("RUNNER_DEFAULT_GROUP", "vm0/forms-system-pause");
+      server.use(
+        http.get("https://www.googleapis.com/oauth2/v1/certs", () => {
+          return HttpResponse.json(
+            {
+              "forms-system-key": providerKeys.publicKey.export({
+                type: "spki",
+                format: "pem",
+              }),
+            },
+            { headers: { "cache-control": "no-cache" } },
+          );
+        }),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId",
+          ({ params }) => {
+            return HttpResponse.json({
+              formId: params.formId,
+              info: { title: "System pause survey" },
+              publishSettings: {
+                publishState: { isPublished: true, isAcceptingResponses: true },
+              },
+            });
+          },
+        ),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/responses",
+          async ({ request }) => {
+            const filter = new URL(request.url).searchParams.get("filter");
+            if (filter === null && failResumeSeed) {
+              failResumeSeed = false;
+              return HttpResponse.json(
+                { error: { message: "Interrupted provider preparation" } },
+                { status: 500 },
+              );
+            }
+            if (filter === null) {
+              const held = seedInterleaving;
+              seedInterleaving = null;
+              if (held) {
+                await held();
+              }
+              return HttpResponse.json({
+                responses: [
+                  {
+                    responseId: "baseline",
+                    createTime: responseTime(0),
+                    lastSubmittedTime: responseTime(0),
+                  },
+                  ...(seed === responseDuringPause
+                    ? [
+                        {
+                          responseId: "response-during-system-pause",
+                          createTime: responseDuringPause,
+                          lastSubmittedTime: responseDuringPause,
+                          respondentEmail: "during-system-pause@example.test",
+                        },
+                      ]
+                    : []),
+                ],
+              });
+            }
+            const cutoff = filter.replace("timestamp > ", "");
+            const responses = [
+              {
+                responseId: "response-during-system-pause",
+                createTime: responseDuringPause,
+                lastSubmittedTime: responseDuringPause,
+                respondentEmail: "during-system-pause@example.test",
+              },
+              {
+                responseId: "response-after-system-pause",
+                createTime: responseAfterPause,
+                lastSubmittedTime: responseAfterPause,
+                respondentEmail: "after-system-pause@example.test",
+              },
+            ];
+            return HttpResponse.json({
+              responses: pending
+                ? responses.filter((response) => {
+                    return response.lastSubmittedTime > cutoff;
+                  })
+                : [],
+            });
+          },
+        ),
+        http.get(
+          "https://forms.googleapis.com/v1/forms/:formId/watches",
+          ({ params }) => {
+            return HttpResponse.json({
+              watches: [...watchIds]
+                .filter(([, resource]) => {
+                  return resource.formId === params.formId;
+                })
+                .map(([id, { expireTime }]) => {
+                  return {
+                    id,
+                    expireTime,
+                    eventType: "RESPONSES",
+                    target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+                  };
+                }),
+            });
+          },
+        ),
+        http.post(
+          "https://forms.googleapis.com/v1/forms/:formId/watches",
+          ({ params }) => {
+            const formId = String(params.formId);
+            if (
+              [...watchIds.values()].some((resource) => {
+                return resource.formId === formId;
+              })
+            ) {
+              return HttpResponse.json(
+                {
+                  error: {
+                    status: "FAILED_PRECONDITION",
+                    message: "Duplicate subscriber",
+                  },
+                },
+                { status: 400 },
+              );
+            }
+            watchId = "system-watch-" + randomUUID();
+            const expireTime = new Date(now() + 30 * 60 * 1000).toISOString();
+            watchIds.set(watchId, { formId, expireTime });
+            if (failCreateOnRecovery) {
+              failCreateOnRecovery = false;
+              return HttpResponse.json(
+                { error: { message: "Lost watch creation response" } },
+                { status: 500 },
+              );
+            }
+            return HttpResponse.json({
+              id: watchId,
+              expireTime,
+              eventType: "RESPONSES",
+              target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+            });
+          },
+        ),
+        http.delete(
+          "https://forms.googleapis.com/v1/forms/:formId/watches/:watchId",
+          async ({ params }) => {
+            watchIds.delete(String(params.watchId));
+            const held = stopInterleaving;
+            stopInterleaving = null;
+            if (held) {
+              await held();
+              if (interleaving === "late stop failure") {
+                return HttpResponse.json(
+                  { error: { message: "Lost stop response" } },
+                  { status: 503 },
+                );
+              }
+            }
+            return HttpResponse.json({});
+          },
+        ),
+        http.post(
+          String.raw`https://forms.googleapis.com/v1/forms/:formId/watches/:watchId\:renew`,
+          async ({ params }) => {
+            const id = String(params.watchId);
+            const expireTime = new Date(
+              now() + 7 * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            watchIds.set(id, { formId: String(params.formId), expireTime });
+            const held = renewInterleaving;
+            renewInterleaving = null;
+            if (held) {
+              await held();
+              if (interleaving === "late renew failure") {
+                return HttpResponse.json(
+                  { error: { message: "Lost renewal response" } },
+                  { status: 503 },
+                );
+              }
+            }
+            return HttpResponse.json({
+              id,
+              expireTime,
+              eventType: "RESPONSES",
+              target: { topic: { topicName: GOOGLE_FORMS_TOPIC_NAME } },
+            });
+          },
+        ),
+      );
+      const formsBlueprint = {
+        ...googleFormsBlueprint(4),
+        parameters: [
+          {
+            key: "form-url",
+            type: "string" as const,
+            format: "url" as const,
+            required: false,
+            default: GOOGLE_FORM_URL,
+          },
+        ],
+        desiredState: {
+          ...googleFormsBlueprint(4).desiredState,
+          eventConfig: {
+            provider: "google-forms" as const,
+            event: "response_submitted" as const,
+            formUrl: { parameter: "form-url" },
+          },
+        },
+      };
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [formsBlueprint])]),
+      );
+      const { actor } = await workflowBdd.setupWorkflowOrg();
+      const { agentId } = await workflowBdd.createAgent(actor);
+      await runs.ensurePersonalSubscriptionModel(actor);
+      await runs.updateUserModelPreference(actor, "claude-fable-5-1");
+      mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+      await workflowBdd.connectConnector(actor, "google-forms");
+      await setOfficialWorkflowsEnabled(actor, true);
+      const headers = authHeaders(actor);
+      const installed = await accept(
+        officialClient().install({
+          headers,
+          params: { definitionName },
+          body: {
+            agentId,
+            blueprints: [
+              { blueprintKey: "google-forms-trigger", bindings: [] },
+            ],
+          },
+        }),
+        [201],
+      );
+      const automation = installed.body.workflow.automations[0];
+      if (!automation?.chatThreadId) {
+        throw new Error("Expected installed Forms thread");
+      }
+      const sourceIdentity = (row: WorkflowAutomationSummary) => {
+        if (
+          row.kind !== "event" ||
+          row.eventType !== "google-forms-response-submitted"
+        ) {
+          throw new Error("Expected a Google Forms source");
+        }
+        return {
+          id: row.id,
+          orgId: actor.orgId,
+          workflowId: installed.body.workflow.id,
+          ownerUserId: row.ownerUserId,
+          kind: row.kind,
+          eventType: row.eventType,
+          eventConfig: row.eventConfig,
+        };
+      };
+      let sharedId: string | undefined;
+      if (sharedWatch) {
+        const ordinaryId = await workflowBdd.createWorkflow(actor, {
+          agentId,
+          name: "forms-shared-system-" + suffix,
+        });
+        const shared = await accept(
+          automationClient().create({
+            headers,
+            params: { workflowId: ordinaryId },
+            body: {
+              kind: "event",
+              eventType: "google-forms-response-submitted",
+              eventConfig: {
+                provider: "google-forms",
+                event: "response_submitted",
+                formUrl: GOOGLE_FORM_URL,
+              },
+            },
+          }),
+          [201],
+        );
+        sharedId = shared.body.id;
+      }
+      const base = formsBlueprint;
+      const requiredBudget = {
+        ...base,
+        parameters: [
+          ...base.parameters,
+          { key: "budget", type: "integer" as const, required: true },
+        ],
+        desiredState: {
+          ...base.desiredState,
+          autonomyBudget: { parameter: "budget" },
+        },
+      };
+      mockNow(startedAt + 5 * 60 * 1000);
+      await syncCatalog(
+        catalog([activeDefinition(definitionName, [requiredBudget])]),
+      );
+      let recoveryFormUrl = GOOGLE_FORM_URL;
+      const recoveryBindings = () => {
+        return [
+          { key: "budget", value: 7 },
+          { key: "form-url", value: recoveryFormUrl },
+        ];
+      };
+      const resume = async () => {
+        mockNow(startedAt + 15 * 60 * 1000);
+        return await accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "google-forms-trigger",
+                  bindings: recoveryBindings(),
+                },
+              ],
+            },
+          }),
+          [200],
+        );
+      };
+      let pausedObservation: WorkflowAutomationSummary | null = null;
+      const observePause = async () => {
+        const response = await accept(
+          automationClient().get({ headers, params: { id: automation.id } }),
+          [200],
+        );
+        expect(response.body).toMatchObject({
+          enabled: false,
+          official: {
+            intendedEnabled: true,
+            reconciliationStatus: "needs_reconfiguration",
+          },
+        });
+        expect(sourceIdentity(response.body)).toStrictEqual(
+          sourceIdentity(automation),
+        );
+        pausedObservation = response.body;
+      };
+      if (interleaving.startsWith("late stop")) {
+        stopInterleaving = async () => {
+          await observePause();
+          seed = resumeBaseline;
+          await resume();
+          await accept(
+            setupApp({ context, routes: cronRenewGoogleFormsWatchesRoutes })(
+              cronRenewGoogleFormsWatchesContract,
+            ).renew({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+            [200],
+          );
+        };
+      }
+      if (interleaving.startsWith("late renew")) {
+        renewInterleaving = async () => {
+          await executeAutomationCron();
+          await observePause();
+          seed = resumeBaseline;
+          await resume();
+        };
+        await accept(
+          setupApp({ context, routes: cronRenewGoogleFormsWatchesRoutes })(
+            cronRenewGoogleFormsWatchesContract,
+          ).renew({ headers: { authorization: `Bearer ${CRON_SECRET}` } }),
+          [200],
+        );
+      } else {
+        await executeAutomationCron();
+      }
+      if (pausedObservation === null) {
+        await observePause();
+      }
+      const paused = { body: pausedObservation };
+      expect(paused.body).toMatchObject({
+        enabled: false,
+        official: {
+          intendedEnabled: true,
+          reconciliationStatus: "needs_reconfiguration",
+        },
+      });
+      if (paused.body === null) {
+        throw new Error("Expected a publicly observed system pause");
+      }
+      expect(sourceIdentity(paused.body)).toStrictEqual(
+        sourceIdentity(automation),
+      );
+      mockNow(startedAt + 15 * 60 * 1000);
+      seed = resumeBaseline;
+      const interruptRecovery = async () => {
+        if (
+          interleaving === "manual stop during recovery" ||
+          interleaving === "source replacement during recovery"
+        ) {
+          seedInterleaving = async () => {
+            if (interleaving === "manual stop during recovery") {
+              const stopped = await accept(
+                automationClient().disable({
+                  headers,
+                  params: { id: automation.id },
+                }),
+                [200],
+              );
+              expect(stopped.body).toMatchObject({
+                enabled: false,
+                official: { intendedEnabled: false },
+              });
+            } else {
+              recoveryFormUrl = `https://docs.google.com/forms/d/${GOOGLE_FORM_ID}${suffix}/edit`;
+              await resume();
+            }
+          };
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "google-forms-trigger",
+                    bindings: recoveryBindings(),
+                  },
+                ],
+              },
+            }),
+            [409],
+          );
+        }
+        if (interleaving === "access revocation") {
+          mockNow(now() + 2 * 60 * 60 * 1000);
+          server.use(
+            http.post("https://oauth2.googleapis.com/token", () => {
+              return HttpResponse.json(
+                { error: "invalid_grant" },
+                { status: 400 },
+              );
+            }),
+          );
+          await accept(
+            installationClient().reconfigure({
+              headers,
+              params: { workflowId: installed.body.workflow.id },
+              body: {
+                blueprints: [
+                  {
+                    blueprintKey: "google-forms-trigger",
+                    bindings: recoveryBindings(),
+                  },
+                ],
+              },
+            }),
+            [409],
+          );
+          const rejected = await accept(
+            automationClient().get({ headers, params: { id: automation.id } }),
+            [200],
+          );
+          expect(rejected.body).toMatchObject({
+            enabled: false,
+            official: { intendedEnabled: true },
+          });
+          if (
+            automation.kind !== "event" ||
+            automation.eventType !== "google-forms-response-submitted"
+          ) {
+            throw new Error("Expected a reconnectable Forms account");
+          }
+          await expect(push(GOOGLE_FORM_ID, watchId)).resolves.toMatchObject({
+            dispatched: 0,
+          });
+          mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+          const reconnect = await connectors.startOauth(
+            actor,
+            "google-forms",
+            "oauth",
+            agentId,
+            {
+              intent: "reconnect",
+              connectionId: automation.eventConfig.connectorId,
+            },
+          );
+          const reconnectState = new URL(
+            reconnect.authorizationUrl,
+          ).searchParams.get("state");
+          if (!reconnectState) {
+            throw new Error("Expected a public OAuth reconnect state");
+          }
+          await connectors.completeOauthCallback("google-forms", {
+            code: "forms-reconnected",
+            state: reconnectState,
+          });
+          // The OAuth client uses its own clock; allow the provider's normal
+          // refresh after the application clock advanced past the old token.
+          server.use(
+            http.post("https://oauth2.googleapis.com/token", () => {
+              return HttpResponse.json({
+                access_token: "google-forms-access-token",
+                expires_in: 3600,
+                token_type: "Bearer",
+                scope:
+                  "https://www.googleapis.com/auth/forms.body.readonly https://www.googleapis.com/auth/forms.responses.readonly",
+              });
+            }),
+          );
+        }
+        if (interleaving === "account removal") {
+          if (
+            automation.kind !== "event" ||
+            automation.eventType !== "google-forms-response-submitted"
+          ) {
+            throw new Error("Expected a Forms account");
+          }
+          await connectors.deleteBuiltinConnectorAccount(
+            actor,
+            "google-forms",
+            automation.eventConfig.connectorId,
+          );
+          await expect(push(GOOGLE_FORM_ID, watchId)).resolves.toMatchObject({
+            watchStates: 0,
+            dispatched: 0,
+          });
+          mockGoogleFormsConnectorOAuth({ subject: actor.userId + suffix });
+          await workflowBdd.connectConnector(actor, "google-forms");
+        }
+      };
+      await interruptRecovery();
+      failCreateOnRecovery = interleaving === "watch creation interruption";
+      if (interrupted || failCreateOnRecovery) {
+        failResumeSeed = interrupted;
+        await accept(
+          installationClient().reconfigure({
+            headers,
+            params: { workflowId: installed.body.workflow.id },
+            body: {
+              blueprints: [
+                {
+                  blueprintKey: "google-forms-trigger",
+                  bindings: recoveryBindings(),
+                },
+              ],
+            },
+          }),
+          [409],
+        );
+        const failed = await accept(
+          automationClient().get({ headers, params: { id: automation.id } }),
+          [200],
+        );
+        expect(failed.body).toMatchObject({
+          enabled: false,
+          official: { intendedEnabled: true },
+        });
+      }
+      const resumed = await accept(
+        installationClient().reconfigure({
+          headers,
+          params: { workflowId: installed.body.workflow.id },
+          body: {
+            blueprints: [
+              {
+                blueprintKey: "google-forms-trigger",
+                bindings: recoveryBindings(),
+              },
+            ],
+          },
+        }),
+        [200],
+      );
+      if (interleaving === "manual stop during recovery") {
+        const stopped = resumed.body.workflow.automations.find((row) => {
+          return row.id === automation.id;
+        });
+        expect(stopped).toMatchObject({
+          enabled: false,
+          official: { intendedEnabled: false },
+        });
+        await accept(
+          automationClient().enable({ headers, params: { id: automation.id } }),
+          [200],
+        );
+      }
+      const recoveredResponse = await accept(
+        automationClient().get({ headers, params: { id: automation.id } }),
+        [200],
+      );
+      const recovered = recoveredResponse.body;
+      expect(resumed.body.workflow.id).toBe(installed.body.workflow.id);
+      expect(recovered).toMatchObject({
+        enabled: true,
+        official: { intendedEnabled: true, reconciliationStatus: "current" },
+      });
+      if (interleaving === "source replacement during recovery") {
+        expect(recovered).toMatchObject({
+          eventConfig: {
+            connectorId: sourceIdentity(automation).eventConfig.connectorId,
+            form: { id: GOOGLE_FORM_ID + suffix },
+          },
+        });
+      } else if (interleaving === "account removal") {
+        expect(sourceIdentity(recovered).eventConfig.connectorId).not.toBe(
+          sourceIdentity(automation).eventConfig.connectorId,
+        );
+      } else {
+        expect(sourceIdentity(recovered)).toStrictEqual(
+          sourceIdentity(automation),
+        );
+      }
+      if (sharedId) {
+        await accept(
+          automationClient().disable({ headers, params: { id: sharedId } }),
+          [200],
+        );
+      }
+      const expectedDeliveries =
+        interleaving === "manual stop during recovery" ||
+        interleaving === "source replacement during recovery" ||
+        interleaving === "account removal"
+          ? 1
+          : 2;
+      const currentFormId = sourceIdentity(recovered).eventConfig.form.id;
+      const remoteWatch = [...watchIds].find(([, resource]) => {
+        return resource.formId === currentFormId;
+      });
+      if (!remoteWatch) {
+        throw new Error(
+          "Expected a surviving provider watch for the recovered source",
+        );
+      }
+      watchId = remoteWatch[0];
+      responseAfterPause = new Date(now() + 60 * 1000)
+        .toISOString()
+        .replace("Z", "456Z");
+      mockNow(now() + 2 * 60 * 1000);
+      pending = true;
+      const result = await push(currentFormId, watchId);
+      const { events } = await chat.listThreadEvents(
+        actor,
+        automation.chatThreadId,
+      );
+      expect(result).toMatchObject({ dispatched: expectedDeliveries });
+      const delivered = events.filter((event) => {
+        return event.eventType === "input.automation";
+      });
+      if (expectedDeliveries === 2) {
+        expect(delivered.map(chatEventDisplayText).join("\n")).toContain(
+          "during-system-pause@example.test",
+        );
+      } else {
+        expect(delivered.map(chatEventDisplayText).join("\n")).not.toContain(
+          "during-system-pause@example.test",
+        );
+      }
+      expect(delivered.map(chatEventDisplayText).join("\n")).toContain(
+        "after-system-pause@example.test",
+      );
+      await expect(push(currentFormId, watchId)).resolves.toMatchObject({
+        dispatched: 0,
+      });
+      expect(
+        (await allThreadEventRows(actor, automation.chatThreadId)).filter(
+          (event) => {
+            return event.eventType === "input.automation";
+          },
+        ),
+      ).toHaveLength(expectedDeliveries);
+      expect(
+        events.filter((event) => {
+          return event.eventType === "input.automation";
+        }),
+      ).toHaveLength(expectedDeliveries);
+    },
+  );
 });
 
 describe("Morning Brief preference", () => {
@@ -1991,6 +2765,71 @@ async function prepareBriefMember({
 }
 
 describe("Morning Brief explicit installation", () => {
+  it.each(["ordinary-first", "official-first"] as const)(
+    "keeps Morning Brief enrollment on the Official identity with same-name user content (%s)",
+    async (order) => {
+      const { actor } = await prepareBriefMember();
+      await initializeBriefMember(actor, "Asia/Shanghai");
+      await bdd.completeOnboarding(actor, { timezone: "Asia/Shanghai" });
+      const onboarding = await bdd.readOnboardingStatus(actor);
+      if (!onboarding.defaultAgentId) {
+        throw new Error("Expected the default Agent");
+      }
+      const headers = authHeaders(actor);
+      const enable = () => {
+        return accept(
+          morningBriefPreferenceClient().update({
+            headers,
+            body: { enabled: true },
+          }),
+          [200],
+        );
+      };
+      if (order === "official-first") {
+        await enable();
+      }
+      const ordinaryId = await workflowBdd.createWorkflow(actor, {
+        agentId: onboarding.defaultAgentId,
+        name: "morning-brief",
+        visibility: "private",
+        instruction: "The user's Morning Brief instructions",
+      });
+      if (order === "ordinary-first") {
+        await enable();
+      }
+      const [installation] = await listMorningBriefInstallations(actor);
+      if (!installation) {
+        throw new Error("Expected the enrolled Official installation");
+      }
+      expect(installation.id).not.toBe(ordinaryId);
+      const [automation] = await readMorningBriefAutomations(
+        actor,
+        installation.id,
+      );
+      expect(automation).toMatchObject({ enabled: true });
+      await accept(
+        morningBriefPreferenceClient().update({
+          headers,
+          body: { enabled: false },
+        }),
+        [200],
+      );
+      await expect(
+        readMorningBriefAutomations(actor, installation.id),
+      ).resolves.toMatchObject([{ id: automation?.id, enabled: false }]);
+      const ordinary = await accept(
+        workflowClient().get({ headers, params: { workflowId: ordinaryId } }),
+        [200],
+      );
+      expect(ordinary.body).toMatchObject({
+        id: ordinaryId,
+        name: "morning-brief",
+        instruction: "The user's Morning Brief instructions",
+        official: null,
+      });
+    },
+  );
+
   it("installs only from the preference toggle, not initialization or onboarding", async () => {
     const { actor } = await prepareBriefMember();
     const headers = authHeaders(actor);
@@ -2123,6 +2962,109 @@ describe("Morning Brief explicit installation", () => {
     );
     expect(saved.body.timezone).toBe("Asia/Tokyo");
   });
+});
+
+describe("Morning Brief suggestion instruction rollout", () => {
+  it.each([
+    { enabled: false, secondary: false, expected: false },
+    { enabled: true, secondary: false, expected: true },
+    { enabled: true, secondary: true, expected: false },
+  ])(
+    "scopes suggestion guidance to enabled=$enabled and secondary=$secondary scheduled runs",
+    async ({ enabled, secondary, expected }) => {
+      await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
+        installCatalogStorageFixture();
+        await syncDeployedCatalog();
+        const sharedBrief = context.mocks.s3.send.mock.calls.flatMap(
+          ([command]) => {
+            if (
+              !(command instanceof PutObjectCommand) ||
+              !command.input.Key?.endsWith("/archive.tar.gz") ||
+              !(command.input.Body instanceof Uint8Array)
+            ) {
+              return [];
+            }
+            const content = gunzipSync(command.input.Body).toString("utf8");
+            return content.includes("# Morning Brief") ? [content] : [];
+          },
+        );
+        expect(sharedBrief).toHaveLength(1);
+        expect(sharedBrief[0]).not.toContain("okou suggestion");
+
+        const { actor } = await workflowBdd.setupWorkflowOrg({
+          timezone: "Asia/Shanghai",
+        });
+        if (!actor.orgId) {
+          throw new Error("Expected an organization-scoped actor");
+        }
+        await connectBriefSource(actor);
+        await updateFeatureSwitchesForUser(
+          context,
+          { ...actor, orgId: actor.orgId },
+          { [FeatureSwitchKey.AgentSuggestion]: enabled },
+        );
+        let workflowId: string;
+        if (secondary) {
+          await setOfficialWorkflowsEnabled(actor, true);
+          const agent = await bdd.createAgent(actor, {
+            displayName: "Secondary Brief Agent",
+            visibility: "private",
+          });
+          workflowId = await installMorningBriefFromCatalog(
+            actor,
+            agent.agentId,
+          );
+        } else {
+          await accept(
+            morningBriefPreferenceClient().update({
+              headers: authHeaders(actor),
+              body: { enabled: true },
+            }),
+            [200],
+          );
+          const [installation] = await listMorningBriefInstallations(actor);
+          if (!installation) {
+            throw new Error("Expected the primary Morning Brief installation");
+          }
+          workflowId = installation.id;
+        }
+        const [automation] = await readMorningBriefAutomations(
+          actor,
+          workflowId,
+        );
+        if (!automation) {
+          throw new Error("Expected a Morning Brief schedule");
+        }
+        const runnerGroup = runs.configureRunnerGroup();
+        runs.acceptStorageDownloads();
+        await runs.heartbeatRunner(runnerGroup);
+        const { runId } = await fireOfficialSchedule(actor, automation);
+        const claim = await runs.claimRunnerJob(runId);
+        onTestFinished(async () => {
+          await webhooks.requestAgentComplete(
+            {
+              runId,
+              exitCode: 1,
+              error: "Morning Brief suggestion fixture cleanup",
+            },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+          await flushWaitUntilForTest();
+        });
+        if (expected) {
+          expect(claim.appendSystemPrompt).toContain(
+            "Curate next-step suggestions when available",
+          );
+          expect(claim.appendSystemPrompt).toContain(
+            "okou suggestion list --json",
+          );
+        } else {
+          expect(claim.appendSystemPrompt).not.toContain("okou suggestion");
+        }
+      });
+    },
+  );
 });
 
 describe("Official schedule expiry", () => {
@@ -2627,7 +3569,7 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([
         activeDefinition(definitionName, [
-          scheduledBlueprint(true),
+          scheduledBlueprint(),
           onceBlueprint(),
           loopBlueprint(),
         ]),
@@ -2919,10 +3861,20 @@ describe("Official Workflow installations", () => {
       await installOfficialWorkflowLifecycleScenario();
     const firstWorkflowId = installed.body.workflow.id;
     expect(installed.body.workflow.automations).toHaveLength(3);
-    expect(installed.body.definition).toMatchObject({
+    const catalogDetail = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    expect(catalogDetail.body.blueprints).toStrictEqual([
+      publishedBlueprint("daily"),
+      publishedBlueprint("one-shot"),
+      publishedBlueprint("pulse"),
+    ]);
+    expect(installed.body.definition).toStrictEqual({
       name: definitionName,
+      revision: catalogDetail.body.revision,
       lifecycle: "active",
-      blueprints: [{ key: "daily" }, { key: "one-shot" }, { key: "pulse" }],
+      blueprints: catalogDetail.body.blueprints,
     });
     expect(
       installed.body.workflow.automations.every((automation) => {
@@ -2972,6 +3924,7 @@ describe("Official Workflow installations", () => {
       },
       official: {
         blueprintKey: "daily",
+        appliedFingerprint: catalogDetail.body.blueprints[0]?.fingerprint,
         reconciliationStatus: "current",
         intendedEnabled: true,
         parameterBindings: expect.arrayContaining([
@@ -3007,7 +3960,7 @@ describe("Official Workflow installations", () => {
       catalog([
         activeDefinition(
           definitionName,
-          [scheduledBlueprint(true), onceBlueprint(), loopBlueprint()],
+          [scheduledBlueprint(), onceBlueprint(), loopBlueprint()],
           instruction,
         ),
         activeDefinition(zeroBlueprintName, []),
@@ -3021,6 +3974,73 @@ describe("Official Workflow installations", () => {
       [200],
     );
     expect(current.body.workflow.instruction).toBe(instruction);
+  });
+
+  it("retains a retired Definition's accepted revision for its existing installation", async () => {
+    const { definitionName, headers, installed, zeroBlueprintName } =
+      await installOfficialWorkflowLifecycleScenario();
+    const workflowId = installed.body.workflow.id;
+    const active = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    const retirement = await syncCatalog(
+      catalog([
+        {
+          name: definitionName,
+          lifecycle: "retired",
+          presentation: { category: "retired" },
+        },
+        activeDefinition(zeroBlueprintName, []),
+      ]),
+    );
+    expect(retirement.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    await executeAutomationCron();
+
+    const retired = await accept(
+      officialClient().get({ headers, params: { definitionName } }),
+      [200],
+    );
+    expect(retired.body).toStrictEqual({
+      ...active.body,
+      lifecycle: "retired",
+      presentation: { category: "retired" },
+    });
+    expect(retired.body.blueprints).toStrictEqual([
+      publishedBlueprint("daily"),
+      publishedBlueprint("one-shot"),
+      publishedBlueprint("pulse"),
+    ]);
+    const installation = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    expect(installation.body.definition).toStrictEqual({
+      name: definitionName,
+      revision: active.body.revision,
+      lifecycle: "retired",
+      blueprints: active.body.blueprints,
+    });
+    expect(installation.body.workflow.official).toMatchObject({
+      definitionName,
+      installationState: "installed",
+      definitionLifecycle: "retired",
+    });
+    const appliedFingerprints = (
+      automations: readonly WorkflowAutomationSummary[],
+    ) => {
+      return Object.fromEntries(
+        automations.map((automation) => {
+          return [automation.id, automation.official?.appliedFingerprint];
+        }),
+      );
+    };
+    expect(
+      appliedFingerprints(installation.body.workflow.automations),
+    ).toStrictEqual(appliedFingerprints(installed.body.workflow.automations));
   });
 
   it("rejects duplicate Official Workflow installation on the same agent", async () => {
@@ -3082,26 +4102,44 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
   });
 
-  it("rejects an Official installation when an ordinary workflow owns the agent name", async () => {
-    const { actor, definitionName, headers, installBody, installed } =
+  it("installs an Official Workflow beside an existing same-name Private workflow", async () => {
+    const { actor, definitionName, headers, installBody } =
       await installOfficialWorkflowLifecycleScenario();
     const { agentId: ordinaryAgentId } = await workflowBdd.createAgent(actor);
 
-    await workflowBdd.createWorkflow(actor, {
+    const ordinaryId = await workflowBdd.createWorkflow(actor, {
       agentId: ordinaryAgentId,
       name: definitionName,
       visibility: "private",
+      instruction: "Preserved ordinary instructions",
     });
-    const ordinaryConflict = await accept(
+    const installed = await accept(
+      officialClient().install({
+        headers,
+        params: { definitionName },
+        body: { ...installBody, agentId: ordinaryAgentId },
+      }),
+      [201],
+    );
+    expect(installed.body.workflow.id).not.toBe(ordinaryId);
+
+    const ordinary = await accept(
+      workflowClient().get({ headers, params: { workflowId: ordinaryId } }),
+      [200],
+    );
+    expect(ordinary.body).toMatchObject({
+      id: ordinaryId,
+      name: definitionName,
+      instruction: "Preserved ordinary instructions",
+      official: null,
+    });
+    await accept(
       officialClient().install({
         headers,
         params: { definitionName },
         body: { ...installBody, agentId: ordinaryAgentId },
       }),
       [409],
-    );
-    expect(ordinaryConflict.body.error.message).toBe(
-      `A private workflow named "${definitionName}" already exists on this agent`,
     );
 
     const unchanged = await accept(
@@ -3114,9 +4152,15 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
   });
 
-  it("retains the shared Private-name guard for ordinary writes beside an Official installation", async () => {
-    const { actor, agentId, definitionName, headers, installed } =
+  it("keeps ordinary creation, rename, demotion, copy and deletion independent of same-name Official identity", async () => {
+    const { actor, agentId, definitionName, headers, installed, installBody } =
       await installOfficialWorkflowLifecycleScenario();
+    const ordinary = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: definitionName,
+      visibility: "private",
+      instruction: "Preserved user content",
+    });
     await accept(
       workflowCollectionClient().create({
         headers,
@@ -3124,19 +4168,13 @@ describe("Official Workflow installations", () => {
       }),
       [409],
     );
-    const ordinary = await workflowBdd.createWorkflow(actor, {
-      agentId,
-      name: `${definitionName}-user`,
-      visibility: "private",
-      instruction: "Preserved user content",
-    });
     await accept(
       workflowClient().update({
         headers,
         params: { workflowId: ordinary },
-        body: { name: definitionName },
+        body: { name: `${definitionName}-user` },
       }),
-      [409],
+      [200],
     );
     const publicWorkflow = await workflowBdd.createWorkflow(actor, {
       agentId,
@@ -3149,7 +4187,7 @@ describe("Official Workflow installations", () => {
         headers,
         params: { workflowId: publicWorkflow },
       }),
-      [409],
+      [200],
     );
     await accept(
       workflowClient().copy({
@@ -3158,6 +4196,60 @@ describe("Official Workflow installations", () => {
         body: { toAgentId: agentId },
       }),
       [409],
+    );
+    await accept(
+      workflowClient().delete({
+        headers,
+        params: { workflowId: publicWorkflow },
+      }),
+      [204],
+    );
+    const copySource = await workflowBdd.createWorkflow(actor, {
+      agentId,
+      name: definitionName,
+      visibility: "public",
+      instruction: "Public content",
+    });
+    const copied = await accept(
+      workflowClient().copy({
+        headers,
+        params: { workflowId: copySource },
+        body: { toAgentId: agentId },
+      }),
+      [201],
+    );
+    expect(copied.body).toMatchObject({
+      name: definitionName,
+      official: null,
+      visibility: "private",
+    });
+    const ordinaryAutomation = await accept(
+      automationClient().create({
+        headers,
+        params: { workflowId: copied.body.id },
+        body: { schedule: { type: "loop", intervalSeconds: 7200 } },
+      }),
+      [201],
+    );
+    await accept(
+      installationClient().reconfigure({
+        headers,
+        params: { workflowId: installed.body.workflow.id },
+        body: { blueprints: installBody.blueprints },
+      }),
+      [200],
+    );
+    const automation = installed.body.workflow.automations[0];
+    if (!automation) {
+      throw new Error("Expected an Official automation");
+    }
+    await accept(
+      automationClient().disable({ headers, params: { id: automation.id } }),
+      [200],
+    );
+    await accept(
+      automationClient().enable({ headers, params: { id: automation.id } }),
+      [200],
     );
     const unchanged = await accept(
       installationClient().get({
@@ -3169,7 +4261,6 @@ describe("Official Workflow installations", () => {
     expect(unchanged.body.workflow).toMatchObject({
       id: installed.body.workflow.id,
       official: installed.body.workflow.official,
-      automations: installed.body.workflow.automations,
     });
     const unchangedOrdinary = await accept(
       workflowClient().get({
@@ -3189,18 +4280,23 @@ describe("Official Workflow installations", () => {
       }),
       [204],
     );
-    const copied = await accept(
-      workflowClient().copy({
-        headers,
-        params: { workflowId: publicWorkflow },
-        body: { toAgentId: agentId },
-      }),
-      [201],
+    const surviving = await accept(
+      workflowClient().get({ headers, params: { workflowId: copied.body.id } }),
+      [200],
     );
-    expect(copied.body).toMatchObject({
-      name: definitionName,
+    expect(surviving.body).toMatchObject(copied.body);
+    const survivingAutomation = await accept(
+      automationClient().get({
+        headers,
+        params: { id: ordinaryAutomation.body.id },
+      }),
+      [200],
+    );
+    expect(survivingAutomation.body).toMatchObject({
+      id: ordinaryAutomation.body.id,
+      enabled: true,
       official: null,
-      visibility: "private",
+      schedule: { type: "loop", intervalSeconds: 7200 },
     });
   });
 
@@ -3230,14 +4326,20 @@ describe("Official Workflow installations", () => {
       }),
       [409],
     );
-    await accept(
+    const forked = await accept(
       workflowClient().copy({
         headers,
         params: { workflowId: firstWorkflowId },
         body: { toAgentId: agentId },
       }),
-      [409],
+      [201],
     );
+    expect(forked.body).toMatchObject({
+      name: installed.body.workflow.name,
+      official: null,
+      visibility: "private",
+    });
+    expect(forked.body.id).not.toBe(firstWorkflowId);
     await accept(
       workflowClient().chatThread({
         headers,
@@ -3287,7 +4389,10 @@ describe("Official Workflow installations", () => {
       }),
       [200],
     );
-    expect(unchanged.body.workflow).toMatchObject(installed.body.workflow);
+    expect(unchanged.body.workflow).toMatchObject({
+      ...installed.body.workflow,
+      shadowedBy: expect.objectContaining({ id: forked.body.id }),
+    });
   });
 
   it("uninstalls and reinstalls Official Workflows, including zero-Blueprint installations", async () => {
@@ -4600,6 +5705,17 @@ describe("Official Workflow installations", () => {
         ]),
       );
       expect(activation.body.outcome).toBe("accepted");
+      const published = await accept(
+        officialClient().get({ headers, params: { definitionName } }),
+        [200],
+      );
+      const publishedPulse = published.body.blueprints.find((blueprint) => {
+        return blueprint.key === "pulse";
+      });
+      expect(publishedPulse).toStrictEqual(publishedBlueprint("pulse"));
+      expect(publishedPulse?.fingerprint).not.toBe(
+        initialPulse.official.appliedFingerprint,
+      );
       const beforeDrain = await accept(
         installationClient().get({ headers, params: { workflowId } }),
         [200],
@@ -4630,7 +5746,11 @@ describe("Official Workflow installations", () => {
         enabled: true,
         kind: "schedule",
         schedule: { type: "once", atTime: onceAt, timezone: "Asia/Shanghai" },
-        official: { reconciliationStatus: "current", intendedEnabled: true },
+        official: {
+          appliedFingerprint: publishedPulse?.fingerprint,
+          reconciliationStatus: "current",
+          intendedEnabled: true,
+        },
       });
       expect(
         afterPulse.body.workflow.automations.find((automation) => {
@@ -5231,11 +6351,37 @@ describe("Official Workflow installations", () => {
     await syncCatalog(
       catalog([
         activeDefinition(definitionName, [
-          { ...webhookBlueprint(true), key: "lifecycle-transition" },
+          {
+            ...webhookBlueprint(),
+            key: "lifecycle-transition",
+            desiredState: {
+              kind: "event",
+              eventType: "webhook-received",
+              autonomyBudget: 5,
+            },
+          },
         ]),
       ]),
     );
     await executeAutomationCron();
+    const revised = await accept(
+      installationClient().get({ headers, params: { workflowId } }),
+      [200],
+    );
+    const revisedFingerprint =
+      revised.body.definition.blueprints[0]?.fingerprint;
+    expect(revisedFingerprint).not.toBe(
+      transitioned.body.workflow.automations[0]?.official?.appliedFingerprint,
+    );
+    expect(revised.body.workflow.automations).toStrictEqual([
+      expect.objectContaining({
+        id: original.id,
+        official: expect.objectContaining({
+          appliedFingerprint: revisedFingerprint,
+          reconciliationStatus: "current",
+        }),
+      }),
+    ]);
     const preserved = await accept(
       automationClient().revealWebhookSecret({
         headers,
@@ -5575,10 +6721,16 @@ describe("Official Workflow Run admission", () => {
     owned.ownsFeatureSwitches();
     const setup = await owned.run(async () => {
       await selectPersonalDefaultModel(owned.actor);
-      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+      const publicWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
         agentId: owned.agentId,
         name,
         visibility: "public",
+        instruction: "Use the public Workflow instructions.",
+      });
+      const ordinaryWorkflowId = await workflowBdd.createWorkflow(owned.actor, {
+        agentId: owned.agentId,
+        name,
+        visibility: "private",
         instruction: "Use the user's ordinary Workflow instructions.",
       });
       await setOfficialWorkflowsEnabled(owned.actor, true);
@@ -5623,7 +6775,12 @@ describe("Official Workflow Run admission", () => {
           return workflow.id;
         }),
       ).toStrictEqual([ordinaryWorkflowId]);
-      return { ordinaryWorkflowId, installation: installed.body, automation };
+      return {
+        ordinaryWorkflowId,
+        publicWorkflowId,
+        installation: installed.body,
+        automation,
+      };
     });
     const ordinary = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
@@ -5637,6 +6794,11 @@ describe("Official Workflow Run admission", () => {
       expect(mounts).toContainEqual(
         expect.objectContaining({
           name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+        }),
+      );
+      expect(mounts).not.toContainEqual(
+        expect.objectContaining({
+          name: getCustomSkillStorageName(setup.publicWorkflowId),
         }),
       );
       expect(mounts).not.toContainEqual(
@@ -5747,6 +6909,11 @@ describe("Official Workflow Run admission", () => {
     expect(mounts).not.toContainEqual(
       expect.objectContaining({
         name: getCustomSkillStorageName(setup.ordinaryWorkflowId),
+      }),
+    );
+    expect(mounts).not.toContainEqual(
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.publicWorkflowId),
       }),
     );
     expect(mounts).not.toContainEqual(
@@ -5872,6 +7039,71 @@ describe("Official Workflow Run admission", () => {
         versionId: expect.stringMatching(/^[0-9a-f]{64}$/),
       }),
     ]);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: nextOfficial.runId, exitCode: 1 },
+        { authorization: `Bearer ${nextClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await accept(
+        workflowClient().update({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.ordinaryWorkflowId },
+          body: { name: `${name}-renamed` },
+        }),
+        [200],
+      );
+    });
+    const publicRun = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const { claim: publicClaim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      publicRun.runId,
+    );
+    expect(
+      expectCanonicalStorageManifest(
+        publicClaim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([
+      expect.objectContaining({
+        name: getCustomSkillStorageName(setup.publicWorkflowId),
+      }),
+    ]);
+    await owned.run(async () => {
+      await webhooks.requestAgentComplete(
+        { runId: publicRun.runId, exitCode: 1 },
+        { authorization: `Bearer ${publicClaim.sandboxToken}` },
+        [200],
+      );
+      await flushWaitUntilForTest();
+      await accept(
+        workflowClient().delete({
+          headers: authHeaders(owned.actor),
+          params: { workflowId: setup.publicWorkflowId },
+        }),
+        [204],
+      );
+    });
+    const withoutOrdinary = await owned.sendChatRun(owned.actor, {
+      agentId: owned.agentId,
+      prompt: `/${name}`,
+    });
+    const { claim: withoutOrdinaryClaim } = await owned.claimChatRun(
+      owned.runnerGroup,
+      withoutOrdinary.runId,
+    );
+    expect(
+      expectCanonicalStorageManifest(
+        withoutOrdinaryClaim.storageManifest,
+      )?.storageMounts.filter((mount) => {
+        return mount.mountPath.endsWith(`/${name}`);
+      }),
+    ).toStrictEqual([]);
   });
 
   it("pins ordinary Workflow publications across a normal revision", async () => {

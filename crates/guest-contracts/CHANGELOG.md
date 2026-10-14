@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.23.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.23.0...guest-contracts-v0.23.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.3...guest-contracts-v0.23.0) (2026-10-14)
+
+
+### Features
+
+* add shared sandbox channel protocol and peer ([#39789](https://github.com/okou-ai/okou/issues/39789)) ([e50944d](https://github.com/okou-ai/okou/commit/e50944da2ecbf4eb66b6518f4cbad7598fd72833))
+
+## [0.22.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.2...guest-contracts-v0.22.3) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage dispatch and response preparation ([#39756](https://github.com/okou-ai/okou/issues/39756)) ([416309e](https://github.com/okou-ai/okou/commit/416309e883204e493c82c389bd90014067627b7c))
+
+## [0.22.2](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.1...guest-contracts-v0.22.2) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
 ## [0.22.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.0...guest-contracts-v0.22.1) (2026-10-12)
 
 ## [0.22.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.21.1...guest-contracts-v0.22.0) (2026-10-12)

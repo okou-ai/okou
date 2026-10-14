@@ -657,6 +657,8 @@
       "importedSlides_many": "{{count}} diapositivas",
       "importedSlides_other": "{{count}} diapositivas",
       "importFile": "Importar plantilla",
+      "importImage": "Importa tu propia imagen",
+      "importImageHint": "Guardar como estilo",
       "multiAccent": "Multiacentos",
       "nextSlide": "Vista previa de la diapositiva siguiente",
       "noMatches": "Sin coincidencias",
@@ -674,6 +676,7 @@
       "selectWorkflow": "Seleccionar plantilla de flujo de trabajo {{title}}",
       "showVariant": "Mostrar variante {{variantNumber}}",
       "singleAccent": "Acento único",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "Vista previa de las diapositivas de {{title}}",
       "slideThumbnail": "Vista previa de la diapositiva {{slideNumber}} de {{title}}",
       "template": "Plantilla",
@@ -1540,6 +1543,17 @@
       },
       "viewAgentProfile": "Ver perfil del agente"
     },
+    "agentSuggestions": {
+      "existingThread": "Conversación existente",
+      "label": "Sugerencias",
+      "loadFailed": "No se pudieron cargar las sugerencias.",
+      "newThread": "Nueva conversación con Okou",
+      "origin": "De tu resumen matutino",
+      "showAll_one": "Ver las {{count}}",
+      "showAll_many": "Ver las {{count}}",
+      "showAll_other": "Ver las {{count}}",
+      "showLess": "Mostrar menos"
+    },
     "attachments": {
       "attach": "Adjuntar",
       "fileTooLarge": "{{filename}} supera el límite de 1 GB",
@@ -1788,6 +1802,7 @@
       "workflows": {
         "empty": "No hay flujos de trabajo coincidentes",
         "loading": "Cargando flujos de trabajo...",
+        "showAll": "Mostrar todos los flujos de trabajo",
         "title": "Flujos de trabajo"
       }
     },
@@ -2094,6 +2109,15 @@
       "retry": "Reintentar",
       "title": "Acceso remoto",
       "unavailableSsh": "host SSH no disponible"
+    },
+    "resources": {
+      "copyLink": "Copiar enlace",
+      "empty": "Este chat aún no tiene artefactos ni enlaces",
+      "links": "Enlaces",
+      "loadFailed": "No se pudieron cargar los recursos",
+      "retry": "Reintentar",
+      "title": "Recursos del chat",
+      "viewAll": "Ver todo"
     },
     "run": {
       "collapseWorkHistory": "Contraer el historial de trabajo",
@@ -2430,6 +2454,7 @@
       "tasks": {
         "image": "Imagen",
         "presentation": "Diapositivas",
+        "suggestions": "Sugerencias",
         "visualization": "Visualización",
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
@@ -2856,6 +2881,14 @@
       "transcribing": "Transcribiendo",
       "transcriptionFailed": "Falló la transcripción de voz. Inténtalo de nuevo."
     },
+    "walletAction": {
+      "approveButton": "Revisar",
+      "approveTitle": "Revisar compra",
+      "connectButton": "Autorizar",
+      "connectTitle": "Autorizar cartera de Link",
+      "continueButton": "Continuar",
+      "continueTitle": "Continuar en Link"
+    },
     "workflows": {
       "named": "Flujo de trabajo {{title}}",
       "open": "Abrir flujo de trabajo {{title}}"
@@ -3034,6 +3067,7 @@
       "genericLabel": "Conector",
       "githubLabel": "GitHub",
       "invalidUrl": "URL de devolución de llamada de conector inválida.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -5378,17 +5412,6 @@
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Conectar suscripción",
-    "description": "Usa tu suscripción actual de ChatGPT o Claude con {{brandName}}.",
-    "dismiss": "Cerrar aviso de suscripción",
-    "hint": "¿Ya tienes ChatGPT o Claude?",
-    "limits": "La disponibilidad y los límites de uso dependen de tu suscripción.",
-    "manage": "Gestionar suscripciones de IA",
-    "menuConnect": "Conectar suscripción de IA",
-    "menuLoading": "Suscripciones de IA",
-    "title": "Conecta tu suscripción"
-  },
   "tailscale": {
     "add": "Añadir Tailscale",
     "addressHelp": "Usa la IP, el nombre completo o el nombre corto de un nodo registrado de tu tailnet. Se siguen requiriendo el inicio de sesión SSH y la verificación de la clave del host.",
@@ -5643,9 +5666,17 @@
     },
     "save": "Guardar",
     "saveRecovery": {
+      "deleteHelp": "Revisa estos datos guardados antes de eliminar. Esta acción solo selecciona la versión; confirma la eliminación por separado.",
+      "incompatible": "El método de autenticación ha cambiado. Cierra este diálogo y vuelve a abrir la credencial para editar el método actual.",
+      "keepChanges": "Conservar mis cambios con esta versión",
+      "keepDeletion": "Usar esta versión para eliminar",
+      "keepHelp": "Revisa estos datos, conserva tu borrador y guárdalo sobre esta versión. Se mantendrán tus opciones de autenticación y confianza.",
+      "latest": "Datos guardados actualmente",
       "resourceIdConflict": "No se pudo crear este recurso. Cierra este diálogo y vuelve a intentarlo.",
       "review": "La configuración se ha actualizado. Cierra este diálogo y revisa los datos actuales antes de volver a intentarlo.",
-      "uncertain": "Se desconoce el resultado del guardado. Tu borrador original está bloqueado. Reintenta la misma solicitud o cierra y actualiza para comprobar la configuración guardada."
+      "unavailable": "Este recurso ya no está disponible. Cierra este diálogo y actualiza la configuración antes de volver a intentarlo.",
+      "uncertain": "Se desconoce el resultado del guardado. Tu borrador original está bloqueado. Reintenta la misma solicitud o cierra y actualiza para comprobar la configuración guardada.",
+      "version": "Versión {{version}}"
     },
     "saving": "Guardando…",
     "security": {
@@ -6457,29 +6488,29 @@
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
       "accountSetup": "Conecta tu cuenta de Discord mediante el consentimiento oficial en el navegador.",
-      "adminSetup": "Instala Okou en tu servidor de Discord y luego conecta tu cuenta.",
-      "approvalConfirmed": "Cierra esta pestaña para completar la conexión en Works.",
+      "approvalConfirmed": "Cierra esta pestaña para completar la conexión en la pestaña original.",
       "approvalFailed": "La confirmación falló. Inicia sesión con la cuenta y organización originales de Okou o reinicia la autorización.",
-      "authorizationError": "No se pudo completar la autorización de Discord. Vuelve a intentarlo desde esta tarjeta.",
+      "authorizationError": "No se pudo completar la autorización de Discord. Inténtalo de nuevo.",
       "authorizing": "Autorizando…",
       "browserConsent": "Completa la autorización en la ventana de Discord. Esta página se actualizará automáticamente.",
-      "chooseDmServer": "Elige un servidor",
+      "chooseWorkspace": "Elige un espacio de trabajo",
+      "connectDescription": "Conecta tu cuenta de Discord para chatear con tu agente.",
+      "connectedTitle": "Conectado con Discord",
+      "connectingTitle": "Conectando con Discord",
+      "connectTitle": "Conectar con Discord",
+      "defaultWorkspace": "Espacio de trabajo predeterminado para Discord",
       "description": "Menciona a Okou en un servidor o envía un mensaje directo al bot.",
       "disconnect": "Desconectar Discord",
-      "dmServer": "Servidor predeterminado para mensajes directos",
-      "install": "Instalar en Discord",
+      "invalidLink": "Este enlace de conexión de Discord no es válido. Abre un enlace nuevo desde Discord.",
       "limitedContext": "Contexto limitado: es posible que Okou no reciba los mensajes normales del canal. Menciona a Okou e incluye los detalles que necesita.",
-      "memberSetup": "Pide a un administrador de la organización que instale Okou en tu servidor de Discord.",
-      "moreOptions": "Más opciones de Discord",
-      "pendingConsent": "Esta pestaña no tiene prueba de autorización. Ciérrala y reinicia la autorización desde la pestaña original de Works.",
+      "open": "Abrir Discord",
+      "openInBrowser": "Abrir en el navegador",
+      "pendingConsent": "Cierra esta pestaña y reinicia la conexión desde la pestaña original.",
       "popupBlocked": "Permite las ventanas emergentes para autorizar Discord y vuelve a intentarlo.",
       "retry": "Reintentar",
       "suspended": "Discord no está disponible temporalmente. Las conexiones existentes se conservan.",
       "title": "Discord",
-      "unconfigured": "Discord aún no está configurado para esta organización.",
-      "uninstall": "Eliminar Discord",
-      "uninstallDescription": "Esto desconecta de Discord a todas las personas de esta organización. Las demás organizaciones mantienen sus conexiones.",
-      "uninstallTitle": "¿Eliminar Discord de esta organización?"
+      "unconfigured": "Discord aún no está configurado para esta organización."
     },
     "documentTitle": "Integraciones",
     "feishuConnected": "Feishu conectado con éxito",

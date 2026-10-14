@@ -16,13 +16,25 @@ use sandbox::{
     SandboxId,
 };
 use serde::Deserialize;
+use sha2::Digest;
 use shell_quote::quote_shell_arg;
 
 use super::TestResult;
 
 pub const PROFILE: &str = "vm0/default";
 pub const IMAGE_BYTES: u64 = 16384 * 1024 * 1024;
+pub const PAYLOAD_BYTES: usize = 64 * 1024;
 const HOME: &str = api_contracts::generated::constants::runners::paths::CANONICAL_GUEST_HOME_DIR;
+
+fn home_payload(run_id: RunId) -> Vec<u8> {
+    run_id
+        .to_string()
+        .into_bytes()
+        .into_iter()
+        .cycle()
+        .take(PAYLOAD_BYTES)
+        .collect()
+}
 
 /// Required current measurements for this test host; no production selector/default.
 #[derive(Deserialize)]
@@ -113,6 +125,10 @@ impl Inputs {
             },
         )
     }
+
+    pub fn preparation_bytes(&self) -> u64 {
+        self.replacement_preparation_bytes
+    }
 }
 
 pub async fn checkout(
@@ -169,6 +185,12 @@ pub async fn prepare_guest(sandbox: &mut dyn Sandbox, run_id: RunId) -> TestResu
     exec(sandbox, &format!(
         "mkdir -p {private} && chmod 700 {private} && printf 'fixture private bytes' > {private}/fixture-private && chmod 600 {private}/fixture-private && printf 'native ordinary home bytes' > {HOME}/guarded-idle-ordinary"
     )).await?;
+    sandbox
+        .write_file(
+            &format!("{HOME}/guarded-idle-payload"),
+            &home_payload(run_id),
+        )
+        .await?;
     Ok(())
 }
 
@@ -180,6 +202,12 @@ pub async fn verify_saved_guest(sandbox: &dyn Sandbox, previous_run: RunId) -> T
     )
     .await?;
     assert_eq!(bytes, b"native ordinary home bytes");
+    let hash = hex::encode(sha2::Sha256::digest(home_payload(previous_run)));
+    let actual = exec(sandbox, &format!("test $(wc -c < {HOME}/guarded-idle-payload) -eq {PAYLOAD_BYTES} && sha256sum {HOME}/guarded-idle-payload")).await?;
+    let actual = std::str::from_utf8(&actual)?;
+    if actual.split_whitespace().next() != Some(hash.as_str()) {
+        return Err(std::io::Error::other("native original home payload was not restored").into());
+    }
     Ok(())
 }
 

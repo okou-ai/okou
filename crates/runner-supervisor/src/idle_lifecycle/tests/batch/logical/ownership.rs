@@ -213,6 +213,8 @@ async fn lost_admission_producer_is_refused_and_accepted_provider_panic_keeps_un
                 .unwrap()
                 .unwrap();
             assert_eq!(outcome.outcome, DestroyOutcome::Uncertain);
+            assert_eq!(home.overrides.destroy_call_count(), 0);
+            home.assert_active_bytes().await;
             drop(lease);
             let physical = fixture.operations.close_and_wait().await.unwrap();
             assert!(physical.uncertain > 0);
@@ -232,5 +234,12 @@ async fn lost_admission_producer_is_refused_and_accepted_provider_panic_keeps_un
             home.confirm_exit();
         }
         fixture.recover().await;
+        if accepted {
+            let owners = fixture.tracker.take_retained_activation_owners().unwrap();
+            assert_eq!(owners.len(), 1);
+            assert_eq!(owners[0].sandbox_id(), home.id);
+            assert!(!owners[0].cleanup_completed());
+            drop(owners);
+        }
     }
 }

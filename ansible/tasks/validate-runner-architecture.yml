@@ -10,7 +10,7 @@
         runner_image_release_tag "$3"
         runner_image_release_asset_name "$3" "$2"
       - bash
-      - "{{ playbook_dir }}/../../.github/scripts/runner-image-target.sh"
+      - "{{ playbook_dir }}/../../.github/scripts/runner/runner-image-target.sh"
       - "{{ runner_target | default('') }}"
       - "{{ runner_version | default('') }}"
   delegate_to: localhost

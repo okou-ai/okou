@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} 頁",
       "importedSlides_other": "{{count}} 頁",
       "importFile": "匯入你自己的檔案",
+      "importImage": "匯入自己的圖片",
+      "importImageHint": "儲存為可重用風格",
       "multiAccent": "多口音",
       "nextSlide": "預覽下一頁",
       "noMatches": "沒有匹配結果",
@@ -654,6 +656,7 @@
       "selectWorkflow": "選擇工作流模板 {{title}}",
       "showVariant": "顯示變體 {{variantNumber}}",
       "singleAccent": "單一口音",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} 投影片預覽",
       "slideThumbnail": "{{title}} 第 {{slideNumber}} 頁預覽",
       "template": "模板",
@@ -903,7 +906,7 @@
     },
     "viewer": {
       "continuePrompt": "幫我處理這個成果：{{url}}",
-      "continueWithBrand": "用{{brandName}}繼續"
+      "continueWithBrand": "用 {{brandName}} 繼續"
     }
   },
   "auth": {
@@ -911,7 +914,7 @@
       "signIn": "登入",
       "signUp": "註冊"
     },
-    "homeLink": "前往{{brandName}}首頁",
+    "homeLink": "前往 {{brandName}} 首頁",
     "loading": "正在載入身份驗證",
     "theme": {
       "darkEnabled": "已開啟深色主題",
@@ -921,7 +924,7 @@
   },
   "authorization": {
     "browser": {
-      "description": "{{assistantName}}會在這個聊天會話中使用獨立的雲端瀏覽器環境。啟用後，該會話的 Computer Use 會斷開。",
+      "description": "{{assistantName}} 會在這個聊天會話中使用獨立的雲端瀏覽器環境。啟用後，該會話的 Computer Use 會斷開。",
       "enable": "為這個會話啟用",
       "enabled": "雲端瀏覽器已啟用",
       "linkExpires": "連結將於{{date}}過期。",
@@ -933,12 +936,12 @@
       "authorize": "授權",
       "authorized": "已授權",
       "checkingCompatibility": "正在檢查相容性",
-      "description": "選擇一臺線上的電腦，供{{assistantName}}在{{source}}中使用。",
+      "description": "選擇一臺線上的電腦，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下載 macOS 版",
       "lastSeen": "最後線上於{{date}}",
       "linkExpires": "連結將於{{date}}過期。",
-      "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14或更高版本的 Mac，不支援 Intel 版 Mac。",
-      "noHostsDescription": "在 Mac 上開啟{{desktopApplicationName}}，等它上線後重新整理本頁。",
+      "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14 或更高版本的 Mac，不支援 Intel 版 Mac。",
+      "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，等它上線後重新整理本頁。",
       "noHostsTitle": "沒有線上的電腦",
       "sources": {
         "chat": "這個聊天會話",
@@ -956,9 +959,9 @@
       "durationLabel": "權限有效期",
       "durationOptions": {
         "always": "永久",
-        "oneHour": "1小時",
-        "sevenDays": "7天",
-        "twentyFourHours": "24小時"
+        "oneHour": "1 小時",
+        "sevenDays": "7 天",
+        "twentyFourHours": "24 小時"
       },
       "errors": {
         "agentNotFound": "未找到智能體",
@@ -974,12 +977,12 @@
       },
       "expiration": {
         "expired": "已過期",
-        "inDays_one": "{{count}}天后過期",
-        "inDays_other": "{{count}}天后過期",
-        "inHours_one": "{{count}}小時後過期",
-        "inHours_other": "{{count}}小時後過期",
-        "lessThanHour": "不到1小時後過期",
-        "lessThanHourShort": "< 1小時",
+        "inDays_one": "{{count}} 天后過期",
+        "inDays_other": "{{count}} 天后過期",
+        "inHours_one": "{{count}} 小時後過期",
+        "inHours_other": "{{count}} 小時後過期",
+        "lessThanHour": "不到 1 小時後過期",
+        "lessThanHourShort": "< 1 小時",
         "prefix": "剩餘 "
       },
       "greeting": "你好，{{userName}}，你正在更新{{targetName}}的權限。",
@@ -1007,7 +1010,7 @@
       "enableAria": "啟用自動充值",
       "thresholdAria": "自動充值的積分閾值",
       "thresholdDescription": "當積分餘額低於這個數值時觸發購買。",
-      "thresholdPlaceholder": "例如2000",
+      "thresholdPlaceholder": "例如 2000",
       "thresholdTitle": "積分低於",
       "title": "自動充值"
     },
@@ -1028,7 +1031,7 @@
       "activeUntil": "有效期至{{date}}",
       "addSlots": "增加名額",
       "billedMonthly": "按月計費",
-      "buyAmount": "購買{{amount}}",
+      "buyAmount": "購買 {{amount}}",
       "buyButton": "購買併發",
       "buyTitle": "購買併發",
       "cancelDescription": "這會在當前帳單週期結束時停止續訂，已有名額在那之前仍然有效。",
@@ -1037,8 +1040,8 @@
       "changeButton": "變更",
       "changeQuantityOptionDescription": "增加立即生效，減少從下個帳單日開始。",
       "changeTitle": "變更併發",
-      "concurrentRun_one": "{{value}}個併發執行",
-      "concurrentRun_other": "{{value}}個併發執行",
+      "concurrentRun_one": "{{value}} 個併發執行",
+      "concurrentRun_other": "{{value}} 個併發執行",
       "decreaseAria": "減少額外併發數量",
       "dueNow": "現在應付",
       "dueToday": "今日應付",
@@ -1062,24 +1065,24 @@
       "scheduleChange": "安排變更",
       "scheduledChange": "將於{{date}}變更為{{quantity}}",
       "scheduledReviewDescription": "你當前的名額在本帳單週期內仍然有效。較少的數量從續訂時開始生效，不退款，也不返還帳戶餘額。",
-      "slot_one": "{{value}}個名額",
-      "slot_other": "{{value}}個名額",
+      "slot_one": "{{value}} 個名額",
+      "slot_other": "{{value}} 個名額",
       "slots": "名額",
       "title": "併發",
       "updateSlots": "更新名額"
     },
     "credits": {
       "amount": "金額",
-      "amountRangeError": "請輸入{{minimum}}到{{maximum}}之間的數值",
+      "amountRangeError": "請輸入 {{minimum}} 到 {{maximum}} 之間的數值",
       "anyAmount": "任意金額",
       "creditsAdded": "積分已到賬",
       "custom": "自定義",
       "customAmountAria": "自定義美元金額",
       "dueNow": "現在應付",
-      "exchangeRate": "積分永不過期。1美元={{credits}}積分。",
+      "exchangeRate": "積分永不過期。1 美元={{credits}} 積分。",
       "payAndAddCredits": "支付並新增積分",
       "quickBuy": "快速購買",
-      "quickBuyAmount": "快速購買{{amount}}",
+      "quickBuyAmount": "快速購買 {{amount}}",
       "reviewDescription": "用你已儲存的支付方式確認這筆一次性扣款。",
       "reviewError": "這筆積分購買沒能完成。請檢查帳單資訊後重試。",
       "reviewTitle": "確認積分購買",
@@ -1101,7 +1104,7 @@
     "invoices": {
       "amount": "金額",
       "date": "日期",
-      "downloadDescription": "最多選擇連續3個月，該區間內的收據 PDF 會打包成一個 ZIP 檔案。",
+      "downloadDescription": "最多選擇連續 3 個月，該區間內的收據 PDF 會打包成一個 ZIP 檔案。",
       "downloadInvoice": "下載{{month}}的帳單",
       "downloadReceipts": "下載收據",
       "downloadZip": "下載 ZIP",
@@ -1111,7 +1114,7 @@
       "loading": "正在載入帳單",
       "monthAria": "{{label}}月份",
       "preparingReceipts": "正在準備收據…",
-      "rangeError": "請選擇不超過連續3個月的區間。",
+      "rangeError": "請選擇不超過連續 3 個月的區間。",
       "selectMonth": "選擇月份",
       "to": "到"
     },
@@ -1126,7 +1129,7 @@
       "custom": {
         "name": "定製"
       },
-      "customAccess": "定製權益，{{value}}個併發執行",
+      "customAccess": "定製權益，{{value}} 個併發執行",
       "customCancellationNotice": "你的定製套餐將於{{date}}結束。",
       "downgrade": "降級",
       "downgradeNotice": "你的{{currentPlan}}套餐將於{{date}}降級為{{targetPlan}}。",
@@ -1143,14 +1146,14 @@
         "builtInResearchData": "內建 SEO、線索、網頁和市場資料",
         "chatIntegrations": "Slack 和 Telegram 整合",
         "computerUse": "智能體直接操作你電腦上的應用",
-        "concurrentAgents": "{{slots}}個智能體同時執行",
+        "concurrentAgents": "{{slots}} 個智能體同時執行",
         "everythingInBuiltForTeams": "包含{{plan}}的全部功能，併為團隊打造",
         "included": "已包含",
         "liveBrowser": "實時觀看智能體的瀏覽器，隨時接管",
         "moreConnectorsChannels": "更多自定義連接器和渠道整合",
         "supportEmail": "郵件支援",
         "supportPriority": "優先支援",
-        "voiceInput": "語音輸入，每天{{requests}}次請求、{{minutes}}分鐘",
+        "voiceInput": "語音輸入，每天 {{requests}} 次請求、{{minutes}} 分鐘",
         "webhookAutomations": "一個 webhook 就能從任何系統發起執行"
       },
       "legacy": "舊版",
@@ -1176,7 +1179,7 @@
       "upgradeTo": "升級到{{plan}}",
       "usagePacks": {
         "bonusCredits": "贈送積分",
-        "bonusIncluded": "含{{credits}}贈送積分",
+        "bonusIncluded": "含 {{credits}} 贈送積分",
         "choosePlan": "選擇套餐",
         "concurrentSlots": "併發名額",
         "configurePackages": "配置成員套包",
@@ -1225,19 +1228,19 @@
         "noPackage": "無套包",
         "orderSummary": "訂單摘要",
         "packagePerMemberNote": "下一步為每位成員選擇付費套包，或選擇「無套包」。",
-        "packCredits": "{{credits}}積分",
-        "packCreditsDiscount": "{{credits}}積分 · 省{{discount}}%",
-        "packOption": "{{price}} · {{credits}}積分 · 省{{discount}}%",
+        "packCredits": "{{credits}} 積分",
+        "packCreditsDiscount": "{{credits}} 積分 · 省 {{discount}}%",
+        "packOption": "{{price}} · {{credits}} 積分 · 省 {{discount}}%",
         "paidPackageRequired": "至少為一位成員選擇付費套包才能繼續。",
         "planChangeError": "無法準備這次訂閱變更，請重試。",
-        "planPlusPackages": "套餐{{plan}} · 成員套包每人{{lowest}}–{{highest}}",
+        "planPlusPackages": "套餐 {{plan}} · 成員套包每人 {{lowest}}–{{highest}}",
         "planStep": "套餐",
         "priceFrom": "起價",
         "purchasedCredits": "已購積分",
         "selectPlan": "從{{plan}}開始",
         "selectUsage": "{{name}}的用量",
-        "stepOfTotal": "第{{current}}步，共{{total}}步",
-        "totalCreditsWithBonus": "{{credits}}積分 · 贈送{{bonus}}"
+        "stepOfTotal": "第 {{current}} 步，共 {{total}} 步",
+        "totalCreditsWithBonus": "{{credits}} 積分 · 贈送 {{bonus}}"
       }
     },
     "restore": {
@@ -1435,8 +1438,8 @@
           "alreadyRedeemed": "貼文已被使用",
           "authorAlreadyRewarded": "該帳號已領取過獎勵",
           "authorUnavailable": "無法確認作者",
-          "officialAccount": "{{assistantName}}官方貼文不計入",
-          "postMustMention": "需要提到{{assistantName}}"
+          "officialAccount": "{{assistantName}} 官方貼文不計入",
+          "postMustMention": "需要提到 {{assistantName}}"
         },
         "rewardsNote": "獎勵在發放後 7 天過期。簽到在 UTC 00:00 重置。Slack 獎勵歸入組織，其他獎勵進入你的個人餘額。",
         "share": {
@@ -1514,6 +1517,15 @@
         "whatsTheMove": "下一步怎麼走，{{userName}}？"
       },
       "viewAgentProfile": "檢視智能體資料"
+    },
+    "agentSuggestions": {
+      "existingThread": "現有對話",
+      "label": "建議",
+      "loadFailed": "無法載入建議。",
+      "newThread": "與 Okou 開始新對話",
+      "origin": "來自你的晨間簡報",
+      "showAll_other": "查看全部 {{count}} 則",
+      "showLess": "收合"
     },
     "attachments": {
       "attach": "新增附件",
@@ -1756,6 +1768,7 @@
       "workflows": {
         "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
+        "showAll": "顯示全部工作流程",
         "title": "工作流"
       }
     },
@@ -1899,18 +1912,18 @@
     "feedback": {
       "emailDraftDescription": "郵件草稿",
       "forwardPartHeading": "轉發自「{{title}}」",
-      "forwardPartsHeading_one": "從「{{title}}」轉發了{{count}}段內容",
-      "forwardPartsHeading_other": "從「{{title}}」轉發了{{count}}段內容",
+      "forwardPartsHeading_one": "從「{{title}}」轉發了 {{count}} 段內容",
+      "forwardPartsHeading_other": "從「{{title}}」轉發了 {{count}} 段內容",
       "partHeading": "引用自你的回覆",
-      "partsHeading_one": "引用了你回覆中的{{count}}段內容",
-      "partsHeading_other": "引用了你回覆中的{{count}}段內容",
+      "partsHeading_one": "引用了你回覆中的 {{count}} 段內容",
+      "partsHeading_other": "引用了你回覆中的 {{count}} 段內容",
       "placeholder": "針對引用內容提問或評論",
       "quote": "引用",
       "remove": "移除反饋",
       "sentEmailDescription": "已傳送的郵件",
       "sourcePartHeading": "引用自{{description}}",
-      "sourcePartsHeading_one": "從{{description}}引用了{{count}}段內容",
-      "sourcePartsHeading_other": "從{{description}}引用了{{count}}段內容"
+      "sourcePartsHeading_one": "從{{description}}引用了 {{count}} 段內容",
+      "sourcePartsHeading_other": "從{{description}}引用了 {{count}} 段內容"
     },
     "forward": {
       "action": "轉發",
@@ -2004,10 +2017,10 @@
       "deny": "拒絕",
       "duration": "權限有效期",
       "expired": "已過期",
-      "expiresInDays_one": "{{count}}天后過期",
-      "expiresInDays_other": "{{count}}天后過期",
-      "expiresInHours_one": "{{count}}小時後過期",
-      "expiresInHours_other": "{{count}}小時後過期",
+      "expiresInDays_one": "{{count}} 天后過期",
+      "expiresInDays_other": "{{count}} 天后過期",
+      "expiresInHours_one": "{{count}} 小時後過期",
+      "expiresInHours_other": "{{count}} 小時後過期",
       "loadFailed": "無法載入權限狀態",
       "otherEndpoints": "其他介面",
       "unknown": "未知權限",
@@ -2021,12 +2034,12 @@
       "automationEvent": "自動化事件",
       "automationEventDescription": "排隊等待，可以開始時自動執行。",
       "cancellationRecoveryPending": "正在收尾已取消的執行，之後繼續處理排隊中的任務。",
-      "event_one": "{{count}}個事件",
-      "event_other": "{{count}}個事件",
+      "event_one": "{{count}} 個事件",
+      "event_other": "{{count}} 個事件",
       "itemsWaiting": "{{items}}等待中",
       "itemsWaitingTogether": "{{messages}}和{{events}}等待中",
-      "message_one": "{{count}}條訊息",
-      "message_other": "{{count}}條訊息",
+      "message_one": "{{count}} 條訊息",
+      "message_other": "{{count}} 條訊息",
       "pendingAutomationEvent": "待處理的自動化事件",
       "queuedMessage": "排隊訊息",
       "queuedMessageDescription": "排隊等待，可以開始時自動傳送。",
@@ -2045,6 +2058,15 @@
       "retry": "重試",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
+    },
+    "resources": {
+      "copyLink": "複製連結",
+      "empty": "此聊天中還沒有成果或連結",
+      "links": "連結",
+      "loadFailed": "無法載入聊天資源",
+      "retry": "重試",
+      "title": "聊天資源",
+      "viewAll": "查看全部"
     },
     "run": {
       "collapseWorkHistory": "收起工作記錄",
@@ -2080,8 +2102,8 @@
       "keepGoingAt": "繼續 · {{timestamp}}",
       "modelChangedTo": "模型已切換為{{model}}",
       "queueEllipsis": "佇列…",
-      "relatedArtifactCount_one": "{{formattedCount}}個成果",
-      "relatedArtifactCount_other": "{{formattedCount}}個成果",
+      "relatedArtifactCount_one": "{{formattedCount}} 個成果",
+      "relatedArtifactCount_other": "{{formattedCount}} 個成果",
       "relatedArtifacts": "相關成果",
       "selectedModelAppliesAfterCurrentRun": "下次執行將使用{{model}}",
       "thinking": {
@@ -2104,7 +2126,7 @@
       "linkCopied": "連結已複製",
       "messageShareFailed": "分享連結建立失敗，請再試一次。",
       "publicDescription": "選中的訊息及其附件將公開可見。",
-      "selectedCount_other": "已選{{count}}條",
+      "selectedCount_other": "已選 {{count}} 條",
       "selectGroup": "選擇該組訊息",
       "shareLink": "分享對話連結",
       "shareLinkCopied": "分享連結已複製",
@@ -2371,6 +2393,7 @@
       "tasks": {
         "image": "圖片",
         "presentation": "簡報",
+        "suggestions": "建議",
         "visualization": "視覺化",
         "website": "網站",
         "workflow": "工作流"
@@ -2427,7 +2450,7 @@
           "nested-donut": "巢狀環形圖",
           "network": "網路關係圖",
           "parallel-coordinates": "平行座標圖",
-          "percent-stacked-bar": "100%堆疊柱狀圖",
+          "percent-stacked-bar": "100% 堆疊柱狀圖",
           "pictorial-bar": "象形柱狀圖",
           "pie": "餅圖",
           "polar-bar": "極座標柱狀圖",
@@ -2633,11 +2656,11 @@
           "invoices": {
             "amount": "金額",
             "example": "示例工作室",
-            "file": "發票 — 9月",
+            "file": "發票 — 9 月",
             "filed": "已歸檔",
             "footer": "可選的表格把記錄集中在一起",
             "label": "發票歸檔",
-            "path": "財務 / 發票 / 9月",
+            "path": "財務 / 發票 / 9 月",
             "second": "示例供應商",
             "status": "狀態",
             "vendor": "供應商"
@@ -2797,6 +2820,14 @@
       "transcribing": "正在轉寫",
       "transcriptionFailed": "語音轉寫失敗，請重試。"
     },
+    "walletAction": {
+      "approveButton": "審核",
+      "approveTitle": "審核購買",
+      "connectButton": "授權",
+      "connectTitle": "授權 Link 錢包",
+      "continueButton": "繼續",
+      "continueTitle": "繼續 Link 錢包操作"
+    },
     "workflows": {
       "named": "工作流 {{title}}",
       "open": "開啟工作流 {{title}}"
@@ -2856,12 +2887,12 @@
     "scope": "誰可以使用",
     "sectionEmpty": "這裡還沒有設定。",
     "select": "選擇 Cloudflare Access",
-    "summary_other": "已配置{{count}}個 Cloudflare Access",
+    "summary_other": "已配置 {{count}} 個 Cloudflare Access",
     "title": "Cloudflare Access",
     "tokenHelp": "使用 Cloudflare Access 服務權杖存取受保護的應用程式。",
     "unavailable": "該帳號無法使用 Cloudflare Access。",
     "unused": "你的主機尚未使用",
-    "usedBy_other": "你的{{count}}臺主機正在使用："
+    "usedBy_other": "你的 {{count}} 臺主機正在使用："
   },
   "connectors": {
     "access": {
@@ -2959,6 +2990,7 @@
       "genericLabel": "連接器",
       "githubLabel": "GitHub",
       "invalidUrl": "連接器回呼 URL 無效。",
+      "linkLabel": "Link",
       "mercuryAttribution": "由 Mercury 提供支援",
       "mercuryDisclosure": "Mercury 是一家金融科技公司，不是受 FDIC 承保的銀行。銀行服務由 Choice Financial Group 和 Column N.A. 提供，兩者均為 FDIC 成員。",
       "mercuryDisclosureLabel": "Mercury 銀行服務披露",
@@ -2982,7 +3014,7 @@
       "access": {
         "add": "新增訪問權限",
         "manage": "管理{{connector}}訪問權限",
-        "summaryMany": "{{value}}個智能體",
+        "summaryMany": "{{value}} 個智能體",
         "unavailable": "無法訪問",
         "usedBy": "使用方： "
       },
@@ -3041,7 +3073,7 @@
         }
       },
       "description": "連線第三方服務，供你的智能體使用。",
-      "descriptionWithCount": "連線{{value}}個服務，供你的智能體使用。",
+      "descriptionWithCount": "連線 {{value}} 個服務，供你的智能體使用。",
       "directory": {
         "browse": "瀏覽",
         "builtin": "內建連接器",
@@ -3093,8 +3125,8 @@
       "shelf": {
         "moreCategories": "更多分類",
         "popular": "熱門",
-        "seeMore_one": "檢視{{names}}及其他{{count}}個",
-        "seeMore_other": "檢視{{names}}及其他{{count}}個",
+        "seeMore_one": "檢視{{names}}及其他 {{count}} 個",
+        "seeMore_other": "檢視{{names}}及其他 {{count}} 個",
         "top": "熱門連接器"
       },
       "title": "連接器",
@@ -3262,11 +3294,11 @@
       "reconnecting": "正在重新連線…"
     },
     "expiration": {
-      "inDays_one": "{{count}}天后過期",
-      "inDays_other": "{{count}}天后過期",
-      "inHours_one": "{{count}}小時後過期",
-      "inHours_other": "{{count}}小時後過期",
-      "lessThanHour": "不到1小時後過期"
+      "inDays_one": "{{count}} 天后過期",
+      "inDays_other": "{{count}} 天后過期",
+      "inHours_one": "{{count}} 小時後過期",
+      "inHours_other": "{{count}} 小時後過期",
+      "lessThanHour": "不到 1 小時後過期"
     },
     "permissions": {
       "actions": {
@@ -3276,9 +3308,9 @@
       },
       "allowDuration": {
         "always": "始終允許",
-        "oneHour": "允許1小時",
-        "sevenDays": "允許7天",
-        "twentyFourHours": "允許24小時"
+        "oneHour": "允許 1 小時",
+        "sevenDays": "允許 7 天",
+        "twentyFourHours": "允許 24 小時"
       },
       "allowOptions": "{{permission}}的允許選項",
       "always": "始終",
@@ -3310,8 +3342,8 @@
     },
     "providerConnect": {
       "agentphone": {
-        "back": "返回{{brandName}}",
-        "connectDescription": "把這個電話號碼關聯到你的{{brandName}}帳號，就可以透過簡訊與{{assistantName}}交流。",
+        "back": "返回 {{brandName}}",
+        "connectDescription": "把這個電話號碼關聯到你的 {{brandName}} 帳號，就可以透過簡訊與 {{assistantName}} 交流。",
         "connectTitle": "連線電話號碼",
         "documentTitle": "連線 Messages",
         "errorFallback": "我們無法連線這個電話號碼。請從簡訊中重試。",
@@ -3321,7 +3353,7 @@
         "invalidTimestamp": "此連結的時間戳無效。",
         "invalidTitle": "連線連結無效",
         "risk": "簡訊和彩信回覆可能無法穩定送達。為獲得最可靠的體驗，請用 iMessage 與這個號碼通訊。",
-        "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與{{assistantName}}對話。",
+        "successDescription": "{{phone}}已連線。傳送一條簡訊，即可開始與 {{assistantName}} 對話。",
         "successTitle": "電話號碼已連線"
       },
       "common": {
@@ -3341,8 +3373,8 @@
         "back": "返回工作流",
         "checkingConnectionDescription": "我們正在檢查你的 GitHub 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
-        "checkingSession": "我們正在驗證你的{{brandName}}登入狀態，請稍候。",
-        "connectDescription": "把你的{{brandName}}帳號關聯到{{account}}，就可以在 issue 和 pull request 中透過@提及執行你的智能體。",
+        "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
+        "connectDescription": "把你的 {{brandName}} 帳號關聯到{{account}}，就可以在 issue 和 pull request 中透過@提及執行你的智能體。",
         "connectTitle": "連線到 GitHub",
         "errorFallback": "我們無法連線 GitHub。請從 GitHub 重試。",
         "invalidInstallation": "此連結中的 GitHub 安裝資訊無效。",
@@ -3356,9 +3388,9 @@
         "notInstalledDescription": "請先讓組織管理員安裝 GitHub，再連線你的帳號。",
         "notInstalledTitle": "尚未安裝 GitHub",
         "refresh": "請重新整理此頁面後重試。",
-        "signInButton": "登入{{brandName}}",
+        "signInButton": "登入 {{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
-        "signInDescription": "連線此 GitHub 使用者前，請先登入你的{{brandName}}帳號。",
+        "signInDescription": "連線此 GitHub 使用者前，請先登入你的 {{brandName}} 帳號。",
         "signInTitle": "登入後繼續",
         "successDescription": "你已以{{account}}身份連線。在 GitHub issue 或 pull request 中@你的智能體，即可開始對話。",
         "successTitle": "已連線到 GitHub！",
@@ -3405,7 +3437,7 @@
         "back": "返回 Telegram 設定",
         "checkingConnectionDescription": "我們正在檢查你的 Telegram 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
-        "checkingSession": "我們正在驗證你的{{brandName}}登入狀態，請稍候。",
+        "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
         "connectDescription": "把你的帳號關聯到這個 Telegram 機器人，就可以直接在 Telegram 裡與你的智能體交流。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
@@ -3419,9 +3451,9 @@
         "linkIncompleteTitle": "連線連結不完整",
         "open": "開啟 Telegram",
         "refresh": "請重新整理此頁面後重試。",
-        "signInButton": "登入{{brandName}}",
+        "signInButton": "登入 {{brandName}}",
         "signInCheckFailed": "無法檢查登入狀態",
-        "signInDescription": "連線此 Telegram 使用者前，請先登入你的{{brandName}}帳號。",
+        "signInDescription": "連線此 Telegram 使用者前，請先登入你的 {{brandName}} 帳號。",
         "signInTitle": "登入後繼續",
         "successDescription": "你已連線到{{bot}}。在 Telegram 中傳送訊息，即可開始對話。",
         "successTitle": "已連線到 Telegram！"
@@ -3430,7 +3462,7 @@
     "providerSettings": {
       "agentphone": {
         "authorizedSender": "已授權的傳送方",
-        "codeExpiry": "10分鐘後過期",
+        "codeExpiry": "10 分鐘後過期",
         "codeLabel": "驗證碼",
         "connectAria": "連線手機",
         "connectDescription": "用相機掃描，然後傳送已填好的驗證碼。",
@@ -3443,7 +3475,7 @@
         "copySuccess": "電話號碼已複製",
         "createCodeError": "無法建立連線碼，請重試。",
         "creatingCode": "正在建立連線碼…",
-        "description": "透過簡訊使用{{assistantName}}",
+        "description": "透過簡訊使用 {{assistantName}}",
         "destination": "iMessage 或簡訊傳送至",
         "openMessages": "開啟 Messages",
         "options": "手機選項",
@@ -3473,10 +3505,10 @@
         "create": {
           "descriptionAfter": "，建立企業自建應用並選擇 Agent 型別。名稱和圖示可以自行決定；Agent 模板已包含機器人能力。",
           "descriptionBefore": "在 ",
-          "downloadIcon": "下載可選的{{brandName}}圖示",
-          "iconAlt": "可選的{{brandName}}應用圖示",
+          "downloadIcon": "下載可選的 {{brandName}} 圖示",
+          "iconAlt": "可選的 {{brandName}} 應用圖示",
           "iconHint": "，也可以使用你喜歡的任意圖示。",
-          "iconTitle": "可選的{{brandName}}應用圖示",
+          "iconTitle": "可選的 {{brandName}} 應用圖示",
           "imageAlt": "飛書建立應用表單，高亮顯示應用名稱、圖示和「建立」按鈕",
           "title": "建立 Agent 應用"
         },
@@ -3541,7 +3573,7 @@
           "title": "發布應用"
         },
         "redirect": {
-          "descriptionAfter": "，開啟「開發配置 → 安全設定」。在重定向 URL 中新增下方地址，讓工作區成員可以把飛書帳號連線到{{brandName}}。",
+          "descriptionAfter": "，開啟「開發配置 → 安全設定」。在重定向 URL 中新增下方地址，讓工作區成員可以把飛書帳號連線到 {{brandName}}。",
           "descriptionBefore": "在 ",
           "imageAlt": "飛書安全設定頁面，顯示新增 OAuth 重定向 URL 的位置",
           "label": "OAuth 重定向 URL",
@@ -3584,7 +3616,7 @@
           "title": "填寫事件驗證令牌",
           "verificationToken": "Verification Token"
         },
-        "uninstallDescription": "此操作會從工作區解除安裝{{bot}}，並斷開所有使用它的{{brandName}}帳號。操作無法撤銷。",
+        "uninstallDescription": "此操作會從工作區解除安裝{{bot}}，並斷開所有使用它的 {{brandName}} 帳號。操作無法撤銷。",
         "uninstallTargetFallback": "此機器人",
         "uninstallTitle": "解除安裝飛書機器人？"
       },
@@ -3605,10 +3637,10 @@
         "create": {
           "descriptionAfter": "，建立企業自建應用並選擇 Agent 型別。名稱和圖示可以自行決定；Agent 模板已包含機器人能力。",
           "descriptionBefore": "在 ",
-          "downloadIcon": "下載可選的{{brandName}}圖示",
-          "iconAlt": "可選的{{brandName}}應用圖示",
+          "downloadIcon": "下載可選的 {{brandName}} 圖示",
+          "iconAlt": "可選的 {{brandName}} 應用圖示",
           "iconHint": "，也可以使用你喜歡的任意圖示。",
-          "iconTitle": "可選的{{brandName}}應用圖示",
+          "iconTitle": "可選的 {{brandName}} 應用圖示",
           "imageAlt": "Lark 建立應用表單，高亮顯示應用名稱、圖示和「建立」按鈕",
           "title": "建立 Agent 應用"
         },
@@ -3674,7 +3706,7 @@
           "title": "發布應用"
         },
         "redirect": {
-          "descriptionAfter": "，開啟「開發配置 → 安全設定」。在重定向 URL 中新增下方地址，讓工作區成員可以把 Lark 帳號連線到{{brandName}}。",
+          "descriptionAfter": "，開啟「開發配置 → 安全設定」。在重定向 URL 中新增下方地址，讓工作區成員可以把 Lark 帳號連線到 {{brandName}}。",
           "descriptionBefore": "在 ",
           "imageAlt": "飛書安全設定頁面，顯示新增 OAuth 重定向 URL 的位置",
           "label": "OAuth 重定向 URL",
@@ -3717,7 +3749,7 @@
           "title": "填寫事件驗證令牌",
           "verificationToken": "Verification Token"
         },
-        "uninstallDescription": "此操作會從工作區解除安裝{{bot}}，並斷開所有使用它的{{brandName}}帳號。操作無法撤銷。",
+        "uninstallDescription": "此操作會從工作區解除安裝{{bot}}，並斷開所有使用它的 {{brandName}} 帳號。操作無法撤銷。",
         "uninstallTargetFallback": "此機器人",
         "uninstallTitle": "解除安裝 Lark 機器人？"
       },
@@ -3730,7 +3762,7 @@
         "moreOptions": "{{bot}}的更多選項",
         "notConnected": "未連線",
         "officialBot": "Telegram 官方機器人",
-        "officialDescription": "由{{brandName}}提供的官方機器人。",
+        "officialDescription": "由 {{brandName}} 提供的官方機器人。",
         "officialMissing": "缺少官方機器人配置。",
         "pageDescription": "管理此工作區的機器人路由"
       },
@@ -3756,13 +3788,13 @@
       }
     },
     "redirect": {
-      "back": "返回{{brandName}}",
-      "errorDescription": "請返回{{brandName}}後重新連線。",
+      "back": "返回 {{brandName}}",
+      "errorDescription": "請返回 {{brandName}} 後重新連線。",
       "errorStatus": "無法發起連線",
       "errorTitle": "無法開啟{{connector}}",
-      "mobileWarning": "{{connector}}應用可能不支援這個 OAuth 連結。請在電腦上用{{brandName}}網頁版完成連線。",
+      "mobileWarning": "{{connector}}應用可能不支援這個 OAuth 連結。請在電腦上用 {{brandName}} 網頁版完成連線。",
       "preparing": "正在準備安全連線",
-      "redirectDescription": "接下來你將在{{connector}}上授權{{brandName}}。",
+      "redirectDescription": "接下來你將在{{connector}}上授權 {{brandName}}。",
       "redirectTitle": "正在跳轉到{{connector}}…"
     },
     "toasts": {
@@ -3793,7 +3825,7 @@
   "lifecycle": {
     "emailUnsubscribe": {
       "action": "退訂",
-      "body": "你將不再收到{{brandName}}發出的系統郵件通知。",
+      "body": "你將不再收到 {{brandName}} 發出的系統郵件通知。",
       "confirmTitle": "退訂郵件通知？",
       "documentTitle": "退訂",
       "doneTitle": "已退訂",
@@ -3801,20 +3833,20 @@
       "errorTitle": "出了點問題"
     },
     "pwaInstall": {
-      "banner": "安裝{{assistantName}}，用起來更順手",
-      "description": "把{{assistantName}}新增到主螢幕，隨時快速開啟。",
+      "banner": "安裝 {{assistantName}}，用起來更順手",
+      "description": "把 {{assistantName}} 新增到主螢幕，隨時快速開啟。",
       "dismiss": "關閉安裝提示",
       "gotIt": "知道了",
       "install": "安裝",
       "installApp": "安裝應用",
       "stepOne": "在 Safari 中點按「分享」按鈕。",
-      "stepThree": "確認名稱是{{assistantName}}，然後點按「新增」。",
+      "stepThree": "確認名稱是 {{assistantName}}，然後點按「新增」。",
       "stepTwo": "選擇「新增到主螢幕」。",
-      "title": "安裝{{assistantName}}"
+      "title": "安裝 {{assistantName}}"
     },
     "redeemCampaign": {
       "actions": {
-        "back": "返回{{brandName}}",
+        "back": "返回 {{brandName}}",
         "redeem": "兌換積分"
       },
       "documentTitle": "領取你的積分",
@@ -3858,13 +3890,13 @@
   "onboarding": {
     "common": {
       "next": "下一步",
-      "stepProgress": "第{{current}}步，共{{total}}步"
+      "stepProgress": "第 {{current}} 步，共 {{total}} 步"
     },
     "documentTitles": {
-      "make": "歡迎使用{{brandName}}"
+      "make": "歡迎使用 {{brandName}}"
     },
     "make": {
-      "promptDescription": "你可以在下面改一改，也可以直接執行，接下來交給{{assistantName}}。你的工具都在沙箱裡執行，資料不會離開你的工作區。",
+      "promptDescription": "你可以在下面改一改，也可以直接執行，接下來交給 {{assistantName}}。你的工具都在沙箱裡執行，資料不會離開你的工作區。",
       "promptLabel": "新手引導提示詞",
       "promptTitle": "試試這個提示詞"
     },
@@ -4383,8 +4415,8 @@
     }
   },
   "queue": {
-    "concurrentRuns_one": "{{count}}個併發執行",
-    "concurrentRuns_other": "{{count}}個併發執行",
+    "concurrentRuns_one": "{{count}} 個併發執行",
+    "concurrentRuns_other": "{{count}} 個併發執行",
     "description": "檢視正在使用的併發執行數，升級即可免去等待。",
     "perMonth": "/月",
     "pricePerMonth": "{{price}}/月",
@@ -4392,20 +4424,20 @@
       "addOn": "附加包",
       "addsToLimit": "在當前上限基礎上疊加",
       "appliedAfterCheckout": "支付完成後生效",
-      "buy": "購買{{price}}/月",
+      "buy": "購買 {{price}}/月",
       "decreaseQuantity": "減少併發數量",
       "description": "為該工作區增加專屬併發執行，按月計費。",
       "increaseQuantity": "增加併發數量",
       "quantity": "數量",
-      "subscription_one": "{{count}}個名額的月度訂閱",
-      "subscription_other": "{{count}}個名額月度訂閱",
+      "subscription_one": "{{count}} 個名額的月度訂閱",
+      "subscription_other": "{{count}} 個名額月度訂閱",
       "title": "增加併發數"
     },
     "redirecting": "正在跳轉…",
     "status": {
       "availableNow": "當前可用",
-      "inUse_one": "{{limit}}個名額中已使用{{active}}個",
-      "inUse_other": "{{limit}}個名額中已使用{{active}}個"
+      "inUse_one": "{{limit}} 個名額中已使用 {{active}} 個",
+      "inUse_other": "{{limit}} 個名額中已使用 {{active}} 個"
     },
     "tiers": {
       "custom": "自定義",
@@ -4417,7 +4449,7 @@
     "upgrade": {
       "action": "升級到{{plan}}",
       "features": {
-        "creditsPerMonth": "每月{{credits}}積分",
+        "creditsPerMonth": "每月 {{credits}} 積分",
         "emailSupport": "郵件支援",
         "payAsYouGo": "超出後按量付費",
         "prioritySupport": "優先支援",
@@ -4425,7 +4457,7 @@
       },
       "proDescription": "並行執行多個任務，無需排隊。",
       "recommended": "推薦",
-      "teamDescription": "10個並行執行和更多積分，支撐團隊擴充。"
+      "teamDescription": "10 個並行執行和更多積分，支撐團隊擴充。"
     }
   },
   "runErrors": {
@@ -4467,8 +4499,8 @@
   "settings": {
     "accountMenu": {
       "addAccount": "新增帳號",
-      "creditBalance_one": "{{value}}積分",
-      "creditBalance_other": "{{value}}積分",
+      "creditBalance_one": "{{value}} 積分",
+      "creditBalance_other": "{{value}} 積分",
       "exportData": "匯出資料",
       "lab": "實驗室",
       "settings": "設定",
@@ -4482,7 +4514,7 @@
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",
         "windows": {
-          "fiveHour": "5小時",
+          "fiveHour": "5 小時",
           "week": "周"
         }
       },
@@ -4554,15 +4586,15 @@
         "start": "匯出我的資料",
         "starting": "正在開始匯出"
       },
-      "backToAssistant": "返回{{assistantName}}",
-      "description": "下載你在{{assistantName}}中的對話、記憶，以及你可訪問的智能體和工作流指令。",
+      "backToAssistant": "返回 {{assistantName}}",
+      "description": "下載你在 {{assistantName}} 中的對話、記憶，以及你可訪問的智能體和工作流指令。",
       "documentTitle": "匯出資料",
       "duration": {
         "soon": "很快"
       },
       "errors": {
         "loadFailed": "匯出資訊載入失敗",
-        "rateLimited": "每24小時只能匯出一次。",
+        "rateLimited": "每 24 小時只能匯出一次。",
         "startFailed": "匯出啟動失敗"
       },
       "scope": {
@@ -4625,7 +4657,7 @@
           "connectTitle": "連線 Claude",
           "error": "Claude 連線失敗。請重新開始並重試。",
           "expired": "Claude 連線會話已過期。請重新開始並重試。",
-          "instructions": "先點選「開啟 Claude 授權頁面」。然後在 Claude 中為{{brandName}}授權，並複製授權後顯示的授權碼。最後把授權碼貼上到這裡，點選「連線」。",
+          "instructions": "先點選「開啟 Claude 授權頁面」。然後在 Claude 中為 {{brandName}} 授權，並複製授權後顯示的授權碼。最後把授權碼貼上到這裡，點選「連線」。",
           "openApproval": "開啟 Claude 授權頁面",
           "preparing": "準備中…",
           "reconnectAction": "重新連線 Claude",
@@ -4640,9 +4672,9 @@
           "deviceCode": "裝置碼",
           "error": "ChatGPT 連線失敗。請重新開始並重試。",
           "expired": "Codex 連線會話已過期。請重新開始並重試。",
-          "freePlanRejected": "免費版 ChatGPT 套餐無法透過{{brandName}}使用 Codex。請升級到 Plus 或 Pro 後重試。",
-          "instructions": "先使用複製按鈕複製裝置碼，再開啟授權頁面。然後按 OpenAI 的提示貼上裝置碼。最後確認授權，並在{{brandName}}完成連線前保持這個對話方塊開啟。",
-          "invalidTokenFormat": "Codex 返回的登入令牌格式{{brandName}}無法識別。請更新 Codex 後重試。",
+          "freePlanRejected": "免費版 ChatGPT 套餐無法透過 {{brandName}} 使用 Codex。請升級到 Plus 或 Pro 後重試。",
+          "instructions": "先使用複製按鈕複製裝置碼，再開啟授權頁面。然後按 OpenAI 的提示貼上裝置碼。最後確認授權，並在 {{brandName}} 完成連線前保持這個對話方塊開啟。",
+          "invalidTokenFormat": "Codex 返回的登入令牌格式 {{brandName}} 無法識別。請更新 Codex 後重試。",
           "openApproval": "開啟授權頁面",
           "preparing": "準備中…",
           "reconnectAction": "重新連線 ChatGPT",
@@ -4651,7 +4683,7 @@
         }
       },
       "personal": {
-        "accountFallback": "帳號{{number}}",
+        "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
@@ -4669,8 +4701,8 @@
         "retry": "重試",
         "status": {
           "connected": "已連線",
-          "fiveHour": "5小時",
-          "left": "剩餘{{percent}}",
+          "fiveHour": "5 小時",
+          "left": "剩餘 {{percent}}",
           "stale": "需處理",
           "week": "本週"
         },
@@ -4709,11 +4741,11 @@
       "reset": {
         "confirmDescription": "消耗一次 Codex 重置額度，重置當前的用量週期。你還有{{remaining}}。",
         "progress": "正在重置…",
-        "remaining_one": "還剩{{value}}次重置",
-        "remaining_other": "還剩{{value}}次重置",
+        "remaining_one": "還剩 {{value}} 次重置",
+        "remaining_other": "還剩 {{value}} 次重置",
         "remainingUnavailable": "剩餘重置次數不可用",
         "remainingUnknown": "重置 —",
-        "remainingWithExpiry_other": "還剩{{value}}次重置 · {{expiry}}過期",
+        "remainingWithExpiry_other": "還剩 {{value}} 次重置 · {{expiry}}過期",
         "title": "重置 Codex 用量？"
       },
       "toasts": {
@@ -4724,12 +4756,12 @@
         "resetUnneeded": "Codex 用量當前不需要重置"
       },
       "usage": {
-        "inDays": "{{days}}天后",
-        "inDaysHours": "{{days}}天{{hours}}小時後",
-        "inHours": "{{hours}}小時後",
-        "inHoursMinutes": "{{hours}}小時{{minutes}}分鐘後",
-        "inLessThanMinute": "1分鐘內",
-        "inMinutes": "{{minutes}}分鐘後",
+        "inDays": "{{days}} 天后",
+        "inDaysHours": "{{days}} 天 {{hours}} 小時後",
+        "inHours": "{{hours}} 小時後",
+        "inHoursMinutes": "{{hours}} 小時 {{minutes}} 分鐘後",
+        "inLessThanMinute": "1 分鐘內",
+        "inMinutes": "{{minutes}} 分鐘後",
         "resetsAt": "{{date}}重置",
         "resetsRaw": "{{value}}重置",
         "resetsRelative": "{{relative}}重置",
@@ -4834,8 +4866,8 @@
       "debug": {
         "capture": {
           "disabled": "已關閉",
-          "enabled_one": "已對接下來{{count}}次執行啟用",
-          "enabled_other": "已對接下來{{count}}次執行啟用",
+          "enabled_one": "已對接下來 {{count}} 次執行啟用",
+          "enabled_other": "已對接下來 {{count}} 次執行啟用",
           "title": "抓取網路請求內容"
         },
         "indexedDb": {
@@ -4903,7 +4935,7 @@
         "unavailableDescription": "請在「帳號與安全」中檢查你的郵箱；如果郵件被攔截，請聯絡客服。"
       },
       "language": {
-        "description": "選擇{{brandName}}介面的顯示語言",
+        "description": "選擇 {{brandName}} 介面的顯示語言",
         "label": "語言",
         "options": {
           "chineseSimplified": "简体中文",
@@ -5104,8 +5136,8 @@
       },
       "validation": {
         "imageUnreadable": "無法讀取圖片檔案",
-        "logoTooLarge": "標識尺寸過大（{{width}}×{{height}}px），最大為{{maximum}}×{{maximum}}px。",
-        "logoTooSmall": "標識尺寸過小（{{width}}×{{height}}px），最小為{{minimum}}×{{minimum}}px。"
+        "logoTooLarge": "標識尺寸過大（{{width}}×{{height}}px），最大為 {{maximum}}×{{maximum}}px。",
+        "logoTooSmall": "標識尺寸過小（{{width}}×{{height}}px），最小為 {{minimum}}×{{minimum}}px。"
       }
     }
   },
@@ -5135,7 +5167,7 @@
     },
     "forceUpgrade": {
       "action": "重新整理",
-      "description": "當前版本的{{brandName}}已不再支援，請重新整理以載入最新版本。",
+      "description": "當前版本的 {{brandName}} 已不再支援，請重新整理以載入最新版本。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -5158,7 +5190,7 @@
     }
   },
   "sharedThread": {
-    "handoffDescription": "{{assistantName}}會把上下文帶進新的對話",
+    "handoffDescription": "{{assistantName}} 會把上下文帶進新的對話",
     "handoffPrompt": "和我一起繼續這段分享的對話：{{url}}",
     "makeConversationYours": "把這段對話變成你自己的",
     "notFoundTitle": "未找到分享的對話",
@@ -5189,7 +5221,7 @@
       "accessProtocolFailure": "Cloudflare Access 未能建立 SSH 隧道。請檢查對外發布的主機名和 Tunnel 路由。",
       "accessRejected": "Cloudflare Access 拒絕了此次連線。請檢查 Service Token 和該應用的 Service Auth 策略。",
       "accessTlsFailure": "無法驗證到 Cloudflare Access 的安全連線。請檢查主機名和 TLS 證書。",
-      "attention_other": "{{count}}臺 SSH 主機需要處理",
+      "attention_other": "{{count}} 臺 SSH 主機需要處理",
       "authenticationFailed": "SSH 認證失敗。請檢查所選憑據的使用者名稱、私鑰或密碼，以及伺服器的授權設定。你可以編輯該憑據，或為該主機選擇其他憑據。",
       "credentialResourceLimit": "該私鑰超出了支援的處理上限。請用受支援的加密設定重新匯出，然後替換憑據。",
       "hostKeyMismatch": "伺服器的主機金鑰與已儲存的身份不一致。請先自行核實伺服器，再使用「重置主機金鑰」。",
@@ -5218,8 +5250,8 @@
       "password": "密碼",
       "replaceAuthentication": "替換認證資訊",
       "select": "選擇憑據",
-      "sharedHelp_other": "登入資訊的更改會應用到全部{{count}}臺主機：",
-      "summary_other": "已配置{{count}}個憑據",
+      "sharedHelp_other": "登入資訊的更改會應用到全部 {{count}} 臺主機：",
+      "summary_other": "已配置 {{count}} 個憑據",
       "unused": "未被任何主機使用"
     },
     "credentialsHelp": "憑據只寫入不回顯，並且儲存在沙箱之外。請貼上完整的金鑰，空白字元會原樣保留。關閉此表單時各欄位會被清空。",
@@ -5273,25 +5305,14 @@
       "resourceIdConflict": "該資源 ID 無法使用。請關閉表單並重新開啟後再試。",
       "uncertain": "我們無法確認你的更改是否已儲存。請重試這次儲存，或關閉後先檢視列表，再決定是否重新新增。"
     },
-    "summary_one": "已配置{{count}}臺主機",
-    "summary_other": "已配置{{count}}臺主機",
+    "summary_one": "已配置 {{count}} 臺主機",
+    "summary_other": "已配置 {{count}} 臺主機",
     "tailscale": {
       "editUnavailable": "此主機現已使用 Tailscale。此處尚未提供 Tailscale 編輯和重新綁定功能。請取消此次編輯以保留已儲存的傳輸方式。",
       "needsRebind": "此主機需要新的 Tailscale 設定。此處尚未提供 Tailscale 設定和重新綁定功能。"
     },
     "unavailable": "該帳號無法使用 SSH 訪問。",
     "username": "SSH 使用者名稱"
-  },
-  "subscriptionLinking": {
-    "connect": "連接訂閱",
-    "description": "將現有的 ChatGPT 或 Claude 訂閱連接到 {{brandName}}。",
-    "dismiss": "關閉訂閱提示",
-    "hint": "已有 ChatGPT / Claude 訂閱？",
-    "limits": "可用功能與使用額度取決於你的訂閱。",
-    "manage": "管理 AI 訂閱",
-    "menuConnect": "連接 AI 訂閱",
-    "menuLoading": "AI 訂閱",
-    "title": "連接你的訂閱"
   },
   "tailscale": {
     "add": "新增 Tailscale",
@@ -5322,7 +5343,7 @@
     "replace": "更換 OAuth 憑證",
     "select": "選取 Tailscale 網路",
     "setupHelp": "使用僅允許這些標籤的 OAuth 用戶端。Tailnet 原則須允許 SSH 連接埠。儲存不會測試連線或授權聊天存取。",
-    "summary_other": "已配置{{count}}個Tailscale",
+    "summary_other": "已配置 {{count}} 個 Tailscale",
     "tags": "註冊標籤",
     "tagsHelp": "以逗號分隔標籤，例如 tag:okou",
     "title": "Tailscale",
@@ -5348,7 +5369,7 @@
     },
     "detail": {
       "back": "自定義模板",
-      "page": "第{{number}}頁"
+      "page": "第 {{number}} 頁"
     },
     "empty": {
       "description": "Okou 會把你檔案裡的設計變成可以反覆使用的模板。",
@@ -5395,8 +5416,8 @@
     },
     "range": {
       "billingPeriod": "帳單週期",
-      "last24Hours": "最近24小時",
-      "last7Days": "最近7天",
+      "last24Hours": "最近 24 小時",
+      "last7Days": "最近 7 天",
       "today": "今天",
       "yesterday": "昨天"
     },
@@ -5421,8 +5442,8 @@
     "units": {
       "credit_one": "{{value}}積分",
       "credit_other": "{{value}}積分",
-      "thread_one": "{{value}}個會話",
-      "thread_other": "{{value}}個會話"
+      "thread_one": "{{value}} 個會話",
+      "thread_other": "{{value}} 個會話"
     }
   },
   "vnc": {
@@ -5451,23 +5472,23 @@
       "name": "憑據名稱",
       "nameHint": "例如：辦公室桌面登入",
       "password": "VNC 密碼",
-      "passwordHelp": "經典 VNC 密碼為1–8個可列印 ASCII 字元，空格會被保留。",
+      "passwordHelp": "經典 VNC 密碼為 1–8 個可列印 ASCII 字元，空格會被保留。",
       "passwordHint": "輸入伺服器的 VNC 密碼",
       "privateKey": "未加密的 PKCS#8 私鑰（PEM）",
-      "qemuScramPasswordHelp": "1–1023個可列印 ASCII 字元；保留空格。",
-      "qemuScramUsernameHelp": "1–255個可列印 ASCII 字元，不允許空格、逗號或等號。",
+      "qemuScramPasswordHelp": "1–1023 個可列印 ASCII 字元；保留空格。",
+      "qemuScramUsernameHelp": "1–255 個可列印 ASCII 字元，不允許空格、逗號或等號。",
       "replace": "更換密碼",
       "replaceHelp": "保持關閉即繼續使用已儲存的密碼。更換密碼會影響所有使用該憑據的主機。",
       "select": "選擇憑據",
-      "sharedHelp_one": "有{{count}}臺主機正在使用。修改密碼會影響這臺主機。",
-      "sharedHelp_other": "有{{count}}臺主機正在使用。修改密碼會影響所有這些主機。",
-      "summary_other": "已配置{{count}}條憑據",
+      "sharedHelp_one": "有 {{count}} 臺主機正在使用。修改密碼會影響這臺主機。",
+      "sharedHelp_other": "有 {{count}} 臺主機正在使用。修改密碼會影響所有這些主機。",
+      "summary_other": "已配置 {{count}} 條憑據",
       "unused": "沒有已儲存的主機在使用。",
       "username": "使用者名稱",
-      "usernameHelp": "1–255個 UTF-8 位元組，不允許使用 NUL。",
+      "usernameHelp": "1–255 個 UTF-8 位元組，不允許使用 NUL。",
       "usernameHint": "輸入伺服器使用者名稱",
       "usernamePassword": "密碼",
-      "usernamePasswordHelp": "1–1023個 UTF-8 位元組，不允許使用 NUL，空格會被保留。",
+      "usernamePasswordHelp": "1–1023 個 UTF-8 位元組，不允許使用 NUL，空格會被保留。",
       "usernamePasswordHint": "輸入該使用者名稱對應的密碼",
       "usernamePasswordMethod": "使用者名稱和密碼"
     },
@@ -5487,7 +5508,7 @@
       "hostUnavailable": "這臺主機已不可用。",
       "invalidHost": "請輸入有效的主機名或 IP 地址，不要包含 URL、使用者名稱或埠。",
       "invalidInput": "請檢查 VNC 配置後重試。",
-      "invalidTrust": "請輸入有效的證書包：最多8個公開 CA 證書，總大小不超過 64 KiB。",
+      "invalidTrust": "請輸入有效的證書包：最多 8 個公開 CA 證書，總大小不超過 64 KiB。",
       "revisionExhausted": "該配置已無法繼續更新，請新建一個。"
     },
     "host": "主機名或 IP 地址",
@@ -5540,9 +5561,17 @@
     },
     "save": "儲存",
     "saveRecovery": {
+      "deleteHelp": "刪除前請核對這些已儲存的資訊。此操作只選擇版本；刪除仍需另外確認。",
+      "incompatible": "驗證方式已變更。請關閉此對話框並重新開啟憑證，以編輯目前的驗證方式。",
+      "keepChanges": "使用此版本保留我的修改",
+      "keepDeletion": "使用此版本繼續刪除",
+      "keepHelp": "請確認這些內容，再保留草稿並依此版本儲存。你的驗證與信任設定將保留。",
+      "latest": "目前已儲存的內容",
       "resourceIdConflict": "該資源建立失敗。請關閉此對話方塊後重試。",
       "review": "配置已重新整理。請關閉此對話方塊，確認當前內容後再重試。",
-      "uncertain": "儲存結果未知，你的原始草稿已鎖定。你可以重試同一次請求，或關閉並重新整理頁面檢視已儲存的配置。"
+      "unavailable": "此資源已無法使用。請關閉此對話框並重新整理設定後再試。",
+      "uncertain": "儲存結果未知，你的原始草稿已鎖定。你可以重試同一次請求，或關閉並重新整理頁面檢視已儲存的配置。",
+      "version": "版本 {{version}}"
     },
     "saving": "正在儲存…",
     "security": {
@@ -5555,7 +5584,7 @@
       "appleVncPassword": "Mac VNC（傳統 VNC 密碼）",
       "appleVncPasswordHelp": "Mac 的選用 VNC 密碼限 1–8 個可列印 ASCII 位元組。單獨的 type 2 不驗證伺服器身分，也不加密桌面。已驗證的 SSH 僅保護此次 Okou 工作階段，無法隔離 Mac 的監聽埠；其他用戶端可能因網路設定而存取 5900 埠。請自行決定是否在 Mac 上啟用並承擔風險。",
       "caBundle": "CA 證書（PEM）",
-      "caHelp": "最多8個 CA 證書，總大小 64 KiB。請勿貼上私鑰或伺服器證書。",
+      "caHelp": "最多 8 個 CA 證書，總大小 64 KiB。請勿貼上私鑰或伺服器證書。",
       "caHint": "貼上簽發該伺服器證書的公開 CA 證書",
       "clientCertificateHelp": "用戶端出示憑證不代表伺服器已驗證。必須獨立設定伺服器驗證受信任 CA 簽發的用戶端憑證並限制入口；SSH 僅驗證跳點。",
       "clientCertificateNone": "用戶端憑證，無 VNC 密碼（X509None）",
@@ -5563,7 +5592,7 @@
       "custom": "自定義證書頒發機構",
       "profileLabel": "安全方案",
       "qemuX509Sasl": "QEMU SCRAM-SHA-256（X509SASL）",
-      "qemuX509SaslHelp": "僅支援 QEMU 子類型263。TLS 會在 SCRAM 之前驗證伺服器；不降級至 PLAIN 或子類型264。",
+      "qemuX509SaslHelp": "僅支援 QEMU 子類型 263。TLS 會在 SCRAM 之前驗證伺服器；不降級至 PLAIN 或子類型 264。",
       "serverName": "TLS 憑證身分",
       "serverNameHelp": "選填。留空時將依據 RFB 目標主機驗證憑證。僅當憑證使用其他 DNS 名稱時才填寫。",
       "serverNameHint": "例如 desktop.internal.example.com",
@@ -5576,8 +5605,8 @@
       "x509Vnc": "加密 VNC（X509Vnc）",
       "x509VncHelp": "需要 VeNCrypt X509Vnc。TLS 會在傳送 VNC 密碼之前驗證伺服器。"
     },
-    "summary_one": "已配置{{count}}臺主機",
-    "summary_other": "已配置{{count}}臺主機",
+    "summary_one": "已配置 {{count}} 臺主機",
+    "summary_other": "已配置 {{count}} 臺主機",
     "transport": {
       "appleDhDestinationHelp": "Apple DH 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
       "appleRsaSrpDestinationHelp": "Apple RSA/SRP 請填寫 127.0.0.1 或 ::1；這是透過所選 SSH 主機存取的 Mac 本機回環位址。",
@@ -5685,12 +5714,12 @@
         "webhookAutomation": "Webhook 自動化"
       },
       "duration": {
-        "hour_one": "{{count}}小時",
-        "hour_other": "{{count}}小時",
-        "minute_one": "{{count}}分鐘",
-        "minute_other": "{{count}}分鐘",
-        "second_one": "{{count}}秒",
-        "second_other": "{{count}}秒"
+        "hour_one": "{{count}} 小時",
+        "hour_other": "{{count}} 小時",
+        "minute_one": "{{count}} 分鐘",
+        "minute_other": "{{count}} 分鐘",
+        "second_one": "{{count}} 秒",
+        "second_other": "{{count}} 秒"
       },
       "forms": {
         "addAction": "新增 Google Forms 自動化",
@@ -5861,8 +5890,8 @@
         "addMessageTitle": "新增 Gmail 自動化",
         "allInboundMessages": "所有收到的郵件",
         "anyMessageRule": "當收到任意 Gmail 郵件時",
-        "conditionField": "條件{{number}}的欄位",
-        "conditionOperator": "條件{{number}}的運算子",
+        "conditionField": "條件 {{number}} 的欄位",
+        "conditionOperator": "條件 {{number}} 的運算子",
         "editLabel": "編輯標籤",
         "editMatch": "編輯匹配條件",
         "enterValue": "輸入一個值",
@@ -5888,7 +5917,7 @@
           "doesNotContain": "不包含",
           "is": "等於"
         },
-        "removeCondition": "移除條件{{number}}",
+        "removeCondition": "移除條件 {{number}}",
         "saveLabel": "儲存標籤",
         "saveMatch": "儲存匹配條件",
         "summary": {
@@ -5984,7 +6013,7 @@
         "everyDay": "每天",
         "everyDayAt": "每天{{time}}",
         "everyMonth": "每月",
-        "everyMonthAt": "每月{{day}}日{{time}}",
+        "everyMonthAt": "每月 {{day}} 日{{time}}",
         "everyWeek": "每週",
         "everyWeekAt": "每週{{time}}",
         "everyWeekday": "每個工作日",
@@ -6132,8 +6161,8 @@
         "privateReady": "私有副本已建立。",
         "removalAlert": "原工作流會被刪除",
         "removalNoAutomations": "這個工作流會從{{agent}}刪除。",
-        "removalWithAutomations_one": "{{agent}}上的{{count}}個自動化會暫停，這個工作流會被刪除。",
-        "removalWithAutomations_other": "{{agent}}上的{{count}}個自動化會暫停，這個工作流會被刪除。",
+        "removalWithAutomations_one": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
+        "removalWithAutomations_other": "{{agent}}上的 {{count}} 個自動化會暫停，這個工作流會被刪除。",
         "removeOriginal": "複製後從{{agent}}移除原工作流",
         "selectAgent": "選擇智能體",
         "title": "複製工作流",
@@ -6260,8 +6289,8 @@
       "activeInstallationDescription": "這個官方工作流仍在正常執行，其託管內容保持只讀。",
       "activeInstallationTitle": "官方工作流",
       "agent": "智能體",
-      "automationCount_one": "{{count}}個自動化",
-      "automationCount_other": "{{count}}個自動化",
+      "automationCount_one": "{{count}} 個自動化",
+      "automationCount_other": "{{count}} 個自動化",
       "badge": "官方",
       "browse": "瀏覽官方工作流",
       "chooseValue": "選擇一個值",
@@ -6284,8 +6313,8 @@
       "noParameters": "無需填寫參數。",
       "noResults": "沒有匹配的官方工作流。",
       "notFound": "未找到這個官方工作流。",
-      "parameterCount_one": "{{count}}個參數",
-      "parameterCount_other": "{{count}}個參數",
+      "parameterCount_one": "{{count}} 個參數",
+      "parameterCount_other": "{{count}} 個參數",
       "parameterRequired": "{{key}}（必填）",
       "reconciliationState": "{{state}} · {{intended}}",
       "reconfigure": "重新配置",
@@ -6347,29 +6376,29 @@
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
       "accountSetup": "透過 Discord 官方瀏覽器授權連接你的帳號。",
-      "adminSetup": "將 Okou 安裝到你的 Discord 伺服器，再連接帳號。",
-      "approvalConfirmed": "關閉此分頁，即可在 Works 中完成連線。",
+      "approvalConfirmed": "關閉此分頁，即可在原分頁中完成連接。",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
-      "authorizationError": "未能完成 Discord 授權。請在此卡片重試。",
+      "authorizationError": "無法完成 Discord 授權，請重試。",
       "authorizing": "正在授權…",
       "browserConsent": "在 Discord 視窗中完成授權，此頁面會自動更新。",
-      "chooseDmServer": "選擇伺服器",
+      "chooseWorkspace": "選擇工作區",
+      "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
+      "connectedTitle": "已連接 Discord",
+      "connectingTitle": "正在連接 Discord",
+      "connectTitle": "連接 Discord",
+      "defaultWorkspace": "Discord 預設工作區",
       "description": "在伺服器中提及 Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷 Discord 連線",
-      "dmServer": "私人訊息預設伺服器",
-      "install": "安裝到 Discord",
+      "invalidLink": "此 Discord 連接連結無效，請從 Discord 取得新連結。",
       "limitedContext": "上下文受限：Okou 可能無法接收頻道中的一般訊息。請提及 Okou，並提供所需的詳細資訊。",
-      "memberSetup": "請組織管理員將 Okou 安裝到你的 Discord 伺服器。",
-      "moreOptions": "更多 Discord 選項",
-      "pendingConsent": "此分頁已無授權憑據。請關閉它，並從原先的 Works 分頁重新發起授權。",
+      "open": "開啟 Discord",
+      "openInBrowser": "在瀏覽器中開啟",
+      "pendingConsent": "請關閉此分頁，然後從原分頁重新開始連接。",
       "popupBlocked": "請允許彈出視窗以授權 Discord，然後重試。",
       "retry": "重試",
       "suspended": "Discord 暫時無法使用。現有連線會保留。",
       "title": "Discord",
-      "unconfigured": "此組織尚未設定 Discord。",
-      "uninstall": "移除 Discord",
-      "uninstallDescription": "這會中斷此組織所有成員與 Discord 的連線。其他組織的連線會保留。",
-      "uninstallTitle": "從此組織移除 Discord？"
+      "unconfigured": "此組織尚未設定 Discord。"
     },
     "documentTitle": "工作渠道",
     "feishuConnected": "飛書連線成功",
@@ -6403,7 +6432,7 @@
       "permissionsUpdated": "Microsoft Teams 權限已更新",
       "title": "Microsoft Teams",
       "uninstall": "解除安裝 Microsoft Teams",
-      "uninstallDescription": "這會為你的工作區移除{{brandName}}中的 Microsoft Teams 整合。所有已連線的使用者都會斷開連線，在管理員重新連線之前，{{displayName}}不再回復這個工作區的 Teams 訊息。",
+      "uninstallDescription": "這會為你的工作區移除 {{brandName}} 中的 Microsoft Teams 整合。所有已連線的使用者都會斷開連線，在管理員重新連線之前，{{displayName}}不再回復這個工作區的 Teams 訊息。",
       "uninstallTitle": "解除安裝 Microsoft Teams 整合？"
     },
     "telegram": {

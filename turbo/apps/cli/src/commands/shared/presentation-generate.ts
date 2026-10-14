@@ -1,4 +1,3 @@
-import { artifactPreviewsEnabled } from "../../lib/api/domains/artifact-previews";
 import { Command, InvalidArgumentError } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { dispatchGenerate } from "../generate/lib/dispatch";
@@ -10,7 +9,7 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
-  PRESENTATION_PREVIEW_INSTRUCTION,
+  presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
 import {
@@ -102,7 +101,9 @@ Output:
 
 Notes:
   - Authenticates via OKOU_TOKEN
-  - The agent authors the HTML presentation artifact and hosts it with okou host
+  - The agent authors HTML first, then chooses delivery from the request, remembered preferences, and intended use
+  - Use okou host for HTML; follow the platform's conversion instructions only when the agent selects PPTX
+  - Deliver one format unless the user requests multiple formats
 
 Templates (presentation):
 ${formatPresentationTemplateListing(templates)}`;
@@ -115,19 +116,17 @@ ${formatPresentationTemplateListing(templates)}`;
         });
         if (dispatch.outcome === "handled") return;
         const prompt = dispatch.prompt;
-        const previewsEnabled = await artifactPreviewsEnabled();
         const visibilityFlag =
           options.visibility === undefined
             ? ""
             : ` --visibility ${options.visibility}`;
-        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag}${previewsEnabled ? " --preview ./generated/previews/cover.png" : ""}`;
+        const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
         const deliveryInstructions = [
           options.visibility === undefined
-            ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, hosting and upload keep their existing behavior."
-            : `- Publish the final deck with ${options.visibility} visibility. Explicit visibility requires privateArtifacts to be enabled.`,
+            ? "- Uploaded and generated files default to only-me. Hosted sites are public."
+            : `- Deliver the final deck with ${options.visibility} visibility.`,
           "- Keep supporting generated media at its default visibility and bundle local copies. The selected visibility applies to the final deck; do not make supporting media public separately.",
-          `- For a requested file copy, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
-          "- Return the exact URL printed by the delivery command.",
+          `- For file delivery, use \`okou web upload-file -f <file>${visibilityFlag}\`.`,
         ];
 
         if (options.template !== undefined) {
@@ -147,7 +146,6 @@ ${formatPresentationTemplateListing(templates)}`;
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
                 hostCommand,
-                artifactPreviewsEnabled: previewsEnabled,
               }),
               ...deliveryInstructions,
               "",
@@ -197,9 +195,10 @@ ${formatPresentationTemplateListing(templates)}`;
             "- Check that text does not overflow or overlap at desktop and mobile viewport sizes.",
             "- Check that shapes, charts, images, or decorative graphics do not cover readable text at desktop and mobile viewport sizes.",
             "",
-            "## Publish",
-            ...(previewsEnabled ? [PRESENTATION_PREVIEW_INSTRUCTION] : []),
-            `- Host the finished deck: ${hostCommand}`,
+            "## Delivery",
+            ...presentationDeliveryInstructions({
+              hostCommand,
+            }),
             ...deliveryInstructions,
           ].join("\n"),
         );

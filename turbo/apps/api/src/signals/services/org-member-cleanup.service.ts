@@ -10,7 +10,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { modelProviders } from "@okouai/db/schema/model-provider";
 import { modelProviderAuthSessions } from "@okouai/db/schema/model-provider-auth-session";
 import { secrets } from "@okouai/db/schema/secret";
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
 import { logger } from "../../lib/log";
 import { publishCancelToRunnerGroup } from "../external/realtime";
@@ -22,6 +22,7 @@ import {
 } from "./agent-run-terminal-transition.service";
 import { revokeMorningBriefScheduleOwnership } from "./morning-brief-schedule-claim.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
+import { eraseSshOwnerData$ } from "./ssh-owner-lifecycle.service";
 import { deleteDiscordOrgMemberData$ } from "./discord-owner-cleanup.service";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
@@ -45,11 +46,10 @@ const disableDepartedMemberAutomations$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0219; new non-billing transactions are prohibited.
-    await db.transaction(async (tx) => {
-      // Disabled Forms may be preparing a re-enable outside the database.
-      // Touch their observation too so departure rejects that stale publication.
-      const disabled = await tx
+    // Disabled Forms may be preparing a re-enable outside the database.
+    // Touch their observation too so departure rejects that stale publication.
+    const disabled = db.$with("disabled_member_automations").as(
+      db
         .update(workflowAutomations)
         .set({ enabled: false, updatedAt: args.currentTime })
         .where(
@@ -62,21 +62,20 @@ const disableDepartedMemberAutomations$ = command(
         .returning({
           id: workflowAutomations.id,
           eventType: workflowAutomations.eventType,
-        });
-      const formsIds = disabled
-        .filter((row) => {
-          return row.eventType === "google-forms-response-submitted";
-        })
-        .map((row) => {
-          return row.id;
-        });
-      if (formsIds.length > 0) {
-        await tx
-          .delete(googleFormsAutomationCursors)
-          .where(inArray(googleFormsAutomationCursors.automationId, formsIds));
-      }
-      signal.throwIfAborted();
-    });
+        }),
+    );
+    await db
+      .with(disabled)
+      .delete(googleFormsAutomationCursors)
+      .where(
+        inArray(
+          googleFormsAutomationCursors.automationId,
+          db
+            .select({ id: disabled.id })
+            .from(disabled)
+            .where(eq(disabled.eventType, "google-forms-response-submitted")),
+        ),
+      );
     signal.throwIfAborted();
   },
 );
@@ -99,6 +98,11 @@ export const cleanupOrgMemberResources$ = command(
     signal.throwIfAborted();
     await revokeOrgMemberRunAuthority(db, args, onSlotsReleased, signal);
     signal.throwIfAborted();
+    await set(
+      eraseSshOwnerData$,
+      { kind: "owner", orgId: args.orgId, userId: args.userId },
+      signal,
+    );
     await set(eraseMailNotifications$, args, signal);
     signal.throwIfAborted();
     await set(deleteDiscordOrgMemberData$, args, signal);

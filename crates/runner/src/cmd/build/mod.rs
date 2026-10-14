@@ -383,52 +383,6 @@ struct BuildHashes {
     snapshot_hash: Option<String>,
 }
 
-struct TemplateLockRelease {
-    guard: Option<std::sync::Arc<Flock<File>>>,
-    #[cfg(test)]
-    callback: Option<Box<dyn FnOnce() + Send>>,
-}
-
-impl TemplateLockRelease {
-    #[cfg(test)]
-    fn none() -> Self {
-        Self {
-            guard: None,
-            callback: None,
-        }
-    }
-
-    fn from_lock(guard: Flock<File>) -> Self {
-        Self {
-            guard: Some(std::sync::Arc::new(guard)),
-            #[cfg(test)]
-            callback: None,
-        }
-    }
-
-    #[cfg(test)]
-    fn from_release(release: impl FnOnce() + Send + 'static) -> Self {
-        Self {
-            guard: None,
-            callback: Some(Box::new(release)),
-        }
-    }
-
-    fn release(&mut self) {
-        self.guard = None;
-        #[cfg(test)]
-        if let Some(release) = self.callback.take() {
-            release();
-        }
-    }
-}
-
-impl Drop for TemplateLockRelease {
-    fn drop(&mut self) {
-        self.release();
-    }
-}
-
 /// Build an image (template from R2 cache or local build, snapshot always local).
 pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> RunnerResult<()> {
     let def = profile::get(&args.profile)?;
@@ -572,13 +526,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
 
     match mode {
         BuildMode::WarmRootfsCache => {
-            let template_lock_path = paths.template_lock(&hashes.template_hash);
-            tracing::info!(
-                "acquiring exclusive template lock for warm build: {}",
-                template_lock_path.display()
-            );
-            let template_lock = std::sync::Arc::new(lock::acquire(template_lock_path).await?);
-            ensure_template_cached_under_lock(&template_input, template_lock).await?;
+            ensure_template_cached(&template_input).await?;
             tracing::info!(
                 "template cache warm complete: template={}",
                 hashes.template_hash
@@ -608,6 +556,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
             // required only when this process may write `rootfs.ext4`.
             let _rootfs_lock =
                 acquire_rootfs_lock_for_image_build(&paths, rootfs_hash, rootfs_paths).await?;
+            tracing::info!(rootfs_hash, "acquired rootfs lock for image build");
             let input = RootfsBuildInput {
                 template: template_input,
                 rootfs_paths,
@@ -615,19 +564,7 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
                 okou_cli: okou_cli.as_ref(),
             };
             if let RootfsImageLock::Exclusive { guard } = &_rootfs_lock {
-                let template_lock_path = paths.template_lock(&hashes.template_hash);
-                tracing::info!(
-                    "acquiring exclusive template lock for image build: {}",
-                    template_lock_path.display()
-                );
-                let template_lock = lock::acquire(template_lock_path).await?;
-                let release_template_lock = TemplateLockRelease::from_lock(template_lock);
-                ensure_rootfs_under_lock(
-                    input,
-                    release_template_lock,
-                    std::sync::Arc::clone(guard),
-                )
-                .await?;
+                ensure_rootfs_under_lock(input, std::sync::Arc::clone(guard)).await?;
             } else {
                 verify_cli_sidecar(rootfs_paths, okou_cli.as_ref()).await?;
                 tracing::info!(
@@ -667,7 +604,6 @@ pub async fn run_build(mut args: BuildArgs, provider: &dyn SnapshotProvider) -> 
 
 async fn ensure_rootfs_under_lock(
     input: RootfsBuildInput<'_>,
-    mut release_template_lock: TemplateLockRelease,
     rootfs_lock: std::sync::Arc<Flock<File>>,
 ) -> RunnerResult<()> {
     let publish = LocalFilePublish::for_rootfs(input.rootfs_paths);
@@ -681,13 +617,11 @@ async fn ensure_rootfs_under_lock(
     publish.cleanup_stale_staging_best_effort().await;
 
     let need_rootfs = !is_rootfs_present(input.rootfs_paths).await?;
-    let mut scripts = RootfsScripts::new(rootfs_lock, release_template_lock.guard.clone());
+    let mut scripts = RootfsScripts::new(rootfs_lock, None);
 
     if need_rootfs {
         let result = async {
             obtain_template_to_staging(&input.template, input.rootfs_paths, &mut scripts).await?;
-            scripts.release_template_lock();
-            release_template_lock.release();
             let work_dir_path = scripts.path().await?;
             customize_rootfs_staging(&input, &work_dir_path).await?;
             verify_rootfs(input.rootfs_paths, &work_dir_path, input.okou_cli).await?;
@@ -708,11 +642,53 @@ async fn ensure_rootfs_under_lock(
             "[OK] rootfs already present: {}",
             input.rootfs_paths.dir().display()
         );
-        scripts.release_template_lock();
-        release_template_lock.release();
     }
 
     Ok(())
+}
+
+async fn ensure_template_cached(input: &TemplateInput<'_>) -> RunnerResult<()> {
+    let cache = input.cache.as_cache().ok_or_else(|| {
+        RunnerError::Internal("--warm-rootfs-cache requires R2 template cache".into())
+    })?;
+    let present = cache
+        .template_exists(input.template_hash)
+        .await
+        .map_err(|e| {
+            RunnerError::Internal(format!("R2 template HEAD failed while warming cache: {e}"))
+        })?;
+    let template_lock_path = input.paths.template_lock(input.template_hash);
+    if present {
+        // A successful HEAD must not queue behind an independent reader or
+        // repair. Clean shared residue only when no writer owns it; defer busy
+        // cleanup to a later eligible warm-up.
+        if let lock::TryLock::Acquired(_guard) =
+            lock::acquire_with_contention_timeout(template_lock_path, std::time::Duration::ZERO)
+                .await?
+        {
+            let warm_parent = template_warm_parent_dir(input.paths, input.template_hash);
+            cleanup_template_warm_parent(&warm_parent).await?;
+            remove_empty_dir_if_exists(&warm_parent).await?;
+        }
+        tracing::info!(
+            r2_key = ?cache.template_download_key(input.template_hash),
+            "[OK] template already in R2: {}",
+            input.template_hash
+        );
+        return Ok(());
+    }
+
+    tracing::info!(
+        "acquiring exclusive template lock for warm build: {}",
+        template_lock_path.display()
+    );
+    let template_lock = std::sync::Arc::new(lock::acquire(template_lock_path).await?);
+    tracing::info!(
+        template_hash = input.template_hash,
+        "acquired template write lock for warm build"
+    );
+    // Recheck after acquisition: another writer may have populated the object.
+    ensure_template_cached_under_lock(input, template_lock).await
 }
 
 async fn ensure_template_cached_under_lock(
@@ -935,13 +911,49 @@ async fn obtain_template_to_staging(
 
     let result = async {
         let work_dir_path = scripts.path().await?;
-        materialize_template_from_r2_or_build(
-            input,
-            &attempt_dir,
-            &work_dir_path,
-            TemplateMaterializationTarget::RootfsStaging(&staging),
-        )
-        .await
+        tokio::fs::create_dir_all(&attempt_dir).await.map_err(|e| {
+            RunnerError::Internal(format!(
+                "create template attempt dir {}: {e}",
+                attempt_dir.display()
+            ))
+        })?;
+        let downloaded_template = attempt_dir.join(TEMPLATE_DOWNLOAD_FILE);
+        // Cached objects and attempt directories are independent. Only local
+        // template generation/remote repair needs the shared write lock.
+        if matches!(
+            resolve_remote_template(input, &downloaded_template, &work_dir_path).await?,
+            RemoteTemplateDecision::UseDownloaded
+        ) {
+            return TemplateMaterializationTarget::RootfsStaging(&staging)
+                .materialize_downloaded(input, &downloaded_template);
+        }
+
+        let template_lock_path = input.paths.template_lock(input.template_hash);
+        tracing::info!(
+            "acquiring exclusive template lock for template repair: {}",
+            template_lock_path.display()
+        );
+        let template_lock = std::sync::Arc::new(lock::acquire(template_lock_path).await?);
+        tracing::info!(
+            template_hash = input.template_hash,
+            "acquired template write lock for repair"
+        );
+        scripts.retain_template_lock(template_lock);
+        let result = async {
+            let repair_scripts = scripts.path().await?;
+            // A contender may have repaired/populated R2 while we waited. Its
+            // result must be validated before deciding to rebuild or overwrite.
+            materialize_template_from_r2_or_build(
+                input,
+                &attempt_dir,
+                &repair_scripts,
+                TemplateMaterializationTarget::RootfsStaging(&staging),
+            )
+            .await
+        }
+        .await;
+        scripts.release_template_lock();
+        result
     }
     .await;
 
@@ -1001,13 +1013,13 @@ async fn resolve_remote_template(
                 if input.cache.is_required() {
                     tracing::warn!(
                         "R2 template object for {} failed required-cache validation ({e}) — \
-                         rebuilding locally and force-overwriting the bad object",
+                         repair is required",
                         input.template_hash
                     );
                 } else {
                     tracing::warn!(
                         "R2 template object for {} failed validation ({e}) — \
-                         rebuilding locally and force-overwriting the bad object",
+                         repair is required",
                         input.template_hash
                     );
                 }
@@ -1019,24 +1031,26 @@ async fn resolve_remote_template(
         Ok(false) => {
             tracing::info!(
                 r2_key = ?cache.template_download_key(input.template_hash),
-                "R2 template cache miss for {} — building locally",
+                "R2 template cache miss for {}",
                 input.template_hash
             );
             Ok(RemoteTemplateDecision::BuildAndUpload(
                 TemplateUploadIntent::Deduplicated,
             ))
         }
+        Err(e) if e.is_deadline_exceeded() => Err(RunnerError::Internal(format!(
+            "R2 template transfer deadline exceeded: {e}"
+        ))),
         Err(e) if e.is_invalid_object() => {
             if input.cache.is_required() {
                 tracing::warn!(
                     "R2 template object for {} is invalid in required-cache mode ({e}) — \
-                     rebuilding locally and force-overwriting the bad object",
+                     repair is required",
                     input.template_hash
                 );
             } else {
                 tracing::warn!(
-                    "R2 template object for {} is invalid ({e}) — \
-                     rebuilding locally and force-overwriting the bad object",
+                    "R2 template object for {} is invalid ({e}) — repair is required",
                     input.template_hash
                 );
             }
@@ -1048,7 +1062,7 @@ async fn resolve_remote_template(
             "R2 template download failed while template cache is required: {e}"
         ))),
         Err(e) => {
-            tracing::warn!("R2 template download failed: {e} — falling back to local build");
+            tracing::warn!("R2 template download failed: {e}");
             Ok(RemoteTemplateDecision::BuildAndUpload(
                 TemplateUploadIntent::Deduplicated,
             ))
@@ -1071,6 +1085,10 @@ async fn build_template_locally(
     output_dir: &Path,
     work_dir: &RootfsScriptDir,
 ) -> RunnerResult<()> {
+    tracing::info!(
+        template_hash = input.template_hash,
+        "starting local template build"
+    );
     tokio::fs::create_dir_all(output_dir)
         .await
         .map_err(|e| RunnerError::Internal(format!("create {}: {e}", output_dir.display())))?;
@@ -1141,6 +1159,7 @@ async fn verify_rootfs(
 }
 
 async fn verify_template_file(rootfs: &Path, work_dir: &RootfsScriptDir) -> RunnerResult<()> {
+    tracing::info!("starting template verification");
     verify_rootfs_file(rootfs, work_dir, "template", None).await?;
 
     let rootfs_sz = file_sizes(rootfs).await;

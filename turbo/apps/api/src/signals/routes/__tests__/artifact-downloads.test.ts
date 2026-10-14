@@ -13,7 +13,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-shares";
 import type { HostedSiteFilesResponse } from "@okouai/api-contracts/contracts/host";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { expect, test } from "vitest";
@@ -31,7 +30,6 @@ import { hostRoutes } from "../host";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -130,13 +128,10 @@ const siteFiles = Object.freeze([
   hostedTextFile("/assets/chart-2b7e10d4.svg", "<svg></svg>", "image/svg+xml"),
 ]);
 
-async function fixture(privateArtifacts = true) {
+async function fixture() {
   const bdd = createBddApi(context);
   const actor = bdd.user();
   await createRunsApi(context).grantProEntitlement(actor);
-  await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-  });
   mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
   mockEnv("APP_URL", "https://app.okou.ai");
   mockEnv("OKOU_PUBLIC_HOST_DOMAIN", "okou.app");
@@ -497,7 +492,7 @@ test.each([
 );
 
 test("legacy public sites are cloneable outside their originating organization", async () => {
-  const { bdd, host, deploy } = await fixture(false);
+  const { bdd, host, deploy } = await fixture();
   const site = await deploy();
   const outsider = bdd.user({ orgId: null });
   for (const slug of [site.publicSlug, `dpl-${site.deploymentId}`]) {

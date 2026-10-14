@@ -703,7 +703,6 @@ function officialCatalogDetail(
             intervalSeconds: { parameter: "interval-seconds" },
           },
         },
-        runtime: { resultEmail: false },
       },
     ],
   };
@@ -2753,15 +2752,33 @@ test("Recover when a stale Run now action receives the automatic-only policy rej
   expect(pathname()).toBe(workflowDetailPath("automations"));
 });
 
-test("Run a workflow automation now", async () => {
+test("Run a workflow automation now and promote it in the next composer overview", async () => {
   const runAutomationIds: string[] = [];
   mockWorkflowApis([salesResearch()]);
   mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
   mockRunWorkflowAutomation((automationId) => {
     runAutomationIds.push(automationId);
   });
+  context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+    return respond(200, [
+      {
+        id: OPS_WORKFLOW_ID,
+        name: "alpha",
+        displayName: null,
+        description: null,
+      },
+      {
+        id: SALES_WORKFLOW_ID,
+        name: "sales-research",
+        displayName: null,
+        description: null,
+      },
+    ]);
+  });
 
-  await setupWorkflowDetailPage(workflowDetailPath("automations"));
+  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
+    [FeatureSwitchKey.ComposerAnchoredSuggestions]: true,
+  });
 
   await waitFor(() => {
     expect(buttonByText("Run now")).toBeInTheDocument();
@@ -2777,6 +2794,19 @@ test("Run a workflow automation now", async () => {
     expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
   });
   expect(search()).toBe("");
+  await fill(await findComposerEditor(), "Draft /");
+  await waitFor(() => {
+    const menu = screen.getByTestId("slash-workflow-menu");
+    const names = queryAllByRoleFast("button", menu)
+      .map((button) => {
+        return button.textContent ?? "";
+      })
+      .filter((name) => {
+        return name.startsWith("/");
+      });
+    // The highest priority is nearest the composer in the anchored menu.
+    expect(names).toStrictEqual(["/sales-research", "/alpha"]);
+  });
 });
 
 test("Create a Gmail new-message automation with match rules", async () => {

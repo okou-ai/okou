@@ -1,5 +1,6 @@
 import { computed, type Computed } from "ccstate";
 import type {
+  McpChatSearchQuery,
   McpChatSearchResponse,
   McpChatSearchResult,
 } from "@okouai/api-contracts/contracts/mcp-chat-search";
@@ -13,15 +14,21 @@ import { visibleJoinedAgentCondition } from "./agent-data.service";
 import { chatSearch } from "./chat-search.service";
 
 export function mcpChatSearch(
-  args$: Computed<{
-    readonly userId: string;
-    readonly orgId: string;
-    readonly keyword: string;
-    readonly agentId?: string;
-    readonly since?: number;
-  }>,
+  args$: Computed<
+    McpChatSearchQuery & {
+      readonly userId: string;
+      readonly orgId: string;
+    }
+  >,
 ): Computed<Promise<McpChatSearchResponse>> {
-  const nativeSearch$ = chatSearch(args$);
+  const nativeInput$ = computed((get) => {
+    const { since, ...args } = get(args$);
+    return {
+      ...args,
+      since: since === undefined ? undefined : Date.parse(since),
+    };
+  });
+  const nativeSearch$ = chatSearch(nativeInput$);
 
   return computed(async (get) => {
     const args = get(args$);

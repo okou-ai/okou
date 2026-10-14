@@ -250,10 +250,6 @@ runs:
           add_env ENV "$deploy_env"
           add_env CLI_PKG_URL "$INPUT_CLI_PKG_URL"
           add_env PI_MEMORY_BACKGROUND_WORKERS_ENABLED "$pi_memory_background_workers_enabled"
-          if [[ "$INPUT_ENVIRONMENT" == "production" ]]; then
-            add_secret CLOUDFLARE_BROWSER_RENDERING_API_TOKEN CLOUDFLARE_BROWSER_RENDERING_API_TOKEN
-            add_secret ARTIFACT_PREVIEW_WAF_SECRET ARTIFACT_PREVIEW_WAF_SECRET
-          fi
           if [[ "$INPUT_ENVIRONMENT" == "preview" && -n "$INPUT_JOB_REF" ]]; then
             add_env OKOU_PREVIEW_JOB_REF "$INPUT_JOB_REF"
           fi
@@ -384,6 +380,7 @@ runs:
           HUBSPOT
           MAILCHIMP
           CLOSE
+          COPPER
           META_ADS
           TIKTOK_ADS
           AHREFS

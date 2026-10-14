@@ -41,7 +41,9 @@ const privateMessageSchema = z.object({
       components: z.array(
         z.object({
           type: z.number(),
-          custom_id: z.string(),
+          custom_id: z.string().optional(),
+          style: z.number().optional(),
+          url: z.string().optional(),
           label: z.string().optional(),
           options: z
             .array(z.object({ label: z.string(), value: z.string() }))
@@ -175,15 +177,45 @@ describe("Discord private account interactions", () => {
       const replies = privateResponses();
       await accept(client().post(signedRequest(command(name))), [202]);
       const message = await replies.delivered;
-      expect(message.content).toContain("[Works](https://app.okou.ai/works)");
-      expect(message.content).toContain("sign in to Okou");
-      expect(message.content).toContain("ask a workspace admin");
-      expect(message.content).toContain(
-        "follow the steps to connect your Discord account",
+      expect(message.content).toBe(
+        "Please connect your account to use Okou from Discord.",
       );
-      expect(message.components).toStrictEqual([]);
+      expect(message.components).toStrictEqual([
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 5,
+              label: "Connect",
+              url: "https://app.okou.ai/settings/discord",
+            },
+          ],
+        },
+      ]);
     },
   );
+
+  it("links a server /connect command directly to setup for that server", async () => {
+    const replies = privateResponses();
+    const guildId = "1464000000000000006";
+    const payload = {
+      ...command("connect"),
+      guild_id: guildId,
+      user: undefined,
+      member: { user: { id: senderId } },
+    };
+    await accept(client().post(signedRequest(payload)), [202]);
+    const message = await replies.delivered;
+    expect(message.components[0]?.components[0]).toMatchObject({
+      label: "Connect",
+      url: `https://app.okou.ai/settings/discord?guild_id=${guildId}`,
+    });
+    expect(replies.callbacks[0]).toStrictEqual({
+      type: 5,
+      data: { flags: 64 },
+    });
+  });
 
   it("rejects a forged picker without reading or changing another account", async () => {
     const replies = privateResponses();

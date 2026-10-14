@@ -5,6 +5,27 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Dependency compatibility policy
+
+Prefer documented addon hooks and public dependency APIs. Minimize monkey patches
+and reliance on private dependency logic: each adaptation must address a concrete
+capability unavailable through the public interface. Keep its affected events,
+replaced methods/classes, private state access and ordering assumptions as narrow
+as possible. A smaller replacement count alone does not establish lower risk.
+Prefer an existing state-specific boundary when it covers the required capability.
+Choose patch boundaries by their behavioral scope and upstream assumptions.
+
+Keep adaptations in `mitmproxy_compat.py` and `websocket_framing.py`, delegate
+protocol state machines to upstream, and use public extension hooks when local
+behavior is required. Pass unrelated events through without adapting their command
+generators. Avoid copying upstream algorithms or accessing private compression
+state. Preserve authentication, accounting, cancellation and resource boundaries
+when simplifying an adapter.
+
+Retain exact version gates and real protocol coverage for necessary adaptations.
+Re-audit private integration when upgrading dependencies, and remove a bridge when
+a supported public API provides the required capability.
+
 ## Cooperative response inspection
 
 Model SSE scanners and opted-in connector parsers use bounded owner-loop work
@@ -493,6 +514,15 @@ record (4096 bytes). Non-pipe stderr and transport setup/write errors also drop
 the event. Input validation and serialization errors still propagate. This
 best-effort policy does not change billing delivery or run-local JSONL logging.
 
+Model usage parse-error diagnostics retain at most four initial warnings per
+SSE response or activated Responses WebSocket flow. The quota is spent before
+JSON serialization, so cumulative warnings stay bounded even when the JSONL
+writer drains continuously. WebSocket parser-error kinds share one quota;
+valid later messages and correlation transitions do not refill it. Inspection,
+parse-error accounting, independent correlation diagnostics, message forwarding,
+and valid usage recovery continue after exhaustion. Each WebSocket flow owns its
+budget, released with its state by the end or connection-error hook.
+
 ### Capture header inspection
 
 Opt-in network capture serializes a header prefix bounded to 512 raw fields
@@ -666,6 +696,10 @@ adapter neither inherits nor reads/writes upstream private compression state.
 Terminal cleanup replaces that opaque sender through public construction,
 releasing its prior resources while preserving close-frame encoding.
 
+Compressed input uses the shared bounded cursor: fresh chunks and copied EOF
+tails stay within 1 KiB, and carried tails are consumed before fresh source
+input. All chunks in one callback share a cumulative decoded-output allowance.
+
 It asks zlib for at most one byte beyond the remaining message and
 aggregate budgets. Extra output or a non-empty zlib unconsumed tail is treated as
 an overflow lower bound, clears the decompressor and message budget, and closes
@@ -680,9 +714,17 @@ marker. Their completion leaves an interrupted message's marker, decompressor
 and cumulative budgets intact; only data-message completion or terminal cleanup
 can end that state.
 
-RFC 7692 messages omit the final deflate block on the wire. The adapter restores
-the empty-deflate trailer (`00 00 ff ff`) at the end of a compressed message and
-runs that output through the same bound before dispatch. Uncompressed messages
+RFC 7692 messages omit the final four bytes of an empty stored block on the
+wire. The adapter restores that trailer (`00 00 ff ff`) at the end of a
+compressed message and runs that output through the same bound before dispatch.
+Permitted `BFINAL=1` blocks end a raw zlib stream, including within a fragmented
+message. The adapter continues through unused input with a replacement raw
+decoder seeded by the retained sliding window. Every stream shares the same
+cumulative output allowance. Retained history is limited to the directional
+negotiated window (at most 32 KiB), survives controls and uncompressed messages,
+and clears with the decoder on negotiated no-context-takeover completion or
+terminal cleanup. No-context-takeover still preserves history between streams
+within one logical message. Uncompressed messages
 after a compressed message, context takeover, and negotiated no-context-takeover
 are connection-local states covered by the real-layer tests. Any rejected or
 terminally closed compressed flow clears its decompressor and partial framing

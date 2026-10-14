@@ -1,29 +1,27 @@
+import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import {
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+  DropdownMenu,
+  DropdownMenuContent,
   DropdownMenuItem,
-  IconButton,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "@okouai/ui";
-import { useGet, useLoadable, useSet } from "ccstate-react";
-import { ArrowRight, Link2, X } from "lucide-react";
+import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { ChevronRight, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { brandName$ } from "../../signals/branding.ts";
-import { reloadPersonalModelProviders$ } from "../../signals/external/personal-model-providers.ts";
 import {
-  closeSubscriptionLinking$,
   connectSubscriptionLinkingProvider$,
-  dismissSubscriptionLinkingHint$,
-  manageLinkedSubscriptions$,
-  openSubscriptionLinking$,
-  subscriptionLinkingEnabled$,
-  subscriptionLinkingHintRef$,
-  subscriptionLinkingHintVisible$,
-  subscriptionLinkingSource$,
+  openSubscriptionLinkingSettings$,
   subscriptionLinkingUnlinked$,
+  trackSubscriptionLinkingOpened$,
+  type SubscriptionLinkingSource,
 } from "../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -31,247 +29,194 @@ import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 
-export function SubscriptionLinkingHint() {
-  const visible = useLoadable(subscriptionLinkingHintVisible$);
-  const open = useSet(openSubscriptionLinking$);
-  const dismiss = useSet(dismissSubscriptionLinkingHint$);
-  const hintRef = useSet(subscriptionLinkingHintRef$);
-  const pageSignal = useGet(pageSignal$);
-  const { t } = useTranslation();
+const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] = [
+  "codex-oauth-token",
+  "claude-code-oauth-token",
+];
 
-  if (visible.state !== "hasData" || !visible.data) {
-    return null;
-  }
-
-  return (
-    <div
-      ref={hintRef}
-      className="mt-2 flex items-start gap-2 text-xs text-muted-foreground"
-      data-testid="subscription-linking-hint"
-    >
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1">
-        <span className="py-2">
-          {t(($) => {
-            return $.subscriptionLinking.hint;
-          })}
-        </span>
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          className="h-11 gap-1 px-1 text-xs text-foreground sm:h-9"
-          onClick={() => {
-            return open("composer_hint");
-          }}
-        >
-          {t(($) => {
-            return $.subscriptionLinking.connect;
-          })}
-          <ArrowRight size={14} aria-hidden />
-        </Button>
-      </div>
-      <IconButton
-        type="button"
-        aria-label={t(($) => {
-          return $.subscriptionLinking.dismiss;
-        })}
-        className="size-11 shrink-0 text-muted-foreground hover:bg-gray-50 sm:size-9"
-        onClick={() => {
-          return detach(dismiss(pageSignal), Reason.DomCallback);
-        }}
-      >
-        <X size={14} aria-hidden />
-      </IconButton>
-    </div>
-  );
+/** True once the member is known to have no personal subscription. */
+export function useSubscriptionLinkingAvailable(): boolean {
+  return useLastResolved(subscriptionLinkingUnlinked$) === true;
 }
 
-export function useSubscriptionLinkingEntry() {
-  const enabled = useGet(subscriptionLinkingEnabled$);
-  const subscriptions = useLoadable(subscriptionLinkingUnlinked$);
-  const open = useSet(openSubscriptionLinking$);
-  const manage = useSet(manageLinkedSubscriptions$);
-  const pageSignal = useGet(pageSignal$);
+function useConnectProvider(source: SubscriptionLinkingSource) {
   const { t } = useTranslation();
-  const connected =
-    subscriptions.state === "hasData" && subscriptions.data === false;
-  const label =
-    subscriptions.state !== "hasData"
-      ? t(($) => {
-          return $.subscriptionLinking.menuLoading;
-        })
-      : connected
+  const connect = useSet(connectSubscriptionLinkingProvider$);
+  const pageSignal = useGet(pageSignal$);
+  return {
+    title: (type: PersonalSubscriptionProviderType) => {
+      return type === "codex-oauth-token"
         ? t(($) => {
-            return $.subscriptionLinking.manage;
+            return $.settings.models.personal.codexTitle;
           })
         : t(($) => {
-            return $.subscriptionLinking.menuConnect;
+            return $.settings.models.personal.claudeTitle;
           });
-
-  return {
-    enabled,
-    label,
-    onClick: () => {
-      if (connected) {
-        detach(manage(pageSignal), Reason.DomCallback);
-      } else {
-        open("account_menu");
-      }
+    },
+    connect: (type: PersonalSubscriptionProviderType) => {
+      detach(connect(source, type, pageSignal), Reason.DomCallback);
     },
   };
 }
 
-export function SubscriptionLinkingMenuItem() {
-  const entry = useSubscriptionLinkingEntry();
-  if (!entry.enabled) {
-    return null;
-  }
+/**
+ * The provider marks at rest take the composer's muted icon colour, so the
+ * slot reads as one more quiet control; hover and the open menu restore the
+ * brand colours.
+ */
+function SubscriptionProviderMarks() {
   return (
-    <DropdownMenuItem className="gap-3 px-3" onClick={entry.onClick}>
-      <Link2 size={18} aria-hidden />
-      <span>{entry.label}</span>
-    </DropdownMenuItem>
+    <span
+      aria-hidden="true"
+      className="flex items-center gap-1 opacity-70 brightness-0 transition-[filter,opacity] group-hover:opacity-100 group-hover:brightness-100 group-data-popup-open:opacity-100 group-data-popup-open:brightness-100 dark:invert dark:group-hover:invert-0 dark:group-data-popup-open:invert-0"
+    >
+      {SUBSCRIPTION_PROVIDERS.map((type) => {
+        return <ProviderIcon key={type} type={type} size={16} />;
+      })}
+    </span>
   );
 }
 
-// One owner per page shell prevents duplicate authorization dialogs when the
-// account menu and Settings > Models share the personal subscription flow.
-export function PersonalSubscriptionDialogs() {
-  return (
-    <>
-      <SubscriptionLinkingDialog />
-      <PersonalClaudeCodeDeviceAuthDialog />
-      <PersonalCodexDeviceAuthDialog />
-    </>
-  );
-}
-
-function SubscriptionLinkingDialog() {
-  const enabled = useGet(subscriptionLinkingEnabled$);
-  const source = useGet(subscriptionLinkingSource$);
-  const close = useSet(closeSubscriptionLinking$);
+/**
+ * Members without a personal subscription have only Auto, so the composer
+ * shows no model picker. Its slot offers the subscriptions that add models;
+ * once one is linked, the same slot becomes the model picker.
+ */
+export function SubscriptionLinkingComposerMenu() {
   const { t } = useTranslation();
-  const brandName = useGet(brandName$);
+  const trackOpened = useSet(trackSubscriptionLinkingOpened$);
+  const { title, connect } = useConnectProvider("composer_model_slot");
+  const label = t(($) => {
+    return $.settings.models.personal.autoTitle;
+  });
   return (
-    <Dialog
-      open={enabled && source !== null}
+    <DropdownMenu
       onOpenChange={(open) => {
-        if (!open) {
-          close();
+        if (open) {
+          trackOpened("composer_model_slot");
         }
       }}
     >
-      <DialogContent maxWidth="md">
-        <DialogHeader className="text-left">
-          <DialogTitle className="pr-8 leading-6">
-            {t(($) => {
-              return $.subscriptionLinking.title;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {t(
-              ($) => {
-                return $.subscriptionLinking.description;
-              },
-              { brandName },
-            )}
-          </DialogDescription>
-        </DialogHeader>
-        {source !== null && <SubscriptionProviderChoices />}
-      </DialogContent>
-    </Dialog>
+      <TooltipProvider delay={300}>
+        <Tooltip>
+          <DropdownMenuTrigger
+            render={
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="quiet"
+                    size="sm"
+                    className="group shrink-0 gap-1 px-2"
+                    aria-label={label}
+                  />
+                }
+              />
+            }
+          >
+            <SubscriptionProviderMarks />
+          </DropdownMenuTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {label}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <DropdownMenuContent
+        side="top"
+        align="end"
+        sideOffset={8}
+        aria-label={label}
+        className="w-56"
+      >
+        <p className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">
+          {label}
+        </p>
+        {SUBSCRIPTION_PROVIDERS.map((type) => {
+          return (
+            <DropdownMenuItem
+              key={type}
+              onClick={() => {
+                connect(type);
+              }}
+            >
+              <ProviderIcon type={type} size={16} />
+              <span className="min-w-0 truncate">{title(type)}</span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
-function SubscriptionProviderChoices() {
-  const providers = useLoadable(subscriptionLinkingUnlinked$);
-  const connect = useSet(connectSubscriptionLinkingProvider$);
-  const reload = useSet(reloadPersonalModelProviders$);
-  const manage = useSet(manageLinkedSubscriptions$);
-  const close = useSet(closeSubscriptionLinking$);
-  const pageSignal = useGet(pageSignal$);
+/**
+ * Sits with the credits, the other way runs are paid for, under the same name
+ * as the composer slot and Settings > Models. Linked members already see their
+ * usage there and manage accounts in Settings, so the row leaves once a
+ * subscription is connected.
+ */
+export function SubscriptionLinkingMenuItem() {
   const { t } = useTranslation();
-  if (providers.state === "hasError") {
-    return (
-      <div className="space-y-3">
-        <p role="alert" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.settings.models.personal.loadError;
-          })}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            return reload();
-          }}
-        >
-          {t(($) => {
-            return $.settings.models.personal.retry;
-          })}
-        </Button>
-      </div>
-    );
+  const available = useSubscriptionLinkingAvailable();
+  const { title, connect } = useConnectProvider("account_menu");
+  if (!available) {
+    return null;
   }
   return (
-    <div className="space-y-3">
-      {(
-        [
-          {
-            type: "codex-oauth-token",
-            label: t(($) => {
-              return $.settings.models.personal.codexTitle;
-            }),
-          },
-          {
-            type: "claude-code-oauth-token",
-            label: t(($) => {
-              return $.settings.models.personal.claudeTitle;
-            }),
-          },
-        ] as const
-      ).map((provider) => {
-        return (
-          <Button
-            key={provider.type}
-            type="button"
-            variant="outline"
-            className="h-auto min-h-16 w-full justify-start gap-3 rounded-xl p-4 text-left"
-            disabled={providers.state !== "hasData"}
-            onClick={() => {
-              return detach(
-                connect(provider.type, pageSignal),
-                Reason.DomCallback,
-              );
-            }}
-          >
-            <ProviderIcon type={provider.type} size={24} />
-            <span className="min-w-0 flex-1 whitespace-normal">
-              {provider.label}
-            </span>
-            <ArrowRight size={16} aria-hidden />
-          </Button>
-        );
-      })}
-      {providers.state === "hasData" && providers.data === false && (
-        <Button
-          type="button"
-          variant="quiet"
-          onClick={() => {
-            close();
-            detach(manage(pageSignal), Reason.DomCallback);
-          }}
-        >
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger className="gap-3 px-3">
+        <Cpu size={18} aria-hidden="true" />
+        <span className="flex-1">
           {t(($) => {
-            return $.subscriptionLinking.manage;
+            return $.settings.models.personal.autoTitle;
           })}
-        </Button>
-      )}
-      <p className="text-xs text-muted-foreground">
-        {t(($) => {
-          return $.subscriptionLinking.limits;
+        </span>
+        <ChevronRight size={14} aria-hidden="true" />
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-[220px]">
+        {SUBSCRIPTION_PROVIDERS.map((type) => {
+          return (
+            <DropdownMenuItem
+              key={type}
+              className="gap-3 px-3"
+              onClick={() => {
+                connect(type);
+              }}
+            >
+              <ProviderIcon type={type} size={18} />
+              <span>{title(type)}</span>
+            </DropdownMenuItem>
+          );
         })}
-      </p>
-    </div>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+export function useSubscriptionLinkingEntry() {
+  const { t } = useTranslation();
+  const available = useSubscriptionLinkingAvailable();
+  const open = useSet(openSubscriptionLinkingSettings$);
+  const pageSignal = useGet(pageSignal$);
+  return {
+    available,
+    label: t(($) => {
+      return $.settings.models.personal.autoTitle;
+    }),
+    onClick: () => {
+      detach(open(pageSignal), Reason.DomCallback);
+    },
+  };
+}
+
+// One owner per page shell prevents duplicate authorization dialogs when the
+// composer, the account menu and Settings > Models share the personal
+// subscription flow.
+export function PersonalSubscriptionDialogs() {
+  return (
+    <>
+      <PersonalClaudeCodeDeviceAuthDialog />
+      <PersonalCodexDeviceAuthDialog />
+    </>
   );
 }

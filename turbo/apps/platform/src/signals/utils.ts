@@ -1,6 +1,7 @@
 import { command, state, type Command } from "ccstate";
 import { delay } from "signal-timers";
 import { IN_VITEST } from "../env.ts";
+import { ApiError } from "../lib/api-error.ts";
 import { logger } from "./log.ts";
 
 const L = logger("Promise");
@@ -41,7 +42,10 @@ export function detach<T>(
     silencePromise = Promise.resolve(promise).then(
       () => {},
       (error: unknown) => {
-        if (!isAbortError(error)) {
+        if (
+          !isAbortError(error) &&
+          !(error instanceof ApiError && error.expected)
+        ) {
           L.error(`Detached promise rejected [${reason}]`, error);
         }
       },
@@ -229,6 +233,25 @@ export function waitForOperation<T>(
       cancelled.reject(new DOMException("Operation settled", "AbortError"));
     }
   });
+}
+
+/** Race independently owned attempts and cancel the losers when one settles. */
+export function raceWithCancellation<T>(
+  operations: readonly ((signal: AbortSignal) => Promise<T>)[],
+  signal: AbortSignal,
+): Promise<T> {
+  signal.throwIfAborted();
+  const controller = new AbortController();
+  const raceSignal = AbortSignal.any([signal, controller.signal]);
+  const attempts = operations.map(async (operation) => {
+    return await operation(raceSignal);
+  });
+  return withCleanup(
+    waitForOperation(Promise.race(attempts), raceSignal),
+    () => {
+      controller.abort();
+    },
+  );
 }
 // ---------------------------------------------------------------------------
 // Polling loop with fibonacci backoff

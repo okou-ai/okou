@@ -22,8 +22,9 @@ import { piMemoryPhase2MaintenanceCallbackPayloadSchema } from "./pi-memory-phas
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import {
   maintenancePublicationResultCondition,
-  maintenancePublicationResultVersion,
   maintenancePublicationVersion,
+  maintenanceUnpublishedRecoveryCondition,
+  maintenanceOutputResultVersion,
 } from "./pi-memory-phase2-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentSessions } from "@okouai/db/runtime/agent-session";
@@ -31,7 +32,7 @@ import { blobs } from "@okouai/db/schema/blob";
 import { conversations } from "@okouai/db/schema/conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, computed } from "ccstate";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
@@ -69,6 +70,7 @@ type PrepareHistoryBody = z.infer<
 export interface AgentRunOutputInput {
   readonly auth: SandboxAuth;
   readonly body: AgentRunOutputBody;
+  readonly recovery: boolean;
 }
 
 interface RunOutputAuthInput<TBody> {
@@ -198,7 +200,7 @@ function createInitialRunOutputContext(runId: string, userId: string) {
       status: runStatusSchema.parse(run.status),
       existingOutput:
         conversation &&
-        run.status === "completed" &&
+        ["completed", "failed", "cancelled"].includes(run.status) &&
         run.chatThreadId === null &&
         run.launchSnapshot?.framework === "pi"
           ? parseExistingRunOutput({ ...conversation, result })
@@ -995,6 +997,16 @@ async function persistAgentRunOutput(
     throw new Error("Failed to upsert conversation record");
   }
 
+  await tx
+    .update(agentRuns)
+    .set({
+      framework: body.cliAgentType,
+      frameworkSessionId: body.cliAgentSessionId,
+      legacyConversationHistoryHash: historyHash ?? null,
+    })
+    .where(eq(agentRuns.id, body.runId));
+  signal.throwIfAborted();
+
   if (previousHistoryHash !== null && historyChanged) {
     await tx
       .update(blobs)
@@ -1054,7 +1066,7 @@ async function exactRunOutputRetryResponse(
   return runOutputSuccessResponse(existing.result);
 }
 
-function completedMaintenanceOutput(
+function finalizedMaintenanceOutput(
   binding: {
     readonly memoryStorageId: string;
     readonly claimedBaseVersionId: string;
@@ -1115,8 +1127,50 @@ function completedMaintenanceOutput(
   };
 }
 
+function privateMaintenanceIdentityMatches(
+  binding: { readonly orgId: string; readonly userId: string },
+  input: AgentRunOutputInput,
+  run: RunOutputContext,
+): boolean {
+  return (
+    binding.orgId === input.auth.orgId &&
+    binding.userId === input.auth.userId &&
+    run.chatThreadId === null &&
+    isPiHistoryRun(run) &&
+    input.body.cliAgentSessionId === input.body.runId &&
+    input.body.cliAgentSessionHistoryHash === undefined &&
+    input.body.cliAgentSessionHistoryDisposition === "unavailable"
+  );
+}
+
+function privateMaintenanceSnapshotOutput(
+  binding: {
+    readonly memoryStorageId: string;
+    readonly claimedBaseVersionId: string;
+  },
+  run: RunOutputContext,
+  body: AgentRunOutputBody,
+  versionId: string,
+): { memoryStorageId: string; versionId: string } | string {
+  const mount = run.storageMounts?.find((entry) => {
+    return entry.storageId === binding.memoryStorageId && entry.writeback;
+  });
+  const snapshot = body.artifactSnapshots?.find((entry) => {
+    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
+  });
+  if (
+    !mount ||
+    !snapshot ||
+    (snapshot.version !== binding.claimedBaseVersionId &&
+      snapshot.version !== versionId)
+  ) {
+    return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
+  }
+  return { memoryStorageId: binding.memoryStorageId, versionId };
+}
+
 // Private maintenance has no public Pi history. The Job proves fresh publication;
-// a completed Run's immutable output proves only that Run's exact replay.
+// a finalized Run's immutable output proves only that Run's exact replay.
 async function privateMaintenanceOutput(
   db: Db | Tx,
   input: AgentRunOutputInput,
@@ -1145,49 +1199,45 @@ async function privateMaintenanceOutput(
   );
   if (
     !parsed.success ||
-    parsed.data.orgId !== input.auth.orgId ||
-    parsed.data.userId !== input.auth.userId ||
-    run.chatThreadId !== null ||
-    !isPiHistoryRun(run) ||
-    input.body.cliAgentSessionId !== input.body.runId ||
-    input.body.cliAgentSessionHistoryHash !== undefined ||
-    input.body.cliAgentSessionHistoryDisposition !== "unavailable"
+    !privateMaintenanceIdentityMatches(parsed.data, input, run)
   ) {
     return "[PI_MAINTENANCE_IDENTITY_INVALID] Private output identity does not match its launch";
   }
   const binding = parsed.data;
-  if (run.status === "completed") {
-    return completedMaintenanceOutput(binding, run, input.body);
+  if (
+    ["completed", "failed", "cancelled"].includes(run.status) &&
+    run.existingOutput?.result !== undefined
+  ) {
+    return finalizedMaintenanceOutput(binding, run, input.body);
   }
   const [result] = await db
-    .select({ versionId: maintenancePublicationResultVersion() })
+    .select({ versionId: maintenanceOutputResultVersion(input.body.runId) })
     .from(piMemoryPhase2Jobs)
     .where(
-      maintenancePublicationResultCondition({
-        ...binding,
-        runId: input.body.runId,
-      }),
+      or(
+        maintenancePublicationResultCondition({
+          ...binding,
+          runId: input.body.runId,
+        }),
+        input.recovery || ["failed", "cancelled"].includes(run.status)
+          ? maintenanceUnpublishedRecoveryCondition({
+              ...binding,
+              runId: input.body.runId,
+            })
+          : undefined,
+      ),
     )
     .limit(1);
   const publicationVersionId = maintenancePublicationVersion(result);
-  const mount = run.storageMounts?.find((entry) => {
-    return entry.storageId === binding.memoryStorageId && entry.writeback;
-  });
-  const snapshot = input.body.artifactSnapshots?.find((entry) => {
-    return entry.name === mount?.name && entry.mountPath === mount.mountPath;
-  });
-  if (
-    !mount ||
-    !snapshot ||
-    (snapshot.version !== binding.claimedBaseVersionId &&
-      snapshot.version !== publicationVersionId)
-  ) {
+  if (publicationVersionId === undefined) {
     return "[PI_MAINTENANCE_OUTPUT_INVALID] Private output lacks exact publication or recovery evidence";
   }
-  return {
-    memoryStorageId: binding.memoryStorageId,
-    versionId: publicationVersionId ?? binding.claimedBaseVersionId,
-  };
+  return privateMaintenanceSnapshotOutput(
+    binding,
+    run,
+    input.body,
+    publicationVersionId,
+  );
 }
 
 function piValidationMatchesRun(
@@ -1225,12 +1275,33 @@ function runStorageOutputError(
   return null;
 }
 
-function isCompletedPrivatePiRun(run: RunOutputContext): boolean {
+function isTerminalPrivatePiRun(run: RunOutputContext): boolean {
   return (
-    run.status === "completed" &&
+    ["completed", "failed", "cancelled"].includes(run.status) &&
     run.chatThreadId === null &&
     isPiHistoryRun(run)
   );
+}
+
+function restoreTerminalPrivateOutput(
+  run: RunOutputContext,
+  existing:
+    | (NonNullable<Parameters<typeof parseExistingRunOutput>[0]> & {
+        readonly agentSessionConversationId: string | null;
+      })
+    | undefined,
+): RunOutputContext | string {
+  if (!existing) {
+    return run.status === "completed"
+      ? "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output"
+      : run;
+  }
+  const { agentSessionConversationId, ...output } = existing;
+  return {
+    ...run,
+    agentSessionConversationId,
+    existingOutput: parseExistingRunOutput(output),
+  };
 }
 
 export async function persistAgentRunOutputsInTransaction(
@@ -1245,7 +1316,7 @@ export async function persistAgentRunOutputsInTransaction(
     return notFound("Agent run not found");
   }
 
-  if (isCompletedPrivatePiRun(run)) {
+  if (isTerminalPrivatePiRun(run)) {
     // Read the completed Run's output and session pointer together after the
     // existing Run lock. Both identities must describe the same completion.
     const [existing] = await tx
@@ -1263,17 +1334,11 @@ export async function persistAgentRunOutputsInTransaction(
       .where(eq(conversations.runId, input.body.runId))
       .limit(1);
     signal.throwIfAborted();
-    if (!existing) {
-      return badRequestMessage(
-        "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output",
-      );
+    const terminalRun = restoreTerminalPrivateOutput(run, existing);
+    if (typeof terminalRun === "string") {
+      return badRequestMessage(terminalRun);
     }
-    const { agentSessionConversationId, ...output } = existing;
-    run = {
-      ...run,
-      agentSessionConversationId,
-      existingOutput: parseExistingRunOutput(output),
-    };
+    run = terminalRun;
   }
 
   const maintenance = await privateMaintenanceOutput(tx, input, run);

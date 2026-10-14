@@ -1,9 +1,4 @@
-import {
-  voiceIoPolishSegmentsContract,
-  voiceIoPolishContract,
-} from "@okouai/api-contracts/contracts/voice-io-polish";
-import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { voiceIoQuotaRoutes } from "../voice-io-quota";
+import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -47,28 +42,6 @@ async function setupVoicePolish() {
 }
 
 describe("POST /api/voice-io/polish", () => {
-  it("preserves the old text-only polish HTTP contract without recording usage", async () => {
-    await setupVoicePolish();
-    const headers = { authorization: "Bearer clerk-session" };
-    server.use(
-      http.post(VERTEX_VOICE_URL, () => {
-        return vertexVoiceResponse("Preserved speech.");
-      }),
-    );
-    const legacy = setupApp({ context, routes: voiceIoPolishRoutes })(
-      voiceIoPolishContract,
-    );
-    const response = await accept(
-      legacy.post({ headers, body: { text: "um preserved speech" } }),
-      [200],
-    );
-    expect(response.body.text).toBe("Preserved speech.");
-    const quota = setupApp({ context, routes: voiceIoQuotaRoutes })(
-      voiceIoQuotaContract,
-    );
-    expect((await accept(quota.get({ headers }), [200])).body.count).toBe(0);
-  });
-
   it.each([
     { code: "ECONNRESET", status: 503 },
     { code: "UND_ERR_BODY_TIMEOUT", status: 503 },
@@ -391,8 +364,6 @@ describe("POST /api/voice-io/polish", () => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           segments: ["um ship the nebula release Friday", "no Monday"],
-          lastAssistantMessage:
-            "The Project Nebula release is scheduled for Friday.",
         },
       }),
       [200],
@@ -425,8 +396,6 @@ describe("POST /api/voice-io/polish", () => {
             {
               text: JSON.stringify({
                 segments: ["um ship the nebula release Friday", "no Monday"],
-                lastAssistantMessage:
-                  "The Project Nebula release is scheduled for Friday.",
               }),
             },
           ],

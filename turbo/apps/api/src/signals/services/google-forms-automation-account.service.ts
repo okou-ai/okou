@@ -1,8 +1,6 @@
 import { googleFormsAutomationCursors } from "@okouai/db/schema/google-forms-event";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { sql } from "drizzle-orm";

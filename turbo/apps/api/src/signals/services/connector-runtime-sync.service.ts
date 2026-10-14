@@ -1,8 +1,4 @@
-import {
-  featureSwitchContextFromRows,
-  userFeatureSwitchRowCondition,
-} from "./feature-switch-scope";
-import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
+import { featureSwitchContextFromRows } from "./feature-switch-scope";
 import type { AgentCustomConnectorGrant } from "@okouai/api-contracts/contracts/agent-custom-connectors";
 import {
   connectorRuntimeTargetKey,
@@ -13,14 +9,14 @@ import {
   type ConnectorRuntimeTargetRegistration,
 } from "@okouai/api-contracts/contracts/runners";
 import type { FirewallApi } from "@okouai/connectors/firewall-types";
-import { userCustomConnectors } from "@okouai/db/schema/user-custom-connector";
-import { and, eq, inArray } from "drizzle-orm";
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
+import { command } from "ccstate";
 import { resolveBuiltinConnectorCredentialAccess } from "./builtin-connector-credential-access.service";
 import {
   connectorAccountTargetKey,
   resolveConnectorAccounts,
+  connectorAccountResolutionsFromRows,
   resolvedConnectorAccountIdsByTarget,
   type ConnectorAccountResolutionRequest,
 } from "./connector-account-resolution.service";
@@ -44,8 +40,13 @@ import {
   loadEffectiveCustomConnectorPermissionBundle,
   type CustomConnectorRuntimeDataRows,
 } from "./connector-runtime-preparation.service";
-import { loadCustomConnectorPermissionBundleDependencySlugs } from "./custom-connector-permission-bundle.service";
-import { loadCustomConnectorRuntimeData } from "./custom-connector.service";
+import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
+import { customConnectorRuntimeDataFromRows } from "./custom-connector.service";
+import { customConnectorRuntimeStorageSnapshot } from "./custom-connector-credential-access.service";
+import {
+  customRuntimeSnapshotReadQuery,
+  customRuntimeSnapshotSectionsFromRows,
+} from "./custom-runtime-snapshot-query";
 
 import { resolveActiveNetworkPolicyRefreshes } from "./user-permission-grants.service";
 
@@ -265,142 +266,136 @@ function customTargetsFromRows(
   );
 }
 
-async function loadCustomSnapshot(args: {
-  readonly db: Db;
-  readonly scope: ConnectorRuntimeScope;
-  readonly registrations: readonly Extract<
-    ConnectorRuntimeTargetRegistration,
-    { readonly kind: "custom" }
-  >[];
-}) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0120; new non-billing transactions are prohibited.
-  return await args.db.transaction(
-    async (tx) => {
-      const customConnectorIds = args.registrations.map((registration) => {
-        return registration.customConnectorId;
-      });
-      const metadataConnectorSlugs =
-        await loadCustomConnectorPermissionBundleDependencySlugs(tx, {
-          orgId: args.scope.orgId,
-          customConnectorIds,
-        });
-      const catalogRows = await tx
-        .select({
-          current: {
-            schemaVersion: connectorCatalog.schemaVersion,
-            hash: connectorCatalog.hash,
-          },
-          entry: connectorCatalogRuntimeColumns,
-        })
-        .from(connectorCatalog)
-        .leftJoin(
-          connectorCatalogEntries,
-          connectorCatalogSlugJoin(metadataConnectorSlugs),
-        )
-        .where(connectorCatalogCurrentWhere());
-      // Permission-bundle dependencies are metadata only. A missing entry
-      // resolves through the fail-closed unavailable custom runtime row.
-      const connectorCatalogSelection = connectorCatalogSlugRuntimeFromRows(
-        catalogRows.map((row) => {
-          return {
-            ...row,
-            entry:
-              row.entry === null
-                ? null
-                : materializeConnectorCatalogRuntimeRow(row.entry),
-          };
-        }),
-        {
-          runtimeConnectorSlugs: [],
-          metadataConnectorSlugs,
-        },
-      );
-      const accountResolutions = await resolveConnectorAccounts(tx, {
-        orgId: args.scope.orgId,
-        userId: args.scope.userId,
-        requests: args.registrations.flatMap((registration) => {
-          return registration.sourceId === undefined
-            ? []
-            : [
-                {
-                  target: {
-                    kind: "custom" as const,
-                    customConnectorId: registration.customConnectorId,
-                  },
-                  selection: {
-                    kind: "exact" as const,
-                    sourceId: registration.sourceId,
-                  },
-                },
-              ];
-        }),
-      });
-      const resolvedAccountIds =
-        resolvedConnectorAccountIdsByTarget(accountResolutions);
-      const memberConnectorIdsByCustomConnectorId = new Map<string, string>();
-      for (const customConnectorId of customConnectorIds) {
-        const memberConnectorId = resolvedAccountIds.get(
-          connectorAccountTargetKey({ kind: "custom", customConnectorId }),
-        );
-        if (memberConnectorId) {
-          memberConnectorIdsByCustomConnectorId.set(
-            customConnectorId,
-            memberConnectorId,
-          );
-        }
-      }
-      const featureSwitchContextRows0 = await tx
-        .select({
-          userId: userFeatureSwitches.userId,
-          switches: userFeatureSwitches.switches,
-        })
-        .from(userFeatureSwitches)
-        .where(
-          userFeatureSwitchRowCondition(args.scope.orgId, args.scope.userId),
-        );
-      const featureSwitchContext = featureSwitchContextFromRows(
-        args.scope.orgId,
-        args.scope.userId,
-        featureSwitchContextRows0,
-      );
-      const runtimeRows = await loadCustomConnectorRuntimeData(tx, {
-        orgId: args.scope.orgId,
-        userId: args.scope.userId,
-        connectorIds: customConnectorIds,
-        memberConnectorIdsByCustomConnectorId,
-      });
-      const grantRows = await tx
-        .select({
-          customConnectorId: userCustomConnectors.customConnectorId,
-          permissionNames: userCustomConnectors.permissionNames,
-        })
-        .from(userCustomConnectors)
-        .where(
-          and(
-            eq(userCustomConnectors.orgId, args.scope.orgId),
-            eq(userCustomConnectors.userId, args.scope.userId),
-            eq(userCustomConnectors.agentId, args.scope.agentId),
-            inArray(userCustomConnectors.customConnectorId, customConnectorIds),
-          ),
-        );
-      const customTargets = customTargetsFromRows(runtimeRows, grantRows);
-      return {
-        connectorCatalogSelection,
-        featureSwitchContext,
-        customTargets,
-        accountResolutions,
-      };
+const loadCustomSnapshot$ = command(
+  async (
+    { get },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly registrations: readonly Extract<
+        ConnectorRuntimeTargetRegistration,
+        { readonly kind: "custom" }
+      >[];
     },
-    { isolationLevel: "repeatable read", accessMode: "read only" },
-  );
-}
+  ) => {
+    const db = get(db$);
+    const query = customRuntimeSnapshotReadQuery(args);
+    const capture = db.$with("captured_custom_runtime_snapshot").as(query);
+    const rows = await db.with(capture).select().from(capture);
+    const sections = customRuntimeSnapshotSectionsFromRows(rows);
+    const metadataConnectorSlugs = [
+      ...new Set(
+        sections.definitionRows.flatMap(({ connector }) => {
+          if (connector.permissionBundleRef === null) {
+            return [];
+          }
+          const dependency = customConnectorPermissionBundleDependencySlug(
+            connector.permissionBundleRef,
+          );
+          return dependency === null ? [] : [dependency];
+        }),
+      ),
+    ].sort();
+    const connectorCatalogSelection = connectorCatalogSlugRuntimeFromRows(
+      sections.catalogRows.map(({ current, entry }) => {
+        return {
+          current,
+          entry:
+            entry === null
+              ? null
+              : materializeConnectorCatalogRuntimeRow(entry),
+        };
+      }),
+      { runtimeConnectorSlugs: [], metadataConnectorSlugs },
+    );
+    const accountResolutions = connectorAccountResolutionsFromRows({
+      requests: args.registrations.flatMap((registration) => {
+        return registration.sourceId === undefined
+          ? []
+          : [
+              {
+                target: {
+                  kind: "custom" as const,
+                  customConnectorId: registration.customConnectorId,
+                },
+                selection: {
+                  kind: "exact" as const,
+                  sourceId: registration.sourceId,
+                },
+              },
+            ];
+      }),
+      exactRows: sections.accountRows,
+      defaultRows: [],
+    });
+    const resolvedAccountIds =
+      resolvedConnectorAccountIdsByTarget(accountResolutions);
+    const memberConnectorIdsByCustomConnectorId = new Map<string, string>();
+    for (const registration of args.registrations) {
+      const customConnectorId = registration.customConnectorId;
+      const memberConnectorId = resolvedAccountIds.get(
+        connectorAccountTargetKey({ kind: "custom", customConnectorId }),
+      );
+      if (memberConnectorId) {
+        memberConnectorIdsByCustomConnectorId.set(
+          customConnectorId,
+          memberConnectorId,
+        );
+      }
+    }
+    const featureSwitchContext = featureSwitchContextFromRows(
+      args.scope.orgId,
+      args.scope.userId,
+      sections.featureRows,
+    );
+    // Preserve the original clock point: after capture, immediately inside the
+    // existing credential materializer, before strict definition normalization.
+    const runtimeRows =
+      sections.definitionRows.length === 0
+        ? []
+        : customConnectorRuntimeDataFromRows(
+            sections.definitionRows,
+            customConnectorRuntimeStorageSnapshot(
+              sections.definitionRows.map(({ connector }) => {
+                return {
+                  id: connector.id,
+                  authMode: connector.authMode,
+                  storageVersion: connector.storageVersion,
+                };
+              }),
+              sections.storageRows,
+              memberConnectorIdsByCustomConnectorId,
+            ),
+          );
+    const customTargets = customTargetsFromRows(
+      runtimeRows,
+      sections.grantRows,
+    );
+    return {
+      connectorCatalogSelection,
+      featureSwitchContext,
+      customTargets,
+      accountResolutions,
+    };
+  },
+);
 
 async function resolveCustomTarget(args: {
   readonly registration: Extract<
     ConnectorRuntimeTargetRegistration,
     { readonly kind: "custom" }
   >;
-  readonly snapshot: Awaited<ReturnType<typeof loadCustomSnapshot>>;
+  readonly snapshot: {
+    readonly connectorCatalogSelection: ReturnType<
+      typeof connectorCatalogSlugRuntimeFromRows
+    >;
+    readonly featureSwitchContext: ReturnType<
+      typeof featureSwitchContextFromRows
+    >;
+    readonly customTargets: ReturnType<typeof customTargetsFromRows>;
+    readonly accountResolutions: ReturnType<
+      typeof connectorAccountResolutionsFromRows
+    >;
+  };
 }): Promise<ConnectorRuntimeCustomSyncResult> {
   const target = {
     kind: "custom" as const,
@@ -567,133 +562,136 @@ function resolveBuiltinTarget(args: {
   };
 }
 
-async function resolveConnectorRuntimeTargetStates(args: {
-  readonly db: Db;
-  readonly scope: ConnectorRuntimeScope;
-  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
-}): Promise<readonly ResolvedConnectorRuntimeTarget[]> {
-  const builtinConnectorSlugs = args.targets.flatMap((target) => {
-    return target.kind === "builtin" ? [target.connectorSlug] : [];
-  });
-  const customRegistrations = args.targets.flatMap((target) => {
-    return target.kind === "custom" ? [target] : [];
-  });
-  const builtinCatalogSelection =
-    builtinConnectorSlugs.length > 0
-      ? connectorCatalogSlugRuntimeFromRows(
-          (
-            await args.db
-              .select({
-                current: {
-                  schemaVersion: connectorCatalog.schemaVersion,
-                  hash: connectorCatalog.hash,
-                },
-                entry: connectorCatalogRuntimeColumns,
-              })
-              .from(connectorCatalog)
-              .leftJoin(
-                connectorCatalogEntries,
-                connectorCatalogSlugJoin(builtinConnectorSlugs),
-              )
-              .where(connectorCatalogCurrentWhere())
-          ).map((row) => {
-            return {
-              ...row,
-              entry:
-                row.entry === null
-                  ? null
-                  : materializeConnectorCatalogRuntimeRow(row.entry),
-            };
-          }),
-          // A registered target without an entry becomes `absent` below.
-          {
-            runtimeConnectorSlugs: builtinConnectorSlugs,
-          },
-        )
-      : undefined;
-  const builtinCatalogConnectorSlugs = new Set(
-    builtinCatalogSelection?.connectors.keys() ?? [],
-  );
-  const catalogBuiltinConnectorSlugs = builtinConnectorSlugs.filter(
-    (connectorSlug) => {
-      return builtinCatalogConnectorSlugs.has(connectorSlug);
+const resolveConnectorRuntimeTargetStates$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
     },
-  );
-  if (catalogBuiltinConnectorSlugs.length < builtinConnectorSlugs.length) {
-    L.warn("Registered connector runtime targets have no catalog entry", {
-      connectorSlugs: builtinConnectorSlugs.filter((connectorSlug) => {
-        return !builtinCatalogConnectorSlugs.has(connectorSlug);
-      }),
+  ): Promise<readonly ResolvedConnectorRuntimeTarget[]> => {
+    const db = get(db$);
+    const builtinConnectorSlugs = args.targets.flatMap((target) => {
+      return target.kind === "builtin" ? [target.connectorSlug] : [];
     });
-  }
-  const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
-    await Promise.all([
-      resolveActiveNetworkPolicyRefreshes(
-        args.db,
-        args.scope,
-        catalogBuiltinConnectorSlugs,
-        builtinCatalogSelection,
-      ),
-      resolveConnectorAccounts(args.db, {
-        orgId: args.scope.orgId,
-        userId: args.scope.userId,
-        requests: connectorAccountRequests(
-          args.targets,
-          builtinCatalogConnectorSlugs,
-        ),
-      }),
-      customRegistrations.length > 0
-        ? loadCustomSnapshot({
-            db: args.db,
-            scope: args.scope,
-            registrations: customRegistrations,
-          })
-        : undefined,
-    ]);
-  const builtinByTarget = new Map(
-    builtinRefreshes.map((refresh) => {
-      return [
-        connectorRuntimeTargetKey({
-          kind: "builtin",
-          connectorSlug: refresh.connectorSlug,
+    const customRegistrations = args.targets.flatMap((target) => {
+      return target.kind === "custom" ? [target] : [];
+    });
+    const builtinCatalogSelection =
+      builtinConnectorSlugs.length > 0
+        ? connectorCatalogSlugRuntimeFromRows(
+            (
+              await db
+                .select({
+                  current: {
+                    schemaVersion: connectorCatalog.schemaVersion,
+                    hash: connectorCatalog.hash,
+                  },
+                  entry: connectorCatalogRuntimeColumns,
+                })
+                .from(connectorCatalog)
+                .leftJoin(
+                  connectorCatalogEntries,
+                  connectorCatalogSlugJoin(builtinConnectorSlugs),
+                )
+                .where(connectorCatalogCurrentWhere())
+            ).map((row) => {
+              return {
+                ...row,
+                entry:
+                  row.entry === null
+                    ? null
+                    : materializeConnectorCatalogRuntimeRow(row.entry),
+              };
+            }),
+            // A registered target without an entry becomes `absent` below.
+            {
+              runtimeConnectorSlugs: builtinConnectorSlugs,
+            },
+          )
+        : undefined;
+    const builtinCatalogConnectorSlugs = new Set(
+      builtinCatalogSelection?.connectors.keys() ?? [],
+    );
+    const catalogBuiltinConnectorSlugs = builtinConnectorSlugs.filter(
+      (connectorSlug) => {
+        return builtinCatalogConnectorSlugs.has(connectorSlug);
+      },
+    );
+    if (catalogBuiltinConnectorSlugs.length < builtinConnectorSlugs.length) {
+      L.warn("Registered connector runtime targets have no catalog entry", {
+        connectorSlugs: builtinConnectorSlugs.filter((connectorSlug) => {
+          return !builtinCatalogConnectorSlugs.has(connectorSlug);
         }),
-        refresh,
-      ] as const;
-    }),
-  );
-
-  const resolvedTargets: ResolvedConnectorRuntimeTarget[] = [];
-  for (const registration of args.targets) {
-    if (registration.kind === "custom") {
-      if (!customSnapshot) {
-        throw new Error("Custom connector runtime snapshot is unavailable");
-      }
-      resolvedTargets.push({
-        kind: "custom",
-        result: await resolveCustomTarget({
-          registration,
-          snapshot: customSnapshot,
-        }),
-        customSnapshot: customSnapshot.customTargets.get(
-          registration.customConnectorId,
-        ),
       });
-      continue;
     }
-    resolvedTargets.push(
-      resolveBuiltinTarget({
-        registration,
-        scope: args.scope,
-        snapshot: builtinCatalogSelection,
-        accounts: builtinAccountResolutions,
-        refreshes: builtinByTarget,
+    const [builtinRefreshes, builtinAccountResolutions, customSnapshot] =
+      await Promise.all([
+        resolveActiveNetworkPolicyRefreshes(
+          db,
+          args.scope,
+          catalogBuiltinConnectorSlugs,
+          builtinCatalogSelection,
+        ),
+        resolveConnectorAccounts(db, {
+          orgId: args.scope.orgId,
+          userId: args.scope.userId,
+          requests: connectorAccountRequests(
+            args.targets,
+            builtinCatalogConnectorSlugs,
+          ),
+        }),
+        customRegistrations.length > 0
+          ? set(loadCustomSnapshot$, {
+              scope: args.scope,
+              registrations: customRegistrations,
+            })
+          : undefined,
+      ]);
+    const builtinByTarget = new Map(
+      builtinRefreshes.map((refresh) => {
+        return [
+          connectorRuntimeTargetKey({
+            kind: "builtin",
+            connectorSlug: refresh.connectorSlug,
+          }),
+          refresh,
+        ] as const;
       }),
     );
-  }
-  logResolvedConnectorRuntimeTargets(args.targets, resolvedTargets);
-  return resolvedTargets;
-}
 
+    const resolvedTargets: ResolvedConnectorRuntimeTarget[] = [];
+    for (const registration of args.targets) {
+      if (registration.kind === "custom") {
+        if (!customSnapshot) {
+          throw new Error("Custom connector runtime snapshot is unavailable");
+        }
+        resolvedTargets.push({
+          kind: "custom",
+          result: await resolveCustomTarget({
+            registration,
+            snapshot: customSnapshot,
+          }),
+          customSnapshot: customSnapshot.customTargets.get(
+            registration.customConnectorId,
+          ),
+        });
+        continue;
+      }
+      resolvedTargets.push(
+        resolveBuiltinTarget({
+          registration,
+          scope: args.scope,
+          snapshot: builtinCatalogSelection,
+          accounts: builtinAccountResolutions,
+          refreshes: builtinByTarget,
+        }),
+      );
+    }
+    logResolvedConnectorRuntimeTargets(args.targets, resolvedTargets);
+    return resolvedTargets;
+  },
+);
 function logResolvedConnectorRuntimeTargets(
   targets: readonly ConnectorRuntimeTargetRegistration[],
   resolvedTargets: readonly ResolvedConnectorRuntimeTarget[],
@@ -716,16 +714,23 @@ function logResolvedConnectorRuntimeTargets(
   });
 }
 
-export async function resolveConnectorRuntimeTargets(args: {
-  readonly db: Db;
-  readonly scope: ConnectorRuntimeScope;
-  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
-}): Promise<readonly ConnectorRuntimeSyncResult[]> {
-  const resolvedTargets = await resolveConnectorRuntimeTargetStates(args);
-  return resolvedTargets.map((target) => {
-    return target.result;
-  });
-}
+export const resolveConnectorRuntimeTargets$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
+  ): Promise<readonly ConnectorRuntimeSyncResult[]> => {
+    const resolvedTargets = await set(
+      resolveConnectorRuntimeTargetStates$,
+      args,
+    );
+    return resolvedTargets.map((target) => {
+      return target.result;
+    });
+  },
+);
 
 function diagnosticCustomApis(
   result: Extract<
@@ -763,14 +768,46 @@ function diagnosticCustomCredentialResolution(
     : "none";
 }
 
-export async function resolveConnectorRuntimeDiagnosticTargets(args: {
-  readonly db: Db;
-  readonly scope: ConnectorRuntimeScope;
-  readonly targets: readonly ConnectorRuntimeTargetRegistration[];
-}): Promise<readonly ConnectorRuntimeDiagnosticResult[]> {
-  const resolvedTargets = await resolveConnectorRuntimeTargetStates(args);
-  return resolvedTargets.map((resolved): ConnectorRuntimeDiagnosticResult => {
-    if (resolved.kind === "builtin") {
+export const resolveConnectorRuntimeDiagnosticTargets$ = command(
+  async (
+    { set },
+    args: {
+      readonly scope: ConnectorRuntimeScope;
+      readonly targets: readonly ConnectorRuntimeTargetRegistration[];
+    },
+  ): Promise<readonly ConnectorRuntimeDiagnosticResult[]> => {
+    const resolvedTargets = await set(
+      resolveConnectorRuntimeTargetStates$,
+      args,
+    );
+    return resolvedTargets.map((resolved): ConnectorRuntimeDiagnosticResult => {
+      if (resolved.kind === "builtin") {
+        const { result } = resolved;
+        if (result.state === "absent") {
+          return {
+            target: result.target,
+            state: result.state,
+            reason: result.reason,
+          };
+        }
+        if (result.state === "unresolved") {
+          return {
+            target: result.target,
+            state: result.state,
+            reason: result.reason,
+          };
+        }
+        return {
+          target: result.target,
+          state: result.state,
+          networkPolicy: result.networkPolicy,
+          ...(resolved.credentialResolution !== undefined
+            ? {
+                credentialResolution: resolved.credentialResolution,
+              }
+            : {}),
+        };
+      }
       const { result } = resolved;
       if (result.state === "absent") {
         return {
@@ -786,44 +823,19 @@ export async function resolveConnectorRuntimeDiagnosticTargets(args: {
           reason: result.reason,
         };
       }
+      if (!resolved.customSnapshot) {
+        throw new Error(
+          `Missing custom connector diagnostic metadata: ${result.target.customConnectorId}`,
+        );
+      }
       return {
         target: result.target,
         state: result.state,
+        label: resolved.customSnapshot.row.connector.displayName,
+        credentialResolution: diagnosticCustomCredentialResolution(result),
+        apis: diagnosticCustomApis(result),
         networkPolicy: result.networkPolicy,
-        ...(resolved.credentialResolution !== undefined
-          ? {
-              credentialResolution: resolved.credentialResolution,
-            }
-          : {}),
       };
-    }
-    const { result } = resolved;
-    if (result.state === "absent") {
-      return {
-        target: result.target,
-        state: result.state,
-        reason: result.reason,
-      };
-    }
-    if (result.state === "unresolved") {
-      return {
-        target: result.target,
-        state: result.state,
-        reason: result.reason,
-      };
-    }
-    if (!resolved.customSnapshot) {
-      throw new Error(
-        `Missing custom connector diagnostic metadata: ${result.target.customConnectorId}`,
-      );
-    }
-    return {
-      target: result.target,
-      state: result.state,
-      label: resolved.customSnapshot.row.connector.displayName,
-      credentialResolution: diagnosticCustomCredentialResolution(result),
-      apis: diagnosticCustomApis(result),
-      networkPolicy: result.networkPolicy,
-    };
-  });
-}
+    });
+  },
+);

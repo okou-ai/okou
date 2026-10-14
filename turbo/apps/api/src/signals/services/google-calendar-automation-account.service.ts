@@ -1,10 +1,8 @@
 import { command } from "ccstate";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
-import {
-  workflowAutomations,
-  workflowUserAutomationThreads,
-} from "@okouai/db/schema/workflow";
+import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { writeDb$, type Db, type ReadonlyDb } from "../external/db";

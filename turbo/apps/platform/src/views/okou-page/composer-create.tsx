@@ -48,7 +48,7 @@ function ComposerSelectedTask({
     },
     { returnObjects: true },
   );
-  if (!task) {
+  if (!task || task === "suggestions") {
     return null;
   }
   const Icon = TASK_ICONS[task];
@@ -113,7 +113,7 @@ export function ComposerTaskControls({
   readonly signals: ComposerSignals;
 }) {
   const task = useGet(signals.taskChips.task$);
-  if (task === null) {
+  if (task === null || task === "suggestions") {
     return null;
   }
   return (

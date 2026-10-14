@@ -53,6 +53,13 @@ production_verifier_source = Path(sys.argv[3]).read_text()
 worker_config_source = Path(sys.argv[4]).read_text()
 turbo, _turbo_source = load_workflow(sys.argv[5])
 
+# The public static origin needs public same-zone fetch compatibility.
+if '"global_fetch_strictly_public"' not in worker_config_source:
+    raise RuntimeError("app Worker must allow public same-zone fetches")
+# The shell is embedded in the Worker, not served by the Workers Assets service.
+if '"assets"' in worker_config_source:
+    raise RuntimeError("app Worker shell must not depend on the Workers Assets service")
+
 release_jobs = release["jobs"]
 rollback_jobs = rollback["jobs"]
 release_controller_job = release_jobs["release-please"]
@@ -120,8 +127,8 @@ for shell_prepare_step in (prepare_step, preview_prepare_step):
 require_fragments(
     prepare_step,
     [
-        "bash .github/scripts/fetch-okou-app-artifact.sh",
-        "bash .github/scripts/verify-okou-app-artifact.sh",
+        "bash .github/scripts/artifacts/fetch-okou-app-artifact.sh",
+        "bash .github/scripts/artifacts/verify-okou-app-artifact.sh",
         "bash .github/scripts/prepare-okou-app-worker-shell.sh",
         'echo "canonical-dist=$canonical_dist"',
     ],

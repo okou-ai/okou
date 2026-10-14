@@ -3,6 +3,7 @@ import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
 import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
+import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
@@ -105,6 +106,7 @@ import * as storageVersionLineageSchema from "./schema/storage-version-lineage";
 import * as runUploadedFileSchema from "./schema/run-uploaded-file";
 import * as builtInModelKeySchema from "./schema/built-in-model-key";
 import * as workflowSchema from "./schema/workflow";
+import * as workflowAutomationRuntime from "./runtime/workflow-automation";
 import * as workflowScheduleSkipSchema from "./schema/workflow-schedule-skip";
 import * as computerUseHostSchema from "./schema/computer-use-host";
 import * as computerUseHostRuntime from "./runtime/computer-use-host";
@@ -166,6 +168,7 @@ export const schema = {
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...homeTaskRecommendationSchema,
+  ...agentSuggestionSchema,
   ...userSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
@@ -269,6 +272,7 @@ export const schema = {
   ...runUploadedFileSchema,
   ...builtInModelKeySchema,
   ...workflowSchema,
+  ...workflowAutomationRuntime,
   ...workflowScheduleSkipSchema,
   ...computerUseHostSchema,
   ...computerUseHostRuntime,

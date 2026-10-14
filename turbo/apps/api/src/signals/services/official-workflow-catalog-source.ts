@@ -72,7 +72,6 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
                 cronExpression: "0 7 * * *",
               },
             },
-            runtime: { resultEmail: false },
           },
         ],
         presentation: { category: "productivity" },

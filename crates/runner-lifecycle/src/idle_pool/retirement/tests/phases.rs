@@ -238,7 +238,7 @@ async fn receiver_loss_and_outer_panic_keep_saving_owned_and_shutdown_joined() {
 async fn supplied_fitting_phases_allow_parallel_real_terminal_progress() {
     let env = Env::new(64).await;
     let mut fixtures = Vec::new();
-    let mut tasks = Vec::new();
+    let mut retirements = Vec::new();
     let destroy = MockLifecycleGate::new();
     for key in ["thread:parallel-first", "thread:parallel-second"] {
         let (exit, backing) = MockBackingProcess::channel();
@@ -247,14 +247,15 @@ async fn supplied_fitting_phases_allow_parallel_real_terminal_progress() {
             .overrides
             .set_destroy_lifecycle_gate(destroy.clone());
         exit.confirm_exit();
-        tasks.push(
-            admitted(&mut fixture, &env)
-                .await
-                .start("fitting_parallel")
-                .unwrap(),
-        );
+        retirements.push(admitted(&mut fixture, &env).await);
         fixtures.push(fixture);
     }
+    // Admit both jobs before either live-phase settlement can invalidate the
+    // other job's memory observation. Their terminal work still runs in parallel.
+    let tasks: Vec<_> = retirements
+        .into_iter()
+        .map(|retirement| retirement.start("fitting_parallel").unwrap())
+        .collect();
     destroy.wait_entered(2, WAIT).await.unwrap();
     wait_snapshot(&env.operations, |s| {
         s.started == 2 && s.cleanup_growth_bytes == 2 * MIB

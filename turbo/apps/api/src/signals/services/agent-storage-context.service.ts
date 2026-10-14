@@ -23,66 +23,12 @@ import {
   type StorageRequest,
   type StorageIndex,
 } from "./storage-index.service";
-import {
-  executionStorageCachePairs,
-  type ExecutionStorageRequest,
-} from "./execution-storage.service";
 import type { BootstrapAgent } from "./agent-data.service";
 
 export interface AgentStorageContext {
   readonly requests: readonly StorageRequest[];
   readonly lookupKeys: ReadonlySet<string>;
   readonly index: StorageIndex;
-}
-
-function agentStorageCacheMounts(context: AgentStorageContext) {
-  const facts = context.requests.flatMap((request, position) => {
-    const storage = context.index.get(
-      storageIndexKey(
-        request.lookup.orgId,
-        request.lookup.userId,
-        request.lookup.name,
-      ),
-    );
-    const version =
-      request.version === undefined || request.version === "latest"
-        ? storage?.headVersion
-        : storage?.headVersion?.id === request.version
-          ? storage.headVersion
-          : storage?.exactVersions.get(request.version);
-    if (!storage || !version) {
-      return [];
-    }
-    const identity = {
-      ...request.lookup,
-      storageId: storage.storageId,
-      versionId: version.id,
-    };
-    const mount: ExecutionStorageRequest = {
-      ...identity,
-      mountPath: `/cache/${position}`,
-      mode: "readonly",
-    };
-    return [
-      {
-        mount,
-        version: {
-          ...identity,
-          s3Key: version.s3Key,
-          archiveSize: version.archiveSize,
-          fileCount: version.fileCount,
-        },
-      },
-    ];
-  });
-  return {
-    mounts: facts.map((fact) => {
-      return fact.mount;
-    }),
-    versions: facts.map((fact) => {
-      return fact.version;
-    }),
-  };
 }
 
 /** Database identities only: framework-specific mount paths are assembled later. */
@@ -221,20 +167,5 @@ export function captureAgentStorageContext(
       }),
     ),
     index: mergeStorageIndexes(index, plan.published),
-  };
-}
-
-export function agentStorageCacheSnapshot(context: AgentStorageContext) {
-  const { mounts, versions } = agentStorageCacheMounts(context);
-  const { pairs } = executionStorageCachePairs(mounts, versions);
-  return {
-    keys: new Set(
-      pairs.map((pair) => {
-        return JSON.stringify([pair.scope, pair.cacheKey]);
-      }),
-    ),
-    rows: [...context.index.values()].flatMap((entry) => {
-      return entry.cachedUrls ?? [];
-    }),
   };
 }

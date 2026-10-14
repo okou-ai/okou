@@ -67,7 +67,7 @@ pub struct IdlePoolRetirementRequest {
 /// Inventory snapshot committed with acceptance. Status publication may happen
 /// afterward without owning or cancelling the physical cleanup.
 pub struct IdlePoolRetirementStarted {
-    pub task: GuardedIdleCleanupTask,
+    pub task: GuardedActivationCleanupTask,
     pub snapshot: IdlePoolSnapshot,
 }
 
@@ -86,9 +86,15 @@ pub struct IdleDestroyTracker {
     finalizing_owners:
         Arc<std::sync::Mutex<Vec<crate::finalizing_admission::GuardedFinalizingRecovery>>>,
     pressure_owners: Arc<std::sync::Mutex<Vec<RetainedActivationCleanup>>>,
+    pub(crate) optional_blank_owners:
+        Arc<std::sync::Mutex<Vec<crate::blank_pool::OptionalBlankResult>>>,
 }
 
 impl IdleDestroyTracker {
+    pub(crate) fn joined(&self) -> bool {
+        self.tasks.is_closed() && self.tasks.is_empty()
+    }
+
     pub fn new(reuse_state_notify: Arc<Notify>) -> Self {
         Self {
             tasks: TaskTracker::new(),
@@ -96,6 +102,7 @@ impl IdleDestroyTracker {
             activation_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             finalizing_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
             pressure_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
+            optional_blank_owners: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -126,7 +133,7 @@ impl IdleDestroyTracker {
             }
         };
         let snapshot = pool.status_snapshot();
-        let task = self.adopt_pool_retirement(task, token, request.context);
+        let task = self.adopt_activation_cleanup(task, token, request.context);
         Ok(IdlePoolRetirementStarted { task, snapshot })
     }
 

@@ -15,10 +15,12 @@ crates_json=$(ruby -ryaml -rjson -e 'puts JSON.generate(YAML.load_file(ARGV.fetc
 jq -e '
   . as $root |
   .jobs.prepare.steps as $steps |
-  ($steps | map(.name // "") | index("Checkout source revision for CLI and Runner")) as $checkout |
-  ($steps | map(.name // "") | index("Build private source-bound CLI bundle")) as $build |
-  ($steps | map(.name // "") | index("Upload private CLI build input")) as $upload |
-  ($steps | map(.name // "") | index("Plan runner binary reuse")) as $plan |
+  ($steps | map(((.uses // "") | startswith("actions/checkout@")) and
+    .with.ref == "${{ steps.identity.outputs.head-sha }}") | index(true)) as $checkout |
+  ($steps | map(.run // "" | contains("build-okou-cli-artifact.sh")) | index(true)) as $build |
+  ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
+    .with.name == "runner-cli-${{ github.run_id }}") | index(true)) as $upload |
+  ($steps | map(.id // "") | index("binary-plan")) as $plan |
   ($checkout < $build and $build < $upload and $upload < $plan) and
   .jobs.prepare.outputs["head-sha"] == "${{ steps.identity.outputs.head-sha }}" and
   .jobs.prepare.outputs["producer-head-sha"] == "${{ steps.identity.outputs.producer-head-sha }}" and
@@ -44,7 +46,7 @@ jq -e '
     ([$root.architecture.jobs[$job].steps[] | select((.uses // "") | startswith("actions/checkout@"))] |
       length == 1 and .[0].with.ref == "${{ inputs.head-sha }}") and
     any($root.architecture.jobs[$job].steps[];
-      .name == "Download private CLI build input" and
+      ((.uses // "") | startswith("actions/download-artifact@")) and
       .with.name == $steps[$upload].with.name)
   )) and
   .jobs["prewarm-rust-cache"].env.GUEST_CLI_PATH == "runner-cli-intermediate/package.tgz" and
@@ -53,11 +55,11 @@ jq -e '
   ([.jobs["prewarm-rust-cache"].steps[] | select((.uses // "") | startswith("actions/checkout@"))] |
     length == 1 and .[0].with.ref == "${{ needs.prepare.outputs.head-sha }}") and
   any(.jobs["prewarm-rust-cache"].steps[];
-    .name == "Download private CLI build input" and
+    ((.uses // "") | startswith("actions/download-artifact@")) and
     .with.name == $steps[$upload].with.name) and
   .jobs.build.with["head-sha"] == .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION and
   any(.architecture.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.PRODUCER_HEAD_SHA == "${{ inputs.producer-head-sha }}"
   )
 ' <<<"$runner_json" >/dev/null || {
@@ -80,13 +82,14 @@ jq -e '
 jq -e '
   .jobs["publish-cli-versioned-artifact"] as $publisher |
   $publisher.steps as $steps |
-  ($steps | map(.name // "") | index("Publish versioned CLI artifact")) as $publish |
-  ($steps | map(.name // "") | index("Upload canonical CLI build input for Runner")) as $upload |
+  ($steps | map(.id // "") | index("publish")) as $publish |
+  ($steps | map(((.uses // "") | startswith("actions/upload-artifact@")) and
+    .with.name == "runner-release-cli-${{ github.run_id }}") | index(true)) as $upload |
   $publisher.needs == "release-please" and
   ($publish < $upload) and
   $steps[$publish].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
   $steps[$publish].env.OUTPUT_DIR == "runner-cli-intermediate" and
-  $steps[$publish].run == "bash .github/scripts/publish-okou-cli-versioned-artifact.sh" and
+  $steps[$publish].run == "bash .github/scripts/release/publish-okou-cli-versioned-artifact.sh" and
   $steps[$upload].if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
   $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}" and
@@ -95,17 +98,15 @@ jq -e '
   $steps[$upload].with["retention-days"] == 1 and
   (.jobs["build-runner-release-assets"].needs | index("publish-cli-versioned-artifact") != null) and
   any(.jobs["build-runner-release-assets"].steps[];
-    .name == "Download canonical CLI build input" and
+    ((.uses // "") | startswith("actions/download-artifact@")) and
     .with.name == $steps[$upload].with.name and
     .with.path == $steps[$publish].env.OUTPUT_DIR) and
   any(.jobs["build-runner-release-assets"].steps[];
-    .name == "Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}" and
     .env.GUEST_CLI_PATH == "${{ github.workspace }}/runner-cli-intermediate/package.tgz" and
     .env.GUEST_CLI_MANIFEST_PATH == "${{ github.workspace }}/runner-cli-intermediate/manifest.json") and
   (.jobs["builds-complete"].needs | index("publish-cli-versioned-artifact") != null) and
   (.jobs["build-runner-production"].needs | index("build-runner-release-assets") != null) and
   any(.jobs["build-runner-production"].steps[];
-    .name == "Build rootfs and snapshot on production hosts" and
     .env.RUNNER_TARGET == "${{ matrix.target }}" and
     .env.RUNNER_VERSION == "${{ needs.release-please.outputs.runner_rs_version }}" and
     (.run | contains("playbooks/build-runner.yml"))

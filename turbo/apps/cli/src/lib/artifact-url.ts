@@ -4,7 +4,7 @@ import { getPlatformOrigin } from "./platform-url";
 export async function assertPrivateArtifactUrl(url: string): Promise<void> {
   if (!parseArtifactReference(url, await getPlatformOrigin())) {
     throw new Error(
-      "The API did not return a private artifact. --visibility requires privateArtifacts and an API that supports private creation.",
+      "The API did not return a private artifact. --visibility requires an API that supports private creation.",
     );
   }
 }

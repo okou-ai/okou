@@ -43,6 +43,9 @@ use super::{
 use guest_contracts::home_cache_history::HomeCacheHistoryProofBinding;
 
 const HOME_IMAGE_PREPARE_LOCK_TIMEOUT: Duration = Duration::from_millis(50);
+// Stopped publishers retain their entry and applicable resource lease while
+// waiting. Give contention a short window without changing checkout's lock budget.
+const HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub struct HomeImageLease {
     cache: HomeImageCache,
@@ -537,61 +540,9 @@ impl HomeImageCache {
                 None,
             );
         };
-        let Ok(mut stats) = self.fs_stats().await else {
-            warn!(
-                run_id = %common.run_id,
-                "home image cache disabled because filesystem stats are unavailable"
-            );
-            return home_drive(
-                HomeCacheCheckoutResult::DiskPressure,
-                None,
-                None,
-                None,
-                None,
-                true,
-                None,
-            );
-        };
-        let mut budget = CacheBudget::from_fs_stats(stats);
-        if stats.available_bytes < budget.min_free_bytes {
-            match self.gc(false).await {
-                Ok(freed) if freed > 0 => match self.fs_stats().await {
-                    Ok(updated) => {
-                        stats = updated;
-                        budget = CacheBudget::from_fs_stats(stats);
-                    }
-                    Err(e) => warn!(
-                        run_id = %common.run_id,
-                        error = %e,
-                        "home image cache stats refresh failed after GC"
-                    ),
-                },
-                Ok(_) => {}
-                Err(e) => warn!(
-                    run_id = %common.run_id,
-                    error = %e,
-                    "home image cache GC failed before checkout"
-                ),
-            }
-        }
-        if stats.available_bytes < budget.min_free_bytes {
-            info!(
-                run_id = %common.run_id,
-                available_bytes = stats.available_bytes,
-                min_free_bytes = budget.min_free_bytes,
-                "home image cache skipped due to free-space pressure"
-            );
-            return home_drive(
-                HomeCacheCheckoutResult::DiskPressure,
-                None,
-                None,
-                None,
-                None,
-                true,
-                None,
-            );
-        }
-
+        // Protect and inspect the requested image before considering pressure.
+        // Same-filesystem consumption moves existing blocks; allocation safety
+        // belongs at the provider's fresh/copy boundary. Maintenance owns GC.
         let cache_key = common.cache_key(self, reuse_key);
         let lock_path = self.entry_lock_path(&cache_key);
         let owner_before = self.local_entry_lock_observation(&cache_key);
@@ -826,15 +777,18 @@ impl HomeImageCache {
                 lease.source_pin = pin.ok();
                 lease
             }
-            None => home_drive(
-                HomeCacheCheckoutResult::Miss,
-                None,
-                None,
-                Some(lock),
-                Some(cache_key),
-                true,
-                None,
-            ),
+            None => {
+                let result = match self.fs_stats().await {
+                    Ok(stats)
+                        if stats.available_bytes
+                            >= CacheBudget::from_fs_stats(stats).min_free_bytes =>
+                    {
+                        HomeCacheCheckoutResult::Miss
+                    }
+                    _ => HomeCacheCheckoutResult::DiskPressure,
+                };
+                home_drive(result, None, None, Some(lock), Some(cache_key), true, None)
+            }
         }
     }
 
@@ -1153,6 +1107,33 @@ impl HomeImageCache {
         }
     }
 
+    async fn acquire_promotion_capacity_lock(
+        &self,
+    ) -> runner_host::error::HostResult<runner_host::lock::TryLock> {
+        let path = self.capacity_lock_path();
+        #[cfg(test)]
+        if let Some((entered, release)) = &self.promotion_capacity_lock_test_gate {
+            return runner_host::lock::acquire_with_contention_timeout_for_test(
+                path,
+                HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
+                async {
+                    entered.notify_one();
+                    release
+                        .acquire()
+                        .await
+                        .expect("publication capacity gate closed")
+                        .forget();
+                },
+            )
+            .await;
+        }
+        runner_host::lock::acquire_with_contention_timeout(
+            path,
+            HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT,
+        )
+        .await
+    }
+
     async fn promote_locked(
         &self,
         input: HomeImagePromotionInput<'_>,
@@ -1186,20 +1167,20 @@ impl HomeImageCache {
         {
             return Ok(HomeImagePromotionOutcome::PreservedExisting);
         }
-        let _capacity =
-            match runner_host::lock::try_acquire_or_busy(self.capacity_lock_path()).await {
-                Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
-                Ok(runner_host::lock::TryLock::Busy) => {
-                    info!(run_id = %input.run_id, cache_key = input.cache_key,
+        let _capacity = match self.acquire_promotion_capacity_lock().await {
+            Ok(runner_host::lock::TryLock::Acquired(lock)) => lock,
+            Ok(runner_host::lock::TryLock::Busy) => {
+                info!(run_id = %input.run_id, cache_key = input.cache_key,
+                        contention_timeout_ms = duration_ms(HOME_IMAGE_PROMOTION_CAPACITY_LOCK_TIMEOUT),
                         "home image cache promotion skipped: capacity lock busy");
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-                Err(error) => {
-                    warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
+                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+            }
+            Err(error) => {
+                warn!(run_id = %input.run_id, cache_key = input.cache_key, %error,
                         "home image cache promotion skipped: capacity lock unavailable");
-                    return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-                }
-            };
+                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
+            }
+        };
         let stats = self.fs_stats().await?;
         let budget = CacheBudget::from_fs_stats(stats);
         // Metadata staging and new directory blocks also need reserve. Never use
@@ -1422,6 +1403,7 @@ impl HomeImageLease {
         }
         self.home_drive_enabled.then(|| sandbox::HomeDriveConfig {
             size_mb: home_image_size_mb(self.image_size_bytes),
+            space_reserve: super::HOME_IMAGE_SPACE_RESERVE,
             seed_image: self.source_image.as_ref().map(|source_image| {
                 if self.consumed_cache_hit {
                     sandbox::HomeDriveSeedImage::Move(source_image.clone())
@@ -1536,6 +1518,14 @@ impl HomeImageLease {
 }
 
 impl HomeImagePromotionContext {
+    /// Required cleanup preserves CPU custody on failure while allowing queued
+    /// owners to report no progress if every slot needs explicit recovery.
+    pub async fn acquire_required_idle_home_reclamation_permit(
+        &self,
+    ) -> LifecycleResult<super::IdleHomeReclamationPermit> {
+        self.cache.idle_home_reclamation.acquire_required().await
+    }
+
     pub async fn acquire_idle_home_reclamation_permit(
         &self,
     ) -> LifecycleResult<tokio::sync::OwnedSemaphorePermit> {

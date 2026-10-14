@@ -1,5 +1,128 @@
 # Changelog
 
+## [8.752.1](https://github.com/okou-ai/okou/compare/core-v8.752.0...core-v8.752.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.0
+
+## [8.752.0](https://github.com/okou-ai/okou/compare/core-v8.751.2...core-v8.752.0) (2026-10-14)
+
+
+### Features
+
+* add shared sandbox channel protocol and peer ([#39789](https://github.com/okou-ai/okou/issues/39789)) ([e50944d](https://github.com/okou-ai/okou/commit/e50944da2ecbf4eb66b6518f4cbad7598fd72833))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.557.0
+
+## [8.751.2](https://github.com/okou-ai/okou/compare/core-v8.751.1...core-v8.751.2) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.2
+
+## [8.751.1](https://github.com/okou-ai/okou/compare/core-v8.751.0...core-v8.751.1) (2026-10-13)
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.1
+
+## [8.751.0](https://github.com/okou-ai/okou/compare/core-v8.750.0...core-v8.751.0) (2026-10-13)
+
+
+### Features
+
+* enable vnc access for staff ([#39748](https://github.com/okou-ai/okou/issues/39748)) ([99cb991](https://github.com/okou-ai/okou/commit/99cb991fd7e35f63f479801ac25219385bbed6bd))
+
+
+### Refactoring
+
+* remove slack link unfurls feature switch ([#39745](https://github.com/okou-ai/okou/issues/39745)) ([18435fb](https://github.com/okou-ai/okou/commit/18435fb32d76f20197f1f9174529bcf0c3215287))
+
+## [8.750.0](https://github.com/okou-ai/okou/compare/core-v8.749.0...core-v8.750.0) (2026-10-13)
+
+
+### Features
+
+* add agent-managed next-step suggestions ([#39632](https://github.com/okou-ai/okou/issues/39632)) ([dad6cd0](https://github.com/okou-ai/okou/commit/dad6cd007f63399ea88652e0a9fcb99123e5a87a))
+* enable artifact previews and slack link unfurls for everyone ([#39701](https://github.com/okou-ai/okou/issues/39701)) ([e8018ca](https://github.com/okou-ai/okou/commit/e8018cab8f6008bafa6905432215399d5893eac5))
+* enable the copper connector by default ([#39723](https://github.com/okou-ai/okou/issues/39723)) ([82b584e](https://github.com/okou-ai/okou/commit/82b584e5f6f3b7cbce92e8d49ce49f2f5ad9aa8d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.0
+
+## [8.749.0](https://github.com/okou-ai/okou/compare/core-v8.748.4...core-v8.749.0) (2026-10-13)
+
+
+### Features
+
+* **app:** add responsive chat resources behind the artifact button ([#39607](https://github.com/okou-ai/okou/issues/39607)) ([f2f1158](https://github.com/okou-ai/okou/commit/f2f1158a9328ab4c4e2b0d2569109f553501d724))
+
+
+### Bug Fixes
+
+* let agents select presentation delivery format ([#39650](https://github.com/okou-ai/okou/issues/39650)) ([264b178](https://github.com/okou-ai/okou/commit/264b17803dafe5243656a898078250880efe0a16))
+
+
+### Refactoring
+
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+
+## [8.748.4](https://github.com/okou-ai/okou/compare/core-v8.748.3...core-v8.748.4) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.554.0
+
+## [8.748.3](https://github.com/okou-ai/okou/compare/core-v8.748.2...core-v8.748.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* apply artifact cover prompts to every html publication ([#39611](https://github.com/okou-ai/okou/issues/39611)) ([f8b01e9](https://github.com/okou-ai/okou/commit/f8b01e90332fd4fc9c06d85d61cfb01e0045bdf5))
+
+## [8.748.2](https://github.com/okou-ai/okou/compare/core-v8.748.1...core-v8.748.2) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.553.1
+
 ## [8.748.1](https://github.com/okou-ai/okou/compare/core-v8.748.0...core-v8.748.1) (2026-10-12)
 
 

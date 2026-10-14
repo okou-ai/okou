@@ -35,7 +35,10 @@ import {
   loadOrgPlanCapabilities,
   loadOrgPlanCapabilities$,
 } from "./org-plan-entitlement-read.service";
-import { resolveActiveRunCreditAdmission } from "./run-admission.service";
+import {
+  resolveActiveRunCreditAdmission,
+  resolveActiveRunCreditAdmission$,
+} from "./run-admission.service";
 import { getSpendableUsagePackCredits } from "./usage-pack-credit.service";
 
 export interface ManagedUsageErrorResponse {
@@ -268,8 +271,7 @@ const checkManagedCreditBalance$ = command(
     if (!capabilities || capabilities.status !== "active") {
       return insufficientCredits();
     }
-    const activeRunAdmission = await resolveActiveRunCreditAdmission({
-      db: set(writeDb$),
+    const activeRunAdmission = await set(resolveActiveRunCreditAdmission$, {
       runId: args.runId,
       orgId: args.orgId,
       userId: args.userId,

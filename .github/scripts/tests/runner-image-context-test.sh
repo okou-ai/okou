@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CONTEXT="${SCRIPT_DIR}/runner-image-context.sh"
+CONTEXT="${SCRIPT_DIR}/runner/runner-image-context.sh"
 
 fail() {
   echo "FAIL: $1" >&2

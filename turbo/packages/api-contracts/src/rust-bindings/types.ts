@@ -9,10 +9,12 @@ import {
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
   sessionHistoryEncodingSchema,
+  sandboxStartupPathSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
 import { vncTypeBindings } from "./vnc-types";
+import { sandboxChannelTypeBindings } from "./sandbox-channel-types";
 import { runnerWssTicketsContract } from "../contracts/runner-wss-tickets";
 import { knownRunFailureReasonSchema } from "../contracts/run-failure-reasons";
 import { modelProviderCodexRuntimeConfigSchema } from "../contracts/model-providers";
@@ -54,6 +56,18 @@ export const rustTypeRootDoc = [
 ] as const;
 
 export const rustTypeModuleDocs = [
+  {
+    rustModulePath: ["sandbox_channel"],
+    rustDoc: ["Shared sandbox application schema and role contracts."],
+  },
+  {
+    rustModulePath: ["sandbox_channel", "fs"],
+    rustDoc: ["Readonly home-directory category contracts."],
+  },
+  {
+    rustModulePath: ["sandbox_channel", "diagnostics"],
+    rustDoc: ["Bidirectional diagnostic category contracts."],
+  },
   {
     rustModulePath: ["runners", "wss"],
     rustDoc: ["Official Runner one-use WSS ticket redemption."],
@@ -139,6 +153,24 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: sandboxStartupPathSchema,
+    rustModulePath: ["runners"],
+    rustTypeName: "SandboxStartupPath",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "SandboxStartupPath",
+        rustDoc: ["Actual sandbox startup resource after preparation settles."],
+        variants: {
+          sandbox: ["An exact retained sandbox and home."],
+          home: ["A new sandbox with a cached home image."],
+          blank: ["A prepared tenant-free sandbox with a fresh home."],
+          cold: ["A new sandbox with a fresh home."],
+        },
+      },
+    ],
+  },
   {
     schema: runnerWssTicketsContract.consume.responses[200],
     rustModulePath: ["runners", "wss"],
@@ -921,7 +953,7 @@ export const rustTypeBindings = [
         rustTypeName: "RequestMaintenanceAttestation",
         rustDoc: ["Private proof of a validated Pi memory maintenance tree."],
         fields: {
-          schemaVersion: ["Maintenance checkpoint attestation version."],
+          schemaVersion: ["Memory publication attestation version."],
           leaseToken: ["Opaque token fencing the maintenance claim."],
           claimedRevision: ["Exact claimed Phase 2 input revision."],
           claimedBaseVersionId: ["Exact memory version mounted for the claim."],
@@ -1028,7 +1060,7 @@ export const rustTypeBindings = [
         rustTypeName: "RequestMaintenanceAttestation",
         rustDoc: ["Private proof of a validated Pi memory maintenance tree."],
         fields: {
-          schemaVersion: ["Maintenance checkpoint attestation version."],
+          schemaVersion: ["Memory publication attestation version."],
           leaseToken: ["Opaque token fencing the maintenance claim."],
           claimedRevision: ["Exact claimed Phase 2 input revision."],
           claimedBaseVersionId: ["Exact memory version mounted for the claim."],
@@ -1089,4 +1121,5 @@ export const rustTypeBindings = [
       },
     ],
   },
+  ...sandboxChannelTypeBindings,
 ] as const satisfies readonly RustTypeBinding[];

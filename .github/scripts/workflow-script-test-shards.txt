@@ -1,9 +1,10 @@
 # Balanced from successful PR runs 35555773756 and 35558264546, plus
 # merge-group run 35555833634.
 # The shard runner rejects missing, unknown, or duplicate test assignments.
-1 action-pins-test.sh
+1 check-action-pins-test.sh
 1 aws-audit-target-setup-test.sh
 1 changed-test.sh
+1 check-packaged-addon-control-test.sh
 1 check-workflow-shell-compatibility-test.sh
 1 ci-source-revision-workflow-test.sh
 1 cloudflare-ssh-preconnect-test.sh
@@ -19,9 +20,9 @@
 1 reconcile-and-start-runner-groups-test.sh
 1 resolve-app-preview-url-test.sh
 1 runner-api-curl-test.sh
-1 runner-behavior-durable-test.sh
-1 runner-behavior-guest-rpc-test.sh
-1 runner-behavior-upgrade-local-test.sh
+1 crates/runner/tests/behavior/tests/runner-behavior-durable-test.sh
+1 crates/sandbox-firecracker/tests/native/tests/runner-behavior-guest-rpc-test.sh
+1 crates/runner/tests/behavior/tests/runner-behavior-upgrade-local-test.sh
 1 runner-firewall-contract-workflow-test.sh
 1 runner-image-manifest-test.sh
 1 runner-native-test-artifact-test.sh
@@ -29,24 +30,21 @@
 1 semgrep-results-test.sh
 1 wait-production-deploy-queue-test.sh
 1 web-api-env-action-test.sh
-2 checkout-depth-test.sh
 2 cloudflare-ssh-command-test.sh
-2 codeql-cache-workflow-test.sh
 2 crate-changed-test.sh
 2 deploy-desktop-workflow-test.sh
 2 docker-toolchain-workflow-test.sh
 2 implicit-npm-audit-test.sh
 2 ios-testflight-workflow-test.sh
 2 native-only-ci-test.sh
-2 nbd-cow-upload-test.sh
+2 crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh
 2 normalize-github-app-private-key-test.sh
-2 okou-app-worker-test.sh
-2 okou-cli-publisher-status-test.sh
 2 okou-desktop-artifact-test.sh
 2 release-tool-downloads-test.sh
 2 resolve-desktop-version-change-test.sh
-2 runner-behavior-agent-ready-benchmark-test.sh
-2 runner-behavior-balloon-test.sh
+2 crates/runner/tests/behavior/tests/runner-behavior-agent-ready-benchmark-test.sh
+2 crates/runner/tests/behavior/tests/runner-behavior-process-containment-test.sh
+2 crates/runner/tests/behavior/tests/runner-behavior-balloon-test.sh
 2 runner-binary-early-publication-test.sh
 2 runner-binary-github-test.sh
 2 runner-binary-test-inputs-test.sh
@@ -56,7 +54,6 @@
 2 runner-image-architecture-test.sh
 2 runner-image-workflow-test.sh
 2 runner-rust-cache-prewarm-workflow-test.sh
-2 runner-token-env-alias-test.sh
 2 setup-r2-sccache-test.sh
 2 smoke-okou-cli-artifact-test.sh
 2 staging-workflow-test.sh
@@ -76,7 +73,7 @@
 3 diagnose-discord-gateway-test.sh
 3 download-verified-test.sh
 3 kms-production-backup-test.sh
-3 kerberos-native-cache-test.sh
+3 crates/kerberos-worker/tests/infrastructure/kerberos-native-cache-test.sh
 3 kerberos-native-cache-workflow-test.sh
 3 mitm-addon-test-sharding-workflow-test.sh
 3 native-only-gates-test.sh
@@ -87,7 +84,7 @@
 3 report-sccache-stats-test.sh
 3 resolve-pr-title-test.sh
 3 resolve-production-rollback-target-test.sh
-3 runner-behavior-cancel-test.sh
+3 crates/runner/tests/behavior/tests/runner-behavior-cancel-test.sh
 3 runner-binary-cache-test.sh
 3 runner-binary-download-test.sh
 3 runner-lifecycle-lock-diagnostics-test.sh
@@ -120,8 +117,8 @@
 4 resolve-app-preview-alias-test.sh
 4 run-semgrep-test.sh
 4 runner-attribution-ansible-test.sh
-4 runner-behavior-exec-inventory-test.sh
-4 runner-behavior-host-cpu-fairness-test.sh
+4 crates/runner/tests/behavior/tests/runner-behavior-exec-inventory-test.sh
+4 crates/sandbox-firecracker/tests/native/tests/runner-behavior-host-cpu-fairness-test.sh
 4 runner-binary-build-test.sh
 4 runner-binary-cache-plan-test.sh
 4 runner-image-context-test.sh

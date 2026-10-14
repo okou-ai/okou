@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.1...runner-lifecycle-v0.12.2) (2026-10-14)
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.0...runner-lifecycle-v0.12.1) (2026-10-14)
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.3...runner-lifecycle-v0.12.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+## [0.11.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.2...runner-lifecycle-v0.11.3) (2026-10-13)
+
+## [0.11.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.1...runner-lifecycle-v0.11.2) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.11.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.11.0...runner-lifecycle-v0.11.1) (2026-10-13)
+
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.10.1...runner-lifecycle-v0.11.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** own pressure-gated snapshot prefetch ([#39624](https://github.com/okou-ai/okou/issues/39624)) ([d4eb35a](https://github.com/okou-ai/okou/commit/d4eb35a53cf3859cc2702cded172449c1fbc3f2c))
+
+
+### Documentation
+
+* **rust:** correct finalizing handoff provider-callback contract ([#39593](https://github.com/okou-ai/okou/issues/39593)) ([9c46b10](https://github.com/okou-ai/okou/commit/9c46b10835470e6b7eac19dea705a162cd453244))
+
+
+### Performance Improvements
+
+* **runner:** retry transient home cache publication contention ([#39602](https://github.com/okou-ai/okou/issues/39602)) ([7c35423](https://github.com/okou-ai/okou/commit/7c35423142ce6b0446cf84d1ecd81a503fcbcfaa))
+
+## [0.10.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.10.0...runner-lifecycle-v0.10.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** retain required pool saving custody ([#39468](https://github.com/okou-ai/okou/issues/39468)) ([596aa18](https://github.com/okou-ai/okou/commit/596aa189a2baf22192a1574dc07d001bcf5c7853))
+
 ## [0.10.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.9.3...runner-lifecycle-v0.10.0) (2026-10-12)
 
 

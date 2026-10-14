@@ -7,11 +7,12 @@ on:
   pull_request:
     paths:
       - ".github/workflows/desktop.yml"
-      - ".github/scripts/build-okou-desktop-artifact.sh"
-      - ".github/scripts/fetch-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/r2-copy.sh"
       - ".github/scripts/resolve-app-preview-url.sh"
-      - ".github/scripts/resolve-desktop-version-change.sh"
-      - ".github/scripts/verify-okou-desktop-artifact.sh"
+      - ".github/scripts/release/resolve-desktop-version-change.sh"
+      - ".github/scripts/artifacts/verify-okou-desktop-artifact.sh"
       - "desktop/**"
       - "turbo/package.json"
       - "turbo/pnpm-lock.yaml"
@@ -22,11 +23,12 @@ on:
       - main
     paths:
       - ".github/workflows/desktop.yml"
-      - ".github/scripts/build-okou-desktop-artifact.sh"
-      - ".github/scripts/fetch-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/build-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/fetch-okou-desktop-artifact.sh"
+      - ".github/scripts/artifacts/r2-copy.sh"
       - ".github/scripts/resolve-app-preview-url.sh"
-      - ".github/scripts/resolve-desktop-version-change.sh"
-      - ".github/scripts/verify-okou-desktop-artifact.sh"
+      - ".github/scripts/release/resolve-desktop-version-change.sh"
+      - ".github/scripts/artifacts/verify-okou-desktop-artifact.sh"
       - "desktop/**"
       - "turbo/package.json"
       - "turbo/pnpm-lock.yaml"
@@ -78,7 +80,7 @@ jobs:
               ;;
           esac
 
-          result="$(bash .github/scripts/resolve-desktop-version-change.sh \
+          result="$(bash .github/scripts/release/resolve-desktop-version-change.sh \
             "$base_sha" \
             "$GITHUB_SHA")"
           {
@@ -270,7 +272,7 @@ jobs:
           DESKTOP_VERSION: ${{ needs.detect-desktop-version.outputs.version }}
         run: |
           mkdir -p /tmp/okou-desktop-artifact
-          bash .github/scripts/build-okou-desktop-artifact.sh \
+          bash .github/scripts/artifacts/build-okou-desktop-artifact.sh \
             "$ARTIFACT_SHA" \
             "$DESKTOP_VERSION" \
             "desktop/out/Okou-darwin-arm64/Okou.app" \

@@ -8,26 +8,107 @@ const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
 const schema = `slack_ingress_failed_retirement_${randomUUID().replaceAll("-", "")}`;
 const before = "2026-01-01 00:00:00";
 const retryAt = "2026-01-01 00:05:00";
+let schemaOwned = false;
+let originalSearchPath: string | undefined;
+const errors: unknown[] = [];
 
-async function expectCheckViolation(statement: string): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0428; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT expected_check_violation");
+async function expectCheckViolation(
+  statement: string,
+  fixture: {
+    readonly databaseUrl: string;
+    readonly schema: string;
+    readonly tableSql: string;
+    readonly inserts: readonly string[];
+    readonly migration: string;
+    readonly expectedRows: readonly unknown[];
+  },
+): Promise<void> {
+  // This standalone validator needs CREATE/DROP DATABASE on a disposable,
+  // test-owned server, just like the complete native migration suite.
+  const database = `slack_ingress_probe_${randomUUID().replaceAll("-", "")}`;
+  const probeUrl = new URL(fixture.databaseUrl);
+  probeUrl.pathname = `/${database}`;
+  const admin = new Client({ connectionString: fixture.databaseUrl });
+  const probe = new Client({ connectionString: probeUrl.toString() });
+  let created = false;
   try {
-    await assert.rejects(client.query(statement), (error: unknown) => {
-      return (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "23514"
+    await admin.connect();
+    // A lost CREATE acknowledgement can leave job-contained residue. Never
+    // adopt or drop a database whose creation this invocation did not confirm.
+    await admin.query(`CREATE DATABASE "${database}" TEMPLATE template0`);
+    created = true;
+    try {
+      await probe.connect();
+      await probe.query(`CREATE SCHEMA "${fixture.schema}"`);
+      await probe.query(`SET search_path TO "${fixture.schema}"`);
+      await probe.query(fixture.tableSql);
+      for (const insert of fixture.inserts) {
+        await probe.query(insert);
+      }
+      await probe.query(fixture.migration);
+      assert.deepEqual(
+        (
+          await probe.query(
+            "SELECT to_jsonb(record) AS value FROM slack_chat_ingress AS record ORDER BY id",
+          )
+        ).rows,
+        fixture.expectedRows,
       );
-    });
+      const statusConstraint = (
+        await probe.query<{
+          definition: string;
+          name: string;
+          validated: boolean;
+        }>(`
+          SELECT conname AS name, convalidated AS validated, pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE conname = 'chk_slack_chat_ingress_status'
+            AND connamespace = '${fixture.schema}'::regnamespace
+        `)
+      ).rows;
+      assert.equal(statusConstraint.length, 1);
+      assert.equal(statusConstraint[0]?.validated, true);
+      assert.ok(statusConstraint[0]?.definition.includes("'terminal'"));
+      assert.ok(!statusConstraint[0]?.definition.includes("'failed'"));
+      await assert.rejects(probe.query(statement), (error: unknown) => {
+        return (
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code === "23514"
+        );
+      });
+      assert.deepEqual(
+        (
+          await probe.query(
+            "SELECT to_jsonb(record) AS value FROM slack_chat_ingress AS record ORDER BY id",
+          )
+        ).rows,
+        fixture.expectedRows,
+      );
+    } finally {
+      await probe.end();
+    }
   } finally {
-    await client.query("ROLLBACK TO SAVEPOINT expected_check_violation");
-    await client.query("RELEASE SAVEPOINT expected_check_violation");
+    try {
+      if (created) {
+        await admin.query(`DROP DATABASE "${database}"`);
+        assert.deepEqual(
+          (
+            await admin.query(
+              "SELECT datname FROM pg_database WHERE datname = $1",
+              [database],
+            )
+          ).rows,
+          [],
+        );
+      }
+    } finally {
+      await admin.end();
+    }
   }
 }
 
@@ -55,13 +136,30 @@ function insertIngress(
 }
 
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0429; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
+  const searchPathRows = (
+    await client.query<{ search_path: unknown }>("SHOW search_path")
+  ).rows;
+  assert.equal(searchPathRows.length, 1);
+  const searchPath = searchPathRows[0]?.search_path;
+  assert.ok(typeof searchPath === "string");
+  originalSearchPath = searchPath;
+  assert.deepEqual(
+    (
+      await client.query(
+        "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+        [schema],
+      )
+    ).rows,
+    [],
+  );
+  // Only an acknowledged CREATE owns this namespace on the disposable server.
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  schemaOwned = true;
+  await client.query(`SET search_path TO "${schema}"`);
   // The shape shipped by 1162_slack_ingress_retry_policy, where `failed` is
   // still an accepted status.
-  await client.query(`
+  const historicalTableSql = `
     CREATE TABLE slack_chat_ingress (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       route_id uuid NOT NULL,
@@ -83,38 +181,31 @@ try {
 
     CREATE UNIQUE INDEX idx_slack_chat_ingress_event_id ON slack_chat_ingress USING btree (event_id);
     CREATE INDEX idx_slack_chat_ingress_retry_sweep ON slack_chat_ingress USING btree (status, retry_at, updated_at);
-  `);
+  `;
+  await client.query(historicalTableSql);
 
-  await client.query(
+  // Capture the route UUIDs once; every replay uses these exact SQL inputs.
+  const fixtureInserts = [
     insertIngress("00000000-0000-4000-8000-000000000001", "failed", {
       retryAt,
     }),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000002", "failed", {
       lastErrorClass: "slack:invalid_auth",
     }),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000003", "pending"),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000004", "retryable", {
       lastErrorClass: "slack:ratelimited",
       retryAt,
     }),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000005", "processing"),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000006", "processed"),
-  );
-  await client.query(
     insertIngress("00000000-0000-4000-8000-000000000007", "terminal", {
       lastErrorClass: "attempts_exhausted",
     }),
-  );
+  ] as const;
+  for (const insert of fixtureInserts) {
+    await client.query(insert);
+  }
 
   const survivorsBefore = (
     await client.query(
@@ -128,7 +219,8 @@ try {
   ).rows;
   const sweepIndexBefore = (
     await client.query(
-      "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep'",
+      "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep' AND schemaname = $1",
+      [schema],
     )
   ).rows[0]?.indexdef;
   assert.ok(sweepIndexBefore);
@@ -235,17 +327,39 @@ try {
   assert.equal(
     (
       await client.query(
-        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep'",
+        "SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_slack_chat_ingress_retry_sweep' AND schemaname = $1",
+        [schema],
       )
     ).rows[0]?.indexdef,
     sweepIndexBefore,
   );
 
+  const expectedRows = (
+    await client.query(
+      "SELECT to_jsonb(record) AS value FROM slack_chat_ingress AS record ORDER BY id",
+    )
+  ).rows;
+  assert.equal(expectedRows.length, 7);
+  assert.equal(
+    expectedRows[2]?.value.id,
+    "00000000-0000-4000-8000-000000000003",
+  );
+  const fixture = {
+    databaseUrl,
+    schema,
+    tableSql: historicalTableSql,
+    inserts: fixtureInserts,
+    migration,
+    expectedRows,
+  };
+
   await expectCheckViolation(
     insertIngress("00000000-0000-4000-8000-000000000008", "failed"),
+    fixture,
   );
   await expectCheckViolation(
     "UPDATE slack_chat_ingress SET status = 'failed' WHERE id = '00000000-0000-4000-8000-000000000003'",
+    fixture,
   );
   const canonicalStatuses = [
     "pending",
@@ -266,7 +380,54 @@ try {
   console.log(
     "✅ the re-added validated status constraint rejects failed and keeps the five canonical statuses",
   );
+} catch (error) {
+  errors.push(error);
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  if (schemaOwned) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname = $1",
+            [schema],
+          )
+        ).rows,
+        [],
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual((await client.query("SHOW search_path")).rows, [
+        { search_path: originalSearchPath },
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    errors.push(error);
+  }
+}
+if (errors.length === 1) {
+  throw errors[0];
+}
+if (errors.length > 1) {
+  throw new AggregateError(errors, "Slack ingress fixture and cleanup failed");
 }

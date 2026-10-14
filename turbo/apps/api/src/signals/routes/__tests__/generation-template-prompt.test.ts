@@ -116,7 +116,10 @@ describe("buildGenerationTemplatePrompt", () => {
       "Keep all slides and visible content in index.html; render the first slide without JavaScript",
     );
     expect(result.prompt).toContain(
-      "okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+    );
+    expect(result.prompt).toContain(
+      "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
     const imageWorkflowLines = result.prompt.split("\n").filter((line) => {
       return line.startsWith("- Image workflow:");
@@ -175,7 +178,10 @@ describe("buildGenerationTemplatePrompt", () => {
     expect(result.prompt).toContain("Do not produce slide JSON");
     expect(result.prompt).toContain("tokens.json");
     expect(result.prompt).toContain(
-      "okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+      "For HTML delivery, host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html",
+    );
+    expect(result.prompt).toContain(
+      "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
     );
     // A private package has no registry resource to pull.
     expect(result.prompt).not.toContain("okou resource pull");

@@ -5,10 +5,10 @@ import {
   googleCalendarWatchStates,
 } from "@okouai/db/schema/google-calendar-event";
 import {
-  workflowAutomations,
   workflows,
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { createHash } from "node:crypto";

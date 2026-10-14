@@ -1,20 +1,20 @@
 import { command } from "ccstate";
-import { and, countDistinct, eq } from "drizzle-orm";
+import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { discordChatIngress } from "@okouai/db/schema/discord-chat-ingress";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { splitDiscordMessage } from "../../lib/discord-message";
 import { logger } from "../../lib/log";
-import type { Db } from "../external/db";
+import { db$, type Db } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { settle } from "../utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
 import {
   resolveIntegrationAdmissionFailurePresentation,
@@ -49,22 +49,22 @@ interface Destination {
 }
 
 const currentDestinationAccess$ = command(
-  async ({ set }, db: Db, destination: Destination, signal: AbortSignal) => {
+  async ({ get, set }, destination: Destination, signal: AbortSignal) => {
+    const db = get(db$);
     const [connection] = await db
       .select({
-        guildId: discordOrgConnections.guildId,
         discordUserId: discordOrgConnections.discordUserId,
       })
       .from(discordOrgConnections)
       .innerJoin(
-        discordOrgInstallations,
-        eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
       )
       .where(
         and(
           eq(discordOrgConnections.id, destination.connectionId),
           eq(discordOrgConnections.userId, destination.userId),
-          eq(discordOrgInstallations.orgId, destination.orgId),
+          eq(discordOauthStates.orgId, destination.orgId),
         ),
       )
       .limit(1);
@@ -81,9 +81,15 @@ const currentDestinationAccess$ = command(
             eq(discordChatThreadRoutes.id, destination.routeId),
             eq(discordChatThreadRoutes.connectionId, destination.connectionId),
             eq(discordChatThreadRoutes.userId, destination.userId),
-            eq(
-              discordChatThreadRoutes.destinationChannelId,
-              destination.channelId,
+            or(
+              eq(
+                discordChatThreadRoutes.destinationChannelId,
+                destination.channelId,
+              ),
+              and(
+                isNull(discordChatThreadRoutes.destinationChannelId),
+                eq(discordChatThreadRoutes.sessionKey, destination.channelId),
+              ),
             ),
           ),
         )
@@ -94,13 +100,12 @@ const currentDestinationAccess$ = command(
       }
     }
     const access = await set(
-      requireDiscordConversationAccess$,
+      requireDiscordOutputAccess$,
       {
         orgId: destination.orgId,
         userId: destination.userId,
-        guildId: connection.guildId,
         channelId: destination.channelId,
-        mode: "write",
+        createThread: destination.routeId !== null,
       },
       signal,
     );
@@ -133,14 +138,17 @@ async function postParts(
   botToken: string,
   channelId: string,
   content: string,
+  replyToMessageId: string | undefined,
   signal: AbortSignal,
 ): Promise<void> {
+  let reference = replyToMessageId;
   for (const part of splitDiscordMessage(content)) {
     const result = await discordClient.createDiscordMessage(
-      { botToken, channelId, content: part },
+      { botToken, channelId, content: part, replyToMessageId: reference },
       signal,
     );
     signal.throwIfAborted();
+    reference = undefined;
     if (result.kind !== "ok") {
       throw new Error(
         result.kind === "unavailable"
@@ -150,103 +158,6 @@ async function postParts(
     }
   }
 }
-
-const sendReply$ = command(
-  async (
-    { set },
-    db: Db,
-    request: DiscordReplyRequest,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const access = await set(
-      currentDestinationAccess$,
-      db,
-      {
-        connectionId: request.target.connectionId,
-        orgId: request.orgId,
-        userId: request.userId,
-        channelId: request.target.channelId,
-        routeId: request.target.routeId,
-      },
-      signal,
-    );
-    if (!access) {
-      return;
-    }
-    const binding = access.binding;
-    const [event] = await db
-      .select({
-        content: canonicalChatEventContent(),
-        runId: chatEvents.runId,
-        agentId: agents.id,
-      })
-      .from(chatEvents)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-      .where(
-        and(
-          eq(chatEvents.id, request.chatEventId),
-          eq(chatEvents.chatThreadId, request.chatThreadId),
-          eq(chatThreads.userId, request.userId),
-          eq(agents.orgId, request.orgId),
-          chatEventTypeIn([
-            "output.message",
-            "output.error",
-            "run.failed",
-            "run.cancelled",
-          ]),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!event?.content) {
-      throw new Error("Discord reply canonical event is unavailable");
-    }
-    const [mentionerCount] = await db
-      .select({ count: countDistinct(discordChatThreadRoutes.userId) })
-      .from(discordChatThreadRoutes)
-      .innerJoin(
-        discordOrgConnections,
-        eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
-      )
-      .where(
-        and(
-          eq(discordOrgConnections.guildId, binding.guildId),
-          eq(
-            discordChatThreadRoutes.destinationChannelId,
-            request.target.channelId,
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    if (!mentionerCount) {
-      throw new Error("Discord reply mentioner count is unavailable");
-    }
-    const presentationArgs = {
-      db,
-      orgId: request.orgId,
-      agentId: event.agentId,
-      replyToMention:
-        mentionerCount.count > 1 ? `<@${binding.discordUserId}>` : undefined,
-    };
-    // An admission failure has no run, so its footer omits the model.
-    const presentation =
-      event.runId === null
-        ? await resolveIntegrationAdmissionFailurePresentation(
-            presentationArgs,
-            signal,
-          )
-        : await resolveIntegrationAgentResponsePresentation(
-            { ...presentationArgs, runId: event.runId },
-            signal,
-          );
-    signal.throwIfAborted();
-    const content = presentation.footerText
-      ? `${event.content}\n\n_${presentation.footerText}_`
-      : event.content;
-    await postParts(access.botToken, request.target.channelId, content, signal);
-  },
-);
 
 /**
  * Fire and forget: call after the transaction that created the event commits,
@@ -260,7 +171,104 @@ export const sendDiscordChatReply$ = command(
     request: DiscordReplyRequest,
     signal: AbortSignal,
   ): Promise<void> => {
-    const sent = await settle(set(sendReply$, db, request, signal), signal);
+    const sent = await settle(
+      (async (): Promise<void> => {
+        const [event] = await db
+          .select({
+            content: canonicalChatEventContent(),
+            runId: chatEvents.runId,
+            agentId: agents.id,
+          })
+          .from(chatEvents)
+          .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+          .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+          .where(
+            and(
+              eq(chatEvents.id, request.chatEventId),
+              eq(chatEvents.chatThreadId, request.chatThreadId),
+              eq(chatThreads.userId, request.userId),
+              eq(agents.orgId, request.orgId),
+              chatEventTypeIn([
+                "output.message",
+                "output.error",
+                "run.failed",
+                "run.cancelled",
+              ]),
+            ),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!event?.content) {
+          throw new Error("Discord reply canonical event is unavailable");
+        }
+        const access = await set(
+          currentDestinationAccess$,
+          {
+            connectionId: request.target.connectionId,
+            orgId: request.orgId,
+            userId: request.userId,
+            channelId: request.target.channelId,
+            routeId: request.target.routeId,
+          },
+          signal,
+        );
+        if (!access) {
+          return;
+        }
+        const binding = access.binding;
+        const [mentionerCount] = await db
+          .select({ count: countDistinct(discordChatThreadRoutes.userId) })
+          .from(discordChatThreadRoutes)
+          .innerJoin(
+            discordOrgConnections,
+            eq(discordOrgConnections.id, discordChatThreadRoutes.connectionId),
+          )
+          .where(
+            and(
+              eq(
+                discordChatThreadRoutes.destinationChannelId,
+                request.target.channelId,
+              ),
+            ),
+          );
+        signal.throwIfAborted();
+        if (!mentionerCount) {
+          throw new Error("Discord reply mentioner count is unavailable");
+        }
+        const presentationArgs = {
+          db,
+          orgId: request.orgId,
+          agentId: event.agentId,
+          replyToMention:
+            mentionerCount.count > 1
+              ? `<@${binding.discordUserId}>`
+              : undefined,
+        };
+        // An admission failure has no run, so its footer omits the model.
+        const presentation =
+          event.runId === null
+            ? await resolveIntegrationAdmissionFailurePresentation(
+                presentationArgs,
+                signal,
+              )
+            : await resolveIntegrationAgentResponsePresentation(
+                { ...presentationArgs, runId: event.runId },
+                signal,
+              );
+        signal.throwIfAborted();
+        const content = presentation.footerText
+          ? `${event.content}\n\n_${presentation.footerText}_`
+          : event.content;
+        await postParts(
+          access.botToken,
+          request.target.channelId,
+          content,
+          undefined,
+          signal,
+        );
+      })(),
+      signal,
+    );
     if (!sent.ok) {
       L.warn("Discord reply was not delivered", {
         chatEventId: request.chatEventId,
@@ -276,17 +284,18 @@ export const sendDiscordChatReply$ = command(
  */
 export const sendDiscordIngressNotice$ = command(
   async (
-    { set },
-    db: Db,
+    { get, set },
     notice: DiscordIngressNotice,
     signal: AbortSignal,
   ): Promise<void> => {
+    const db = get(db$);
     const sent = await settle(
       (async (): Promise<void> => {
         const [owner] = await db
           .select({
+            messageId: discordChatIngress.messageId,
             userId: discordOrgConnections.userId,
-            orgId: discordOrgInstallations.orgId,
+            orgId: discordOauthStates.orgId,
           })
           .from(discordChatIngress)
           .innerJoin(
@@ -294,8 +303,8 @@ export const sendDiscordIngressNotice$ = command(
             eq(discordOrgConnections.id, discordChatIngress.connectionId),
           )
           .innerJoin(
-            discordOrgInstallations,
-            eq(discordOrgInstallations.guildId, discordOrgConnections.guildId),
+            discordOauthStates,
+            eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
           )
           .where(
             and(
@@ -308,9 +317,11 @@ export const sendDiscordIngressNotice$ = command(
         if (!owner) {
           return;
         }
+        // A thread's starter has the thread ID but belongs to its parent.
+        const replyToMessageId =
+          notice.channelId === owner.messageId ? undefined : owner.messageId;
         const access = await set(
           currentDestinationAccess$,
-          db,
           {
             connectionId: notice.connectionId,
             orgId: owner.orgId,
@@ -327,6 +338,7 @@ export const sendDiscordIngressNotice$ = command(
           access.botToken,
           notice.channelId,
           notice.content,
+          replyToMessageId,
           signal,
         );
       })(),

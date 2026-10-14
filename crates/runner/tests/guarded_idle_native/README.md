@@ -24,7 +24,7 @@ It verifies ordinary bytes survive and the previous private runtime directory
 does not. It repeats exact-prune, all-inventory drain/shutdown batches and logical
 substitution, atomic park replacement, reserved restore over blank inventory and
 aged exact-to-blank replenishment with fresh boot and the matching prepared
-snapshot (twenty-two owned cases, including independent job-free pressure,
+snapshot (twenty-six owned cases, including independent job-free pressure,
 caller-owned cancellation before
 business activation, speculative guest restore failure, and cancelled parked
 and fenced running finalizing deliveries).
@@ -53,6 +53,25 @@ background component with an explicitly aged insertion and wraps new blank
 preparation in a supplied Fresh operation. Its final park uses guarded acceptance.
 Each scenario finishes its remaining pool inventory through the guarded batch.
 These component seams do not activate the production composition root.
+
+Optional ordinary and aged cases enter `maybe_start_optional` with mandatory
+current pressure, the original P2 authority, positive Fresh preparation coverage,
+provider creation custody and the original full logical lease. Both share their
+pressure controller and global start cadence with a real snapshot prefetch.
+The aged case retains the original required home saving independently of its
+foreground-preemptible logical lease; both retire final inventory through covered
+required cleanup.
+Prefetch, blank preparation and pressure producers join before factory teardown.
+
+These cases additionally require `OKOU_TEST_OPTIONAL_MEMORY_POLICY` to name a
+separate JSON file with `snapshot_path`, `snapshot_memory_mb` and
+`prefetch_overhead_bytes`. Supply an actual snapshot memory file and measured
+positive bounds; the overhead must cover at least the retained read buffer.
+The existing `replacement_preparation_bytes` supplies the new guest's Fresh
+preparation envelope. This seam requires real Ready pressure and headroom,
+and rejects missing inputs, unknown pressure and incomplete reads. Ordinary
+verification compiles it; native execution and the complete combined P3d
+acceptance remain separate.
 
 Caller-owned saving removes an ordinary exact reservation from inventory and
 uses the borrowed `IdleActivationOwner`/tracked Supervisor entry after successor
@@ -132,3 +151,99 @@ cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
 Ordinary CI compiles this fixture but does not execute its ignored native test.
 Compilation or mocked proof does not establish native execution, real host
 capacity savings, restored session/history correctness, or the parent P3d corpus.
+
+## Measured terminal corpus
+
+`native_terminal_corpus_records_data_and_phase_ownership` selects twelve cases:
+exact and all-inventory retirement, caller-owned cancellation, speculative guest
+restore failure, and parked/running finalizing cancellation, each with fresh boot
+and the matching snapshot. It preserves the complete older fixture above.
+Every case writes a 64 KiB home payload containing its original run identity,
+saves it through the real owner, restores and verifies its digest, and checks
+removal of the predecessor private runtime.
+
+Compile this test with `OKOU_TEST_BUILD_SOURCE_SHA` set to the exact checked-out
+commit. Prepare an immutable copy of the matching rootfs, kernel and Firecracker
+under a new experiment root; never use an existing Runner workspace. The ignored
+`prepare_native_terminal_snapshot` test creates a new matching snapshot directory
+using these explicit inputs. Supply a new invocation-owned snapshot ID in
+`OKOU_TEST_RPC_SNAPSHOT_HASH` before preparation and retain that exact value for
+restore. The provider encodes this ID into the vsock bind path; replacing it with
+a digest of the resulting files creates an incompatible restore path. File
+digests are recorded separately. The fixture also requires
+`OKOU_TEST_IDLE_ROOTFS_HASH`.
+The rootfs must contain the current Guest programs and initialization settings.
+An older packaged Guest can boot while failing the current control handshake;
+prepare the image through the existing source-derived Guest build and rootfs
+customization flow rather than relaxing the connection or data checks.
+
+Select the executable from Cargo's `compiler-artifact` JSON for the
+`guarded_idle_native` target with `profile.test` set, requiring exactly one
+non-null executable. A dependency/profile change can change the executable's
+filename; never reuse a previous filename or hash a different test binary.
+For large rootfs and snapshot files, compile with
+`--config 'profile.local.package.sha2.opt-level=3'` so their cryptographic
+preflight fits the bounded collector's workload. Record that build option in the
+experiment metadata; it does not establish a calibrated memory envelope.
+
+`OKOU_TEST_TERMINAL_ARTIFACTS` names a JSON object with `source_sha`,
+`test_binary_sha256`, `firecracker_sha256`, `kernel_sha256`, `rootfs_sha256`, `snapshot_id`,
+`snapshot_files` (filename to SHA-256) and `policy_sha256`. All hashes are lower-case
+hexadecimal. The test verifies the compiled source value and hashes its actual
+executable and supplied artifacts before starting a VM. Preserve the source
+checkout and build log alongside the manifest; the compiled value is not a
+signature proving where a rootfs was produced.
+
+The measured factory adds an explicit **fixture** post-exit tail: it writes and
+syncs 64 MiB in 1 MiB chunks, then reads and verifies every byte. The original full
+logical lease must remain allocated throughout that accepted blocking IO. This
+work belongs to the factory's joined physical tracker; it is not a calibration of
+production teardown. `tail_growth_bytes` must cover at least the complete 64 MiB
+file and 1 MiB buffer. All supplied policy bounds are test limits, and observations
+below them do not establish a production upper envelope or OOM protection.
+
+Each receipt records Linux monotonic and wall clocks, the original sandbox and
+backing generation, a positive owned backing wait, physical-tail completion and
+the restored data result. Case directories are removed only after success and
+dependency shutdown. Failed cases preserve their directories and never emit a
+completion receipt. Native admission, saving, teardown or data failures must be
+investigated; forced cleanup cannot substitute for native success.
+
+Run the exact test through the repository's bounded
+[P1 collector](../../../../.github/scripts/runner-memory-calibrate.md), using
+an owned driver that supplies these non-secret fixture inputs before executing
+the native test binary. P1 deliberately removes the caller's environment. Put
+`native_terminal_artifacts` in its metadata, containing the manifest plus
+`profile: {"vcpu": 2, "memory_mib": 4096, "home_mib": 16384}` and
+`required_fixture_tail_bytes: 67108864`.
+The owned driver must also explicitly supply the standard system-tool PATH,
+including `/usr/sbin` and `/sbin` for the provider's iptables, conntrack and sysctl
+prerequisites. Keep the collector's environment isolation intact; do not inherit
+the caller's credentials or substitute fake provider commands.
+
+```sh
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_terminal_corpus_records_data_and_phase_ownership \
+  --ignored --exact --nocapture --test-threads=1
+
+python3 crates/runner/tests/guarded_idle_native/report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+The report requires all twelve cases, stable original identities, every phase
+and actual samples in both live saving and the added required fixture IO. The
+total post-exit window also includes publication and teardown before the added
+tail starts. It reports
+RSS/PSS **lower bounds**, sample/read age and host availability. Missing process
+residency stays unknown; a missing phase/window fails validation. P1's generic
+`calibrated` and `native_vm_exit_confirmed` flags remain false. Complete
+session/history continuation, combined pressure/foreground/optional work and
+native cancellation races remain the separate parent acceptance gate.
+
+Ordinary `cargo test -p runner --test guarded_idle_native` executes the report
+consumer's real-file regressions through Python 3 and compiles the opt-in native
+tests. The report regressions do not substitute for executing KVM/NBD cases.
+The ordinary provider-boundary refusal test also drives actual finalizing park
+with controlled external park errors, an unexpected parked return and an
+unexpected running handoff point. It verifies the original file bytes and cache
+lock remain owned, the complete logical lease stays allocated and no destruction
+occurs until explicit disposal of the ordinary mock fixture.

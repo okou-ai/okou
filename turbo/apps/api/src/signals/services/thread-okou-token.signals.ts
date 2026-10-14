@@ -20,11 +20,12 @@ export function createOkouTokenInputSignals(
   threadContext: ThreadContext,
 ) {
   return computed(async (get): Promise<OkouTokenInput> => {
-    const [event, features, hostGrant, snapshot] = await Promise.all([
+    const [event, features, hostGrant, snapshot, agent] = await Promise.all([
       get(pickedEvent$),
       get(bootstrap.featureSwitches$),
       get(threadContext.computerUseHostGrant$),
       get(threadContext.connectorSnapshot$),
+      get(bootstrap.agent$),
     ]);
     if (!event) {
       throw new Error("The Okou run token requires a picked event");
@@ -53,6 +54,7 @@ export function createOkouTokenInputSignals(
       orgId: bootstrap.orgId,
       featureOverrides: features.overrides,
       options: {
+        isDefaultAgent: agent !== null && agent.id === agent.defaultAgentId,
         ...(hostGrant ? { computerUseHostId: hostGrant.hostId } : {}),
         cloudBrowserEnabled: event.thread.cloudBrowserEnabled,
         ...(Object.keys(customConnectorSourceIds).length === 0

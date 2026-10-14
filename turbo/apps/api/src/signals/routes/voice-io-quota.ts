@@ -6,9 +6,10 @@ import { authRoute } from "../auth/auth-route";
 import type { RouteEntry } from "../route-entry";
 import { audioInputQuota } from "../services/voice-io.service";
 
+const voiceIoQuota$ = audioInputQuota(organizationAuthContext$);
+
 const getVoiceIoQuotaInner$ = computed(async (get): Promise<unknown> => {
-  const auth = get(organizationAuthContext$);
-  const body = await get(audioInputQuota(auth.orgId, auth.userId));
+  const body = await get(voiceIoQuota$);
   return {
     status: 200 as const,
     body,

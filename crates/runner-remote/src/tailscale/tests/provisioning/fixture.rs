@@ -203,7 +203,13 @@ impl Service {
                         connections.spawn(async move {
                             let secure = tls.is_some();
                             let socket: Box<dyn Duplex> = match tls {
-                                Some(tls) => Box::new(tokio_rustls::TlsAcceptor::from(tls).accept(socket).await.unwrap()),
+                                Some(tls) => match tokio_rustls::TlsAcceptor::from(tls).accept(socket).await {
+                                    Ok(socket) => Box::new(socket),
+                                    // An abandoned connection must not stop the listener
+                                    // or the authenticated provisioning exchanges.
+                                    Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return,
+                                    Err(error) => panic!("provider TLS handshake failed: {error:?}"),
+                                },
                                 None => Box::new(socket),
                             };
                             serve(socket, received, send, gates, invalid, delete_status, secure).await;
@@ -267,7 +273,7 @@ impl Service {
                     let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
                     assert_eq!(
                         body,
-                        serde_json::json!({"expirySeconds":86400,"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}})
+                        serde_json::json!({"expirySeconds":7200,"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}})
                     );
                 }
                 _ => {
@@ -401,7 +407,7 @@ pub(super) fn key_response() -> Vec<u8> {
     let created = chrono::Utc::now();
     serde_json::to_vec(&serde_json::json!({
         "id":"captured/?other#id", "key":"tskey-auth-synthetic-one-use",
-        "created":created.to_rfc3339(), "expires":(created+chrono::Duration::days(1)).to_rfc3339(),
+        "created":created.to_rfc3339(), "expires":(created+chrono::Duration::hours(2)).to_rfc3339(),
         "capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:ssh"]}}}
     })).unwrap()
 }

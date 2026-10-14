@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
-import { workflowAutomations, workflows } from "@okouai/db/schema/workflow";
+import { workflows } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { computed, type Computed } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { db$ } from "../external/db";
@@ -170,7 +171,6 @@ export function createThreadContext(
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     workflowSkills$: workflowContext.workflowSkills$,
     storage$: workflowContext.storage$,
-    storageCache$: workflowContext.storageCache$,
     templates$,
     queuedModel$: model.queuedModel$,
     modelSelection$: model.modelSelection$,

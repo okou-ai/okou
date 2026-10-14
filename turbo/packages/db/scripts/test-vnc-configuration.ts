@@ -2,26 +2,404 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Client } from "pg";
+import { z } from "zod";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
 const schema = `vnc_configuration_${randomUUID().replaceAll("-", "")}`;
+
+const preservationMigrations = [
+  "1182_wet_felicia_hardy.sql",
+  "1183_wild_natasha_romanoff.sql",
+  "1184_lovely_christian_walker.sql",
+  "1196_dizzy_archangel.sql",
+  "1197_puzzling_aaron_stack.sql",
+  "1207_smart_oracle.sql",
+  "1211_daily_diamondback.sql",
+  "1229_peaceful_mathemanic.sql",
+  "1253_unique_zarek.sql",
+  "1289_thick_bruce_banner.sql",
+  "1296_little_electro.sql",
+  "1304_bright_grim_reaper.sql",
+  "1313_rsa_aes_vnc.sql",
+  "1381_vnc_kerberos_admission.sql",
+] as const;
+
+const fixtureTables = [
+  "retained_owner_data",
+  "vnc_credentials",
+  "ssh_connections",
+  "agent_vnc_access",
+  "vnc_connections",
+] as const;
+
+const namespaceRows = z.array(z.strictObject({ nspname: z.string() }));
+const searchPathRows = z.tuple([z.strictObject({ search_path: z.string() })]);
+const fixtureSnapshotRows = z
+  .array(
+    z.strictObject({
+      namespace: z.string(),
+      relations: z.literal(
+        "{agent_vnc_access,retained_owner_data,ssh_connections,vnc_connections,vnc_credentials}",
+      ),
+      retained_owner_data: z
+        .string()
+        .min(3)
+        .refine((text) => {
+          return text !== "[]";
+        }),
+      vnc_credentials: z
+        .string()
+        .min(3)
+        .refine((text) => {
+          return text !== "[]";
+        }),
+      ssh_connections: z
+        .string()
+        .min(3)
+        .refine((text) => {
+          return text !== "[]";
+        }),
+      agent_vnc_access: z
+        .string()
+        .min(3)
+        .refine((text) => {
+          return text !== "[]";
+        }),
+      vnc_connections: z
+        .string()
+        .min(3)
+        .refine((text) => {
+          return text !== "[]";
+        }),
+      catalog: z.string().min(3),
+    }),
+  )
+  .length(1);
+type FixtureSnapshot = Omit<
+  z.infer<typeof fixtureSnapshotRows>[number],
+  "namespace"
+>;
+type NativeOwnership = { namespace: string; createAcknowledged: true };
+
+function decodeSnapshot(rows: unknown, namespace: string): FixtureSnapshot {
+  const [row] = fixtureSnapshotRows.parse(rows);
+  assert.ok(row);
+  const { namespace: capturedNamespace, ...snapshot } = row;
+  assert.equal(capturedNamespace, namespace);
+  return snapshot;
+}
+
+// Keep server JSON TEXT opaque: pg's native record decoder owns bigint,
+// timestamp microseconds, JSONB, NULL and ciphertext materialization.
+function fixtureSnapshotQuery() {
+  const images = fixtureTables.map((table) => {
+    return `
+    (SELECT COALESCE(json_agg(to_json(r) ORDER BY to_json(r)::text),'[]'::json)::text
+     FROM ${table} AS r) AS ${table}`;
+  });
+  return `SELECT current_schema() AS namespace,
+    (SELECT array_agg(relname ORDER BY relname)::text FROM pg_class
+      WHERE relnamespace = current_schema()::regnamespace AND relkind = 'r') AS relations,
+    ${images.join(",")},
+    json_build_object(
+      'columns', (SELECT json_agg(to_json(r) ORDER BY r.table_name,r.attnum) FROM (
+        SELECT c.relname AS table_name,a.attnum,a.attname,
+          format_type(a.atttypid,a.atttypmod) AS type,a.atttypmod,a.attnotnull,
+          a.attidentity,a.attgenerated,co.collname,
+          pg_get_expr(d.adbin,d.adrelid) AS default
+        FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid
+        LEFT JOIN pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
+        LEFT JOIN pg_collation co ON co.oid=a.attcollation
+        WHERE c.relnamespace=current_schema()::regnamespace
+          AND a.attnum>0 AND NOT a.attisdropped AND c.relkind='r'
+      ) r),
+      'constraints', (SELECT json_agg(to_json(r) ORDER BY r.table_name,r.conname) FROM (
+        SELECT c.relname AS table_name,k.conname,k.contype,k.convalidated,
+          k.condeferrable,k.condeferred,k.conkey,k.confkey,
+          k.confupdtype,k.confdeltype,k.confmatchtype,
+          ref.relname AS referenced_table,
+          CASE WHEN k.confrelid=0 THEN NULL
+            WHEN ref.relnamespace=current_schema()::regnamespace THEN 'fixture'
+            ELSE rn.nspname END AS referenced_namespace,
+          pg_get_constraintdef(k.oid) AS definition
+        FROM pg_constraint k JOIN pg_class c ON c.oid=k.conrelid
+        LEFT JOIN pg_class ref ON ref.oid=k.confrelid
+        LEFT JOIN pg_namespace rn ON rn.oid=ref.relnamespace
+        WHERE c.relnamespace=current_schema()::regnamespace
+      ) r),
+      'indexes', (SELECT json_agg(to_json(r) ORDER BY r.table_name,r.index_name) FROM (
+        SELECT c.relname AS table_name,i.relname AS index_name,
+          k.indisunique,k.indisprimary,k.indisvalid,k.indisready,k.indkey::text,
+          replace(replace(pg_get_indexdef(i.oid),
+            quote_ident(current_schema())||'.',''),
+            '"'||current_schema()||'".','') AS definition
+        FROM pg_index k JOIN pg_class c ON c.oid=k.indrelid
+          JOIN pg_class i ON i.oid=k.indexrelid
+        WHERE c.relnamespace=current_schema()::regnamespace
+      ) r)
+    )::text AS catalog`;
+}
+
+function throwFailures(failures: unknown[]) {
+  if (failures.length === 1) throw failures[0];
+  if (failures.length > 1)
+    throw new AggregateError(
+      failures,
+      "VNC fixture operation and cleanup failed",
+    );
+}
+
+async function prepareNative(connectionString: string) {
+  const localClient = new Client({ connectionString });
+  const namespace = `vnc_negative_${randomUUID().replaceAll("-", "")}`;
+  let ownership: NativeOwnership | undefined;
+  let path: string | undefined;
+  const failures: unknown[] = [];
+  try {
+    await localClient.connect();
+    path = searchPathRows.parse(
+      (await localClient.query("SHOW search_path")).rows,
+    )[0].search_path;
+    assert.deepEqual(
+      namespaceRows.parse(
+        (
+          await localClient.query(
+            "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+            [namespace],
+          )
+        ).rows,
+      ),
+      [],
+    );
+    await localClient.query(`CREATE SCHEMA "${namespace}"`);
+    // The ACK survives path restoration or end failure in the plain receipt.
+    ownership = { namespace, createAcknowledged: true };
+    await localClient.query("SELECT set_config('search_path',$1,false)", [
+      namespace,
+    ]);
+    await localClient.query(
+      "CREATE TABLE retained_owner_data (value text NOT NULL)",
+    );
+    await localClient.query(
+      (await migration("1158_vnc_configuration.sql")).replaceAll(
+        '"public".',
+        `"${namespace}".`,
+      ),
+    );
+    await localClient.query(`CREATE TABLE ssh_connections (
+      id uuid PRIMARY KEY,org_id text NOT NULL,user_id text NOT NULL
+    )`);
+    await localClient.query(`CREATE TABLE agent_vnc_access (
+      org_id text NOT NULL,user_id text NOT NULL,agent_id uuid NOT NULL,
+      PRIMARY KEY (org_id,user_id,agent_id)
+    )`);
+    for (const name of preservationMigrations) {
+      await localClient.query(
+        (await migration(name)).replaceAll('"public".', `"${namespace}".`),
+      );
+    }
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      if (path !== undefined) {
+        try {
+          await localClient.query("SELECT set_config('search_path',$1,false)", [
+            path,
+          ]);
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          assert.deepEqual(
+            searchPathRows.parse(
+              (await localClient.query("SHOW search_path")).rows,
+            ),
+            [{ search_path: path }],
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    } finally {
+      try {
+        await localClient.end();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  }
+  return { ownership, failures };
+}
 
 async function rejects(
   query: string,
   expected: { code: string | RegExp; constraint?: string },
+  ownership: NativeOwnership,
+  source: FixtureSnapshot,
 ) {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0434; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT invalid_write");
-  await assert.rejects(
-    client.query(query),
-    expected,
-    `Synthetic VNC constraint query: ${query}`,
-  );
-  await client.query("ROLLBACK TO SAVEPOINT invalid_write");
-  await client.query("RELEASE SAVEPOINT invalid_write");
+  assert.equal(ownership.createAcknowledged, true);
+  const localClient = new Client({ connectionString: databaseUrl });
+  let path: string | undefined;
+  const failures: unknown[] = [];
+  try {
+    await localClient.connect();
+    path = searchPathRows.parse(
+      (await localClient.query("SHOW search_path")).rows,
+    )[0].search_path;
+    await localClient.query("SELECT set_config('search_path',$1,false)", [
+      ownership.namespace,
+    ]);
+    for (const table of [
+      "vnc_connections",
+      "ssh_connections",
+      "vnc_credentials",
+      "agent_vnc_access",
+      "retained_owner_data",
+    ]) {
+      await localClient.query(`DELETE FROM ${table}`);
+    }
+    for (const table of fixtureTables) {
+      await localClient.query(
+        `INSERT INTO ${table}
+        SELECT * FROM json_populate_recordset(NULL::${table}, $1::json)`,
+        [source[table]],
+      );
+    }
+    assert.deepEqual(
+      decodeSnapshot(
+        (await localClient.query(fixtureSnapshotQuery())).rows,
+        ownership.namespace,
+      ),
+      source,
+    );
+    try {
+      await assert.rejects(
+        localClient.query(query).catch((error: unknown) => {
+          const frontier = z
+            .object({ schema: z.string().optional() })
+            .parse(error);
+          if (frontier.schema !== undefined) {
+            assert.equal(frontier.schema, ownership.namespace);
+          }
+          throw error;
+        }),
+        expected,
+        `Synthetic VNC constraint query: ${query}`,
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+    // Also inspect the committed image after a wrong error or unexpected success.
+    assert.deepEqual(
+      decodeSnapshot(
+        (await localClient.query(fixtureSnapshotQuery())).rows,
+        ownership.namespace,
+      ),
+      source,
+    );
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      if (path !== undefined) {
+        try {
+          await localClient.query("SELECT set_config('search_path',$1,false)", [
+            path,
+          ]);
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          assert.deepEqual(
+            searchPathRows.parse(
+              (await localClient.query("SHOW search_path")).rows,
+            ),
+            [{ search_path: path }],
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    } finally {
+      try {
+        await localClient.end();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  }
+  throwFailures(failures);
+}
+
+async function disposeNative(ownership: NativeOwnership) {
+  assert.equal(ownership.createAcknowledged, true);
+  const localClient = new Client({ connectionString: databaseUrl });
+  let path: string | undefined;
+  const failures: unknown[] = [];
+  try {
+    await localClient.connect();
+    try {
+      path = searchPathRows.parse(
+        (await localClient.query("SHOW search_path")).rows,
+      )[0].search_path;
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      await localClient.query(`DROP SCHEMA "${ownership.namespace}" CASCADE`);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        namespaceRows.parse(
+          (
+            await localClient.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+              [ownership.namespace],
+            )
+          ).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  } catch (error) {
+    failures.push(error);
+  } finally {
+    try {
+      if (path !== undefined) {
+        try {
+          await localClient.query("SELECT set_config('search_path',$1,false)", [
+            path,
+          ]);
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          assert.deepEqual(
+            searchPathRows.parse(
+              (await localClient.query("SHOW search_path")).rows,
+            ),
+            [{ search_path: path }],
+          );
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+    } finally {
+      try {
+        await localClient.end();
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  }
+  throwFailures(failures);
 }
 
 async function migration(name: string) {
@@ -31,11 +409,39 @@ async function migration(name: string) {
   );
 }
 
+let nativeOwnership: NativeOwnership | undefined;
+let originalPath: string | undefined;
+let positiveCreateAcknowledged = false;
+const failures: unknown[] = [];
+client.on("error", (error) => {
+  failures.push(error);
+});
+
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0435; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
+  originalPath = searchPathRows.parse(
+    (await client.query("SHOW search_path")).rows,
+  )[0].search_path;
+  const prepared = await prepareNative(databaseUrl);
+  nativeOwnership = prepared.ownership;
+  throwFailures(prepared.failures);
+  assert.ok(nativeOwnership);
+  assert.match(schema, /^vnc_configuration_[0-9a-f]{32}$/);
+  assert.deepEqual(
+    namespaceRows.parse(
+      (
+        await client.query(
+          "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+          [schema],
+        )
+      ).rows,
+    ),
+    [],
+  );
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
+  // Only the CREATE ACK owns this namespace on the disposable native-job DB.
+  positiveCreateAcknowledged = true;
+  await client.query("SELECT set_config('search_path',$1,false)", [schema]);
   await client.query("CREATE TABLE retained_owner_data (value text NOT NULL)");
   await client.query("INSERT INTO retained_owner_data VALUES ('retained')");
   await client.query(
@@ -85,22 +491,7 @@ try {
     )
   ).rows;
 
-  for (const name of [
-    "1182_wet_felicia_hardy.sql",
-    "1183_wild_natasha_romanoff.sql",
-    "1184_lovely_christian_walker.sql",
-    "1196_dizzy_archangel.sql",
-    "1197_puzzling_aaron_stack.sql",
-    "1207_smart_oracle.sql",
-    "1211_daily_diamondback.sql",
-    "1229_peaceful_mathemanic.sql",
-    "1253_unique_zarek.sql",
-    "1289_thick_bruce_banner.sql",
-    "1296_little_electro.sql",
-    "1304_bright_grim_reaper.sql",
-    "1313_rsa_aes_vnc.sql",
-    "1381_vnc_kerberos_admission.sql",
-  ]) {
+  for (const name of preservationMigrations) {
     await client.query(
       (await migration(name)).replaceAll('"public".', `"${schema}".`),
     );
@@ -229,38 +620,92 @@ try {
   await client.query(
     "UPDATE vnc_connections SET transport_type='ssh',ssh_connection_id='00000000-0000-4000-8000-000000000010',x509_server_name='plain-tls.example.com' WHERE id='00000000-0000-4000-8000-000000000004'",
   );
-  await rejects(
-    "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
-    {
-      code: /^(23503|23001)$/,
-      constraint: "vnc_connections_ssh_owner_fk",
-    },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-000000000010'",
+      {
+        code: /^(23503|23001)$/,
+        constraint: "vnc_connections_ssh_owner_fk",
+      },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   for (const assignment of [
     "transport_type='direct'",
     "ssh_connection_id=NULL",
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000004'`,
+        { code: "23514", constraint: "chk_vnc_connections_transport" },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000004'`,
-      { code: "23514", constraint: "chk_vnc_connections_transport" },
+      "UPDATE vnc_connections SET ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-000000000004'",
+      { code: "23503", constraint: "vnc_connections_ssh_owner_fk" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_connections SET ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-000000000004'",
-    { code: "23503", constraint: "vnc_connections_ssh_owner_fk" },
-  );
   for (const serverName of [
     "TLS.EXAMPLE.COM",
     "tls.example.com/path",
     "",
   ] as const) {
-    await rejects(
-      `UPDATE vnc_connections SET x509_server_name='${serverName}' WHERE id='00000000-0000-4000-8000-000000000004'`,
-      {
-        code: "23514",
-        constraint: "chk_vnc_connections_x509_server_name",
-      },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET x509_server_name='${serverName}' WHERE id='00000000-0000-4000-8000-000000000004'`,
+        {
+          code: "23514",
+          constraint: "chk_vnc_connections_x509_server_name",
+        },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
 
   for (const assignment of [
@@ -268,10 +713,25 @@ try {
     "user_id='other'",
     "credential_id='00000000-0000-4000-8000-000000000005'",
   ] as const) {
-    await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000003'`,
-      { code: "23503", constraint: "vnc_connections_credential_owner_fk" },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000003'`,
+        { code: "23503", constraint: "vnc_connections_credential_owner_fk" },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
 
   for (const [authMethod, securityType, credentialId, constraint] of [
@@ -300,13 +760,28 @@ try {
       "chk_vnc_connections_profile",
     ],
   ] as const) {
-    await rejects(
-      `INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode) VALUES ('org','owner','Mismatch','mismatch.example.com','${credentialId}','${authMethod}','${securityType}','system')`,
-      {
-        code: constraint.endsWith("_fk") ? "23503" : "23514",
-        constraint,
-      },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `INSERT INTO vnc_connections (org_id,user_id,display_name,host,credential_id,auth_method,security_type,trust_mode) VALUES ('org','owner','Mismatch','mismatch.example.com','${credentialId}','${authMethod}','${securityType}','system')`,
+        {
+          code: constraint.endsWith("_fk") ? "23503" : "23514",
+          constraint,
+        },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
 
   await client.query(
@@ -318,14 +793,38 @@ try {
   assert.deepEqual(credentialless.rows, [
     { credential_id: null, auth_method: "none", security_type: "x509_none" },
   ]);
-  await rejects(
-    "UPDATE vnc_connections SET security_type='x509_vnc' WHERE id='00000000-0000-4000-8000-000000000099'",
-    { code: "23514", constraint: "chk_vnc_connections_profile" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000001' WHERE id='00000000-0000-4000-8000-000000000099'",
-    { code: "23514", constraint: "chk_vnc_connections_profile" },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET security_type='x509_vnc' WHERE id='00000000-0000-4000-8000-000000000099'",
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000001' WHERE id='00000000-0000-4000-8000-000000000099'",
+      { code: "23514", constraint: "chk_vnc_connections_profile" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   await client.query(
     "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-000000000099'",
   );
@@ -344,24 +843,66 @@ try {
     ["encrypted_password='unexpected'", "chk_vnc_credentials_password"],
     ["username='unexpected'", "chk_vnc_credentials_auth"],
   ] as const) {
-    await rejects(
-      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000080'`,
-      { code: "23514", constraint },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000080'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
   for (const assignment of [
     "security_type='x509_vnc'",
     "auth_method='none'",
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000082'`,
+        { code: "23514", constraint: "chk_vnc_connections_profile" },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000082'`,
-      { code: "23514", constraint: "chk_vnc_connections_profile" },
+      "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000081' WHERE id='00000000-0000-4000-8000-000000000082'",
+      { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000081' WHERE id='00000000-0000-4000-8000-000000000082'",
-    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
-  );
   await client.query(
     "DELETE FROM vnc_connections WHERE id IN ('00000000-0000-4000-8000-000000000082','00000000-0000-4000-8000-000000000083')",
   );
@@ -369,14 +910,38 @@ try {
     "DELETE FROM vnc_credentials WHERE id IN ('00000000-0000-4000-8000-000000000080','00000000-0000-4000-8000-000000000081')",
   );
 
-  await rejects(
-    "UPDATE vnc_credentials SET username='operator',auth_method='username_password' WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
-  );
-  await rejects(
-    "DELETE FROM vnc_credentials WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: /^(23503|23001)$/ },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_credentials SET username='operator',auth_method='username_password' WHERE id='00000000-0000-4000-8000-000000000001'",
+      { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "DELETE FROM vnc_credentials WHERE id='00000000-0000-4000-8000-000000000001'",
+      { code: /^(23503|23001)$/ },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
 
   for (const [assignment, constraint] of [
     ["revision=0", "chk_vnc_credentials_revision"],
@@ -385,10 +950,25 @@ try {
     ["name=''", "chk_vnc_credentials_name"],
     ["username='unexpected'", "chk_vnc_credentials_auth"],
   ] as const) {
-    await rejects(
-      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000001'`,
-      { code: "23514", constraint },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000001'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
   for (const [assignment, expected] of [
     [
@@ -402,27 +982,90 @@ try {
     ],
     ["username=repeat('x',256)", { code: "22001" }],
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000002'`,
+        expected,
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000002'`,
-      expected,
+      "UPDATE vnc_credentials SET encrypted_password=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
+      { code: "23514", constraint: "chk_vnc_credentials_password" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_credentials SET encrypted_password=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: "23514", constraint: "chk_vnc_credentials_password" },
-  );
-  await rejects(
-    "UPDATE vnc_credentials SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
-    { code: "23502" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000003'",
-    { code: "23502" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET security_type=NULL WHERE id='00000000-0000-4000-8000-000000000003'",
-    { code: "23502" },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_credentials SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000001'",
+      { code: "23502" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET auth_method=NULL WHERE id='00000000-0000-4000-8000-000000000003'",
+      { code: "23502" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET security_type=NULL WHERE id='00000000-0000-4000-8000-000000000003'",
+      { code: "23502" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   for (const [assignment, constraint] of [
     ["generation=0", "chk_vnc_connections_generation"],
     ["security_type='unsupported'", "chk_vnc_connections_profile"],
@@ -441,10 +1084,25 @@ try {
       "chk_vnc_connections_trust",
     ],
   ] as const) {
-    await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000003'`,
-      { code: "23514", constraint },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000003'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
 
   // PEM parsing belongs to the API; storage enforces the discriminated shape.
@@ -472,25 +1130,79 @@ try {
     "username='é'",
     "username=''",
   ]) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000021'`,
+        { code: "23514", constraint: "chk_vnc_credentials_auth" },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_credentials SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000021'`,
-      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      "UPDATE vnc_credentials SET username=repeat('x',256) WHERE id='00000000-0000-4000-8000-000000000021'",
+      { code: "22001" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_credentials SET username=repeat('x',256) WHERE id='00000000-0000-4000-8000-000000000021'",
-    { code: "22001" },
-  );
   for (const securityType of ["x509_plain", "x509_vnc", "x509_none"]) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET security_type='${securityType}' WHERE id='00000000-0000-4000-8000-000000000022'`,
+        { code: "23514", constraint: "chk_vnc_connections_profile" },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET security_type='${securityType}' WHERE id='00000000-0000-4000-8000-000000000022'`,
-      { code: "23514", constraint: "chk_vnc_connections_profile" },
+      "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000002' WHERE id='00000000-0000-4000-8000-000000000022'",
+      { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_connections SET credential_id='00000000-0000-4000-8000-000000000002' WHERE id='00000000-0000-4000-8000-000000000022'",
-    { code: "23503", constraint: "vnc_connections_credential_profile_fk" },
-  );
 
   // One existing classic password can be explicitly selected for either X509Vnc
   // or Mac type 2; the saved security remains a distinct, constrained profile.
@@ -509,10 +1221,25 @@ try {
     ["ca_bundle='unexpected'", "chk_vnc_connections_trust"],
     ["security_type='apple_dh'", "chk_vnc_connections_profile"],
   ] as const) {
-    await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000018'`,
-      { code: "23514", constraint },
-    );
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000018'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
   }
   await client.query(
     "UPDATE vnc_connections SET host='::1' WHERE id='00000000-0000-4000-8000-000000000018'",
@@ -535,15 +1262,42 @@ try {
     ["ca_bundle='unexpected'", "chk_vnc_connections_trust"],
     ["security_type='x509_plain'", "chk_vnc_connections_profile"],
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000013'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000013'`,
-      { code: "23514", constraint },
+      "UPDATE vnc_credentials SET username=repeat('é',32) WHERE id='00000000-0000-4000-8000-000000000012'",
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_credentials SET username=repeat('é',32) WHERE id='00000000-0000-4000-8000-000000000012'",
-    { code: "23514", constraint: "chk_vnc_credentials_auth" },
-  );
   await client.query(
     "UPDATE vnc_credentials SET username=repeat('x',63) WHERE id='00000000-0000-4000-8000-000000000012'",
   );
@@ -566,15 +1320,42 @@ try {
     ["security_type='apple_dh'", "chk_vnc_connections_profile"],
     ["trust_mode='system'", "chk_vnc_connections_trust"],
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000015'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000015'`,
-      { code: "23514", constraint },
+      "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000014'",
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000014'",
-    { code: "23514", constraint: "chk_vnc_credentials_auth" },
-  );
   await client.query(
     "UPDATE vnc_credentials SET username=repeat('x',255) WHERE id='00000000-0000-4000-8000-000000000014'",
   );
@@ -594,15 +1375,42 @@ try {
     ["security_type='apple_srp'", "chk_vnc_connections_profile"],
     ["trust_mode='system'", "chk_vnc_connections_trust"],
   ] as const) {
+    {
+      const sourceImage = decodeSnapshot(
+        (await client.query(fixtureSnapshotQuery())).rows,
+        schema,
+      );
+      await rejects(
+        `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000017'`,
+        { code: "23514", constraint },
+        nativeOwnership,
+        sourceImage,
+      );
+      assert.deepEqual(
+        decodeSnapshot(
+          (await client.query(fixtureSnapshotQuery())).rows,
+          schema,
+        ),
+        sourceImage,
+      );
+    }
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
     await rejects(
-      `UPDATE vnc_connections SET ${assignment} WHERE id='00000000-0000-4000-8000-000000000017'`,
-      { code: "23514", constraint },
+      "UPDATE vnc_credentials SET username=repeat('é',118) WHERE id='00000000-0000-4000-8000-000000000016'",
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
     );
   }
-  await rejects(
-    "UPDATE vnc_credentials SET username=repeat('é',118) WHERE id='00000000-0000-4000-8000-000000000016'",
-    { code: "23514", constraint: "chk_vnc_credentials_auth" },
-  );
   await client.query(
     "UPDATE vnc_credentials SET username=repeat('é',117) WHERE id='00000000-0000-4000-8000-000000000016'",
   );
@@ -637,10 +1445,25 @@ try {
         "x509_server_name='other.example.com'",
         "trust_mode='system'",
       ]) {
-        await rejects(
-          `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
-          { code: "23514" },
-        );
+        {
+          const sourceImage = decodeSnapshot(
+            (await client.query(fixtureSnapshotQuery())).rows,
+            schema,
+          );
+          await rejects(
+            `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
+            { code: "23514" },
+            nativeOwnership,
+            sourceImage,
+          );
+          assert.deepEqual(
+            decodeSnapshot(
+              (await client.query(fixtureSnapshotQuery())).rows,
+              schema,
+            ),
+            sourceImage,
+          );
+        }
       }
       if (security.includes("ra2ne")) {
         for (const assignment of [
@@ -648,10 +1471,25 @@ try {
           "host='localhost'",
           "host='other.example.com'",
         ]) {
-          await rejects(
-            `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
-            { code: "23514" },
-          );
+          {
+            const sourceImage = decodeSnapshot(
+              (await client.query(fixtureSnapshotQuery())).rows,
+              schema,
+            );
+            await rejects(
+              `UPDATE vnc_connections SET ${assignment} WHERE id='${id}'`,
+              { code: "23514" },
+              nativeOwnership,
+              sourceImage,
+            );
+            assert.deepEqual(
+              decodeSnapshot(
+                (await client.query(fixtureSnapshotQuery())).rows,
+                schema,
+              ),
+              sourceImage,
+            );
+          }
         }
       } else {
         await client.query(
@@ -661,18 +1499,54 @@ try {
       await client.query(`DELETE FROM vnc_connections WHERE id='${id}'`);
     }
   }
-  await rejects(
-    "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000019'",
-    { code: "23514", constraint: "chk_vnc_credentials_auth" },
-  );
-  await rejects(
-    "UPDATE vnc_credentials SET username='not-password-only' WHERE id='00000000-0000-4000-8000-000000000018'",
-    { code: "23514", constraint: "chk_vnc_credentials_auth" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET rsa_server_key_sha256=repeat('a',64) WHERE id='00000000-0000-4000-8000-000000000003'",
-    { code: "23514", constraint: "chk_vnc_connections_rsa_pin" },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_credentials SET username=repeat('é',128) WHERE id='00000000-0000-4000-8000-000000000019'",
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_credentials SET username='not-password-only' WHERE id='00000000-0000-4000-8000-000000000018'",
+      { code: "23514", constraint: "chk_vnc_credentials_auth" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET rsa_server_key_sha256=repeat('a',64) WHERE id='00000000-0000-4000-8000-000000000003'",
+      { code: "23514", constraint: "chk_vnc_connections_rsa_pin" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   await client.query(`
     INSERT INTO ssh_connections (id,org_id,user_id)
       VALUES ('00000000-0000-4000-8000-00000000b015','org','owner');
@@ -685,44 +1559,140 @@ try {
         '00000000-0000-4000-8000-00000000b013','qemu_kerberos_password','qemu_x509_gssapi','system',
         '{"realm":"EXAMPLE.INVALID","components":["vnc","desktop.example.com"]}', 'direct','kdc.example.com',88,1200,7200);
   `);
-  await rejects(
-    "UPDATE vnc_credentials SET encrypted_password='wrong-source' WHERE id='00000000-0000-4000-8000-00000000b013'",
-    { code: "23514", constraint: "chk_vnc_credentials_password" },
-  );
-  await rejects(
-    'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":[false]}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
-    { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
-  );
-  await rejects(
-    'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":["alice"],"ambient":true}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
-    { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET kerberos_ticket_lifetime_seconds=7201 WHERE id='00000000-0000-4000-8000-00000000b014'",
-    { code: "23514", constraint: "chk_vnc_connections_kdc" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET kdc_transport_type=NULL WHERE id='00000000-0000-4000-8000-00000000b014'",
-    { code: "23514", constraint: "chk_vnc_connections_kdc" },
-  );
-  await rejects(
-    "UPDATE vnc_connections SET kdc_transport_type='ssh',kdc_host='127.0.0.1',kdc_ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-00000000b014'",
-    { code: "23503", constraint: "vnc_connections_kdc_ssh_owner_fk" },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_credentials SET encrypted_password='wrong-source' WHERE id='00000000-0000-4000-8000-00000000b013'",
+      { code: "23514", constraint: "chk_vnc_credentials_password" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":[false]}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
+      { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      'UPDATE vnc_credentials SET kerberos_initiator=\'{"realm":"EXAMPLE.INVALID","components":["alice"],"ambient":true}\' WHERE id=\'00000000-0000-4000-8000-00000000b013\'',
+      { code: "23514", constraint: "chk_vnc_credentials_kerberos_initiator" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET kerberos_ticket_lifetime_seconds=7201 WHERE id='00000000-0000-4000-8000-00000000b014'",
+      { code: "23514", constraint: "chk_vnc_connections_kdc" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET kdc_transport_type=NULL WHERE id='00000000-0000-4000-8000-00000000b014'",
+      { code: "23514", constraint: "chk_vnc_connections_kdc" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "UPDATE vnc_connections SET kdc_transport_type='ssh',kdc_host='127.0.0.1',kdc_ssh_connection_id='00000000-0000-4000-8000-000000000011' WHERE id='00000000-0000-4000-8000-00000000b014'",
+      { code: "23503", constraint: "vnc_connections_kdc_ssh_owner_fk" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   await client.query(
     "UPDATE vnc_connections SET kdc_transport_type='ssh',kdc_host='127.0.0.1',kdc_ssh_connection_id='00000000-0000-4000-8000-00000000b015' WHERE id='00000000-0000-4000-8000-00000000b014'",
   );
-  await rejects(
-    "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-00000000b015'",
-    {
-      code: /^(23503|23001)$/,
-      constraint: "vnc_connections_kdc_ssh_owner_fk",
-    },
-  );
-  await rejects(
-    'UPDATE vnc_connections SET kerberos_service=\'{"realm":"EXAMPLE.INVALID","components":["host","desktop.example.com"]}\' WHERE id=\'00000000-0000-4000-8000-00000000b014\'',
-    { code: "23514", constraint: "chk_vnc_connections_kerberos_service" },
-  );
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      "DELETE FROM ssh_connections WHERE id='00000000-0000-4000-8000-00000000b015'",
+      {
+        code: /^(23503|23001)$/,
+        constraint: "vnc_connections_kdc_ssh_owner_fk",
+      },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
+  {
+    const sourceImage = decodeSnapshot(
+      (await client.query(fixtureSnapshotQuery())).rows,
+      schema,
+    );
+    await rejects(
+      'UPDATE vnc_connections SET kerberos_service=\'{"realm":"EXAMPLE.INVALID","components":["host","desktop.example.com"]}\' WHERE id=\'00000000-0000-4000-8000-00000000b014\'',
+      { code: "23514", constraint: "chk_vnc_connections_kerberos_service" },
+      nativeOwnership,
+      sourceImage,
+    );
+    assert.deepEqual(
+      decodeSnapshot((await client.query(fixtureSnapshotQuery())).rows, schema),
+      sourceImage,
+    );
+  }
   await client.query(
     "DELETE FROM vnc_connections WHERE id='00000000-0000-4000-8000-00000000b014'",
   );
@@ -737,8 +1707,60 @@ try {
     [{ count: 10 }],
   );
   await client.query("DELETE FROM vnc_credentials");
-  console.log("VNC preservation migrations and storage constraints passed");
+} catch (error) {
+  failures.push(error);
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  if (nativeOwnership !== undefined) {
+    try {
+      await disposeNative(nativeOwnership);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (positiveCreateAcknowledged) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        namespaceRows.parse(
+          (
+            await client.query(
+              "SELECT nspname FROM pg_namespace WHERE nspname=$1",
+              [schema],
+            )
+          ).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (originalPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path',$1,false)", [
+        originalPath,
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        searchPathRows.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: originalPath }],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    failures.push(error);
+  }
 }
+throwFailures(failures);
+console.log("VNC preservation migrations and storage constraints passed");

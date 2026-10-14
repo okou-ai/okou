@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCRIPT="${SCRIPT_DIR}/reconcile-runner-binary-groups.sh"
+SCRIPT="${SCRIPT_DIR}/runner/reconcile-runner-binary-groups.sh"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 FAKE_BIN="${TMP_DIR}/bin"
@@ -100,12 +100,12 @@ SH
   chmod +x "${target_dir}/runner"
 
   local digest size sha toolchain
-  digest=$(env GITHUB_OUTPUT= "${SCRIPT_DIR}/runner-binary-build/digest.sh" "$target" |
+  digest=$(env GITHUB_OUTPUT= "${SCRIPT_DIR}/runner/runner-binary-build/digest.sh" "$target" |
     sed -n 's/^binary-input-digest=//p' | tail -n1)
   size=$(stat -c '%s' "${target_dir}/runner")
   sha=$(sha256sum "${target_dir}/runner" | awk '{print $1}')
   # shellcheck disable=SC1091
-  . "${SCRIPT_DIR}/runner-binary-build/contract.env"
+  . "${SCRIPT_DIR}/runner/runner-binary-build/contract.env"
   toolchain=$RUNNER_BINARY_TOOLCHAIN_IMAGE
   jq -n \
     --arg digest "$digest" \

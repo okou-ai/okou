@@ -579,10 +579,6 @@ async function convert(options: Options): Promise<void> {
     );
   }
   console.log();
-  console.log("Check how it renders:");
-  console.log(
-    chalk.cyan(`  okou presentation screenshot --input ${out} --out ./pages`),
-  );
   console.log("Deliver it to the user:");
   console.log(chalk.cyan(`  okou web upload-file -f ${out}`));
 }
@@ -637,19 +633,6 @@ Examples:
   Hosted deck:         okou presentation convert --input https://example.com/deck
   Machine-readable:    okou presentation convert --input deck.html --json
   Deck behind a login: okou browser use && okou presentation convert \\
-                         --session okou-browser --input https://example.com/deck
-
-Notes:
-  - Activates selected inactive slides using the visible page's layout
-  - Wrapped inline text is exported as measured native line fragments
-  - Fixed geometry preserves font size; the viewer does not resize measured boxes
-  - Table row heights and solid cell backgrounds come from browser measurements
-  - HTML text and CSS effects never fall back to screenshots or generated images
-  - Source images, SVG/canvas assets, and image URL backgrounds remain images
-  - Unsupported effects can be missing or inaccurate; native export is not visual acceptance
-  - --json lists elements whose synthetic image exports were omitted
-  - --verify checks original source text; it does not grade appearance
-  - Complex effects still require rendered-page comparison
-  - Use okou presentation screenshot and compare each page before delivery`,
+                         --session okou-browser --input https://example.com/deck`,
   )
   .action(withErrorHandler(convert));

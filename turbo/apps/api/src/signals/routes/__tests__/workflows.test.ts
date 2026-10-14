@@ -5,7 +5,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
-import { createPublicAutomationResultEmailApi } from "./helpers/public-automation-result-email";
+import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 
 import {
   GetObjectCommand,
@@ -69,7 +69,7 @@ const chat = createChatFilesBddApi(context);
 const miscApi = createMiscRoutesApi(context);
 const mocks = createRouteMocks(context);
 const api = createRunsApi(context);
-const publicResults = createPublicAutomationResultEmailApi(context);
+const automationRuns = createPublicAutomationRunApi(context);
 const connectorApi = createConnectorBddApi(context);
 const STAFF_ORG_ID = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
 
@@ -1625,23 +1625,21 @@ describe("workflows", () => {
     });
     const runnerGroup = api.configureRunnerGroup();
     api.acceptTelemetryIngest();
-    publicResults.configureDelivery(actor);
     onTestFinished(async () => {
-      await publicResults.cleanup(actor);
+      await automationRuns.cleanup(actor);
       const cleanupBdd = createBddApi(context);
       cleanupBdd.acceptAgentStorageWrites();
       await cleanupBdd.deleteAgent(actor, sourceAgent.agentId);
       await cleanupBdd.deleteAgent(actor, targetAgent.agentId);
     });
-    const sourceRun = await publicResults.start(
+    const sourceRun = await automationRuns.start(
       actor,
       automation.body.id,
       runnerGroup,
     );
-    await publicResults.complete(actor, sourceRun.runId, runnerGroup, {
+    await automationRuns.complete(actor, sourceRun.runId, runnerGroup, {
       output: "Ordinary source result",
     });
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
     const copied = await accept(
       detailClient().copy({
         headers: authHeaders(actor),
@@ -1685,15 +1683,14 @@ describe("workflows", () => {
         );
       }),
     ).toBeTruthy();
-    const copiedRun = await publicResults.start(
+    const copiedRun = await automationRuns.start(
       actor,
       copiedSchedule.id,
       runnerGroup,
     );
-    await publicResults.complete(actor, copiedRun.runId, runnerGroup, {
+    await automationRuns.complete(actor, copiedRun.runId, runnerGroup, {
       output: "Ordinary copied result",
     });
-    expect(context.mocks.resend.send).not.toHaveBeenCalled();
   });
 
   it("copies schedule-only workflows without binding a chat thread", async () => {

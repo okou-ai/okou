@@ -61,16 +61,14 @@ import { FeishuCard } from "./feishu-card.tsx";
 import type { DiscordOrgStatus } from "@okouai/api-contracts/contracts/integrations-discord";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import {
+  discordDescription,
+  DiscordAuthorizationActions,
+} from "./discord-authorization-actions.tsx";
+import {
   discordOrgData$,
-  discordAuthorizationFailed$,
   discordAuthorizationPending$,
-  DiscordPopupBlockedError,
-  startDiscordAuthorization$,
   disconnectDiscordOrg$,
-  uninstallDiscordOrg$,
   selectDiscordDmBinding$,
-  showDiscordUninstallDialog$,
-  setShowDiscordUninstallDialog$,
 } from "../../signals/okou-page/discord.ts";
 import {
   approveDiscordAuthorization$,
@@ -457,36 +455,6 @@ function SlackCard({ displayName }: { displayName: string }) {
   );
 }
 
-function discordDescription(data: DiscordOrgStatus): string {
-  if (!data.isAvailable && data.isInstalled) {
-    return i18n.t(($) => {
-      return $.works.discord.suspended;
-    });
-  }
-  if (!data.isAvailable) {
-    return i18n.t(($) => {
-      return $.works.discord.unconfigured;
-    });
-  }
-  if (!data.isInstalled) {
-    return data.isAdmin
-      ? i18n.t(($) => {
-          return $.works.discord.adminSetup;
-        })
-      : i18n.t(($) => {
-          return $.works.discord.memberSetup;
-        });
-  }
-  if (!data.isConnected) {
-    return i18n.t(($) => {
-      return $.works.discord.accountSetup;
-    });
-  }
-  return i18n.t(($) => {
-    return $.works.discord.description;
-  });
-}
-
 function DiscordDmSelection({
   data,
   saving,
@@ -500,17 +468,17 @@ function DiscordDmSelection({
   const items = data.dmBindings.map((binding) => {
     return {
       value: binding.connectionId,
-      label: binding.guildName ?? binding.guildId,
+      label: binding.workspaceName,
     };
   });
   return (
     <div className="flex flex-col gap-2 border-t border-border p-4">
       <label
-        htmlFor="discord-dm-server"
+        htmlFor="discord-workspace"
         className="text-sm font-medium text-foreground"
       >
         {t(($) => {
-          return $.works.discord.dmServer;
+          return $.works.discord.defaultWorkspace;
         })}
       </label>
       <Select
@@ -532,10 +500,10 @@ function DiscordDmSelection({
           }
         }}
       >
-        <SelectTrigger id="discord-dm-server" variant="neutral">
+        <SelectTrigger id="discord-workspace" variant="neutral">
           <SelectValue
             placeholder={t(($) => {
-              return $.works.discord.chooseDmServer;
+              return $.works.discord.chooseWorkspace;
             })}
           />
         </SelectTrigger>
@@ -549,107 +517,6 @@ function DiscordDmSelection({
           })}
         </SelectContent>
       </Select>
-    </div>
-  );
-}
-
-function canAuthorizeDiscord(data: DiscordOrgStatus): boolean {
-  return (
-    data.isAvailable &&
-    ((!data.isInstalled && data.isAdmin) ||
-      (data.isInstalled && !data.isConnected))
-  );
-}
-
-function DiscordAuthorizationActions({
-  data,
-  disabled,
-}: {
-  data: DiscordOrgStatus | null;
-  disabled: boolean;
-}) {
-  const { t } = useTranslation();
-  const [authorizationState, authorize] = useLoadableSet(
-    startDiscordAuthorization$,
-  );
-  const authorizationFailed = useGet(discordAuthorizationFailed$);
-  const approvalAvailable = useGet(discordApprovalAvailable$);
-  const approvalSucceeded = useGet(discordApprovalSucceeded$);
-  const pageSignal = useGet(pageSignal$);
-  if (approvalAvailable || approvalSucceeded) {
-    return null;
-  }
-  const canAuthorize = data && canAuthorizeDiscord(data);
-  if (
-    !canAuthorize &&
-    authorizationState.state !== "loading" &&
-    authorizationState.state !== "hasError" &&
-    !authorizationFailed
-  ) {
-    return null;
-  }
-
-  return (
-    <div className="flex max-w-64 flex-col items-end gap-2">
-      {canAuthorize ? (
-        <Button
-          data-testid={
-            data.isInstalled
-              ? "discord-connect-button"
-              : "discord-install-button"
-          }
-          variant="outline"
-          size="sm"
-          className="h-8 shrink-0 gap-1.5 rounded-lg"
-          disabled={disabled || authorizationState.state === "loading"}
-          onClick={() => {
-            detach(
-              authorize(
-                data.isInstalled ? "connect" : "install",
-                data.guildId,
-                pageSignal,
-              ),
-              Reason.DomCallback,
-            );
-          }}
-        >
-          {!data.isInstalled && <Download size={14} />}
-          {authorizationState.state === "loading"
-            ? t(($) => {
-                return $.works.discord.authorizing;
-              })
-            : authorizationState.state === "hasError"
-              ? t(($) => {
-                  return $.works.discord.retry;
-                })
-              : data.isInstalled
-                ? t(($) => {
-                    return $.works.actions.connect;
-                  })
-                : t(($) => {
-                    return $.works.discord.install;
-                  })}
-        </Button>
-      ) : null}
-      {authorizationState.state === "loading" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {t(($) => {
-            return $.works.discord.browserConsent;
-          })}
-        </p>
-      ) : null}
-      {authorizationState.state === "hasError" || authorizationFailed ? (
-        <p role="alert" className="text-sm text-destructive">
-          {authorizationState.state === "hasError" &&
-          authorizationState.error instanceof DiscordPopupBlockedError
-            ? t(($) => {
-                return $.works.discord.popupBlocked;
-              })
-            : t(($) => {
-                return $.works.discord.authorizationError;
-              })}
-        </p>
-      ) : null}
     </div>
   );
 }
@@ -723,7 +590,7 @@ function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
       {data
         ? discordDescription(data)
         : t(($) => {
-            return $.works.discord.memberSetup;
+            return $.works.discord.description;
           })}
     </p>
   );
@@ -736,12 +603,9 @@ function DiscordCard() {
   });
   const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
-  const [uninstallState, uninstall] = useLoadableSet(uninstallDiscordOrg$);
   const [selectionState, selectBinding] = useLoadableSet(
     selectDiscordDmBinding$,
   );
-  const showUninstallDialog = useGet(showDiscordUninstallDialog$);
-  const setShowUninstallDialog = useSet(setShowDiscordUninstallDialog$);
   const pageSignal = useGet(pageSignal$);
   const data = status.state === "hasData" ? status.data : null;
 
@@ -762,44 +626,29 @@ function DiscordCard() {
           </div>
           <DiscordAuthorizationActions
             data={data}
-            disabled={
-              disconnectState.state === "loading" ||
-              uninstallState.state === "loading"
-            }
+            disabled={disconnectState.state === "loading"}
           />
-          {data ? (
-            <ProviderCardActions
-              isConnected={data.isConnected}
-              isInstalled={data.isInstalled}
-              isAdmin={data.isAdmin}
-              installUrl={null}
-              connectUrl={null}
-              connectedDetail={data.guildName}
-              connectedTestId="discord-connected-indicator"
-              installTestId="discord-install-button"
-              installLabel={title}
-              moreOptionsLabel={t(($) => {
-                return $.works.discord.moreOptions;
-              })}
-              disconnectLabel={t(($) => {
-                return $.works.discord.disconnect;
-              })}
-              uninstallLabel={t(($) => {
-                return $.works.discord.uninstall;
-              })}
-              disconnecting={disconnectState.state === "loading"}
-              onDisconnect={() => {
-                detach(disconnect(pageSignal), Reason.DomCallback);
-              }}
-              onUninstall={() => {
-                setShowUninstallDialog(true);
-              }}
-            />
+          {data?.isConnected ? (
+            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+              <ConnectedIndicator testId="discord-connected-indicator" />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={disconnectState.state === "loading"}
+                onClick={() => {
+                  detach(disconnect(pageSignal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.works.discord.disconnect;
+                })}
+              </Button>
+            </div>
           ) : null}
         </div>
         <DiscordApprovalPanel />
         <DiscordAuthorizationPendingNotice />
-        {data?.isInstalled && data.contextMode === "mentions_only" ? (
+        {data?.isConnected && data.contextMode === "mentions_only" ? (
           <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
             {t(($) => {
               return $.works.discord.limitedContext;
@@ -819,20 +668,6 @@ function DiscordCard() {
           />
         ) : null}
       </section>
-      <UninstallConfirmDialog
-        open={showUninstallDialog && data?.isInstalled === true && data.isAdmin}
-        setOpen={setShowUninstallDialog}
-        uninstalling={uninstallState.state === "loading"}
-        uninstall={() => {
-          return uninstall(pageSignal);
-        }}
-        title={t(($) => {
-          return $.works.discord.uninstallTitle;
-        })}
-        description={t(($) => {
-          return $.works.discord.uninstallDescription;
-        })}
-      />
     </>
   );
 }

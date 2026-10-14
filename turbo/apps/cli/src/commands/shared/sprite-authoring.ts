@@ -149,8 +149,8 @@ export function createSpriteAuthoringInstructions(
     }),
     "- For bundles, create one subfolder per asset and keep the per-action FX/projectile/impact sheets separate.",
     options.visibility === undefined
-      ? "- With privateArtifacts enabled, new artifacts default to only-me. Otherwise, generation and upload keep their existing behavior."
-      : `- Use ${options.visibility} visibility for delivered files. Explicit visibility requires privateArtifacts to be enabled.`,
+      ? "- New artifacts default to only-me."
+      : `- Use ${options.visibility} visibility for delivered files.`,
     "- Keep raw intermediate sheets at their default visibility. Apply the selected visibility only when uploading the final files requested by the user.",
     `- Deliver each requested file with \`okou web upload-file -f <file>${visibilityFlag}\` and return the exact URL it prints.`,
     "",

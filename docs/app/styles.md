@@ -19,6 +19,7 @@ Building something:
 | Building a card, panel or page surface                    | [Page surfaces](#page-surfaces)                                                                                                                                                 |
 | Building a badge, tag or chip                             | [Inline badges](#inline-badges)                                                                                                                                                 |
 | Building a dropdown, menu or select row                   | [Menu and select rows](#menu-and-select-rows)                                                                                                                                   |
+| Putting an icon tile or fill inside a hoverable row       | [Fills inside interactive rows](#fills-inside-interactive-rows)                                                                                                                 |
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
@@ -504,6 +505,24 @@ type rail and its current-model rows pair a label with a summary line and state
 their own `h-11` and `h-12`; they sit outside this contract because they are not
 single-line list rows.
 
+### Fills inside interactive rows
+
+A fill drawn inside an element that takes a state — the icon tile in a menu
+item, a command palette result or a hoverable list row — uses `bg-nested-fill`.
+It is the state-layer colour at its own `--nested-fill-alpha` (6% light, 8.6%
+dark), solved so a tile on the card weighs what `bg-muted` does at rest. Being a
+layer, it stays one step off whatever is under it, including the row's hover
+and highlight, and the palette presets carry it through `--state-layer`.
+
+Do not reach for an opaque ramp stop there. The state ladder is solved to land
+back on the ramp, so every opaque neutral coincides with some state: light hover
+over a white card composites to `gray-100`, which is `--muted`, `--secondary`
+and `--accent`, and sits within a hair of `gray-50`; dark hover over the card
+lands on `gray-200`, which is dark `--muted`. The tile then reads as the row.
+
+An image thumbnail in the same slot keeps its own fill behind `object-cover`;
+the rule is for fills that are seen.
+
 ### Inline references
 
 `inlineReferenceVariants` from `@okouai/ui` owns the shared treatment of
@@ -917,13 +936,14 @@ not by raising the button's paint order.
 
 - Shared floating primitives own their portals inside `@okouai/ui`. Base UI
   appends top-level portals after the isolated app root and nests descendant
-  portals under their owner. Preserve that structure so floating surfaces paint
-  above app content, each popup paints above its backdrop, and a nested surface
-  stays above its parent. Callers must not override this order with z-index.
-  The wrappers currently rely on this structure rather than a shared `z-50`.
-  Shadcn's `z-50` is a convention, not a browser requirement or proof of correct
-  stacking; changing it requires a demonstrated ordering failure and a browser
-  regression test.
+  portals under their owner. `DialogContent` and `SheetContent` give their portal
+  host `relative z-50`, keeping the backdrop, popup, and descendant portals in
+  one stacking context above page-level popovers, including those that mount
+  later after data loads. Anchored surfaces keep their natural paint order;
+  a menu opened inside a dialog remains inside that modal context and above
+  its parent. Preserve this nesting rather than raising only the dialog popup
+  or all popovers. Callers must not override this order with z-index. Changes
+  require a demonstrated ordering failure and a browser regression test.
 - The shell owns app-wide non-portal layers such as drawers, scrims and
   fullscreen panels. Keep a small fixed set of literal Tailwind z-index
   utilities in shell-owned files, below the shared floating layer in the

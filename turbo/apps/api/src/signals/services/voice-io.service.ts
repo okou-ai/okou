@@ -10,7 +10,12 @@ import {
   sttDailyDurationKey,
   sttDailyRateKey,
 } from "./voice-io-limits";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { orgPlanCapabilities } from "./org-plan-entitlement-read.service";
+
+interface AudioInputQuotaIdentity {
+  readonly orgId: string;
+  readonly userId: string;
+}
 
 export const recordAudioInputUsage$ = command(
   async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
@@ -54,12 +59,16 @@ function lifetimeQuota(
 }
 
 export function audioInputLifetimeQuota(
-  orgId: string,
-  userId: string,
+  identity$: Computed<AudioInputQuotaIdentity>,
 ): Computed<Promise<AudioInputQuotaResponse>> {
+  const orgId$ = computed((get) => {
+    return get(identity$).orgId;
+  });
+  const capabilities$ = orgPlanCapabilities(orgId$);
   return computed(async (get): Promise<AudioInputQuotaResponse> => {
+    const { orgId, userId } = get(identity$);
     const db = get(db$);
-    const capabilities = await loadOrgPlanCapabilities(db, orgId);
+    const capabilities = await get(capabilities$);
     const lifetimeLimit = capabilities ? capabilities.audioLifetimeLimit : 0;
 
     if (lifetimeLimit === null) {
@@ -83,16 +92,20 @@ export function audioInputLifetimeQuota(
 }
 
 export function audioInputQuota(
-  orgId: string,
-  userId: string,
+  identity$: Computed<AudioInputQuotaIdentity>,
 ): Computed<Promise<AudioInputQuotaResponse>> {
+  const orgId$ = computed((get) => {
+    return get(identity$).orgId;
+  });
+  const capabilities$ = orgPlanCapabilities(orgId$);
   return computed(async (get): Promise<AudioInputQuotaResponse> => {
+    const { orgId, userId } = get(identity$);
     const db = get(db$);
     const today = nowDate();
     const rateKey = sttDailyRateKey(today);
     const durationKey = sttDailyDurationKey(today);
 
-    const capabilities = await loadOrgPlanCapabilities(db, orgId);
+    const capabilities = await get(capabilities$);
     const lifetimeLimit = capabilities ? capabilities.audioLifetimeLimit : 0;
     const rateLimit = capabilities?.audioDailyRateLimit ?? 0;
     const durationLimit = capabilities?.audioDailyDurationSeconds ?? 0;

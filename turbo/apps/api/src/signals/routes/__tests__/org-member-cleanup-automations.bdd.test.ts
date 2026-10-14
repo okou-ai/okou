@@ -188,6 +188,36 @@ async function readAsAdmin(admin: ApiTestUser, automationId: string) {
 }
 
 describe("Org member cleanup disarms the departing member's automations", () => {
+  it("removes a member with no automations while preserving another owner's automations", async () => {
+    const departing = await setupWorkspaceOwner(wf.user());
+    const auditor = wf.user({
+      orgId: orgIdOf(departing),
+      orgRole: "org:admin",
+    });
+    const peer = await seedOwnedAutomations(auditor, "empty-departure-peer");
+    org.mockClerkOrg(auditor, {
+      members: [
+        { actor: auditor, role: "org:admin" },
+        { actor: departing, role: "org:member" },
+      ],
+    });
+    await expect(
+      org.removeMember(auditor, { email: departing.email }),
+    ).resolves.toStrictEqual({
+      message: `Removed ${departing.email} from org`,
+    });
+    await expect(
+      readAsAdmin(auditor, peer.scheduleAutomationId),
+    ).resolves.toMatchObject({
+      enabled: true,
+      nextRunAt: peer.scheduleNextRunAt,
+      schedule: { type: "loop", intervalSeconds: LOOP_INTERVAL_SECONDS },
+    });
+    await expect(
+      readAsAdmin(auditor, peer.webhookAutomationId),
+    ).resolves.toMatchObject({ enabled: true });
+  });
+
   it("disables automations and stops event dispatch for the departing owner alone", async () => {
     runs.configureRunnerGroup();
     const departing = await setupWorkspaceOwner(wf.user());

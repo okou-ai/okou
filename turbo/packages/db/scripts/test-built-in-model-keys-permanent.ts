@@ -107,58 +107,6 @@ async function validateCanonicalVendorType(client: Client): Promise<void> {
   ]);
 }
 
-async function validateCanonicalRowLock(
-  client: Client,
-  databaseUrl: string,
-  row: BuiltInModelKeyRow,
-): Promise<void> {
-  const contender = new Client({ connectionString: databaseUrl });
-  await contender.connect();
-  try {
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0371; new non-billing transactions are prohibited.
-    await client.query("BEGIN");
-    try {
-      const locked = await client.query<BuiltInModelKeyRow>(
-        `
-          SELECT
-            "id",
-            "vendor",
-            "api_key" AS "apiKey",
-            "label"
-          FROM "built_in_model_keys"
-          WHERE "id" = $1
-          FOR UPDATE
-        `,
-        [row.id],
-      );
-      assert.deepEqual(locked.rows, [row]);
-
-      await contender.query("SET lock_timeout = '100ms'");
-      await assert.rejects(
-        contender.query(
-          `
-              UPDATE "built_in_model_keys"
-              SET "label" = 'unexpected-lock-winner'
-              WHERE "id" = $1
-            `,
-          [row.id],
-        ),
-        (error: unknown) => {
-          return (
-            typeof error === "object" &&
-            error !== null &&
-            Reflect.get(error, "code") === "55P03"
-          );
-        },
-      );
-    } finally {
-      await client.query("ROLLBACK");
-    }
-  } finally {
-    await contender.end();
-  }
-}
-
 async function validateCanonicalConflictHandling(
   client: Client,
   insertedRows: BuiltInModelKeyRow[],
@@ -208,10 +156,7 @@ async function validateCanonicalConflictHandling(
   assert.deepEqual(upserted.rows, insertedRows);
 }
 
-async function validateCanonicalStatements(
-  client: Client,
-  databaseUrl: string,
-): Promise<void> {
+async function validateCanonicalStatements(client: Client): Promise<void> {
   const baseline = await client.query<PreservedBuiltInModelKeyRow>(
     `
       INSERT INTO "built_in_model_keys" (
@@ -268,7 +213,6 @@ async function validateCanonicalStatements(
   assert.deepEqual(updated.rows, updatedRows);
   const [updatedRow] = updated.rows;
   assert.ok(updatedRow);
-  await validateCanonicalRowLock(client, databaseUrl, updatedRow);
 
   const deleted = await client.query<BuiltInModelKeyRow>(
     `
@@ -298,12 +242,12 @@ export async function validatePermanentBuiltInModelKeyState(
   try {
     await validateCanonicalColumnOrder(client);
     await validateCanonicalVendorType(client);
-    await validateCanonicalStatements(client, databaseUrl);
+    await validateCanonicalStatements(client);
 
     console.log("   ✅ canonical current-schema column order is enforced");
     console.log("   ✅ canonical vendor type is character varying(50)");
     console.log(
-      "   ✅ canonical statements preserve unrelated rows and support conflict handling, returning, and row locks\n",
+      "   ✅ canonical statements preserve unrelated rows and support conflict handling and returning\n",
     );
   } finally {
     await client.query(

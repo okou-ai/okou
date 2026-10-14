@@ -66,6 +66,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
                 },
                 device_rate_limits: None,
                 home_drive: Some(HomeDriveConfig {
+                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
                     size_mb: 16384,
                     seed_image: None,
                 }),

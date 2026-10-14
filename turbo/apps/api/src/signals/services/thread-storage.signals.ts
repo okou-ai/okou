@@ -442,14 +442,11 @@ function createStorageObjectSignals(
       },
     );
     const storageIndex = selected.plan.requested.input.storageIndex;
-    const cache = await get(threadContext.storageCache$);
     const versions = exactStorageVersionsFromIndex(mounts, storageIndex);
-    const rows = [
-      ...cache.rows,
-      ...[...storageIndex.values()].flatMap((entry) => {
-        return entry.cachedUrls ?? [];
-      }),
-    ];
+    // The index includes the prefetched entries and their cached URLs.
+    const rows = [...storageIndex.values()].flatMap((entry) => {
+      return entry.cachedUrls ?? [];
+    });
     return {
       mounts,
       objects: createResolvedExecutionStorageObjects(mounts, versions, rows),

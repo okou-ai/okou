@@ -59,6 +59,69 @@ async fn direct_file_transfer_completes_across_notification_outages() {
 }
 
 #[tokio::test]
+async fn active_binary_upload_and_followup_download_survive_vnc_only_invalidation() {
+    use crate::{
+        guest_rpc::Runtime,
+        test_fixtures::http::{HttpClientConfig, http_client},
+        vnc::VncRuntime,
+    };
+    use runner_provider::AblySideMessageHandler;
+    use std::sync::Arc;
+    let mut h = Harness::new(Reply::Sftp("normal")).await;
+    let vnc = VncRuntime::official(
+        http_client(HttpClientConfig {
+            api_url: h.api.base_url(),
+            vercel_bypass: None,
+            client_session_id: "vnc-file-isolation".into(),
+        }),
+        super::harness::TOKEN,
+        h.identity,
+    )
+    .unwrap()
+    .unwrap();
+    h.restart_with_vnc(Arc::clone(&vnc)).await;
+    let runtime = Runtime {
+        ssh: Some(Arc::clone(&h.runtime)),
+        vnc: Some(vnc),
+        usage: None,
+    };
+    let resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("binary-file");
+    let data = b"independent SSH\0\xff\xfe";
+    let guest = open(
+        &h,
+        "upload",
+        upload_params(&path, data.len(), false),
+        900_000,
+    )
+    .await;
+    let (read, write) = tokio::io::split(guest);
+    wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
+    for connection in [json!(CONNECTION), json!(uuid::Uuid::new_v4()), Value::Null] {
+        assert!(runtime.handle(&ably_subscriber::Message {
+            name: Some("vnc-authority-invalidated".into()),
+            data: json!({"runId":h.run,"connectionId":connection}),
+            id: None,
+            client_id: None,
+            timestamp: None,
+        }));
+    }
+    assert!(!h.cancel.is_cancelled());
+    let mut writer = Writer::input(write);
+    writer.send(&Frame::Data(data.to_vec())).await.unwrap();
+    writer.send(&Frame::End).await.unwrap();
+    let (outcome, _) = response(read).await;
+    assert_eq!(outcome["type"], "completed");
+    assert_eq!(std::fs::read(&path).unwrap(), data);
+    let (downloaded, received) = download(&h, &path).await;
+    assert_eq!(downloaded["type"], "completed");
+    assert_eq!(received, data);
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn active_upload_outlives_the_common_rpc_setup_deadline() {
     let mut h = Harness::new(Reply::Sftp("normal")).await;
     let _resolve = h.resolve(h.credential(true)).await;
@@ -574,6 +637,38 @@ async fn subsystem_refusal_records_authenticated_connection_not_a_connectivity_w
     dispatcher.shutdown().await.unwrap();
     observed.assert_calls_async(1).await;
     assert!(h.observed.commands.lock().unwrap().is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn rpc_owner_drop_reports_cancellation_when_authority_is_also_invalidated() {
+    let mut h = Harness::new(Reply::Sftp("normal")).await;
+    let _resolve = h.resolve(h.credential(true)).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("file");
+    let guest = open(&h, "upload", upload_params(&path, 5, false), 900_000).await;
+    wait_for(|| std::fs::read_dir(dir.path()).unwrap().count() == 1).await;
+
+    // The public RPC owner synchronously cancels the Run and closes its SSH
+    // authority. On this current-thread executor, both are ready before the
+    // active transfer can resume; no private token or cache mutation is needed.
+    drop(h.take_dispatcher());
+
+    let outcome = response(guest).await.0;
+    assert_eq!(outcome["type"], "failed", "{outcome}");
+    assert_eq!(outcome["failure_reason"], "cancelled", "{outcome}");
+    assert_eq!(outcome["effects"], "not_started");
+    assert_eq!(outcome["bytes"], 0);
+    assert!(outcome["sha256"].is_null());
+    let residue = Path::new(outcome["residue"].as_str().unwrap());
+    assert!(residue.is_dir());
+    assert_eq!(
+        std::fs::metadata(residue).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert!(!path.exists());
+    wait_for(|| h.observed.reservations.load(Ordering::SeqCst) == 0).await;
+    wait_for(|| h.observed.closed.load(Ordering::SeqCst) == 1).await;
+    assert_eq!(h.observed.attempts.lock().unwrap().len(), 1);
 }
 
 #[tokio::test]

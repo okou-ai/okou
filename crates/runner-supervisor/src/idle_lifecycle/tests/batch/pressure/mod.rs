@@ -37,12 +37,14 @@ async fn fixture(available: u64) -> BatchFixture {
 }
 
 async fn available_bytes(fixture: &BatchFixture, mib: u64) {
-    tokio::fs::write(
-        &fixture.meminfo,
-        format!("MemAvailable: {} kB\n", mib * 1024),
-    )
-    .await
-    .unwrap();
+    // Sampling and settlement must see complete snapshots during an update.
+    let next_meminfo = fixture.meminfo.with_extension("next");
+    tokio::fs::write(&next_meminfo, format!("MemAvailable: {} kB\n", mib * 1024))
+        .await
+        .unwrap();
+    tokio::fs::rename(next_meminfo, &fixture.meminfo)
+        .await
+        .unwrap();
 }
 
 fn config(fixture: &BatchFixture, count: usize) -> IdlePressureConfig {

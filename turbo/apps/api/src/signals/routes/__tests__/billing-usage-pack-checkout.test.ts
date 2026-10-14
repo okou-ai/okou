@@ -1586,6 +1586,161 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     });
   });
 
+  it.each(["quote changed", "provider rejection", "provider Abort"] as const)(
+    "retires an unpaid claim after %s and permits a fresh preview",
+    async (failure) => {
+      const lifecycle = createPublicBillingScenario(context);
+      return await lifecycle.run(async () => {
+        const fixture = lifecycle.own(createOrgFixture());
+        authenticateOrg(fixture);
+        const customerId = `cus_${randomUUID()}`;
+        const paymentMethodId = `pm_${randomUUID()}`;
+        context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: "org:admin",
+                publicUserData: { userId: fixture.userId },
+                createdAt: now(),
+              },
+            ],
+          },
+        );
+        context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+          { data: [] },
+        );
+        context.mocks.stripe.customers.create.mockResolvedValue({
+          id: customerId,
+        });
+        context.mocks.stripe.customers.retrieve.mockResolvedValue({
+          id: customerId,
+          invoice_settings: { default_payment_method: paymentMethodId },
+        });
+        context.mocks.stripe.subscriptions.list.mockResolvedValue({
+          data: [],
+          has_more: false,
+        });
+        const quote = {
+          id: `in_preview_${randomUUID()}`,
+          customer: customerId,
+          amount_due: 4000,
+          currency: "usd",
+          status: null,
+          metadata: {},
+          hosted_invoice_url: null,
+          lines: { has_more: false, data: [] },
+          parent: null,
+        };
+        context.mocks.stripe.invoices.createPreview.mockResolvedValue(quote);
+        lifecycle.captureExternalState();
+        const client = setupApp({ context, routes: billingCheckoutRoutes })(
+          billingUsagePackCheckoutContract,
+        );
+        const headers = { authorization: "Bearer clerk-session" };
+        const body = {
+          tier: "pro" as const,
+          supportsInAppPreview: true,
+          memberUsagePacks: [
+            { memberId: fixture.userId, usagePackUsd: 20 as const },
+          ],
+          successUrl: `${APP_ORIGIN}/billing?billing=success`,
+          cancelUrl: `${APP_ORIGIN}/billing?billing=canceled`,
+        };
+        const preview = await lifecycle.run(() => {
+          return accept(client.create({ headers, body }), [200]);
+        });
+        if (!("previewToken" in preview.body)) {
+          throw new Error("Expected a usage pack purchase preview");
+        }
+        const previewToken = preview.body.previewToken;
+        const controller = new AbortController();
+        onTestFinished(() => {
+          controller.abort();
+        });
+        const providerError = new Error(`Usage pack admission ${failure}`);
+        if (failure === "quote changed") {
+          context.mocks.stripe.invoices.createPreview.mockResolvedValue({
+            ...quote,
+            amount_due: 4100,
+          });
+        } else if (failure === "provider rejection") {
+          context.mocks.stripe.invoices.createPreview.mockRejectedValue(
+            providerError,
+          );
+        } else {
+          providerError.name = "AbortError";
+          context.mocks.stripe.invoices.createPreview.mockImplementation(() => {
+            controller.abort(providerError);
+            return Promise.resolve(quote);
+          });
+        }
+        lifecycle.captureExternalState();
+        const confirmationClient = setupApp({
+          context: {
+            mocks: context.mocks,
+            sessionHistoryBlobs: context.sessionHistoryBlobs,
+            signal: controller.signal,
+          },
+          routes: billingCheckoutRoutes,
+        })(billingUsagePackCheckoutContract);
+        const rejected = await lifecycle.run(() => {
+          return confirmationClient.confirm({
+            headers,
+            body: { previewToken },
+          });
+        });
+        expect(rejected.status).toBe(failure === "quote changed" ? 409 : 500);
+        if (failure === "quote changed") {
+          expect(rejected.body).toStrictEqual({
+            error: {
+              message: "Usage pack purchase preview is no longer valid",
+              code: "CONFLICT",
+            },
+          });
+        }
+        expect(
+          context.mocks.stripe.subscriptions.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          context.mocks.stripe.checkout.sessions.create,
+        ).not.toHaveBeenCalled();
+        const replay = await lifecycle.run(() => {
+          return accept(
+            client.confirm({ headers, body: { previewToken } }),
+            [409],
+          );
+        });
+        expect(replay.body).toStrictEqual({
+          error: {
+            message: "Usage pack purchase preview is no longer valid",
+            code: "CONFLICT",
+          },
+        });
+        context.mocks.stripe.invoices.createPreview.mockResolvedValue(quote);
+        lifecycle.captureExternalState();
+        const fresh = await lifecycle.run(() => {
+          return accept(client.create({ headers, body }), [200]);
+        });
+        expect(fresh.body).toMatchObject({
+          status: "preview",
+          immediateAmountCents: 4000,
+          nextRecurringAmountCents: 4000,
+          currency: "usd",
+        });
+        if (!("previewToken" in fresh.body)) {
+          throw new Error("Expected a fresh usage pack purchase preview");
+        }
+        expect(fresh.body.previewToken).not.toBe(previewToken);
+        expect(
+          context.mocks.stripe.subscriptions.create,
+        ).not.toHaveBeenCalled();
+        expect(
+          context.mocks.stripe.checkout.sessions.create,
+        ).not.toHaveBeenCalled();
+      });
+    },
+  );
+
   it("attempts the saved card for an open usage pack invoice", async () => {
     const fixture = createOrgFixture();
     authenticateOrg(fixture);
@@ -2116,6 +2271,111 @@ describe("POST /api/billing/usage-pack-checkout", () => {
     expect(
       context.mocks.stripe.checkout.sessions.retrieve,
     ).toHaveBeenCalledWith(checkoutSessionId);
+  });
+
+  it("expires a known Checkout without a URL before replacing its snapshot", async () => {
+    const fixture = createOrgFixture();
+    authenticateOrg(fixture);
+    const customerId = `cus_${randomUUID()}`;
+    const sessionId = `cs_${randomUUID()}`;
+    const replacementSessionId = `cs_${randomUUID()}`;
+    const checkoutUrl = "https://checkout.stripe.test/recovered-url";
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            role: "org:admin",
+            publicUserData: { userId: fixture.userId },
+            createdAt: now(),
+          },
+        ],
+      },
+    );
+    context.mocks.clerk.organizations.getOrganizationInvitationList.mockResolvedValue(
+      { data: [] },
+    );
+    context.mocks.stripe.customers.create.mockResolvedValue({ id: customerId });
+    context.mocks.stripe.customers.retrieve.mockResolvedValue({
+      id: customerId,
+      invoice_settings: { default_payment_method: null },
+      default_source: null,
+    });
+    context.mocks.stripe.paymentMethods.list.mockResolvedValue({ data: [] });
+    const expired: string[] = [];
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: sessionId,
+      url: null,
+    });
+    context.mocks.stripe.checkout.sessions.expire.mockImplementation((id) => {
+      if (typeof id !== "string") {
+        throw new Error("Expected a known Checkout Session");
+      }
+      expired.push(id);
+      return Promise.resolve({ id, status: "expired" });
+    });
+    const app = await setupApp({
+      context,
+      routes: billingCheckoutRoutes,
+      isolatePg: true,
+    });
+    const client = app(billingUsagePackCheckoutContract);
+    const body = usagePackCheckoutBody(fixture.userId);
+    const headers = { authorization: "Bearer clerk-session" };
+    const failed = await accept(client.create({ body, headers }), [500]);
+    expect(failed.status).toBe(500);
+    expect(expired).toStrictEqual([sessionId]);
+    const original =
+      context.mocks.stripe.checkout.sessions.create.mock.calls[0];
+    expect(original).toBeDefined();
+
+    context.mocks.stripe.checkout.sessions.create.mockResolvedValue({
+      id: replacementSessionId,
+      url: checkoutUrl,
+    });
+    const replacementBody = {
+      ...body,
+      memberUsagePacks: [
+        { memberId: fixture.userId, usagePackUsd: 50 as const },
+      ],
+    };
+    const retried = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
+    expect(retried.body).toStrictEqual({ url: checkoutUrl });
+    const replacement =
+      context.mocks.stripe.checkout.sessions.create.mock.calls[1];
+    expect(replacement).toBeDefined();
+    expect(replacement?.[1]).not.toStrictEqual(original?.[1]);
+    expect(
+      context.mocks.stripe.checkout.sessions.create,
+    ).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        line_items: [
+          { price: TEST_PRICE_USAGE_PACK_PLAN_PRO, quantity: 1 },
+          { price: TEST_PRICE_USAGE_PACK_50, quantity: 1 },
+        ],
+      }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringContaining("usage-pack-checkout:"),
+      }),
+    );
+    expect(expired).toStrictEqual([sessionId]);
+
+    context.mocks.stripe.checkout.sessions.retrieve.mockResolvedValue({
+      id: replacementSessionId,
+      status: "open",
+      url: checkoutUrl,
+    });
+    const reused = await accept(
+      client.create({ body: replacementBody, headers }),
+      [200],
+    );
+    expect(reused.body).toStrictEqual(retried.body);
+    expect(context.mocks.stripe.checkout.sessions.create).toHaveBeenCalledTimes(
+      2,
+    );
+    expect(expired).toStrictEqual([sessionId]);
   });
 
   it("rejects stale member selections before creating checkout", async () => {

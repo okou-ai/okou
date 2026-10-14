@@ -520,7 +520,7 @@ if (args[0] === "stop") {
     );
   });
 
-  it("rejects explicit visibility before launching a batch when the switch is off", async () => {
+  it("rejects explicit visibility before launching a batch when the serving API cannot create privately", async () => {
     const root = await makeTemporaryDirectory();
     const manifestPath = join(root, "images.tsv");
     const stateDirectory = join(root, "state");
@@ -546,7 +546,7 @@ if (args[0] === "stop") {
       code: "ENOENT",
     });
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--visibility requires privateArtifacts to be enabled",
+      "Artifact visibility is unavailable on this API",
     );
   });
 

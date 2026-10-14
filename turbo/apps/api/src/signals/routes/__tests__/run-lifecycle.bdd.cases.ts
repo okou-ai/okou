@@ -1299,34 +1299,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("advertises artifact sharing only when private artifacts are enabled", async () => {
+      it("advertises private artifact sharing and downloads", async () => {
         const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
         const { actor, agentId } = await entitledRunActor();
-        for (const enabled of [false, true]) {
-          await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.PrivateArtifacts]: enabled,
-          });
-          const created = await api.createThreadRun(actor, {
-            agentId,
-            prompt: "share the report with my organization",
-          });
-          const run = await api.readRun(actor, created.runId);
-          const prompt = run.appendSystemPrompt ?? "";
-          expect(
-            prompt
-              .split("\n")
-              .includes(
-                "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-              ),
-          ).toBe(enabled);
-          expect(
-            prompt.includes(
-              "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
-            ),
-          ).toBe(enabled);
-          await api.requestCancelRun(actor, created.runId, [200]);
-        }
+        const created = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "share the report with my organization",
+        });
+        const run = await api.readRun(actor, created.runId);
+        const prompt = run.appendSystemPrompt ?? "";
+        expect(prompt.split("\n")).toContain(
+          "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+        );
+        expect(prompt).toContain(
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
+        );
+        await api.requestCancelRun(actor, created.runId, [200]);
       });
 
       it("advertises current Run usage and grants its Run capability", async () => {
@@ -7360,6 +7348,92 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
+      it("keeps a revoked exact custom source absent after a replacement becomes default", async () => {
+        const owned = await publicChatActor(context);
+        const { actor, agentId, runnerGroup } = owned;
+        const api = createRunsApi(context);
+        const connectors = createConnectorBddApi(context);
+        const fw = createFirewallApi(context);
+        await owned.run(async () => {
+          const custom = await connectors.createCustomConnector(
+            actor,
+            manualMcpRuntimeConnectorBody({
+              displayName: "Exact source replacement",
+              endpoint: "https://exact-source.example.test/mcp",
+            }),
+          );
+          await connectors.setCustomConnectorValues(actor, custom.id, [
+            { key: "secret", kind: "secret", value: "original-source-token" },
+          ]);
+          await connectors.updateAgentCustomConnectors(actor, agentId, [
+            custom.id,
+          ]);
+          const run = await api.createThreadRun(actor, {
+            agentId,
+            prompt: "use the exact custom connector account",
+          });
+          await api.heartbeatRunner(runnerGroup);
+          const { claim } = await owned.claimChatRun(runnerGroup, run.runId);
+          const target = customConnectorRuntimeRegistration(claim, custom.id);
+          if (!target.sourceId) {
+            throw new Error("Expected the admitted exact source");
+          }
+          const [initial] = await api.syncConnectorRuntime(run.runId, {
+            targets: [target],
+          });
+          const { body: originalAuth } = customConnectorRuntimeAuthBody(
+            availableCustomConnectorRuntime(initial),
+            fw.encryptedSecretsBody({}),
+          );
+          await connectors.deleteCustomConnectorAccount(
+            actor,
+            custom.id,
+            target.sourceId,
+          );
+          await connectors.setCustomConnectorValues(actor, custom.id, [
+            {
+              key: "secret",
+              kind: "secret",
+              value: "replacement-source-token",
+            },
+          ]);
+          const replacement = (
+            await connectors.listCustomConnectorAccounts(actor, custom.id)
+          ).find((account) => {
+            return account.isDefault;
+          });
+          if (!replacement) {
+            throw new Error(
+              "Expected the publicly created replacement default",
+            );
+          }
+          expect(replacement.id).not.toBe(target.sourceId);
+          const [revoked] = await api.syncConnectorRuntime(run.runId, {
+            targets: [target],
+          });
+          expect(revoked).toStrictEqual({
+            target: { kind: "custom", customConnectorId: custom.id },
+            state: "absent",
+            reason: "connector-unavailable",
+          });
+          const rejected = await fw.requestFirewallAuth(
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            originalAuth,
+            [424],
+          );
+          expect(rejected.body).toMatchObject({
+            error: { code: "CONNECTOR_NOT_CONFIGURED" },
+          });
+          const [current] = await api.syncConnectorRuntime(run.runId, {
+            targets: [{ ...target, sourceId: replacement.id }],
+          });
+          expect(
+            availableCustomConnectorRuntime(current).firewall.sourceId,
+          ).toBe(replacement.id);
+          await api.requestCancelRun(actor, run.runId, [200]);
+        });
+      });
+
       async function setupBoundedMcpAwareness() {
         const api = createRunsApi(context);
         const connectors = createConnectorBddApi(context);
@@ -11049,7 +11123,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`",
           "use Okou Cloud Browser when you need browser state, authentication, JavaScript, screenshots, or interaction",
           "Local dev servers are useful for agent-side verification",
-          "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`",
+          "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`",
           "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime",
           "for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help`",
           "okou connector status <slug>",
@@ -11512,7 +11586,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each([false, true])(
-        "advertises pptx presentation delivery and Run capabilities only while its feature is enabled (%s)",
+        "selects one presentation format and gates PPTX conversion guidance and capability (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -11536,20 +11610,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
+          expect(prompt).toContain("Presentation delivery:");
+          expect(prompt).toContain("first author and check the deck as HTML");
+          expect(prompt).toContain(
+            "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
+          );
+          expect(prompt).toContain(
+            "Deliver one format unless the user requests multiple formats",
+          );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain("Presentation delivery:");
             expect(prompt).toContain(
-              "deliver both the hosted HTML deck and a pptx of it in one reply",
+              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
-            expect(prompt).toContain("name the artifact, not a format");
             expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --verify",
+              "Only after the agent selects PPTX as the delivery format",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
             expect(prompt).not.toContain("okou presentation convert");
-            expect(prompt).not.toContain("Presentation delivery:");
           }
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(

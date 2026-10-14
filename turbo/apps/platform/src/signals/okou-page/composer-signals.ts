@@ -11,7 +11,6 @@ import type {
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { VOICE_IO_POLISH_MAX_TEXT_CHARS } from "@okouai/api-contracts/contracts/voice-io-polish";
 import {
   checkPaidToolForCreation$,
   templatePaidTool,
@@ -19,7 +18,11 @@ import {
 } from "./paid-tools.ts";
 import { i18n } from "../../i18n/index.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef } from "../utils.ts";
+import { bestEffort, onRef } from "../utils.ts";
+import {
+  prepareRecentWorkflowUse$,
+  recordRecentWorkflowUse$,
+} from "./recent-workflows.ts";
 import {
   createPendingRemoteAccessSignals,
   threadRemoteAccess$,
@@ -103,6 +106,9 @@ type ComposerSuggestionSignals = Pick<
   | "setSelectedSuggestionIndex$"
   | "previewSuggestionIndex$"
   | "previewSuggestion$"
+  | "slashWorkflowsExpanded$"
+  | "recentWorkflowIds$"
+  | "expandSlashWorkflows$"
   | "closeSuggestionMenu$"
   | "setSuggestionMenuRef$"
   | "clearSlashRange$"
@@ -360,6 +366,9 @@ function composerSuggestionSignals(
     setSelectedSuggestionIndex$: composer.setSelectedSuggestionIndex$,
     previewSuggestionIndex$: composer.previewSuggestionIndex$,
     previewSuggestion$: composer.previewSuggestion$,
+    slashWorkflowsExpanded$: composer.slashWorkflowsExpanded$,
+    recentWorkflowIds$: composer.recentWorkflowIds$,
+    expandSlashWorkflows$: composer.expandSlashWorkflows$,
     closeSuggestionMenu$: composer.closeSuggestionMenu$,
     setSuggestionMenuRef$: composer.setSuggestionMenuRef$,
     clearSlashRange$: composer.clearSlashRange$,
@@ -434,7 +443,6 @@ function composerDraftSignals(
 function createComposerVoiceInput(
   options: Pick<CreateComposerSignalsOptions, "draft" | "voiceDraftTarget">,
   workflowComposer: WorkflowComposerSignals,
-  lastAssistantMessage$: Computed<string | undefined>,
 ) {
   const deliverText$ = command(
     async ({ set }, text: string, signal: AbortSignal) => {
@@ -446,7 +454,6 @@ function createComposerVoiceInput(
   return createComposerVoiceInputSignals(
     deliverText$,
     workflowComposer.readVoiceContext$,
-    lastAssistantMessage$,
     options.voiceDraftTarget,
   );
 }
@@ -513,11 +520,7 @@ export function createComposerSignals(
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
   });
-  const voice = createComposerVoiceInput(
-    options,
-    workflowComposer,
-    eventSignals.lastAssistantMessage$,
-  );
+  const voice = createComposerVoiceInput(options, workflowComposer);
   const submission = createComposerSubmissionSignals(
     options,
     eventSignals,
@@ -629,20 +632,6 @@ function pendingAutomationEventText(
 }
 
 function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
-  const lastAssistantMessage$ = computed((get): string | undefined => {
-    const events = get(chatEvents$);
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.eventType !== "output.message") {
-        continue;
-      }
-      const content = event.content.trim();
-      if (content.length > 0) {
-        return content.slice(-VOICE_IO_POLISH_MAX_TEXT_CHARS);
-      }
-    }
-    return undefined;
-  });
   const semanticEvents$ = computed((get) => {
     return semanticChatEventsFromChatEvents(get(chatEvents$));
   });
@@ -702,7 +691,6 @@ function createComposerChatEventSignals(chatEvents$: Computed<ChatEvent[]>) {
     },
   );
   return {
-    lastAssistantMessage$,
     actionsLoading$,
     sending$,
     runningModelSelection$,
@@ -809,6 +797,7 @@ function createSubmitCurrentInput({
         return false;
       }
       const mode = get(create.mode$);
+      const selectedTask = get(taskChips.task$);
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
@@ -833,7 +822,7 @@ function createSubmitCurrentInput({
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
         taskSelection: {
-          task: get(taskChips.task$) ?? mode,
+          task: selectedTask === "suggestions" ? null : (selectedTask ?? mode),
           presentationSlideCount: get(create.presentationSlideCount$),
           visualization: get(taskChips.visualization.preferences$),
         },
@@ -842,7 +831,23 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      return set(options.submitMessage$, action, nextSubmission, signal);
+      const workflowUse = await set(
+        prepareRecentWorkflowUse$,
+        visiblePrompt,
+        workflowComposer.workflows$,
+        signal,
+      );
+      const submitted = await set(
+        options.submitMessage$,
+        action,
+        nextSubmission,
+        signal,
+      );
+      if (submitted && workflowUse) {
+        // Browser history must never turn an accepted send into a send error.
+        await bestEffort(set(recordRecentWorkflowUse$, workflowUse, signal));
+      }
+      return submitted;
     },
   );
 }

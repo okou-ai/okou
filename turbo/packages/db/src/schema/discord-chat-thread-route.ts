@@ -22,7 +22,7 @@ export const discordChatThreadRoutes = pgTable(
     sessionKey: text("session_key").notNull(),
     userId: text("user_id").notNull(),
     chatThreadId: uuid("chat_thread_id").notNull(),
-    /** Persisted after native thread creation; absent while that side effect is retried. */
+    /** Null until the first output materializes the native thread; DMs use their channel. */
     destinationChannelId: varchar("destination_channel_id", { length: 255 }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

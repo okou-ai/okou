@@ -1,7 +1,9 @@
+import { createPublicComputerUseScenario } from "./helpers/public-computer-use-scenario";
 import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
+import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -12,10 +14,15 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
+import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import { settleIncludingAbort } from "../../utils";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
@@ -101,6 +108,119 @@ async function readSlackStatus(
   ).body;
 }
 
+function createDeleteFixture() {
+  const actors: ApiTestUser[] = [];
+  const installations: string[] = [];
+  let accepted = captureConnectorExternalState(context);
+  let previous: (() => void) | undefined;
+  onTestFinished(() => {
+    previous?.();
+  });
+  const owner = createFixtureOperationOwner(
+    async () => {
+      const errors: unknown[] = [];
+      async function cleanup(operation: () => Promise<unknown>) {
+        const result = await settleIncludingAbort(operation);
+        if (!result.ok) {
+          errors.push(result.error);
+        }
+      }
+      await cleanup(flushWaitUntilForTest);
+      for (const teamId of installations) {
+        await cleanup(() => {
+          return slackOrgs.uninstallWorkspace(teamId);
+        });
+      }
+      const workspaces = new Map(
+        actors
+          .filter((actor) => {
+            return actor.orgId !== null;
+          })
+          .map((actor) => {
+            return [actor.orgId, actor];
+          }),
+      );
+      for (const actor of workspaces.values()) {
+        await cleanup(() => {
+          return deletePublicWorkspace(context, actor);
+        });
+      }
+      for (const actor of actors) {
+        await cleanup(async () => {
+          const webhooks = createWebhookCallbackApi(context);
+          webhooks.configureClerkWebhookSecret();
+          webhooks.verifyNextClerkWebhook({
+            type: "user.deleted",
+            data: { id: actor.userId },
+          });
+          await webhooks.requestClerkWebhook("{}", {}, [200]);
+        });
+      }
+      await cleanup(flushWaitUntilForTest);
+      if (errors.length > 0) {
+        throw new AggregateError(errors, "Slack DELETE fixture cleanup failed");
+      }
+    },
+    {
+      continueAcceptedOperations: true,
+      beforeDrain: () => {
+        previous ??= captureConnectorExternalState(context);
+        accepted();
+      },
+    },
+  );
+  function user(options: Parameters<typeof bdd.user>[0] = {}) {
+    const actor = bdd.user(options);
+    actors.push(actor);
+    return actor;
+  }
+  function run<T>(operation: () => Promise<T>): Promise<T> {
+    return owner.run(async () => {
+      const result = await settleIncludingAbort(operation);
+      accepted = captureConnectorExternalState(context);
+      if (!result.ok) {
+        throw result.error;
+      }
+      return result.value;
+    });
+  }
+  return {
+    run,
+    user,
+    install() {
+      return run(async () => {
+        integrations.configureSlackAppMocks();
+        context.mocks.slack.views.publish.mockResolvedValue({ ok: true });
+        const actor = user({ orgRole: "org:admin" });
+        await bdd.bootstrapLimitedFreeOnboarding(actor, {
+          displayName: "Slack Bot",
+        });
+        const installation = await integrations.installSlackWorkspace(actor);
+        installations.push(installation.teamId);
+        await flushWaitUntilForTest();
+        return { actor, ...installation };
+      });
+    },
+    connect(install: PublicSlackInstall) {
+      return run(async () => {
+        const member = user({
+          orgId: install.actor.orgId,
+          orgRole: "org:member",
+        });
+        await bdd.readMe(member);
+        const slackUserId = uniqueSlackUserId();
+        await integrations.connectSlackUser(member, {
+          workspaceId: install.teamId,
+          slackUserId,
+          channelId: "C_BDD_SECOND_MEMBER",
+        });
+        await flushWaitUntilForTest();
+        return { member, slackUserId };
+      });
+    },
+  };
+}
+
 describe("GET /api/integrations/slack", () => {
   let install: PublicSlackInstall;
 
@@ -175,152 +295,267 @@ describe("DELETE /api/integrations/slack", () => {
   const mocks = createRouteMocks(context);
 
   it("returns 404 when the user has no Slack connection", async () => {
-    const install = await installPublicSlack();
-    const unconnected = bdd.user({
-      orgId: install.actor.orgId,
-      orgRole: "org:member",
+    const fixture = createDeleteFixture();
+    await fixture.run(async () => {
+      const install = await fixture.install();
+      const unconnected = fixture.user({
+        orgId: install.actor.orgId,
+        orgRole: "org:member",
+      });
+      await bdd.readMe(unconnected);
+      await flushWaitUntilForTest();
+      context.mocks.slack.views.publish.mockClear();
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+      mocks.clerk.session(unconnected.userId, unconnected.orgId, "org:member");
+
+      const response = await accept(
+        slackClient().disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [404],
+      );
+
+      expect(response.body.error.code).toBe("NOT_FOUND");
+      expect(response.body.error.message).toBe("No Slack connection found");
+      await expect(
+        readSlackStatus(install.actor, "org:admin"),
+      ).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+      });
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
+      expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     });
-    mocks.clerk.session(unconnected.userId, unconnected.orgId);
-
-    const response = await accept(
-      slackClient().disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [404],
-    );
-
-    expect(response.body.error.code).toBe("NOT_FOUND");
-    expect(response.body.error.message).toBe("No Slack connection found");
   });
 
   it("deletes only the current user's connection and refreshes App Home", async () => {
-    const install = await installPublicSlack();
-    const other = await connectSecondMember(install);
-    context.mocks.slack.views.publish.mockClear();
-    context.mocks.ably.publish.mockClear();
-    mocks.clerk.session(install.actor.userId, install.actor.orgId);
+    const fixture = createDeleteFixture();
+    await fixture.run(async () => {
+      const install = await fixture.install();
+      const other = await fixture.connect(install);
+      context.mocks.slack.views.publish.mockClear();
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+      mocks.clerk.session(install.actor.userId, install.actor.orgId);
 
-    const response = await accept(
-      slackClient().disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: {},
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ ok: true });
-    await expect(
-      readSlackStatus(install.actor, "org:admin"),
-    ).resolves.toMatchObject({ isConnected: false, isInstalled: true });
-    await expect(
-      readSlackStatus(other.member, "org:member"),
-    ).resolves.toMatchObject({ isConnected: true });
-    expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: install.installerSlackUserId,
-        view: expect.objectContaining({
-          type: "home",
-          blocks: expect.arrayContaining([
-            expect.objectContaining({
-              type: "actions",
-              elements: expect.arrayContaining([
-                expect.objectContaining({ action_id: "home_login_prompt" }),
-              ]),
-            }),
-          ]),
+      const response = await accept(
+        slackClient().disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
         }),
-      }),
-    );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "slack:changed",
-      null,
-    );
-  });
-});
+        [200],
+      );
 
-describe("DELETE /api/integrations/slack?action=uninstall", () => {
-  const mocks = createRouteMocks(context);
-
-  it("returns 403 when a non-admin tries to uninstall", async () => {
-    const install = await installPublicSlack();
-    const other = await connectSecondMember(install);
-    mocks.clerk.session(other.member.userId, other.member.orgId, "org:member");
-
-    const response = await accept(
-      slackClient().disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { action: "uninstall" },
-      }),
-      [403],
-    );
-
-    expect(response.body.error.code).toBe("FORBIDDEN");
-    expect(response.body.error.message).toBe("Admin access required");
-  });
-
-  it("publishes uninstalled App Home then deletes installation and connections", async () => {
-    const install = await installPublicSlack();
-    const other = await connectSecondMember(install);
-    const orgId = install.actor.orgId;
-    if (!orgId) {
-      throw new Error("Expected the Slack installer to belong to an org");
-    }
-    await store.set(
-      seedOrgMembership$,
-      {
-        orgId,
-        userId: install.actor.userId,
-        role: "admin",
-      },
-      context.signal,
-    );
-    context.mocks.slack.views.publish.mockClear();
-    context.mocks.ably.publish.mockClear();
-    mocks.clerk.session(install.actor.userId, orgId, "org:admin");
-
-    const response = await accept(
-      slackClient().disconnect({
-        headers: { authorization: "Bearer clerk-session" },
-        query: { action: "uninstall" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ ok: true });
-    expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(2);
-    for (const slackUserId of [
-      install.installerSlackUserId,
-      other.slackUserId,
-    ]) {
+      expect(response.body).toStrictEqual({ ok: true });
+      await expect(
+        readSlackStatus(install.actor, "org:admin"),
+      ).resolves.toMatchObject({ isConnected: false, isInstalled: true });
+      await expect(
+        readSlackStatus(other.member, "org:member"),
+      ).resolves.toMatchObject({ isConnected: true, isInstalled: true });
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(1);
       expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
         expect.objectContaining({
-          user_id: slackUserId,
+          user_id: install.installerSlackUserId,
           view: expect.objectContaining({
             type: "home",
             blocks: expect.arrayContaining([
               expect.objectContaining({
                 type: "actions",
                 elements: expect.arrayContaining([
-                  expect.objectContaining({ action_id: "home_open_settings" }),
+                  expect.objectContaining({ action_id: "home_login_prompt" }),
                 ]),
               }),
             ]),
           }),
         }),
       );
-    }
-    // The installation and every member connection are gone.
-    await expect(
-      readSlackStatus(install.actor, "org:admin"),
-    ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
-    await expect(
-      readSlackStatus(other.member, "org:member"),
-    ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "slack:changed",
-      null,
-    );
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "slack:changed",
+        null,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledTimes(1);
+      expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+        `user:${install.actor.userId}`,
+      );
+      expect(context.mocks.ably.channelGet).not.toHaveBeenCalledWith(
+        `user:${other.member.userId}`,
+      );
+    });
+  });
+  it.each(["unauthenticated", "without an organization"])(
+    "returns 401 for a session that is %s",
+    async (session) => {
+      const fixture = createDeleteFixture();
+      await fixture.run(async () => {
+        const actor = fixture.user({ orgId: null });
+        if (session === "unauthenticated") {
+          context.mocks.clerk.authenticateRequest.mockResolvedValue({
+            isAuthenticated: false,
+          });
+        } else {
+          mocks.clerk.session(actor.userId, null);
+        }
+        const response = await accept(
+          slackClient().disconnect({
+            headers:
+              session === "unauthenticated"
+                ? {}
+                : { authorization: "Bearer clerk-session" },
+            query: {},
+          }),
+          [401],
+        );
+        expect(response.body.error.code).toBe("UNAUTHORIZED");
+        await flushWaitUntilForTest();
+        expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
+        expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+      });
+    },
+  );
+});
+
+describe("DELETE /api/integrations/slack?action=uninstall", () => {
+  const mocks = createRouteMocks(context);
+
+  it("returns 403 when a non-admin tries to uninstall", async () => {
+    const fixture = createDeleteFixture();
+    await fixture.run(async () => {
+      const install = await fixture.install();
+      const other = await fixture.connect(install);
+      context.mocks.slack.views.publish.mockClear();
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+      mocks.clerk.session(
+        other.member.userId,
+        other.member.orgId,
+        "org:member",
+      );
+
+      const response = await accept(
+        slackClient().disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { action: "uninstall" },
+        }),
+        [403],
+      );
+
+      expect(response.body.error.code).toBe("FORBIDDEN");
+      expect(response.body.error.message).toBe("Admin access required");
+      for (const actor of [install.actor, other.member]) {
+        await expect(
+          readSlackStatus(
+            actor,
+            actor.orgRole === "org:admin" ? "org:admin" : "org:member",
+          ),
+        ).resolves.toMatchObject({
+          isInstalled: true,
+          isConnected: true,
+        });
+      }
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.views.publish).not.toHaveBeenCalled();
+      expect(context.mocks.ably.publish).not.toHaveBeenCalled();
+    });
+  });
+
+  it("publishes uninstalled App Home then deletes installation and connections", async () => {
+    const fixture = createDeleteFixture();
+    await fixture.run(async () => {
+      const install = await fixture.install();
+      const other = await fixture.connect(install);
+      const orgId = install.actor.orgId;
+      if (!orgId) {
+        throw new Error("Expected the Slack installer to belong to an org");
+      }
+      await bdd.readMe(install.actor);
+      context.mocks.slack.views.publish.mockClear();
+      context.mocks.ably.publish.mockClear();
+      context.mocks.ably.channelGet.mockClear();
+      mocks.clerk.session(install.actor.userId, orgId, "org:admin");
+
+      const response = await accept(
+        slackClient().disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { action: "uninstall" },
+        }),
+        [200],
+      );
+
+      expect(response.body).toStrictEqual({ ok: true });
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(2);
+      for (const slackUserId of [
+        install.installerSlackUserId,
+        other.slackUserId,
+      ]) {
+        expect(context.mocks.slack.views.publish).toHaveBeenCalledWith(
+          expect.objectContaining({
+            user_id: slackUserId,
+            view: expect.objectContaining({
+              type: "home",
+              blocks: expect.arrayContaining([
+                expect.objectContaining({
+                  type: "actions",
+                  elements: expect.arrayContaining([
+                    expect.objectContaining({
+                      action_id: "home_open_settings",
+                    }),
+                  ]),
+                }),
+              ]),
+            }),
+          }),
+        );
+      }
+      // The installation and every member connection are gone.
+      await expect(
+        readSlackStatus(install.actor, "org:admin"),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      await expect(
+        readSlackStatus(other.member, "org:member"),
+      ).resolves.toMatchObject({ isInstalled: false, isConnected: false });
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "slack:changed",
+        null,
+      );
+      for (const actor of [install.actor, other.member]) {
+        expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+          `user:${actor.userId}`,
+        );
+      }
+
+      await flushWaitUntilForTest();
+      const viewCount = context.mocks.slack.views.publish.mock.calls.length;
+      const notificationCount = context.mocks.ably.publish.mock.calls.length;
+      mocks.clerk.session(install.actor.userId, orgId, "org:admin");
+      for (const action of ["uninstall", undefined]) {
+        const missing = await accept(
+          slackClient().disconnect({
+            headers: { authorization: "Bearer clerk-session" },
+            query: { action },
+          }),
+          [404],
+        );
+        expect(missing.body.error).toMatchObject({
+          code: "NOT_FOUND",
+          message:
+            action === "uninstall"
+              ? "No Slack installation found"
+              : "No Slack connection found",
+        });
+      }
+      await flushWaitUntilForTest();
+      expect(context.mocks.slack.views.publish).toHaveBeenCalledTimes(
+        viewCount,
+      );
+      expect(context.mocks.ably.publish).toHaveBeenCalledTimes(
+        notificationCount,
+      );
+    });
   });
 });
 
@@ -391,6 +626,124 @@ async function expectErrorResponse(
 }
 
 describe("GET /api/integrations/slack/download-file", () => {
+  it("selects each request's installation across users and organizations", async () => {
+    const scenario = createPublicComputerUseScenario(context);
+    const first = scenario.user({ orgRole: "org:admin" });
+    const member = scenario.user({ orgId: first.orgId, orgRole: "org:member" });
+    const second = scenario.user({ orgRole: "org:admin" });
+    const missing = scenario.user({ orgRole: "org:admin" });
+    await scenario.run(async () => {
+      for (const actor of [first, member, second, missing]) {
+        await scenario.prepareActor(actor);
+      }
+      const a = await slackOrgs.installOrg({
+        actor: first,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+      });
+      const b = await slackOrgs.installOrg({
+        actor: second,
+        withConnection: true,
+      });
+      scenario.beforeWorkspaceCleanup(() => {
+        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+      });
+      await flushWaitUntilForTest();
+      const requests = [
+        { actor: first, installation: a },
+        { actor: member, installation: a },
+        { actor: second, installation: b },
+        { actor: missing, installation: undefined },
+        { actor: first, installation: a },
+      ];
+      const infoRequests: {
+        authorization: string | null;
+        file: string | null;
+      }[] = [];
+      server.use(
+        http.get("https://slack.com/api/files.info", ({ request }) => {
+          const fileId = new URL(request.url).searchParams.get("file");
+          infoRequests.push({
+            authorization: request.headers.get("authorization"),
+            file: fileId,
+          });
+          return HttpResponse.json({
+            ok: true,
+            file: defaultSlackFile({
+              id: fileId ?? "",
+              name: `${fileId}.txt`,
+              mimetype: "text/plain",
+              url_private_download: `https://files.slack.com/files-pri/${fileId}/download.txt`,
+            }),
+          });
+        }),
+      );
+      for (const [index, request] of requests.entries()) {
+        const claim = await scenario.claim(request.actor);
+        await flushWaitUntilForTest();
+        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+          {
+            data: [
+              {
+                role: request.actor.orgRole,
+                organization: { id: request.actor.orgId },
+                publicUserData: { userId: request.actor.userId },
+              },
+            ],
+          },
+        );
+        const fileId = `F_GRAPH_${String(index)}`;
+        const bytes = `file ${String(index)}`;
+        context.mocks.slack.fetchFile.mockResolvedValue(
+          new Response(bytes, {
+            headers: {
+              "Content-Type": "text/plain",
+              "Content-Length": String(bytes.length),
+            },
+          }),
+        );
+        const infos = infoRequests.length;
+        const fetches = context.mocks.slack.fetchFile.mock.calls.length;
+        const response = await requestDownloadFile(
+          `?file_id=${fileId}`,
+          `Bearer ${claim.token}`,
+        );
+        if (!request.installation) {
+          await expectErrorResponse(response, 404, "NOT_FOUND");
+          expect(infoRequests.slice(infos)).toStrictEqual([]);
+          expect(
+            context.mocks.slack.fetchFile.mock.calls.slice(fetches),
+          ).toStrictEqual([]);
+          continue;
+        }
+        expect(response.status).toBe(200);
+        await expect(response.text()).resolves.toBe(bytes);
+        expect(response.headers.get("content-type")).toBe("text/plain");
+        expect(response.headers.get("content-length")).toBe(
+          String(bytes.length),
+        );
+        expect(response.headers.get("x-file-name")).toBe(`${fileId}.txt`);
+        expect(response.headers.get("x-file-mimetype")).toBe("text/plain");
+        expect(infoRequests.slice(infos)).toStrictEqual([
+          {
+            authorization: `Bearer ${request.installation.botToken}`,
+            file: fileId,
+          },
+        ]);
+        expect(
+          context.mocks.slack.fetchFile.mock.calls.slice(fetches),
+        ).toStrictEqual([
+          [
+            `https://files.slack.com/files-pri/${fileId}/download.txt`,
+            request.installation.botToken,
+          ],
+        ]);
+      }
+    });
+  });
+
   const mocks = createRouteMocks(context);
 
   async function seedDownloadContext(

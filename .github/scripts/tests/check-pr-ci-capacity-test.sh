@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
-script="${repo_root}/.github/scripts/check-pr-ci-capacity.sh"
+script="${repo_root}/.github/scripts/checks/check-pr-ci-capacity.sh"
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
 mkdir -p "${test_root}/bin"

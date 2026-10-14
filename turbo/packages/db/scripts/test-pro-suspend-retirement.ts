@@ -3,39 +3,16 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import { Client } from "pg";
+import { z } from "zod";
 
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
 const schema = `pro_suspend_retirement_${randomUUID().replaceAll("-", "")}`;
 const before = "2026-01-01 00:00:00";
 
-async function expectCheckViolation(statement: string): Promise<void> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0423; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT expected_check_violation");
-  try {
-    await assert.rejects(client.query(statement), (error: unknown) => {
-      return (
-        typeof error === "object" &&
-        error !== null &&
-        "code" in error &&
-        error.code === "23514"
-      );
-    });
-  } finally {
-    await client.query("ROLLBACK TO SAVEPOINT expected_check_violation");
-    await client.query("RELEASE SAVEPOINT expected_check_violation");
-  }
-}
-
-try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0424; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-  await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}"`);
-  await client.query(`
+const historicalDdl = `
     CREATE TABLE org_metadata (
       org_id text PRIMARY KEY,
       credits bigint NOT NULL DEFAULT 0,
@@ -78,7 +55,244 @@ try {
       created_at timestamp NOT NULL DEFAULT now(),
       updated_at timestamp NOT NULL DEFAULT now()
     );
-  `);
+  `;
+
+const rowImagesSchema = z.array(
+  z.strictObject({ org_id: z.string(), value: z.string() }),
+);
+const constraintsSchema = z.array(
+  z.strictObject({
+    table_name: z.string(),
+    name: z.string(),
+    type: z.string(),
+    validated: z.boolean(),
+    definition: z.string(),
+  }),
+);
+const searchPathSchema = z.array(z.strictObject({ search_path: z.string() }));
+const namespacesSchema = z.array(z.strictObject({ nspname: z.string() }));
+const metadataRowsSql =
+  "SELECT org_id, to_jsonb(row_value)::text AS value FROM org_metadata AS row_value ORDER BY org_id";
+const entitlementRowsSql =
+  "SELECT org_id, to_jsonb(row_value)::text AS value FROM org_plan_entitlements AS row_value ORDER BY org_id";
+const namespaceSql = "SELECT nspname FROM pg_namespace WHERE nspname = $1";
+const constraintsSql = `
+  SELECT r.relname AS table_name, c.conname AS name, c.contype::text AS type,
+         c.convalidated AS validated, pg_get_constraintdef(c.oid) AS definition
+  FROM pg_constraint AS c
+  JOIN pg_class AS r ON r.oid = c.conrelid
+  JOIN pg_namespace AS n ON n.oid = c.connamespace
+  WHERE n.nspname = $1
+    AND r.relname IN ('org_metadata', 'org_plan_entitlements')
+  ORDER BY r.relname, c.conname
+`;
+
+async function expectCheckViolations(input: {
+  ddl: string;
+  migration: string;
+  metadataPayload: string;
+  entitlementPayload: string;
+  metadataRows: z.infer<typeof rowImagesSchema>;
+  entitlementRows: z.infer<typeof rowImagesSchema>;
+  constraints: z.infer<typeof constraintsSchema>;
+  statements: { sql: string; constraint: string; table: string }[];
+}): Promise<void> {
+  const negativeClient = new Client({ connectionString: databaseUrl });
+  const negativeSchema = `pro_suspend_negative_${randomUUID().replaceAll("-", "")}`;
+  const errors: unknown[] = [];
+  negativeClient.on("error", (error: unknown) => {
+    errors.push(error);
+  });
+  let owned = false;
+  let originalSearchPath: string | undefined;
+  try {
+    await negativeClient.connect();
+    const paths = searchPathSchema.parse(
+      (await negativeClient.query("SHOW search_path")).rows,
+    );
+    assert.equal(paths.length, 1);
+    originalSearchPath = paths[0]?.search_path;
+    assert.ok(originalSearchPath !== undefined);
+    assert.deepEqual(
+      (await negativeClient.query(namespaceSql, [negativeSchema])).rows,
+      [],
+    );
+    await negativeClient.query(`CREATE SCHEMA "${negativeSchema}"`);
+    owned = true;
+    await negativeClient.query(`SET search_path TO "${negativeSchema}"`);
+    await negativeClient.query(input.ddl);
+    assert.equal(
+      (
+        await negativeClient.query(
+          "INSERT INTO org_metadata SELECT * FROM jsonb_populate_recordset(NULL::org_metadata, $1::jsonb)",
+          [input.metadataPayload],
+        )
+      ).rowCount,
+      3,
+    );
+    assert.equal(
+      (
+        await negativeClient.query(
+          "INSERT INTO org_plan_entitlements SELECT * FROM jsonb_populate_recordset(NULL::org_plan_entitlements, $1::jsonb)",
+          [input.entitlementPayload],
+        )
+      ).rowCount,
+      2,
+    );
+    // Install the shipped checks without replacing the copied parent clocks.
+    const migrationResults = await negativeClient.query(input.migration);
+    assert.ok(Array.isArray(migrationResults));
+    assert.deepEqual(
+      migrationResults
+        .filter((result) => {
+          return result.command === "UPDATE";
+        })
+        .map((result) => {
+          return result.rowCount;
+        }),
+      [0, 0],
+    );
+    assert.deepEqual(
+      constraintsSchema.parse(
+        (await negativeClient.query(constraintsSql, [negativeSchema])).rows,
+      ),
+      input.constraints,
+    );
+    for (const statement of input.statements) {
+      const metadataBefore = rowImagesSchema.parse(
+        (await negativeClient.query(metadataRowsSql)).rows,
+      );
+      const entitlementsBefore = rowImagesSchema.parse(
+        (await negativeClient.query(entitlementRowsSql)).rows,
+      );
+      assert.deepEqual(
+        metadataBefore.map((row) => {
+          return row.org_id;
+        }),
+        ["legacy", "limited", "pending"],
+      );
+      assert.deepEqual(
+        entitlementsBefore.map((row) => {
+          return row.org_id;
+        }),
+        ["legacy", "limited"],
+      );
+      assert.deepEqual(metadataBefore, input.metadataRows);
+      assert.deepEqual(entitlementsBefore, input.entitlementRows);
+      await assert.rejects(
+        negativeClient.query(statement.sql),
+        (error: unknown) => {
+          return (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "23514" &&
+            "constraint" in error &&
+            error.constraint === statement.constraint &&
+            "table" in error &&
+            error.table === statement.table &&
+            "schema" in error &&
+            error.schema === negativeSchema
+          );
+        },
+      );
+      assert.deepEqual(
+        rowImagesSchema.parse(
+          (await negativeClient.query(metadataRowsSql)).rows,
+        ),
+        input.metadataRows,
+      );
+      assert.deepEqual(
+        rowImagesSchema.parse(
+          (await negativeClient.query(entitlementRowsSql)).rows,
+        ),
+        input.entitlementRows,
+      );
+    }
+    assert.deepEqual(
+      constraintsSchema.parse(
+        (await negativeClient.query(constraintsSql, [negativeSchema])).rows,
+      ),
+      input.constraints,
+    );
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    if (owned) {
+      try {
+        await negativeClient.query(`DROP SCHEMA "${negativeSchema}" CASCADE`);
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        assert.deepEqual(
+          (await negativeClient.query(namespaceSql, [negativeSchema])).rows,
+          [],
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (originalSearchPath !== undefined) {
+      try {
+        await negativeClient.query(
+          "SELECT set_config('search_path', $1, false)",
+          [originalSearchPath],
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+      try {
+        assert.deepEqual(
+          searchPathSchema.parse(
+            (await negativeClient.query("SHOW search_path")).rows,
+          ),
+          [{ search_path: originalSearchPath }],
+        );
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    try {
+      await negativeClient.end();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (errors.length === 1) {
+    throw errors[0];
+  }
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      "Negative fixture validation or disposal failed",
+    );
+  }
+}
+
+const failures: unknown[] = [];
+client.on("error", (error: unknown) => {
+  failures.push(error);
+});
+let owned = false;
+let originalSearchPath: string | undefined;
+
+try {
+  await client.connect();
+  const paths = searchPathSchema.parse(
+    (await client.query("SHOW search_path")).rows,
+  );
+  assert.equal(paths.length, 1);
+  originalSearchPath = paths[0]?.search_path;
+  assert.ok(originalSearchPath !== undefined);
+  assert.deepEqual(
+    namespacesSchema.parse((await client.query(namespaceSql, [schema])).rows),
+    [],
+  );
+  await client.query(`CREATE SCHEMA "${schema}"`);
+  owned = true;
+  await client.query(`SET search_path TO "${schema}"`);
+  await client.query(historicalDdl);
 
   await client.query(
     `
@@ -382,14 +596,109 @@ try {
     ],
   );
 
-  await expectCheckViolation(
-    "INSERT INTO org_metadata (org_id, tier) VALUES ('rejected-tier', 'pro-suspend')",
+  const metadataRows = rowImagesSchema.parse(
+    (await client.query(metadataRowsSql)).rows,
   );
-  await expectCheckViolation(
-    "UPDATE org_metadata SET pending_subscription_target_tier = 'pro-suspend' WHERE org_id = 'limited'",
+  const entitlementRows = rowImagesSchema.parse(
+    (await client.query(entitlementRowsSql)).rows,
   );
-  await expectCheckViolation(
-    `
+  assert.deepEqual(
+    metadataRows.map((row) => {
+      return row.org_id;
+    }),
+    ["legacy", "limited", "pending"],
+  );
+  assert.deepEqual(
+    entitlementRows.map((row) => {
+      return row.org_id;
+    }),
+    ["legacy", "limited"],
+  );
+  const constraints = constraintsSchema.parse(
+    (await client.query(constraintsSql, [schema])).rows,
+  );
+  assert.deepEqual(
+    constraints
+      .filter((row) => {
+        return row.type === "p";
+      })
+      .map((row) => {
+        return {
+          table: row.table_name,
+          name: row.name,
+          validated: row.validated,
+        };
+      }),
+    [
+      { table: "org_metadata", name: "org_metadata_pkey", validated: true },
+      {
+        table: "org_plan_entitlements",
+        name: "org_plan_entitlements_pkey",
+        validated: true,
+      },
+    ],
+  );
+  assert.deepEqual(
+    constraints
+      .filter((row) => {
+        return row.type === "c";
+      })
+      .map((row) => {
+        return {
+          table: row.table_name,
+          name: row.name,
+          validated: row.validated,
+        };
+      }),
+    [
+      {
+        table: "org_metadata",
+        name: "chk_org_metadata_pending_target_not_pro_suspend",
+        validated: true,
+      },
+      {
+        table: "org_metadata",
+        name: "chk_org_metadata_tier_not_pro_suspend",
+        validated: true,
+      },
+      {
+        table: "org_plan_entitlements",
+        name: "chk_org_plan_entitlements_plan_key_not_pro_suspend",
+        validated: true,
+      },
+    ],
+  );
+
+  // Keep server-encoded numbers, NULLs, JSON and microsecond timestamps opaque.
+  await expectCheckViolations({
+    ddl: historicalDdl,
+    migration,
+    metadataPayload: `[${metadataRows
+      .map((row) => {
+        return row.value;
+      })
+      .join(",")}]`,
+    entitlementPayload: `[${entitlementRows
+      .map((row) => {
+        return row.value;
+      })
+      .join(",")}]`,
+    metadataRows,
+    entitlementRows,
+    constraints,
+    statements: [
+      {
+        sql: "INSERT INTO org_metadata (org_id, tier) VALUES ('rejected-tier', 'pro-suspend')",
+        constraint: "chk_org_metadata_tier_not_pro_suspend",
+        table: "org_metadata",
+      },
+      {
+        sql: "UPDATE org_metadata SET pending_subscription_target_tier = 'pro-suspend' WHERE org_id = 'limited'",
+        constraint: "chk_org_metadata_pending_target_not_pro_suspend",
+        table: "org_metadata",
+      },
+      {
+        sql: `
       INSERT INTO org_plan_entitlements (
         org_id, plan_key, plan_rank, source, status,
         base_concurrency_limit, can_buy_concurrency, can_buy_credits,
@@ -402,15 +711,71 @@ try {
         0, false, false, false, false, false, true, false, false, 0, 0
       )
     `,
+        constraint: "chk_org_plan_entitlements_plan_key_not_pro_suspend",
+        table: "org_plan_entitlements",
+      },
+    ],
+  });
+  assert.deepEqual(
+    rowImagesSchema.parse((await client.query(metadataRowsSql)).rows),
+    metadataRows,
   );
-
-  console.log(
-    "✅ pro-suspend metadata, pending targets, and complete entitlement capabilities migrate to limited-free-1",
+  assert.deepEqual(
+    rowImagesSchema.parse((await client.query(entitlementRowsSql)).rows),
+    entitlementRows,
   );
-  console.log(
-    "✅ unrelated rows and billing provenance remain unchanged, and validated constraints reject the retired tier",
-  );
+} catch (error) {
+  failures.push(error);
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  if (owned) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        namespacesSchema.parse(
+          (await client.query(namespaceSql, [schema])).rows,
+        ),
+        [],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      assert.deepEqual(
+        searchPathSchema.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: originalSearchPath }],
+      );
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    failures.push(error);
+  }
 }
+if (failures.length === 1) {
+  throw failures[0];
+}
+if (failures.length > 1) {
+  throw new AggregateError(failures, "Parent validation or disposal failed");
+}
+console.log(
+  "✅ pro-suspend metadata, pending targets, and complete entitlement capabilities migrate to limited-free-1",
+);
+console.log(
+  "✅ unrelated rows and billing provenance remain unchanged, and validated constraints reject the retired tier",
+);

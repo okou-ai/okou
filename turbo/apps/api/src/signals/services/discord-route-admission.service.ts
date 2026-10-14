@@ -12,12 +12,8 @@ import {
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db } from "../external/db";
-import {
-  discordClient,
-  type DiscordApiResult,
-  type DiscordChannel,
-} from "../external/discord-client";
+import { writeDb$ } from "../external/db";
+import type { DiscordChannel } from "../external/discord-client";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
 import {
   discordChatThreadRouteWhere,
@@ -32,123 +28,40 @@ import {
 } from "./discord-data.service";
 import { sendDiscordIngressNotice$ } from "./internal-discord-chat-run-callback.service";
 
-function requireDiscordResult<T>(result: DiscordApiResult<T>): T {
-  if (result.kind === "ok") {
-    return result.data;
-  }
-  if (result.kind === "unavailable") {
-    throw new DiscordIngressFailure(
-      "destination_unavailable",
-      false,
-      0,
-      "Discord conversation is unavailable",
-    );
-  }
-  throw new DiscordIngressFailure(
-    "discord_provider",
-    result.status === 429 || result.status >= 500,
-    result.retryAfterMs ?? 0,
-    "Discord could not prepare the conversation",
-  );
-}
-
-async function resolvePhysicalThread(
-  args: {
-    readonly botToken: string;
-    readonly guildId: string;
-    readonly channelId: string;
-    readonly messageId: string;
+const terminalIngress$ = command(
+  async (
+    { set },
+    args: {
+      readonly ingressId: string;
+      readonly claimToken: string;
+      readonly reason: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const db = set(writeDb$);
+    const [updated] = await db
+      .update(discordChatIngress)
+      .set({
+        status: "terminal",
+        claimToken: null,
+        claimedAt: null,
+        retryAt: null,
+        lastErrorClass: args.reason,
+        lastError: null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(discordChatIngress.id, args.ingressId),
+          eq(discordChatIngress.claimToken, args.claimToken),
+          eq(discordChatIngress.status, "processing"),
+        ),
+      )
+      .returning({ id: discordChatIngress.id });
+    signal.throwIfAborted();
+    return updated !== undefined;
   },
-  signal: AbortSignal,
-): Promise<DiscordChannel> {
-  function matchingThread(channel: DiscordChannel): DiscordChannel {
-    if (
-      channel.id !== args.messageId ||
-      channel.parent_id !== args.channelId ||
-      channel.guild_id !== args.guildId ||
-      ![10, 11, 12].includes(channel.type)
-    ) {
-      throw new Error("Discord thread does not match its starter message");
-    }
-    return channel;
-  }
-  // Discord's message-created thread has the starter message's ID. Looking it
-  // up first recovers a successful create whose HTTP response was lost.
-  const existing = await discordClient.fetchDiscordChannel(
-    {
-      botToken: args.botToken,
-      channelId: args.messageId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (existing.kind === "ok") {
-    return matchingThread(existing.data);
-  }
-  if (existing.kind !== "unavailable" || existing.status !== 404) {
-    return requireDiscordResult(existing);
-  }
-  const created = await discordClient.createDiscordThreadFromMessage(
-    {
-      botToken: args.botToken,
-      channelId: args.channelId,
-      messageId: args.messageId,
-      name: "Okou conversation",
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  if (created.kind === "ok") {
-    return matchingThread(created.data);
-  }
-  if (created.kind === "discord-error" && created.status === 429) {
-    // Retry through the durable ingress claim so binding and permissions are
-    // rechecked after Discord's rate-limit window.
-    return requireDiscordResult(created);
-  }
-  // Another message/replay worker may have created this same physical thread.
-  const reconciled = await discordClient.fetchDiscordChannel(
-    {
-      botToken: args.botToken,
-      channelId: args.messageId,
-    },
-    signal,
-  );
-  signal.throwIfAborted();
-  return matchingThread(
-    requireDiscordResult(reconciled.kind === "ok" ? reconciled : created),
-  );
-}
-
-async function terminalIngress(
-  db: Db,
-  args: {
-    readonly ingressId: string;
-    readonly claimToken: string;
-    readonly reason: string;
-  },
-): Promise<boolean> {
-  const [updated] = await db
-    .update(discordChatIngress)
-    .set({
-      status: "terminal",
-      claimToken: null,
-      claimedAt: null,
-      retryAt: null,
-      lastErrorClass: args.reason,
-      lastError: null,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(discordChatIngress.id, args.ingressId),
-        eq(discordChatIngress.claimToken, args.claimToken),
-        eq(discordChatIngress.status, "processing"),
-      ),
-    )
-    .returning({ id: discordChatIngress.id });
-  return updated !== undefined;
-}
+);
 
 interface DiscordIngressClaim {
   readonly ingressId: string;
@@ -180,14 +93,18 @@ const resolveDiscordAdmissionSource$ = command(
     message: DiscordMessageCreate,
     signal: AbortSignal,
   ): Promise<DiscordAdmissionSource | null> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const bindings = await get(discordIngressSenderBindings(message.author.id));
     signal.throwIfAborted();
     const binding = bindings.find((candidate) => {
       return candidate.connectionId === ingress.connectionId;
     });
     if (!binding) {
-      await terminalIngress(db, { ...args, reason: "binding_revoked" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "binding_revoked" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -196,7 +113,7 @@ const resolveDiscordAdmissionSource$ = command(
       {
         orgId: binding.orgId,
         userId: binding.userId,
-        guildId: binding.guildId,
+        guildId: message.guild_id,
         channelId: message.channel_id,
         mode: "write",
       },
@@ -212,15 +129,20 @@ const resolveDiscordAdmissionSource$ = command(
           "Discord access could not be verified",
         );
       }
-      await terminalIngress(db, {
-        ...args,
-        reason: "conversation_unavailable",
-      });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "conversation_unavailable" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
     if (sourceAccess.binding.connectionId !== binding.connectionId) {
-      await terminalIngress(db, { ...args, reason: "binding_changed" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "binding_changed" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -232,7 +154,11 @@ const resolveDiscordAdmissionSource$ = command(
       (!isDm && channel.guild_id !== message.guild_id) ||
       (!isDm && !isThread && ![0, 5].includes(channel.type))
     ) {
-      await terminalIngress(db, { ...args, reason: "unsupported_channel" });
+      await set(
+        terminalIngress$,
+        { ...args, reason: "unsupported_channel" },
+        signal,
+      );
       signal.throwIfAborted();
       return null;
     }
@@ -240,26 +166,31 @@ const resolveDiscordAdmissionSource$ = command(
     if (!routeChannelId) {
       throw new Error("Discord thread has no parent channel");
     }
-    return { binding, channel, isDm, isThread, routeChannelId };
+    return {
+      binding: sourceAccess.binding,
+      channel,
+      isDm,
+      isThread,
+      routeChannelId,
+    };
   },
 );
 
 const terminalAgentUnavailable$ = command(
   async (
     { set },
-    db: Db,
     { claim, message, source: { binding } }: DiscordAdmissionContext,
     signal: AbortSignal,
   ): Promise<void> => {
-    const terminal = await terminalIngress(db, {
-      ...claim,
-      reason: "agent_unavailable",
-    });
+    const terminal = await set(
+      terminalIngress$,
+      { ...claim, reason: "agent_unavailable" },
+      signal,
+    );
     signal.throwIfAborted();
     if (terminal) {
       await set(
         sendDiscordIngressNotice$,
-        db,
         {
           ingressId: claim.ingressId,
           connectionId: binding.connectionId,
@@ -288,13 +219,13 @@ const createDiscordAdmissionRoute$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordChatThreadRouteBinding | undefined> => {
-    const db = set(writeDb$);
+    set(writeDb$);
     const { binding } = context.source;
     const { effectiveAgent } = preferences;
     const agent = effectiveAgent ?? (await get(discordEffectiveAgent(binding)));
     signal.throwIfAborted();
     if (!agent) {
-      await set(terminalAgentUnavailable$, db, context, signal);
+      await set(terminalAgentUnavailable$, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -394,7 +325,7 @@ const resolveCanonicalDiscordRoute$ = command(
       isDm && !assignedRoute ? await get(discordEffectiveAgent(binding)) : null;
     signal.throwIfAborted();
     if (isDm && !assignedRoute && !effectiveAgent) {
-      await set(terminalAgentUnavailable$, db, context, signal);
+      await set(terminalAgentUnavailable$, context, signal);
       signal.throwIfAborted();
       return undefined;
     }
@@ -450,9 +381,13 @@ const resolveDiscordAdmissionDestination$ = command(
     context: DiscordAdmissionContext,
     route: DiscordChatThreadRouteBinding,
     signal: AbortSignal,
-  ): Promise<string | null> => {
-    const db = set(writeDb$);
-    const { claim, message, source } = context;
+  ): Promise<
+    | { readonly kind: "deferred" }
+    | { readonly kind: "ready"; readonly channelId: string }
+    | { readonly kind: "unavailable" }
+  > => {
+    set(writeDb$);
+    const { claim, source } = context;
     const { binding, channel, isDm, isThread } = source;
     let destinationChannelId = route.destinationChannelId;
     if (!destinationChannelId) {
@@ -481,21 +416,17 @@ const resolveDiscordAdmissionDestination$ = command(
           );
         }
         if (createAccess.binding.connectionId !== binding.connectionId) {
-          await terminalIngress(db, { ...claim, reason: "binding_changed" });
+          await set(
+            terminalIngress$,
+            { ...claim, reason: "binding_changed" },
+            signal,
+          );
           signal.throwIfAborted();
-          return null;
+          return { kind: "unavailable" };
         }
-        const thread = await resolvePhysicalThread(
-          {
-            botToken: createAccess.botToken,
-            guildId: binding.guildId,
-            channelId: channel.id,
-            messageId: message.id,
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        destinationChannelId = thread.id;
+        // Keep the route pending until there is actual content to deliver.
+        // Discord gives a message-started thread the starter message's ID.
+        return { kind: "deferred" };
       }
     }
     const destinationAccess = await set(
@@ -519,11 +450,15 @@ const resolveDiscordAdmissionDestination$ = command(
       );
     }
     if (destinationAccess.binding.connectionId !== binding.connectionId) {
-      await terminalIngress(db, { ...claim, reason: "binding_changed" });
+      await set(
+        terminalIngress$,
+        { ...claim, reason: "binding_changed" },
+        signal,
+      );
       signal.throwIfAborted();
-      return null;
+      return { kind: "unavailable" };
     }
-    return destinationChannelId;
+    return { kind: "ready", channelId: destinationChannelId };
   },
 );
 
@@ -674,21 +609,24 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
     if (!route) {
       return false;
     }
-    const destinationChannelId = await set(
+    const destination = await set(
       resolveDiscordAdmissionDestination$,
       context,
       route,
       signal,
     );
     signal.throwIfAborted();
-    if (!destinationChannelId) {
+    if (destination.kind === "unavailable") {
       return false;
+    }
+    if (destination.kind === "deferred") {
+      return true;
     }
     return await set(
       persistDiscordAdmissionDestination$,
       args,
       route.id,
-      destinationChannelId,
+      destination.channelId,
       signal,
     );
   },

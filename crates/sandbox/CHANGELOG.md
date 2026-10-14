@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/sandbox-v0.26.4...sandbox-v0.27.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+## [0.26.4](https://github.com/okou-ai/okou/compare/sandbox-v0.26.3...sandbox-v0.26.4) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage dispatch and response preparation ([#39756](https://github.com/okou-ai/okou/issues/39756)) ([416309e](https://github.com/okou-ai/okou/commit/416309e883204e493c82c389bd90014067627b7c))
+
+## [0.26.3](https://github.com/okou-ai/okou/compare/sandbox-v0.26.2...sandbox-v0.26.3) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
 ## [0.26.2](https://github.com/okou-ai/okou/compare/sandbox-v0.26.1...sandbox-v0.26.2) (2026-10-12)
 
 

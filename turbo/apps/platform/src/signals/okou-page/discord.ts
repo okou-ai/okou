@@ -7,7 +7,6 @@ import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { pageVersion$ } from "../page-signal.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { searchParams$ } from "../route.ts";
 import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
@@ -26,7 +25,8 @@ export const discordOrgData$ = computed(async (get) => {
   if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
     return null;
   }
-  get(pageVersion$);
+  // Retain the authenticated owner's status across navigation, like Slack.
+  // The route-owned subscription refreshes it on re-entry and live changes.
   get(reloadVersion$);
   await get(runtimeAuthenticatedIdentity$);
   const client = get(apiClient$)(integrationsDiscordContract);
@@ -64,12 +64,7 @@ export class DiscordPopupBlockedError extends Error {
 const resetDiscordAuthorization$ = resetSignal();
 
 export const startDiscordAuthorization$ = command(
-  async (
-    { get, set },
-    flow: "install" | "connect",
-    guildId: string | null,
-    signal: AbortSignal,
-  ) => {
+  async ({ get, set }, guildId: string | null, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
@@ -95,7 +90,7 @@ export const startDiscordAuthorization$ = command(
         const client = get(apiClient$)(discordOauthContract);
         const result = await accept(
           client.start({
-            body: { flow, ...(guildId ? { guildId } : {}) },
+            body: guildId ? { guildId } : {},
             fetchOptions: { signal: flowSignal, credentials: "include" },
           }),
           [200],
@@ -143,38 +138,12 @@ export const startDiscordAuthorization$ = command(
   },
 );
 
-const uninstallDialogOpen$ = state(false);
-export const showDiscordUninstallDialog$ = computed((get) => {
-  return get(uninstallDialogOpen$);
-});
-export const setShowDiscordUninstallDialog$ = command(
-  ({ set }, open: boolean) => {
-    set(uninstallDialogOpen$, open);
-  },
-);
-
 export const disconnectDiscordOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const client = get(apiClient$)(integrationsDiscordContract);
     await accept(client.disconnect({ fetchOptions: { signal } }), [200]);
     signal.throwIfAborted();
     await set(refreshDiscordOrg$, signal);
-  },
-);
-
-export const uninstallDiscordOrg$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const client = get(apiClient$)(integrationsDiscordContract);
-    await accept(
-      client.disconnect({
-        query: { action: "uninstall" },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    await set(refreshDiscordOrg$, signal);
-    set(setShowDiscordUninstallDialog$, false);
   },
 );
 
@@ -194,11 +163,12 @@ export const selectDiscordDmBinding$ = command(
 );
 
 export const watchDiscordConnection$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    set(setShowDiscordUninstallDialog$, false);
+  async ({ get, set }, signal: AbortSignal) => {
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
     }
+    // Attach even if the cached read failed, so returning to the page can
+    // recover through the subscription's fresh status read.
     set(
       setAblyInvalidationLoop$,
       {
@@ -208,5 +178,7 @@ export const watchDiscordConnection$ = command(
       },
       signal,
     );
+    await get(discordOrgData$);
+    signal.throwIfAborted();
   },
 );

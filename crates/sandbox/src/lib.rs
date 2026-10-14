@@ -20,6 +20,7 @@
 mod backing_process;
 mod config;
 mod control;
+mod create_custody;
 mod dns_readiness;
 mod error;
 mod factory;
@@ -35,12 +36,13 @@ mod types;
 pub use backing_process::{BackingProcessIdentity, SandboxBackingProcess};
 pub use config::{
     BlockRateLimits, DeviceRateLimits, FactoryConfig, HomeDriveConfig, HomeDriveSeedImage,
-    HostCpuPlacementConfig, HostCpuPlacementMode, NetworkRateLimits, ResourceLimits, RuntimeConfig,
-    SandboxConfig, SandboxId, SnapshotRef,
+    HomeDriveSpaceReserve, HostCpuPlacementConfig, HostCpuPlacementMode, NetworkRateLimits,
+    ResourceLimits, RuntimeConfig, SandboxConfig, SandboxId, SnapshotRef,
 };
 pub use control::{
     RemoteExecResult, RemoteKillResult, SandboxControl, SandboxControlError, SandboxControlTarget,
 };
+pub use create_custody::SandboxCreateCustody;
 pub use dns_readiness::{SandboxDnsReadinessAttempt, SandboxDnsReadinessOutcome};
 pub use error::{
     Result, SandboxError, SandboxGuestDnsReadinessReason, SandboxIdleTransition,
@@ -67,7 +69,10 @@ pub use sandbox::{
 pub use snapshot::{
     PendingSnapshotPublish, SnapshotCreateConfig, SnapshotError, SnapshotOutput, SnapshotProvider,
 };
-pub use storage_manifest_timing::{StorageManifestRequestTiming, StorageManifestTiming};
+pub use storage_manifest_timing::{
+    StorageManifestGuestTiming, StorageManifestRequestTiming, StorageManifestResources,
+    StorageManifestTiming,
+};
 pub use types::{
     CodexSessionCleanupRequest, CopyFileOptions, CopyFileResult, DEFAULT_PROCESS_START_TIMEOUT,
     EXEC_OUTPUT_LIMIT_1_MIB, EXEC_OUTPUT_LIMIT_7_MIB, EXEC_OUTPUT_LIMIT_64_KIB, ExecOutputLimits,

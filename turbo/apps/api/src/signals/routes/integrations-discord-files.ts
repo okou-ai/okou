@@ -18,10 +18,7 @@ import {
   DiscordFileFetchError,
   fetchDiscordAttachment,
 } from "../external/discord-file-fetcher";
-import {
-  requireDiscordConversationAccess$,
-  requireDiscordRunReadAccess$,
-} from "../services/discord-access.service";
+import { requireDiscordRunReadAccess$ } from "../services/discord-access.service";
 import {
   discordApiFailure,
   discordUnavailable,
@@ -34,6 +31,7 @@ import {
   completeCanonicalDiscordDelivery$,
   materializeCanonicalDiscordAsset$,
 } from "../services/canonical-discord-asset-delivery.service";
+import { requireDiscordOutputAccess$ } from "../services/discord-output-destination.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
 
@@ -48,13 +46,13 @@ const init$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = parsed.data;
   const access = await set(
-    requireDiscordConversationAccess$,
+    requireDiscordOutputAccess$,
     {
       orgId: auth.orgId,
       userId: auth.userId,
       channelId: body.channelId,
       guildId: body.guildId,
-      mode: "write",
+      createThread: false,
       attachFiles: true,
     },
     signal,

@@ -43,6 +43,7 @@ from firewall_matching.patterns import (
     _split_path_segments,
 )
 from path_security import has_unsafe_path
+from runtime_url_parsing import split_runtime_url
 from url_syntax import (
     has_raw_whitespace,
     has_unsafe_url_codepoint,
@@ -2338,7 +2339,7 @@ def _match_compiled_firewall_request_with_api_candidates(
     def get_query_pairs() -> list[tuple[str, str]]:
         nonlocal parsed_query_pairs
         if parsed_query_pairs is None:
-            parsed_query_pairs = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+            parsed_query_pairs = parse_qsl(split_runtime_url(url).query, keep_blank_values=True)
         return parsed_query_pairs
 
     def get_sigv4_service() -> str | None:

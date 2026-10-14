@@ -110,8 +110,7 @@ where
 
 #[tokio::test]
 async fn mock_firecracker_api_reads_split_request_body() {
-    let mut api = MockFirecrackerApi::with_responses([MockResponse::no_content()]);
-    let mut stream = UnixStream::connect(api.socket_path()).await.unwrap();
+    let (mut stream, mut reader) = UnixStream::pair().unwrap();
 
     stream
         .write_all(
@@ -122,9 +121,26 @@ async fn mock_firecracker_api_reads_split_request_body() {
         )
         .await
         .unwrap();
+
+    // Make headers readable before polling, so Pending proves the reader is
+    // waiting for the withheld body rather than initial socket readiness.
+    tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, reader.readable())
+        .await
+        .expect("timed out waiting for split request headers")
+        .unwrap();
+    let read_request = read_mock_request(&mut reader);
+    tokio::pin!(read_request);
+    assert!(
+        futures_util::poll!(&mut read_request).is_pending(),
+        "request parsing completed before the split body was sent"
+    );
+
     stream.write_all(br#"{"split":true}"#).await.unwrap();
 
-    let request = api.next_request().await;
+    let request = tokio::time::timeout(MOCK_REQUEST_READ_TIMEOUT, read_request)
+        .await
+        .expect("timed out waiting for split request body")
+        .unwrap();
     assert_request(&request, "PUT", "/split");
     assert_eq!(request.body, r#"{"split":true}"#);
 }

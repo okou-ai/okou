@@ -449,6 +449,8 @@ export {
   homeReuseResultSchema,
   type SandboxReuseResult,
   type HomeReuseResult,
+  sandboxStartupPathSchema,
+  type SandboxStartupPath,
 } from "./runner-primitives";
 export {
   runnersPollContract,
@@ -1566,14 +1568,10 @@ export {
   type BuiltInGenerationResponse,
 } from "./built-in-generation";
 export {
-  voiceIoPolishContract,
   voiceIoPolishSegmentsContract,
-  voiceIoPolishRequestSchema,
   voiceIoPolishSegmentsRequestSchema,
   voiceIoPolishResponseSchema,
   VOICE_IO_POLISH_MAX_TEXT_CHARS,
-  type VoiceIoPolishContract,
-  type VoiceIoPolishRequest,
   type VoiceIoPolishSegmentsRequest,
   type VoiceIoPolishSegmentsContract,
   type VoiceIoPolishResponse,
@@ -1581,7 +1579,6 @@ export {
 export {
   voiceIoTranscribeContract,
   voiceIoTranscribeSegmentResponseSchema,
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   type VoiceIoTranscribeContract,
   type VoiceIoTranscribeSegmentResponse,
 } from "./voice-io-transcribe";
@@ -1690,6 +1687,13 @@ export {
   activitySummaryResponseSchema,
   type ActivitySummaryResponse,
 } from "./chat-thread-activity-summary";
+
+export {
+  CHAT_INPUT_STATUS_MAX_RESPONSE_BYTES,
+  chatInputStatusContract,
+  chatInputStatusResponseSchema,
+  type ChatInputStatusResponse,
+} from "./chat-input-status";
 
 export {
   HOME_TASK_RECOMMENDATION_LIMIT,

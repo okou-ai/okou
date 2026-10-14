@@ -7,10 +7,7 @@ import type {
   ExpandedFirewallConfig,
   FirewallPolicyValue,
 } from "@okouai/connectors/firewall-types";
-import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
-import { and, eq, inArray } from "drizzle-orm";
 
-import type { ReadonlyDb } from "../external/db";
 import type { ConnectorServerFirewallMetadataCatalog } from "./connector-server-firewall-catalog.service";
 import {
   FEISHU_CUSTOM_CONNECTOR_DEFAULT_POLICIES,
@@ -41,41 +38,6 @@ export function customConnectorPermissionBundleDependencySlug(
   const match = PERMISSION_BUNDLE_REF_PATTERN.exec(ref);
   const parsed = connectorSlugSchema.safeParse(match?.[1]);
   return parsed.success ? parsed.data : null;
-}
-
-export async function loadCustomConnectorPermissionBundleDependencySlugs(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly customConnectorIds: readonly string[];
-  },
-): Promise<readonly ConnectorSlug[]> {
-  if (args.customConnectorIds.length === 0) {
-    return [];
-  }
-  const rows = await db
-    .select({ permissionBundleRef: orgCustomConnectors.permissionBundleRef })
-    .from(orgCustomConnectors)
-    .where(
-      and(
-        eq(orgCustomConnectors.orgId, args.orgId),
-        eq(orgCustomConnectors.enabled, true),
-        inArray(orgCustomConnectors.id, [...args.customConnectorIds]),
-      ),
-    );
-  return [
-    ...new Set(
-      rows.flatMap((row) => {
-        if (row.permissionBundleRef === null) {
-          return [];
-        }
-        const dependency = customConnectorPermissionBundleDependencySlug(
-          row.permissionBundleRef,
-        );
-        return dependency === null ? [] : [dependency];
-      }),
-    ),
-  ].sort();
 }
 
 export async function loadCustomConnectorPermissionBundle(args: {

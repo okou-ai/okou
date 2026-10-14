@@ -10,10 +10,10 @@ import {
   stripeWorkflowDeliveries,
 } from "@okouai/db/schema/stripe-automation-event";
 import {
-  workflowAutomations,
   workflowUserAutomationThreads,
   workflows,
 } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, or, sql } from "drizzle-orm";
 import {
   resolveBuiltinConnectorCredentialAccess,

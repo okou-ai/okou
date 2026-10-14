@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use runner_executor::pre_spawn_admission::PreSpawnAdmission;
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperation};
-use runner_lifecycle::idle_pool::{IdlePoolIncoming, ParkedIdleCandidate};
+use runner_lifecycle::idle_pool::{
+    ActivationCleanupOutcome, IdlePoolIncoming, ParkedIdleCandidate,
+};
 use runner_lifecycle::lifecycle::RunnerMode;
 use runner_supervisor::blank_pool::{
     BlankPoolReplenisher, BlankPrepareResult, BlankProfile, GuardedBlankPoolRequest,
@@ -72,15 +74,15 @@ pub async fn exercise(
                 io::Error::other("native insertion did not replace its original victim")
             })?;
             let completion = task.join().await??;
-            if completion.outcome != DestroyOutcome::Completed
-                || (matches!(scope, NativeScope::Replacement) && !completion.home_cache_promoted)
+            if !matches!(completion, ActivationCleanupOutcome::Completed { home_cache_promoted }
+                if !matches!(scope, NativeScope::Replacement) || home_cache_promoted)
             {
                 return Err(io::Error::other(
                     "native replacement did not prove required saving/exit",
                 )
                 .into());
             }
-            drop(completion);
+            drop(task.take_completed_lease()?);
         }
         NativeScope::Aged => {
             let mut request = context.operations.request(inputs.replacement_plan()?)?;

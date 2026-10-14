@@ -12,6 +12,7 @@ use crate::process::ProcessExitCompletion;
 /// drains them asynchronously.
 pub(crate) struct LeakedResources {
     pub(crate) sandbox_id: String,
+    pub(crate) create_custody: Option<sandbox::SandboxCreateCustody>,
     /// None only for allocation cleanup that never launched a process.
     pub(crate) process_exit: Option<ProcessExitCompletion>,
     pub(crate) cow_device: Option<PooledNbdCowDevice>,
@@ -33,6 +34,7 @@ mod tests {
     fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
         LeakedResources {
             sandbox_id: sandbox_id.into(),
+            create_custody: None,
             process_exit: None,
             cow_device: None,
             network: None,
@@ -48,6 +50,7 @@ mod tests {
 
         tx.send(LeakedResources {
             sandbox_id: "test-sandbox".into(),
+            create_custody: None,
             process_exit: None,
             cow_device: None,
             network: Some(test_network()),
@@ -72,6 +75,7 @@ mod tests {
 
         let resources = LeakedResources {
             sandbox_id: "test".into(),
+            create_custody: None,
             process_exit: None,
             cow_device: None,
             network: Some(test_network()),

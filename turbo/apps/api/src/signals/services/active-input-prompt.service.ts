@@ -4,11 +4,7 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -157,18 +153,11 @@ export const materializeActiveInputSource$ = command(
   },
 );
 
-function activeInputGenerationTemplates(
-  userMessage: ChatEventUserMessage,
-  featureSwitchContext: FeatureSwitchContext,
-) {
+function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
   return {
     projection,
     templatePrompt: resolveThreadGenerationTemplatePrompt({
-      artifactPreviewsEnabled: isFeatureEnabled(
-        FeatureSwitchKey.ArtifactPreviews,
-        featureSwitchContext,
-      ),
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
       // Steered into a run that is already executing, whose volumes were fixed
@@ -284,10 +273,8 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templatePrompt } = activeInputGenerationTemplates(
-      userMessage,
-      args.featureSwitchContext,
-    );
+    const { projection, templatePrompt } =
+      activeInputGenerationTemplates(userMessage);
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

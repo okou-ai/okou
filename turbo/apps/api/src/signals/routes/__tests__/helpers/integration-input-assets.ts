@@ -75,13 +75,11 @@ export async function expectIntegrationInputPreview(
     readonly bytes: Buffer;
     readonly uploads: readonly PutObjectCommand["input"][];
     readonly okouToken: string | undefined;
-    readonly privateFiles?: boolean;
   },
 ): Promise<void> {
-  const privateFiles = args.privateFiles ?? true;
   expect(args.uploads).toContainEqual(
     expect.objectContaining({
-      Bucket: privateFiles ? "test-private-artifacts" : "test-user-artifacts",
+      Bucket: "test-private-artifacts",
       Body: args.bytes,
       ContentType: args.contentType,
     }),
@@ -99,11 +97,7 @@ export async function expectIntegrationInputPreview(
     [200],
   );
   expect(response.body.url).toBeTruthy();
-  if (privateFiles) {
-    expect(response.body.publicUrl).toBeNull();
-  } else {
-    expect(response.body.publicUrl).toBeTruthy();
-  }
+  expect(response.body.publicUrl).toBeNull();
   if (!args.okouToken) {
     throw new Error("Expected the dispatched run's Okou token");
   }

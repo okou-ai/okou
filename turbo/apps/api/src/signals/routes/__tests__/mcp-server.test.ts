@@ -65,7 +65,7 @@ function protocolHeaders(
   token: string,
   method: string,
   modern = true,
-  toolName = "get_chat_thread",
+  toolName = "get_chat_thread_list",
 ) {
   return {
     authorization: `Bearer ${token}`,
@@ -186,12 +186,12 @@ describe("external MCP authentication and transport", () => {
     const auth = await fixture();
     const token = auth.token({ scope: `${orgScope} okou:chat:manage` });
     for (const { method, name, args } of [
-      { method: "tools/list", name: "get_chat_thread", args: {} },
+      { method: "tools/list", name: "get_chat_thread_list", args: {} },
       { method: "tools/call", name: "get_chat_indicators", args: {} },
-      { method: "tools/call", name: "get_chat_thread", args: {} },
+      { method: "tools/call", name: "get_chat_thread_list", args: {} },
       {
         method: "tools/call",
-        name: "get_chat_thread",
+        name: "get_chat_thread_list",
         args: { threadId: randomUUID() },
       },
       {
@@ -467,7 +467,7 @@ describe("external MCP authentication and transport", () => {
       },
       body: JSON.stringify(
         requestBody("tools/call", false, {
-          name: "get_chat_thread",
+          name: "get_chat_thread_list",
           arguments: {},
         }),
       ),

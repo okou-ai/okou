@@ -498,17 +498,13 @@ export function VncSecurityProfileField({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {profileItems
-            .filter((item) => {
-              return !isVncKerberosMethod(item.value) || item.value === profile;
-            })
-            .map((item) => {
-              return (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
+          {profileItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
       <VncSecurityProfileHelp profile={profile} />
@@ -1005,17 +1001,13 @@ function VncAuthenticationMethodSelector({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {profileItems
-            .filter((item) => {
-              return !isVncKerberosMethod(item.value) || item.value === profile;
-            })
-            .map((item) => {
-              return (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              );
-            })}
+          {profileItems.map((item) => {
+            return (
+              <SelectItem key={item.value} value={item.value}>
+                {item.label}
+              </SelectItem>
+            );
+          })}
         </SelectContent>
       </Select>
     </div>

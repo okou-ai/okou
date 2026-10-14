@@ -1,9 +1,10 @@
 //! Home image cache. There is no old directory/layout/metadata reader.
 //!
 //! Entry locks own checkout, publication, and orphan reclamation. Promotion
-//! attempts capacity non-blockingly while holding entry; GC holds capacity and
-//! attempts entries non-blockingly. Routine inventory releases entry locks
-//! before attempting capacity. Never introduce blocking nested acquisition.
+//! retries capacity asynchronously with bounded contention while holding entry;
+//! GC holds capacity and attempts entries non-blockingly. Routine inventory
+//! releases entry locks before attempting capacity. A capacity owner must never
+//! wait for an entry lock.
 //!
 //! A checkout removes the commit before moving its selected immutable image.
 //! Publication syncs a new generation and directories before a single atomic
@@ -16,7 +17,9 @@ use std::path::PathBuf;
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::OwnedSemaphorePermit;
+#[cfg(any(test, feature = "test-support"))]
+use tokio::sync::Semaphore;
 
 mod entry;
 mod fs;
@@ -27,6 +30,9 @@ mod io_context;
 mod lifecycle;
 mod metadata;
 mod path_safety;
+mod reclamation;
+use reclamation::IdleHomeReclamation;
+pub use reclamation::IdleHomeReclamationPermit;
 pub mod snapshot;
 #[cfg(test)]
 mod tests;
@@ -54,6 +60,9 @@ const CACHE_FORMAT_VERSION: u32 = 3;
 const HOME_DRIVE_LAYOUT: &str = runner_host::paths::HOME_DRIVE_LAYOUT;
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIN_FREE_BYTES_FLOOR: u64 = 50 * GIB;
+/// Shared reserve for home cache publication and runtime image allocation.
+pub const HOME_IMAGE_SPACE_RESERVE: sandbox::HomeDriveSpaceReserve =
+    sandbox::HomeDriveSpaceReserve::new(MIN_FREE_BYTES_FLOOR, 10);
 const MAX_HOME_PROMOTION_CONCURRENCY: usize = 4;
 #[cfg(any(test, feature = "test-support"))]
 const TEST_FS_TOTAL_BYTES: u64 = 2_000 * GIB;
@@ -63,13 +72,15 @@ const TEST_FS_AVAILABLE_BYTES: u64 = 1_000 * GIB;
 #[derive(Clone)]
 pub struct HomeImageCache {
     inner: Arc<HomeImageCacheInner>,
-    idle_home_reclamation_permits: Arc<Semaphore>,
+    idle_home_reclamation: Arc<IdleHomeReclamation>,
     #[cfg(any(test, feature = "test-support"))]
     prepare_lock_test_gate: Option<HomeImagePrepareLockTestGate>,
     #[cfg(any(test, feature = "test-support"))]
     routine_gc_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
     #[cfg(test)]
     gc_inventory_test_gate: Option<gc::GcInventoryTestGate>,
+    #[cfg(test)]
+    promotion_capacity_lock_test_gate: Option<(Arc<tokio::sync::Notify>, Arc<Semaphore>)>,
 }
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Clone, Default)]
@@ -176,7 +187,7 @@ impl HomeImageCache {
                     cache_scope: scope.to_owned(),
                     entry_lock_owners: Mutex::new(HashMap::new()),
                 }),
-                idle_home_reclamation_permits: Arc::new(Semaphore::new(
+                idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
                     MAX_HOME_PROMOTION_CONCURRENCY,
                 )),
             }
@@ -204,15 +215,19 @@ impl HomeImageCache {
                 #[cfg(test)]
                 publication_fault: AtomicUsize::new(0),
             }),
-            idle_home_reclamation_permits: Arc::new(Semaphore::new(MAX_HOME_PROMOTION_CONCURRENCY)),
+            idle_home_reclamation: Arc::new(IdleHomeReclamation::new(
+                MAX_HOME_PROMOTION_CONCURRENCY,
+            )),
             prepare_lock_test_gate: None,
             routine_gc_test_gate: None,
             #[cfg(test)]
             gc_inventory_test_gate: None,
+            #[cfg(test)]
+            promotion_capacity_lock_test_gate: None,
         }
     }
     fn with_promotion_capacity(mut self, capacity: usize) -> Self {
-        self.idle_home_reclamation_permits = Arc::new(Semaphore::new(capacity.max(1)));
+        self.idle_home_reclamation = Arc::new(IdleHomeReclamation::new(capacity.max(1)));
         self
     }
     pub fn with_promotion_host_cpus(self, host_cpus: usize) -> Self {
@@ -223,7 +238,7 @@ impl HomeImageCache {
         self.with_promotion_capacity(capacity)
     }
     async fn acquire_idle_home_reclamation_permit(&self) -> LifecycleResult<OwnedSemaphorePermit> {
-        Arc::clone(&self.idle_home_reclamation_permits)
+        Arc::clone(&self.idle_home_reclamation.permits)
             .acquire_owned()
             .await
             .map_err(|e| {
@@ -245,6 +260,15 @@ impl HomeImageCache {
     #[cfg(any(test, feature = "test-support"))]
     pub fn with_prepare_lock_test_gate(mut self, gate: HomeImagePrepareLockTestGate) -> Self {
         self.prepare_lock_test_gate = Some(gate);
+        self
+    }
+    #[cfg(test)]
+    fn with_promotion_capacity_lock_test_gate(
+        mut self,
+        entered: Arc<tokio::sync::Notify>,
+        release: Arc<Semaphore>,
+    ) -> Self {
+        self.promotion_capacity_lock_test_gate = Some((entered, release));
         self
     }
     #[cfg(test)]

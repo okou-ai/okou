@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/reconcile-and-start-runner-groups.sh"
+script="${repo_root}/.github/scripts/runner/reconcile-and-start-runner-groups.sh"
 tmp_dir=$(mktemp -d)
 trap 'rm -rf "$tmp_dir"' EXIT
 mkdir -p "${tmp_dir}/bin"
@@ -152,7 +152,7 @@ guests=$(jq -c --arg sha "$cached_sha" \
   'map({key: .binary, value: $sha}) | from_entries' \
   "${repo_root}/crates/runner/guest-binaries.json")
 for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
-  digest_output=$("${repo_root}/.github/scripts/runner-binary-build/digest.sh" "$target")
+  digest_output=$("${repo_root}/.github/scripts/runner/runner-binary-build/digest.sh" "$target")
   digest=$(sed -n 's/^binary-input-digest=//p' <<<"$digest_output")
   toolchain=$(sed -n 's/^toolchain-image=//p' <<<"$digest_output")
   jq -n --arg target "$target" --arg digest "$digest" \

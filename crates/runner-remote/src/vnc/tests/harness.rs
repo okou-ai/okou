@@ -35,21 +35,10 @@ fn supported_profiles() -> Value {
     crate::test_fixtures::vnc::supported_profiles(false)
 }
 
-// A successful native bootstrap adds these three exact direct-only tuples.
-// Both capability states must retain the complete legacy request unchanged.
 fn optional_kerberos_request(
     expected: Value,
 ) -> impl Fn(&httpmock::HttpMockRequest) -> bool + Send + Sync + 'static {
-    let mut capable = expected.clone();
-    capable["supportedProfiles"].as_array_mut().unwrap().extend([
-        json!({"authMethod":"qemu_kerberos_ticket","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"none"}),
-        json!({"authMethod":"qemu_kerberos_keytab","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
-        json!({"authMethod":"qemu_kerberos_password","securityType":"qemu_x509_gssapi","transportType":"direct","kdcTransportType":"direct"}),
-    ]);
-    move |request| {
-        serde_json::from_slice::<Value>(request.body_ref())
-            .is_ok_and(|body| body == expected || body == capable)
-    }
+    crate::test_fixtures::vnc::optional_kerberos_request(expected, false)
 }
 
 pub(super) async fn bounded<T>(future: impl Future<Output = T>) -> T {
@@ -183,7 +172,10 @@ pub(super) struct TestRun {
 
 impl TestRun {
     pub(super) fn new(runtime: &Arc<VncRuntime>) -> Self {
-        let id = RunId::new_v4();
+        Self::with_id(runtime, RunId::new_v4())
+    }
+
+    pub(super) fn with_id(runtime: &Arc<VncRuntime>, id: RunId) -> Self {
         let cancel = CancellationToken::new();
         let (incoming, receiver) = mpsc::channel(16);
         let dispatcher = Runtime {

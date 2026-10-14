@@ -5,7 +5,8 @@
 
 use runner_lifecycle::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 use runner_lifecycle::idle_pool::{
-    IdlePoolIncoming, IdlePoolRetirement, IdleRetirementCandidate, IdleRetirementEnvelope,
+    ActivationCleanupOutcome, IdlePoolIncoming, IdlePoolRetirement, IdleRetirementCandidate,
+    IdleRetirementEnvelope,
 };
 
 use super::*;
@@ -33,7 +34,11 @@ impl BlankPoolReplenisher {
     /// the same accepting authority and a join before dependent teardown. This
     /// method covers the old pool-owned phase; the native fixture composes both.
     pub async fn maybe_start_guarded(&mut self, request: GuardedBlankPoolRequest<'_>) {
-        if !self.attempt_requested || self.task.is_some() || request.mode != RunnerMode::Running {
+        if !self.attempt_requested
+            || self.task.is_some()
+            || self.optional.is_some()
+            || request.mode != RunnerMode::Running
+        {
             return;
         }
         self.attempt_requested = false;
@@ -125,24 +130,23 @@ impl BlankPoolReplenisher {
                             return Err(MemoryOperationError::ResourceChanged);
                         }
                         let token = tracker.acceptance_token()?;
-                        let started = match retirement
-                            .start_for_substitution(&mut pool, "blank_pool_guarded_aged_exact")
-                        {
-                            Ok(task) => task,
-                            Err(failure) => {
-                                drop(pool);
-                                return Err(failure.into_error());
-                            }
-                        };
-                        let task = tracker.adopt_pool_substitution(
-                            started.task,
+                        let started =
+                            match retirement.start(&mut pool, "blank_pool_guarded_aged_exact") {
+                                Ok(task) => task,
+                                Err(failure) => {
+                                    drop(pool);
+                                    return Err(failure.into_error());
+                                }
+                            };
+                        let task = tracker.adopt_activation_cleanup(
+                            started,
                             token,
                             "blank_pool_guarded_aged_exact",
                         );
                         tracker.notify_reuse_state();
-                        Ok((task, pool.status_snapshot(), started.budget_lease))
+                        Ok((task, pool.status_snapshot()))
                     };
-                    let (mut cleanup, snapshot, lease) = tokio::select! {
+                    let (mut cleanup, snapshot) = tokio::select! {
                         biased;
                         _ = cancel.cancelled() => return failed("aged_admission_cancelled", None),
                         result = started => match result {
@@ -150,42 +154,60 @@ impl BlankPoolReplenisher {
                             Err(error) => return failed("aged_admission", Some(error.to_string())),
                         },
                     };
-                    let mut retiring_lease = Some(lease);
                     // Cleanup is already adopted. A slow publication cannot
-                    // retract it. Preemption releases the full logical lease
-                    // before CPU admission, without discharging physical coverage.
+                    // retract it. Preemption releases CPU admission while the
+                    // original full lease stays with required saving custody.
                     let publication = set_idle_status_snapshot(&status, snapshot);
                     tokio::pin!(publication);
                     tokio::select! {
                         biased;
                         _ = cancel.cancelled() => {
-                            drop(retiring_lease.take()); drop(pre_spawn_lease.take()); publication.await;
+                            drop(pre_spawn_lease.take());
+                            let failure = match cleanup.join().await {
+                                Ok(Ok(ActivationCleanupOutcome::Completed { .. })) => {
+                                    match cleanup.take_completed_lease() {
+                                        Ok(lease) => {
+                                            drop(lease);
+                                            failed("aged_cleanup_cancelled", None)
+                                        }
+                                        Err(error) => failed("aged_cleanup", Some(error.to_string())),
+                                    }
+                                }
+                                Ok(Ok(ActivationCleanupOutcome::NoProgress(error))) => {
+                                    failed("aged_cleanup_uncertain", Some(error))
+                                }
+                                Ok(Err(error)) => failed("aged_cleanup", Some(error.to_string())),
+                                Err(error) => failed("aged_cleanup_producer", Some(error.to_string())),
+                            };
+                            publication.await;
+                            return failure;
                         }
                         () = &mut publication => {},
                     }
                     let result = tokio::select! {
                         biased;
                         _ = cancel.cancelled() => {
-                            drop(retiring_lease.take()); drop(pre_spawn_lease.take()); cleanup.join().await
+                            drop(pre_spawn_lease.take()); cleanup.join().await
                         }
                         result = cleanup.join() => result,
                     };
                     match result {
-                        Ok(Ok(result))
-                            if !cancel.is_cancelled()
-                                && result.outcome == DestroyOutcome::Completed =>
-                        {
-                            match retiring_lease.take() {
-                                Some(lease) => lease,
-                                None => {
-                                    return failed(
-                                        "aged_cleanup",
-                                        Some(MemoryOperationError::OwnershipInvariant.to_string()),
-                                    );
+                        Ok(Ok(ActivationCleanupOutcome::Completed { .. })) => {
+                            let lease = match cleanup.take_completed_lease() {
+                                Ok(lease) => lease,
+                                Err(error) => {
+                                    return failed("aged_cleanup", Some(error.to_string()));
                                 }
+                            };
+                            if cancel.is_cancelled() {
+                                drop(lease);
+                                return failed("aged_cleanup_cancelled", None);
                             }
+                            lease
                         }
-                        Ok(Ok(_)) => return failed("aged_cleanup_uncertain_or_cancelled", None),
+                        Ok(Ok(ActivationCleanupOutcome::NoProgress(error))) => {
+                            return failed("aged_cleanup_uncertain", Some(error));
+                        }
                         Ok(Err(error)) => return failed("aged_cleanup", Some(error.to_string())),
                         Err(error) => {
                             return failed("aged_cleanup_producer", Some(error.to_string()));
@@ -240,6 +262,9 @@ impl BlankPoolReplenisher {
         ) {
             return Err(MemoryOperationError::OwnershipInvariant);
         }
+        // Bridge acceptance to the independently owned successful-lease release
+        // observer before status can yield. Uncertain capsules stay retained.
+        let completion_token = request.tracker.acceptance_token()?;
         let started = request
             .tracker
             .insert_pool_entry(
@@ -250,6 +275,22 @@ impl BlankPoolReplenisher {
                 "blank_pool_guarded_finish",
             )
             .await?;
+        if let Some(mut retirement) = started.retirement {
+            request.tracker.spawn_cleanup(
+                async move {
+                    let _token = completion_token;
+                    if matches!(
+                        retirement.join().await,
+                        Ok(Ok(ActivationCleanupOutcome::Completed { .. }))
+                    ) {
+                        drop(retirement.take_completed_lease());
+                    }
+                },
+                "blank_pool_guarded_finish_lease",
+            );
+        } else {
+            drop(completion_token);
+        }
         set_idle_status_snapshot(request.status, started.snapshot).await;
         self.diagnostics.ready();
         if let Some(plan) = &self.plan {
@@ -259,7 +300,7 @@ impl BlankPoolReplenisher {
     }
 }
 
-fn aged_candidate(
+pub(super) fn aged_candidate(
     pool: &IdlePool,
     plan: &BlankPoolPlan,
 ) -> Result<Option<IdleRetirementCandidate>, MemoryOperationError> {

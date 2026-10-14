@@ -6,7 +6,6 @@ import {
   artifactSharesContract,
   type ArtifactShareStatus,
 } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -167,6 +166,7 @@ test("Sidebar navigation decodes a resolved private URL without replacing its fo
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await urlReady.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", secondUrl).href,
       url: secondUrl,
       filename: "second.png",
       contentType: "image/png",
@@ -271,6 +271,7 @@ test("Share permission radios own their arrows without changing the lightbox ima
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", publicArtifactUrl("first.png")).href,
       url: publicArtifactUrl("first.png"),
       filename: "first.png",
       contentType: "image/png",
@@ -309,7 +310,6 @@ test("Share permission radios own their arrows without changing the lightbox ima
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   const dialog = await openGallery();
   await user.click(getNamedButton("Share", dialog));

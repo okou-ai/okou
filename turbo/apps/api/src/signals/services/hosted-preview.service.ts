@@ -1,7 +1,4 @@
 import { createHash } from "node:crypto";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
@@ -152,18 +149,7 @@ export const completeHostedPreview$ = command(
   ): Promise<
     | { readonly status: "ok"; readonly url: string }
     | { readonly status: "bad_request"; readonly message: string }
-    | { readonly status: "skipped"; readonly url?: never }
   > => {
-    const features = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
-      return { status: "skipped" };
-    }
     const id = hostedPreviewArtifactId(args.deploymentId, args.preview);
     const existing = await set(privateArtifactRecord$, id, signal);
     signal.throwIfAborted();

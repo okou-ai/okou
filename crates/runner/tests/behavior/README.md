@@ -1,0 +1,90 @@
+# Runner native behavior scenarios
+
+These commands exercise Runner config, local execution and host lifecycle on a
+provisioned metal host. Driver/remote-worker pairs and the agent-ready benchmark
+belong to this suite; `runner-behavior-durable.sh` owns staging, bounded systemd
+execution, reconnectable status and cleanup. Keep scenario logic with its owner.
+
+The home-cache promotion scenario pins its committed entry through the changed
+rootfs build and restore Runner startup. Before checkout, it acquires the shared
+routine-GC and capacity locks with bounded waits, then releases the entry pin.
+The restore submit has a 60-second deadline; success, failure and cleanup release
+the GC locks before service teardown. This protects restoration assertions from
+concurrent collectors on the shared native host.
+
+Run a driver from the repository root, for example:
+
+```bash
+bash crates/runner/tests/behavior/runner-behavior-exec.sh
+```
+
+`runner-behavior-process-containment.sh` owns one shared Runner fixture and runs
+three scenario programs: native managed tasks and their CLI/Pi consumers,
+detached-descendant/bootstrap reuse with live CPU and mixed-identity cleanup,
+and independently threaded memory/PID pressure. Keep each pressure/reuse pair
+and the complete leak/reuse/CPU lifecycle together. The lifecycle program owns
+its active pressure submit; the coordinator stops the Runner after success or a
+scenario failure. Support programs are checksum-verified before durable execution.
+
+Run agent-ready measurement separately with
+`bash crates/runner/tests/behavior/runner-behavior-agent-ready.sh`. It owns a
+separate fixture and captured systemd invocation and calls the existing benchmark
+worker. `AGENT_READY_BENCHMARK_SAMPLES` defaults to one (six submissions across
+fresh, home-cache and exact reuse); explicit measurement runs may select 1–100.
+Missing/invalid durations, incorrect reuse and failed home promotion fail the
+command. Timing summaries are observations, not a performance-regression gate.
+The existing Crates lane c runs both entry points with the same pinned inputs.
+
+The Crates behavior lanes provide `METAL_USER`, `HOST`, `BIN_DIR`, `JOB_REF`,
+immutable rootfs/snapshot hashes, the official Runner token environment, and
+numeric `GITHUB_RUN_ID`/`GITHUB_RUN_ATTEMPT`. Preserve those inherited inputs and
+the SSH setup action's guarded transport. Manual runs require the same provisioned
+host, captured binaries/images and authorization; command failure is a failed
+scenario. Remote workers require their driver's arguments and durable owner and
+are not standalone host setup commands.
+
+The durable supervisor is also consumed by the
+[sandbox native suite](../../../sandbox-firecracker/tests/native/). Their Cargo
+test binary build/transport remains in the
+[Runner CI adapter](../../../../.github/scripts/runner/runner-native-test-artifact.sh).
+Do not substitute a mutable image or retry uncertain native execution.
+
+The exec driver supplies the `exec/` entry directory to the durable supervisor.
+It stages one archive, verifies its digest, and atomically publishes immutable
+assets before launching `worker.sh`. Existing file workers keep their invocation
+contract. The same durable identity recovers a lost launch reply without replay.
+
+`exec/worker.sh` owns one service, long-running submit and sandbox for the suite.
+`network.sh` keeps idle-pool identity, live DNS/isolation and retained-lock stop
+assertions in one lifecycle; sourcing it only defines functions. Independent
+scenario commands receive `<binary-directory> <sandbox-id>`:
+
+| Command        | Contract                                                      |
+| -------------- | ------------------------------------------------------------- |
+| `commands.sh`  | Privilege, argv, exit status and one-shot descendant cleanup. |
+| `inventory.sh` | 21 runtime + 8 user + 8 root checks in three exec probes.     |
+| `postgres.sh`  | Guest PostgreSQL/pgvector with owned cluster/process cleanup. |
+| `clients.sh`   | Complete packaged Claude/Codex compatibility programs.        |
+| `https.sh`     | Runtime proxy/CA checks with separate build/request budgets.  |
+
+For an already-owned sandbox on the provisioned host, an individual scenario
+can be invoked as `bash inventory.sh "$BIN_DIR" "$SANDBOX_ID"` from its staged
+entry directory. It inherits the caller's environment and returns nonzero on
+failure; it does not create or take ownership of an unrelated sandbox. Run the
+driver for full service/network lifetime and actual native CI verification.
+
+From the repository root, run the local infrastructure regressions:
+
+```bash
+for test in crates/runner/tests/behavior/tests/*-test.sh; do
+  bash "$test"
+done
+```
+
+These regressions control external host/SSH/process boundaries; they do not
+establish real metal results. The existing four CI script shards register them
+by owner-relative path. Native lanes retain actual execution, resource and
+failure/cancellation gates. Follow the
+[testing guide](../../../../docs/runner/rust-testing.md) and
+[script standard](../../../../docs/github-scripts.md) for changes to consumers,
+source inputs, test registration, privilege, locks or cleanup.

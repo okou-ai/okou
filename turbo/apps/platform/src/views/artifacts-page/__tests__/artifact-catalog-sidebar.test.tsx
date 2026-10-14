@@ -165,6 +165,7 @@ test("An avatar sidebar reuses the private video URL already shown by its card",
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     const resolved = resolveCount++ === 0 ? firstUrl : nextUrl;
     return respond(200, {
+      downloadUrl: new URL("?download=1", resolved).href,
       url: resolved,
       expiresAt: "2099-01-01T00:00:00.000Z",
       filename: "avatar.mp4",

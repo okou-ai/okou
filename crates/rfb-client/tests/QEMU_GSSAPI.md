@@ -69,7 +69,7 @@ existing fixed-source/signed-package producer and the explicit
 `--local-source-qemu` profile:
 
 ```bash
-runtime=$(python3 -B .github/scripts/prepare-qemu-gssapi-fixture.py)
+runtime=$(python3 -B crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py)
 mkdir -m 700 codex-work/qemu-captures
 QEMU_GSSAPI_CAPTURE_DIR="$PWD/codex-work/qemu-captures" \
   python3 -B crates/rfb-client/tests/fixtures/qemu_gssapi.py \
@@ -82,7 +82,7 @@ ordinary caller. Compile the test executable as that caller, then select the
 existing disposable privileged-synthetic mount/PID harness with
 `--test-executable`: its child-only `/run` tmpfs is limited to 64 MiB/256 inodes
 and `KERBEROS_NATIVE_TEST_ROOT=/run/kerberos-native-fixture`. The pattern is in
-[`check-native-gssapi-peer.sh`](../../../.github/scripts/check-native-gssapi-peer.sh).
+[`check-native-gssapi-peer.sh`](check-native-gssapi-peer.sh).
 This is fixture bootstrap privilege, not a supported non-root result. Keep the
 worker's own capability drop, readonly root, Landlock, seccomp and all original
 assertions. Do not change host policy or private checkout ancestor permissions.
@@ -125,8 +125,17 @@ The harness compiles the current Rust test target and owns only its synthetic lo
 
 ## Optional full-private candidate producer
 
+The peer/QEMU producers and inert producer regressions live alongside the owning
+RFB fixture in `fixtures/`. `check-native-gssapi-peer.sh` provisions the signed
+independent peer with `fixtures/prepare-kerberos-peer-fixture.py` and reuses the
+worker-owned native environment. The optional command below verifies the pinned
+source archive before running `fixtures/test-qemu-gssapi-producer.py`; direct
+producer-test invocation requires that same verified archive at its configured
+`crates/target/qemu-full-fixture-source/` path. Inert tests do not run a full private
+QEMU build or establish native interoperability.
+
 ```bash
-bash .github/scripts/check-full-qemu-producer.sh
+bash crates/rfb-client/tests/check-full-qemu-producer.sh
 ```
 
 The optional native x86_64/aarch64 producer tool downloads the complete
@@ -462,7 +471,7 @@ realm control remain in the unchanged ten-test acceptance.
 ## Native independent-acceptor CI
 
 ```bash
-bash .github/scripts/check-native-gssapi-peer.sh
+bash crates/rfb-client/tests/check-native-gssapi-peer.sh
 ```
 
 The separate Crates `native-gssapi-independent-peer` matrix runs on native x86-64 and ARM Linux, without emulation. It builds the current Rust test target unprivileged and downloads the exact MIT `1.20.1-6ubuntu2` acceptor/KDC packages through signed official Ubuntu Noble indexes. Archive SHA256, package/version/architecture and extracted file digests are checked; packages are **extracted, not installed**, and host apt/Kerberos configuration is unchanged. The independent acceptor uses only those private libraries; the production MIT1.22.2/musl helper has no override. Fixture-only event-loop and CLI dependencies are also bound to the signed Noble metadata.

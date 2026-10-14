@@ -56,6 +56,10 @@ impl GuestRuntime {
             }
         }
         let config = GuestConfig::from_raw(raw)?;
+        guest_telemetry::telemetry::set_sandbox_ops_log_file_with_startup_path(
+            paths.sandbox_ops_file(),
+            config.sandbox_startup_path,
+        );
         let http = HttpClient::for_config(&config).map_err(|error| error.to_string())?;
 
         Ok(Self {

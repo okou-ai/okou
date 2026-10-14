@@ -19,6 +19,9 @@
 //!    `rootfs.ext4.staging`, customize the staging image locally, verify it,
 //!    and then atomically commit the rootfs.
 //!
+//! Cached reads use independent destinations; only generation and corrupt-object
+//! repair require the host-wide template write lock, with a recheck after locking.
+//!
 //! Atomicity guarantees:
 //! - Multipart upload is atomic from consumer POV (object only appears after
 //!   `CompleteMultipartUpload`); abandoned segments are auto-cleaned by R2's
@@ -40,6 +43,9 @@
 //! is only an early rejection hint; byte limits are enforced on the stream.
 //! Callers that coordinate shared output paths should pass an attempt-scoped
 //! destination and perform their own final publish step.
+//! One eight-minute deadline covers GET retries, response headers and body reads.
+//! Expiry reaches the blocking extractor through its reader; the caller joins it
+//! before removing staging. An exhausted budget is distinct from invalid data.
 //! Memory peak per upload ≈ `(2 + CONCURRENCY + 1) × PART_SIZE` — duplex buffer,
 //! in-flight upload chunks, and the part being read — bounded regardless of
 //! image size. Currently ~112 MiB with `PART_SIZE` = 16 MiB and `CONCURRENCY` = 4.
@@ -74,8 +80,8 @@
 //!   best-effort abort if the upload future is cancelled before disarm.
 //! - **`spawn_blocking` pack / unpack tasks**: tokio cannot cancel blocking
 //!   tasks. After parent cancellation, the task runs until BrokenPipe, natural
-//!   EOF, or a compressed/decompressed/metadata limit. Detached extraction is
-//!   therefore still resource-bounded.
+//!   EOF, the body transfer deadline, or a compressed/decompressed/metadata limit.
+//!   Detached extraction is therefore still resource-bounded.
 //!
 //! ## Corrupt-object eviction
 //!
@@ -140,6 +146,8 @@ pub enum R2Error {
 
 #[derive(Debug, thiserror::Error)]
 pub enum R2DownloadError {
+    #[error("template transfer exceeded its eight-minute deadline: {key}")]
+    DeadlineExceeded { key: String },
     #[error("request failed: {0}")]
     Request(#[source] R2Error),
     #[error("invalid cache object: {0}")]
@@ -149,6 +157,10 @@ pub enum R2DownloadError {
 }
 
 impl R2DownloadError {
+    pub fn is_deadline_exceeded(&self) -> bool {
+        matches!(self, Self::DeadlineExceeded { .. })
+    }
+
     pub fn is_invalid_object(&self) -> bool {
         matches!(self, Self::InvalidObject(_))
     }

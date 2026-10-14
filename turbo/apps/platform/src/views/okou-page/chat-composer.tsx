@@ -1,4 +1,5 @@
 import { Combobox } from "@base-ui/react/combobox";
+import { ScrollArea } from "@base-ui/react/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +23,7 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
@@ -71,6 +73,7 @@ import {
   ElapsedTime,
   getShortcutLabel,
   processShortcut,
+  ScrollBar,
   type KeyboardEventLike,
 } from "@okouai/ui";
 import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
@@ -129,6 +132,8 @@ import {
   ArrowUp,
   Bolt,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Globe,
   Image as ImageIcon,
@@ -138,7 +143,6 @@ import {
   Lock,
   Mic,
   Monitor,
-  Palette,
   Paperclip,
   Plug,
   Plus,
@@ -213,6 +217,7 @@ import { resolveDefaultModelSelection } from "../../signals/okou-page/model-defa
 import { preferredChatReasoningEffort } from "../../signals/okou-page/model-reasoning-effort.ts";
 import {
   PRESENTATION_TEMPLATE_IMPORT_ACCEPT,
+  IMAGE_TEMPLATE_IMPORT_ACCEPT,
   importPresentationTemplateDeck$,
 } from "../../signals/okou-page/presentation-template-import.ts";
 import type {
@@ -256,6 +261,10 @@ import {
   audioInputQuota$,
 } from "../../signals/voice-io/voice-io-stt.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
+import {
+  SubscriptionLinkingComposerMenu,
+  useSubscriptionLinkingAvailable,
+} from "./subscription-linking.tsx";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { AttachmentChips } from "./attachment-chips.tsx";
 import { ComposerModelPanel } from "./components/composer-model-panel.tsx";
@@ -312,6 +321,10 @@ import {
   TEMPLATE_TILE_USE,
   TEMPLATE_TILE_WRAPPER,
 } from "./template-tile.ts";
+import {
+  SCROLL_FADE_X_WHEN_OVERFLOWING,
+  SCROLL_FADE_Y_WHEN_OVERFLOWING,
+} from "./scroll-fade.ts";
 import { TiptapWorkflowComposer } from "./tiptap-workflow-composer.tsx";
 import { VoiceLevelWaveform } from "./voice-level-waveform.tsx";
 import { WebsiteTemplatePreviewDialogSlot } from "./website-template-preview-dialog.tsx";
@@ -2286,22 +2299,12 @@ function TemplatePreviewPage({
       selectDetailSlide(activeSlideIndex + 1);
     }
   };
-  const multiAccentThemes = PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-    (theme) => {
-      return theme.group === "multi-accent";
-    },
-  );
-  const singleAccentThemes = PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-    (theme) => {
-      return theme.group === "single-accent";
-    },
-  );
 
   return (
     <>
       <DialogHeader
         data-presentation-template-detail-header=""
-        className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
+        className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none"
       >
         <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
           <button
@@ -2319,286 +2322,466 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
-        <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3">
-          <div
-            ref={focusPreview}
-            role="group"
-            aria-label={t(
-              ($) => {
-                return $.artifacts.templates.slidePreview;
-              },
-              {
-                title: item.title,
-              },
-            )}
-            tabIndex={0}
+      {/* One height owner: the dialog. From lg the body is a size container
+          and the stage takes the 16:9 box that fits beside the theme list and
+          above the filmstrip, so no viewport height clips the page. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
+        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6">
+          <TemplateDetailStage
+            title={item.title}
+            focusRef={focusPreview}
+            activeSlideIndex={activeSlideIndex}
+            slideCount={detailSlideCount}
+            lowResolutionImage={detailLowResolutionImage}
+            highResolutionImage={detailHighResolutionImage}
+            html={html.state === "hasData" ? html.data : null}
+            onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
-            className="relative aspect-[16/9] overflow-hidden rounded-lg bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <ProgressiveTemplatePreviewImage
-              alt=""
-              className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
-              dataTestId={`${item.title} detail image preview`}
-              fetchPriority="high"
-              highResolutionUrl={detailHighResolutionImage}
-              loading="eager"
-              lowResolutionUrl={detailLowResolutionImage}
-            />
-            <PresentationTemplateHtmlFrame
-              html={html.state === "hasData" ? html.data : null}
-              title={t(
-                ($) => {
-                  return $.artifacts.templates.htmlPreview;
-                },
-                {
-                  title: item.title,
-                },
-              )}
-              dataTestId={`${item.title} detail HTML preview`}
-              className="z-40"
-            />
-            <button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.templates.previousSlide;
-              })}
-              disabled={activeSlideIndex === 0}
-              tabIndex={-1}
-              onClick={() => {
-                selectDetailSlide(activeSlideIndex - 1);
-              }}
-              className="absolute inset-y-0 left-0 w-1/2 cursor-w-resize bg-transparent focus:outline-none disabled:cursor-default"
-            />
-            <button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.templates.nextSlide;
-              })}
-              disabled={activeSlideIndex >= detailSlideCount - 1}
-              tabIndex={-1}
-              onClick={() => {
-                selectDetailSlide(activeSlideIndex + 1);
-              }}
-              className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
-            />
-          </div>
-          <div
-            className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
+          />
+          <TemplateDetailFilmstrip
+            item={item}
+            slideCount={Math.min(detailSlideCount, 15)}
+            activeSlideIndex={activeSlideIndex}
+            theme={selectedTheme}
+            htmlPreviewFailed={htmlPreviewFailed}
+            thumbnails={thumbnails.state === "hasData" ? thumbnails.data : null}
+            onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
-          >
-            {Array.from(
-              { length: Math.min(detailSlideCount, 15) },
-              (_, index) => {
-                return index + 1;
-              },
-            ).map((slideNumber) => {
-              const slideIndex = slideNumber - 1;
-              const active = slideIndex === activeSlideIndex;
-              const thumbnailImage = r2ImageTransformUrl(
-                presentationTemplateDetailSlideImageSource(
-                  item,
-                  slideIndex,
-                  selectedTheme,
-                  htmlPreviewFailed,
-                ),
-                TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
-              );
-              return (
-                <button
-                  key={slideNumber}
-                  type="button"
-                  aria-label={t(
-                    ($) => {
-                      return $.artifacts.templates.previewSlide;
-                    },
-                    {
-                      slideNumber,
-                    },
-                  )}
-                  aria-pressed={active}
-                  onClick={() => {
-                    selectDetailSlide(slideIndex);
-                  }}
-                  className={cn(
-                    "relative aspect-[16/9] overflow-hidden rounded-md border bg-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active
-                      ? "border-ring ring-1 ring-ring"
-                      : "border-border hover:border-muted-foreground/50",
-                  )}
-                >
-                  <img
-                    src={thumbnailImage}
-                    alt=""
-                    loading="lazy"
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                  <PresentationTemplateHtmlFrame
-                    html={
-                      thumbnails.state === "hasData"
-                        ? (thumbnails.data[slideIndex] ?? null)
-                        : null
-                    }
-                    loading="lazy"
-                    title={t(
-                      ($) => {
-                        return $.artifacts.templates.slideThumbnail;
-                      },
-                      {
-                        title: item.title,
-                        slideNumber,
-                      },
-                    )}
-                  />
-                  <span className="absolute bottom-1 right-1 rounded border border-border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm backdrop-blur">
-                    {slideNumber}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+          />
+          <TemplateDetailThemeList
+            item={item}
+            selectedTheme={selectedTheme}
+            onSelect={selectDetailTheme}
+          />
         </div>
-        <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
-          <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-            <h3 className="break-words text-xl font-semibold text-foreground">
-              {item.title}
-            </h3>
-            <div className="my-5 border-t border-border" />
-            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Palette size={14} />
-              <span>
-                {t(($) => {
-                  return $.artifacts.templates.theme;
-                })}
-              </span>
-            </p>
-            <div className="mt-3 space-y-4">
-              <div className="space-y-2">
-                <p className="px-1 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
-                    return $.artifacts.templates.multiAccent;
-                  })}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {multiAccentThemes.map((theme) => {
-                    const active = theme.id === selectedTheme.id;
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        aria-label={t(
-                          ($) => {
-                            return $.artifacts.templates.selectStyle;
-                          },
-                          { style: presentationTemplateThemeName(theme) },
-                        )}
-                        aria-pressed={active}
-                        onClick={() => {
-                          selectDetailTheme(theme);
-                        }}
-                        className={cn(
-                          "relative h-7 w-14 overflow-hidden rounded-lg border bg-background transition-colors hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          active
-                            ? "border-ring ring-1 ring-ring"
-                            : "border-border hover:border-muted-foreground/60",
-                        )}
-                      >
-                        <span className="flex h-full overflow-hidden rounded-md">
-                          {presentationTemplateThemePreviewSwatches(theme).map(
-                            (swatch) => {
-                              return (
-                                <span
-                                  key={`${theme.id}-${swatch.id}`}
-                                  className="flex-1"
-                                  style={{ backgroundColor: swatch.color }}
-                                />
-                              );
-                            },
-                          )}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <p className="px-1 text-xs font-medium text-muted-foreground">
-                  {t(($) => {
-                    return $.artifacts.templates.singleAccent;
-                  })}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {singleAccentThemes.map((theme) => {
-                    const active = theme.id === selectedTheme.id;
-                    const swatches = presentationTemplateThemeAccentSwatches(
+      </div>
+      <div className="flex shrink-0 items-center justify-end px-6 py-4">
+        <Button
+          type="button"
+          size="lg"
+          aria-label={t(
+            ($) => {
+              return $.artifacts.templates.selectTemplate;
+            },
+            {
+              title: item.title,
+            },
+          )}
+          onClick={() => {
+            setCardThemeId(item.slug, selectedTheme.id);
+            onSelect(item, presentationTemplateColorSystemId(selectedTheme.id));
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.templates.useThisTemplate;
+          })}
+        </Button>
+      </div>
+    </>
+  );
+}
+
+// From lg the stage is as wide as the body allows once the theme list keeps
+// its 180px floor and the 24px gap beside it, and as tall as the body allows
+// once the filmstrip's 74px row and the 12px gap under the stage are taken.
+// The smaller of the two decides, so the slide is never cropped and never
+// letterboxed. Spelled out because Tailwind only emits what it finds written.
+const TEMPLATE_DETAIL_STAGE_WIDTH =
+  "lg:w-[min(calc(100cqw_-_204px),calc((100cqh_-_86px)*16/9))]";
+
+// The stage controls sit on cover art, which looks the same in both themes, so
+// the counter is literal white on a literal black like `TEMPLATE_TILE_SCRIM`
+// (the `white` token flips in Dark). Arrows appear on hover where the pointer
+// can hover, without an opacity transition, and stay visible on touch.
+const TEMPLATE_DETAIL_STAGE_ARROW =
+  "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
+
+function TemplateDetailStage({
+  title,
+  focusRef,
+  activeSlideIndex,
+  slideCount,
+  lowResolutionImage,
+  highResolutionImage,
+  html,
+  onChange,
+  onKeyDown,
+}: {
+  readonly title: string;
+  readonly focusRef: RefCallback<HTMLDivElement>;
+  readonly activeSlideIndex: number;
+  readonly slideCount: number;
+  readonly lowResolutionImage: string;
+  readonly highResolutionImage: string;
+  readonly html: string | null;
+  readonly onChange: (index: number) => void;
+  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      ref={focusRef}
+      role="group"
+      aria-label={t(
+        ($) => {
+          return $.artifacts.templates.slidePreview;
+        },
+        { title },
+      )}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className={cn(
+        TEMPLATE_TILE_MEDIA,
+        TEMPLATE_DETAIL_STAGE_WIDTH,
+        "group/stage isolate aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
+      )}
+    >
+      <ProgressiveTemplatePreviewImage
+        alt=""
+        className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
+        dataTestId={`${title} detail image preview`}
+        fetchPriority="high"
+        highResolutionUrl={highResolutionImage}
+        loading="eager"
+        lowResolutionUrl={lowResolutionImage}
+      />
+      <PresentationTemplateHtmlFrame
+        html={html}
+        title={t(
+          ($) => {
+            return $.artifacts.templates.htmlPreview;
+          },
+          { title },
+        )}
+        dataTestId={`${title} detail HTML preview`}
+        className="z-40"
+      />
+      <button
+        type="button"
+        aria-label={t(($) => {
+          return $.artifacts.templates.previousSlide;
+        })}
+        disabled={activeSlideIndex === 0}
+        tabIndex={-1}
+        onClick={() => {
+          onChange(activeSlideIndex - 1);
+        }}
+        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "left-3")}
+      >
+        <ChevronLeft size={16} />
+      </button>
+      <button
+        type="button"
+        aria-label={t(($) => {
+          return $.artifacts.templates.nextSlide;
+        })}
+        disabled={activeSlideIndex >= slideCount - 1}
+        tabIndex={-1}
+        onClick={() => {
+          onChange(activeSlideIndex + 1);
+        }}
+        className={cn(TEMPLATE_DETAIL_STAGE_ARROW, "right-3")}
+      >
+        <ChevronRight size={16} />
+      </button>
+      <span className="pointer-events-none absolute bottom-3 right-3 z-50 rounded-md bg-[rgb(0_0_0_/_0.55)] px-2 py-0.5 text-xs font-medium tabular-nums text-[#ffffff]">
+        {t(
+          ($) => {
+            return $.artifacts.templates.slideCounter;
+          },
+          { current: activeSlideIndex + 1, total: slideCount },
+        )}
+      </span>
+    </div>
+  );
+}
+
+// The filmstrip's edge fade, `SCROLL_FADE_X_WHEN_OVERFLOWING`; change together.
+const TEMPLATE_DETAIL_FILMSTRIP_FADE = 24;
+
+// Keep this ref stable: the strip follows the selection only when a different
+// thumbnail becomes the active one, not on every theme or HTML re-render. It
+// moves the strip alone, by just enough to clear the edge fade, so a short
+// dialog body is never scrolled to bring the filmstrip into view.
+function scrollActiveTemplateThumbnailIntoStrip(
+  thumbnail: HTMLButtonElement | null,
+): (() => void) | undefined {
+  if (!thumbnail) {
+    return;
+  }
+  const frame = window.requestAnimationFrame(() => {
+    // The thumbnail always renders inside the filmstrip's viewport.
+    const strip = thumbnail.closest<HTMLElement>(
+      '[data-slot="scroll-area-viewport"]',
+    )!;
+    const stripBox = strip.getBoundingClientRect();
+    const tileBox = thumbnail.getBoundingClientRect();
+    const hiddenBefore =
+      stripBox.left + TEMPLATE_DETAIL_FILMSTRIP_FADE - tileBox.left;
+    const hiddenAfter =
+      tileBox.right - (stripBox.right - TEMPLATE_DETAIL_FILMSTRIP_FADE);
+    if (hiddenBefore > 0) {
+      strip.scrollLeft -= hiddenBefore;
+    } else if (hiddenAfter > 0) {
+      strip.scrollLeft += hiddenAfter;
+    }
+  });
+  return () => {
+    window.cancelAnimationFrame(frame);
+  };
+}
+
+function TemplateDetailFilmstrip({
+  item,
+  slideCount,
+  activeSlideIndex,
+  theme,
+  htmlPreviewFailed,
+  thumbnails,
+  onChange,
+  onKeyDown,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly slideCount: number;
+  readonly activeSlideIndex: number;
+  readonly theme: PresentationTemplateThemeOption;
+  readonly htmlPreviewFailed: boolean;
+  readonly thumbnails: readonly string[] | null;
+  readonly onChange: (index: number) => void;
+  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ScrollArea.Root className="group relative -mx-0.5 min-w-0 lg:col-span-2 lg:row-start-2">
+      <ScrollArea.Viewport
+        data-slot="scroll-area-viewport"
+        className={cn(
+          SCROLL_FADE_X_WHEN_OVERFLOWING,
+          "focus-visible:outline-none",
+        )}
+      >
+        <ScrollArea.Content
+          className="flex w-max gap-2 p-0.5"
+          onKeyDown={onKeyDown}
+        >
+          {Array.from({ length: slideCount }, (_, slideIndex) => {
+            const slideNumber = slideIndex + 1;
+            const active = slideIndex === activeSlideIndex;
+            return (
+              <button
+                key={slideNumber}
+                ref={
+                  active ? scrollActiveTemplateThumbnailIntoStrip : undefined
+                }
+                type="button"
+                aria-label={t(
+                  ($) => {
+                    return $.artifacts.templates.previewSlide;
+                  },
+                  { slideNumber },
+                )}
+                aria-pressed={active}
+                onClick={() => {
+                  onChange(slideIndex);
+                }}
+                className={cn(
+                  "relative aspect-video w-[124px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-lg after:border-(length:--border-width-emphasis) after:border-transparent after:transition-colors",
+                  active
+                    ? "after:border-primary"
+                    : "hover:after:border-muted-foreground/40",
+                )}
+              >
+                <img
+                  src={r2ImageTransformUrl(
+                    presentationTemplateDetailSlideImageSource(
                       item,
+                      slideIndex,
                       theme,
-                    );
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        aria-label={t(
-                          ($) => {
-                            return $.artifacts.templates.selectStyle;
-                          },
-                          { style: presentationTemplateThemeName(theme) },
-                        )}
-                        aria-pressed={active}
-                        onClick={() => {
-                          selectDetailTheme(theme);
-                        }}
-                        className={cn(
-                          "relative h-7 w-7 overflow-hidden rounded-md border transition-colors hover:-translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          active
-                            ? "border-ring ring-1 ring-ring"
-                            : "border-border hover:border-muted-foreground/60",
-                        )}
-                      >
-                        <span className="flex h-full">
-                          {swatches.map((swatch) => {
-                            return (
-                              <span
-                                key={`${theme.id}-${swatch.id}`}
-                                className="flex-1"
-                                style={{ backgroundColor: swatch.color }}
-                              />
-                            );
-                          })}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-            <Button
+                      htmlPreviewFailed,
+                    ),
+                    TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
+                  )}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+                <PresentationTemplateHtmlFrame
+                  html={thumbnails?.[slideIndex] ?? null}
+                  loading="lazy"
+                  title={t(
+                    ($) => {
+                      return $.artifacts.templates.slideThumbnail;
+                    },
+                    { title: item.title, slideNumber },
+                  )}
+                />
+              </button>
+            );
+          })}
+        </ScrollArea.Content>
+      </ScrollArea.Viewport>
+      <ScrollBar orientation="horizontal" />
+    </ScrollArea.Root>
+  );
+}
+
+// A theme reads as a small page: its ground, one line of its ink, and its
+// accent dots. Light and dark grounds separate at a glance, which a split
+// square of ground and accent could not show when 13 of 16 grounds are white.
+function PresentationTemplateThemeSwatch({
+  item,
+  theme,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly theme: PresentationTemplateThemeOption;
+}) {
+  const accents =
+    theme.group === "multi-accent"
+      ? presentationTemplateThemePreviewSwatches(theme).slice(1)
+      : [presentationTemplateAccentSwatchColor(item, theme)];
+  return (
+    <span
+      aria-hidden
+      className="flex h-5 w-8 shrink-0 flex-col justify-between rounded p-1 ring-1 ring-inset ring-black/10"
+      style={{ backgroundColor: theme.colors[0] }}
+    >
+      <span
+        className="block h-0.5 w-1/2 rounded-full"
+        style={{ backgroundColor: theme.colors[2] }}
+      />
+      <span className="flex gap-0.5">
+        {accents.map((accent) => {
+          return (
+            <span
+              key={accent.id}
+              className="size-1.5 rounded-full"
+              style={{ backgroundColor: accent.color }}
+            />
+          );
+        })}
+      </span>
+    </span>
+  );
+}
+
+function TemplateDetailThemeOptions({
+  item,
+  label,
+  themes,
+  selectedTheme,
+  onSelect,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly label: string;
+  readonly themes: readonly PresentationTemplateTheme[];
+  readonly selectedTheme: PresentationTemplateTheme;
+  readonly onSelect: (theme: PresentationTemplateThemeOption) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div>
+      <p className="px-2 pb-1 pt-1 text-xs text-muted-foreground">{label}</p>
+      <div className="grid grid-cols-2 gap-x-1 lg:grid-cols-1">
+        {themes.map((theme) => {
+          const active = theme.id === selectedTheme.id;
+          const name = presentationTemplateThemeName(theme);
+          return (
+            <button
+              key={theme.id}
               type="button"
               aria-label={t(
                 ($) => {
-                  return $.artifacts.templates.selectTemplate;
+                  return $.artifacts.templates.selectStyle;
                 },
-                {
-                  title: item.title,
-                },
+                { style: name },
               )}
-              className="mt-4 h-12 w-full font-semibold shadow-sm"
+              aria-pressed={active}
               onClick={() => {
-                setCardThemeId(item.slug, selectedTheme.id);
-                onSelect(
-                  item,
-                  presentationTemplateColorSystemId(selectedTheme.id),
-                );
+                onSelect(theme);
               }}
+              className={cn(
+                "flex h-9 min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                active
+                  ? "bg-state-selected hover:bg-state-selected-hover"
+                  : "hover:bg-state-hover",
+              )}
             >
-              {t(($) => {
-                return $.artifacts.templates.useThisTemplate;
-              })}
-            </Button>
-          </div>
-        </div>
+              <PresentationTemplateThemeSwatch item={item} theme={theme} />
+              <span className="min-w-0 truncate">{name}</span>
+            </button>
+          );
+        })}
       </div>
-    </>
+    </div>
+  );
+}
+
+function TemplateDetailThemeList({
+  item,
+  selectedTheme,
+  onSelect,
+}: {
+  readonly item: PresentationTemplateItem;
+  readonly selectedTheme: PresentationTemplateTheme;
+  readonly onSelect: (theme: PresentationTemplateThemeOption) => void;
+}) {
+  const { t } = useTranslation();
+  const groups = [
+    {
+      group: "multi-accent",
+      label: t(($) => {
+        return $.artifacts.templates.multiAccent;
+      }),
+    },
+    {
+      group: "single-accent",
+      label: t(($) => {
+        return $.artifacts.templates.singleAccent;
+      }),
+    },
+  ] as const;
+  // From lg the list sits beside the stage and must not add height to the row,
+  // so it is laid out against the stage's box and scrolls inside it.
+  return (
+    <div className="relative min-w-0 pt-3 lg:col-start-2 lg:row-start-1 lg:pt-0">
+      <div className="flex flex-col lg:absolute lg:inset-0">
+        <p className="px-2 text-sm font-medium text-foreground">
+          {t(($) => {
+            return $.artifacts.templates.theme;
+          })}
+        </p>
+        <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
+          <ScrollArea.Viewport
+            data-slot="scroll-area-viewport"
+            className={cn(
+              "h-full focus-visible:outline-none",
+              SCROLL_FADE_Y_WHEN_OVERFLOWING,
+            )}
+          >
+            <ScrollArea.Content className="flex flex-col gap-2 pb-1">
+              {groups.map(({ group, label }) => {
+                return (
+                  <TemplateDetailThemeOptions
+                    key={group}
+                    item={item}
+                    label={label}
+                    themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
+                      (theme) => {
+                        return theme.group === group;
+                      },
+                    )}
+                    selectedTheme={selectedTheme}
+                    onSelect={onSelect}
+                  />
+                );
+              })}
+            </ScrollArea.Content>
+          </ScrollArea.Viewport>
+          <ScrollBar />
+        </ScrollArea.Root>
+      </div>
+    </div>
   );
 }
 
@@ -3568,7 +3751,7 @@ function IllustrationTemplateGrid({
 }
 
 /**
- * Hands the chosen deck to the composer, which attaches it, sends it, and
+ * Hands the chosen file to the composer, which attaches it, sends it, and
  * navigates into the new thread. Importing is the ordinary chat path with the
  * message written for the user, not a separate upload flow.
  *
@@ -3578,32 +3761,39 @@ function IllustrationTemplateGrid({
  * the in-flight thread create and the run that follows it, leaving a thread the
  * user can see but the server never recorded.
  */
-function PptImportCard({
+export function TemplateImportCard({
   signals,
   onImported,
+  kind = "presentation",
   compact = false,
   className,
 }: {
   signals: ComposerSignals;
   onImported: () => void;
+  kind?: "presentation" | "illustration";
   compact?: boolean;
   className?: string;
 }) {
   const { t } = useTranslation();
   const rootSignal = useGet(rootSignal$);
-  const importDeck = useSet(importPresentationTemplateDeck$);
+  const importTemplate = useSet(importPresentationTemplateDeck$);
   const label = t(($) => {
-    return $.artifacts.templates.importDeck;
+    return kind === "illustration"
+      ? $.artifacts.templates.importImage
+      : $.artifacts.templates.importDeck;
   });
   return (
     <label
-      data-presentation-template-import=""
+      data-presentation-template-import={
+        kind === "presentation" ? "" : undefined
+      }
       className={cn(TEMPLATE_TILE_WRAPPER, className)}
     >
       <span
         className={cn(
           TEMPLATE_TILE_MEDIA,
-          "block aspect-video bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          "block bg-muted/40 transition-colors duration-150 group-hover/tile:bg-muted/60 group-active/tile:bg-muted/80 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-inset has-[:focus-visible]:ring-ring",
+          kind === "illustration" ? "aspect-[4/5]" : "aspect-video",
           compact && "bg-gray-50 group-hover/tile:bg-state-hover",
         )}
       >
@@ -3615,18 +3805,22 @@ function PptImportCard({
         <input
           type="file"
           className="sr-only"
-          accept={PRESENTATION_TEMPLATE_IMPORT_ACCEPT}
+          accept={
+            kind === "illustration"
+              ? IMAGE_TEMPLATE_IMPORT_ACCEPT
+              : PRESENTATION_TEMPLATE_IMPORT_ACCEPT
+          }
           aria-label={label}
           onChange={(event) => {
             const file = event.currentTarget.files?.[0];
-            // Clear the input so choosing the same deck again still fires.
+            // Clear the input so choosing the same file again still fires.
             event.currentTarget.value = "";
             if (!file) {
               return;
             }
             onImported();
             detach(
-              importDeck({ signals, file }, rootSignal),
+              importTemplate({ signals, file }, rootSignal),
               Reason.DomCallback,
             );
           }}
@@ -3642,7 +3836,12 @@ function PptImportCard({
             : "flex-col items-stretch gap-0.5",
         )}
       >
-        <span className={compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME}>
+        <span
+          className={cn(
+            compact ? RAIL_TILE_CAPTION : TEMPLATE_TILE_NAME,
+            kind === "illustration" && "whitespace-normal",
+          )}
+        >
           {label}
         </span>
         <span
@@ -3652,7 +3851,9 @@ function PptImportCard({
           )}
         >
           {t(($) => {
-            return $.artifacts.templates.importDeckHint;
+            return kind === "illustration"
+              ? $.artifacts.templates.importImageHint
+              : $.artifacts.templates.importDeckHint;
           })}
         </span>
       </span>
@@ -4921,6 +5122,9 @@ export function ComposerPresentationRecommendations({
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
   const imported = useImportedPresentationTemplatePickerItems(signals);
+  const custom = useCustomTemplateRecommendations(signals, "presentation");
+  const customTemplatesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.CustomTemplates] === true;
   const builtIn = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   const openTemplates = useSet(signals.template.openTemplatePicker$);
   const setMode = useSet(signals.create.setMode$);
@@ -4928,8 +5132,7 @@ export function ComposerPresentationRecommendations({
     return $.chat.taskChips.presentationTemplates;
   });
   // The same header line, rail and cover metrics as every other type's shelf.
-  // The import tile leads the rail because uploading a deck is the one action
-  // this catalog has that the others do not.
+  // The import tile leads the rail so members can start with their own deck.
   return (
     <div
       className="flex min-w-0 flex-col gap-3"
@@ -4961,7 +5164,7 @@ export function ComposerPresentationRecommendations({
         rail="templates:presentation"
         gap="gap-3"
         items={[
-          <PptImportCard
+          <TemplateImportCard
             key="import"
             signals={signals}
             compact
@@ -4972,29 +5175,58 @@ export function ComposerPresentationRecommendations({
               setMode(null);
             }}
           />,
-          ...imported.map(({ imageBuffers, template }) => {
+          ...custom.map((template) => {
             return (
               <ComposerPresentationSuggestion
                 key={template.id}
                 title={template.title}
                 onSelect={() => {
-                  picker.onChange(
-                    toImportedPresentationGenerationTemplate(template),
-                  );
+                  picker.onChange({
+                    type: "custom",
+                    selection: { userTemplateId: template.id },
+                  });
                 }}
               >
-                <ImportedPptImage
-                  imageSignals={imageBuffers.card}
-                  label=""
-                  loading="eager"
-                  fetchPriority="high"
-                  size={TEMPLATE_CARD_PREVIEW_SIZE}
-                  placeholder={<ImageIcon size={24} aria-hidden />}
-                  className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
-                />
+                {template.coverUrl ? (
+                  <img
+                    src={template.coverUrl}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="absolute inset-0 flex items-center justify-center">
+                    <ImageIcon size={24} aria-hidden />
+                  </span>
+                )}
               </ComposerPresentationSuggestion>
             );
           }),
+          ...(customTemplatesEnabled ? [] : imported).map(
+            ({ imageBuffers, template }) => {
+              return (
+                <ComposerPresentationSuggestion
+                  key={template.id}
+                  title={template.title}
+                  onSelect={() => {
+                    picker.onChange(
+                      toImportedPresentationGenerationTemplate(template),
+                    );
+                  }}
+                >
+                  <ImportedPptImage
+                    imageSignals={imageBuffers.card}
+                    label=""
+                    loading="eager"
+                    fetchPriority="high"
+                    size={TEMPLATE_CARD_PREVIEW_SIZE}
+                    placeholder={<ImageIcon size={24} aria-hidden />}
+                    className="pointer-events-none absolute inset-0 h-full w-full bg-background object-cover"
+                  />
+                </ComposerPresentationSuggestion>
+              );
+            },
+          ),
           ...builtIn.map((item) => {
             return (
               <ComposerPresentationSuggestion
@@ -5051,7 +5283,7 @@ function PptTemplateGrid({
       {customTemplates ? null : (
         <>
           <ImportedPresentationTemplateLibraryStatus signals={signals} />
-          <PptImportCard signals={signals} onImported={onImported} />
+          <TemplateImportCard signals={signals} onImported={onImported} />
         </>
       )}
       {(customTemplates ? [] : importedItems).map(
@@ -6794,18 +7026,18 @@ function ConnectorsPopoverButton({
             render={
               <TooltipTrigger
                 render={
-                  <button
+                  <Button
                     type="button"
-                    className={cn(
-                      "inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg px-1 transition-colors hover:bg-state-hover composer-wide:min-w-9 composer-wide:px-1.5",
-                      COMPOSER_CONTROL_FOCUS_CLASS,
-                    )}
+                    variant="quiet"
+                    size="icon-sm"
+                    iconSize="md"
+                    className="shrink-0"
                     aria-label={t(($) => {
                       return $.chat.connectors.title;
                     })}
                   >
                     <Plug size={18} />
-                  </button>
+                  </Button>
                 }
               />
             }
@@ -6958,9 +7190,9 @@ function ComposerConnectorsPopoverBody({
       )}
     >
       {(connectorItems.length > 0 || connectorsLoading) && (
-        <div className="flex min-h-0 flex-1 flex-col py-1">
+        <div className="flex min-h-0 flex-1 flex-col">
           {showSearch && (
-            <div className="flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
+            <div className="mt-1 flex shrink-0 items-center gap-2 px-3 py-1 border-b border-border/50">
               <Search
                 size={16}
                 aria-hidden="true"
@@ -6987,7 +7219,7 @@ function ComposerConnectorsPopoverBody({
             </div>
           )}
           {waitingForConnectors ? (
-            <div className="flex flex-col animate-pulse">
+            <div className="flex flex-col pt-1 pb-2 animate-pulse">
               {Array.from({ length: 3 }, (_, i) => {
                 return (
                   <div key={i} className="flex items-center gap-2 px-3 py-2">
@@ -7004,7 +7236,13 @@ function ComposerConnectorsPopoverBody({
               aria-label={t(($) => {
                 return $.chat.connectors.title;
               })}
-              className="flex max-h-64 min-h-0 flex-1 flex-col overflow-y-auto"
+              // The list's air lives inside the scroller, so a clipped row runs
+              // to the card edge and the rule instead of stopping short of
+              // them. With search the panel's fixed height bounds the list.
+              className={cn(
+                "flex min-h-0 flex-1 flex-col overflow-y-auto pb-2",
+                !showSearch && "max-h-67 pt-1",
+              )}
             >
               {visibleConnectors.map((item) => {
                 if (item.kind === "custom") {
@@ -7134,12 +7372,10 @@ function ComposerConnectorsPopoverBody({
               })}
             </div>
           )}
+          <div className="mx-3 shrink-0 border-t border-border/50" />
         </div>
       )}
       <div className="flex shrink-0 flex-col p-1">
-        {(connectorItems.length > 0 || connectorsLoading) && (
-          <div className="mx-2 mb-1 border-t border-border/50" />
-        )}
         <PopoverClose
           render={
             <button
@@ -7800,7 +8036,7 @@ function useComposerTemplatePicker(
         return;
       }
       // Built-in templates resolve without a catalog. Uploaded and custom ones
-      // read theirs only now, so rendering the composer never requests them.
+      // read theirs only now; this picker hook does not subscribe on render.
       const builtIn = selectedComposerTemplateAttachment(value);
       if (
         builtIn ||
@@ -7903,17 +8139,13 @@ function composerLayoutHeightClassNames(
   { singleLineOnMobile, forwardComposer }: ComposerSignals["editor"],
   hasTemplateAttachment: boolean,
 ): ComposerLayoutHeightClassNames {
-  // On the start page the composer is the subject of the screen rather than a
-  // dock under a transcript, so it opens 48px taller. The forward dialog shares
-  // these signals and is not that page, so it keeps the compact shell.
-  //
-  // That reading only holds while the page has room to make it the subject.
-  // Under 600px the start page's composer sits on the floor of the screen with
-  // the starting ideas above it — the same job the docked composer does — and
-  // 196px of mostly empty field there reads as a demand for a long message
-  // rather than an invitation. So the narrow end of both start-page shells is
-  // the height the docked composer already uses, and the taller opening is
-  // moved behind `composer-wide`, which is where it was always describing.
+  // The start page opens at the compact shell at every width. Most first
+  // messages are a line or two, and a field several lines deep reads as a
+  // demand for a long message rather than an invitation. The page centres the
+  // composer, so every pixel of empty field is also taken from the room the
+  // slash and mention menus open into. The input still grows with the draft.
+  // The forward dialog shares these signals and is not that page, so it keeps
+  // the dialog's shell.
   const startPage = !singleLineOnMobile && !forwardComposer;
   if (hasTemplateAttachment) {
     return singleLineOnMobile
@@ -7923,8 +8155,8 @@ function composerLayoutHeightClassNames(
         }
       : startPage
         ? {
-            input: "min-h-[86px] composer-wide:min-h-[162px]",
-            shell: "min-h-[158px] composer-wide:min-h-[234px]",
+            input: "min-h-[86px]",
+            shell: "min-h-[158px]",
           }
         : {
             input: "min-h-[114px]",
@@ -7938,8 +8170,8 @@ function composerLayoutHeightClassNames(
       }
     : startPage
       ? {
-          input: "min-h-12 composer-wide:min-h-[124px]",
-          shell: "min-h-[120px] composer-wide:min-h-[196px]",
+          input: "min-h-12",
+          shell: "min-h-[120px]",
         }
       : {
           input: "min-h-[76px]",
@@ -8290,7 +8522,25 @@ function ComposerModelPickerControls({
         open={open}
         onOpenChange={setOpen}
       />
-      <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />
+      <ComposerModelSlotDivider />
+    </>
+  );
+}
+
+function ComposerModelSlotDivider() {
+  return <div className="mx-0 h-5 w-px bg-divider/60 composer-wide:mx-0.5" />;
+}
+
+/** The model slot of a member who can only run Auto; see the menu's note. */
+function ComposerSubscriptionLinkingSlot() {
+  const available = useSubscriptionLinkingAvailable();
+  if (!available) {
+    return null;
+  }
+  return (
+    <>
+      <SubscriptionLinkingComposerMenu />
+      <ComposerModelSlotDivider />
     </>
   );
 }
@@ -8313,6 +8563,9 @@ function ComposerModelPickerSlot({ signals }: { signals: ComposerSignals }) {
     models.models.every((runModel) => {
       return runModel.model === null;
     });
+  if (models !== undefined && autoOnly) {
+    return <ComposerSubscriptionLinkingSlot />;
+  }
   if (modelPickerLoading || value === null || autoOnly) {
     return null;
   }

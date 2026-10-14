@@ -794,7 +794,7 @@ function WorkflowSelectionStep({
         className="mb-3 flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 px-3 py-3 text-left transition-colors hover:bg-state-hover"
         onClick={onCreateWorkflow}
       >
-        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
+        <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground">
           <MessageCircle size={16} />
         </span>
         <span className="min-w-0">

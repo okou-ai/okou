@@ -19,6 +19,8 @@ entry points. The current suite covers:
   deployed preview API, runner, sandbox, and proxy.
 - raw network protocol, DNS, connector diagnostic, browser classification, and
   opt-in body-capture telemetry through the deployed runner and public run API.
+- direct WSS admission and opaque Guest echo, with one-use ticket replay
+  rejection through the existing user API credential.
 
 An E2E test must not call `/api/test/*`, mint a test-only API token, write the
 database directly, or use an internal fixture endpoint to construct or inspect
@@ -58,6 +60,10 @@ The local fixture integration suite (`cd e2e && pnpm test`) exercises this
 lifecycle through the real Playwright runner, Chromium and a loopback HTTP server.
 It requires the Chromium headless shell (`pnpm exec playwright install --only-shell
 chromium` from `e2e`), but not a deployed preview or Clerk credentials.
+The focused runner sign-in and Clerk bootstrap fixture files also accept
+`E2E_CHROMIUM_EXECUTABLE_PATH` for an installed Chromium executable. Such a local
+run verifies that browser version; the PR pipeline still verifies the locked
+Playwright headless shell.
 
 Before adding a case, verify that it:
 
@@ -221,8 +227,48 @@ omitted-record counts, and best-effort page/Clerk readiness. Status and response
 timing are present only once the browser reports them; their absence is not
 proof that the server sent nothing. Pending script requests can explain a
 missing `DOMContentLoaded` milestone.
+The additional Chromium CDP `network` section retains the first 64 request hops
+independently, including separate redirect responses with the same CDP request
+ID. It aggregates `dataEvents`, `decodedDataBytes`, `encodedDataBytes`, and
+`firstDataMs`/`lastDataMs` without collecting body content. Response metadata
+includes protocol, DNS/connection/TLS/send/header timing, cache/service-worker
+flags, and strictly validated `cfRay` values when available. Timing fields are
+milliseconds relative to the request's CDP timing baseline; -1 means that phase
+is unavailable. Terminal events distinguish `finished`, `failed`, and
+`redirected` from `pending`. `totalEncodedBytes` comes only from loadingFinished
+and can include headers; it is not the sum of encoded data-event lengths.
+An interrupted session is marked, and unavailable setup is reported explicitly.
+Setup and session disposal each have a one-second deadline. Observation freezes
+before failure capture and intentional detachment, so cleanup cannot become a
+network failure in the report. Browser buffering and cached responses affect
+byte events: zero observed data does not prove that the server sent nothing.
+These client-side observations can locate a stalled transfer or script but
+cannot alone distinguish a Worker stall from a remote edge/transport failure.
 Page-state capture has its own one-second deadline and can be unavailable.
-These reports exclude URL queries/fragments/userinfo, headers, cookies, payloads,
+The preview-only Worker entry adds `x-okou-preview-build-sha` to eligible
+same-origin `/sign-in` HTML navigation responses. Its value comes from the
+unique canonical source-SHA meta declaration in the immutable bundled shell,
+not the expected artifact or request. Default and production entries omit it.
+The wrapper annotates the existing Response without consuming its body.
+
+Runner preparation carries the resolved artifact SHA as
+`OKOU_EXPECTED_APP_BUILD_SHA`; failure reports retain its valid/missing/invalid
+classification separately from each eligible CDP document hop's observation.
+`requestId` plus `redirectHop` identify the hop. Observations are
+valid/missing/invalid/unavailable; comparisons are match/mismatch/not-comparable
+with a reason. Duplicate, combined or malformed marker values are rejected
+without retaining raw values. CDP can normalize headers before observation, so
+this cannot prove the absence of duplicate fields on the wire. External and
+ineligible hops are not compared. Missing markers do not distinguish an older
+Worker from an omitted or invalid bundled declaration.
+
+This source SHA is not an asset-byte digest or unique upload identity. Even a
+match and `loadingFinished` do not prove DOMContentLoaded, native streaming
+behavior or the cause of a historical failure. Retain this bounded preview
+contract; changing or removing it requires review of its producer and observer.
+
+These reports exclude URL queries/fragments/userinfo, headers other than the
+validated cf-ray and preview-build identifiers, cookies, payloads,
 raw console/error text, screenshots and raw traces. Successful sign-in writes
 no report; diagnostic failure preserves the original sign-in error and does not
 retry authentication or increase its deadlines. This evidence diagnoses future
@@ -264,3 +310,9 @@ The workflow discovers the checked-in BATS files, weighs each file by its test
 count, and assigns whole files to at most twelve non-empty shards. New files are
 included automatically. Keep setup and teardown self-contained within a file so
 the shard planner can move it without introducing cross-file ordering.
+
+Transport probes must preserve the production authentication and TLS
+boundaries. Use the credential kind the endpoint admits, the returned target
+verbatim, and certificate validation for deployed acceptance. Controlled local
+peers validate the probe; they do not prove public trust or real sandbox traffic.
+Public cleanup must remain available after the connection being tested is lost.

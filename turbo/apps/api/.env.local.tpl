@@ -36,13 +36,11 @@ VERCEL_TOKEN=op://Development/vercel/VERCEL_TOKEN
 
 # Required: Object Storage (Cloudflare R2)
 CF_ACCOUNT_ID=op://Development/cloudflare/CF_ACCOUNT_ID
-CLOUDFLARE_BROWSER_RENDERING_API_TOKEN=op://Development/cloudflare/CLOUDFLARE_BROWSER_RENDERING_API_TOKEN
-ARTIFACT_PREVIEW_WAF_SECRET=op://Development/cloudflare/ARTIFACT_PREVIEW_WAF_SECRET
 R2_ACCOUNT_ID=op://Development/cloudflare/R2_ACCOUNT_ID
 R2_ACCESS_KEY_ID=op://Development/cloudflare/R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY=op://Development/cloudflare/R2_SECRET_ACCESS_KEY
 R2_USER_STORAGES_BUCKET_NAME=op://Development/cloudflare/R2_USER_STORAGES_BUCKET_NAME
-# Configure scoped private-bucket credentials before enabling privateArtifacts.
+# Private uploads and generation require scoped private-bucket credentials.
 R2_PRIVATE_ARTIFACTS_BUCKET_NAME=user-artifact-private-dev
 R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID=
 R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY=

@@ -199,4 +199,61 @@ describe("okou wallet", () => {
       ),
     );
   });
+  it.each(["structured", "gateway", "empty", "null"] as const)(
+    "preserves %s creation failure diagnostics without retrying",
+    async (kind) => {
+      const diagnosticId = randomUUID();
+      const message = `Link rejected the request (operation: spend_create; HTTP 400; parameter: expires_at; detail: expires_at must be in the future; reference: ${diagnosticId})`;
+      let requests = 0;
+      server.use(
+        http.post(`${origin}/api/wallet/spend`, () => {
+          requests += 1;
+          if (kind === "empty") {
+            return new HttpResponse(null, { status: 502 });
+          }
+          if (kind === "null") {
+            return HttpResponse.json(null, { status: 502 });
+          }
+          return kind === "structured"
+            ? HttpResponse.json(
+                { error: { code: "WALLET_PROVIDER_ERROR", message } },
+                { status: 502 },
+              )
+            : new HttpResponse(
+                "<html>gateway failed with private-upstream-fixture</html>",
+                { status: 502, headers: { "content-type": "text/html" } },
+              );
+        }),
+      );
+      await expect(
+        run([
+          "spend",
+          "create",
+          "--intent-id",
+          intentId,
+          "--amount",
+          "3500",
+          "--merchant-name",
+          spend.merchantName,
+          "--merchant-url",
+          spend.merchantUrl,
+          "--context",
+          context,
+          "--test",
+          "--json",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      const displayed = JSON.stringify(errors.mock.calls);
+      expect(displayed).toContain("operation: spend_create");
+      expect(displayed).toContain(
+        kind === "structured" ? diagnosticId : intentId,
+      );
+      expect(displayed).toContain(
+        kind === "structured" ? "HTTP 400" : "backend diagnostic unavailable",
+      );
+      expect(displayed).not.toContain("private-upstream-fixture");
+      expect(requests).toBe(1);
+      expect(output).not.toHaveBeenCalled();
+    },
+  );
 });

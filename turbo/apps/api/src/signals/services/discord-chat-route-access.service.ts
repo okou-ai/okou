@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { discordChatThreadRoutes } from "@okouai/db/schema/discord-chat-thread-route";
 import type { Db } from "../external/db";
 import { requireDiscordConversationAccess$ } from "./discord-access.service";
@@ -27,7 +27,7 @@ const loadCurrentConversationAccess$ = command(
       {
         orgId: args.orgId,
         userId: args.userId,
-        guildId: args.target.guildId,
+        guildId: args.target.guildId ?? undefined,
         channelId,
         mode,
       },
@@ -54,16 +54,36 @@ const loadCurrentConversationAccess$ = command(
 export async function findDiscordChatRoute(
   db: Db,
   args: Pick<DiscordChatRouteAccessArgs, "chatThreadId" | "userId" | "target">,
-): Promise<{ readonly id: string } | undefined> {
+): Promise<
+  | {
+      readonly id: string;
+      readonly channelId: string;
+      readonly destinationChannelId: string | null;
+    }
+  | undefined
+> {
   const [route] = await db
-    .select({ id: discordChatThreadRoutes.id })
+    .select({
+      id: discordChatThreadRoutes.id,
+      channelId: discordChatThreadRoutes.channelId,
+      destinationChannelId: discordChatThreadRoutes.destinationChannelId,
+    })
     .from(discordChatThreadRoutes)
     .where(
       and(
         eq(discordChatThreadRoutes.chatThreadId, args.chatThreadId),
         eq(discordChatThreadRoutes.connectionId, args.target.connectionId),
         eq(discordChatThreadRoutes.id, args.target.routeId),
-        eq(discordChatThreadRoutes.destinationChannelId, args.target.channelId),
+        or(
+          eq(
+            discordChatThreadRoutes.destinationChannelId,
+            args.target.channelId,
+          ),
+          and(
+            isNull(discordChatThreadRoutes.destinationChannelId),
+            eq(discordChatThreadRoutes.sessionKey, args.target.channelId),
+          ),
+        ),
         eq(discordChatThreadRoutes.sessionKey, args.target.sessionKey),
         eq(discordChatThreadRoutes.userId, args.userId),
       ),
@@ -117,7 +137,7 @@ export const loadDiscordChatRouteAccess$ = command(
     const access = await set(
       loadCurrentConversationAccess$,
       args,
-      args.target.channelId,
+      route.destinationChannelId ?? route.channelId,
       "write",
       signal,
     );

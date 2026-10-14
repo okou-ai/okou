@@ -276,9 +276,6 @@ for name in ['bench-app']:
         assert not condition(job, values | {
             'needs.detect-turbo-ts-checks.result': 'skipped',
         }), f'{name} must remain skipped after release detection'
-    artifact = next(step for step in job['steps']
-                    if step.get('uses', '').startswith('actions/upload-artifact@'))
-    assert artifact['with']['name'] == f'{name}-results'
 
 print('staging workflow selection, isolation, and failure gates: ok')
 PY

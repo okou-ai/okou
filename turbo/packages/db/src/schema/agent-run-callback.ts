@@ -47,6 +47,9 @@ export const agentRunCallbacks = pgTable(
   (table) => {
     return [
       index("idx_agent_run_callbacks_run_id").on(table.runId),
+      index("idx_agent_run_callbacks_pi_memory")
+        .on(sql`(${table.payload}->>'memoryStorageId')`, table.runId)
+        .where(sql`${table.internalKind} = 'pi-memory:phase2'`),
       index("idx_agent_run_callbacks_pending")
         .on(table.status)
         .where(sql`status = 'pending'`),

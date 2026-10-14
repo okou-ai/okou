@@ -9,8 +9,13 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { server } from "../../../mocks/server";
 import { integrationsSlackReadRoutes } from "../integrations-slack-read";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
+import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
+import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { seedOrgMembership$ } from "./helpers/org-membership";
-import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
+import {
+  createPublicSlackOrgApi,
+  uniqueSlackUserId,
+} from "./helpers/slack-public-install";
 
 // Connecting a Slack user resolves the built-in Slack connector OAuth method.
 const context = testContext();
@@ -76,6 +81,140 @@ function allowSharedConversation(conversationId: string): void {
 }
 
 describe("Slack bot channel discovery and history", () => {
+  const track = createFixtureTracker<{
+    readonly teamId: string;
+    readonly installerSlackUserId: string;
+  }>((installation) => {
+    return slackOrgs.uninstallWorkspace(installation.teamId);
+  });
+
+  it("keeps successive read requests scoped to their user and organization", async () => {
+    const integrations = createBddIntegrationApi(context);
+    const mocks = createRouteMocks(context);
+    const first = integrations.user();
+    const second = integrations.user({
+      orgId: first.orgId,
+      orgRole: "org:member",
+    });
+    const other = integrations.user();
+    const uninstalled = integrations.user();
+    integrations.configureSlackAppMocks();
+    const installationA = await track(
+      integrations.installSlackWorkspace(first),
+    );
+    const installationB = await track(
+      integrations.installSlackWorkspace(other),
+    );
+    const client = setupApp({ context, routes: integrationsSlackReadRoutes })(
+      integrationsSlackReadContract,
+    );
+    const request = {
+      headers: { authorization: "Bearer clerk-session" },
+      query: { limit: 10 },
+    };
+    const requests: { token: string | null; user: string | null }[] = [];
+    server.use(
+      http.get(SLACK_USER_CONVERSATIONS_URL, ({ request }) => {
+        requests.push({
+          token: request.headers.get("authorization"),
+          user: new URL(request.url).searchParams.get("user"),
+        });
+        return HttpResponse.json({
+          ok: true,
+          channels: [{ id: "C001", name: "general", is_private: false }],
+          response_metadata: { next_cursor: "" },
+        });
+      }),
+    );
+    const bodyA = {
+      channels: [
+        {
+          id: "C001",
+          name: "general",
+          isPrivate: false,
+          isMember: true,
+          channelUrl: `https://slack.com/app_redirect?team=${installationA.teamId}&channel=C001`,
+        },
+      ],
+      nextCursor: null,
+    };
+    mocks.clerk.session(first.userId, first.orgId, first.orgRole);
+    expect(
+      (await accept(client.listChannels(request), [200])).body,
+    ).toStrictEqual(bodyA);
+    mocks.clerk.session(second.userId, second.orgId, second.orgRole);
+    const disconnected = await accept(client.listChannels(request), [404]);
+    expect(disconnected.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          "Your Slack account is not connected to this organization. Connect it from Settings > Slack before reading conversations.",
+      },
+    });
+    expect(requests).toHaveLength(1);
+
+    const secondSlackUserId = uniqueSlackUserId();
+    await integrations.connectSlackUser(second, {
+      workspaceId: installationA.teamId,
+      slackUserId: secondSlackUserId,
+    });
+    mocks.clerk.session(second.userId, second.orgId, second.orgRole);
+    expect(
+      (await accept(client.listChannels(request), [200])).body,
+    ).toStrictEqual(bodyA);
+    mocks.clerk.session(other.userId, other.orgId, other.orgRole);
+    expect(
+      (await accept(client.listChannels(request), [200])).body,
+    ).toStrictEqual({
+      channels: [
+        {
+          id: "C001",
+          name: "general",
+          isPrivate: false,
+          isMember: true,
+          channelUrl: `https://slack.com/app_redirect?team=${installationB.teamId}&channel=C001`,
+        },
+      ],
+      nextCursor: null,
+    });
+    mocks.clerk.session(
+      uninstalled.userId,
+      uninstalled.orgId,
+      uninstalled.orgRole,
+    );
+    const missing = await accept(client.listChannels(request), [404]);
+    expect(missing.body).toStrictEqual({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          "No Slack installation found for this organization. Install Okou from Settings > Slack first.",
+      },
+    });
+    expect(requests).toHaveLength(3);
+    mocks.clerk.session(first.userId, first.orgId, first.orgRole);
+    expect(
+      (await accept(client.listChannels(request), [200])).body,
+    ).toStrictEqual(bodyA);
+    expect(requests).toStrictEqual([
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: installationA.installerSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: secondSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationB.teamId}`,
+        user: installationB.installerSlackUserId,
+      },
+      {
+        token: `Bearer xoxb-bdd-${installationA.teamId}`,
+        user: installationA.installerSlackUserId,
+      },
+    ]);
+  });
+
   it("lists only channels shared by the connected Slack user and bot", async () => {
     const { client, headers, botToken, installation, slackUserId } =
       await fixture();

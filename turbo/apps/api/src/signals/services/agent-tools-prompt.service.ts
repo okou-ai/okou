@@ -6,6 +6,8 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import { presentationTemplateSkillInstruction } from "@okouai/core/presentation-template-skill";
+import { PRESENTATION_DELIVERY_INSTRUCTION } from "@okouai/core/presentation-generation-instructions";
+import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 
 const instructionsAndMemoryGuidance = Object.freeze([
   "- Instructions and memory have different scopes. Agent instructions are team-shared behavior rules for everyone using the same agent. They define responsibilities, common workflows, and default behavior; changes can affect other team members and future runs. Use them for genuinely shared, stable team rules, not as a notebook for personal preferences or one-off task details.",
@@ -28,12 +30,12 @@ function buildIntegrationToolsPrompt(
     `Prefer the workspace directory (\`${CANONICAL_WORKING_DIR}\`) for file operations and project work.`,
     "A `[Web file]` block from any integration refers to a file stored by Okou. Use `okou web download-file -h` to download it with its `[ID]`.",
     "Local dev servers are useful for agent-side verification, but they are not by themselves a user-facing deliverable.",
-    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`.",
+    "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`.",
     "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime, `okou host` may not be sufficient; use the project's own deployment workflow or hosting platform to make the change visible to users.",
     ...(deliveryFormatGuidanceEnabled
       ? [
           "Hosting and file delivery are two channels and neither is the default: `okou host` publishes a view the user browses, while `upload-file` hands the user a file they keep. Choose from what the user will do with the result, not from what is easiest to produce.",
-          "Pick the delivery format before authoring, taking the first rule that matches: honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
+          "Choose the delivery format for every artifact based on the user's request, relevant remembered preferences, and intended use. Honor an explicitly requested format; return a file the user sent for editing in its original format; use CSV when another system will import the result; use xlsx when the content is data with calculations, several sheets, or a report read in a spreadsheet; use docx when the content is prose the recipient keeps editing; use PDF when prose is final because it is sent onward, printed, signed, or archived, and attach the docx source with it; publish a hosted HTML view when the result is meant to be browsed, interactive, shared by link, or updated in place; answer in the chat reply itself when the content is short.",
           "Producing docx, xlsx, or PDF requires the `office-files` skill, which carries the toolchain install and the exact command for each format.",
         ]
       : [
@@ -45,13 +47,12 @@ function buildIntegrationToolsPrompt(
   const localFileContextLines = localFileContext.map((line) => {
     return `- ${line}`;
   });
-  return localFileContextLines;
+  return [...localFileContextLines, ...artifactPreviewInstructions()];
 }
 
 /** Feature and browser configuration that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
   readonly walletEnabled: boolean;
-  readonly privateArtifactsEnabled: boolean;
   readonly bankingEnabled: boolean;
   readonly vncEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -68,10 +69,6 @@ export function buildAgentToolsPromptInputs(args: {
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
-    privateArtifactsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.PrivateArtifacts,
-      context,
-    ),
     bankingEnabled: isFeatureEnabled(FeatureSwitchKey.Banking, context),
     walletEnabled: isFeatureEnabled(FeatureSwitchKey.LinkWallet, context),
     vncEnabled: isFeatureEnabled(FeatureSwitchKey.VncAccess, context),
@@ -96,28 +93,13 @@ export function buildAgentToolsPromptInputs(args: {
   };
 }
 
-export function buildAgentToolsPrompt(args: {
-  readonly walletEnabled: boolean;
-  readonly privateArtifactsEnabled: boolean;
-  readonly cloudBrowserEnabled: boolean;
-  readonly browserNativeInputEnabled: boolean;
-  readonly bankingEnabled: boolean;
-  readonly vncEnabled: boolean;
-  readonly larkEnabled: boolean;
-  readonly discordEnabled: boolean;
-  readonly deliveryFormatGuidanceEnabled: boolean;
-  readonly presentationConvertEnabled: boolean;
-}): string {
+export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
   return [
     "# Agent Tools",
     "You have access to the Okou CLI. Run commands with: `okou <command>`.",
     "- Discover available commands: `okou --help`.",
-    ...(args.privateArtifactsEnabled
-      ? [
-          "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
-        ]
-      : []),
+    "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+    "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
     "- SSH: use `okou ssh host list --json` to find hosts, `okou ssh exec` to run commands, `okou ssh session` for persistent sessions, and `okou ssh upload` / `okou ssh download` for files. Read `okou ssh --help` and the relevant subcommand's `--help` before use.",
     "- Current Run usage: use `okou run usage --json` to inspect observed provider-token usage for the currently assigned Run.",
     ...(args.vncEnabled
@@ -178,7 +160,7 @@ export function buildAgentToolsPrompt(args: {
     ...(args.discordEnabled
       ? [
           "- Discord: use `okou discord channel list --help` and `okou discord message history --help` for guild channels and threads shared by the connected user and Okou. `message replies` reads a native thread; a Discord reply reference is not itself a thread. Read one bounded page at a time and continue with `nextBefore`; do not infer unread messages are absent. Ordinary context can be limited by the bot MESSAGE_CONTENT intent.",
-          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Server installation and account linking happen in the authenticated App's Works settings; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
+          "- When explicitly asked to send to Discord, use `okou discord message send --help` with the destination channel or native thread ID. Long text is split without truncation; report partial delivery and already-delivered message links instead of blindly retrying the entire send. These commands require your own verified Discord binding. Connect from the authenticated App's Works settings to choose a server, or use a server's connection link to connect without choosing it again; use `okou discord connect --help` for setup guidance, never collect OAuth codes or provider tokens.",
           "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help` with the destination channel or native thread ID; publication succeeds before delivery; retry with the printed `--operation-id` only when the JSON output reports the delivery as pending or retryable. Use `okou discord download-file --help` with the channel, message, and attachment IDs to read an attachment in a guild channel or thread the connected user and Okou can both access.",
         ]
       : []),
@@ -192,9 +174,10 @@ export function buildAgentToolsPrompt(args: {
     "- Current weather, forecasts, and recent history: use `okou weather --help`.",
     "- Presentation page images: use `okou presentation screenshot --input <deck.ppt|deck.pptx|deck.pdf|page.html|layouts-dir|url> --out <dir>` to render any presentation source to ordered `page-001.png` files at one fixed page size. PPT, PPTX, and PDF are rasterised through LibreOffice and Poppler; HTML pages, layout directories, and URLs are captured through a browser, one image per slide. It only writes local image files: it uploads nothing, publishes nothing, and is unrelated to `okou presentation-template publish`, so it is the right tool whenever page images are the goal, including review and analysis. Prefer it over `pdftoppm`, `soffice`, or hand-driven `agent-browser` screenshot calls, because a screenshot of a page the browser never painted looks like a successful screenshot. Run `okou presentation screenshot --help` for the current interface.",
     "- Static web artifacts can be published with `okou host <dir> --site <slug> [--spa]`; for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help` for details.",
+    PRESENTATION_DELIVERY_INSTRUCTION,
     ...(args.presentationConvertEnabled
       ? [
-          "- Presentation delivery: when the user asks for a presentation and names no delivery format, deliver both the hosted HTML deck and a pptx of it in one reply. `PPT`, `slides`, and `deck` name the artifact, not a format. Convert the finished deck with `okou presentation convert --input <deck.html> --verify`, then send the file with this surface's `upload-file` command.",
+          "- Only after the agent selects PPTX as the delivery format, convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
         ]
       : []),
     "- Third-party services (GitHub, Slack, Notion, 100+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
@@ -207,7 +190,7 @@ export function buildAgentToolsPrompt(args: {
     "- Buy credits: use `okou credit <credits>` only when diagnostics say the current plan can buy credits. It creates a Stripe checkout link for org admins and supports `--auto-recharge`, `--auto-recharge-threshold`, and `--auto-recharge-amount`; non-admins should run `okou doctor credit`.",
     `- Upgrade plan: use \`${PLAN_UPGRADE_CLI_HINT}\` when the current plan blocks a requested capability or cannot buy credits. Return the generated plan link to the user so chat can render the upgrade card.`,
     "- If a connector appears unconnected, unauthenticated, missing auth/token environment names, blocked by firewall, or denied by permission policy, diagnose it with `okou connector check --help` before trying ad hoc fixes.",
-    "- An attached generation template takes precedence. Follow its exact commands and resources directly; do not run `okou generate -h` or list providers unless the template explicitly names type-specific help as a fallback.",
+    "- An attached generation template takes precedence for content, style, and QA. Follow platform instructions for publishing and delivery. Use the template's commands and resources; do not run `okou generate -h` or list providers unless the template names them as a fallback.",
     "- Without an attached generation template, when the user asks to generate anything (supported generation content: built-in image, presentation, website, sprite, and HTML artifacts such as report, poster, docs, dashboard, and mobile app designs, plus connector-backed music, text, code, or document), run `okou generate -h`. Run `okou generate <type>` with no generation input to list every provider available for that type.",
     "- Before executing a generation command, run `okou generate <type> -h` and follow its type-specific input flags. Image accepts `--provider built-in` or `--provider <connector>`; music, text, code, and document require `--provider <connector>` and the returned connector skill guidance; the other types run on Okou without `--provider`.",
     "- If you choose an Okou generation command, wait for it to finish and use its returned artifact.",

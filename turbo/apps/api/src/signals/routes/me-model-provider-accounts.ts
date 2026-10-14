@@ -11,7 +11,7 @@ import { isNotFoundResponse, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { db$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import {
@@ -29,6 +29,10 @@ import {
   personalSubscriptionAccountIdentity,
 } from "../services/personal-subscription-recovery.service";
 import { resetDisconnectedMemberModelSelection } from "../services/member-subscription-models.service";
+
+const resetMemberModelSelection$ = resetDisconnectedMemberModelSelection(
+  organizationAuthContext$,
+);
 
 function managedPersonalAccountCondition(args: {
   readonly id: string;
@@ -203,11 +207,7 @@ const deleteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result) {
     return result;
   }
-  await resetDisconnectedMemberModelSelection(
-    set(writeDb$),
-    auth.orgId,
-    auth.userId,
-  );
+  await set(resetMemberModelSelection$);
   signal.throwIfAborted();
   return { status: 204 as const, body: undefined };
 });

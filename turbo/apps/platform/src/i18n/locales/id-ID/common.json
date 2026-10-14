@@ -637,6 +637,8 @@
       "importedSlides_one": "{{count}} slide",
       "importedSlides_other": "{{count}} slide",
       "importFile": "Impor template",
+      "importImage": "Impor gambar Anda sendiri",
+      "importImageHint": "Simpan sebagai gaya",
       "multiAccent": "Multi-aksen",
       "nextSlide": "Pratinjau slide berikutnya",
       "noMatches": "Tidak ada hasil",
@@ -654,6 +656,7 @@
       "selectWorkflow": "Pilih template alur kerja {{title}}",
       "showVariant": "Tampilkan varian {{variantNumber}}",
       "singleAccent": "Satu aksen",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "pratinjau slide {{title}}",
       "slideThumbnail": "pratinjau slide {{title}} {{slideNumber}}",
       "template": "Template",
@@ -1515,6 +1518,15 @@
       },
       "viewAgentProfile": "Lihat profil agen"
     },
+    "agentSuggestions": {
+      "existingThread": "Percakapan yang ada",
+      "label": "Saran",
+      "loadFailed": "Saran tidak dapat dimuat.",
+      "newThread": "Percakapan baru dengan Okou",
+      "origin": "Dari ringkasan pagimu",
+      "showAll_other": "Lihat semua ({{count}})",
+      "showLess": "Tampilkan lebih sedikit"
+    },
     "attachments": {
       "attach": "Lampirkan",
       "fileTooLarge": "{{filename}} melebihi batas 1 GB",
@@ -1756,6 +1768,7 @@
       "workflows": {
         "empty": "Tidak ada alur kerja yang cocok",
         "loading": "Memuat alur kerja...",
+        "showAll": "Tampilkan semua alur kerja",
         "title": "Alur kerja"
       }
     },
@@ -2045,6 +2058,15 @@
       "retry": "Coba lagi",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
+    },
+    "resources": {
+      "copyLink": "Salin tautan",
+      "empty": "Chat ini belum memiliki artefak atau tautan",
+      "links": "Tautan",
+      "loadFailed": "Tidak dapat memuat sumber daya",
+      "retry": "Coba lagi",
+      "title": "Sumber daya chat",
+      "viewAll": "Lihat semua"
     },
     "run": {
       "collapseWorkHistory": "Ciutkan riwayat kerja",
@@ -2371,6 +2393,7 @@
       "tasks": {
         "image": "Gambar",
         "presentation": "Slide",
+        "suggestions": "Saran",
         "visualization": "Visualisasi",
         "website": "Situs web",
         "workflow": "Alur kerja"
@@ -2797,6 +2820,14 @@
       "transcribing": "Mentranskripsi",
       "transcriptionFailed": "Transkripsi suara gagal. Coba lagi."
     },
+    "walletAction": {
+      "approveButton": "Tinjau",
+      "approveTitle": "Tinjau pembelian",
+      "connectButton": "Izinkan",
+      "connectTitle": "Izinkan dompet Link",
+      "continueButton": "Lanjutkan",
+      "continueTitle": "Lanjutkan di Link"
+    },
     "workflows": {
       "named": "Alur kerja {{title}}",
       "open": "Buka alur kerja {{title}}"
@@ -2959,6 +2990,7 @@
       "genericLabel": "Konektor",
       "githubLabel": "GitHub",
       "invalidUrl": "URL callback konektor tidak valid.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -5282,17 +5314,6 @@
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Hubungkan langganan",
-    "description": "Gunakan langganan ChatGPT atau Claude Anda dengan {{brandName}}.",
-    "dismiss": "Tutup petunjuk langganan",
-    "hint": "Sudah berlangganan ChatGPT atau Claude?",
-    "limits": "Ketersediaan dan batas penggunaan bergantung pada langganan Anda.",
-    "manage": "Kelola langganan AI",
-    "menuConnect": "Hubungkan langganan AI",
-    "menuLoading": "Langganan AI",
-    "title": "Hubungkan langganan Anda"
-  },
   "tailscale": {
     "add": "Tambahkan Tailscale",
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
@@ -5540,9 +5561,17 @@
     },
     "save": "Simpan",
     "saveRecovery": {
+      "deleteHelp": "Tinjau detail tersimpan ini sebelum menghapus. Tindakan ini hanya memilih versi; konfirmasikan penghapusan secara terpisah.",
+      "incompatible": "Metode autentikasi telah berubah. Tutup dialog ini dan buka kembali kredensial untuk mengedit metode saat ini.",
+      "keepChanges": "Pertahankan perubahan saya dengan versi ini",
+      "keepDeletion": "Gunakan versi ini untuk penghapusan",
+      "keepHelp": "Tinjau detail ini, lalu pertahankan draf dan simpan berdasarkan versi ini. Pilihan autentikasi dan kepercayaan Anda akan dipertahankan.",
+      "latest": "Detail yang tersimpan saat ini",
       "resourceIdConflict": "Sumber daya ini tidak dapat dibuat. Tutup dialog ini dan coba lagi.",
       "review": "Konfigurasi telah disegarkan. Tutup dialog ini dan tinjau detail terbaru sebelum mencoba lagi.",
-      "uncertain": "Hasil penyimpanan tidak diketahui. Draf asli Anda dikunci. Coba ulang permintaan yang sama atau tutup dan segarkan untuk memeriksa konfigurasi tersimpan."
+      "unavailable": "Sumber daya ini tidak lagi tersedia. Tutup dialog ini dan muat ulang konfigurasi sebelum mencoba lagi.",
+      "uncertain": "Hasil penyimpanan tidak diketahui. Draf asli Anda dikunci. Coba ulang permintaan yang sama atau tutup dan segarkan untuk memeriksa konfigurasi tersimpan.",
+      "version": "Versi {{version}}"
     },
     "saving": "Menyimpan…",
     "security": {
@@ -6347,29 +6376,29 @@
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
       "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
-      "adminSetup": "Instal Okou ke server Discord Anda, lalu hubungkan akun Anda.",
-      "approvalConfirmed": "Tutup tab ini untuk menyelesaikan koneksi di Works.",
+      "approvalConfirmed": "Tutup tab ini untuk menyelesaikan koneksi di tab awal.",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
-      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi dari kartu ini.",
+      "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
       "authorizing": "Mengotorisasi…",
       "browserConsent": "Selesaikan otorisasi di jendela Discord. Halaman ini akan diperbarui secara otomatis.",
-      "chooseDmServer": "Pilih server",
+      "chooseWorkspace": "Pilih ruang kerja",
+      "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
+      "connectedTitle": "Terhubung ke Discord",
+      "connectingTitle": "Menghubungkan ke Discord",
+      "connectTitle": "Hubungkan ke Discord",
+      "defaultWorkspace": "Ruang kerja default untuk Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
-      "dmServer": "Server default untuk pesan langsung",
-      "install": "Instal ke Discord",
+      "invalidLink": "Tautan koneksi Discord ini tidak valid. Buka tautan baru dari Discord.",
       "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
-      "memberSetup": "Minta admin organisasi menginstal Okou ke server Discord Anda.",
-      "moreOptions": "Opsi Discord lainnya",
-      "pendingConsent": "Tab ini tidak memiliki bukti otorisasi. Tutup dan mulai ulang otorisasi dari tab Works semula.",
+      "open": "Buka Discord",
+      "openInBrowser": "Buka di browser",
+      "pendingConsent": "Tutup tab ini dan mulai ulang koneksi dari tab awal.",
       "popupBlocked": "Izinkan popup untuk mengotorisasi Discord, lalu coba lagi.",
       "retry": "Coba lagi",
       "suspended": "Discord untuk sementara tidak tersedia. Koneksi yang ada tetap disimpan.",
       "title": "Discord",
-      "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini.",
-      "uninstall": "Hapus Discord",
-      "uninstallDescription": "Ini memutuskan koneksi Discord untuk semua orang di organisasi ini. Organisasi lain tetap terhubung.",
-      "uninstallTitle": "Hapus Discord dari organisasi ini?"
+      "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini."
     },
     "documentTitle": "Berfungsi",
     "feishuConnected": "Feishu berhasil terhubung",

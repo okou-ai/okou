@@ -93,7 +93,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          BASE_REF=$(.github/scripts/checks/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
           # Check if the workflow file or ansible playbooks changed
           if git diff --name-only "$BASE_REF" HEAD | grep -qE "^\.github/workflows/(crates|runner-image(-architecture)?)\.yml$|^\.github/actions/(setup-aws-cli|setup-r2-sccache|setup-ssh-tunnel|provision|report-memory-peak)/|^\.github/scripts/|^ansible/"; then
@@ -168,19 +168,19 @@ jobs:
           while IFS= read -r changed_file; do
             case "$changed_file" in
               .github/workflows/crates.yml | \
-              .github/scripts/changed-base-ref.sh | \
+              .github/scripts/checks/changed-base-ref.sh | \
               scripts/crate-changed.sh | \
-              .github/scripts/native-test-environment.sh | \
+              crates/kerberos-worker/tests/native-test-environment.sh | \
               .github/scripts/tests/runner-firewall-contract-workflow-test.sh | \
               docker/toolchain/Dockerfile)
                 native_kerberos_needed=true
                 native_gssapi_peer_needed=true
                 ;;
-              .github/scripts/check-native-kerberos.sh)
+              crates/kerberos-worker/tests/check-native-kerberos.sh)
                 native_kerberos_needed=true
                 ;;
-              .github/scripts/check-native-gssapi-peer.sh | \
-              .github/scripts/prepare-kerberos-peer-fixture.py)
+              crates/rfb-client/tests/check-native-gssapi-peer.sh | \
+              crates/rfb-client/tests/fixtures/prepare-kerberos-peer-fixture.py)
                 native_gssapi_peer_needed=true
                 ;;
             esac
@@ -222,7 +222,7 @@ jobs:
         env:
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           RUNNER_CHANGED: ${{ steps.detect.outputs.runner-changed }}
-        run: .github/scripts/runner-image-context.sh crates-consumer
+        run: .github/scripts/runner/runner-image-context.sh crates-consumer
 
       - name: Select runner job refs
         id: runner-job-ref
@@ -322,11 +322,11 @@ jobs:
           SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
         run: |
           if [ "$RUNNER_CONSUMER_NEEDED" = "true" ]; then
-            PLAN=$(.github/scripts/runner-host-architecture-groups.sh selection-plan "$SELECTION_KEY")
+            PLAN=$(.github/scripts/runner/runner-host-architecture-groups.sh selection-plan "$SELECTION_KEY")
             MATRIX=$(jq -c '.matrix' <<<"$PLAN")
             echo "selected-target=$(jq -r '.selectedTarget' <<<"$PLAN")" >> "$GITHUB_OUTPUT"
           else
-            MATRIX=$(.github/scripts/runner-host-architecture-groups.sh matrix)
+            MATRIX=$(.github/scripts/runner/runner-host-architecture-groups.sh matrix)
           fi
           GROUP_COUNT=$(jq -r 'length' <<<"$MATRIX")
           if [ "$GROUP_COUNT" -lt 1 ]; then
@@ -560,6 +560,8 @@ jobs:
     timeout-minutes: 20
     env:
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
+      # Share the pinned native dependencies produced by the check job.
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
     needs: [detect]
@@ -586,6 +588,16 @@ jobs:
           workspaces: crates -> target
           shared-key: coverage-line-tables-only
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}
 
       - name: Report coverage disk usage after cache restore
         continue-on-error: true
@@ -788,9 +800,30 @@ jobs:
       - name: Sync locked environment
         working-directory: crates/runner/mitm-addon
         run: uv sync --locked
+      - name: Resolve pinned mitmproxy archive
+        id: mitmproxy-archive
+        shell: bash
+        run: |
+          cache_key=$(bash .github/scripts/check-packaged-addon-control.sh --cache-key)
+          printf 'cache-key=%s\n' "$cache_key" >> "$GITHUB_OUTPUT"
+          printf 'archive-path=%s/mitmproxy-archive.tar.gz\n' "$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
+      - name: Restore pinned mitmproxy archive
+        id: mitmproxy-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.mitmproxy-archive.outputs.archive-path }}
+          key: ${{ steps.mitmproxy-archive.outputs.cache-key }}
       - name: Check packaged addon control lifecycle
         shell: bash
+        env:
+          MITMPROXY_CONTROL_TEST_ARCHIVE: ${{ steps.mitmproxy-archive.outputs.archive-path }}
         run: bash .github/scripts/check-packaged-addon-control.sh
+      - name: Save pinned mitmproxy archive
+        if: steps.mitmproxy-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.mitmproxy-archive.outputs.archive-path }}
+          key: ${{ steps.mitmproxy-archive.outputs.cache-key }}
 
   # Exercise the client's real native boundary and protocol peers, not a build
   # of an external VNC server. Optional QEMU tooling is outside routine CI.
@@ -816,7 +849,7 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
-        run: bash .github/scripts/check-native-kerberos.sh --privileged-synthetic
+        run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
       - name: Preserve exact-head native receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -848,7 +881,7 @@ jobs:
         env:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
-        run: bash .github/scripts/check-native-gssapi-peer.sh
+        run: bash crates/rfb-client/tests/check-native-gssapi-peer.sh
       - name: Preserve exact-head independent protocol receipts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -910,13 +943,13 @@ jobs:
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
           JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
         run: |
-          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOSTS=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           NUM_HOSTS=$(printf '%s\n' "$HOSTS" | tr ',' '\n' | grep -c . || true)
           if [ "$NUM_HOSTS" -lt 1 ]; then
             echo "::error::No metal hosts found for runner host group $RUNNER_HOST_GROUP_ID"
             exit 1
           fi
-          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
           echo "host=${HOST}" >> "$GITHUB_OUTPUT"
           echo "Selected $RUNNER_HOST_GROUP_ID metal host: ${HOST} (${NUM_HOSTS} host(s) in group)"
 
@@ -925,7 +958,7 @@ jobs:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           HOST: ${{ steps.selected-host.outputs.host }}
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
-        run: bash .github/scripts/run-nbd-cow-tests.sh
+        run: bash crates/nbd-cow/tests/run-nbd-cow-tests.sh
 
       - name: Report peak memory
         if: always()
@@ -998,8 +1031,8 @@ jobs:
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
           JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
         run: |
-          HOSTS=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
-          HOST=$(.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
+          HOSTS=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          HOST=$(.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS")
           REMOTE="${METAL_USER}@${HOST}"
           REMOTE_BIN="/tmp/runner-rootfs-process-test-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RUNNER_HOST_GROUP_ID}"
           scp "$TEST_BIN" "${REMOTE}:${REMOTE_BIN}"
@@ -1062,7 +1095,7 @@ jobs:
           SELECTION_KEY: ${{ needs.detect.outputs.runner-image-job-ref }}
           EXPECTED_TARGET: ${{ needs.runner-host-groups.outputs.selected-target }}
         run: |
-          CONTEXT=$(.github/scripts/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
+          CONTEXT=$(.github/scripts/runner/runner-host-architecture-groups.sh select-context "$SELECTION_KEY")
           HOST=$(jq -r '.host' <<<"$CONTEXT")
           GROUP_ID=$(jq -r '.groupId' <<<"$CONTEXT")
           TARGET=$(jq -r '.target' <<<"$CONTEXT")
@@ -1090,11 +1123,11 @@ jobs:
           SELECTED_HOST: ${{ steps.selected-host.outputs.host }}
           TARGET: ${{ steps.selected-host.outputs.target }}
           PROFILE: vm0/default
-        run: .github/scripts/wait-runner-image.sh
+        run: .github/scripts/runner/wait-runner-image.sh
 
-  # Balance by recent step medians: lanes A-D are about 139s, 138s, 151s, and
-  # 138s before per-job overhead. The bounded balloon scenario stays in lane A
-  # and caps deliberate Guest pressure allocation at 512 MiB.
+  # Keep containment alone; run the shorter cancel and systemd reload scenarios
+  # after exec to balance the parallel lanes. The bounded balloon scenario stays
+  # in lane A and caps deliberate Guest pressure allocation at 512 MiB.
   runner-behavior-lane-a:
     runs-on: ubuntu-latest
     needs: [runner-test-prepare]
@@ -1122,13 +1155,13 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-balloon.sh
+        run: crates/runner/tests/behavior/runner-behavior-balloon.sh
 
       - name: Test home cache promotion across runner restart
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-home-cache-promotion.sh
+        run: crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh
 
   runner-behavior-lane-b:
     runs-on: ubuntu-latest
@@ -1157,7 +1190,19 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-exec.sh
+        run: crates/runner/tests/behavior/runner-behavior-exec.sh
+
+      - name: Test runner local cancel
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: crates/runner/tests/behavior/runner-behavior-cancel.sh
+
+      - name: Test systemd reload coordination
+        timeout-minutes: 5
+        env:
+          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
+        run: crates/runner/tests/behavior/runner-behavior-systemd-reload.sh
 
   runner-behavior-lane-c:
     runs-on: ubuntu-latest
@@ -1186,19 +1231,13 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-process-containment.sh
+        run: crates/runner/tests/behavior/runner-behavior-process-containment.sh
 
-      - name: Test runner local cancel
+      - name: Measure Guest Agent ready boundary
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-cancel.sh
-
-      - name: Test systemd reload coordination
-        timeout-minutes: 5
-        env:
-          OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-systemd-reload.sh
+        run: crates/runner/tests/behavior/runner-behavior-agent-ready.sh
 
   runner-behavior-lane-d:
     runs-on: ubuntu-latest
@@ -1227,19 +1266,19 @@ jobs:
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-drain-resume.sh
+        run: crates/runner/tests/behavior/runner-behavior-drain-resume.sh
 
       - name: Test sandbox keep-alive across conversation turns
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-keep-alive.sh
+        run: crates/runner/tests/behavior/runner-behavior-keep-alive.sh
 
       - name: Run upgrade test
         timeout-minutes: 5
         env:
           OFFICIAL_RUNNER_SECRET: ${{ secrets.OFFICIAL_RUNNER_SECRET }}
-        run: .github/scripts/runner-behavior-upgrade-local.sh
+        run: crates/runner/tests/behavior/runner-behavior-upgrade-local.sh
 
   # Compilation only needs the selected target; overlap it with image preparation.
   host-cpu-fairness-build:
@@ -1264,6 +1303,7 @@ jobs:
     outputs:
       producer-attempt: ${{ steps.build.outputs.producer-attempt }}
     env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
       TEST_NAME: host_cpu_fairness
       ARTIFACT_DIR: native-test-artifact
@@ -1277,9 +1317,19 @@ jobs:
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+
       - name: Cross-compile host CPU fairness test
         id: build
-        run: bash .github/scripts/runner-native-test-artifact.sh build
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh build
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -1291,7 +1341,7 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh publish
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
 
       - name: Report peak memory
         if: always()
@@ -1339,10 +1389,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh download
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh download
 
       - name: Validate native test
-        run: bash .github/scripts/runner-native-test-artifact.sh validate
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -1354,7 +1404,7 @@ jobs:
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
       - name: Verify weighted host CPU service with real Firecracker Guests
-        run: .github/scripts/runner-behavior-host-cpu-fairness.sh
+        run: crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh
 
   guest-rpc-firecracker-build:
     runs-on: ubuntu-latest
@@ -1369,6 +1419,7 @@ jobs:
     outputs:
       producer-attempt: ${{ steps.build.outputs.producer-attempt }}
     env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       TARGET_TRIPLE: ${{ needs.runner-host-groups.outputs.selected-target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
@@ -1382,9 +1433,19 @@ jobs:
           shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-guest-rpc
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+
       - name: Cross-compile native Guest RPC and duplex test
         id: build
-        run: bash .github/scripts/runner-native-test-artifact.sh build
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh build
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -1396,7 +1457,14 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh publish
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
+
+      - name: Save pinned Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
 
       - name: Report peak memory
         if: always()
@@ -1435,10 +1503,10 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
-        run: bash .github/scripts/runner-native-test-artifact.sh download
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh download
 
       - name: Validate native test
-        run: bash .github/scripts/runner-native-test-artifact.sh validate
+        run: bash .github/scripts/runner/runner-native-test-artifact.sh validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -1450,7 +1518,7 @@ jobs:
           cf-access-client-secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
 
       - name: Verify packaged RPC and duplex over fresh and restored Firecracker
-        run: bash .github/scripts/runner-behavior-guest-rpc.sh
+        run: bash crates/sandbox-firecracker/tests/native/runner-behavior-guest-rpc.sh
 
   ci-gate-crates:
     runs-on: ubuntu-latest

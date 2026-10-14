@@ -1,6 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { http, HttpResponse } from "msw";
-import { server } from "../../../mocks/server";
 import { generateCommand } from "../index";
 
 const variants = [
@@ -14,12 +12,8 @@ const variants = [
   ["presentation", ["--template", "html-ppt-playful-launch"]],
 ] as const;
 
-describe("artifact preview rollout in generation instructions", () => {
+describe("artifact cover guidance in generation instructions", () => {
   const logs = vi.spyOn(console, "log").mockImplementation(() => {});
-  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
-  vi.spyOn(process, "exit").mockImplementation(() => {
-    throw new Error("process.exit");
-  });
 
   beforeEach(() => {
     vi.stubEnv("OKOU_TOKEN", "test-token");
@@ -32,67 +26,26 @@ describe("artifact preview rollout in generation instructions", () => {
   });
   afterEach(() => {
     logs.mockClear();
-    errors.mockClear();
     vi.unstubAllEnvs();
   });
 
   it.each(variants)(
-    "gates %s capture and publish instructions together (%j)",
+    "includes %s capture and publish instructions (%j)",
     async (kind, args) => {
-      for (const enabled of [false, true, false]) {
-        server.use(
-          http.get("*/api/feature-switches", () => {
-            return HttpResponse.json({
-              switches: { artifactPreviews: enabled },
-              effectiveSwitches: { artifactPreviews: enabled },
-            });
-          }),
-        );
-        logs.mockClear();
-        await generateCommand.parseAsync([
-          "node",
-          "okou",
-          kind,
-          "--prompt",
-          "Quarterly plan",
-          ...args,
-        ]);
-        const output = logs.mock.calls.flat().join("\n");
-        expect(output.includes("okou host screenshot")).toBe(enabled);
-        expect(output.includes(" --preview ")).toBe(enabled);
-        expect(output).toContain("okou host ");
-      }
-    },
-  );
-
-  it("surfaces availability failures instead of silently selecting a rollout", async () => {
-    server.use(
-      http.get("*/api/feature-switches", () => {
-        return HttpResponse.json(
-          {
-            error: {
-              code: "UNAVAILABLE",
-              message: "Feature state unavailable",
-            },
-          },
-          { status: 500 },
-        );
-      }),
-    );
-    await expect(
-      generateCommand.parseAsync([
+      await generateCommand.parseAsync([
         "node",
         "okou",
-        "website",
+        kind,
         "--prompt",
         "Quarterly plan",
-      ]),
-    ).rejects.toThrow("process.exit");
-    expect(errors.mock.calls.flat().join("\n")).toContain(
-      "Feature state unavailable",
-    );
-    expect(logs.mock.calls.flat().join("\n")).not.toContain(
-      "okou host screenshot",
-    );
-  });
+        ...args,
+      ]);
+      const output = logs.mock.calls.flat().join("\n");
+      expect(output).toContain("okou host screenshot");
+      expect(output).toContain(" --preview ");
+      expect(output).toContain("previewImageUrl");
+      expect(output).toContain("file-only deliverable");
+      expect(output).toContain("okou host ");
+    },
+  );
 });

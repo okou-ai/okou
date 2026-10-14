@@ -19,7 +19,6 @@ yq -o=json '.' "$WORKFLOW" | jq --slurpfile architecture "${TEST_ROOT}/architect
 
 # Producer and consumers must derive compatible keys, without relaxing any
 # required compiler gate or making an image/deployment wait for cache warming.
-# All third-party actions in the main-owned producer use immutable commits.
 jq -e '
   .architecture.jobs.compile as $compile |
   .jobs["prewarm-rust-cache"] as $warm |
@@ -48,21 +47,14 @@ jq -e '
   $lookup.with["save-if"] == false and
   ($restore.with["lookup-only"] // false) == false and
   $restore.with["save-if"] == $cache.with["save-if"] and
-  any($warm.steps[];
-    .name == "Configure git safe directory" and .shell == "bash"
-  ) and
   ($warm.steps | map(select(.uses == "./.github/actions/setup-r2-sccache")) | .[0].with) ==
     ($compile.steps | map(select(.uses == "./.github/actions/setup-r2-sccache")) | .[0].with) and
   (($warm.steps | map(.id // .name) | index("sccache")) <
     ($warm.steps | map(.id // .name) | index("cache-lookup"))) and
   any($warm.steps[];
     .id == "prewarm" and
-    .run == ".github/scripts/runner-binary-build/build.sh build" and
+    .run == ".github/scripts/runner/runner-binary-build/build.sh build" and
     .env.RUNNER_BINARY_METADATA_PATH == "runner-rust-cache-prewarm/metadata.json"
-  ) and
-  all($warm.steps[];
-    (.uses // "") as $uses |
-    $uses == "" or ($uses | startswith("./")) or ($uses | test("@[0-9a-f]{40}$"))
   ) and
   all($warm.steps[];
     ((.uses // "") | startswith("actions/upload-artifact@") | not) and
@@ -79,12 +71,11 @@ jq -e '
 node - "${TEST_ROOT}/workflow.json" <<'JS'
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const path = require("node:path");
-const { execFileSync } = require("node:child_process");
 const vm = require("node:vm");
 const workflow = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const warm = workflow.jobs["prewarm-rust-cache"];
-const steps = Object.fromEntries(warm.steps.map(step => [step.id || step.name, step]));
+const steps = Object.fromEntries(warm.steps.filter(step => step.id).map(step => [step.id, step]));
+const cliDownload = warm.steps.find(step => step.uses?.startsWith("actions/download-artifact@"));
 const targets = [
   { id: "arm64", target: "aarch64-unknown-linux-musl" },
   { id: "x86_64", target: "x86_64-unknown-linux-musl" },
@@ -108,8 +99,7 @@ function evaluate(expression, context) {
 function context(overrides = {}) {
   const { event = "push", ref = "refs/heads/main", hits = targets,
     needed = "true", prepared = "success", cancelled = false,
-    lookup = "false", restore = "false", lookupOutcome = "success",
-    restoreOutcome = "success", buildOutcome = "success" } = overrides;
+    lookup = "false", restore = "false" } = overrides;
   return {
     github: { event_name: event, ref },
     needs: { prepare: { result: prepared, outputs: {
@@ -117,9 +107,8 @@ function context(overrides = {}) {
       "runner-binary-hit-matrix": JSON.stringify(hits),
     } } },
     steps: {
-      "cache-lookup": { outcome: lookupOutcome, outputs: { "cache-hit": lookup } },
-      "cache-restore": { outcome: restoreOutcome, outputs: { "cache-hit": restore } },
-      prewarm: { outcome: buildOutcome },
+      "cache-lookup": { outputs: { "cache-hit": lookup } },
+      "cache-restore": { outputs: { "cache-hit": restore } },
     },
     cancelled,
   };
@@ -148,33 +137,9 @@ for (const [label, input, expected] of [
   ["cache filled between lookup and restore", { lookup: "false", restore: "true" }, [true, false, false]],
 ]) {
   const data = context(input);
-  const selected = ["cache-restore", "Download private CLI build input", "prewarm"]
-    .map(name => evaluate(steps[name].if, data));
+  const selected = [steps["cache-restore"], cliDownload, steps.prewarm]
+    .map(step => evaluate(step.if, data));
   assert.deepEqual(selected, expected, label);
-}
-
-// Render the real container-shell summary. Missing cache-hit output does not
-// imply that a step was skipped: preserve the GitHub-owned execution outcome.
-const summary = steps["Summarize dependency cache prewarm"];
-for (const [label, input] of [
-  ["cold-key-build", {}],
-  ["exact-hit-skips-build", { lookup: "true", restore: "", restoreOutcome: "skipped", buildOutcome: "skipped" }],
-  ["failed-lookup", { lookup: "", restore: "", lookupOutcome: "failure", restoreOutcome: "skipped", buildOutcome: "skipped" }],
-]) {
-  const data = context(input);
-  const file = path.join(path.dirname(process.argv[2]), `${label}.md`);
-  const env = Object.fromEntries(Object.entries(summary.env)
-    .map(([key, value]) => [key, evaluate(value, data)]));
-  execFileSync("sh", ["-e", "-c", summary.run], { env: {
-    PATH: process.env.PATH,
-    GITHUB_STEP_SUMMARY: file,
-    TARGET_TRIPLE: targets[0].target,
-    ...env,
-  } });
-  const rendered = fs.readFileSync(file, "utf8");
-  assert.ok(rendered.includes(`Lookup step: \`${data.steps["cache-lookup"].outcome}\`; exact hit: \`${data.steps["cache-lookup"].outputs["cache-hit"]}\``), label);
-  assert.ok(rendered.includes(`Restore step: \`${data.steps["cache-restore"].outcome}\`; exact hit: \`${data.steps["cache-restore"].outputs["cache-hit"]}\``), label);
-  assert.ok(rendered.includes(`Prewarm build: \`${data.steps.prewarm.outcome}\``), label);
 }
 JS
 

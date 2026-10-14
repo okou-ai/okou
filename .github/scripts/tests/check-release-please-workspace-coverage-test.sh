@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CHECK_COVERAGE="${SCRIPT_DIR}/check-release-please-workspace-coverage.sh"
-CHECK_CYCLES="${SCRIPT_DIR}/check-rust-workspace-cycles.py"
+CHECK_COVERAGE="${SCRIPT_DIR}/checks/check-release-please-workspace-coverage.sh"
+CHECK_CYCLES="${SCRIPT_DIR}/checks/check-rust-workspace-cycles.py"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 

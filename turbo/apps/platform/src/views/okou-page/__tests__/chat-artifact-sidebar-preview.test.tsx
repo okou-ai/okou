@@ -82,6 +82,7 @@ test("Sent user attachments open in the sidebar and retain their private sharing
   const url = "https://files.example.test/upload.txt";
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       publicUrl: null,
       expiresAt: "2099-01-01T00:00:00.000Z",

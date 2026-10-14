@@ -1,4 +1,5 @@
 // Okou CLI entry point - standalone binary for Okou platform commands
+// (no-op CLI release marker refreshed for production delivery on 2026-10-14)
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
@@ -92,12 +93,20 @@ const COMMAND_CAPABILITY_MAP: Record<
   finance: "finance:read",
   seo: "seo:read",
   banking: "banking:read",
+  suggestion: ["suggestion:read", "suggestion:write"],
   wallet: "wallet:write",
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run", "suggestion"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
+  {
+    name: "suggestion",
+    description: "Manage actionable next-step suggestions from Okou",
+    load: async () => {
+      return (await import("./commands/suggestion/index")).suggestionCommand;
+    },
+  },
   {
     name: "notify",
     description: "Send notifications to yourself through Okou",

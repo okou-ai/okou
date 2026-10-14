@@ -195,6 +195,7 @@ function runOutputInputForCompletion(
   }
   return {
     auth: input.auth,
+    recovery: input.body.exitCode !== 0,
     body: {
       ...completion,
       runId: input.body.runId,

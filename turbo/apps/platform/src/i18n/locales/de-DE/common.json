@@ -638,6 +638,8 @@
       "importedSlides_one": "{{count}} Folie",
       "importedSlides_other": "{{count}} Folien",
       "importFile": "Vorlage importieren",
+      "importImage": "Eigenes Bild importieren",
+      "importImageHint": "Als Stil speichern",
       "multiAccent": "Multi-Akzent",
       "nextSlide": "Vorschau der nächsten Folie",
       "noMatches": "Keine Übereinstimmungen",
@@ -655,6 +657,7 @@
       "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
       "showVariant": "Variante {{variantNumber}} anzeigen",
       "singleAccent": "Einzelakzent",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} Folienvorschau",
       "slideThumbnail": "{{title}} Folie {{slideNumber}} Vorschau",
       "template": "Vorlage",
@@ -1516,6 +1519,16 @@
       },
       "viewAgentProfile": "Agentenprofil anzeigen"
     },
+    "agentSuggestions": {
+      "existingThread": "Bestehende Unterhaltung",
+      "label": "Vorschläge",
+      "loadFailed": "Vorschläge konnten nicht geladen werden.",
+      "newThread": "Neue Unterhaltung mit Okou",
+      "origin": "Aus deinem Morgenbriefing",
+      "showAll_one": "Alle {{count}} anzeigen",
+      "showAll_other": "Alle {{count}} anzeigen",
+      "showLess": "Weniger anzeigen"
+    },
     "attachments": {
       "attach": "Anhängen",
       "fileTooLarge": "{{filename}} überschreitet die 1-GB-Grenze",
@@ -1759,6 +1772,7 @@
       "workflows": {
         "empty": "Keine passenden Workflows",
         "loading": "Workflows werden geladen...",
+        "showAll": "Alle Workflows anzeigen",
         "title": "Workflows"
       }
     },
@@ -2053,6 +2067,15 @@
       "retry": "Erneut versuchen",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
+    },
+    "resources": {
+      "copyLink": "Link kopieren",
+      "empty": "Dieser Chat enthält noch keine Artefakte oder Links",
+      "links": "Links",
+      "loadFailed": "Ressourcen konnten nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "title": "Chat-Ressourcen",
+      "viewAll": "Alle anzeigen"
     },
     "run": {
       "collapseWorkHistory": "Arbeitsverlauf einklappen",
@@ -2382,6 +2405,7 @@
       "tasks": {
         "image": "Bild",
         "presentation": "Folien",
+        "suggestions": "Vorschläge",
         "visualization": "Visualisierung",
         "website": "Website",
         "workflow": "Workflow"
@@ -2808,6 +2832,14 @@
       "transcribing": "Transkribieren",
       "transcriptionFailed": "Die Sprachtranskription ist fehlgeschlagen. Versuchen Sie es erneut."
     },
+    "walletAction": {
+      "approveButton": "Prüfen",
+      "approveTitle": "Kauf prüfen",
+      "connectButton": "Autorisieren",
+      "connectTitle": "Link-Wallet autorisieren",
+      "continueButton": "Weiter",
+      "continueTitle": "Weiter in Link"
+    },
     "workflows": {
       "named": "Workflow {{title}}",
       "open": "Workflow öffnen {{title}}"
@@ -2978,6 +3010,7 @@
       "genericLabel": "Integration",
       "githubLabel": "GitHub",
       "invalidUrl": "Ungültige Integration-Rückruf-URL.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -5306,17 +5339,6 @@
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"
   },
-  "subscriptionLinking": {
-    "connect": "Abo verbinden",
-    "description": "Nutze dein bestehendes ChatGPT- oder Claude-Abo mit {{brandName}}.",
-    "dismiss": "Abo-Hinweis schließen",
-    "hint": "Schon ein ChatGPT- oder Claude-Abo?",
-    "limits": "Verfügbarkeit und Nutzungslimits hängen von deinem Abo ab.",
-    "manage": "KI-Abos verwalten",
-    "menuConnect": "KI-Abo verbinden",
-    "menuLoading": "KI-Abos",
-    "title": "Dein Abo verbinden"
-  },
   "tailscale": {
     "add": "Tailscale hinzufügen",
     "addressHelp": "Verwende die IP, den vollständigen Hostnamen oder Kurznamen eines registrierten Tailnet-Peers. SSH-Anmeldung und Hostschlüsselprüfung bleiben erforderlich.",
@@ -5566,9 +5588,17 @@
     },
     "save": "Speichern",
     "saveRecovery": {
+      "deleteHelp": "Prüfe diese gespeicherten Angaben vor dem Löschen. Diese Aktion wählt nur die Version aus; bestätige das Löschen anschließend separat.",
+      "incompatible": "Die Authentifizierungsmethode wurde geändert. Schließe diesen Dialog und öffne die Zugangsdaten erneut, um die aktuelle Methode zu bearbeiten.",
+      "keepChanges": "Meine Änderungen mit dieser Version behalten",
+      "keepDeletion": "Diese Version zum Löschen verwenden",
+      "keepHelp": "Prüfe diese Angaben, behalte dann deinen Entwurf und speichere ihn auf Basis dieser Version. Deine Authentifizierungs- und Vertrauenseinstellungen bleiben erhalten.",
+      "latest": "Aktuell gespeicherte Angaben",
       "resourceIdConflict": "Diese Ressource konnte nicht erstellt werden. Schließe diesen Dialog und versuche es erneut.",
       "review": "Die Konfiguration wurde aktualisiert. Schließe diesen Dialog und prüfe die aktuellen Angaben, bevor du es erneut versuchst.",
-      "uncertain": "Das Ergebnis des Speicherns ist unbekannt. Dein ursprünglicher Entwurf ist gesperrt. Wiederhole dieselbe Anfrage oder schließe den Dialog und aktualisiere die Ansicht, um die gespeicherte Konfiguration zu prüfen."
+      "unavailable": "Diese Ressource ist nicht mehr verfügbar. Schließe diesen Dialog und aktualisiere die Konfiguration, bevor du es erneut versuchst.",
+      "uncertain": "Das Ergebnis des Speicherns ist unbekannt. Dein ursprünglicher Entwurf ist gesperrt. Wiederhole dieselbe Anfrage oder schließe den Dialog und aktualisiere die Ansicht, um die gespeicherte Konfiguration zu prüfen.",
+      "version": "Version {{version}}"
     },
     "saving": "Wird gespeichert…",
     "security": {
@@ -6373,29 +6403,29 @@
     "connectedWithDetail": "Verbunden ({{detail}})",
     "discord": {
       "accountSetup": "Verbinden Sie Ihr Discord-Konto über die offizielle Zustimmung im Browser.",
-      "adminSetup": "Installieren Sie Okou auf Ihrem Discord-Server und verbinden Sie dann Ihr Konto.",
-      "approvalConfirmed": "Schließe diesen Tab, um die Verbindung in Works abzuschließen.",
+      "approvalConfirmed": "Schließe diesen Tab, um die Verbindung im ursprünglichen Tab abzuschließen.",
       "approvalFailed": "Bestätigung fehlgeschlagen. Melden Sie sich mit dem ursprünglichen Okou-Konto und der Organisation an oder starten Sie die Autorisierung erneut.",
-      "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuchen Sie es über diese Karte erneut.",
+      "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden. Versuche es erneut.",
       "authorizing": "Autorisierung läuft…",
       "browserConsent": "Schließe die Autorisierung im Discord-Fenster ab. Diese Seite wird automatisch aktualisiert.",
-      "chooseDmServer": "Server auswählen",
+      "chooseWorkspace": "Workspace auswählen",
+      "connectDescription": "Verbinde dein Discord-Konto, um mit deinem Agenten zu chatten.",
+      "connectedTitle": "Mit Discord verbunden",
+      "connectingTitle": "Verbindung mit Discord wird hergestellt",
+      "connectTitle": "Mit Discord verbinden",
+      "defaultWorkspace": "Standard-Workspace für Discord",
       "description": "Erwähnen Sie Okou auf einem Server oder senden Sie dem Bot eine Direktnachricht.",
       "disconnect": "Verbindung zu Discord trennen",
-      "dmServer": "Standardserver für Direktnachrichten",
-      "install": "Auf Discord installieren",
+      "invalidLink": "Dieser Discord-Verbindungslink ist ungültig. Öffne einen neuen Link in Discord.",
       "limitedContext": "Begrenzter Kontext: Okou empfängt möglicherweise keine normalen Kanalnachrichten. Erwähnen Sie Okou und geben Sie die benötigten Details an.",
-      "memberSetup": "Bitten Sie einen Organisationsadministrator, Okou auf Ihrem Discord-Server zu installieren.",
-      "moreOptions": "Weitere Discord-Optionen",
-      "pendingConsent": "Dieser Tab hat keinen Autorisierungsnachweis. Schließen Sie ihn und starten Sie die Autorisierung im ursprünglichen Works-Tab erneut.",
+      "open": "Discord öffnen",
+      "openInBrowser": "Im Browser öffnen",
+      "pendingConsent": "Schließe diesen Tab und starte die Verbindung im ursprünglichen Tab erneut.",
       "popupBlocked": "Erlauben Sie Pop-ups für die Discord-Autorisierung und versuchen Sie es erneut.",
       "retry": "Erneut versuchen",
       "suspended": "Discord ist vorübergehend nicht verfügbar. Bestehende Verbindungen bleiben erhalten.",
       "title": "Discord",
-      "unconfigured": "Discord ist für diese Organisation noch nicht eingerichtet.",
-      "uninstall": "Discord entfernen",
-      "uninstallDescription": "Dadurch wird die Discord-Verbindung für alle in dieser Organisation getrennt. Die Verbindungen anderer Organisationen bleiben bestehen.",
-      "uninstallTitle": "Discord aus dieser Organisation entfernen?"
+      "unconfigured": "Discord ist für diese Organisation noch nicht eingerichtet."
     },
     "documentTitle": "Funktioniert",
     "feishuConnected": "Feishu hat erfolgreich eine Verbindung hergestellt",

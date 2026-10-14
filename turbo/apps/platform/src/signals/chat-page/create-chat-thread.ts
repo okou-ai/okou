@@ -33,6 +33,7 @@ import {
   type State,
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
+import { createChatResourceSignals } from "./chat-resources.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,
@@ -1587,6 +1588,12 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(bankingCardSignals.register$, descriptor.descriptor),
+          };
+        }
+        case "wallet-action": {
+          return {
+            kind: descriptor.type,
+            descriptor: descriptor.descriptor,
           };
         }
         case "browser-user-action": {
@@ -3902,6 +3909,11 @@ export function createChatPanelSignals(
     sharing,
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
+    resources: createChatResourceSignals(
+      messagePipeline.allChatGroups$,
+      artifact.artifacts$,
+      messagePipeline.initialEventsReady$,
+    ),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

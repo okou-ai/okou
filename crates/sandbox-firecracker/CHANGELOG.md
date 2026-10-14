@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.48.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.1...sandbox-firecracker-v0.48.2) (2026-10-14)
+
+## [0.48.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.0...sandbox-firecracker-v0.48.1) (2026-10-14)
+
+## [0.48.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.14...sandbox-firecracker-v0.48.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+## [0.47.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.13...sandbox-firecracker-v0.47.14) (2026-10-13)
+
+## [0.47.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.12...sandbox-firecracker-v0.47.13) (2026-10-13)
+
+## [0.47.12](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.11...sandbox-firecracker-v0.47.12) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
+## [0.47.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.10...sandbox-firecracker-v0.47.11) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.47.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.9...sandbox-firecracker-v0.47.10) (2026-10-13)
+
+## [0.47.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.8...sandbox-firecracker-v0.47.9) (2026-10-13)
+
+## [0.47.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.7...sandbox-firecracker-v0.47.8) (2026-10-13)
+
 ## [0.47.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.6...sandbox-firecracker-v0.47.7) (2026-10-12)
 
 ## [0.47.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.5...sandbox-firecracker-v0.47.6) (2026-10-12)

@@ -1,11 +1,9 @@
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -23,17 +21,6 @@ const fixture = createChatEventsFixture(context);
 async function claimedUpload(options: { readonly stage?: boolean } = {}) {
   const actor = bdd.user();
   createRouteMocks(context).clerk.session(actor.userId, actor.orgId);
-  const features = setupApp({
-    context,
-    routes: featureSwitchesRoutes,
-  })(featureSwitchesContract);
-  await accept(
-    features.update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: { switches: { privateArtifacts: false } },
-    }),
-    [200],
-  );
   const owner = await fixture.entitledNativeChatActor(actor);
   const run = await fixture.sendChatRun(actor, {
     agentId: owner.agentId,
@@ -44,11 +31,13 @@ async function claimedUpload(options: { readonly stage?: boolean } = {}) {
     run.runId,
   );
   const bearer = `Bearer ${okouTokenFromClaim(claim)}`;
+  // Public organization-less uploads may later be attached to a run.
+  createRouteMocks(context).clerk.session(actor.userId, null);
   const prepared = await accept(
     setupApp({ context, routes: uploadsPrepareRoutes })(
       uploadsContract,
     ).prepare({
-      headers: { authorization: bearer },
+      headers: { authorization: "Bearer clerk-session" },
       body: {
         filename: "report.txt",
         contentType: "text/plain",

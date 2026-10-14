@@ -1,5 +1,6 @@
 //! Mandatory physical coverage around deterministic full-profile substitution.
 
+use runner_lifecycle::idle_pool::{AcceptedActivationCleanup, ActivationCleanupOutcome};
 use runner_lifecycle::status::StatusPersistenceError;
 
 use super::*;
@@ -105,7 +106,7 @@ pub async fn select_idle_entries_for_guarded_pressure(
             }
         };
         retirements.push(tracker.adopt_pool_substitution(
-            started.task,
+            started.cleanup,
             token,
             request.selection.context,
         ));
@@ -150,22 +151,40 @@ pub async fn select_idle_entries_for_guarded_pressure(
 impl IdleDestroyTracker {
     pub(crate) fn adopt_pool_substitution(
         &self,
-        task: runner_lifecycle::host_memory_operations::MemoryOperationTask<IdleDestroyResult>,
+        accepted: AcceptedActivationCleanup,
         token: tokio_util::task::task_tracker::TaskTrackerToken,
         context: &'static str,
     ) -> GuardedLogicalCleanupTask {
+        let (task, retained) = self.retain_activation_cleanup(accepted);
+        let owners = self.activation_owners.clone();
         let notify = self.reuse_state_notify.clone();
         self.track(
             async move {
                 let _token = token;
-                let result = task.join().await;
-                if result
-                    .as_ref()
-                    .is_ok_and(|result| result.home_cache_promoted)
-                {
-                    notify.notify_one();
-                }
-                result
+                let outcome = task.join().await?;
+                let result = match outcome {
+                    ActivationCleanupOutcome::Completed {
+                        home_cache_promoted,
+                    } => {
+                        retained.release_completed_substitution()?;
+                        if home_cache_promoted {
+                            notify.notify_one();
+                        }
+                        IdleDestroyResult {
+                            outcome: DestroyOutcome::Completed,
+                            home_cache_promoted,
+                        }
+                    }
+                    ActivationCleanupOutcome::NoProgress(_) => IdleDestroyResult {
+                        outcome: DestroyOutcome::Uncertain,
+                        home_cache_promoted: false,
+                    },
+                };
+                owners
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .retain(RetainedActivationCleanup::needs_retention);
+                Ok(result)
             },
             context,
         )

@@ -27,7 +27,7 @@ import {
 } from "../external/slack-file-fetcher";
 import type { SlackView } from "../external/slack-block-kit";
 import { createSlackClient } from "../external/slack-message-client";
-import { writeDb$, type Db } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import { decryptPersistentSecretValue } from "../services/crypto.utils";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
@@ -198,13 +198,13 @@ const uninstallSlackIntegration$ = command(
   async (
     { get, set },
     args: {
-      readonly db: Db;
       readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
   ) => {
-    const [installation] = await args.db
+    const db = set(writeDb$);
+    const [installation] = await db
       .select()
       .from(slackOrgInstallations)
       .where(eq(slackOrgInstallations.orgId, args.orgId))
@@ -219,7 +219,7 @@ const uninstallSlackIntegration$ = command(
       );
     }
 
-    const connections = await args.db
+    const connections = await db
       .select({
         slackUserId: slackOrgConnections.slackUserId,
         userId: slackOrgConnections.userId,
@@ -249,14 +249,14 @@ const uninstallSlackIntegration$ = command(
       signal.throwIfAborted();
     }
 
-    await args.db
+    await db
       .delete(slackOrgConnections)
       .where(
         eq(slackOrgConnections.slackWorkspaceId, installation.slackWorkspaceId),
       );
     signal.throwIfAborted();
 
-    await args.db
+    await db
       .delete(slackOrgInstallations)
       .where(
         eq(
@@ -292,15 +292,15 @@ const uninstallSlackIntegration$ = command(
 
 const disconnectSlackIntegration$ = command(
   async (
-    { get },
+    { get, set },
     args: {
-      readonly db: Db;
       readonly orgId: string;
       readonly userId: string;
     },
     signal: AbortSignal,
   ) => {
-    const [installation] = await args.db
+    const db = set(writeDb$);
+    const [installation] = await db
       .select()
       .from(slackOrgInstallations)
       .where(eq(slackOrgInstallations.orgId, args.orgId))
@@ -315,7 +315,7 @@ const disconnectSlackIntegration$ = command(
       );
     }
 
-    const [connection] = await args.db
+    const [connection] = await db
       .select({
         id: slackOrgConnections.id,
         slackUserId: slackOrgConnections.slackUserId,
@@ -341,7 +341,7 @@ const disconnectSlackIntegration$ = command(
       );
     }
 
-    await args.db
+    await db
       .delete(slackOrgConnections)
       .where(eq(slackOrgConnections.id, connection.id));
     signal.throwIfAborted();
@@ -377,7 +377,8 @@ const deleteSlackIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(deleteSlackIntegrationQuery$);
-    const db = set(writeDb$);
+    // Preserve initialization and error ordering before the admin check.
+    set(writeDb$);
 
     if (query.action === "uninstall") {
       if (auth.orgRole !== "admin") {
@@ -386,14 +387,14 @@ const deleteSlackIntegration$ = command(
 
       return await set(
         uninstallSlackIntegration$,
-        { db, orgId: auth.orgId, userId: auth.userId },
+        { orgId: auth.orgId, userId: auth.userId },
         signal,
       );
     }
 
     return await set(
       disconnectSlackIntegration$,
-      { db, orgId: auth.orgId, userId: auth.userId },
+      { orgId: auth.orgId, userId: auth.userId },
       signal,
     );
   },
@@ -469,8 +470,23 @@ function slackFileFetchErrorResponse(error: unknown): Response | null {
   return null;
 }
 
+const slackDownloadInstallationInput$ = computed(
+  (
+    get,
+  ): {
+    readonly orgId: string;
+    readonly userId: string;
+  } => {
+    const auth = get(organizationAuthContext$);
+    return { orgId: auth.orgId, userId: auth.userId };
+  },
+);
+const slackDownloadInstallation$ = slackOrgInstallation(
+  slackDownloadInstallationInput$,
+);
+
 const getSlackDownloadFileInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
+  get(organizationAuthContext$);
   const query = get(queryOf(integrationsSlackDownloadFileContract.download));
   const fileId = query.file_id;
 
@@ -482,9 +498,7 @@ const getSlackDownloadFileInner$ = computed(async (get) => {
     );
   }
 
-  const installation = await get(
-    slackOrgInstallation({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  const installation = await get(slackDownloadInstallation$);
   if (!installation) {
     return jsonErrorResponse(
       404,

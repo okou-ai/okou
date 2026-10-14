@@ -46,6 +46,10 @@ use super::env::{
     PreparedRunPayload, build_env_json_for_run, build_user_env_json, write_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
+use super::session_history_attribution::{
+    HistoryMaterializationObservation, HistoryMaterializationOutcome, HistoryTimingWindow,
+    record_download_attribution,
+};
 use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryPrefixOutcome};
 use super::session_history_download::{
     SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
@@ -249,6 +253,8 @@ fn record_session_history_prefix_outcome(
 fn record_session_history_download_timings(
     telemetry: &mut JobTelemetry,
     timings: &SessionHistoryDownloadTimings,
+    restore_wait: HistoryTimingWindow,
+    outcome: HistoryMaterializationOutcome,
 ) {
     let metadata = timings.metadata();
     record_session_history_download_phase(
@@ -280,6 +286,15 @@ fn record_session_history_download_timings(
         "session_history_download_hash_verification",
         timings.hash_verification(),
         metadata,
+    );
+    record_download_attribution(
+        telemetry,
+        timings,
+        HistoryMaterializationObservation {
+            window: restore_wait,
+            stage: crate::telemetry::SessionHistoryObservationStage::Restore,
+            outcome,
+        },
     );
 }
 
@@ -1189,6 +1204,7 @@ pub(super) struct RunStart<'a> {
     pub(super) restore_guest_state: bool,
     pub(super) reuse_result: SandboxReuseResult,
     pub(super) home_reuse_result: HomeReuseResult,
+    pub(super) sandbox_startup_path: runner_types::types::SandboxStartupPath,
     pub(super) prev_storage: Option<&'a crate::storage_fingerprints::StorageFingerprints>,
 }
 
@@ -1673,7 +1689,9 @@ async fn prepare_staged_session_restore(
     let completed_before_restore = remote_materializer.is_download_finished();
     let wait_started = Instant::now();
     let materialization = remote_materializer.finish(cancel).await;
-    let materialization_wait = wait_started.elapsed();
+    let wait_finished = Instant::now();
+    let restore_wait_window = HistoryTimingWindow::new(wait_started, wait_finished);
+    let materialization_wait = restore_wait_window.elapsed();
     let downloaded = match materialization {
         SessionHistoryMaterialization::Missing
         | SessionHistoryMaterialization::NoDownloadNeeded => None,
@@ -1707,7 +1725,12 @@ async fn prepare_staged_session_restore(
                 None,
                 timings.metadata(),
             );
-            record_session_history_download_timings(telemetry, &timings);
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                HistoryMaterializationOutcome::Succeeded,
+            );
             if let Some(prefix_outcome) = prefix_outcome {
                 record_session_history_prefix_outcome(telemetry, prefix_outcome);
             }
@@ -1742,7 +1765,16 @@ async fn prepare_staged_session_restore(
                 Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
                 timings.metadata(),
             );
-            record_session_history_download_timings(telemetry, &timings);
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                if matches!(&error, RunnerError::Cancelled) {
+                    HistoryMaterializationOutcome::Cancelled
+                } else {
+                    HistoryMaterializationOutcome::Failed
+                },
+            );
             return Err(error);
         }
     };
@@ -2100,7 +2132,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     Ok(result)
                 }
             };
-            session_history_restore_plan.cancel_and_drain().await;
+            session_history_restore_plan
+                .cancel_and_drain(telemetry)
+                .await;
             return result;
         }
     };
@@ -2179,7 +2213,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         && !storage_apply_admitted.load(Ordering::Acquire);
                     let should_discard_staging = match staged_result {
                         Ok(StagedSessionRestorePreparation::Serial(plan)) => {
-                            plan.cancel_and_drain().await;
+                            plan.cancel_and_drain(telemetry).await;
                             false
                         }
                         Ok(StagedSessionRestorePreparation::Ready(staged)) => {
@@ -2247,7 +2281,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             if cancel.is_cancelled() {
                 let should_discard_staging = match staged {
                     StagedSessionRestorePreparation::Serial(plan) => {
-                        plan.cancel_and_drain().await;
+                        plan.cancel_and_drain(telemetry).await;
                         false
                     }
                     StagedSessionRestorePreparation::Ready(staged) => {
@@ -2546,7 +2580,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             Ok(result)
                         }
                     };
-                    session_history_restore_plan.cancel_and_drain().await;
+                    session_history_restore_plan
+                        .cancel_and_drain(telemetry)
+                        .await;
                     return result;
                 }
             }
@@ -2667,7 +2703,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             session_history_materializer.is_download_finished();
         let materialization_wait_started = Instant::now();
         let materialization = session_history_materializer.finish(&cancel).await;
-        let materialization_wait = materialization_wait_started.elapsed();
+        let materialization_wait_finished = Instant::now();
+        let restore_wait_window = HistoryTimingWindow::new(materialization_wait_started, materialization_wait_finished);
+        let materialization_wait = restore_wait_window.elapsed();
         let downloaded_resume_session = match materialization {
             SessionHistoryMaterialization::Missing => None,
             SessionHistoryMaterialization::NoDownloadNeeded => None,
@@ -2701,7 +2739,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     None,
                     timings.metadata(),
                 );
-                record_session_history_download_timings(telemetry, &timings);
+                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
+                    HistoryMaterializationOutcome::Succeeded);
                 if let Some(prefix_outcome) = prefix_outcome {
                     record_session_history_prefix_outcome(telemetry, prefix_outcome);
                 }
@@ -2736,7 +2775,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
                     timings.metadata(),
                 );
-                record_session_history_download_timings(telemetry, &timings);
+                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
+                    if matches!(&error, RunnerError::Cancelled) { HistoryMaterializationOutcome::Cancelled }
+                    else { HistoryMaterializationOutcome::Failed });
                 return Err(error);
             }
         };
@@ -2820,6 +2861,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    env_map.insert(
+        guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+        guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
+    );
     telemetry.record(
         "runner_agent_env_build",
         env_build_started.elapsed(),
@@ -2939,7 +2984,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 telemetry,
                 start.reuse_result,
-                start.home_reuse_result,
+                start.sandbox_startup_path,
                 timing.shell_started_at,
                 timing.ready_at,
             );
@@ -2947,6 +2992,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,
                 home_reuse = ?start.home_reuse_result,
+                sandbox_startup_path = guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path),
                 shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
                 agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
                 containment_create_us = timing.containment_create.as_micros(),

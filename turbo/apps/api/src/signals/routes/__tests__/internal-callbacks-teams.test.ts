@@ -8,6 +8,7 @@ import {
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -43,6 +44,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { chatThreadRoutes } from "../chat-threads";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 
 const context = testContext();
 const api = createRunsApi(context);
@@ -78,6 +80,11 @@ interface TeamsPostedActivity {
   readonly textFormat?: unknown;
   readonly replyToId?: unknown;
   readonly channelData?: unknown;
+}
+
+interface TeamsPostedRequest {
+  readonly url: string;
+  readonly body: TeamsPostedActivity;
 }
 
 interface TeamsReactionRequest {
@@ -126,10 +133,12 @@ function teamsApiMocks(args: {
 }): {
   readonly tokenRequests: URLSearchParams[];
   readonly postedActivities: TeamsPostedActivity[];
+  readonly postedRequests: TeamsPostedRequest[];
   readonly reactionRequests: TeamsReactionRequest[];
 } {
   const tokenRequests: URLSearchParams[] = [];
   const postedActivities: TeamsPostedActivity[] = [];
+  const postedRequests: TeamsPostedRequest[] = [];
   const reactionRequests: TeamsReactionRequest[] = [];
   const serviceBaseUrl = teamsServiceBaseUrl(args.fixture.serviceUrl);
 
@@ -161,9 +170,9 @@ function teamsApiMocks(args: {
     http.post(
       `${serviceBaseUrl}/v3/conversations/:conversationId/activities`,
       async ({ request }) => {
-        postedActivities.push(
-          teamsPostedActivityFromUnknown(await request.json()),
-        );
+        const body = teamsPostedActivityFromUnknown(await request.json());
+        postedActivities.push(body);
+        postedRequests.push({ url: request.url, body });
         if (args.activityStatus) {
           return new HttpResponse(args.activityError ?? "Teams API failed", {
             status: args.activityStatus,
@@ -180,9 +189,9 @@ function teamsApiMocks(args: {
     http.post(
       `${serviceBaseUrl}/v3/conversations/:conversationId/activities/:activityId`,
       async ({ request }) => {
-        postedActivities.push(
-          teamsPostedActivityFromUnknown(await request.json()),
-        );
+        const body = teamsPostedActivityFromUnknown(await request.json());
+        postedActivities.push(body);
+        postedRequests.push({ url: request.url, body });
         if (args.activityStatus) {
           return new HttpResponse(args.activityError ?? "Teams API failed", {
             status: args.activityStatus,
@@ -290,12 +299,13 @@ function teamsApiMocks(args: {
     }),
   );
 
-  return { tokenRequests, postedActivities, reactionRequests };
+  return { tokenRequests, postedActivities, postedRequests, reactionRequests };
 }
 
 function clearTeamsApiCalls(api: ReturnType<typeof teamsApiMocks>): void {
   api.tokenRequests.splice(0, api.tokenRequests.length);
   api.postedActivities.splice(0, api.postedActivities.length);
+  api.postedRequests.splice(0, api.postedRequests.length);
   api.reactionRequests.splice(0, api.reactionRequests.length);
 }
 
@@ -765,12 +775,33 @@ describe("Teams chat callbacks", () => {
       teams.subscription,
     ).update("canceled");
     clearTeamsApiCalls(teamsApi);
-    await completeSandboxRun({
-      runId: firstRunId,
-      sandboxToken: firstClaim.sandboxToken,
-      exitCode: 0,
+    const headers = { authorization: `Bearer ${firstClaim.sandboxToken}` };
+    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
+      context,
+      firstRunId,
+      headers,
+      `bdd teams history ${firstRunId}`,
+    );
+    const completionRequest = {
+      headers,
+      body: {
+        runId: firstRunId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "claude-code" as const,
+          cliAgentSessionId: `bdd-teams-cli-${firstRunId}`,
+          cliAgentSessionHistoryHash,
+        },
+      },
+    };
+    const client = setupApp({ context, routes: webhooksAgentCompleteRoutes })(
+      webhookCompleteContract,
+    );
+    const completed = await accept(client.complete(completionRequest), [200]);
+    expect(completed.body).toStrictEqual({
+      success: true,
+      status: "completed",
     });
-
     await flushWaitUntilForTest();
     expect(
       teamsApi.postedActivities.filter((activity) => {
@@ -785,6 +816,21 @@ describe("Teams chat callbacks", () => {
         text: expect.stringContaining("Add credits"),
       }),
     ]);
+    const admissionRequests = teamsApi.postedRequests.filter((request) => {
+      return (
+        typeof request.body.text === "string" &&
+        request.body.text.includes("Add credits")
+      );
+    });
+    expect(admissionRequests).toStrictEqual([
+      {
+        url: `${teamsServiceBaseUrl(teams.fixture.serviceUrl)}/v3/conversations/${encodeURIComponent(`a:personal-${teams.fixture.teamsUserId}`)}/activities/${encodeURIComponent(queuedActivityId)}`,
+        body: expect.objectContaining({
+          replyToId: queuedActivityId,
+          text: expect.stringContaining("Add credits"),
+        }),
+      },
+    ]);
     const listed = await runReadsApi.requestListLogs(
       teams.actor,
       { limit: 20 },
@@ -792,6 +838,28 @@ describe("Teams chat callbacks", () => {
     );
     expect(
       listed.body.data.filter((run) => {
+        return run.prompt === queuedPrompt;
+      }),
+    ).toHaveLength(0);
+
+    const replayed = await accept(client.complete(completionRequest), [200]);
+    expect(replayed.body).toStrictEqual(completed.body);
+    await flushWaitUntilForTest();
+    expect(
+      teamsApi.postedRequests.filter((request) => {
+        return (
+          typeof request.body.text === "string" &&
+          request.body.text.includes("Add credits")
+        );
+      }),
+    ).toStrictEqual(admissionRequests);
+    const afterReplay = await runReadsApi.requestListLogs(
+      teams.actor,
+      { limit: 20 },
+      [200],
+    );
+    expect(
+      afterReplay.body.data.filter((run) => {
         return run.prompt === queuedPrompt;
       }),
     ).toHaveLength(0);

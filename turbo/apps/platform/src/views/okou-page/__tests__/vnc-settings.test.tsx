@@ -22,7 +22,8 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { mockNow } from "../../../lib/time.ts";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -979,6 +980,426 @@ test("QEMU SCRAM creates only its explicit X509SASL pair and keeps its password 
   expect(document.body.textContent).not.toContain(" secret ");
 });
 
+test("Kerberos password saves independent explicit identities and KDC policy", async () => {
+  mockSettings({ connections: [], credentials: [] });
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
+  const security = {
+    type: "qemu_x509_gssapi" as const,
+    trust: { mode: "system" as const },
+    service: {
+      realm: initiator.realm,
+      components: ["vnc", "desktop.identity.invalid"],
+    },
+    kdc: {
+      host: "kdc.example.com",
+      port: 88,
+      transport: { type: "direct" as const },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+    },
+  };
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      ...qemuHost,
+      kerberosAuthentication: "qemu_kerberos_password",
+      security,
+    });
+  });
+  await openAddHostPage();
+  const dialog = await screen.findByRole("dialog", { name: "Add host" });
+  await fillHost(dialog);
+  await choose(dialog, "Security profile", "Kerberos · password");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Explicit identity",
+  );
+  await fill(within(dialog).getByLabelText("Initiator realm"), initiator.realm);
+  await fill(within(dialog).getByLabelText("Initiator components"), "Alice");
+  await fill(
+    within(dialog).getByLabelText("VNC service realm"),
+    initiator.realm,
+  );
+  await fill(
+    within(dialog).getByLabelText("VNC service instance"),
+    "desktop.identity.invalid",
+  );
+  await fill(within(dialog).getByLabelText("KDC host"), "kdc.example.com");
+  const password = within(dialog).getByLabelText("Password");
+  await fill(password, " exact kerb ");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "Second desktop",
+      host: "second.example.com",
+      port: 5900,
+      transport: { type: "direct" },
+      security,
+      credential: {
+        create: {
+          name: "Explicit identity",
+          authentication: {
+            method: "qemu_kerberos_password",
+            initiator,
+            password: " exact kerb ",
+          },
+        },
+      },
+    },
+  ]);
+  expect(password).toHaveValue("");
+});
+
+const keytabHex =
+  "05020000004b0001000f4558414d504c452e494e56414c49440005616c69636500000001000000000200120020535353535353535353535353535353535353535353535353535353535353535300000002";
+function keytabBytes(lastKeyByte = 0x53) {
+  const bytes = Uint8Array.from(keytabHex.match(/../gu) ?? [], (pair) => {
+    return Number.parseInt(pair, 16);
+  });
+  bytes[bytes.length - 5] = lastKeyByte;
+  return bytes;
+}
+function keytabFile(name: string, lastKeyByte = 0x53) {
+  return new File([keytabBytes(lastKeyByte).buffer], name);
+}
+function mockKerberosImport(
+  method:
+    "qemu_kerberos_keytab" | "qemu_kerberos_ticket" = "qemu_kerberos_keytab",
+) {
+  mockSettings({ connections: [], credentials: [] });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    const metadata = {
+      ...credential,
+      name: body.name,
+      initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+      hosts: [],
+    };
+    return method === "qemu_kerberos_ticket"
+      ? respond(201, {
+          ...metadata,
+          authMethod: method,
+          service: {
+            realm: "EXAMPLE.INVALID",
+            components: ["vnc", "host.example.invalid"],
+          },
+          declaredExpiresAt: 1000,
+        })
+      : respond(201, { ...metadata, authMethod: method });
+  });
+  return requests;
+}
+async function openKeytabDialog() {
+  const dialog = await addCredential();
+  await choose(dialog, "Authentication method", "Kerberos · keytab");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Imported keytab",
+  );
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  return dialog;
+}
+function pendingFileRead(file: File) {
+  const started = context.mocks.deferred<void>();
+  const read = context.mocks.deferred<ArrayBuffer>();
+  vi.spyOn(file, "arrayBuffer").mockImplementationOnce(() => {
+    started.resolve();
+    return read.promise;
+  });
+  return { started, read };
+}
+
+// Public K1 service vector; its ticket bytes are synthetic, not a real credential.
+const ticketHex =
+  "0504000000000001000000010000000f4558414d504c452e494e56414c494400000005616c69636500000001000000010000000f4558414d504c452e494e56414c494400000005616c69636500000002000000020000000f4558414d504c452e494e56414c494400000003766e6300000014686f73742e6578616d706c652e696e76616c696400120000002037373737373737373737373737373737373737373737373737373737373737370000006400000064000003e800000000004000000000000000000000000000001b53594e5448455449435f4e4f545f415f5245414c5f5449434b455400000000";
+function ticketFile(name: string) {
+  const bytes = Uint8Array.from(ticketHex.match(/../gu) ?? [], (pair) => {
+    return Number.parseInt(pair, 16);
+  });
+  return new File([bytes.buffer], name);
+}
+async function openTicketDialog() {
+  const dialog = await addCredential();
+  await choose(dialog, "Authentication method", "Kerberos · service ticket");
+  await fill(
+    within(dialog).getByLabelText("Credential name"),
+    "Offline ticket",
+  );
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  await fill(
+    within(dialog).getByLabelText("VNC service realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(
+    within(dialog).getByLabelText("VNC service instance"),
+    "host.example.invalid",
+  );
+  return dialog;
+}
+
+test("A supplied service ticket is imported without saving and retains its exact service on Save", async () => {
+  mockNow(200_000, context.signal);
+  const requests = mockKerberosImport("qemu_kerberos_ticket");
+  await page();
+  const dialog = await openTicketDialog();
+  await userEvent.upload(
+    within(dialog).getByLabelText("Service ticket file (.ccache)"),
+    ticketFile("service.ccache"),
+  );
+  expect(requests).toStrictEqual([]);
+  expect(within(dialog).queryByLabelText("KDC host")).toBeNull();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      name: "Offline ticket",
+      authentication: {
+        method: "qemu_kerberos_ticket",
+        initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+        service: {
+          realm: "EXAMPLE.INVALID",
+          components: ["vnc", "host.example.invalid"],
+        },
+        ticketCache: btoa(
+          String.fromCharCode(
+            ...new Uint8Array(
+              await ticketFile("expected.ccache").arrayBuffer(),
+            ),
+          ),
+        ),
+      },
+    },
+  ]);
+});
+
+test("Changing a ticket's service away and back invalidates its pending import", async () => {
+  mockNow(200_000, context.signal);
+  const requests = mockKerberosImport("qemu_kerberos_ticket");
+  await page();
+  const dialog = await openTicketDialog();
+  const file = ticketFile("prior-service.ccache");
+  const pending = pendingFileRead(file);
+  const input = within(dialog).getByLabelText("Service ticket file (.ccache)");
+  await userEvent.upload(input, file);
+  await pending.started.promise;
+  const instance = within(dialog).getByLabelText("VNC service instance");
+  await fill(instance, "other.example.invalid");
+  await fill(instance, "host.example.invalid");
+  await act(async () => {
+    pending.read.resolve(await ticketFile("late.ccache").arrayBuffer());
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
+  await userEvent.upload(input, ticketFile("current-service.ccache"));
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test("A replacement keytab is saved without a late file overwriting it", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const oldFile = keytabFile("old.keytab");
+  const pending = pendingFileRead(oldFile);
+  const input = within(dialog).getByLabelText("Keytab file (.keytab)");
+  await userEvent.upload(input, oldFile);
+  await pending.started.promise;
+  await userEvent.upload(input, keytabFile("replacement.keytab", 0x54));
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  expect(dialog).toBeInTheDocument();
+  expect(requests).toStrictEqual([]);
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      name: "Imported keytab",
+      authentication: {
+        method: "qemu_kerberos_keytab",
+        initiator: { realm: "EXAMPLE.INVALID", components: ["alice"] },
+        keytab: btoa(String.fromCharCode(...keytabBytes(0x54))),
+      },
+    },
+  ]);
+});
+
+test("Changing an initiator away and back invalidates a pending keytab import", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("prior-identity.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  const realm = within(dialog).getByLabelText("Initiator realm");
+  await fill(realm, "OTHER.INVALID");
+  await fill(realm, "EXAMPLE.INVALID");
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(dialog).toBeInTheDocument();
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    keytabFile("current-identity.keytab"),
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test("A closed dialog cannot deliver its pending keytab into a new dialog", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const prior = await openKeytabDialog();
+  const file = keytabFile("abandoned.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(prior).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  click(getAction("button", "Cancel", prior));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  const current = await openKeytabDialog();
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", current));
+  await within(current).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  expect(current).toBeInTheDocument();
+});
+
+test("A keytab read failure is reported and a newly selected file can be saved", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("unreadable.keytab");
+  vi.spyOn(file, "arrayBuffer").mockRejectedValueOnce(
+    new DOMException("Synthetic file failure", "NotReadableError"),
+  );
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    keytabFile("readable.keytab"),
+  );
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toHaveLength(1);
+});
+
+test("Switching authentication profiles away and back discards a pending keytab", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const dialog = await openKeytabDialog();
+  const file = keytabFile("old-profile.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(dialog).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  await choose(dialog, "Authentication method", "Kerberos · password");
+  await within(dialog).findByLabelText("Password");
+  await choose(dialog, "Authentication method", "Kerberos · keytab");
+  await fill(
+    within(dialog).getByLabelText("Initiator realm"),
+    "EXAMPLE.INVALID",
+  );
+  await fill(within(dialog).getByLabelText("Initiator components"), "alice");
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", dialog));
+  await within(dialog).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+});
+
+test("Changing owners discards a pending keytab even after the original owner returns", async () => {
+  const requests = mockKerberosImport();
+  await page();
+  const original = await openKeytabDialog();
+  const file = keytabFile("old-owner.keytab");
+  const pending = pendingFileRead(file);
+  await userEvent.upload(
+    within(original).getByLabelText("Keytab file (.keytab)"),
+    file,
+  );
+  await pending.started.promise;
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "different-kerberos-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
+    clerk.stateChanged();
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  act(() => {
+    clerk.user(auth.user, { token: "returned-token" });
+    clerk.stateChanged();
+  });
+  const current = await openKeytabDialog();
+  await act(async () => {
+    pending.read.resolve(keytabBytes().buffer);
+    await pending.read.promise;
+  });
+  click(getAction("button", "Save", current));
+  await within(current).findByRole("alert");
+  expect(requests).toStrictEqual([]);
+});
+
 test("Kerberos metadata can be read and its stored password replaced without revealing it", async () => {
   const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
   const saved: VncCredentialResponse = {
@@ -1689,14 +2110,27 @@ test("Deleting an unused credential sends the reviewed revision after confirmati
   ]);
 });
 
-test("A host conflict requires closing and reviewing the refreshed host before another save", async () => {
+test("Host conflicts keep the draft and require explicit review of each newer generation", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
   context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
     requests.push(body);
-    if (body.expectedGeneration === 4) {
+    if (body.expectedGeneration === 4 || body.expectedGeneration === 5) {
       data.connections = [
-        { ...host, displayName: "Changed elsewhere", generation: 5 },
+        {
+          ...host,
+          displayName:
+            body.expectedGeneration === 4
+              ? "Changed elsewhere"
+              : "Changed twice",
+          host: "updated.example.com",
+          port: 5902,
+          security: {
+            type: "x509_vnc",
+            trust: { mode: "custom_ca", caBundle },
+          },
+          generation: body.expectedGeneration + 1,
+        },
       ];
       return respond(409, {
         error: {
@@ -1708,7 +2142,7 @@ test("A host conflict requires closing and reviewing the refreshed host before a
     const updated = {
       ...host,
       displayName: body.displayName ?? host.displayName,
-      generation: 6,
+      generation: 7,
     };
     data.connections = [updated];
     return respond(200, updated);
@@ -1718,50 +2152,118 @@ test("A host conflict requires closing and reviewing the refreshed host before a
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
   await fill(within(dialog).getByLabelText("Display name"), "My edit");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    /Close this dialog and review the current details/u,
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "draft.example.com",
   );
+  await fill(within(dialog).getByLabelText("RFB destination port"), "5901");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(within(dialog).getByLabelText("Credential name"), "Draft login");
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, "draft pw");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Changed elsewhere");
+  expect(within(review).getByText("Version 5")).toBeInTheDocument();
+  expect(
+    within(review).getByText("RFB destination: updated.example.com:5902"),
+  ).toBeInTheDocument();
+  expect(within(review).getByText(/TEST-CA-CERTIFICATE/u)).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue("My edit");
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "draft.example.com",
+  );
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5901,
+  );
+  expect(
+    within(dialog).getByLabelText("Server certificate trust"),
+  ).toHaveTextContent("System certificate authorities");
+  expect(secret).toHaveValue("draft pw");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(queryAction("button", "Retry", dialog)).toBeNull();
   expect(requests).toStrictEqual([
     expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
   ]);
   expect(document.body.textContent).not.toContain("private host conflict");
-  click(getAction("button", "Close", dialog));
-  await screen.findByText("Changed elsewhere");
-  click(getAction("button", "Edit host"));
-  const reopened = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(reopened).getByLabelText("Display name")).toHaveValue(
-    "Changed elsewhere",
-  );
-  await fill(within(reopened).getByLabelText("Display name"), "Reviewed edit");
-  click(getAction("button", "Save", reopened));
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(secret).toHaveValue("draft pw");
+  expect(
+    within(dialog).queryByRole("region", { name: "Current saved details" }),
+  ).toBeNull();
+  expect(requests).toStrictEqual([
+    expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
+  ]);
+  click(getAction("button", "Save", dialog));
+  const repeated = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(repeated).findByText("Changed twice");
+  expect(within(repeated).getByText("Version 6")).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(secret).toHaveValue("draft pw");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
-  await screen.findByText("Reviewed edit");
-  expect(requests).toStrictEqual([
-    expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
-    expect.objectContaining({
-      expectedGeneration: 5,
-      displayName: "Reviewed edit",
+  await screen.findByText("My edit");
+  expect(requests).toStrictEqual(
+    [4, 5, 6].map((expectedGeneration) => {
+      return {
+        expectedGeneration,
+        displayName: "My edit",
+        host: "draft.example.com",
+        port: 5901,
+        transport: { type: "direct" },
+        credential: {
+          create: {
+            name: "Draft login",
+            authentication: { method: "vnc_password", password: "draft pw" },
+          },
+        },
+        security: { type: "x509_vnc", trust: { mode: "system" } },
+      };
     }),
-  ]);
+  );
+  expect(secret).toHaveValue("");
 });
 
-test("A credential conflict never rotates a password against an unseen revision", async () => {
+test("Credential conflicts preserve a replacement password and require each reviewed revision", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
   context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
     requests.push(body);
-    data.credentials = [{ ...credential, name: "Updated login", revision: 4 }];
-    return respond(409, {
-      error: {
-        code: "VNC_CREDENTIAL_REVISION_CONFLICT",
-        message: "private credential conflict",
-      },
-    });
+    if (body.expectedRevision === 3 || body.expectedRevision === 4) {
+      data.credentials = [
+        {
+          ...credential,
+          name: body.expectedRevision === 3 ? "Updated login" : "Updated again",
+          revision: body.expectedRevision + 1,
+        },
+      ];
+      return respond(409, {
+        error: {
+          code: "VNC_CREDENTIAL_REVISION_CONFLICT",
+          message: "private credential conflict",
+        },
+      });
+    }
+    const updated = {
+      ...credential,
+      name: body.name ?? credential.name,
+      revision: 6,
+    };
+    data.credentials = [updated];
+    return respond(200, updated);
   });
   await page();
   click(getAction("radio", "Credentials"));
@@ -1775,9 +2277,16 @@ test("A credential conflict never rotates a password against an unseen revision"
   const secret = within(dialog).getByLabelText("VNC password");
   await fill(secret, "new-pass");
   click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    /Close this dialog and review the current details/u,
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Updated login");
+  expect(within(review).getByText("Version 4")).toBeInTheDocument();
+  expect(within(review).getByText(host.displayName)).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Credential name")).toHaveValue(
+    "My login",
   );
+  expect(secret).toHaveValue("new-pass");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(requests).toStrictEqual([
     {
@@ -1789,17 +2298,643 @@ test("A credential conflict never rotates a password against an unseen revision"
   expect(document.body.textContent).not.toContain(
     "private credential conflict",
   );
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(secret).toHaveValue("new-pass");
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 3,
+      name: "My login",
+      authentication: { method: "vnc_password", password: "new-pass" },
+    },
+  ]);
+  click(getAction("button", "Save", dialog));
+  const repeated = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(repeated).findByText("Updated again");
+  expect(within(repeated).getByText("Version 5")).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(secret).toHaveValue("new-pass");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  await screen.findByText("My login");
+  expect(requests).toStrictEqual(
+    [3, 4, 5].map((expectedRevision) => {
+      return {
+        expectedRevision,
+        name: "My login",
+        authentication: { method: "vnc_password", password: "new-pass" },
+      };
+    }),
+  );
+  expect(secret).toHaveValue("");
+});
+
+test.each(["host", "credential"] as const)(
+  "A missing %s cannot supply a reviewed version for a preserved draft",
+  async (resource) => {
+    const data = mockSettings({ credentials: [{ ...credential, hosts: [] }] });
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      data.connections = [];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    });
+    context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      data.credentials = [];
+      return respond(409, {
+        error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+      });
+    });
+    await page();
+    if (resource === "credential") {
+      click(getAction("radio", "Credentials"));
+      await screen.findByText(credential.name);
+    } else {
+      await screen.findByText(host.displayName);
+    }
+    click(
+      getAction(
+        "button",
+        resource === "host" ? "Edit host" : "Edit credential",
+      ),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: resource === "host" ? "Edit host" : "Edit credential",
+    });
+    const name = within(dialog).getByLabelText(
+      resource === "host" ? "Display name" : "Credential name",
+    );
+    await fill(name, "Kept draft");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText(/This resource is no longer available/u);
+    expect(name).toHaveValue("Kept draft");
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(
+      queryAction("button", "Keep my changes with this version", dialog),
+    ).toBeNull();
+    expect(requests).toStrictEqual([
+      expect.objectContaining(
+        resource === "host"
+          ? { expectedGeneration: 4, displayName: "Kept draft" }
+          : { expectedRevision: 3, name: "Kept draft" },
+      ),
+    ]);
+    click(getAction("button", "Close", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  },
+);
+
+test("A changed credential method is inspectable but cannot reuse the original authentication draft", async () => {
+  const data = mockSettings({
+    connections: [],
+    credentials: [{ ...credential, hosts: [] }],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    data.credentials = [
+      {
+        ...plainCredential,
+        id: credential.id,
+        name: "Changed method",
+        hosts: [],
+        revision: 4,
+      },
+    ];
+    return respond(409, {
+      error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+    });
+  });
+  await page();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(credential.name);
+  click(getAction("button", "Edit credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, "old-dft");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Changed method");
+  expect(within(review).getByText("Username and password")).toBeInTheDocument();
+  expect(
+    within(review).getByText(plainCredential.username),
+  ).toBeInTheDocument();
+  expect(within(review).getByRole("alert")).toHaveTextContent(
+    "The authentication method changed.",
+  );
+  expect(secret).toHaveValue("old-dft");
+  expect(
+    getAction("button", "Keep my changes with this version", dialog),
+  ).toBeDisabled();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 3,
+      name: credential.name,
+      authentication: { method: "vnc_password", password: "old-dft" },
+    },
+  ]);
   click(getAction("button", "Close", dialog));
   expect(secret).toHaveValue("");
-  await screen.findByText("Updated login");
-  click(getAction("button", "Edit credential"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Edit credential",
+});
+
+test.each(["credential", "ssh"] as const)(
+  "A reviewed host conflict requires explicitly repairing a changed %s dependency",
+  async (dependency) => {
+    const original = {
+      ...tunneledHost,
+      host: "desktop.example.com",
+      transport: { type: "ssh" as const, connectionId: sshHost.id },
+    };
+    const data = mockSettings({
+      connections: [original],
+      sshConnections: [sshHost],
+    });
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      if (body.expectedGeneration === 4) {
+        data.connections = [
+          dependency === "credential"
+            ? { ...plainHost, id: original.id, generation: 5 }
+            : { ...host, id: original.id, generation: 5 },
+        ];
+        if (dependency === "credential") {
+          data.credentials = [plainCredential];
+        } else {
+          data.sshConnections = [];
+        }
+        return respond(409, {
+          error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+        });
+      }
+      return respond(200, {
+        ...host,
+        id: original.id,
+        displayName: "Draft route",
+        generation: 6,
+      });
+    });
+    await page();
+    await screen.findByText(original.displayName);
+    click(getAction("button", "Edit host"));
+    const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+    await fill(within(dialog).getByLabelText("Display name"), "Draft route");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText("Version 5");
+    click(getAction("button", "Keep my changes with this version", dialog));
+    await waitFor(() => {
+      expect(
+        within(dialog).queryByRole("region", { name: "Current saved details" }),
+      ).toBeNull();
+    });
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      "Draft route",
+    );
+    expect(
+      within(dialog).getByText(
+        dependency === "credential"
+          ? "The selected credential is no longer available."
+          : /The selected SSH host is no longer available/u,
+      ),
+    ).toBeInTheDocument();
+    if (dependency === "credential") {
+      await choose(
+        dialog,
+        "Security profile",
+        "Encrypted username and password (X509Plain)",
+      );
+      await choose(dialog, "Credential", plainCredential.name);
+    } else {
+      await choose(dialog, "Connection route", "Direct from Runner");
+    }
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      expect.objectContaining({
+        expectedGeneration: 4,
+        displayName: "Draft route",
+        transport: original.transport,
+        credential: { id: credential.id },
+      }),
+      expect.objectContaining({
+        expectedGeneration: 5,
+        displayName: "Draft route",
+        transport:
+          dependency === "ssh" ? { type: "direct" } : original.transport,
+        credential: {
+          id: dependency === "credential" ? plainCredential.id : credential.id,
+        },
+        security:
+          dependency === "credential"
+            ? {
+                type: "x509_plain",
+                serverName: "desktop.internal.example.com",
+                trust: { mode: "system" },
+              }
+            : original.security,
+      }),
+    ]);
+  },
+);
+
+test("A failed conflict metadata reload preserves the draft until an explicit successful retry", async () => {
+  const data = mockSettings();
+  let unavailable = false;
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private reload failure" },
+        })
+      : respond(200, { connections: data.connections });
   });
-  expect(within(reopened).getByLabelText("Credential name")).toHaveValue(
-    "Updated login",
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        { ...host, displayName: "Latest after retry", generation: 5 },
+      ];
+      unavailable = true;
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...host, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(within(dialog).getByLabelText("Display name"), "Retry draft");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Could not load VNC configuration.");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Retry draft",
   );
-  expect(within(reopened).queryByLabelText("VNC password")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(
+    queryAction("button", "Keep my changes with this version", dialog),
+  ).toBeNull();
+  expect(document.body.textContent).not.toContain("private reload failure");
+  unavailable = false;
+  click(getAction("button", "Try again", review));
+  await within(review).findByText("Latest after retry");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual(
+    [4, 5].map((expectedGeneration) => {
+      return expect.objectContaining({
+        expectedGeneration,
+        displayName: "Retry draft",
+      });
+    }),
+  );
+});
+
+test.each([
+  "close",
+  "owner",
+  "session",
+  "logout",
+  "revoked admission",
+] as const)(
+  "A conflicted authentication draft is cleared on %s and never restored",
+  async (event) => {
+    const data = mockSettings({ credentials: [{ ...credential, hosts: [] }] });
+    context.mocks.api(vncCredentialsContract.update, ({ respond }) => {
+      data.credentials = [
+        { ...credential, name: "Latest login", revision: 4, hosts: [] },
+      ];
+      return respond(409, {
+        error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+      });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?scope=remote-control&type=vnc",
+      auth: {
+        ...auth,
+        session: { id: "vnc-conflict-original", token: "original-token" },
+      },
+      featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
+    });
+    click(getAction("radio", "Credentials"));
+    await screen.findByText(credential.name);
+    click(getAction("button", "Edit credential"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit credential",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+    );
+    const secret = within(dialog).getByLabelText("VNC password");
+    await fill(secret, "discard");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText("Latest login");
+    expect(secret).toHaveValue("discard");
+    if (event === "close") {
+      click(getAction("button", "Close", dialog));
+    } else {
+      const clerk = context.mocks.clerk();
+      act(() => {
+        if (event === "logout") {
+          clerk.sessionSignedOut(true);
+        } else if (event === "revoked admission") {
+          clerk.organization({ activeOrg: null, memberships: [] });
+        } else {
+          clerk.user(
+            event === "owner"
+              ? { id: "another-vnc-owner", fullName: "Another Owner" }
+              : auth.user,
+            { id: "vnc-conflict-new", token: "new-token" },
+          );
+        }
+        clerk.stateChanged();
+      });
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(secret).toHaveValue("");
+    if (event !== "close") {
+      const clerk = context.mocks.clerk();
+      act(() => {
+        if (event === "logout") {
+          clerk.sessionSignedOut(false);
+        } else if (event === "revoked admission") {
+          clerk.organization(auth.organization);
+        }
+        clerk.user(auth.user, {
+          id: "vnc-conflict-original",
+          token: "returned-token",
+        });
+        clerk.stateChanged();
+      });
+    }
+    await screen.findByText("Latest login");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    click(getAction("button", "Edit credential"));
+    const reopened = await screen.findByRole("dialog", {
+      name: "Edit credential",
+    });
+    expect(within(reopened).getByLabelText("Credential name")).toHaveValue(
+      "Latest login",
+    );
+    expect(within(reopened).queryByLabelText("VNC password")).toBeNull();
+    expect(
+      within(reopened).queryByRole("region", { name: "Current saved details" }),
+    ).toBeNull();
+  },
+);
+
+test("A reviewed Kerberos host keeps its separate KDC draft and requires an explicit route repair", async () => {
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
+  const savedCredential: VncCredentialResponse = {
+    ...credential,
+    authMethod: "qemu_kerberos_password",
+    initiator,
+  };
+  const security = {
+    type: "qemu_x509_gssapi" as const,
+    trust: { mode: "system" as const },
+    service: {
+      realm: initiator.realm,
+      components: ["vnc", "desktop.identity.invalid"],
+    },
+    kdc: {
+      host: "127.0.0.1",
+      port: 88,
+      transport: { type: "ssh" as const, connectionId: sshHost.id },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+    },
+  };
+  const original: VncConnectionResponse = {
+    ...host,
+    kerberosAuthentication: "qemu_kerberos_password",
+    security,
+  };
+  const data = mockSettings({
+    connections: [original],
+    credentials: [savedCredential],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        {
+          ...original,
+          generation: 5,
+          security: {
+            ...security,
+            kdc: {
+              ...security.kdc,
+              host: "latest.kdc.example.com",
+              transport: { type: "direct" },
+            },
+          },
+        },
+      ];
+      data.sshConnections = [];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...original, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(within(dialog).getByLabelText("Display name"), "Kerberos draft");
+  await fill(
+    within(dialog).getByLabelText("Requested ticket lifetime (seconds)"),
+    "600",
+  );
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Version 5");
+  expect(
+    within(review).getByText("KDC host: latest.kdc.example.com:88"),
+  ).toBeInTheDocument();
+  expect(
+    within(review).getByText("Separate KDC route: Direct from Runner"),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("KDC host")).toHaveValue("127.0.0.1");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(
+      within(dialog).queryByRole("region", { name: "Current saved details" }),
+    ).toBeNull();
+  });
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "The selected SSH host is no longer available.",
+  );
+  await choose(dialog, "Separate KDC route", "Direct from Runner");
+  await fill(
+    within(dialog).getByLabelText("KDC host"),
+    "draft.kdc.example.com",
+  );
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    expect.objectContaining({
+      expectedGeneration: 4,
+      security: {
+        ...security,
+        kdc: { ...security.kdc, ticketLifetimeSeconds: 600 },
+      },
+    }),
+    expect.objectContaining({
+      expectedGeneration: 5,
+      displayName: "Kerberos draft",
+      security: {
+        ...security,
+        kdc: {
+          ...security.kdc,
+          host: "draft.kdc.example.com",
+          transport: { type: "direct" },
+          ticketLifetimeSeconds: 600,
+        },
+      },
+    }),
+  ]);
+});
+
+test("Accepting a host conflict cannot revive a pending RSA public-key import", async () => {
+  const original: VncConnectionResponse = {
+    ...host,
+    rsaAesAuthentication: "rsa_aes_password",
+    security: { type: "rsa_aes_ra2", serverKeySha256: "ab".repeat(32) },
+  };
+  const data = mockSettings({
+    connections: [original],
+    credentials: [{ ...credential, authMethod: "rsa_aes_password" }],
+  });
+  const started = context.mocks.deferred<void>();
+  const result = context.mocks.deferred<void>();
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    async ({ respond }) => {
+      started.resolve();
+      await result.promise;
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        {
+          ...original,
+          generation: 5,
+          security: { type: "rsa_aes_ra2", serverKeySha256: "ef".repeat(32) },
+        },
+      ];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...original, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(
+    within(dialog).getByLabelText(
+      "Independently trusted RSA public PEM (optional)",
+    ),
+    "public-key-draft",
+  );
+  click(getAction("button", "Import trusted public key", dialog));
+  await started.promise;
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Version 5");
+  expect(
+    within(review).getByText(new RegExp("ef".repeat(32), "u")),
+  ).toBeInTheDocument();
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  await act(async () => {
+    result.resolve();
+    await result.promise;
+  });
+  expect(
+    within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+  ).toHaveValue("ab".repeat(32));
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual(
+    [4, 5].map((expectedGeneration) => {
+      return expect.objectContaining({
+        expectedGeneration,
+        security: original.security,
+      });
+    }),
+  );
 });
 
 test("An uncertain host creation freezes its draft and explicitly retries the same UUID and password", async () => {

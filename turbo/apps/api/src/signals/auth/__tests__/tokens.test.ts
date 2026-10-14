@@ -233,8 +233,6 @@ describe("auth tokens", () => {
   });
 
   it.each([
-    [FeatureSwitchKey.PrivateArtifacts, "artifact:read"],
-    [FeatureSwitchKey.PrivateArtifacts, "artifact:write"],
     [FeatureSwitchKey.Banking, "banking:read"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
     [FeatureSwitchKey.DiscordIntegration, "discord:read"],

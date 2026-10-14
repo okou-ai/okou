@@ -2,12 +2,13 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Popover, type KeyboardEventLike } from "@okouai/ui";
+import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { useTranslation } from "react-i18next";
@@ -17,9 +18,11 @@ import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { ComposerMentionSuggestionMenu } from "./chat-thread-suggestion.tsx";
+import { START_PAGE_CENTRED_MEDIA_QUERY } from "./start-page-breakpoint.ts";
 import {
   buildComposerSlashWorkflows,
   findWorkflowQueryMatches,
+  orderRecentWorkflows,
   type ComposerSlashWorkflow,
   type ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain";
@@ -30,6 +33,8 @@ import {
 } from "./slash-workflow.tsx";
 import {
   SlashTemplatePanel,
+  SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT,
+  SLASH_PANEL_EXPAND_WORKFLOWS_ID,
   slashTemplateCategoryLabel,
 } from "./slash-template-panel.tsx";
 import {
@@ -202,10 +207,9 @@ interface ComposerKeyDownContext {
   readonly composer: ComposerSignals;
   readonly selectedTask: ComposerTask | null;
   readonly selectTask: (task: ComposerTask | null) => void;
-  readonly suggestionCount: number;
+  readonly suggestionOrder: readonly number[];
   readonly selectedSuggestionIndex: number;
   readonly showSuggestionMenu: boolean;
-  readonly reversedSuggestions: boolean;
   readonly setSelectedSuggestionIndex: (index: number) => void;
   readonly closeSuggestionMenu: () => void;
   readonly selectSuggestion: (index: number) => void;
@@ -230,6 +234,21 @@ function shouldRemoveSelectedTask(
     context.selectedTask !== null &&
     context.composer.editor.editor.isEmpty
   );
+}
+
+function nextSuggestionIndex(
+  order: readonly number[],
+  selectedIndex: number,
+  direction: 1 | -1,
+): number | undefined {
+  const position = order.indexOf(selectedIndex);
+  const nextPosition =
+    position === -1
+      ? direction > 0
+        ? 0
+        : order.length - 1
+      : Math.max(0, Math.min(position + direction, order.length - 1));
+  return order[nextPosition];
 }
 
 function handleComposerKeyDownCapture(
@@ -276,28 +295,24 @@ function handleComposerKeyDownCapture(
   }
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
-    // Indices retain relevance order; only the rendered order is reversed.
     const direction = event.key === "ArrowDown" ? 1 : -1;
-    const delta = context.reversedSuggestions ? -direction : direction;
-    const next = Math.max(
-      0,
-      Math.min(
-        context.selectedSuggestionIndex + delta,
-        Math.max(context.suggestionCount - 1, 0),
-      ),
+    const next = nextSuggestionIndex(
+      context.suggestionOrder,
+      context.selectedSuggestionIndex,
+      direction,
     );
-    context.setSelectedSuggestionIndex(next);
-    context.scrollSuggestionIntoView(next);
+    if (next !== undefined) {
+      context.setSelectedSuggestionIndex(next);
+      context.scrollSuggestionIntoView(next);
+    }
     return true;
   }
   if (
     (event.key === "Enter" || event.key === "Tab") &&
-    context.suggestionCount > 0
+    context.suggestionOrder.includes(context.selectedSuggestionIndex)
   ) {
     event.preventDefault();
-    context.selectSuggestion(
-      Math.min(context.selectedSuggestionIndex, context.suggestionCount - 1),
-    );
+    context.selectSuggestion(context.selectedSuggestionIndex);
     return true;
   }
   if (event.key === "Escape") {
@@ -325,6 +340,9 @@ interface ComposerSuggestionMenuState {
   ) => void;
   readonly browseAllTemplates: () => void;
   readonly workflowsLoading: boolean;
+  readonly reverseWorkflows: boolean;
+  readonly collapseWorkflows: boolean;
+  readonly expandWorkflows: () => void;
   readonly showWorkflows: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
@@ -421,8 +439,10 @@ function useSlashTemplatePanelActions(
 function useComposerWorkflowSuggestions(
   composer: ComposerSignals,
   query: string | undefined,
+  composerAnchored: boolean,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
+  const recentIds = useLoadable(composer.suggestion.recentWorkflowIds$);
   // Null means the list is not requested yet; the last loadable keeps that
   // null while the first request is in flight.
   const requested =
@@ -431,10 +451,20 @@ function useComposerWorkflowSuggestions(
     agentId: composer.agentId,
     workflows: requested ?? [],
   });
+  const recentOverview = composerAnchored && query === "";
+  const ordered = recentOverview
+    ? orderRecentWorkflows(
+        workflows,
+        recentIds.state === "hasData" ? recentIds.data : [],
+      )
+    : workflows;
   return {
     workflows:
-      query === undefined ? [] : findWorkflowQueryMatches(workflows, query),
-    loading: workflowsLoadable.state === "loading" || requested === null,
+      query === undefined ? [] : findWorkflowQueryMatches(ordered, query),
+    loading:
+      workflowsLoadable.state === "loading" ||
+      requested === null ||
+      (recentOverview && recentIds.state === "loading"),
   };
 }
 
@@ -477,16 +507,27 @@ interface SuggestionRows {
   readonly panelCategories: readonly SlashTemplateCategory[];
   /** How many rows sit above the workflow suggestions. */
   readonly headCount: number;
+  readonly expandIndex: number | null;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly agents: readonly ComposerAgentSuggestion[];
   readonly chatThreads: readonly ComposerChatThreadSuggestion[];
 }
 
 interface SuggestionRowActions {
+  readonly expandWorkflows: () => void;
   readonly selectCategory: (category: SlashTemplateCategory) => void;
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly insertAgent: (agent: ComposerAgentSuggestion) => void;
   readonly insertChatThread: (chatThread: ComposerChatThreadSuggestion) => void;
+}
+
+function suggestionRowCount(rows: SuggestionRows): number {
+  if (!rows.showWorkflows) {
+    return rows.agents.length + rows.chatThreads.length;
+  }
+  return rows.expandIndex === null
+    ? rows.headCount + rows.workflows.length
+    : rows.expandIndex + 1;
 }
 
 /** The template category row for an index, if it is one. */
@@ -502,6 +543,12 @@ function selectSlashSuggestionRow(
   rows: SuggestionRows,
   actions: SuggestionRowActions,
 ): void {
+  if (index === rows.expandIndex) {
+    // The ellipsis occupies the first hidden workflow's index. Activating
+    // it reveals that row and keeps keyboard selection at the same position.
+    actions.expandWorkflows();
+    return;
+  }
   const category = rows.panelCategories[index];
   if (category) {
     actions.selectCategory(category);
@@ -537,18 +584,42 @@ function suggestionRowScrollTarget(
   index: number,
   rows: SuggestionRows,
 ): { readonly id: string } | undefined {
+  if (index === rows.expandIndex) {
+    return { id: SLASH_PANEL_EXPAND_WORKFLOWS_ID };
+  }
   const head = suggestionHeadRow(index, rows);
   return head === undefined
     ? rows.workflows[index - rows.headCount]
     : { id: head };
 }
 
+function suggestionNavigationOrder(
+  count: number,
+  reversed: boolean,
+  overviewCategoryCount: number | null,
+): readonly number[] {
+  return Array.from({ length: count }, (_, visualIndex) => {
+    // Above the composer the overview reads workflows from most recent to
+    // least recent, then the creation categories in their existing anchored
+    // order below them. Below the composer it reads categories then workflows
+    // top-down, which is the index order, so callers pass null there.
+    if (overviewCategoryCount !== null) {
+      return visualIndex < count - overviewCategoryCount
+        ? overviewCategoryCount + visualIndex
+        : count - visualIndex - 1;
+    }
+    return reversed ? count - visualIndex - 1 : visualIndex;
+  });
+}
+
 function useComposerSuggestionMenu({
   composer,
+  composerAnchored,
   reversedSuggestions,
   onKeyDown,
 }: {
   readonly composer: ComposerSignals;
+  readonly composerAnchored: boolean;
   readonly reversedSuggestions: boolean;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
 }): ComposerSuggestionMenuState {
@@ -562,6 +633,10 @@ function useComposerSuggestionMenu({
     composer.suggestion.setSelectedSuggestionIndex$,
   );
   const close = useSet(composer.suggestion.closeSuggestionMenu$);
+  const workflowsExpanded = useGet(composer.suggestion.slashWorkflowsExpanded$);
+  const expandWorkflows = useSet(composer.suggestion.expandSlashWorkflows$);
+  const workflowOverview = composerAnchored && slashRange?.query === "";
+  const collapseWorkflows = workflowOverview && !workflowsExpanded;
   const templatePanel = useSlashTemplatePanelActions(
     composer,
     slashRange?.query,
@@ -574,6 +649,7 @@ function useComposerSuggestionMenu({
   const workflowResult = useComposerWorkflowSuggestions(
     composer,
     slashRange?.query,
+    composerAnchored,
   );
   const workflowSuggestions = workflowResult.workflows;
   const showWorkflows = slashRange !== null;
@@ -586,21 +662,30 @@ function useComposerSuggestionMenu({
       ? chatThreadRange
       : null;
   const headCount = panelCategories.length;
-  const suggestionCount = showWorkflows
-    ? headCount + workflowSuggestions.length
-    : agents.length + chatThreads.length;
+  const expandIndex =
+    collapseWorkflows &&
+    workflowSuggestions.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      ? headCount + SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT
+      : null;
 
   const rows: SuggestionRows = {
     showWorkflows,
     panelCategories,
     headCount,
+    expandIndex,
     workflows: workflowSuggestions,
     agents,
     chatThreads,
   };
+  const suggestionOrder = suggestionNavigationOrder(
+    suggestionRowCount(rows),
+    reversedSuggestions,
+    reversedSuggestions && workflowOverview ? headCount : null,
+  );
 
   function selectSuggestion(index: number): void {
     selectSuggestionRow(index, rows, {
+      expandWorkflows,
       selectCategory: templatePanel.selectCategory,
       insertWorkflow,
       insertAgent,
@@ -619,10 +704,9 @@ function useComposerSuggestionMenu({
       composer,
       selectedTask,
       selectTask,
-      suggestionCount,
+      suggestionOrder,
       selectedSuggestionIndex: selectedIndex,
       showSuggestionMenu: open,
-      reversedSuggestions,
       setSelectedSuggestionIndex: setSelectedIndex,
       closeSuggestionMenu: close,
       selectSuggestion,
@@ -644,6 +728,9 @@ function useComposerSuggestionMenu({
     selectTemplate: templatePanel.selectTemplate,
     browseAllTemplates: templatePanel.browseAll,
     workflowsLoading: workflowResult.loading,
+    reverseWorkflows: reversedSuggestions && !workflowOverview,
+    collapseWorkflows,
+    expandWorkflows,
     showWorkflows,
     agents,
     chatThreads,
@@ -704,9 +791,24 @@ export function TiptapWorkflowComposer({
   const features = useLastResolved(featureSwitch$);
   const composerAnchored =
     features?.[FeatureSwitchKey.ComposerAnchoredSuggestions] ?? false;
+  // Composer-anchored menus open on the side with the room. A docked composer
+  // sits on the floor of the screen, so its menus open above it. From `sm` up
+  // the start page centres its composer and the free space is below it, where
+  // a menu forced above was squeezed against the top of the window. Either way
+  // the most relevant row sits next to the composer, so the rendered order
+  // follows the side.
+  const startPageCentred = useMediaQuery(START_PAGE_CENTRED_MEDIA_QUERY);
+  const suggestionsBelow =
+    composerAnchored &&
+    startPageCentred &&
+    !composer.editor.singleLineOnMobile &&
+    !composer.editor.forwardComposer;
+  const reversedSuggestions = composerAnchored && !suggestionsBelow;
+  const suggestionSide = suggestionsBelow ? "bottom" : "top";
   const suggestionMenu = useComposerSuggestionMenu({
     composer,
-    reversedSuggestions: composerAnchored,
+    composerAnchored,
+    reversedSuggestions,
     onKeyDown,
   });
   const suggestionAnchor = composerAnchored
@@ -799,14 +901,19 @@ export function TiptapWorkflowComposer({
         <SlashWorkflowMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
+          side={suggestionSide}
           composerAnchored={composerAnchored}
         >
           <SlashTemplatePanel
             menuRef={setSuggestionMenuRef}
             categories={suggestionMenu.panelCategories}
-            reversed={composerAnchored}
+            anchored={composerAnchored}
+            reversed={reversedSuggestions}
+            reverseWorkflows={suggestionMenu.reverseWorkflows}
             workflows={suggestionMenu.workflows}
             workflowsLoading={suggestionMenu.workflowsLoading}
+            collapseWorkflows={suggestionMenu.collapseWorkflows}
+            onExpandWorkflows={suggestionMenu.expandWorkflows}
             selectedIndex={suggestionMenu.selectedIndex}
             previewIndex={suggestionMenu.previewIndex}
             onPreview={suggestionMenu.previewSuggestion}
@@ -826,7 +933,9 @@ export function TiptapWorkflowComposer({
         <ComposerMentionSuggestionMenu
           menuRef={setSuggestionMenuRef}
           anchor={suggestionAnchor}
+          side={suggestionSide}
           composerAnchored={composerAnchored}
+          reversed={reversedSuggestions}
           agents={suggestionMenu.agents}
           chatThreads={suggestionMenu.chatThreads}
           selectedIndex={suggestionMenu.selectedIndex}

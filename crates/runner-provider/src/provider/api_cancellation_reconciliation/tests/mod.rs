@@ -791,6 +791,38 @@ async fn chunked_body_bound_is_enforced_without_content_length() {
 }
 
 #[tokio::test]
+async fn chunked_body_bound_accumulates_small_chunks_and_accepts_exact_limit() {
+    for (body_len, expected) in [
+        (MAX_RESPONSE_BYTES, Ok(Some(Mode::Hard))),
+        (MAX_RESPONSE_BYTES + 1, Err(ReadError::Oversized)),
+    ] {
+        let run_id = RunId::new_v4();
+        let mut body = serde_json::json!({
+            "protocolVersion": 1, "runId": run_id, "state": "present", "mode": "hard",
+        })
+        .to_string()
+        .into_bytes();
+        // Keep the decision valid so JSON validation cannot mask a missing size check.
+        body.resize(body_len, b' ');
+        let mut response =
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
+        for chunk in body.chunks(256) {
+            response.extend_from_slice(format!("{:x}\r\n", chunk.len()).as_bytes());
+            response.extend_from_slice(chunk);
+            response.extend_from_slice(b"\r\n");
+        }
+        response.extend_from_slice(b"0\r\n\r\n");
+
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(response)]).await;
+        let controller = controller_for_url(server.url());
+        let result = bounded(controller.client.read(run_id, "sandbox-test-token")).await;
+        server.assert_finished().await;
+        controller.shutdown().await;
+        assert_eq!(result, expected, "decoded body length: {body_len}");
+    }
+}
+
+#[tokio::test]
 async fn redirected_response_cannot_authorize_disappearance() {
     let mut server = Server::new().await;
     let mut redirect = Server::new().await;

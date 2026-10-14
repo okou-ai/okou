@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.10.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.16...runner-executor-v0.10.17) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
+## [0.10.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.15...runner-executor-v0.10.16) (2026-10-14)
+
+## [0.10.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.14...runner-executor-v0.10.15) (2026-10-13)
+
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.13...runner-executor-v0.10.14) (2026-10-13)
+
+## [0.10.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.12...runner-executor-v0.10.13) (2026-10-13)
+
+## [0.10.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.11...runner-executor-v0.10.12) (2026-10-13)
+
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.10...runner-executor-v0.10.11) (2026-10-13)
+
+
+### Refactoring
+
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.9...runner-executor-v0.10.10) (2026-10-13)
+
+## [0.10.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.8...runner-executor-v0.10.9) (2026-10-13)
+
+## [0.10.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.7...runner-executor-v0.10.8) (2026-10-13)
+
 ## [0.10.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.6...runner-executor-v0.10.7) (2026-10-12)
 
 

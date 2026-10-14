@@ -1823,6 +1823,7 @@ impl Drop for FirecrackerSandbox {
         {
             let resources = LeakedResources {
                 sandbox_id: self.id.clone(),
+                create_custody: None,
                 process_exit: self.runtime.process_exit.take(),
                 cow_device: self.cow_device.take(),
                 network: self.network.take_lease(),

@@ -18,8 +18,8 @@ export RUSTC_WRAPPER="" RUSTC_WORKSPACE_WRAPPER=""
 repo="${TMPDIR}/repo"
 context="${TMPDIR}/context"
 target_dir="${TMPDIR}/native-target"
-mkdir -p "${repo}/.github/scripts" "${repo}/crates/runner/src/contract"
-cp -a "${REPO_ROOT}/.github/scripts/runner-binary-build" "${repo}/.github/scripts/"
+mkdir -p "${repo}/.github/scripts/runner" "${repo}/crates/runner/src/contract"
+cp -a "${REPO_ROOT}/.github/scripts/runner/runner-binary-build" "${repo}/.github/scripts/runner/"
 
 # Use an actual audited owner's native module layout, not a new name filter.
 owner="${REPO_ROOT}/crates/runner-host/src/gc/workspaces"
@@ -73,7 +73,7 @@ commit_fixture() {
 digest_value() {
   GITHUB_OUTPUT="" GUEST_CLI_PATH="" GUEST_CLI_MANIFEST_PATH="" \
     RUNNER_BINARY_GIT_REVISION=HEAD \
-    "${repo}/.github/scripts/runner-binary-build/digest.sh" "$1" \
+    "${repo}/.github/scripts/runner/runner-binary-build/digest.sh" "$1" \
     | sed -n 's/^binary-input-digest=//p'
 }
 
@@ -82,8 +82,8 @@ materialize() {
     TARGET_TRIPLE=x86_64-unknown-linux-musl RUNNER_BINARY_GIT_REVISION=HEAD \
     RUNNER_BINARY_CONTEXT_ROOT="$context" RUNNER_TEMP="$TMPDIR" \
     CARGO_TARGET_DIR="$target_dir" \
-    "${repo}/.github/scripts/runner-binary-build/build.sh" materialize >/dev/null
-  "${context}/.github/scripts/runner-binary-build/context.sh" validate-workspace "$context"
+    "${repo}/.github/scripts/runner/runner-binary-build/build.sh" materialize >/dev/null
+  "${context}/.github/scripts/runner/runner-binary-build/context.sh" validate-workspace "$context"
 }
 
 build_native() {

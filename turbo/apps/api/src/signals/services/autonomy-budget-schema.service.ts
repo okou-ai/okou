@@ -1,4 +1,4 @@
-import { workflowAutomations } from "@okouai/db/schema/workflow";
+import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 
 import { workflowAutomationSnapshotColumns } from "./workflow-automation-snapshot";
 
@@ -33,7 +33,6 @@ export function workflowAutomationColumns() {
       workflowAutomations.officialReconciliationStatus,
     officialParameterBindings: workflowAutomations.officialParameterBindings,
     officialIntendedEnabled: workflowAutomations.officialIntendedEnabled,
-    officialResultEmailEnabled: workflowAutomations.officialResultEmailEnabled,
     createdAt: workflowAutomations.createdAt,
     updatedAt: workflowAutomations.updatedAt,
   };

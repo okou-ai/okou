@@ -8,6 +8,23 @@
 
 /// Runner-facing DTOs generated from TypeScript API contracts.
 pub mod runners {
+    /// Actual sandbox startup resource after preparation settles.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    pub enum SandboxStartupPath {
+        /// An exact retained sandbox and home.
+        #[serde(rename = "sandbox")]
+        Sandbox,
+        /// A new sandbox with a cached home image.
+        #[serde(rename = "home")]
+        Home,
+        /// A prepared tenant-free sandbox with a fresh home.
+        #[serde(rename = "blank")]
+        Blank,
+        /// A new sandbox with a fresh home.
+        #[serde(rename = "cold")]
+        Cold,
+    }
+
     /// Run-scoped DTOs exchanged between runners, guests, and the API.
     pub mod runs {
         /// API-owned provider configuration forwarded to Codex in the sandbox.
@@ -1462,6 +1479,16 @@ pub mod runners {
             ConfigurationChanged,
         }
 
+        /// VNC-only authority eviction, never an authorization grant.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct InvalidateNotification {
+            /// Affected active Run UUID.
+            pub run_id: String,
+            /// Affected VNC connection UUID, or explicit null for every VNC connection in the Run.
+            pub connection_id: Option<String>,
+        }
+
         /// Immutable winning official Runner process.
         #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
         #[serde(rename_all = "camelCase")]
@@ -2912,6 +2939,187 @@ pub mod runners {
     }
 }
 
+/// Shared sandbox application schema and role contracts.
+pub mod sandbox_channel {
+    /// Installed role/category revisions for one connection epoch.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct HelloResult {
+        /// Current installed role contracts.
+        pub categories: std::collections::BTreeMap<String, u64>,
+    }
+
+    /// Safe structured failure without raw paths or exception text.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct MessageResponseError {
+        /// Bounded error code; unknown codes are generic to consumers.
+        pub code: String,
+        /// Optional failed category.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub category: Option<String>,
+        /// Expected current revision when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub expected_version: Option<u64>,
+        /// Received revision when valid.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub received_version: Option<u64>,
+    }
+
+    /// Opaque schema-v1 application envelope; guest-contracts validates before dispatch.
+    /// Every message owns id; response requestId alone correlates a call.
+    #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+    #[serde(tag = "type", rename_all_fields = "camelCase")]
+    pub enum Message {
+        /// External bootstrap.
+        #[serde(rename = "hello")]
+        Hello {
+            /// Exact common schema revision.
+            schema_version: i64,
+            /// Fresh identity of this message.
+            id: String,
+            /// Installed current category revisions for the sending role.
+            categories: std::collections::BTreeMap<String, u64>,
+        },
+        /// Either-direction call.
+        #[serde(rename = "request")]
+        Request {
+            /// Exact common schema revision.
+            schema_version: i64,
+            /// Fresh identity of this message.
+            id: String,
+            /// Target business namespace.
+            category: String,
+            /// Exact target category revision.
+            category_version: u64,
+            /// Versioned category operation name.
+            operation: String,
+            /// Opaque object decoded by the operation contract.
+            params: serde_json::Value,
+        },
+        /// Correlated success or error.
+        #[serde(rename = "response")]
+        Response {
+            /// Exact common schema revision.
+            schema_version: i64,
+            /// Fresh identity of this message.
+            id: String,
+            /// Identity of the answered hello/request; distinct from this response id.
+            request_id: String,
+            /// Opaque result decoded by the captured outgoing operation.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            result: Option<serde_json::Value>,
+            /// Bounded safe business failure.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            error: Option<MessageResponseError>,
+        },
+        /// One-way notice without an implied ACK.
+        #[serde(rename = "event")]
+        Event {
+            /// Exact common schema revision.
+            schema_version: i64,
+            /// Fresh identity of this message.
+            id: String,
+            /// Target business namespace.
+            category: String,
+            /// Exact target category revision.
+            category_version: u64,
+            /// One-way category event name.
+            event: String,
+            /// Opaque object decoded by the event contract.
+            data: serde_json::Value,
+        },
+    }
+
+    /// Bidirectional diagnostic category contracts.
+    pub mod diagnostics {
+        /// Canonical bounded base64 echo request/result in either direction.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct Echo {
+            /// Canonical padded base64 of at most 16 KiB.
+            pub payload: String,
+        }
+
+        /// One-way diagnostic notice; no implicit response or ACK.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct Notice {
+            /// Bounded diagnostic text.
+            pub message: String,
+        }
+    }
+
+    /// Readonly home-directory category contracts.
+    pub mod fs {
+        /// Release this connection's directory continuation.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ListCloseParams {
+            /// Owned continuation to release.
+            pub cursor: String,
+        }
+
+        /// Successful bounded cursor release.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ListCloseResult {}
+
+        /// Exactly one relative raw-name path or owned continuation.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ListParams {
+            /// Canonical raw basename tokens relative to home.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub path: Option<Vec<String>>,
+            /// This connection's opaque continuation.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub cursor: Option<String>,
+        }
+
+        /// Readonly entry kinds.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ListResultEntrieKind {
+            /// Expandable directory within policy.
+            #[serde(rename = "directory")]
+            Directory,
+            /// Ordinary file metadata.
+            #[serde(rename = "file")]
+            File,
+            /// Displayed without target traversal.
+            #[serde(rename = "symlink")]
+            Symlink,
+            /// Special entry metadata only.
+            #[serde(rename = "other")]
+            Other,
+        }
+
+        /// One raw basename and safe display label.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ListResultEntrie {
+            /// Canonical raw basename bytes.
+            pub name_token: String,
+            /// Safe text label, never a path input.
+            pub display_name: String,
+            /// Readonly entry presentation kind.
+            pub kind: ListResultEntrieKind,
+        }
+
+        /// One bounded directory page; null continuation denotes actual EOF.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ListResult {
+            /// This enumeration's independent identity.
+            pub listing_id: String,
+            /// Bounded readonly metadata.
+            pub entries: Vec<ListResultEntrie>,
+            /// Continuation, or null at actual EOF.
+            pub next_cursor: Option<String>,
+        }
+    }
+}
+
 /// Webhook DTOs generated from TypeScript API contracts.
 pub mod webhooks {
     /// Agent webhook DTOs exchanged between sandboxes and the API.
@@ -3229,7 +3437,7 @@ pub mod webhooks {
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct RequestMaintenanceAttestation {
-                    /// Maintenance checkpoint attestation version.
+                    /// Memory publication attestation version.
                     pub schema_version: i64,
                     /// Opaque token fencing the maintenance claim.
                     pub lease_token: String,
@@ -3304,7 +3512,7 @@ pub mod webhooks {
                 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
                 #[serde(rename_all = "camelCase")]
                 pub struct RequestMaintenanceAttestation {
-                    /// Maintenance checkpoint attestation version.
+                    /// Memory publication attestation version.
                     pub schema_version: i64,
                     /// Opaque token fencing the maintenance claim.
                     pub lease_token: String,

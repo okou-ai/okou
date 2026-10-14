@@ -5,6 +5,26 @@ export default [
   ...config,
   ...oxlint.buildFromOxlintConfigFile("./.oxlintrc.json"),
   {
+    files: ["tests/worker.test.mjs"],
+    languageOptions: {
+      globals: {
+        Buffer: "readonly",
+        console: "readonly",
+        Headers: "readonly",
+        ReadableStream: "readonly",
+        Request: "readonly",
+        Response: "readonly",
+        TextDecoder: "readonly",
+        TextEncoder: "readonly",
+        URL: "readonly",
+      },
+    },
+  },
+  {
+    files: ["src/preview-response.js"],
+    languageOptions: { globals: { URL: "readonly" } },
+  },
+  {
     files: ["src/worker.js"],
     languageOptions: {
       globals: {

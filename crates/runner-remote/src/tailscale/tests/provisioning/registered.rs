@@ -4,6 +4,7 @@
 use std::sync::{Arc, Mutex};
 
 use runner_types::ids::RunId;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::regional_fixture::{Relay, map};
 use super::{configuration, fixture::Service as Api};
@@ -104,7 +105,18 @@ async fn configured_tls_oauth_noise_error_and_auth_url_remain_private_through_ac
 
 #[tokio::test]
 async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_owner() {
+    use tracing_subscriber::prelude::*;
+    let captured = tracing_test_support::CapturedEvents::default();
+    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(captured.clone()));
+    let _parent = tracing::dispatcher::set_default(&dispatch);
     let api = Api::secure(None).await;
+    // A separate loopback client abandons TLS before sending a ClientHello.
+    // Observe its retirement before starting the real provisioning exchange.
+    let mut abandoned = tokio::net::TcpStream::connect(api.dial.0).await.unwrap();
+    abandoned.shutdown().await.unwrap();
+    let mut byte = [0];
+    assert_eq!(bounded(abandoned.read(&mut byte)).await.unwrap(), 0);
+    drop(abandoned);
     let relay = Server::secure().await;
     let control = Control::new(ACCEPTED.to_vec(), map(&relay), KeyReply::Valid, false).await;
     let gate = WriteGate::new();
@@ -125,6 +137,11 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     control.allow_all();
     bounded(node.ready()).await.unwrap();
     assert_eq!(control.announced_home(), vec![1]);
+    assert_eq!(control.logout_count(), 0);
+    control.set_logout_reply(
+        hyper::StatusCode::OK,
+        br#"{"NodeKeyExpired":true}"#.to_vec(),
+    );
     let (mut frames, _) = bounded(relay.task).await.unwrap();
     run.close();
     bounded(node.physical()).await.unwrap();
@@ -137,12 +154,68 @@ async fn configured_tls_oauth_key_and_authenticated_root_share_one_physical_run_
     crate::tailscale::tests::peers::relay::closed(frames.get_mut(), true).await;
     assert_eq!(descriptors.lock().unwrap().len(), 1);
     control.assert_control_closed();
+    assert_eq!(control.logout_count(), 1);
     dial.assert_closed(2);
     // A possibly consumed key is never deleted as an unused key. Validated
     // registration + map + relay readiness allows later legitimate lifetimes.
     api.assert_contract(1, 0);
     api.finish().await;
     control.finish().await;
+    let events = captured.entries();
+    let logout = events
+        .iter()
+        .filter(|event| event.fields.get("stage").map(String::as_str) == Some("logout"))
+        .collect::<Vec<_>>();
+    assert_eq!(logout.len(), 1);
+    assert_eq!(logout[0].level, tracing::Level::INFO);
+    assert_eq!(logout[0].fields["reason"], "confirmed");
+    let startup = events
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("native Tailscale startup")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        startup
+            .iter()
+            .all(|event| event.level == tracing::Level::INFO)
+    );
+    assert_eq!(
+        startup
+            .iter()
+            .map(|event| (
+                event.fields["stage"].as_str(),
+                event.fields["reason"].as_str()
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("provisioning", "starting"),
+            ("key_tls", "starting"),
+            ("control_key", "starting"),
+            ("control_tls", "starting"),
+            ("noise", "starting"),
+            ("registration", "starting"),
+            ("map", "starting"),
+            ("map_response", "starting"),
+            ("derp_map", "starting"),
+            ("local_node", "starting"),
+            ("peers", "starting"),
+            ("home_announcement", "starting"),
+            ("relay", "starting"),
+            ("ready", "ready"),
+        ]
+    );
+    for private in [
+        "synthetic-secret",
+        "synthetic-access-token",
+        "tskey-auth-synthetic-one-use",
+    ] {
+        assert!(
+            events
+                .iter()
+                .all(|event| { event.fields.values().all(|value| !value.contains(private)) })
+        );
+    }
 }
 
 #[tokio::test]
@@ -176,6 +249,7 @@ async fn cancelling_a_received_registration_or_unready_map_never_deletes_or_recr
         let replacement = cache.register(run_id);
         assert_eq!(bounded(node.ready()).await, Err(Failure::Cancelled));
         bounded(node.physical()).await.unwrap();
+        assert_eq!(control.logout_count(), 1);
         drop(node);
         let fresh = replacement.lookup(uuid::Uuid::new_v4()).unwrap();
         assert!(matches!(

@@ -33,12 +33,22 @@ def opened_fds() -> Iterator[list[int]]:
         yield descriptors
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(b"state", id="single-read"),
+        pytest.param(
+            b"prefix:" + b"x" * (1024 * 1024) + b":distinct-tail",
+            id="multiple-reads",
+        ),
+    ],
+)
 def test_reads_exact_limit_from_opened_identity_and_closes(
     tmp_path: Path,
     opened_fds: list[int],
+    payload: bytes,
 ) -> None:
     path = tmp_path / "state.json"
-    payload = b"state"
     path.write_bytes(payload)
 
     with state_file.open_state_file(path, description="test state") as opened_file:
@@ -55,6 +65,27 @@ def test_reads_exact_limit_from_opened_identity_and_closes(
         )
         assert opened_file.read_bytes(len(payload)) == payload
         assert not os.get_inheritable(fd)
+
+    _assert_descriptor_closed(fd)
+
+
+def test_assembles_short_reads_from_real_descriptor_and_closes(
+    tmp_path: Path,
+    opened_fds: list[int],
+) -> None:
+    path = tmp_path / "state.json"
+    payload = b"prefix:" + bytes(range(32)) + b":distinct-tail"
+    path.write_bytes(payload)
+    real_read = os.read
+
+    def read_short(fd: int, count: int) -> bytes:
+        return real_read(fd, min(count, 7))
+
+    with state_file.open_state_file(path, description="test state") as opened_file:
+        assert len(opened_fds) == 1
+        fd = opened_fds[0]
+        with patch.object(state_file.os, "read", side_effect=read_short):
+            assert opened_file.read_bytes(len(payload)) == payload
 
     _assert_descriptor_closed(fd)
 

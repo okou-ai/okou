@@ -1,4 +1,6 @@
 import { computed, type Computed } from "ccstate";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -9,7 +11,11 @@ import { env } from "../../lib/env";
 import { db$ } from "../external/db";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import type { ApiOrgRole } from "../../types/auth";
-import { userFeatureSwitchContext } from "./feature-switches.service";
+import { createUserFeatureSwitchContext } from "./feature-switches.service";
+import {
+  userFeatureSwitchOverridesFromRows,
+  userFeatureSwitchRowCondition,
+} from "./feature-switch-scope";
 import { buildSlackConnectorOAuthStartUrl } from "./slack-connector-oauth-state";
 
 export const SLACK_BOT_SCOPES: readonly string[] = [
@@ -227,21 +233,45 @@ export function slackOrgStatus(
   });
 }
 
-export function slackOrgInstallation(args: {
-  readonly orgId: string;
-  readonly userId?: string;
-}): Computed<
+export function slackOrgInstallation(
+  input$: Computed<{
+    readonly orgId: string;
+    readonly userId?: string;
+  }>,
+): Computed<
   Promise<{
     readonly workspaceId: string;
     readonly botToken: string;
     readonly workspaceName: string | null;
   } | null>
 > {
-  const featureContext$ = args.userId
-    ? userFeatureSwitchContext(args.orgId, args.userId)
-    : undefined;
+  const overrides$ = computed(async (get) => {
+    const { orgId, userId } = get(input$);
+    if (!userId) {
+      return undefined;
+    }
+    const db = get(db$);
+    const rows = await db
+      .select({
+        userId: userFeatureSwitches.userId,
+        switches: userFeatureSwitches.switches,
+      })
+      .from(userFeatureSwitches)
+      .where(userFeatureSwitchRowCondition(orgId, userId));
+    return userFeatureSwitchOverridesFromRows(rows, userId);
+  });
+  const featureContext$ = computed(
+    async (get): Promise<FeatureSwitchContext> => {
+      const { orgId, userId } = get(input$);
+      if (!userId) {
+        return { orgId };
+      }
+      return { orgId, userId, overrides: await get(overrides$) };
+    },
+  );
 
   return computed(async (get) => {
+    const args = get(input$);
     const db = get(db$);
 
     const [installation] = await db
@@ -256,7 +286,7 @@ export function slackOrgInstallation(args: {
 
     const botToken = await decryptPersistentSecretValue(
       installation.encryptedBotToken,
-      featureContext$ ? await get(featureContext$) : { orgId: args.orgId },
+      args.userId ? await get(featureContext$) : { orgId: args.orgId },
     );
 
     return {
@@ -267,10 +297,12 @@ export function slackOrgInstallation(args: {
   });
 }
 
-export function slackUserInstallation(args: {
-  readonly orgId: string;
-  readonly userId: string;
-}): Computed<
+export function slackUserInstallation(
+  input$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+  }>,
+): Computed<
   Promise<
     | {
         readonly kind: "connected";
@@ -283,9 +315,13 @@ export function slackUserInstallation(args: {
     | { readonly kind: "not-connected" }
   >
 > {
-  const featureContext$ = userFeatureSwitchContext(args.orgId, args.userId);
+  const identity$ = computed((get) => {
+    return Promise.resolve(get(input$));
+  });
+  const featureContext$ = createUserFeatureSwitchContext(identity$);
 
   return computed(async (get) => {
+    const args = get(input$);
     const db = get(db$);
 
     const [installation] = await db

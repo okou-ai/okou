@@ -7,6 +7,7 @@ import { command } from "ccstate";
 import { delay } from "signal-timers";
 
 import type { DiscordCommandName } from "../../lib/discord-command-definition";
+import { discordConnectMessage } from "../../lib/discord-connect-message";
 import {
   discordAccountLabel,
   discordAccountMessage,
@@ -40,16 +41,11 @@ import {
   disconnectDiscordBinding$,
   discordDmBinding,
   discordEffectiveAgent,
-  discordGuildUserBinding,
   discordSenderBindings,
   selectDiscordDmBinding$,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
 
-function discordSetupGuidance(): string {
-  const worksUrl = new URL("/works", env("APP_URL")).toString();
-  return `Please connect your account to use Okou in this workspace.\n\nOpen [Works](${worksUrl}), sign in to Okou, and follow the steps to connect your Discord account. If Okou hasn't been set up for this workspace, ask a workspace admin to install it in your Discord server.`;
-}
 const UNCONFIRMED_REQUEST =
   "Discord could not confirm this request in time, so no changes were made. Run the command again.";
 // Discord's 3 s initial-response deadline plus a margin for in-flight delivery.
@@ -67,7 +63,7 @@ function discordHelp(): string {
     "",
     "**Usage**",
     "• Send a DM to this bot or mention it in a channel to message your workspace's default agent",
-    "• Use `/connect` in a DM to choose your workspace",
+    "• Use `/connect` to choose your workspace",
   ].join("\n");
 }
 
@@ -76,18 +72,6 @@ type AccountInteraction =
 
 const currentDiscordBinding$ = command(
   async ({ get }, actor: DiscordInteractionActor, signal: AbortSignal) => {
-    if (actor.guildId) {
-      const binding = await get(
-        discordGuildUserBinding({
-          guildId: actor.guildId,
-          discordUserId: actor.discordUserId,
-        }),
-      );
-      signal.throwIfAborted();
-      return binding
-        ? { kind: "connected" as const, binding }
-        : { kind: "not-connected" as const };
-    }
     const binding = await get(discordDmBinding(actor.discordUserId));
     signal.throwIfAborted();
     return binding;
@@ -149,15 +133,10 @@ const discordOrgPicker$ = command(
     },
     signal: AbortSignal,
   ): Promise<DiscordAccountMessage> => {
-    if (args.actor.guildId) {
-      return discordAccountMessage(
-        "In a server, Okou uses that server's workspace. Use `/connect` in a direct message to the bot to choose your DM workspace.",
-      );
-    }
     const bindings = await get(discordSenderBindings(args.actor.discordUserId));
     signal.throwIfAborted();
     if (bindings.length === 0) {
-      return discordAccountMessage(discordSetupGuidance());
+      return discordConnectMessage(args.actor.guildId);
     }
     if (
       bindings.length === 1 &&
@@ -199,7 +178,7 @@ const discordOrgPicker$ = command(
       );
       return discordAccountMessage(
         saved
-          ? "✅ Workspace selected for bot DMs. Message the bot to start chatting."
+          ? "✅ Workspace selected for Discord. Message the bot to start chatting."
           : STALE_CONTROL,
       );
     }
@@ -211,8 +190,8 @@ const discordOrgPicker$ = command(
       })
       .map((binding) => {
         return {
-          label: binding.guildName ?? `Server ${binding.guildId}`,
-          description: `Workspace ${binding.orgId}`,
+          label: binding.orgName,
+
           value: binding.connectionId,
         };
       });
@@ -224,7 +203,7 @@ const discordOrgPicker$ = command(
       ...(current.kind === "connected"
         ? { selected: current.binding.connectionId }
         : {}),
-      content: "Choose your workspace for bot DMs.",
+      content: "Choose your workspace for Discord.",
       placeholder: "Select a workspace",
     });
   },
@@ -292,7 +271,7 @@ const discordAccountAction$ = command(
     if (action === "help") {
       return discordAccountMessage(discordHelp());
     }
-    if (action === "org" || (action === "connect" && !actor.guildId)) {
+    if (action === "org" || action === "connect") {
       return set(
         discordOrgPicker$,
         { actor, botToken, page: control?.page, selection },
@@ -307,7 +286,7 @@ const discordAccountAction$ = command(
       return set(discordOrgPicker$, { actor, botToken }, signal);
     }
     if (current.kind !== "connected") {
-      return discordAccountMessage(discordSetupGuidance());
+      return discordConnectMessage(actor.guildId);
     }
     if (control && control.connectionId !== current.binding.connectionId) {
       return discordAccountMessage(STALE_CONTROL);

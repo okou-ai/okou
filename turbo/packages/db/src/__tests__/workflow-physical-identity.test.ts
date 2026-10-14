@@ -2,6 +2,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 
 import { schema } from "../index";
+import { workflowAutomations as runtimeWorkflowAutomations } from "../runtime/workflow-automation";
 import { officialWorkflowReconciliationWork } from "../schema/official-workflow-catalog";
 import {
   officialWorkflowAutomationIdentities,
@@ -70,7 +71,7 @@ describe("workflow schema physical identity", () => {
       officialWorkflowAutomationIdentities,
     );
     expect(schema.workflows).toBe(workflows);
-    expect(schema.workflowAutomations).toBe(workflowAutomations);
+    expect(schema.workflowAutomations).toBe(runtimeWorkflowAutomations);
     expect(schema.workflowWebhookAutomations).toBe(workflowWebhookAutomations);
     expect(schema.workflowWebhookDeliveries).toBe(workflowWebhookDeliveries);
     expect(schema.workflowGithubProcessedEvents).toBe(
@@ -90,20 +91,41 @@ describe("workflow schema physical identity", () => {
           return name.startsWith("official_");
         });
     };
+    const officialAutomationColumns = [
+      "official_blueprint_key",
+      "official_applied_fingerprint",
+      "official_reconciliation_status",
+      "official_parameter_bindings",
+      "official_intended_enabled",
+    ];
     expect({
       workflows: officialColumnNames(workflows),
       workflowAutomations: officialColumnNames(workflowAutomations),
+      runtimeWorkflowAutomations: officialColumnNames(
+        runtimeWorkflowAutomations,
+      ),
     }).toEqual({
       workflows: ["official_definition_name", "official_installation_state"],
-      workflowAutomations: [
-        "official_blueprint_key",
-        "official_applied_fingerprint",
-        "official_reconciliation_status",
-        "official_parameter_bindings",
-        "official_intended_enabled",
-        "official_result_email_enabled",
-      ],
+      workflowAutomations: officialAutomationColumns,
+      runtimeWorkflowAutomations: officialAutomationColumns,
     });
+  });
+
+  it("maps every physical Automation column at runtime", () => {
+    const columnNames = (table: Parameters<typeof getTableConfig>[0]) => {
+      return getTableConfig(table)
+        .columns.map(({ name }) => {
+          return name;
+        })
+        .sort();
+    };
+
+    expect(getTableConfig(runtimeWorkflowAutomations).name).toBe(
+      "workflow_automations",
+    );
+    expect(columnNames(runtimeWorkflowAutomations)).toStrictEqual(
+      columnNames(workflowAutomations),
+    );
   });
 
   it("keeps every explicit index and check name in the touched schemas", () => {
@@ -147,7 +169,6 @@ describe("workflow schema physical identity", () => {
           "idx_workflows_ordinary_private_owner_agent_name_unique",
           "idx_workflows_org",
           "idx_workflows_org_owner",
-          "idx_workflows_private_owner_agent_name_unique",
           "idx_workflows_public_agent_name_unique",
         ],
         checks: ["workflows_official_installation_check"],

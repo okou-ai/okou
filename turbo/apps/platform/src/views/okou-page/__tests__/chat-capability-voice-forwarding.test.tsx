@@ -31,6 +31,7 @@ import {
 } from "./chat-capability-test-helpers.ts";
 import { textContinuityDraft } from "./chat-continuity-test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
+import { START_PAGE_CENTRED_MEDIA_QUERY } from "../start-page-breakpoint.ts";
 import {
   findEnabledButton,
   NEW_CHAT_PATH,
@@ -100,8 +101,13 @@ test.each([false, true])(
   "keeps forward suggestions consistent with the composer-anchored switch (%s)",
   async (composerAnchored) => {
     installVoiceBoundaries();
+    // A desktop window also matches the start page's centred breakpoint, which
+    // the forward dialog's composer must not follow.
     context.mocks.browser.matchMedia((query) => {
-      return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
+      return (
+        query === SIDEBAR_DESKTOP_MEDIA_QUERY ||
+        query === START_PAGE_CENTRED_MEDIA_QUERY
+      );
     });
     await setupPage({
       context,
@@ -124,6 +130,14 @@ test.each([false, true])(
       composerAnchored ? "Website" : "Presentation",
     );
     const presentation = queryButton("Presentation", menu);
+    const user = userEvent.setup();
+    expect(presentation?.dataset.active === "true").toBe(!composerAnchored);
+    expect(
+      within(menu).queryAllByRole("region", { name: "Presentation" }),
+    ).toHaveLength(0);
+    if (composerAnchored) {
+      await user.keyboard("{ArrowUp}");
+    }
     expect(presentation).toHaveAttribute("data-active", "true");
     expect(
       within(menu).queryAllByRole("region", { name: "Presentation" }),
@@ -132,7 +146,6 @@ test.each([false, true])(
       document.querySelectorAll('[data-slot="slash-template-flyout"]'),
     ).toHaveLength(composerAnchored ? 0 : 1);
     expect(editor).toHaveFocus();
-    const user = userEvent.setup();
     await user.keyboard(composerAnchored ? "{ArrowUp}" : "{ArrowDown}");
     expect(queryButton("Illustration", menu)).toHaveAttribute(
       "data-active",

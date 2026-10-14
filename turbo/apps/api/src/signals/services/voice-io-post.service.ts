@@ -7,7 +7,7 @@ import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import { tapError } from "../utils";
 import { sttDailyDurationKey, sttDailyRateKey } from "./voice-io-limits";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 
 export const MAX_STT_FILE_SIZE = 25 * 1024 * 1024;
 const MAX_DURATION_READ_BYTES = 4096;
@@ -412,7 +412,7 @@ export async function getAudioDuration(file: File): Promise<number | null> {
 
 export const sttDailyPolicy$ = command(
   async (
-    { get },
+    { get, set },
     orgId: string,
     userId: string,
     durationSeconds: number,
@@ -422,7 +422,7 @@ export const sttDailyPolicy$ = command(
     const currentDate = nowDate();
     const rateKey = sttDailyRateKey(currentDate);
     const durationKey = sttDailyDurationKey(currentDate);
-    const capabilities = await loadOrgPlanCapabilities(db, orgId);
+    const capabilities = await set(loadOrgPlanCapabilities$, orgId);
     signal.throwIfAborted();
     const rateLimit = capabilities?.audioDailyRateLimit ?? 0;
     const durationLimit = capabilities?.audioDailyDurationSeconds ?? 0;

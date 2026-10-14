@@ -5,7 +5,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { z } from "zod";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
 import { i18n } from "../i18n/index.ts";
 import { clerk$ } from "./auth.ts";
@@ -13,7 +12,6 @@ import { apiClient$ } from "./api-client.ts";
 import { pathParams$ } from "./route.ts";
 import { updatePage$ } from "./react-router.ts";
 import { hideAppSkeleton$ } from "./app-skeleton.ts";
-import { featureSwitches$ } from "./external/feature-switch.ts";
 import { updateDocumentTitle$ } from "./document-title.ts";
 import {
   createSharedArtifactPreview,
@@ -91,19 +89,6 @@ export const setupSharedArtifact$ = command(
       Boolean(clerk.user),
       signal,
     );
-    if (
-      content?.expiresAt !== undefined &&
-      content.sharedThreadSnapshot !== true
-    ) {
-      const switches = await get(featureSwitches$);
-      signal.throwIfAborted();
-      if (!switches[FeatureSwitchKey.PrivateArtifacts]) {
-        const contentUrl = new URL(content.url);
-        contentUrl.hash = location.hash;
-        window.location.replace(contentUrl.href);
-        return;
-      }
-    }
     const referenceUrl = new URL(
       `/artifacts/${encodeURIComponent(id)}`,
       location.origin,
