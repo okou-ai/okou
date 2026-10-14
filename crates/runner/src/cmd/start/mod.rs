@@ -711,6 +711,13 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
+    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
+        ssh,
+        vnc,
+        usage: Some(crate::run_usage::Runtime::new(
+            crate::MitmUsageHandle::from(&mitm),
+        )),
+    });
     let (provider, group_name, connector_runtime_sync): (
         Arc<dyn JobProvider>,
         String,
@@ -727,9 +734,9 @@ async fn run_start_observed(
             http.clone(),
             server.token,
             ApiProviderConfig {
-                ably_side_message_handler: ssh
-                    .clone()
-                    .map(|runtime| runtime as Arc<dyn runner_provider::AblySideMessageHandler>),
+                ably_side_message_handler: guest_rpc.clone().map(|runtime| {
+                    Arc::new(runtime) as Arc<dyn runner_provider::AblySideMessageHandler>
+                }),
                 runner_identity,
                 runner_hostname: hostname.clone(),
                 group,
@@ -746,13 +753,6 @@ async fn run_start_observed(
         let connector_runtime_sync = provider.connector_runtime_sync_handle();
         (provider, group_name, Some(connector_runtime_sync))
     };
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
-        ssh,
-        vnc,
-        usage: Some(crate::run_usage::Runtime::new(
-            crate::MitmUsageHandle::from(&mitm),
-        )),
-    });
 
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,

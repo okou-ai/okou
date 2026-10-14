@@ -1,6 +1,7 @@
 //! Run-owned VNC sessions. Guest requests carry saved IDs, never authority.
 
 mod authority;
+mod invalidation;
 mod kerberos;
 mod network;
 mod operations;
@@ -12,7 +13,10 @@ pub(crate) mod tests;
 
 use runner_types::ids::RunId;
 use serde::Serialize;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, Weak},
+};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
@@ -132,6 +136,7 @@ pub struct VncRuntime {
     authority: Authority,
     network: Arc<dyn Network>,
     capacity: Arc<Semaphore>,
+    runs: Mutex<HashMap<RunId, Weak<Run>>>,
 }
 
 impl VncRuntime {
@@ -151,6 +156,7 @@ impl VncRuntime {
             authority,
             network: Arc::new(PublicNetwork),
             capacity: Arc::new(Semaphore::new(4)),
+            runs: Mutex::new(HashMap::new()),
         })))
     }
 
@@ -160,6 +166,65 @@ impl VncRuntime {
         cancel: &CancellationToken,
         ssh: Option<Arc<crate::ssh::Run>>,
     ) -> Arc<Run> {
-        Arc::new(Run::new(Arc::clone(self), run, cancel.child_token(), ssh))
+        let owner = Arc::new(Run::new(Arc::clone(self), run, cancel.child_token(), ssh));
+        let previous = self
+            .runs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(run, Arc::downgrade(&owner))
+            .and_then(|previous| previous.upgrade());
+        if let Some(previous) = previous {
+            previous.close();
+        }
+        owner
+    }
+}
+
+impl runner_provider::AblySideMessageHandler for VncRuntime {
+    fn handle(&self, message: &ably_subscriber::Message) -> bool {
+        use api_contracts::generated::types::runners::{ssh, vnc};
+        let ssh = match message.name.as_deref() {
+            Some("vnc-authority-invalidated") => false,
+            Some("ssh-authority-invalidated") => true,
+            _ => return false,
+        };
+        // Generated response DTOs ignore unknown fields and default a missing
+        // Option to None. Match the strict event schema before decoding so only
+        // an explicit null in a valid notification can select every connection.
+        if !message.data.as_object().is_some_and(|data| {
+            data.len() == 2 && data.contains_key("runId") && data.contains_key("connectionId")
+        }) {
+            return true;
+        }
+        let notification = if ssh {
+            serde_json::from_value::<ssh::InvalidateNotification>(message.data.clone())
+                .map(|value| (value.run_id, value.connection_id))
+        } else {
+            serde_json::from_value::<vnc::InvalidateNotification>(message.data.clone())
+                .map(|value| (value.run_id, value.connection_id))
+        };
+        let Ok((run, connection)) = notification else {
+            return true;
+        };
+        let Ok(run) = run.parse::<RunId>() else {
+            return true;
+        };
+        let connection = match connection {
+            Some(value) => match value.parse::<uuid::Uuid>() {
+                Ok(connection) => Some(connection),
+                Err(_) => return true,
+            },
+            None => None,
+        };
+        let owner = self
+            .runs
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&run)
+            .and_then(Weak::upgrade);
+        if let Some(owner) = owner {
+            owner.invalidate(connection, ssh);
+        }
+        true
     }
 }

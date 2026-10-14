@@ -340,6 +340,7 @@
     "src/signals/services/ssh-client-invalidation.service.ts",
     "src/signals/services/ssh-creation.service.ts",
     "src/signals/services/ssh-runtime-wakeup.service.ts",
+    "src/signals/services/remote-runtime-wakeup.service.ts",
     "src/signals/services/uploaded-artifact.service.ts"
   ],
   "exclude": ["node_modules", "dist"],

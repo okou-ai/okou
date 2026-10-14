@@ -172,7 +172,10 @@ pub(super) struct TestRun {
 
 impl TestRun {
     pub(super) fn new(runtime: &Arc<VncRuntime>) -> Self {
-        let id = RunId::new_v4();
+        Self::with_id(runtime, RunId::new_v4())
+    }
+
+    pub(super) fn with_id(runtime: &Arc<VncRuntime>, id: RunId) -> Self {
         let cancel = CancellationToken::new();
         let (incoming, receiver) = mpsc::channel(16);
         let dispatcher = Runtime {
