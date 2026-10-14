@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.14.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.12...runner-remote-v0.14.13) (2026-10-14)
+
 ## [0.14.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.11...runner-remote-v0.14.12) (2026-10-14)
 
 

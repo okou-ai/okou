@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.19...runner-executor-v0.10.20) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
 ## [0.10.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.18...runner-executor-v0.10.19) (2026-10-14)
 
 ## [0.10.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.17...runner-executor-v0.10.18) (2026-10-14)

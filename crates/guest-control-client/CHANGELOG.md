@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.14](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.13...guest-control-client-v0.23.14) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
 ## [0.23.13](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.12...guest-control-client-v0.23.13) (2026-10-14)
 
 ## [0.23.12](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.11...guest-control-client-v0.23.12) (2026-10-14)
