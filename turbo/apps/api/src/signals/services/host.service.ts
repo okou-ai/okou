@@ -90,6 +90,40 @@ const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 
+function publicationIdentityViolation(
+  owned: {
+    readonly orgId: string;
+    readonly siteOrgId: string;
+    readonly identity: {
+      readonly deploymentId: string;
+      readonly siteId: string;
+      readonly publicSlug: string;
+      readonly access: "owner-private-v1" | null;
+      readonly hasAccess: boolean;
+    };
+  },
+  args: {
+    readonly deploymentId: string;
+    readonly siteId: string;
+    readonly publicSlug: string;
+  },
+): "org_mismatch" | "manifest_identity" | "access_marker" | null {
+  if (owned.orgId !== owned.siteOrgId) {
+    return "org_mismatch";
+  }
+  if (
+    owned.identity.deploymentId !== args.deploymentId ||
+    owned.identity.siteId !== args.siteId ||
+    owned.identity.publicSlug !== args.publicSlug
+  ) {
+    return "manifest_identity";
+  }
+  if (owned.identity.hasAccess && owned.identity.access === null) {
+    return "access_marker";
+  }
+  return null;
+}
+
 /** R2 references do not carry authority over a deployment's current lifecycle. */
 export const authorizeHostedSiteDelivery$ = command(
   async (
@@ -110,9 +144,7 @@ export const authorizeHostedSiteDelivery$ = command(
       .select({
         prefix: hostedDeployments.r2Prefix,
         activeDeploymentId: hostedSites.activeDeploymentId,
-        userId: hostedDeployments.userId,
         orgId: hostedDeployments.orgId,
-        siteUserId: hostedSites.userId,
         siteOrgId: hostedSites.orgId,
         identity: sql`jsonb_build_object(
           'deploymentId', ${hostedDeployments.manifest}->'deploymentId',
@@ -150,15 +182,14 @@ export const authorizeHostedSiteDelivery$ = command(
     if (!owned) {
       return false;
     }
-    if (
-      owned.userId !== owned.siteUserId ||
-      owned.orgId !== owned.siteOrgId ||
-      owned.identity.deploymentId !== args.deploymentId ||
-      owned.identity.siteId !== args.siteId ||
-      owned.identity.publicSlug !== args.publicSlug ||
-      (owned.identity.hasAccess && owned.identity.access === null)
-    ) {
-      throw new Error("Hosted deployment has an invalid publication identity");
+    // Organization-scoped sites (before #23908) let any member publish to a
+    // site another member created, so the deployment publisher need not be
+    // the site creator. Allocation now rejects such redeploys.
+    const violation = publicationIdentityViolation(owned, args);
+    if (violation) {
+      throw new Error(
+        `Hosted deployment has an invalid publication identity: ${violation}`,
+      );
     }
     return (
       !owned.identity.hasAccess &&
