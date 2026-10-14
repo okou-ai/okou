@@ -1151,6 +1151,8 @@ describe("webhook telemetry contract", () => {
       ["sandbox", "reused"],
       ["workspace", "noReuseKey"],
       ["home", "poolMiss"],
+      ["blank", "poolMiss"],
+      ["blank", "noReuseKey"],
       ["cold", "poolMiss"],
       ["cold", "profileMismatch"],
       ["cold", "deviceLimitMismatch"],

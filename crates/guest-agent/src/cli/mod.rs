@@ -2455,6 +2455,7 @@ mod tests {
 
     fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::GuestConfig {
         env::GuestConfig {
+            sandbox_startup_path: None,
             run_id: "run-okou-env-test".to_string(),
             api_url: "https://runner.example".to_string(),
             api_token: "test-token".to_string(),

@@ -71,6 +71,7 @@ async fn zstd_sources_restore_both_frameworks_at_all_sizes_and_fail_before_spawn
                     &ctx,
                     &config,
                     RunStart {
+                        sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                         restore_guest_state: false,
                         reuse_result: SandboxReuseResult::PoolMiss,
                         home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -208,6 +209,7 @@ async fn run_in_sandbox_materializes_resume_session_history_ref_before_restore()
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -307,6 +309,7 @@ async fn unverifiable_home_candidates_use_owned_authoritative_restore_after_prep
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Home,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::Reused,
@@ -378,6 +381,7 @@ async fn run_in_sandbox_records_gzip_session_history_download_encoding() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -490,6 +494,7 @@ async fn run_in_sandbox_records_zstd_session_history_download_encoding() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -639,6 +644,7 @@ async fn run_in_sandbox_uses_prestarted_session_history_materializer() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -748,6 +754,7 @@ async fn run_in_sandbox_restores_large_inline_codex_history_without_cleanup() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -835,6 +842,7 @@ async fn run_in_sandbox_records_completed_prestarted_materializer_failure() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

@@ -84,6 +84,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_process_cancel_send_fails
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -154,6 +155,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_terminal_grace_expires() 
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -313,6 +315,7 @@ async fn execute_inner_preserves_system_stream_log_after_nonzero_exit_guest_copy
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -376,6 +379,7 @@ async fn execute_prepared_sandbox_run_logs_discovered_guest_session_id() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -427,6 +431,7 @@ async fn execute_prepared_sandbox_run_discovers_guest_session_id_after_nonzero_e
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -484,6 +489,7 @@ async fn execute_prepared_sandbox_run_canonicalizes_codex_discovered_cli_agent_s
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -535,6 +541,7 @@ async fn execute_prepared_sandbox_run_ignores_non_uuid_codex_discovered_cli_agen
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

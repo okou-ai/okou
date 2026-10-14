@@ -25,13 +25,18 @@ static SANDBOX_OPS_LOG_OVERRIDE: Mutex<Option<Arc<SandboxOpsSink>>> = Mutex::new
 /// external pathname replacement.
 struct SandboxOpsSink {
     path: PathBuf,
+    startup_path: Option<guest_contracts::sandbox_startup::SandboxStartupPath>,
     file: Mutex<Option<File>>,
 }
 
 impl SandboxOpsSink {
-    fn new(path: PathBuf) -> Self {
+    fn new(
+        path: PathBuf,
+        startup_path: Option<guest_contracts::sandbox_startup::SandboxStartupPath>,
+    ) -> Self {
         Self {
             path,
+            startup_path,
             file: Mutex::new(None),
         }
     }
@@ -67,10 +72,21 @@ impl SandboxOpsSink {
 /// This is not a scoped override. Tests and other callers that replace or clear
 /// the path must coordinate exclusive ownership of the shared state.
 pub fn set_sandbox_ops_log_file(path: impl AsRef<Path>) {
+    set_sandbox_ops_log_file_with_startup_path(path, None);
+}
+
+/// Install the captured startup resource with the process-owned operation sink.
+pub fn set_sandbox_ops_log_file_with_startup_path(
+    path: impl AsRef<Path>,
+    startup_path: Option<guest_contracts::sandbox_startup::SandboxStartupPath>,
+) {
     let mut state = SANDBOX_OPS_LOG_OVERRIDE
         .lock()
         .unwrap_or_else(|e| e.into_inner());
-    *state = Some(Arc::new(SandboxOpsSink::new(path.as_ref().to_path_buf())));
+    *state = Some(Arc::new(SandboxOpsSink::new(
+        path.as_ref().to_path_buf(),
+        startup_path,
+    )));
 }
 
 /// Clear the process-global sandbox operations log path.
@@ -160,6 +176,8 @@ struct SandboxOpEntry {
     outcome: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    runner_startup_path: Option<guest_contracts::sandbox_startup::SandboxStartupPath>,
 }
 
 /// Optional low-cardinality dimensions for a sandbox operation.
@@ -227,6 +245,7 @@ pub fn record_sandbox_op_with_dimensions(
         error: error.map(String::from),
         outcome: dimensions.outcome.map(String::from),
         reason: dimensions.reason.map(String::from),
+        runner_startup_path: sink.startup_path,
     };
 
     let Ok(mut record) = serde_json::to_vec(&entry) else {
@@ -278,6 +297,51 @@ mod tests {
         fn drop(&mut self) {
             clear_sandbox_ops_log_file();
         }
+    }
+
+    #[test]
+    fn startup_resource_is_captured_with_the_sink_and_cleared_on_replacement() {
+        use guest_contracts::sandbox_startup::SandboxStartupPath;
+
+        let _guard = lock_test_state();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sandbox-ops.jsonl");
+        let _override_guard = SandboxOpsOverrideGuard::set(&path);
+        for startup in [
+            SandboxStartupPath::Sandbox,
+            SandboxStartupPath::Home,
+            SandboxStartupPath::Blank,
+            SandboxStartupPath::Cold,
+        ] {
+            set_sandbox_ops_log_file_with_startup_path(&path, Some(startup));
+            record_sandbox_op("api_to_agent_start", Duration::ZERO, true, None);
+        }
+        set_sandbox_ops_log_file(&path);
+        record_sandbox_op("api_to_agent_start", Duration::ZERO, true, None);
+
+        let records: Vec<serde_json::Value> = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        let paths: Vec<_> = records
+            .iter()
+            .map(|record| {
+                record
+                    .get("runner_startup_path")
+                    .and_then(|value| value.as_str())
+            })
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                Some("sandbox"),
+                Some("home"),
+                Some("blank"),
+                Some("cold"),
+                None
+            ]
+        );
     }
 
     #[test]
@@ -477,6 +541,7 @@ mod tests {
         std::fs::write(&log_path, "").unwrap();
         let read_only_file = File::open(&log_path).unwrap();
         let sink = SandboxOpsSink {
+            startup_path: None,
             path: log_path.clone(),
             file: Mutex::new(Some(read_only_file)),
         };

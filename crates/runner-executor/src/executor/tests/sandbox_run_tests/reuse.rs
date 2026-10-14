@@ -336,6 +336,7 @@ async fn execute_reused_sandbox_drains_archive_when_guest_state_restore_fails() 
             &context,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: true,
                 reuse_result: runner_types::types::SandboxReuseResult::Reused,
                 home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,

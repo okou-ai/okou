@@ -34,8 +34,10 @@ export {
   runnerVersionSchema,
   sandboxReuseResultSchema,
   homeReuseResultSchema,
+  sandboxStartupPathSchema,
   type SandboxReuseResult,
   type HomeReuseResult,
+  type SandboxStartupPath,
 } from "./runner-primitives";
 
 const c = initContract();

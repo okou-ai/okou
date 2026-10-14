@@ -9,6 +9,7 @@ import {
   runnerNextSteerableInputResponseSchema,
   runnerSteeredInputResponseSchema,
   sessionHistoryEncodingSchema,
+  sandboxStartupPathSchema,
   storageMountEntrySchema,
 } from "../contracts/runners";
 import { sshTypeBindings } from "./ssh-types";
@@ -152,6 +153,24 @@ export const rustTypeModuleDocs = [
 ] satisfies readonly RustTypeModuleDoc[];
 
 export const rustTypeBindings = [
+  {
+    schema: sandboxStartupPathSchema,
+    rustModulePath: ["runners"],
+    rustTypeName: "SandboxStartupPath",
+    direction: "request",
+    declarations: [
+      {
+        rustTypeName: "SandboxStartupPath",
+        rustDoc: ["Actual sandbox startup resource after preparation settles."],
+        variants: {
+          sandbox: ["An exact retained sandbox and home."],
+          home: ["A new sandbox with a cached home image."],
+          blank: ["A prepared tenant-free sandbox with a fresh home."],
+          cold: ["A new sandbox with a fresh home."],
+        },
+      },
+    ],
+  },
   {
     schema: runnerWssTicketsContract.consume.responses[200],
     rustModulePath: ["runners", "wss"],

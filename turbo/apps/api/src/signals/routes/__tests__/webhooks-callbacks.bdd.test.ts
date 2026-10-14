@@ -2131,7 +2131,13 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     } = await createEventWebhookRun(`home startup telemetry ${randomUUID()}`);
     await own(async () => {
       const body = { ...homeStartupTelemetry, runId };
-      for (const startupPath of ["home", "workspace", "sandbox", "cold"]) {
+      for (const startupPath of [
+        "home",
+        "workspace",
+        "sandbox",
+        "blank",
+        "cold",
+      ]) {
         const response = await api.requestAgentTelemetryUnchecked(
           {
             ...body,

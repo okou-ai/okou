@@ -1881,6 +1881,8 @@ pub enum HomeReuseResult {
     SandboxPrepareFallback,
 }
 
+pub use api_contracts::generated::types::runners::SandboxStartupPath;
+
 impl HomeReuseResult {
     /// Wire-format string, kept lockstep with the serde derive in tests.
     pub const fn as_wire(self) -> &'static str {

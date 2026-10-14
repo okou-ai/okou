@@ -449,6 +449,8 @@ export {
   homeReuseResultSchema,
   type SandboxReuseResult,
   type HomeReuseResult,
+  sandboxStartupPathSchema,
+  type SandboxStartupPath,
 } from "./runner-primitives";
 export {
   runnersPollContract,

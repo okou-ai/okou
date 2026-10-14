@@ -80,6 +80,7 @@ async fn run_in_sandbox_runs_guest_storage_apply_for_cached_instruction_normaliz
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -163,6 +164,7 @@ async fn run_in_sandbox_applies_decoded_artifact_before_agent_spawn() {
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -251,6 +253,7 @@ async fn run_in_sandbox_starts_deferred_cache_fill_after_agent_spawn() {
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -387,6 +390,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_agent_spawn_fails() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -443,6 +447,7 @@ async fn run_in_sandbox_drops_deferred_cache_fill_when_guest_storage_apply_fails
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -502,6 +507,7 @@ async fn run_in_sandbox_records_storage_manifest_no_work_timing_without_guest_st
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -564,6 +570,7 @@ async fn run_in_sandbox_records_storage_manifest_guest_storage_apply_failure_tim
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::Reused,
                 home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -624,6 +631,7 @@ async fn run_in_sandbox_rejects_non_empty_artifact_without_archive_url() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

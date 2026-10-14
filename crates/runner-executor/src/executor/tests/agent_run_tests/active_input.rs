@@ -74,6 +74,7 @@ impl ApiRun {
                 &ctx,
                 &config,
                 RunStart {
+                    sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                     restore_guest_state: false,
                     reuse_result: SandboxReuseResult::PoolMiss,
                     home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -255,6 +256,7 @@ async fn run_local_active_input_rejection(diagnostic: &str) -> Vec<CapturedEvent
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -359,6 +361,7 @@ async fn run_in_sandbox_forwards_local_active_inputs_in_order() {
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -575,6 +578,7 @@ async fn run_in_sandbox_retries_local_active_input_with_same_id_after_uncertain_
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -850,6 +854,7 @@ async fn assert_uncertain_delivery_is_suppressed(outcome: sandbox::ProcessContro
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

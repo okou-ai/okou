@@ -1204,6 +1204,7 @@ pub(super) struct RunStart<'a> {
     pub(super) restore_guest_state: bool,
     pub(super) reuse_result: SandboxReuseResult,
     pub(super) home_reuse_result: HomeReuseResult,
+    pub(super) sandbox_startup_path: runner_types::types::SandboxStartupPath,
     pub(super) prev_storage: Option<&'a crate::storage_fingerprints::StorageFingerprints>,
 }
 
@@ -2860,6 +2861,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    env_map.insert(
+        guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+        guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
+    );
     telemetry.record(
         "runner_agent_env_build",
         env_build_started.elapsed(),
@@ -2979,7 +2984,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 telemetry,
                 start.reuse_result,
-                start.home_reuse_result,
+                start.sandbox_startup_path,
                 timing.shell_started_at,
                 timing.ready_at,
             );
@@ -2987,6 +2992,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,
                 home_reuse = ?start.home_reuse_result,
+                sandbox_startup_path = guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path),
                 shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
                 agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
                 containment_create_us = timing.containment_create.as_micros(),

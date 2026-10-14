@@ -93,6 +93,7 @@ async fn run_in_sandbox_uses_final_identity_when_restored_history_changes_before
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -154,6 +155,7 @@ async fn run_in_sandbox_uses_final_identity_without_resume_request() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -201,6 +203,7 @@ async fn run_in_sandbox_records_invalid_final_identity_metadata_reason() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -245,6 +248,7 @@ async fn run_in_sandbox_records_oversized_final_identity_metadata_reason() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -308,6 +312,7 @@ async fn run_in_sandbox_records_large_final_identity_metadata() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -351,6 +356,7 @@ async fn run_in_sandbox_records_final_identity_metadata_read_failure_reason() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -407,6 +413,7 @@ async fn run_in_sandbox_redacts_session_history_download_details_from_telemetry(
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
