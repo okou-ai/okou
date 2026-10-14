@@ -6,7 +6,7 @@ import {
   builtinConnectorsBySlugContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { createStore } from "ccstate";
-import { afterEach } from "vitest";
+import { onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -50,9 +50,9 @@ async function seedSandboxJwtFixture(): Promise<AuthenticatedFixture> {
   return fixture;
 }
 
-async function connectOpenai(fixture: AuthenticatedFixture): Promise<void> {
+async function connectOpenai(fixture: AuthenticatedFixture): Promise<string> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
-  await accept(
+  const response = await accept(
     setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorManualGrantContract,
     ).connect({
@@ -66,47 +66,33 @@ async function connectOpenai(fixture: AuthenticatedFixture): Promise<void> {
     }),
     [200],
   );
+  const connectionId = response.body.id;
+  onTestFinished(async () => {
+    await deleteOpenai(fixture, connectionId, [200, 404]);
+  });
+  return connectionId;
 }
 
-async function deleteOpenai(fixture: AuthenticatedFixture): Promise<void> {
+async function deleteOpenai(
+  fixture: AuthenticatedFixture,
+  connectionId: string,
+  statuses: readonly (200 | 404)[],
+): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId);
   const client = setupApp({ context, routes: connectorAccountRoutes })(
     connectorAccountsContract,
   );
-  const accounts = await accept(
-    client.connections({
+  await accept(
+    client.delete({
       headers: authHeaders(),
-      query: { kind: "builtin", connectorSlug: "openai" },
+      params: { connectionId },
+      body: { target: { kind: "builtin", connectorSlug: "openai" } },
     }),
-    [200, 404],
+    statuses,
   );
-  if (accounts.status === 404) {
-    return;
-  }
-  for (const account of accounts.body.connections) {
-    await accept(
-      client.delete({
-        headers: authHeaders(),
-        params: { connectionId: account.id },
-        body: { target: { kind: "builtin", connectorSlug: "openai" } },
-      }),
-      [200],
-    );
-  }
 }
 
 describe("GET /api/connectors/:connectorSlug", () => {
-  const seededFixtures: AuthenticatedFixture[] = [];
-
-  afterEach(async () => {
-    while (seededFixtures.length > 0) {
-      const fixture = seededFixtures.pop();
-      if (fixture) {
-        await deleteOpenai(fixture);
-      }
-    }
-  });
-
   it("returns 401 when not authenticated", async () => {
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorsBySlugContract,
@@ -156,8 +142,7 @@ describe("GET /api/connectors/:connectorSlug", () => {
 
   it("returns a connector created through the connector API", async () => {
     const fixture = seedAuthenticatedFixture();
-    seededFixtures.push(fixture);
-    await connectOpenai(fixture);
+    const connectionId = await connectOpenai(fixture);
     mocks.clerk.session(fixture.userId, fixture.orgId);
 
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
@@ -172,6 +157,7 @@ describe("GET /api/connectors/:connectorSlug", () => {
     );
 
     expect(response.body).toMatchObject({
+      id: connectionId,
       slug: "openai",
       authMethod: "api-token",
       connectionStatus: "connected",
@@ -180,7 +166,6 @@ describe("GET /api/connectors/:connectorSlug", () => {
 
   it("allows access with a sandbox JWT carrying connector:read capability", async () => {
     const fixture = await seedSandboxJwtFixture();
-    seededFixtures.push(fixture);
     await connectOpenai(fixture);
 
     const token = await claimedToken({
@@ -200,5 +185,122 @@ describe("GET /api/connectors/:connectorSlug", () => {
     );
 
     expect(response.body.slug).toBe("openai");
+  });
+
+  it("keeps stored connector details scoped to the user, organization, and slug", async () => {
+    const owner = seedAuthenticatedFixture();
+    const connectionId = await connectOpenai(owner);
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
+    );
+    const own = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(own.body.id).toBe(connectionId);
+
+    const wrongSlug = await accept(
+      client.get({
+        params: { connectorSlug: "github" },
+        headers: authHeaders(),
+      }),
+      [404],
+    );
+    mocks.clerk.session(`user_${randomUUID()}`, owner.orgId);
+    const otherUser = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [404],
+    );
+    mocks.clerk.session(owner.userId, `org_${randomUUID()}`);
+    const otherOrg = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [404],
+    );
+    expect(otherUser.body).toStrictEqual(wrongSlug.body);
+    expect(otherOrg.body).toStrictEqual(wrongSlug.body);
+
+    mocks.clerk.session(owner.userId, owner.orgId);
+    const ownAgain = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(ownAgain.body).toStrictEqual(own.body);
+  });
+
+  it("reads current account details after rename, deletion, and a new connection", async () => {
+    const owner = seedAuthenticatedFixture();
+    const connectionId = await connectOpenai(owner);
+    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
+      builtinConnectorsBySlugContract,
+    );
+    const original = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    const renamed = await accept(
+      setupApp({ context, routes: connectorAccountRoutes })(
+        connectorAccountsContract,
+      ).rename({
+        headers: authHeaders(),
+        params: { connectionId },
+        body: {
+          target: { kind: "builtin", connectorSlug: "openai" },
+          displayName: "Renamed OpenAI account",
+        },
+      }),
+      [200],
+    );
+    const afterRename = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(afterRename.body).toStrictEqual({
+      ...original.body,
+      updatedAt: renamed.body.updatedAt,
+    });
+
+    await deleteOpenai(owner, connectionId, [200]);
+    const deleted = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [404],
+    );
+    expect(deleted.body.error.code).toBe("NOT_FOUND");
+
+    const replacementId = await connectOpenai(owner);
+    expect(replacementId).not.toBe(connectionId);
+    const replacement = await accept(
+      client.get({
+        params: { connectorSlug: "openai" },
+        headers: authHeaders(),
+      }),
+      [200],
+    );
+    expect(replacement.body).toMatchObject({
+      id: replacementId,
+      slug: "openai",
+      authMethod: "api-token",
+      connectionStatus: "connected",
+    });
   });
 });
