@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { readFile, readdir } from "node:fs/promises";
-import { MemoryFS, PGlite } from "@electric-sql/pglite";
+import { MemoryFS, PGlite, type PGliteOptions } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { btree_gin } from "@electric-sql/pglite/contrib/btree_gin";
 import { btree_gist } from "@electric-sql/pglite/contrib/btree_gist";
@@ -14,10 +14,12 @@ import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
-// The API's ES-only TypeScript library declares WebAssembly types through the
-// SDK, but does not declare Node's runtime global value.
+// The API uses ES-only TypeScript libraries. Describe Node's existing runtime
+// value with the SDK's public option type, without adding browser globals.
 declare const WebAssembly: {
-  compile(bytes: Uint8Array): Promise<WebAssembly.Module>;
+  compile(
+    bytes: Uint8Array,
+  ): Promise<NonNullable<PGliteOptions["pgliteWasmModule"]>>;
 };
 
 /** Cleanup always finishes; preserve both failures rather than masking work. */
