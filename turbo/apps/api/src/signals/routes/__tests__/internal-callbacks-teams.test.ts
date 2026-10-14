@@ -1,5 +1,8 @@
 import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
@@ -13,7 +16,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -625,6 +628,29 @@ async function claimFollowUpInThread(args: {
   return await runsApi.claimRunnerJob(followUpRunId);
 }
 
+async function setupOwnedTeamsSteering() {
+  const fixtures = createPublicTeamsDispatchFixture(context);
+  const teams = await fixtures.run(() => {
+    return fixtures.create({ withDefaultAgent: true, paidNative: true });
+  });
+  teamsApiMocks({ fixture: teams.installation });
+  const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+  if (!runnerGroup) {
+    throw new Error("Expected the Teams fixture's configured runner group");
+  }
+  const restoreEnvironment = captureConnectorExternalState(context, [
+    "MICROSOFT_TEAMS_BOT_APP_ID",
+    "MICROSOFT_TEAMS_APP_TENANT_ID",
+    "MICROSOFT_TEAMS_BOT_APP_PASSWORD",
+    "MICROSOFT_TEAMS_BOT_TOKEN_URL",
+    "GIT_COMMIT_SHA",
+    "CLI_PKG_URL",
+    "GCP_LLM_PROJECT_ID",
+  ]);
+  const owner = publicRunOwner(context, teams.actor, { restoreEnvironment });
+  return { fixtures, teams, owner, runnerGroup };
+}
+
 beforeEach(() => {
   setupTeamsConnectTestEnv(APP_URL);
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", BOT_APP_PASSWORD);
@@ -641,6 +667,138 @@ afterEach(async () => {
 });
 
 describe("Teams chat callbacks", () => {
+  it("steers queued Teams personal input into the claimed Run", async () => {
+    const { teams, owner, runnerGroup } = await setupOwnedTeamsSteering();
+    await owner.run(async () => {
+      const fixture = teams.installation;
+      const firstActivityId = teamsFixtureExternalId(fixture, "steering-first");
+      const queuedActivityId = teamsFixtureExternalId(
+        fixture,
+        "steering-queued",
+      );
+      const firstRunId = await dispatchTeamsPersonalRun({
+        fixture,
+        activityId: firstActivityId,
+        text: "hold the Teams Run for steering",
+      });
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await owner.claim(firstRunId);
+      await expect(
+        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+      ).resolves.toStrictEqual({ input: null });
+
+      const queuedPrompt = `steer Teams input ${fixture.teamsTenantId}`;
+      await postTeamsPersonalMessage({
+        fixture,
+        activityId: queuedActivityId,
+        text: queuedPrompt,
+      });
+      const queuedInput = await findPendingInputEventByText(context, {
+        actor: teams.actor,
+        text: queuedPrompt,
+      });
+      if (!queuedInput) {
+        throw new Error("Expected the queued Teams steering event");
+      }
+      const next = await runsApi.nextSteerableInput(
+        claim.sandboxToken,
+        firstRunId,
+      );
+      if (!next.input) {
+        throw new Error("Expected materialized Teams steering input");
+      }
+      expect(next.input.eventId).toBe(queuedInput.id);
+      for (const text of [
+        queuedPrompt,
+        `Tenant ID: ${fixture.teamsTenantId}`,
+        `Conversation ID: a:personal-${fixture.teamsUserId}`,
+        "Conversation type: personal",
+        `Activity ID: ${queuedActivityId}`,
+        `Thread ID: ${queuedActivityId}`,
+      ]) {
+        expect(next.input.prompt).toContain(text);
+      }
+      expect(next.input.prompt).not.toContain(
+        `Activity ID: ${firstActivityId}`,
+      );
+      expect(next.input.prompt).not.toContain("Team ID:");
+      expect(next.input.prompt).not.toContain("Channel ID:");
+      await expect(
+        runsApi.declareSteeredInput(
+          claim.sandboxToken,
+          firstRunId,
+          queuedInput.id,
+        ),
+      ).resolves.toStrictEqual({ outcome: "steered" });
+      await expect(
+        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+      ).resolves.toStrictEqual({ input: null });
+      await completeSandboxRun({
+        runId: firstRunId,
+        sandboxToken: claim.sandboxToken,
+        exitCode: 0,
+      });
+      const completed = await runsApi.readRun(teams.actor, firstRunId);
+      expect(completed.status).toBe("completed");
+    });
+  });
+
+  it.each(["accepted dispatch", "claimed Run"] as const)(
+    "terminalizes owned Teams %s after a test-body failure",
+    async (phase) => {
+      const { fixtures, teams, owner, runnerGroup } =
+        await setupOwnedTeamsSteering();
+      const fixture = teams.installation;
+      const prompt = `Teams cleanup ${phase} ${fixture.teamsTenantId}`;
+      const failure = new Error(`Controlled failure after ${phase}`);
+      await expect(
+        owner.run(async () => {
+          await postTeamsPersonalMessage({
+            fixture,
+            activityId: teamsFixtureExternalId(fixture, "cleanup-failure"),
+            text: prompt,
+          });
+          if (phase === "claimed Run") {
+            const runId = await runIdForPrompt(teams.actor, prompt);
+            await runsApi.heartbeatRunner(runnerGroup);
+            await owner.claim(runId);
+          }
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+
+      const before = await runReadsApi.requestListLogs(
+        teams.actor,
+        { limit: 20 },
+        [200],
+      );
+      expect(before.body.data).toHaveLength(1);
+      const [acceptedRun] = before.body.data;
+      if (!acceptedRun) {
+        throw new Error("Expected an accepted Teams Run before cleanup");
+      }
+      expect(acceptedRun.prompt).toBe(prompt);
+      expect(acceptedRun.status).toBe(
+        phase === "claimed Run" ? "running" : "pending",
+      );
+      await owner.cleanup();
+      const after = await runReadsApi.requestListLogs(
+        teams.actor,
+        { limit: 20 },
+        [200],
+      );
+      expect(after.body.data).toHaveLength(1);
+      expect(after.body.data).toStrictEqual([
+        expect.objectContaining({ id: acceptedRun.id, status: "cancelled" }),
+      ]);
+      await expect(fixtures.status(teams)).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        tenantId: fixture.teamsTenantId,
+      });
+    },
+  );
+
   it.each(["stored context", "claimed launch material"] as const)(
     "preserves queued Teams %s",
     async (phase) => {
