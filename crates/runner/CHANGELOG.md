@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.231.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.3...runner-rs-v0.231.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* isolate vnc invalidation from ssh sessions ([#39843](https://github.com/okou-ai/okou/issues/39843)) ([0ec2680](https://github.com/okou-ai/okou/commit/0ec26807a5073e76d3b3fbbcb48c9452422d25cb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.2...runner-rs-v0.231.3) (2026-10-14)
 
 ### Release Dependencies

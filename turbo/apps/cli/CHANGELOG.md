@@ -1,5 +1,26 @@
 # Changelog
 
+## [9.389.0](https://github.com/okou-ai/okou/compare/cli-v9.388.5...cli-v9.389.0) (2026-10-14)
+
+
+### Features
+
+* unify discord account connections across servers ([#39915](https://github.com/okou-ai/okou/issues/39915)) ([4909db4](https://github.com/okou-ai/okou/commit/4909db42d809d2cdc358f56db539dc26971b6e00))
+
+
+### Bug Fixes
+
+* preserve link wallet failure diagnostics ([#39932](https://github.com/okou-ai/okou/issues/39932)) ([f43b528](https://github.com/okou-ai/okou/commit/f43b528f10ebb934d66baabbab074167b441097d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.558.0
+    * @okouai/core bumped to 8.752.1
+    * @okouai/pi-agent-runtime bumped to 1.49.28
+
 ## [9.388.5](https://github.com/okou-ai/okou/compare/cli-v9.388.4...cli-v9.388.5) (2026-10-14)
 
 

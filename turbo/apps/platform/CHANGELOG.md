@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1021.0](https://github.com/okou-ai/okou/compare/app-v0.1020.0...app-v0.1021.0) (2026-10-14)
+
+
+### Features
+
+* **app:** widen the slash template preview and describe workflow rows ([#39906](https://github.com/okou-ai/okou/issues/39906)) ([727f6a1](https://github.com/okou-ai/okou/commit/727f6a1c91d3c162bdc860517b29117d8effb574))
+* unify discord account connections across servers ([#39915](https://github.com/okou-ai/okou/issues/39915)) ([4909db4](https://github.com/okou-ai/okou/commit/4909db42d809d2cdc358f56db539dc26971b6e00))
+* **vnc:** preserve drafts and review deletion conflicts ([#39840](https://github.com/okou-ai/okou/issues/39840)) ([36fd7bb](https://github.com/okou-ai/okou/commit/36fd7bbf72c7e0907bc049520c165de588403d7d))
+
+
+### Bug Fixes
+
+* limit chat resource previews to six items ([#39828](https://github.com/okou-ai/okou/issues/39828)) ([07cd3cb](https://github.com/okou-ai/okou/commit/07cd3cb42e179de85840ad878123b649a9ea8592))
+* remove assistant history from voice input ([#39908](https://github.com/okou-ai/okou/issues/39908)) ([a785a4d](https://github.com/okou-ai/okou/commit/a785a4d4a5679c1451fb40b52878f593aea606fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.0
+    * @okouai/core bumped to 8.752.1
+
 ## [0.1020.0](https://github.com/okou-ai/okou/compare/app-v0.1019.4...app-v0.1020.0) (2026-10-14)
 
 

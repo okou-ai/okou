@@ -9,6 +9,32 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.733.0](https://github.com/okou-ai/okou/compare/api-v1.732.6...api-v1.733.0) (2026-10-14)
+
+
+### Features
+
+* **api:** list linked agents and chat threads in the web run prompt ([#39929](https://github.com/okou-ai/okou/issues/39929)) ([4d71d2c](https://github.com/okou-ai/okou/commit/4d71d2ca4d36a4d0a73d6d4c54bfe957799d419f))
+* unify discord account connections across servers ([#39915](https://github.com/okou-ai/okou/issues/39915)) ([4909db4](https://github.com/okou-ai/okou/commit/4909db42d809d2cdc358f56db539dc26971b6e00))
+
+
+### Bug Fixes
+
+* isolate vnc invalidation from ssh sessions ([#39843](https://github.com/okou-ai/okou/issues/39843)) ([0ec2680](https://github.com/okou-ai/okou/commit/0ec26807a5073e76d3b3fbbcb48c9452422d25cb))
+* preserve link wallet failure diagnostics ([#39932](https://github.com/okou-ai/okou/issues/39932)) ([f43b528](https://github.com/okou-ai/okou/commit/f43b528f10ebb934d66baabbab074167b441097d))
+* remove assistant history from voice input ([#39908](https://github.com/okou-ai/okou/issues/39908)) ([a785a4d](https://github.com/okou-ai/okou/commit/a785a4d4a5679c1451fb40b52878f593aea606fa))
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.0
+    * @okouai/core bumped to 8.752.1
+    * @okouai/db bumped to 1.336.0
+    * @okouai/pi-agent-runtime bumped to 1.49.28
+
 ## [1.732.6](https://github.com/okou-ai/okou/compare/api-v1.732.5...api-v1.732.6) (2026-10-14)
 
 
