@@ -36,7 +36,7 @@ describe("Serial private Pi maintenance", () => {
   });
 
   it.each(["published", "no-diff"])(
-    "replays a finalized %s result after queued updates launch a successor",
+    "replays a %s result across finalization without losing queued updates",
     async (outcome) => {
       const run = await prepareMaintenance();
       const first = await publish(
@@ -51,6 +51,24 @@ describe("Serial private Pi maintenance", () => {
         1,
       );
       await expectBlocked(run);
+      const prepared = await webhooks.requestAgentStoragePrepare(
+        first,
+        run.headers,
+        [200],
+      );
+      expect(prepared.body).toMatchObject({
+        versionId: first.versionId,
+        existing: true,
+      });
+      const activeReplay = await webhooks.requestAgentStorageCommit(
+        first,
+        run.headers,
+        [200],
+      );
+      expect(activeReplay.body).toMatchObject({
+        versionId: first.versionId,
+        deduplicated: true,
+      });
       const completed = await completeMaintenance(
         run,
         run.maintenance.claimedBaseVersionId,
