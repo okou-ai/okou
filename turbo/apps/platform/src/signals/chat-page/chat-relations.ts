@@ -54,6 +54,7 @@ function createPaging<T>(
     await withCleanup(
       (async () => {
         const first = await get(first$);
+        signal.throwIfAborted();
         const loaded = await get(data$);
         signal.throwIfAborted();
         if (!loaded.nextCursor) {
@@ -61,7 +62,9 @@ function createPaging<T>(
         }
         const page = await set(fetchMore$, loaded.nextCursor, signal);
         signal.throwIfAborted();
-        if ((await get(first$)) !== first) {
+        const currentFirst = await get(first$);
+        signal.throwIfAborted();
+        if (currentFirst !== first) {
           return;
         }
         set(extra$, (previous) => {
@@ -129,15 +132,14 @@ function chatOrigin(events: ChatEvent[]): ChatOrigin {
   if (!first) {
     return { kind: "not-started" };
   }
-  // New admissions use the run ID as the launch input ID. For older history,
-  // only the very first run event may establish a source; never use a later input.
-  const launch =
-    events.find((event) => {
-      return event.id === first.runId && event.runId === first.runId;
-    }) ?? first;
+  // Admission uses the run ID as its launch input ID; later inputs are not origins.
+  const launch = events.find((event) => {
+    return event.id === first.runId && event.runId === first.runId;
+  });
   if (
-    launch.eventType !== "input.prompt" &&
-    launch.eventType !== "input.automation"
+    !launch ||
+    (launch.eventType !== "input.prompt" &&
+      launch.eventType !== "input.automation")
   ) {
     return { kind: "unknown" };
   }
