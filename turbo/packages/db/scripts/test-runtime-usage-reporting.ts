@@ -20,7 +20,14 @@ try {
     ["model", null, "@preset/deleted-run", "@preset/deleted-run"],
     ["connector", "auto", "github", "github"],
     ["image", "auto", "gpt-image-2", "gpt-image-2"],
-    ["model", "gpt-6-sol", "legacy-alias", "gpt-6-sol"],
+    ["model", "gpt-6-sol", "legacy-alias", "legacy-alias"],
+    [
+      "model",
+      "claude-opus-5-5",
+      "anthropic/claude-opus-4.8",
+      "anthropic/claude-opus-4.8",
+    ],
+    ["model", "gpt-6-sol", "", "unknown"],
   ] as const;
   for (const [kind, selected, provider, expected] of cases) {
     const query = new PgDialect().sqlToQuery(sql`
@@ -43,6 +50,35 @@ try {
       [expected],
     );
   }
+  // Both finalized ledger representations use the same projection, without a
+  // Run relation. Constants protect identity, quantity and settled Credit totals.
+  const query = new PgDialect().sqlToQuery(sql`
+    WITH usage_event AS (
+      SELECT 'model'::text AS kind, 'openai/gpt-6-luna'::text AS provider,
+             17::bigint AS credits, 1000::bigint AS quantity
+      UNION ALL
+      SELECT 'model', '@preset/retired-operator-preset', 23, 2000
+    ), usage_event_hourly_rollup AS (SELECT * FROM usage_event)
+    SELECT ${modelUsageDisplayProviderSql(usageEvent)} AS provider, credits, quantity
+    FROM usage_event
+    UNION ALL
+    SELECT ${modelUsageDisplayProviderSql({ provider: sql`usage_event_hourly_rollup.provider` })} AS provider, credits, quantity
+    FROM usage_event_hourly_rollup
+  `);
+  const rows = await database.unsafe(query.sql);
+  assert.deepStrictEqual(rows.slice(0, 2), rows.slice(2));
+  assert.equal(
+    rows.reduce((total, row) => {
+      return total + Number(row.credits);
+    }, 0),
+    80,
+  );
+  assert.equal(
+    rows.reduce((total, row) => {
+      return total + Number(row.quantity);
+    }, 0),
+    6000,
+  );
   console.log(
     `Runtime reporting identity: ${cases.length} SQL fixtures passed`,
   );

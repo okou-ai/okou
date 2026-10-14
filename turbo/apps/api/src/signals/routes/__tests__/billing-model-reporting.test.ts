@@ -1,0 +1,164 @@
+import { randomUUID } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
+import { usageMembersContract } from "@okouai/api-contracts/contracts/usage";
+import { cronCompactUsageEventsContract } from "@okouai/api-contracts/contracts/cron";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow } from "../../../lib/time";
+import { flushWaitUntilForTest } from "../../context/wait-until";
+import { usageRecordRoutes } from "../usage-record";
+import { usageMembersRoutes } from "../usage-members";
+import { cronCompactUsageEventsRoutes } from "../cron-compact-usage-events";
+import { createChatEventsFixture } from "./helpers/chat-events-fixture";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { createBddApi } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
+import { createRouteMocks } from "./helpers/route-test";
+
+const context = testContext();
+const fixture = createChatEventsFixture(context);
+
+describe("Billing model reporting", () => {
+  it("retains captured providers and settled totals across compaction and Run deletion", async () => {
+    await setupApp({ context, routes: usageRecordRoutes, isolatePg: true });
+    const at = Date.UTC(2026, 2, 1, 12, 15);
+    mockNow(at);
+    const {
+      actor,
+      agentId,
+      runnerGroup,
+      run: own,
+      sendChatRun,
+      claimChatRun,
+    } = await publicChatActor(context, { clockTime: at });
+    fixture.mockPiResourceArchiveDownloads();
+    const historyObjects = fixture.mockPiObjectStore();
+    await own(async () => {
+      const run = await sendChatRun(actor, {
+        agentId,
+        prompt: "Report captured usage",
+        model: "auto",
+      });
+      await flushWaitUntilForTest();
+      const claim = await claimChatRun(runnerGroup, run.runId);
+      expect(claim.claim.modelUsageProvider).toBe("@preset/okou-1-0");
+      await fixture.webhooks.requestAgentUsageEvent(
+        {
+          runId: run.runId,
+          events: [
+            {
+              idempotencyKey: randomUUID(),
+              kind: "model",
+              provider: "gpt-6-astra",
+              category: "tokens.output",
+              quantity: 10_000,
+            },
+            {
+              idempotencyKey: randomUUID(),
+              kind: "image",
+              provider: "gpt-image-1",
+              category: "output_image.low.standard",
+              quantity: 2,
+            },
+          ],
+        },
+        claim.sandboxHeaders,
+        [200],
+      );
+      await fixture.completeSandboxFirstPiRun({
+        actor,
+        run,
+        claim,
+        historyObjects,
+        prompt: "Report captured usage",
+        answer: "Usage captured",
+        responsesModel: { provider: "openrouter", model: "@preset/okou-1-0" },
+      });
+      await flushWaitUntilForTest();
+
+      const report = async () => {
+        createRouteMocks(context).clerk.session(
+          actor.userId,
+          actor.orgId,
+          actor.orgRole,
+        );
+        const headers = { authorization: "Bearer clerk-session" };
+        const record = await accept(
+          setupApp({ context, routes: usageRecordRoutes })(
+            usageRecordContract,
+          ).get({ headers, query: { range: "7d", tz: "UTC" } }),
+          [200],
+        );
+        const members = await accept(
+          setupApp({ context, routes: usageMembersRoutes })(
+            usageMembersContract,
+          ).get({ headers, query: { range: "7d", tz: "UTC" } }),
+          [200],
+        );
+        return { record: record.body, members: members.body };
+      };
+      const raw = await report();
+      const expectedBreakdown = [
+        {
+          kind: "model",
+          credits: 10,
+          providers: [
+            {
+              provider: "@preset/okou-1-0",
+              credits: 10,
+              usageKinds: [{ kind: "model", credits: 10 }],
+            },
+          ],
+        },
+        {
+          kind: "image",
+          credits: 26,
+          providers: [
+            {
+              provider: "gpt-image-1",
+              credits: 26,
+              usageKinds: [{ kind: "image", credits: 26 }],
+            },
+          ],
+        },
+      ];
+      expect(raw.record.totalCredits, JSON.stringify(raw)).toBe(36);
+      expect(raw.record.rows[0]).toMatchObject({
+        threadId: run.threadId,
+        tokens: 10_000,
+        credits: 36,
+        breakdown: expectedBreakdown,
+      });
+      expect(raw.members.members[0]).toMatchObject({
+        creditsCharged: 36,
+        outputTokens: 10_000,
+        breakdown: expectedBreakdown,
+      });
+
+      // The real operator endpoint is in scope for raw/hourly reporting equivalence.
+      // Usage was constructed only through authenticated Sandbox requests.
+      const compaction = await accept(
+        setupApp({ context, routes: cronCompactUsageEventsRoutes })(
+          cronCompactUsageEventsContract,
+        ).compact({ headers: { authorization: "Bearer test-cron-secret" } }),
+        [200],
+      );
+      expect(compaction.body.reconciled).toBeTruthy();
+      expect(compaction.body.hourlyRowsInserted).toBeGreaterThan(0);
+      const compacted = await report();
+      expect(compacted).toStrictEqual(raw);
+
+      await createBddApi(context).deleteAgent(actor, agentId);
+      await createRunsApi(context).requestReadRun(actor, run.runId, [404]);
+      const deleted = await report();
+      expect(deleted.record.totalCredits).toBe(36);
+      expect(deleted.record.rows[0]).toMatchObject({
+        tokens: 10_000,
+        credits: 36,
+        breakdown: expectedBreakdown,
+      });
+      expect(deleted.members.members).toStrictEqual(raw.members.members);
+    });
+  });
+});

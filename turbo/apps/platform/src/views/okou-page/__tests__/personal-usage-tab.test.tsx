@@ -956,3 +956,54 @@ test("Refresh all loaded usage pages after billing changes", async () => {
     ).not.toBeInTheDocument();
   });
 });
+
+test("Personal billing merges model aliases and historical Auto presets without changing totals", async () => {
+  mockPersonalUsageStory([
+    {
+      threadId: "thread-model-aliases",
+      title: "Model usage history",
+      credits: 60,
+      tokens: 1200,
+      member: null,
+      lastActivityAt: "2026-03-21T10:00:00Z",
+      breakdown: [
+        {
+          kind: "model",
+          credits: 60,
+          providers: [
+            {
+              provider: "gpt-6-luna",
+              credits: 10,
+              usageKinds: [{ kind: "model", credits: 10 }],
+            },
+            {
+              provider: "openai/gpt-6-luna",
+              credits: 20,
+              usageKinds: [{ kind: "model", credits: 20 }],
+            },
+            {
+              provider: "okou-1.0",
+              credits: 5,
+              usageKinds: [{ kind: "model", credits: 5 }],
+            },
+            {
+              provider: "@preset/removed-history",
+              credits: 25,
+              usageKinds: [{ kind: "model", credits: 25 }],
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+  await openUsageSettings("usage-records");
+  await screen.findByText("Model usage history");
+  const user = userEvent.setup();
+  await user.hover(screen.getByTestId("usage-kind-segment-model"));
+  await expect(screen.findByText("Models - 60")).resolves.toBeInTheDocument();
+  expect(screen.getByText("GPT 6 Luna").parentElement).toHaveTextContent(
+    "GPT 6 Luna30",
+  );
+  expect(screen.getByText("Auto").parentElement).toHaveTextContent("Auto30");
+  expect(screen.queryByText(/@preset\//u)).not.toBeInTheDocument();
+});
