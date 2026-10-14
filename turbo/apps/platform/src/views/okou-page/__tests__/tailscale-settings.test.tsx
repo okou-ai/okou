@@ -125,9 +125,7 @@ test("Members see shared metadata without management or other owners' hosts", as
   expect(document.body.textContent).not.toContain("secret-canary");
 });
 
-test("The setup guide preserves the creation draft, copies the recommended rule and clears secrets after saving", async () => {
-  const user = userEvent.setup();
-  const clipboard = context.mocks.browser.clipboardWriteText();
+test("The collapsed setup guide preserves the creation draft and clears secrets after saving", async () => {
   const requests: unknown[] = [];
   context.mocks.api(tailscaleContract.create, ({ body, respond }) => {
     requests.push(body);
@@ -143,32 +141,26 @@ test("The setup guide preserves the creation draft, copies the recommended rule 
   const secret = within(dialog).getByLabelText("OAuth client secret");
   expect(secret).toHaveAttribute("type", "password");
   const guide = within(dialog).getByRole("region", {
-    name: "Set up Tailscale",
+    name: "How do I configure Tailscale?",
   });
+  const toggle = within(guide).getByText("How do I configure Tailscale?");
+  const steps = within(guide).getByRole("tablist", { hidden: true });
+  expect(steps).not.toBeVisible();
+  click(toggle);
+  expect(steps).toBeVisible();
   expect(within(guide).getByRole("tabpanel", { name: "Tags" })).toBeVisible();
-  await user.click(getAction("tab", "OAuth", guide));
+  click(getAction("tab", "OAuth", guide));
   expect(within(guide).getByRole("tabpanel", { name: "OAuth" })).toBeVisible();
   expect(getAction("link", "Trust credentials", guide)).toHaveAttribute(
     "href",
     "https://console.tailscale.com/admin/settings/trust-credentials",
   );
-  await user.click(getAction("tab", "General access rules", guide));
+  click(getAction("tab", "General access rules", guide));
   expect(within(guide).getAllByRole("tabpanel")).toHaveLength(1);
   expect(within(guide).getByText("All users and devices")).toBeVisible();
   expect(within(guide).getByText("All ports and protocols")).toBeVisible();
-  await user.click(within(guide).getByText("JSON preview"));
-  await user.click(getAction("button", "Copy recommended rule", guide));
-  await waitFor(() => {
-    expect(clipboard.writes).toHaveLength(1);
-  });
-  expect(JSON.parse(clipboard.writes[0]!)).toStrictEqual({
-    src: ["tag:okou"],
-    dst: ["*"],
-    ip: ["*"],
-  });
-  await waitFor(() => {
-    expect(getAction("button", "Copied", guide)).toBeVisible();
-  });
+  click(toggle);
+  expect(steps).not.toBeVisible();
   expect(within(dialog).getByLabelText("Name")).toHaveValue("New network");
   expect(within(dialog).getByLabelText("Registration tags")).toHaveValue(
     "tag:okou, tag:build",
@@ -177,6 +169,10 @@ test("The setup guide preserves the creation draft, copies the recommended rule 
     "test-client-id",
   );
   expect(secret).toHaveValue("secret-canary");
+  click(toggle);
+  expect(
+    within(guide).getByRole("tabpanel", { name: "General access rules" }),
+  ).toBeVisible();
   expect(getAction("button", "Save", dialog)).toBeEnabled();
   click(getAction("button", "Save", dialog));
   await waitFor(() => {
@@ -245,12 +241,11 @@ test("Editing metadata does not read or resend stored OAuth credentials", async 
     ),
   );
   const dialog = await screen.findByRole("dialog");
-  await userEvent.click(getAction("tab", "OAuth", dialog));
   expect(
-    within(dialog).getByText(
-      /To update an existing configuration's credentials/,
-    ),
-  ).toBeVisible();
+    within(dialog).queryByRole("region", {
+      name: "How do I configure Tailscale?",
+    }),
+  ).toBeNull();
   expect(within(dialog).queryByLabelText("OAuth client secret")).toBeNull();
   await fill(within(dialog).getByLabelText("Name"), "Renamed network");
   click(getAction("button", "Save", dialog));

@@ -61,7 +61,7 @@ export function TailscaleFields({
   const setReplace = useSet(replaceTailscaleCredentials$);
   return (
     <div className="grid min-w-0 gap-4">
-      <TailscaleSetupGuide showReplaceHint={config !== null && !replace} />
+      {config === null && <TailscaleSetupGuide />}
       <label className="grid gap-2">
         {t(($) => {
           return $.cloudflareAccess.name;
