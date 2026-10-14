@@ -9,7 +9,7 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { setResHeader$ } from "../context/hono";
 import { connectorOAuthCompletionReceipt } from "../services/connector-oauth-completion.service";
 import type { RouteEntry } from "../route-entry";
@@ -20,7 +20,7 @@ import {
   connectorAccountSummaries,
   connectorAccountsForTarget,
   isConnectorAccountDefaultConflict,
-  listConnectorAccountsByIds,
+  connectorAccountsByIds,
   renameConnectorAccount$,
   setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
@@ -88,19 +88,27 @@ const oauthCompletionInner$ = command(
   },
 );
 
-const inspectInner$ = computed(async (get) => {
+const inspectionScope$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
+  const body = await get(bodyResultOf(connectorAccountsContract.inspect));
+  return body.ok
+    ? {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        connectionIds: body.data.selections.map((selection) => {
+          return selection.connectionId;
+        }),
+      }
+    : null;
+});
+const inspectedAccounts$ = connectorAccountsByIds(inspectionScope$);
+
+const inspectInner$ = computed(async (get) => {
   const body = await get(bodyResultOf(connectorAccountsContract.inspect));
   if (!body.ok) {
     return body.response;
   }
-  const accounts = await listConnectorAccountsByIds(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    connectionIds: body.data.selections.map((selection) => {
-      return selection.connectionId;
-    }),
-  });
+  const accounts = await get(inspectedAccounts$);
   const accountsById = new Map(
     accounts.map((account) => {
       return [account.id, account];

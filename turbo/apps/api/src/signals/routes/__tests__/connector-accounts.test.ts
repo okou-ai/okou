@@ -237,10 +237,12 @@ describe("connector account lifecycle routes", () => {
     expect(scopeDiff.body.error.message).toBe("Connector account not found");
   });
 
-  it("inspects only exact owned accounts without leaking credentials", async () => {
-    await seedFixture();
+  it("inspects exact account duplicates in request order after rename and deletion without leaking credentials", async () => {
+    const app = await setupApp({ context, routes, isolatePg: true });
+    const accounts = app(connectorAccountsContract);
+    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
     const connected = await accept(
-      connectorClient().connect({
+      app(builtinConnectorManualGrantContract).connect({
         headers: authHeaders(),
         params: { connectorSlug: "openai" },
         body: {
@@ -251,55 +253,79 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
-    const missingId = randomUUID();
-
+    const target = { kind: "builtin", connectorSlug: "openai" } as const;
+    const selected = { connectionId: connected.body.id, target };
+    const missing = { connectionId: randomUUID(), target };
+    const mismatched = {
+      connectionId: connected.body.id,
+      target: { kind: "builtin", connectorSlug: "github" } as const,
+    };
+    const selections = [missing, selected, mismatched, selected];
+    const available = {
+      kind: "available",
+      connectionId: connected.body.id,
+      target,
+      authMethod: "api-token",
+      displayName: "Work",
+      externalId: null,
+      externalUsername: null,
+      externalEmail: null,
+      connectionStatus: "connected",
+      reconnectReason: null,
+    };
     const inspected = await accept(
-      accountClient().inspect({
+      accounts.inspect({ headers: authHeaders(), body: { selections } }),
+      [200],
+    );
+    expect(inspected.body.results).toStrictEqual([
+      { kind: "unavailable", ...missing },
+      available,
+      { kind: "unavailable", ...mismatched },
+      available,
+    ]);
+
+    const renamed = await accept(
+      accounts.rename({
         headers: authHeaders(),
-        body: {
-          selections: [
-            {
-              connectionId: missingId,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-            {
-              connectionId: connected.body.id,
-              target: { kind: "builtin", connectorSlug: "github" },
-            },
-            {
-              connectionId: connected.body.id,
-              target: { kind: "builtin", connectorSlug: "openai" },
-            },
-          ],
-        },
+        params: { connectionId: connected.body.id },
+        body: { target, displayName: "Renamed work" },
       }),
       [200],
     );
-
-    expect(inspected.body.results).toStrictEqual([
-      {
-        kind: "unavailable",
-        connectionId: missingId,
-        target: { kind: "builtin", connectorSlug: "openai" },
-      },
-      {
-        kind: "unavailable",
-        connectionId: connected.body.id,
-        target: { kind: "builtin", connectorSlug: "github" },
-      },
-      {
-        kind: "available",
-        connectionId: connected.body.id,
-        target: { kind: "builtin", connectorSlug: "openai" },
-        authMethod: "api-token",
-        displayName: "Work",
-        externalId: null,
-        externalUsername: null,
-        externalEmail: null,
-        connectionStatus: "connected",
-        reconnectReason: null,
-      },
+    expect(renamed.body).toMatchObject({
+      id: connected.body.id,
+      target,
+      displayName: "Renamed work",
+    });
+    const renamedInspection = await accept(
+      accounts.inspect({ headers: authHeaders(), body: { selections } }),
+      [200],
+    );
+    expect(renamedInspection.body.results).toStrictEqual([
+      { kind: "unavailable", ...missing },
+      { ...available, displayName: renamed.body.displayName },
+      { kind: "unavailable", ...mismatched },
+      { ...available, displayName: renamed.body.displayName },
     ]);
+
+    const deleted = await accept(
+      accounts.delete({
+        headers: authHeaders(),
+        params: { connectionId: connected.body.id },
+        body: { target },
+      }),
+      [200],
+    );
+    expect(deleted.body.deletedConnectionId).toBe(connected.body.id);
+    const deletedInspection = await accept(
+      accounts.inspect({ headers: authHeaders(), body: { selections } }),
+      [200],
+    );
+    expect(deletedInspection.body.results).toStrictEqual(
+      selections.map((selection) => {
+        return { kind: "unavailable", ...selection };
+      }),
+    );
   });
 
   it("accepts a claimed Runner credential for account inspection", async () => {
