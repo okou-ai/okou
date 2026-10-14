@@ -58,7 +58,12 @@ export function previewBuildSha(indexHtml) {
       return uniqueBuildSha(declarations);
     }
     if (["script", "style", "title", "noscript"].includes(tag)) {
-      const end = new RegExp(`</${tag}\\s*>`, "giu");
+      const end = {
+        script: /<\/script\s*>/giu,
+        style: /<\/style\s*>/giu,
+        title: /<\/title\s*>/giu,
+        noscript: /<\/noscript\s*>/giu,
+      }[tag];
       end.lastIndex = offset;
       const closing = end.exec(indexHtml);
       if (!closing) return undefined;
