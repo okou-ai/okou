@@ -691,7 +691,8 @@ function projectSummaryGroup(
 
 function connectorAccountAuthLookup(
   rows$: Computed<
-    Promise<readonly { readonly connectorSlug: string | null }[]>
+    | readonly { readonly connectorSlug: string | null }[]
+    | Promise<readonly { readonly connectorSlug: string | null }[]>
   >,
 ): Computed<Promise<ConnectorRuntimeAuthLookup | null>> {
   return computed(async (get) => {
@@ -864,30 +865,17 @@ export function connectorAccountSummaries(
   });
 }
 
-/** Custom accounts project without the connector catalog. */
-async function loadConnectorTargetAuthLookup(
-  db: ReadonlyDb,
-  target: ConnectorAccountTarget,
-): Promise<ConnectorRuntimeAuthLookup | null> {
-  return target.kind === "builtin"
-    ? await loadConnectorAccountAuthLookup(db, [
-        { connectorSlug: target.connectorSlug },
-      ])
-    : null;
+interface ConnectorAccountListScope {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly target: ConnectorAccountTarget;
+  readonly cursor?: string;
+  readonly limit: number;
+  readonly search?: string;
+  readonly includeScopeMismatch?: true;
 }
 
-export async function listConnectorAccountsForTarget(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly target: ConnectorAccountTarget;
-    readonly cursor?: string;
-    readonly limit: number;
-    readonly search?: string;
-    readonly includeScopeMismatch?: true;
-  },
-): Promise<
+type ConnectorAccountListResult =
   | {
       readonly kind: "ok";
       readonly connections: readonly ConnectorAccountConnection[];
@@ -895,78 +883,238 @@ export async function listConnectorAccountsForTarget(
       readonly defaultConnection?: ConnectorAccountConnection | null;
     }
   | { readonly kind: "invalid-cursor" }
-  | { readonly kind: "missing" }
-> {
-  const cursor = args.cursor ? decodeCursor(args.cursor) : undefined;
-  if (args.cursor && !cursor) {
-    return { kind: "invalid-cursor" };
-  }
-  const snapshot = await loadConnectorTargetAuthLookup(db, args.target);
-  if (
-    args.target.kind === "builtin" &&
-    (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
-  ) {
-    return { kind: "missing" };
-  }
-  if (
-    args.target.kind === "custom" &&
-    !(await customTargetIsVisible(db, {
-      orgId: args.orgId,
-      customConnectorId: args.target.customConnectorId,
-    }))
-  ) {
-    return { kind: "missing" };
-  }
-  const rows = await loadConnectorAccountRows(db, {
-    ...args,
-    cursor: cursor ?? undefined,
-    limit: args.limit + 1,
+  | { readonly kind: "missing" };
+
+function connectorAccountTargetRows(
+  scope$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly target: ConnectorAccountTarget;
+    readonly cursor?: ConnectorAccountCursor;
+    readonly limit: number;
+    readonly search?: string;
+    readonly defaultOnly?: true;
+  }>,
+) {
+  return computed(async (get) => {
+    const args = get(scope$);
+    const db = get(db$);
+    const searchPattern = args.search
+      ? `%${args.search
+          .replaceAll("\\", String.raw`\\`)
+          .replaceAll("%", String.raw`\%`)
+          .replaceAll("_", String.raw`\_`)}%`
+      : undefined;
+    const cursorCondition = args.cursor
+      ? or(
+          lt(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
+          and(
+            eq(connectors.createdAt, sql`${args.cursor.createdAt}::timestamp`),
+            lt(connectors.id, args.cursor.id),
+          ),
+        )
+      : undefined;
+    const searchCondition =
+      searchPattern === undefined
+        ? undefined
+        : or(
+            ilike(sql`${connectors.id}::text`, searchPattern),
+            ilike(connectors.displayName, searchPattern),
+            ilike(connectors.externalEmail, searchPattern),
+            ilike(connectors.externalUsername, searchPattern),
+            ilike(connectors.externalId, searchPattern),
+          );
+    return await db
+      .select(accountSelection())
+      .from(connectors)
+      .leftJoin(
+        orgCustomConnectors,
+        and(
+          eq(orgCustomConnectors.id, connectors.customConnectorId),
+          eq(orgCustomConnectors.orgId, connectors.orgId),
+        ),
+      )
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+        ),
+      )
+      .leftJoin(
+        accessTokenSecret,
+        and(
+          eq(accessTokenSecret.connectorId, connectors.id),
+          eq(accessTokenSecret.name, "access_token"),
+        ),
+      )
+      .leftJoin(
+        refreshTokenSecret,
+        and(
+          eq(refreshTokenSecret.connectorId, connectors.id),
+          eq(refreshTokenSecret.name, "refresh_token"),
+        ),
+      )
+      .leftJoin(
+        customConnectorAccountOauthBindings,
+        and(
+          eq(
+            customConnectorAccountOauthBindings.connectorAccountId,
+            connectors.id,
+          ),
+          eq(
+            customConnectorAccountOauthBindings.customConnectorId,
+            orgCustomConnectors.id,
+          ),
+        ),
+      )
+      .where(
+        and(
+          eq(connectors.orgId, args.orgId),
+          eq(connectors.userId, args.userId),
+          targetCondition(args.target),
+          args.defaultOnly ? eq(connectors.isDefault, true) : undefined,
+          cursorCondition,
+          searchCondition,
+        ),
+      )
+      .orderBy(desc(connectors.createdAt), desc(connectors.id))
+      .limit(args.limit);
   });
-  const now = nowDate();
-  const projected = rows.flatMap((row) => {
-    const connection = projectConnection(
-      row,
-      snapshot,
-      now,
-      args.includeScopeMismatch === true,
+}
+
+function connectorAccountCustomTargetIsVisible(
+  scope$: Computed<ConnectorAccountListScope>,
+) {
+  return computed(async (get) => {
+    const args = get(scope$);
+    if (args.target.kind !== "custom") {
+      return true;
+    }
+    const db = get(db$);
+    const [definition] = await db
+      .select({
+        providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+      })
+      .from(orgCustomConnectors)
+      .leftJoin(
+        orgCustomConnectorOauthConfigs,
+        and(
+          eq(
+            orgCustomConnectorOauthConfigs.connectorId,
+            orgCustomConnectors.id,
+          ),
+          eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(orgCustomConnectors.id, args.target.customConnectorId),
+          eq(orgCustomConnectors.orgId, args.orgId),
+        ),
+      )
+      .limit(1);
+    return (
+      definition !== undefined &&
+      !isIntegrationManagedCustomConnectorProviderAdapter(
+        definition.providerAdapter,
+      )
     );
-    return connection ? [connection] : [];
   });
-  const includeDefaultConnection =
-    args.includeScopeMismatch === true &&
-    args.cursor === undefined &&
-    args.search === undefined;
-  const defaultRow = includeDefaultConnection
-    ? (rows.find((row) => {
-        return row.isDefault;
-      }) ??
-      (
-        await loadConnectorAccountRows(db, {
-          ...args,
-          cursor: undefined,
-          limit: 1,
-          search: undefined,
-          defaultOnly: true,
-        })
-      )[0])
-    : undefined;
-  const defaultConnection = defaultRow
-    ? projectConnection(defaultRow, snapshot, now, true)
-    : null;
-  if (
-    args.target.kind === "custom" &&
-    rows.length > 0 &&
-    projected.length === 0
-  ) {
-    return { kind: "missing" };
-  }
-  const hasMore = rows.length > args.limit;
-  return {
-    kind: "ok",
-    connections: projected.slice(0, args.limit),
-    nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
-    ...(includeDefaultConnection ? { defaultConnection } : {}),
-  };
+}
+
+export function connectorAccountsForTarget(
+  scope$: Computed<ConnectorAccountListScope>,
+): Computed<Promise<ConnectorAccountListResult>> {
+  const cursor$ = computed((get) => {
+    const args = get(scope$);
+    return args.cursor ? decodeCursor(args.cursor) : undefined;
+  });
+  const authRows$ = computed((get) => {
+    const { target } = get(scope$);
+    return target.kind === "builtin"
+      ? [{ connectorSlug: target.connectorSlug }]
+      : [];
+  });
+  const authLookup$ = connectorAccountAuthLookup(authRows$);
+  const customTargetVisible$ = connectorAccountCustomTargetIsVisible(scope$);
+  const pageScope$ = computed((get) => {
+    const args = get(scope$);
+    return {
+      ...args,
+      cursor: get(cursor$) ?? undefined,
+      limit: args.limit + 1,
+    };
+  });
+  const rows$ = connectorAccountTargetRows(pageScope$);
+  const defaultScope$ = computed((get) => {
+    return {
+      ...get(scope$),
+      cursor: undefined,
+      limit: 1,
+      search: undefined,
+      defaultOnly: true as const,
+    };
+  });
+  const defaultRows$ = connectorAccountTargetRows(defaultScope$);
+
+  return computed(async (get): Promise<ConnectorAccountListResult> => {
+    const args = get(scope$);
+    const cursor = get(cursor$);
+    if (args.cursor && !cursor) {
+      return { kind: "invalid-cursor" };
+    }
+    const snapshot = await get(authLookup$);
+    if (
+      args.target.kind === "builtin" &&
+      (!snapshot || !snapshot.connectors.has(args.target.connectorSlug))
+    ) {
+      return { kind: "missing" };
+    }
+    if (args.target.kind === "custom" && !(await get(customTargetVisible$))) {
+      return { kind: "missing" };
+    }
+    const rows = await get(rows$);
+    const now = nowDate();
+    const projected = rows.flatMap((row) => {
+      const connection = projectConnection(
+        row,
+        snapshot,
+        now,
+        args.includeScopeMismatch === true,
+      );
+      return connection ? [connection] : [];
+    });
+    const includeDefaultConnection =
+      args.includeScopeMismatch === true &&
+      args.cursor === undefined &&
+      args.search === undefined;
+    const defaultRow = includeDefaultConnection
+      ? (rows.find((row) => {
+          return row.isDefault;
+        }) ?? (await get(defaultRows$))[0])
+      : undefined;
+    const defaultConnection = defaultRow
+      ? projectConnection(defaultRow, snapshot, now, true)
+      : null;
+    if (
+      args.target.kind === "custom" &&
+      rows.length > 0 &&
+      projected.length === 0
+    ) {
+      return { kind: "missing" };
+    }
+    const hasMore = rows.length > args.limit;
+    return {
+      kind: "ok",
+      connections: projected.slice(0, args.limit),
+      nextCursor: hasMore ? encodeCursor(rows[args.limit - 1]!) : null,
+      ...(includeDefaultConnection ? { defaultConnection } : {}),
+    };
+  });
 }
 
 interface ConnectorAccountScope {

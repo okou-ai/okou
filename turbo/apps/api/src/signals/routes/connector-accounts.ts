@@ -18,9 +18,9 @@ import {
   connectorAccount,
   connectorAccountDeletionImpact,
   connectorAccountSummaries,
+  connectorAccountsForTarget,
   isConnectorAccountDefaultConflict,
   listConnectorAccountsByIds,
-  listConnectorAccountsForTarget,
   renameConnectorAccount$,
   setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
@@ -142,10 +142,10 @@ const summariesInner$ = computed(async (get) => {
   return { status: 200 as const, body: { summaries: [...summaries] } };
 });
 
-const connectionsInner$ = computed(async (get) => {
+const connectionsScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(connectorAccountsContract.connections));
-  const result = await listConnectorAccountsForTarget(get(db$), {
+  return {
     orgId: auth.orgId,
     userId: auth.userId,
     target: targetFromQuery(query),
@@ -153,9 +153,14 @@ const connectionsInner$ = computed(async (get) => {
     ...(query.cursor ? { cursor: query.cursor } : {}),
     ...(query.search ? { search: query.search } : {}),
     ...(query.kind === "builtin" && query.includeScopeMismatch === "true"
-      ? { includeScopeMismatch: true }
+      ? { includeScopeMismatch: true as const }
       : {}),
-  });
+  };
+});
+const accountsForTarget$ = connectorAccountsForTarget(connectionsScope$);
+
+const connectionsInner$ = computed(async (get) => {
+  const result = await get(accountsForTarget$);
   if (result.kind === "invalid-cursor") {
     return badRequestMessage("Invalid connector account cursor");
   }
