@@ -20,6 +20,7 @@ pub(super) struct Observation {
 impl Attempt {
     pub(super) fn finish(self, failure: Option<Failure>) -> Option<Observation> {
         if let Some(observed_at) = self.authenticated_at {
+            // RFB connection evidence is independent of subsequent session admission.
             return Some(Observation {
                 attempt: self,
                 observed_at,

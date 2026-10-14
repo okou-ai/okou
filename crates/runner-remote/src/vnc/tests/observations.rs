@@ -102,6 +102,41 @@ async fn unavailable_reporting_on_old_api_or_outage_does_not_change_vnc_results_
 }
 
 #[tokio::test]
+async fn post_authentication_authority_errors_preserve_connection_evidence() {
+    for (outcome, status, reason) in [
+        ("unavailable", 200, "unavailable"),
+        ("configuration_changed", 200, "configuration_changed"),
+        ("valid", 500, "authority_failure"),
+    ] {
+        let mut h = Harness::new().await;
+        let _resolve = h.resolve().await;
+        let _check = h.check(outcome, status).await;
+        let report = h
+            .api
+            .mock_async(|when, then| {
+                when.method("POST")
+                    .path_matches(r"^/api/runners/runs/[^/]+/vnc/observations$")
+                    .json_body_includes(
+                        json!({
+                            "connectionId": CONNECTION,
+                            "expectedGeneration": 7,
+                            "expectedTransport": {"type": "direct"},
+                            "failureReason": null,
+                        })
+                        .to_string(),
+                    );
+                then.status(200).json_body(json!({"outcome": "recorded"}));
+            })
+            .await;
+        assert_eq!(h.start("shared").await.result()["reason"], reason);
+        mode(&h, 1).await;
+        closed(&h).await;
+        h.run.shutdown().await;
+        report.assert_calls_async(1).await;
+    }
+}
+
+#[tokio::test]
 async fn denied_vnc_start_does_not_publish_connection_evidence() {
     let mut h = Harness::new().await;
     let _resolve = h.resolve_response(json!({"outcome": "unavailable"})).await;
