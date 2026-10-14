@@ -8,6 +8,7 @@ import { clerk$ } from "../../signals/auth.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import {
   connectTelegramAccount$,
   telegramConnectLinkStatus$,
@@ -36,9 +37,9 @@ function BackLink() {
   const { t } = useTranslation();
   return (
     <ConnectBackLink
-      pathname="/settings/telegram"
+      pathname={ROUTES.works}
       label={t(($) => {
-        return $.connectors.providerConnect.telegram.back;
+        return $.connectors.providerSettings.telegram.backToIntegrations;
       })}
     />
   );

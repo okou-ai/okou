@@ -3453,7 +3453,6 @@
         "alreadyDescription": "Sie sind bereits verbunden. Senden Sie eine Nachricht in Telegram, um mit dem Chatten zu beginnen.",
         "alreadyDescriptionNamed": "Sie sind bereits mit {{bot}} verbunden. Senden Sie eine Nachricht in Telegram, um mit dem Chatten zu beginnen.",
         "alreadyTitle": "Bereits mit Telegram verbunden",
-        "back": "Zurück zu den Telegram-Einstellungen",
         "checkingConnectionDescription": "Bitte warten Sie, während wir Ihre Telegram-Verbindung überprüfen.",
         "checkingConnectionTitle": "Verbindung prüfen...",
         "checkingSession": "Bitte warten Sie, während wir Ihre {{brandName}}-Sitzung überprüfen.",
@@ -3774,16 +3773,8 @@
       },
       "telegram": {
         "backToIntegrations": "Zurück zu Integrationen",
-        "botFallback": "Telegram-Bot",
-        "disconnectAria": "Trennen Sie {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Telegram-Einstellungen konnten nicht geladen werden.",
-        "moreOptions": "Weitere Optionen für {{bot}}",
-        "notConnected": "Nicht verbunden",
-        "officialBot": "Offizieller Telegram-Bot",
-        "officialDescription": "Offizieller Bot bereitgestellt von {{brandName}}.",
-        "officialMissing": "Die offizielle Bot-Konfiguration fehlt.",
-        "pageDescription": "Verwalten Sie das Bot-Routing für diesen Arbeitsbereich"
+        "officialMissing": "Die offizielle Bot-Konfiguration fehlt."
       },
       "toasts": {
         "agentphoneConnected": "Telefonnummer verbunden",
@@ -6392,7 +6383,6 @@
       "connect": "Verbinden",
       "disconnect": "Trennen",
       "disconnecting": "Verbindung trennen…",
-      "manage": "Verwalten",
       "moreOptions": "Weitere Optionen",
       "uninstall": "Deinstallieren",
       "uninstalling": "Deinstallation…",
@@ -6463,7 +6453,6 @@
     },
     "telegram": {
       "description": "Leiten Sie Telegram-Nachrichten an Agenten weiter",
-      "openSettings": "Öffnen Sie die Telegram-Einstellungen",
       "title": "Telegram"
     }
   }

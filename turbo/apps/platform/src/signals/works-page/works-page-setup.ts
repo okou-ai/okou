@@ -14,6 +14,10 @@ import {
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { watchGithubIntegration$ } from "../okou-page/github.ts";
 import {
+  reloadTelegramBots$,
+  watchTelegramConnection$,
+} from "../okou-page/telegram.ts";
+import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "../okou-page/agentphone.ts";
@@ -73,6 +77,7 @@ export const setupWorksPage$ = command(
     }
     set(ownDiscordApprovalRoute$, signal);
     set(setAgentPhoneConnectDialogOpen$, false);
+    set(reloadTelegramBots$);
     set(updatePage$, createElement(WorksPage), "sidebar");
     set(
       updateDocumentTitle$,
@@ -88,6 +93,7 @@ export const setupWorksPage$ = command(
       set(watchTeamsConnection$, signal),
       set(watchDiscordConnection$, signal),
       set(watchGithubIntegration$, signal),
+      set(watchTelegramConnection$, signal),
       set(watchAgentPhoneConnection$, signal),
     ]);
     signal.throwIfAborted();

@@ -3433,7 +3433,6 @@
         "alreadyDescription": "Anda sudah tersambung. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyDescriptionNamed": "Anda sudah tersambung ke {{bot}}. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyTitle": "Sudah tersambung ke Telegram",
-        "back": "Kembali ke pengaturan Telegram",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi Telegram Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
@@ -3754,16 +3753,8 @@
       },
       "telegram": {
         "backToIntegrations": "Kembali ke integrasi",
-        "botFallback": "Bot Telegram",
-        "disconnectAria": "Putuskan sambungan {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Tidak dapat memuat setelan Telegram.",
-        "moreOptions": "Opsi lainnya untuk {{bot}}",
-        "notConnected": "Tidak terhubung",
-        "officialBot": "Bot Telegram resmi",
-        "officialDescription": "Bot resmi yang disediakan oleh {{brandName}}.",
-        "officialMissing": "Konfigurasi bot resmi tidak ada.",
-        "pageDescription": "Kelola perutean bot untuk ruang kerja ini"
+        "officialMissing": "Konfigurasi bot resmi tidak ada."
       },
       "toasts": {
         "agentphoneConnected": "Nomor telepon terhubung",
@@ -6365,7 +6356,6 @@
       "connect": "Hubungkan",
       "disconnect": "Putuskan koneksi",
       "disconnecting": "Memutuskan koneksi…",
-      "manage": "Kelola",
       "moreOptions": "Opsi lainnya",
       "uninstall": "Copot pemasangan",
       "uninstalling": "Mencopot pemasangan…",
@@ -6436,7 +6426,6 @@
     },
     "telegram": {
       "description": "Rutekan pesan Telegram ke agen",
-      "openSettings": "Buka pengaturan Telegram",
       "title": "Telegram"
     }
   }
