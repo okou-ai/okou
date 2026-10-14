@@ -50,6 +50,7 @@ import {
   setOfficialWorkflowSearch$,
   type OfficialWorkflowConfigurationForm,
 } from "../../signals/workflows-page/official-workflows-signals.ts";
+import { pwaNavigationEnabled$ } from "../../signals/okou-page/pwa-navigation.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
@@ -206,6 +207,8 @@ function OfficialWorkflowCatalogPage() {
   const search = useGet(officialWorkflowSearch$);
   const setSearch = useSet(setOfficialWorkflowSearch$);
   const reload = useSet(reloadOfficialWorkflows$);
+  // Mobile navigation puts the back control in the top bar.
+  const pwaNavigation = useGet(pwaNavigationEnabled$);
   const query = search.trim().toLocaleLowerCase();
   const workflows =
     catalogLoadable.state === "hasData"
@@ -223,16 +226,23 @@ function OfficialWorkflowCatalogPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="shrink-0 px-4 pb-0 pt-3 sm:px-6 md:pb-3 md:pt-10">
         <div className="mx-auto max-w-[900px]">
-          <Link
-            pathname={ROUTES.workflows}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          {!pwaNavigation && (
+            <Link
+              pathname={ROUTES.workflows}
+              className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft size={14} />
+              {i18n.t(($) => {
+                return $.workflows.common.workflows;
+              })}
+            </Link>
+          )}
+          <div
+            className={cn(
+              "flex flex-col justify-between gap-4 sm:flex-row sm:items-end",
+              !pwaNavigation && "mt-4",
+            )}
           >
-            <ArrowLeft size={14} />
-            {i18n.t(($) => {
-              return $.workflows.common.workflows;
-            })}
-          </Link>
-          <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
             <div>
               <h1 className="text-lg font-semibold tracking-tight text-foreground">
                 {i18n.t(($) => {

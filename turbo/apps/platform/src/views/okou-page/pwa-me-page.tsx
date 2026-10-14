@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import {
   Button,
   buttonVariants,
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
@@ -98,12 +99,12 @@ function MeLink({
     <Link
       pathname={pathname}
       target={target}
-      className={buttonVariants({
-        variant: "quiet",
-        size: "lg",
-        iconSize: "md",
-        className: "w-full justify-start gap-3 px-3 text-foreground",
-      })}
+      // `cn` merges the overrides the way Button does; cva alone appends them,
+      // which left link rows at the size's padding and colour.
+      className={cn(
+        buttonVariants({ variant: "quiet", size: "lg", iconSize: "md" }),
+        "w-full justify-start gap-3 px-3 text-foreground",
+      )}
     >
       <Icon aria-hidden />
       <span className="min-w-0 flex-1 truncate text-left">{children}</span>

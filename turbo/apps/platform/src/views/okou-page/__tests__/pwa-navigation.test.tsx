@@ -617,6 +617,33 @@ test("Open profile settings from Me in a regular mobile browser", async () => {
   expect(within(settings).getByText("Chat list user")).toBeInTheDocument();
 });
 
+test("Start the first chat from an empty mobile chat list", async () => {
+  mockDisplayMode({ standalone: true, desktop: false });
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 81,
+    threads: [],
+  });
+
+  await setupPage({
+    context,
+    path: CHAT_LIST_PATH,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
+    ...workspace.pageOptions,
+  });
+
+  const emptyMessage = await screen.findByText(
+    "Start a conversation and it'll show up here",
+  );
+
+  click(fastButton("New chat", emptyMessage.parentElement!));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
+  expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
+});
+
 test("Step back to Me from the pages it opens", async () => {
   mockDisplayMode({ standalone: true, desktop: false });
   const workspace = installContinuityWorkspace(context, {

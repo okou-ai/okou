@@ -36,11 +36,21 @@ function useSelectFilter() {
   };
 }
 
-function PwaChatListHeader() {
-  const { t } = useTranslation();
+function useOpenNewChat() {
   const currentAgentId = useLastResolved(currentChatAgentId$);
   const openNewChat = useSet(navigateToNewChat$);
   const pageSignal = useGet(pageSignal$);
+  return {
+    disabled: !currentAgentId,
+    open: () => {
+      detach(openNewChat(pageSignal), Reason.DomCallback);
+    },
+  };
+}
+
+function PwaChatListHeader() {
+  const { t } = useTranslation();
+  const newChat = useOpenNewChat();
   const openSearch = useSet(openThreeColumnSearchDialog$);
 
   return (
@@ -67,13 +77,11 @@ function PwaChatListHeader() {
           size="icon"
           iconSize="lg"
           className="min-h-11 min-w-11 shrink-0"
-          disabled={!currentAgentId}
+          disabled={newChat.disabled}
           aria-label={t(($) => {
             return $.chat.newChat;
           })}
-          onClick={() => {
-            detach(openNewChat(pageSignal), Reason.DomCallback);
-          }}
+          onClick={newChat.open}
         >
           <SquarePen aria-hidden="true" />
         </Button>
@@ -96,6 +104,26 @@ function ShowAllChatsButton() {
     >
       {t(($) => {
         return $.chat.sidebar.showAllChats;
+      })}
+    </Button>
+  );
+}
+
+// A first visit lands on an empty list, so the start page is one tap away
+// rather than behind the header icon.
+function StartChatButton() {
+  const { t } = useTranslation();
+  const newChat = useOpenNewChat();
+  return (
+    <Button
+      variant="neutral"
+      className="min-h-11 gap-2"
+      disabled={newChat.disabled}
+      onClick={newChat.open}
+    >
+      <SquarePen aria-hidden="true" />
+      {t(($) => {
+        return $.chat.newChat;
       })}
     </Button>
   );
@@ -136,6 +164,9 @@ function PwaChatListEmpty({
       <MessageSquare size={28} aria-hidden="true" />
       <p className="text-sm">{message}</p>
       {unread || archived || muted ? <ShowAllChatsButton /> : null}
+      {!unread && !archived && !muted && !hasHiddenArchivedThreads ? (
+        <StartChatButton />
+      ) : null}
       {hasHiddenArchivedThreads ? (
         <Button
           variant="quiet"

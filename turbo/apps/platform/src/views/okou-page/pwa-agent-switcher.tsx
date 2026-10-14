@@ -136,7 +136,7 @@ export function PwaAgentSwitcher() {
         <span className="relative flex shrink-0">
           <ChevronDown size={16} aria-hidden="true" />
           {otherAgentsUnread && (
-            <span className="absolute -right-1 -top-1.5 flex">
+            <span className="absolute -right-1 -top-1 flex">
               <AgentUnreadIndicator />
             </span>
           )}
