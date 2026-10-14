@@ -21,12 +21,13 @@
 //! failures to the caller. Metadata-free cancellation fallback remains
 //! fire-and-forget because the runner is its correctness guarantee.
 //!
-//! Trust model: sandbox and home metadata are relayed from
-//! runner-set env vars and included in the payload for analytics only. The
+//! Trust model: the sandbox identifier is relayed from runner-set env vars
+//! and included in the payload for diagnostics only. The
 //! guest is semi-trusted under the normal threat model, and the runner's
 //! fallback call is idempotency-short-circuited, so a compromised guest
-//! could skew these values with no way for the runner to correct them. Do
-//! not treat these fields as authoritative for security decisions.
+//! could skew this value with no way for the runner to correct it. Do
+//! not treat the reported identifier as authoritative for security decisions.
+//! Startup attribution is reported independently by the Runner.
 
 use crate::constants;
 use crate::error::AgentError;
