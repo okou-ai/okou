@@ -706,6 +706,8 @@ pub mod runners {
             pub runner_identity: ObservationRequestRunnerIdentity,
             /// Configuration used, including successful TOFU advancement.
             pub expected_generation: i64,
+            /// Immutable creation instance at PostgreSQL microsecond precision.
+            pub expected_created_at: String,
             /// UTC observation time, ordered independently of report delivery.
             pub observed_at: String,
             /// Connection failure; null means verified host and authenticated user.
@@ -1487,6 +1489,114 @@ pub mod runners {
             pub run_id: String,
             /// Affected VNC connection UUID, or explicit null for every VNC connection in the Run.
             pub connection_id: Option<String>,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ObservationRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact RFB transport snapshot returned by credential resolution.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum ObservationRequestExpectedTransport {
+            /// Expected direct RFB route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Expected verified saved SSH carrier for RFB.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact saved SSH UUID for the RFB route.
+                connection_id: String,
+                /// Resolved SSH configuration generation.
+                generation: i64,
+            },
+        }
+
+        /// Independently authorized exact KDC transport snapshot.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum ObservationRequestExpectedKdcTransport {
+            /// Exact saved public-network KDC route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Exact independently authorized SSH-to-loopback KDC route.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact separately granted saved SSH UUID.
+                connection_id: String,
+                /// Current SSH generation, independently fenced from RFB.
+                generation: i64,
+            },
+        }
+
+        /// Secret-free connection evidence only.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ObservationRequestFailureReason {
+            /// Resolved credentials could not be used.
+            #[serde(rename = "invalid_credential")]
+            InvalidCredential,
+            /// Destination rejected by network policy.
+            #[serde(rename = "unsafe_destination")]
+            UnsafeDestination,
+            /// Connection transport failed.
+            #[serde(rename = "network_failure")]
+            NetworkFailure,
+            /// Peer did not complete the selected protocol.
+            #[serde(rename = "protocol")]
+            Protocol,
+            /// Connection setup deadline expired.
+            #[serde(rename = "timed_out")]
+            TimedOut,
+            /// Peer disconnected during connection setup.
+            #[serde(rename = "disconnected")]
+            Disconnected,
+            /// Client authentication or server identity verification failed.
+            #[serde(rename = "authentication_failed")]
+            AuthenticationFailed,
+            /// Peer does not support the selected security profile.
+            #[serde(rename = "unsupported_profile")]
+            UnsupportedProfile,
+            /// Selected Kerberos credentials expired.
+            #[serde(rename = "kerberos_expired")]
+            KerberosExpired,
+            /// Selected Kerberos credentials cannot be renewed.
+            #[serde(rename = "kerberos_non_renewable")]
+            KerberosNonRenewable,
+            /// Selected Kerberos renewal limit was reached.
+            #[serde(rename = "kerberos_renewal_exhausted")]
+            KerberosRenewalExhausted,
+        }
+
+        /// Bounded evidence from one authorized connection attempt; never raw errors.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ObservationRequest {
+            /// Exact saved VNC UUID.
+            pub connection_id: String,
+            /// Winning official process identity.
+            pub runner_identity: ObservationRequestRunnerIdentity,
+            /// Resolved VNC configuration generation.
+            pub expected_generation: i64,
+            /// Resolved RFB transport authority.
+            pub expected_transport: ObservationRequestExpectedTransport,
+            /// Independent online KDC transport, when applicable.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_kdc_transport: Option<ObservationRequestExpectedKdcTransport>,
+            /// Kerberos source revision, when applicable.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_credential_revision: Option<i64>,
+            /// Exact PostgreSQL creation instance, including microsecond precision.
+            pub expected_created_at: String,
+            /// UTC connection-result time, not report delivery time.
+            pub observed_at: String,
+            /// Allow-listed connection failure, or null for recovery.
+            pub failure_reason: Option<ObservationRequestFailureReason>,
         }
 
         /// Immutable winning official Runner process.

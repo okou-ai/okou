@@ -438,7 +438,9 @@ async fn shared_token_rotation_reopens_bound_hosts_without_evicting_another_conf
                     when.method("POST")
                         .path(format!("/api/runners/runs/{}/ssh/resolve", h.run))
                         .json_body_includes(json!({"connectionId":id}).to_string());
-                    then.status(200).json_body(body);
+                    then.status(200)
+                        .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                        .json_body(body);
                 })
                 .await,
         );
@@ -461,7 +463,9 @@ async fn shared_token_rotation_reopens_bound_hosts_without_evicting_another_conf
                     when.method("POST")
                         .path(format!("/api/runners/runs/{}/ssh/resolve", h.run))
                         .json_body_includes(json!({"connectionId":id}).to_string());
-                    then.status(200).json_body(body);
+                    then.status(200)
+                        .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                        .json_body(body);
                 })
                 .await,
         );

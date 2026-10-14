@@ -17,6 +17,12 @@ const expectedBindings = [
     };
   }),
   {
+    method: "POST",
+    path: "/api/runners/runs/:runId/vnc/observations",
+    rustModulePath: ["runners", "runs", "by_run_id", "vnc", "observations"],
+    rustConstName: "OBSERVE",
+  },
+  {
     method: "GET",
     path: "/api/runners/runs/:runId/cancellation",
     rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],

@@ -52,6 +52,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatRelations]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat relationships",
+    description:
+      "Show chat origins, created chats, and cross-chat communication.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatResourcePanel]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Chat resources",
@@ -85,6 +93,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Agent Suggestion",
     description: "Let Okou manage actionable suggestions on your home page.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.CustomTemplates]: {
     maintainer: "bingjie@okou.ai",

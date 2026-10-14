@@ -116,6 +116,9 @@
     "crates/guest-init": {
       "release-type": "rust"
     },
+    "crates/guest-channel-server": {
+      "release-type": "rust"
+    },
     "crates/claude-mock": {
       "release-type": "rust"
     },

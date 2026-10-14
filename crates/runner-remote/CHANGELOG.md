@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.15.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.14...runner-remote-v0.15.0) (2026-10-14)
+
+
+### Features
+
+* add native sandbox channel peer and diagnostics ([#39953](https://github.com/okou-ai/okou/issues/39953)) ([0fed55f](https://github.com/okou-ai/okou/commit/0fed55fb786b7532d9f4cf9b38aa0f7a1cc9c7e7))
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
+## [0.14.14](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.13...runner-remote-v0.14.14) (2026-10-14)
+
+
+### Refactoring
+
+* **vnc:** align authority caching with ssh ([#39957](https://github.com/okou-ai/okou/issues/39957)) ([6a1f7f8](https://github.com/okou-ai/okou/commit/6a1f7f84d991c69d3824255a41a79188ae71ea75))
+
+## [0.14.13](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.12...runner-remote-v0.14.13) (2026-10-14)
+
 ## [0.14.12](https://github.com/okou-ai/okou/compare/runner-remote-v0.14.11...runner-remote-v0.14.12) (2026-10-14)
 
 

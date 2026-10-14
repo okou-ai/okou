@@ -98,15 +98,14 @@ function ComposerModelPanelBody({
   return (
     <>
       {/*
-       * Only the model list scrolls; the effort rows below stay put. The list
-       * needs no visible heading: the trigger already names the model, and the
-       * radio group and popover carry the "Chat models" label for assistive
-       * tech. The list shrinks before the popover outgrows
-       * `--available-height`, and `-mr-1` lands the overlay track on the
-       * popover's own edge instead of over the rows, the way shadcn's Base UI
-       * Scroll Area places it.
+       * Normally only the model list scrolls; the effort rows stay put. Keep
+       * room for one menu row and its list padding so a very short window can
+       * scroll the whole popover instead of collapsing all model choices.
+       * The trigger already names the model, and the radio group and popover
+       * carry the "Chat models" label for assistive tech. `-mr-1` lands the
+       * overlay track on the popover's own edge instead of over the rows.
        */}
-      <ScrollArea.Root className="group relative -mr-1 flex min-h-0 flex-col">
+      <ScrollArea.Root className="group relative -mr-1 flex min-h-11 flex-col">
         <ScrollArea.Viewport
           data-slot="scroll-area-viewport"
           className={cn(
@@ -306,10 +305,17 @@ export function ComposerModelPanel({
         align="end"
         sideOffset={6}
         collisionPadding={8}
+        // Model and notice changes may resize or move the anchor while open.
+        // Shrink the list rather than flipping the panel beside/below it.
+        collisionAvoidance={{
+          side: "none",
+          align: "shift",
+          fallbackAxisSide: "none",
+        }}
         aria-label={t(($) => {
           return $.settings.models.picker.chatModels;
         })}
-        className="flex max-h-[var(--available-height)] w-[304px] max-w-[calc(100vw-16px)] flex-col p-1"
+        className="flex max-h-[var(--available-height)] w-[304px] max-w-[var(--available-width)] flex-col overflow-y-auto p-1"
       >
         <ComposerModelPanelBody value={value} onChange={onChange} />
       </PopoverContent>

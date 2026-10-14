@@ -31,6 +31,7 @@ const isolatedDependencies = [
   "@clerk",
   "@slack",
   "@smithy",
+  "@stripe/link-sdk",
   "stripe",
 ];
 
@@ -436,6 +437,18 @@ export default [
     ],
     rules: {
       "api/no-direct-agent-run-terminal-update": "error",
+    },
+  },
+  {
+    files: ["src/signals/services/telegram-data.service.ts"],
+    rules: {
+      // #39897 needs both failed and successful readiness probes to explain
+      // different attempts. Axiom drops debug; info preserves one content-free
+      // receipt per unlinked check without warning on every transient failure.
+      "api/no-logger-info": [
+        "error",
+        { allowedMessages: ["Telegram connection readiness checked"] },
+      ],
     },
   },
   {

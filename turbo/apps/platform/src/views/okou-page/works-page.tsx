@@ -69,16 +69,9 @@ import {
 } from "./discord-authorization-actions.tsx";
 import {
   discordOrgData$,
-  discordAuthorizationPending$,
   disconnectDiscordOrg$,
   selectDiscordDmBinding$,
 } from "../../signals/okou-page/discord.ts";
-import {
-  approveDiscordAuthorization$,
-  discordApprovalAvailable$,
-  discordApprovalRequest$,
-  discordApprovalSucceeded$,
-} from "../../signals/okou-page/discord-oauth-approval.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 
@@ -115,6 +108,73 @@ function ConnectedIndicator({
             })}
       </span>
     </span>
+  );
+}
+
+function ProviderCardMenu({
+  moreOptionsLabel,
+  disconnectLabel,
+  uninstallLabel,
+  onDisconnect,
+  onUninstall,
+  disconnecting,
+}: {
+  moreOptionsLabel: string;
+  disconnectLabel: string;
+  uninstallLabel?: string;
+  onDisconnect?: () => void;
+  onUninstall?: () => void;
+  disconnecting: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            className="shrink-0"
+            aria-label={moreOptionsLabel}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
+      <PopoverContent align="end" className="flex flex-col gap-0.5 w-40 p-2">
+        {onDisconnect && (
+          <button
+            type="button"
+            aria-label={disconnectLabel}
+            disabled={disconnecting}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            onClick={onDisconnect}
+          >
+            {disconnecting
+              ? t(($) => {
+                  return $.works.actions.disconnecting;
+                })
+              : t(($) => {
+                  return $.works.actions.disconnect;
+                })}
+          </button>
+        )}
+        {onUninstall && (
+          <button
+            type="button"
+            aria-label={uninstallLabel}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
+            onClick={onUninstall}
+          >
+            {t(($) => {
+              return $.works.actions.uninstall;
+            })}
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -192,56 +252,14 @@ function ProviderCardActions({
         </Button>
       )}
       {isInstalled && (isConnected || isAdmin) && (
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button
-                showTooltip
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0"
-                aria-label={moreOptionsLabel}
-              >
-                <EllipsisVertical size={16} />
-              </Button>
-            }
-          />
-          <PopoverContent
-            align="end"
-            className="flex flex-col gap-0.5 w-40 p-2"
-          >
-            {isConnected && (
-              <button
-                type="button"
-                aria-label={disconnectLabel}
-                disabled={disconnecting}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                onClick={onDisconnect}
-              >
-                {disconnecting
-                  ? t(($) => {
-                      return $.works.actions.disconnecting;
-                    })
-                  : t(($) => {
-                      return $.works.actions.disconnect;
-                    })}
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                aria-label={uninstallLabel}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
-                onClick={onUninstall}
-              >
-                {t(($) => {
-                  return $.works.actions.uninstall;
-                })}
-              </button>
-            )}
-          </PopoverContent>
-        </Popover>
+        <ProviderCardMenu
+          moreOptionsLabel={moreOptionsLabel}
+          disconnectLabel={disconnectLabel}
+          uninstallLabel={uninstallLabel}
+          disconnecting={disconnecting}
+          onDisconnect={isConnected ? onDisconnect : undefined}
+          onUninstall={isAdmin ? onUninstall : undefined}
+        />
       )}
     </>
   );
@@ -524,68 +542,6 @@ function DiscordDmSelection({
   );
 }
 
-function DiscordApprovalPanel() {
-  const { t } = useTranslation();
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  const loadable = useLoadable(discordApprovalRequest$);
-  const approve = useSet(approveDiscordAuthorization$);
-  const pageSignal = useGet(pageSignal$);
-  if (!available && !approved) {
-    return null;
-  }
-  return (
-    <div className="space-y-2 px-4 pb-3">
-      {loadable.state !== "hasError" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {approved
-            ? t(($) => {
-                return $.works.discord.approvalConfirmed;
-              })
-            : t(($) => {
-                return $.works.discord.authorizing;
-              })}
-        </p>
-      ) : null}
-      {available && loadable.state === "hasError" ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            detach(approve(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.works.discord.retry;
-          })}
-        </Button>
-      ) : null}
-      {loadable.state === "hasError" ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(($) => {
-            return $.works.discord.approvalFailed;
-          })}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function DiscordAuthorizationPendingNotice() {
-  const { t } = useTranslation();
-  const pending = useGet(discordAuthorizationPending$);
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  return pending && !available && !approved ? (
-    <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
-      {t(($) => {
-        return $.works.discord.pendingConsent;
-      })}
-    </p>
-  ) : null;
-}
-
 function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
@@ -632,32 +588,23 @@ function DiscordCard() {
             disabled={disconnectState.state === "loading"}
           />
           {data?.isConnected ? (
-            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            <>
               <ConnectedIndicator testId="discord-connected-indicator" />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={disconnectState.state === "loading"}
-                onClick={() => {
-                  detach(disconnect(pageSignal), Reason.DomCallback);
-                }}
-              >
-                {t(($) => {
+              <ProviderCardMenu
+                moreOptionsLabel={t(($) => {
+                  return $.works.actions.moreOptions;
+                })}
+                disconnectLabel={t(($) => {
                   return $.works.discord.disconnect;
                 })}
-              </Button>
-            </div>
+                disconnecting={disconnectState.state === "loading"}
+                onDisconnect={() => {
+                  detach(disconnect(pageSignal), Reason.DomCallback);
+                }}
+              />
+            </>
           ) : null}
         </div>
-        <DiscordApprovalPanel />
-        <DiscordAuthorizationPendingNotice />
-        {data?.isConnected && data.contextMode === "mentions_only" ? (
-          <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.discord.limitedContext;
-            })}
-          </p>
-        ) : null}
         {data?.isConnected && data.dmBindings.length > 1 ? (
           <DiscordDmSelection
             data={data}
@@ -1013,7 +960,7 @@ function TelegramCard() {
             disabled={loading || !configured || connecting}
             onClick={() => {
               detach(
-                connect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
                 Reason.DomCallback,
               );
             }}

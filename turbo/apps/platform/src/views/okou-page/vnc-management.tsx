@@ -28,6 +28,7 @@ import {
   VncX509NoneWarning,
 } from "./vnc-fields.tsx";
 import { VncLoadError } from "./vnc-load-error.tsx";
+import { VncAttention, VncHostWarning } from "./vnc-connection-status.tsx";
 import { RemoteHostDefaultToggle } from "./remote-access-controls.tsx";
 
 function isX509Security(
@@ -392,6 +393,11 @@ function VncHostCard({
         </p>
       )}
       <VncHostProfileDetails connection={connection} />
+      <VncHostWarning
+        connectionId={connection.id}
+        generation={connection.generation}
+        createdAt={connection.createdAt}
+      />
       <RemoteHostDefaultToggle protocol="vnc" connectionId={connection.id} />
       <div className="flex flex-wrap gap-2">
         <Button
@@ -447,6 +453,7 @@ export function VncHosts() {
   }
   return (
     <div className="grid gap-5">
+      {hosts.data.length > 0 ? <VncAttention connections={hosts.data} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {t(

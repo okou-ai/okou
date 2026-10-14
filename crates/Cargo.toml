@@ -11,9 +11,11 @@ members = [
     "guest-task-exec",
     "process-control-ipc",
     "process-launch",
+    "raw-http-test-support",
     "guest-telemetry",
     "guest-storage-apply",
     "guest-init",
+    "guest-channel-server",
     "claude-mock",
     "codex-mock",
     "guest-state-restore",
@@ -62,9 +64,11 @@ guest-tool-exec = { path = "guest-tool-exec" }
 guest-task-exec = { path = "guest-task-exec" }
 process-control-ipc = { path = "process-control-ipc" }
 process-launch = { path = "process-launch" }
+raw-http-test-support = { path = "raw-http-test-support" }
 guest-telemetry = { path = "guest-telemetry" }
 guest-storage-apply = { path = "guest-storage-apply" }
 guest-init = { path = "guest-init" }
+guest-channel-server = { path = "guest-channel-server" }
 claude-mock = { path = "claude-mock" }
 codex-mock = { path = "codex-mock" }
 guest-state-restore = { path = "guest-state-restore" }

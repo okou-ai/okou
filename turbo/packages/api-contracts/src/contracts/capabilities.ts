@@ -178,7 +178,8 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
   },
   "wallet:write": {
     group: "Wallet",
-    label: "Connect Link and request purchase approval",
+    label:
+      "Connect Link, request purchase approval and retrieve payment credentials",
   },
   "banking:read": {
     group: "Banking",

@@ -2,7 +2,10 @@ import {
   integrationsSlackContract,
   type SlackOrgStatus,
 } from "@okouai/api-contracts/contracts/integrations-slack";
-import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
+import {
+  integrationsTelegramContract,
+  type TelegramLinkStatusResponse,
+} from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   teamsConnectContract,
   type TeamsConnectStatus,
@@ -280,6 +283,70 @@ test("A workspace this user cannot add to names who can, instead of a dead butto
   expect(getButtonByName(SLACK_ADD)).toBeDisabled();
   expect(getChannelTile("Teams")).toBeDisabled();
 });
+
+test.each([
+  {
+    reason: "bot_not_configured",
+    message:
+      "Telegram connection is not configured yet. Please contact support.",
+  },
+  {
+    reason: "domain_not_verified",
+    message:
+      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+  },
+  {
+    reason: "domain_check_failed",
+    message:
+      "We couldn't reach Telegram to check the connection. Please try again in a moment.",
+  },
+] satisfies {
+  reason: Extract<
+    TelegramLinkStatusResponse,
+    { linked: false }
+  >["readinessError"];
+  message: string;
+}[])(
+  "Onboarding explains Telegram $reason and leaves retry available",
+  async ({ reason, message }) => {
+    mockOnboardingNeeded();
+    mockConnectedSource();
+    const sentry = context.mocks.sentry();
+    context.mocks.api(
+      integrationsTelegramContract.getLinkStatus,
+      ({ query, respond }) => {
+        expect(query.source).toBe("onboarding");
+        return respond(200, {
+          linked: false,
+          readinessError: reason,
+          installation: {
+            id: "official",
+            botUsername: "okou_bot",
+            loginBotId: "987654321",
+            domainConfigured: false,
+          },
+        });
+      },
+    );
+    const popup = context.mocks.browser.authWindow();
+    context.mocks.browser.open(popup);
+    await openChatChannelStep();
+    await waitFor(() => {
+      expect(getChannelTile("Telegram")).toBeEnabled();
+    });
+
+    click(getChannelTile("Telegram"));
+
+    await expect(screen.findByText(message)).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(getChannelTile("Telegram")).toBeEnabled();
+    });
+    expect(popup.closed).toBeTruthy();
+    expect(getChannelTile("Telegram")).not.toHaveTextContent("Added");
+    expect(pathname()).toBe(ROUTES.onboardingSlack);
+    expect(sentry.reports).toStrictEqual([]);
+  },
+);
 
 test("Telegram authorizes the official bot in a new tab and keeps onboarding open", async () => {
   mockOnboardingNeeded();

@@ -1,13 +1,14 @@
 [package]
 name = "runner-executor"
-version = "0.10.19"
+version = "0.10.22"
 edition.workspace = true
 description = "Claimed-run sandbox execution, session history, results, and telemetry"
 
 [features]
-test-support = ["dep:guest-control-client", "runner-host/test-support", "runner-lifecycle/test-support", "runner-network/test-support", "runner-storage/test-support"]
+test-support = ["dep:guest-control-client", "dep:raw-http-test-support", "runner-host/test-support", "runner-lifecycle/test-support", "runner-network/test-support", "runner-storage/test-support"]
 
 [dependencies]
+raw-http-test-support = { workspace = true, optional = true, features = ["test-support"] }
 api-contracts.workspace = true
 guest-contracts.workspace = true
 guest-control-client = { workspace = true, optional = true, features = ["test-support"] }
@@ -46,6 +47,7 @@ uuid = { workspace = true, features = ["serde", "std", "v4", "v5"] }
 zstd = { workspace = true, features = ["zstdmt"] }
 
 [dev-dependencies]
+raw-http-test-support = { workspace = true, features = ["test-support"] }
 aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 guest-control-client = { workspace = true, features = ["test-support"] }
 guest-storage-apply.workspace = true

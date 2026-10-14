@@ -92,6 +92,7 @@ function authorityQuery(
       .select({
         id: host.id,
         generation: host.generation,
+        createdAt: host.createdAt,
         algorithm: host.learnedHostKeyAlgorithm,
         fingerprint: host.learnedHostKeyFingerprint,
         transport: host.transport,
@@ -253,7 +254,11 @@ export function createRunnerSshMutationReads(
   );
   const eligible = qb.$with("eligible_runner_ssh_authority").as(
     qb
-      .select({ id: current.id, generation: current.generation })
+      .select({
+        id: current.id,
+        generation: current.generation,
+        createdAt: current.createdAt,
+      })
       .from(current)
       .where(
         and(

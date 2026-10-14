@@ -12,6 +12,58 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1022.3](https://github.com/okou-ai/okou/compare/app-v0.1022.2...app-v0.1022.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **app:** keep composer model panel placement stable ([#39975](https://github.com/okou-ai/okou/issues/39975)) ([358325d](https://github.com/okou-ai/okou/commit/358325d324f63dc631acd57919777b5515282e81))
+* **app:** show home suggestions only after they load ([#40007](https://github.com/okou-ai/okou/issues/40007)) ([524acdd](https://github.com/okou-ai/okou/commit/524acdd4323ddf3715a41145793f0f157ca3819f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.559.0
+    * @okouai/core bumped to 8.754.0
+
+## [0.1022.2](https://github.com/okou-ai/okou/compare/app-v0.1022.1...app-v0.1022.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* explain telegram readiness failures and add diagnostics ([#39984](https://github.com/okou-ai/okou/issues/39984)) ([098184f](https://github.com/okou-ai/okou/commit/098184f9b8dc998dbf95d5c6426b49675188de95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.3
+    * @okouai/core bumped to 8.753.2
+
+## [0.1022.1](https://github.com/okou-ai/okou/compare/app-v0.1022.0...app-v0.1022.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **app:** improve slash menu layout and empty states ([#39948](https://github.com/okou-ai/okou/issues/39948)) ([f6a0d54](https://github.com/okou-ai/okou/commit/f6a0d548aa172da2f159c77a4e4ad8f307dc4448))
+* refresh runner platform api and cli release markers ([#39966](https://github.com/okou-ai/okou/issues/39966)) ([1d331fc](https://github.com/okou-ai/okou/commit/1d331fcf527832ed096e9016bdb21588542dd642))
+
+
+### Refactoring
+
+* **app:** move telegram connection controls to works ([#39945](https://github.com/okou-ai/okou/issues/39945)) ([59c0428](https://github.com/okou-ai/okou/commit/59c04284062cd9d71d03075d1e4a5915f0a37b37))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.2
+    * @okouai/core bumped to 8.753.1
+
 ## [0.1022.0](https://github.com/okou-ai/okou/compare/app-v0.1021.1...app-v0.1022.0) (2026-10-14)
 
 

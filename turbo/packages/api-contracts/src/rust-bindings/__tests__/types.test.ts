@@ -97,6 +97,11 @@ const expectedBindings = [
     ];
   }),
   {
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "ObservationRequest",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners", "ssh"],
     rustTypeName: "ObservationRequest",
     direction: "request",

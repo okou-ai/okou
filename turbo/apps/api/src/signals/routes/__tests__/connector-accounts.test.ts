@@ -203,6 +203,21 @@ describe("connector account lifecycle routes", () => {
       [404],
     );
     expect(exact.body.error.message).toBe("Connector account not found");
+    const invalidPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          cursor: "not-a-cursor",
+        },
+      }),
+      [400],
+    );
+    expect(invalidPage.body.error.message).toBe(
+      "Invalid connector account cursor",
+    );
     const inspection = await accept(
       accountClient().inspect({
         headers: authHeaders(),
@@ -576,6 +591,38 @@ describe("connector account lifecycle routes", () => {
       }),
       [200],
     );
+    const initialImpact = await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: first.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [200],
+    );
+    expect(initialImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: false,
+    });
+    const initialPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(initialPage.body).toMatchObject({
+      connections: [
+        { id: first.body.id, displayName: "Work", isDefault: true },
+      ],
+      nextCursor: null,
+      defaultConnection: { id: first.body.id, isDefault: true },
+    });
     const second = await accept(
       connectorClient().connect({
         headers: authHeaders(),
@@ -615,12 +662,21 @@ describe("connector account lifecycle routes", () => {
     const listed = await accept(
       accountClient().connections({
         headers: authHeaders(),
-        query: { kind: "builtin", connectorSlug: "openai", limit: 1 },
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
       }),
       [200],
     );
     expect(listed.body.connections).toHaveLength(1);
     expect(listed.body.nextCursor).not.toBeNull();
+    expect(listed.body.defaultConnection).toMatchObject({
+      id: first.body.id,
+      isDefault: true,
+    });
 
     const next = await accept(
       accountClient().connections({
@@ -630,14 +686,32 @@ describe("connector account lifecycle routes", () => {
           connectorSlug: "openai",
           limit: 1,
           cursor: listed.body.nextCursor!,
+          includeScopeMismatch: "true",
         },
       }),
       [200],
     );
     expect(next.body.connections).toHaveLength(1);
+    expect(next.body).not.toHaveProperty("defaultConnection");
     expect(
       new Set([listed.body.connections[0]!.id, next.body.connections[0]!.id]),
     ).toStrictEqual(new Set([first.body.id, second.body.id]));
+
+    const beforeRename = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          search: "Personal renamed",
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(beforeRename.body.connections).toStrictEqual([]);
+    expect(beforeRename.body).not.toHaveProperty("defaultConnection");
 
     const renamed = await accept(
       accountClient().rename({
@@ -661,6 +735,86 @@ describe("connector account lifecycle routes", () => {
       [200],
     );
     expect(selectedDefault.body.isDefault).toBeTruthy();
+
+    const currentPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(currentPage.body.defaultConnection).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
+    const afterRename = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          search: "Personal renamed",
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(afterRename.body.connections).toMatchObject([
+      { id: second.body.id, displayName: "Personal renamed", isDefault: true },
+    ]);
+    expect(afterRename.body.nextCursor).toBeNull();
+    expect(afterRename.body).not.toHaveProperty("defaultConnection");
+
+    const [currentFirst, currentSecond, currentFirstImpact] = await Promise.all(
+      [
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().connection({
+            headers: authHeaders(),
+            params: { connectionId: second.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+        accept(
+          accountClient().deletionImpact({
+            headers: authHeaders(),
+            params: { connectionId: first.body.id },
+            query: { kind: "builtin", connectorSlug: "openai" },
+          }),
+          [200],
+        ),
+      ],
+    );
+    expect(currentFirst.body).toMatchObject({
+      id: first.body.id,
+      displayName: "Work",
+      isDefault: false,
+    });
+    expect(currentSecond.body).toMatchObject({
+      id: second.body.id,
+      displayName: "Personal renamed",
+      isDefault: true,
+    });
+    expect(currentFirstImpact.body).toStrictEqual({
+      connectionId: first.body.id,
+      explicitSelectionCount: 0,
+      hasSibling: true,
+    });
 
     const legacyProjection = await accept(
       connectorProjectionClient().get({
@@ -714,6 +868,23 @@ describe("connector account lifecycle routes", () => {
       promotedDefaultConnectionId: first.body.id,
     });
 
+    await accept(
+      accountClient().connection({
+        headers: authHeaders(),
+        params: { connectionId: second.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [404],
+    );
+    await accept(
+      accountClient().deletionImpact({
+        headers: authHeaders(),
+        params: { connectionId: second.body.id },
+        query: { kind: "builtin", connectorSlug: "openai" },
+      }),
+      [404],
+    );
+
     const remaining = await accept(
       accountClient().connections({
         headers: authHeaders(),
@@ -744,6 +915,25 @@ describe("connector account lifecycle routes", () => {
       connectionId: first.body.id,
       explicitSelectionCount: 0,
       hasSibling: false,
+    });
+    const remainingPage = await accept(
+      accountClient().connections({
+        headers: authHeaders(),
+        query: {
+          kind: "builtin",
+          connectorSlug: "openai",
+          limit: 1,
+          includeScopeMismatch: "true",
+        },
+      }),
+      [200],
+    );
+    expect(remainingPage.body).toMatchObject({
+      connections: [
+        { id: first.body.id, displayName: "Work", isDefault: true },
+      ],
+      nextCursor: null,
+      defaultConnection: { id: first.body.id, isDefault: true },
     });
   });
 
@@ -1102,6 +1292,55 @@ describe("connector account lifecycle routes", () => {
     });
 
     it("paginates more than one hundred accounts", async () => {
+      const firstTwo = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: { kind: "builtin", connectorSlug: "openai", limit: 2 },
+        }),
+        [200],
+      );
+      expect(firstTwo.body.connections).toHaveLength(2);
+      const outsideFirstTwo = createdAccountIds.find((id) => {
+        return !firstTwo.body.connections.some((account) => {
+          return account.id === id;
+        });
+      });
+      if (!outsideFirstTwo) {
+        throw new Error("Expected an account outside the first two rows");
+      }
+      const defaultAccount = await accept(
+        accountClient().setDefault({
+          headers: authHeaders(),
+          params: { connectionId: outsideFirstTwo },
+          body: { target: { kind: "builtin", connectorSlug: "openai" } },
+        }),
+        [200],
+      );
+      expect(defaultAccount.body).toMatchObject({
+        id: outsideFirstTwo,
+        isDefault: true,
+      });
+      const firstPage = await accept(
+        accountClient().connections({
+          headers: authHeaders(),
+          query: {
+            kind: "builtin",
+            connectorSlug: "openai",
+            limit: 1,
+            includeScopeMismatch: "true",
+          },
+        }),
+        [200],
+      );
+      expect(firstPage.body.connections).toHaveLength(1);
+      expect(firstPage.body.connections[0]!.id).toBe(
+        firstTwo.body.connections[0]!.id,
+      );
+      expect(firstPage.body.defaultConnection).toMatchObject({
+        id: defaultAccount.body.id,
+        isDefault: true,
+      });
+      expect(firstPage.body.nextCursor).not.toBeNull();
       const ids = new Set<string>();
       let cursor: string | undefined;
       do {

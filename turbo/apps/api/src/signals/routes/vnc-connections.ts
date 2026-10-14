@@ -9,6 +9,8 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import { vncErrorResponse } from "../../lib/vnc-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { createVncConnectionObservations } from "../services/vnc-connection-observations.service";
 import { safeSync } from "../utils";
 import { inspectVncRsaPublicKey } from "../services/vnc-rsa-key.utils";
 import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
@@ -46,6 +48,23 @@ const invalidInput = Object.freeze(
     "Invalid VNC configuration",
   ),
 );
+const ownerAuth = {
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+  accept: ["session"],
+} as const;
+
+const observations$ = createVncConnectionObservations(organizationAuthContext$);
+const listObservations$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const context = await set(vncAdmission$, signal);
+  if (!context) {
+    return unavailable;
+  }
+  const observations = await get(observations$);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { observations } };
+});
+
 const vncAdmission$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const auth = get(organizationAuthContext$);
@@ -305,6 +324,10 @@ const inspectRsaKey$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const vncConnectionsRoutes: readonly RouteEntry[] = [
+  {
+    route: vncConnectionsContract.observations,
+    handler: authRoute(ownerAuth, listObservations$),
+  },
   {
     route: vncConnectionsContract.inspectRsaKey,
     handler: remoteControlOwnerRoute("connector:read", inspectRsaKey$),

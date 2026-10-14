@@ -207,12 +207,30 @@ BOOTSTRAP
 
     # Exercise the actual setpriv/UID/capability/environment boundary, not a
     # fabricated compiler or a namespace mock. This is not Docker/native success.
-    container_check = '''source "$1"
+    cold_temp = native / 'cold-temp'
+    cold_temp.mkdir()
+    cold_cache = cold_temp / 'kerberos-native-cache'
+    run(root_command + [
+        'env', f'NATIVE_TEST_OWNER={owner}', f'RUNNER_TEMP={cold_temp}',
+        f'KERBEROS_NATIVE_CACHE_DIR={cold_cache}', 'bash', '-euo', 'pipefail',
+        '-c', 'source "$1"; native_build touch "$KERBEROS_NATIVE_CACHE_DIR/cold-lock"',
+        'bash', helper], native, host_env)
+    assert cold_cache.stat().st_uid == (cold_cache / 'cold-lock').stat().st_uid == bootstrap_uid
+    container_check = '''
+# Model Actions restoring trusted material as root, including private entry
+# directories and the lock inode that the unprivileged compiler must reopen.
+mkdir -p "$KERBEROS_NATIVE_CACHE_DIR/entry"
+chmod 0700 "$KERBEROS_NATIVE_CACHE_DIR/entry"
+printf 'restored archive\\n' > "$KERBEROS_NATIVE_CACHE_DIR/entry/archive"
+printf 'old completion\\n' > "$KERBEROS_NATIVE_CACHE_DIR/entry/complete"
+: > "$KERBEROS_NATIVE_CACHE_DIR/entry.lock"
+source "$1"
 [[ $native_uid != 0 && ${#native_privileged_command[@]} == 0 ]]
 printf 'synthetic caller receipt\\n' > crates/target/caller-receipt.txt
 chmod 0644 crates/target/caller-receipt.txt
 native_build python3 - "$native_uid" <<'CHECK'
 import json
+import fcntl
 import os
 from pathlib import Path
 import sys
@@ -225,6 +243,14 @@ for name in ('HOME', 'CARGO_HOME'):
     path = Path(os.environ[name])
     assert path.is_dir() and path.stat().st_uid == os.geteuid()
     (path / 'owner-canary').write_text('synthetic owner canary\\n')
+cache = Path(os.environ['KERBEROS_NATIVE_CACHE_DIR'])
+assert all(path.stat().st_uid == os.geteuid() for path in [cache, *cache.rglob('*')])
+assert (cache / 'entry/archive').read_text() == 'restored archive\\n'
+with (cache / 'entry.lock').open('w') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    (cache / 'entry/complete').write_text('rebuilt completion\\n')
+    (cache / 'new-entry').mkdir()
+assert (cache / 'entry/complete').read_text() == 'rebuilt completion\\n'
 receipt = Path('crates/target/caller-receipt.txt')
 assert receipt.stat().st_uid == 0
 assert receipt.read_text() == 'synthetic caller receipt\\n'
@@ -237,8 +263,51 @@ metadata.write_text(json.dumps(data))
 assert json.loads(metadata.read_text())['roundTrip'] is True
 CHECK
 '''
-    run(root_command + ['env', f'NATIVE_TEST_OWNER={owner}', 'bash', '-euo', 'pipefail',
+    runner_temp = native / 'runner-temp'
+    runner_temp.mkdir()
+    cache = runner_temp / 'kerberos-native-cache'
+    cache_env = [f'RUNNER_TEMP={runner_temp}', f'KERBEROS_NATIVE_CACHE_DIR={cache}']
+    run(root_command + ['env', f'NATIVE_TEST_OWNER={owner}', *cache_env, 'bash', '-euo', 'pipefail',
                         '-c', container_check, 'bash', helper], native, host_env)
+
+    # Exercise actual bootstrap refusal before ownership changes. Cache roots,
+    # ancestors, descendants and hard links must not reach outside the cache.
+    outside = native / 'outside-cache'
+    outside.mkdir()
+    # Public synthetic resources only; the ordinary fixture owner can clean
+    # them even when assertions fail after the root-owned restoration canary.
+    outside.chmod(0o777)
+    canary = outside / 'canary'
+    canary.write_text('outside ownership canary\\n')
+    run(root_command + ['chown', '0:0', str(outside), str(canary)], native, host_env)
+    before = (outside.stat().st_uid, canary.stat().st_uid, canary.read_bytes())
+    for case in ('root-link', 'ancestor-link', 'entry-link', 'hard-link', 'special-file', 'outside-path'):
+        case_temp = native / case
+        case_temp.mkdir()
+        case_cache = case_temp / 'kerberos-native-cache'
+        if case == 'root-link':
+            case_cache.symlink_to(outside, target_is_directory=True)
+        elif case == 'ancestor-link':
+            (case_temp / 'link').symlink_to(outside, target_is_directory=True)
+            case_temp = case_temp / 'link'
+            case_cache = case_temp / 'kerberos-native-cache'
+        elif case == 'outside-path':
+            case_cache = outside
+        else:
+            case_cache.mkdir()
+            if case == 'entry-link':
+                (case_cache / 'linked').symlink_to(canary)
+            elif case == 'special-file':
+                os.mkfifo(case_cache / 'fifo')
+            else:
+                run(root_command + ['ln', str(canary), str(case_cache / 'linked')], native, host_env)
+        refused = subprocess.run(root_command + [
+            'env', f'NATIVE_TEST_OWNER={owner}', f'RUNNER_TEMP={case_temp}',
+            f'KERBEROS_NATIVE_CACHE_DIR={case_cache}', 'bash', '-euo', 'pipefail',
+            '-c', 'source "$1"', 'bash', helper], cwd=native, env=host_env,
+            text=True, capture_output=True)
+        assert refused.returncode != 0, f'{case}: unsafe cache must refuse'
+        assert (outside.stat().st_uid, canary.stat().st_uid, canary.read_bytes()) == before
     refused = subprocess.run(root_command + [
         'env', 'NATIVE_TEST_OWNER=root', 'bash', '-euo', 'pipefail',
         '-c', 'source "$1"', 'bash', helper], cwd=native, env=host_env,

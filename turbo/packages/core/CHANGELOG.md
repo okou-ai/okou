@@ -1,5 +1,37 @@
 # Changelog
 
+## [8.754.0](https://github.com/okou-ai/okou/compare/core-v8.753.2...core-v8.754.0) (2026-10-14)
+
+
+### Features
+
+* add link payment credential retrieval to wallet cli ([#40016](https://github.com/okou-ai/okou/issues/40016)) ([6844864](https://github.com/okou-ai/okou/commit/6844864ee67b12e4d95967214a6487f454fa82c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.559.0
+
+## [8.753.2](https://github.com/okou-ai/okou/compare/core-v8.753.1...core-v8.753.2) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.3
+
+## [8.753.1](https://github.com/okou-ai/okou/compare/core-v8.753.0...core-v8.753.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.2
+
 ## [8.753.0](https://github.com/okou-ai/okou/compare/core-v8.752.2...core-v8.753.0) (2026-10-14)
 
 

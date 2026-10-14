@@ -3,6 +3,7 @@ import { apiErrorSchema } from "@okouai/api-contracts/contracts/errors";
 import {
   walletContract,
   walletSpendSchema,
+  walletSpendCredentialsSchema,
   type WalletCreateSpend,
 } from "@okouai/api-contracts/contracts/wallet";
 
@@ -98,4 +99,47 @@ export async function walletCancelSpend(id: string) {
     );
   }
   return walletSpendSchema.parse(response.body);
+}
+
+export async function walletSpendCredentials(id: string) {
+  const api = await client();
+  const response = await api
+    .spendCredentials({ params: { id }, body: {} })
+    .catch(() => {
+      // JSON/transport exceptions can contain fragments of the credential body.
+      throw new Error(
+        "Could not read payment credentials; check the existing spend request before retrying",
+      );
+    });
+  if (response.status !== 200) {
+    walletError(
+      response,
+      "Could not retrieve payment credentials",
+      "spend_credentials",
+      id,
+    );
+  }
+  if (
+    !(response.body instanceof Blob) ||
+    response.headers.get("content-type") !== "application/octet-stream"
+  ) {
+    throw new Error(
+      "The backend did not return a private credential file; no credentials were saved",
+    );
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(await response.body.text());
+  } catch {
+    throw new Error(
+      "The payment credential file could not be decoded; no credentials were saved",
+    );
+  }
+  const parsed = walletSpendCredentialsSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(
+      "The backend returned invalid payment credentials; no credentials were saved",
+    );
+  }
+  return parsed.data;
 }

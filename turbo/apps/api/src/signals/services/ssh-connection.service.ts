@@ -79,8 +79,13 @@ import {
   visibleTailscaleConfig,
 } from "./tailscale-config-model";
 import { publishTailscaleClientInvalidation } from "./tailscale-client-invalidation.service";
+import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 
 const MAX_SSH_GENERATION = 2_147_483_647;
+const connectionSelection = Object.freeze({
+  ...getTableColumns(sshConnections),
+  createdAt: sshCreationTimestamp.as("ssh_created_at"),
+});
 const credentialSelection = Object.freeze({
   id: sshCredentials.id,
   name: sshCredentials.name,
@@ -91,6 +96,9 @@ const credentialSelection = Object.freeze({
   updatedAt: sshCredentials.updatedAt,
 });
 type SshConnectionRow = typeof sshConnections.$inferSelect;
+type SshConnectionResponseRow = Omit<SshConnectionRow, "createdAt"> & {
+  readonly createdAt: string;
+};
 type SshConnectionFailure = {
   readonly kind: "bad_request" | "not_found" | "conflict";
   readonly message: string;
@@ -231,7 +239,7 @@ function canonicalizeSshHost(host: string): SshConnectionResult<string> {
 }
 
 function toSshConnectionResponse(
-  row: SshConnectionRow,
+  row: SshConnectionResponseRow,
   credential: { readonly name: string; readonly username: string },
 ): SshConnectionResponse {
   const hasAlgorithm = row.learnedHostKeyAlgorithm !== null;
@@ -278,7 +286,7 @@ function toSshConnectionResponse(
             algorithm: row.learnedHostKeyAlgorithm,
             fingerprint: row.learnedHostKeyFingerprint,
           },
-    createdAt: row.createdAt.toISOString(),
+    createdAt: row.createdAt,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -302,7 +310,7 @@ export const listSshConnections$ = command(
     const db = set(writeDb$);
     const rows = await db
       .select({
-        connection: sshConnections,
+        connection: { ...connectionSelection },
         credential: {
           name: sshCredentials.name,
           username: sshCredentials.username,
@@ -497,7 +505,7 @@ const commitSshConnectionCreationAttempt$ = command(
             tailscaleId,
           ),
         )
-        .returning(),
+        .returning({ ...connectionSelection }),
     );
     const complete =
       sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
@@ -812,7 +820,7 @@ const commitSshConnectionUpdateAttempt$ = command(
             ),
           ),
         )
-        .returning(getTableColumns(sshConnections)),
+        .returning({ ...connectionSelection }),
     );
     const complete =
       sql`1 / CASE WHEN (${db.select({ count: count() }).from(written)}) = (${db.select({ count: count() }).from(ready)}) THEN 1 ELSE 0 END`.mapWith(
@@ -1090,7 +1098,7 @@ export const resetSshConnectionHostKey$ = command(
           eq(sshConnections.generation, args.expectedGeneration),
         ),
       )
-      .returning();
+      .returning({ ...connectionSelection });
     if (!updated) {
       // The conditional write lost without changing trust. Distinguish deletion
       // from a stale generation; never replay the reset against a newer Host.
@@ -1164,7 +1172,7 @@ function validateSshHostUpdate(
 }
 interface SshBindingCapture {
   readonly credentialAvailable: boolean;
-  readonly changed: SshConnectionRow | null;
+  readonly changed: SshConnectionResponseRow | null;
   readonly credential: {
     readonly name: string;
     readonly username: string;

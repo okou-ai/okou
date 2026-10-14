@@ -1892,7 +1892,8 @@ jobs:
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check Playwright E2E types
-        run: cd e2e && pnpm check-types
+        working-directory: e2e
+        run: pnpm check-types
       - name: Install Playwright browsers
         run: cd e2e && pnpm exec playwright install --only-shell chromium
       - name: Run Playwright fixture integration tests

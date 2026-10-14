@@ -31,13 +31,28 @@ function useSshObservations():
     : { kind: "available", observations: retained.data.observations };
 }
 
-export function SshAttention() {
+export function SshAttention({
+  connections,
+}: {
+  readonly connections: readonly {
+    readonly id: string;
+    readonly generation: number;
+    readonly createdAt: string;
+  }[];
+}) {
   const { t } = useTranslation();
   const status = useSshObservations();
   const count =
     status.kind === "available"
-      ? status.observations.filter((observation) => {
-          return observation.failureReason !== null;
+      ? connections.filter((connection) => {
+          return status.observations.some((observation) => {
+            return (
+              observation.connectionId === connection.id &&
+              observation.generation === connection.generation &&
+              observation.connectionCreatedAt === connection.createdAt &&
+              observation.failureReason !== null
+            );
+          });
         }).length
       : 0;
   const label =
@@ -144,9 +159,11 @@ function failureDescription(
 export function SshHostWarning({
   connectionId,
   generation,
+  createdAt,
 }: {
   readonly connectionId: string;
   readonly generation: number;
+  readonly createdAt: string;
 }) {
   const { t } = useTranslation();
   const status = useSshObservations();
@@ -154,7 +171,9 @@ export function SshHostWarning({
     status.kind === "available"
       ? status.observations.find((item) => {
           return (
-            item.connectionId === connectionId && item.generation === generation
+            item.connectionId === connectionId &&
+            item.generation === generation &&
+            item.connectionCreatedAt === createdAt
           );
         })
       : undefined;

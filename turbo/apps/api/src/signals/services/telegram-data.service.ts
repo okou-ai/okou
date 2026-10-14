@@ -9,6 +9,7 @@ import { telegramOfficialUserLinks } from "@okouai/db/schema/telegram-official-u
 import { and, eq } from "drizzle-orm";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import { buildTelegramBotAvatarUrl } from "../external/telegram-avatar";
 import { checkTelegramDomain } from "../external/telegram-domain";
@@ -20,6 +21,7 @@ import { safeUrlParse } from "../utils";
 
 type TelegramBotListItem = TelegramBot;
 type TelegramConnectedUser = NonNullable<TelegramBot["connectedUser"]>;
+const log = logger("api:telegram:readiness");
 
 function officialUserLink(args: {
   readonly orgId: string;
@@ -216,6 +218,8 @@ export function telegramIntegrationLinkStatus(args: {
   readonly userId: string;
   readonly botId?: string;
   readonly origin?: string;
+  readonly source?: "onboarding" | "works" | "connect_page";
+  readonly clientRequestId?: string;
 }): Computed<Promise<TelegramLinkStatusResult>> {
   return computed(async (get): Promise<TelegramLinkStatusResult> => {
     const telegramLoginOrigin = resolveTelegramLoginOrigin(args.origin);
@@ -234,22 +238,68 @@ export function telegramIntegrationLinkStatus(args: {
         };
       }
 
+      const diagnostics = {
+        type: "telegram_connection_readiness",
+        source: args.source ?? "unknown",
+        origin: telegramLoginOrigin,
+        has_bot_id: Boolean(config.botId),
+        has_bot_username: Boolean(config.botUsername),
+        ...(args.clientRequestId &&
+        /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(
+          args.clientRequestId,
+        )
+          ? { x_client_request_id: args.clientRequestId }
+          : {}),
+      };
       if (!config.botUsername) {
-        return { status: 200, body: { linked: false } };
+        log.info("Telegram connection readiness checked", {
+          ...diagnostics,
+          reason: "bot_not_configured",
+        });
+        return {
+          status: 200,
+          body: { linked: false, readinessError: "bot_not_configured" },
+        };
       }
 
-      const domainConfigured = config.botId
+      const domainCheck = config.botId
         ? await checkTelegramDomain(config.botId, telegramLoginOrigin)
-        : false;
+        : null;
+      const readinessError = !domainCheck
+        ? "bot_not_configured"
+        : domainCheck.configured
+          ? undefined
+          : domainCheck.reason === "request_failed" ||
+              domainCheck.reason === "request_timeout"
+            ? "domain_check_failed"
+            : "domain_not_verified";
+      // One info record per check makes transient failures diagnosable without
+      // reporting an expected readiness outcome as an unhandled exception.
+      log.info("Telegram connection readiness checked", {
+        ...diagnostics,
+        reason: readinessError ?? "ready",
+        ...(domainCheck
+          ? {
+              probe_reason: domainCheck.reason,
+              upstream_status: domainCheck.httpStatus,
+              content_length: domainCheck.contentLength,
+              duration_ms: domainCheck.durationMs,
+              ...(domainCheck.errorType
+                ? { error_type: domainCheck.errorType }
+                : {}),
+            }
+          : {}),
+      });
       return {
         status: 200,
         body: {
           linked: false,
+          ...(readinessError ? { readinessError } : {}),
           installation: {
             id: OFFICIAL_TELEGRAM_BOT_ID,
             botUsername: config.botUsername,
             ...(config.botId ? { loginBotId: config.botId } : {}),
-            domainConfigured,
+            domainConfigured: domainCheck?.configured ?? false,
           },
         },
       };

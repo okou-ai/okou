@@ -245,6 +245,7 @@ async function isSameCurrentHandoff(
     hasTransportAuthority(current, currentTransport) &&
     hasKdcAuthority(current) &&
     sameKdc(current, initial) &&
+    current.createdAt === initial.createdAt &&
     (!isVncKerberosMethod(initial.authMethod) ||
       current.credentialRevision === initial.credentialRevision) &&
     current.generation === initial.generation &&
@@ -259,7 +260,13 @@ export const checkRunnerVnc$ = command(
     { get, set },
     input: RunnerVncCheckRequest & { readonly runId: string },
     signal: AbortSignal,
-  ): Promise<RunnerVncCheckResponse> => {
+  ): Promise<
+    | Exclude<RunnerVncCheckResponse, { outcome: "valid" }>
+    | {
+        readonly outcome: "valid";
+        readonly owner: { readonly orgId: string; readonly userId: string };
+      }
+  > => {
     const clerk = get(clerk$);
 
     const row = await set(currentRunnerVncAuthority$, input, signal);
@@ -278,22 +285,24 @@ export const checkRunnerVnc$ = command(
     if (!hasValidAppleRoute(row, transport)) {
       return { outcome: "unavailable" };
     }
-    return {
-      outcome:
-        row.generation === input.expectedGeneration &&
-        matchesExpectedTransport(transport, input.expectedTransport) &&
-        (!isVncKerberosMethod(row.authMethod) ||
-          (row.credentialRevision === input.expectedCredentialRevision &&
-            (row.authMethod === "qemu_kerberos_ticket"
-              ? input.expectedKdcTransport === undefined
-              : input.expectedKdcTransport !== undefined &&
-                matchesExpectedTransport(
-                  storedKdcSnapshot(row)!,
-                  input.expectedKdcTransport,
-                ))))
-          ? "valid"
-          : "configuration_changed",
-    };
+    const matches =
+      row.generation === input.expectedGeneration &&
+      matchesExpectedTransport(transport, input.expectedTransport) &&
+      (!isVncKerberosMethod(row.authMethod) ||
+        (row.credentialRevision === input.expectedCredentialRevision &&
+          (row.authMethod === "qemu_kerberos_ticket"
+            ? input.expectedKdcTransport === undefined
+            : input.expectedKdcTransport !== undefined &&
+              matchesExpectedTransport(
+                storedKdcSnapshot(row)!,
+                input.expectedKdcTransport,
+              ))));
+    return matches
+      ? {
+          outcome: "valid" as const,
+          owner: { orgId: row.orgId, userId: row.userId },
+        }
+      : { outcome: "configuration_changed" as const };
   },
 );
 
@@ -716,12 +725,15 @@ export const resolveRunnerVnc$ = command(
     { get, set },
     input: RunnerVncResolveRequest & { readonly runId: string },
     signal: AbortSignal,
-  ): Promise<RunnerVncResolveResponse> => {
+  ): Promise<{
+    readonly response: RunnerVncResolveResponse;
+    readonly createdAt: string | null;
+  }> => {
     const clerk = get(clerk$);
 
     const row = await set(currentRunnerVncAuthority$, input, signal);
     if (!row || !(await hasCurrentVncMembership(clerk, row, signal))) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     validateStoredProfile(row);
     const transport = storedTransportSnapshot(row);
@@ -730,7 +742,7 @@ export const resolveRunnerVnc$ = command(
       !hasKdcAuthority(row) ||
       !hasLiveKerberosTicket(row)
     ) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     const capability = selectedCapability(
       row,
@@ -738,17 +750,25 @@ export const resolveRunnerVnc$ = command(
       input.supportedProfiles,
     );
     if (!capability) {
-      return { outcome: "unsupported_profile" };
+      return { response: { outcome: "unsupported_profile" }, createdAt: null };
     }
     const security = storedRunnerSecurity(row, transport);
     const authentication = await decryptRunnerAuthentication(row, signal);
     if (authentication === null) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
     const current = await set(currentRunnerVncAuthority$, input, signal);
     if (!(await isSameCurrentHandoff(current, row, transport, clerk, signal))) {
-      return { outcome: "unavailable" };
+      return { response: { outcome: "unavailable" }, createdAt: null };
     }
-    return resolvedRunnerResponse(row, transport, security, authentication);
+    return {
+      response: resolvedRunnerResponse(
+        row,
+        transport,
+        security,
+        authentication,
+      ),
+      createdAt: row.createdAt,
+    };
   },
 );

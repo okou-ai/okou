@@ -39,6 +39,7 @@ function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
 test.each(["install", "connect"] as const)(
   "The Discord bot link offers %s directly and retains the target server",
   async (flow) => {
+    let approved = false;
     let current = status({
       guildId: flow === "connect" ? guildId : null,
       guildName: flow === "connect" ? "Design team" : null,
@@ -63,6 +64,14 @@ test.each(["install", "connect"] as const)(
     });
     context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
       completionBody = body;
+      if (!approved) {
+        return respond(409, {
+          error: {
+            code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
+            message: "Approve Discord authorization before completing it.",
+          },
+        });
+      }
       current = status({ isConnected: true });
       return respond(200, {
         status: "connected",
@@ -81,13 +90,12 @@ test.each(["install", "connect"] as const)(
       expect(popup.location.href).toBe(authorizationUrl);
     });
     expect(getAction("button", "Connecting...")).toBeDisabled();
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Complete authorization in the Discord window",
-    );
+    expect(
+      screen.getByText("Connect your Discord account to chat with your agent."),
+    ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
     expect(requestBody).toStrictEqual({ guildId });
-    expect(completionBody).toBeUndefined();
-    popup.close();
+    approved = true;
     await waitFor(() => {
       const completed = screen.getByRole("heading", {
         name: "Connected to Discord",
@@ -110,6 +118,13 @@ test.each(["install", "connect"] as const)(
     expect(
       queryAction("link", "Open in browser")?.getAttribute("href") ?? null,
     ).toBe(`https://discord.com/channels/${guildId}`);
+    expect(popup.closed).toBeFalsy();
+    expect(popup.location.href).toBe(
+      new URL(
+        "/settings/discord?status=connected",
+        window.location.origin,
+      ).toString(),
+    );
   },
 );
 
@@ -173,9 +188,9 @@ test("Closing Discord consent without approval keeps the page retryable without 
     return respond(200, { authorizationUrl, completionToken: "c".repeat(43) });
   });
   context.mocks.api(discordOauthContract.complete, ({ respond }) => {
-    return respond(400, {
+    return respond(409, {
       error: {
-        code: "BAD_REQUEST",
+        code: "DISCORD_OAUTH_APPROVAL_REQUIRED",
         message: "Discord consent has not been approved",
       },
     });

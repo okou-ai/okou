@@ -4,6 +4,7 @@ import {
   walletContract,
   walletUserContract,
   type WalletCreateSpend,
+  walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
@@ -164,10 +165,13 @@ function spendProvider(input: WalletCreateSpend) {
     | "succeeded" = "pending_approval";
   let amount = input.amount;
   let payload: Record<string, unknown> = {};
+  let credentialPayload: Record<string, unknown> | undefined;
   const wire = () => {
     return {
       id,
       status,
+      created_at: "2026-10-14T00:00:00Z",
+      updated_at: "2026-10-14T00:00:00Z",
       amount,
       currency: input.currency,
       merchant_name: input.merchantName,
@@ -177,11 +181,23 @@ function spendProvider(input: WalletCreateSpend) {
     };
   };
   server.use(
-    http.post("https://api.link.com/spend_requests", () => {
+    http.post("https://api.link.com/spend_requests", async ({ request }) => {
+      const body = (await request.json()) as Record<string, unknown>;
+      if ("expires_at" in body) {
+        return HttpResponse.json(
+          { error: { message: "expires_at is not supported for this client" } },
+          { status: 400 },
+        );
+      }
       return HttpResponse.json(wire());
     }),
     http.get(`https://api.link.com/spend_requests/${id}`, ({ request }) => {
-      expect(new URL(request.url).searchParams.has("include")).toBeFalsy();
+      const include = new URL(request.url).searchParams.get("include");
+      if (include !== null) {
+        expect(include).toBe("card");
+        expect(credentialPayload).toBeDefined();
+        return HttpResponse.json({ ...wire(), ...credentialPayload });
+      }
       return HttpResponse.json(wire());
     }),
     http.post(`https://api.link.com/spend_requests/${id}/cancel`, () => {
@@ -190,6 +206,7 @@ function spendProvider(input: WalletCreateSpend) {
     }),
   );
   return {
+    id,
     approve: () => {
       status = "approved";
     },
@@ -201,6 +218,9 @@ function spendProvider(input: WalletCreateSpend) {
     },
     payload: (value: Record<string, unknown>) => {
       payload = value;
+    },
+    credentials: (value: Record<string, unknown>) => {
+      credentialPayload = value;
     },
   };
 }
@@ -237,6 +257,14 @@ test("is unavailable with a flag-off token and rejects a previously issued token
     { [FeatureSwitchKey.LinkWallet]: false },
   );
   await accept(client().connect({ headers: active.headers, body: {} }), [403]);
+  await accept(
+    client().spendCredentials({
+      headers: active.headers,
+      params: { id: randomUUID() },
+      body: {},
+    }),
+    [403],
+  );
 });
 
 test("accepts hosted PKCE consent after 20 minutes, binds the callback to the session owner, and consumes state once", async () => {
@@ -578,7 +606,7 @@ test("deduplicates immutable intent details, returns the exact approval URL, and
       })
     ).status,
   ).toBe(400);
-  expect(approved.body.nextAction).toBe("secure_checkout_unavailable");
+  expect(approved.body.nextAction).toBe("retrieve_credentials");
   expect(approved.body.approvalUrl).toBeNull();
   provider.changeAmount();
   await accept(
@@ -610,6 +638,14 @@ test("keeps ownership scoped to the user, organization and agent", async () => {
   );
   await accept(
     client().cancelSpend({
+      headers: peer.headers,
+      params: { id: created.body.id },
+      body: {},
+    }),
+    [404],
+  );
+  await accept(
+    client().spendCredentials({
       headers: peer.headers,
       params: { id: created.body.id },
       body: {},
@@ -650,6 +686,15 @@ test.each(["denied", "expired", "submitted", "succeeded"] as const)(
           ? "verify_order"
           : "stop",
     );
+    const credentials = await accept(
+      client().spendCredentials({
+        headers: fixture.headers,
+        params: { id: created.body.id },
+        body: {},
+      }),
+      [409],
+    );
+    expect(credentials.body.error.code).toBe("WALLET_SPEND_NOT_APPROVED");
     await accept(
       client().cancelSpend({
         headers: fixture.headers,
@@ -728,6 +773,15 @@ test("refreshes rotating credentials only on the backend and isolates requests f
     [409],
   );
   expect(oldAuthorization.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
+  const credentials = await accept(
+    client().spendCredentials({
+      headers: fixture.headers,
+      params: { id: created.body.id },
+      body: {},
+    }),
+    [409],
+  );
+  expect(credentials.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
 });
 
 test("prevents an in-flight OAuth callback from resurrecting a disconnected grant", async () => {
@@ -803,6 +857,14 @@ test("does not share a wallet grant with another agent of the same user", async 
     }),
     [404],
   );
+  await accept(
+    client().spendCredentials({
+      headers: otherAgent.headers,
+      params: { id: created.body.id },
+      body: {},
+    }),
+    [404],
+  );
 });
 
 test("denies unattended automation runs even when the user's switch is enabled", async () => {
@@ -814,9 +876,240 @@ test("denies unattended automation runs even when the user's switch is enabled",
   expect(denied.body.error.code).toBe("WALLET_INTERACTIVE_RUN_REQUIRED");
   await accept(client().connect({ headers: fixture.headers, body: {} }), [403]);
   await accept(
+    client().spendCredentials({
+      headers: fixture.headers,
+      params: { id: randomUUID() },
+      body: {},
+    }),
+    [403],
+  );
+  await accept(
     client().createSpend({ headers: fixture.headers, body: purchase() }),
     [403],
   );
+});
+
+function virtualCard() {
+  return {
+    id: "card_fixture",
+    brand: "visa",
+    number: "4000009990001984",
+    cvc: "123",
+    exp_month: 12,
+    exp_year: 2030,
+    billing_address: {
+      name: "Wallet Test",
+      line1: "123 Test Street",
+      city: "San Francisco",
+      state: "CA",
+      postal_code: "94103",
+      country: "US",
+    },
+    valid_until: new Date(now() + 30 * 60_000).toISOString(),
+  };
+}
+
+test("releases only the approved purchase's card through the explicit uncached credentials endpoint", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  const created = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  const request = {
+    headers: fixture.headers,
+    params: { id: created.body.id },
+    body: {},
+  };
+  const pending = await accept(client().spendCredentials(request), [409]);
+  expect(pending.body.error.code).toBe("WALLET_SPEND_NOT_APPROVED");
+  const card = virtualCard();
+  provider.approve();
+  provider.credentials({
+    card,
+    access_token: "private-oauth-fixture",
+    shared_payment_token: "private-spt-fixture",
+  });
+  const response = await accept(client().spendCredentials(request), [200]);
+  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("content-type")).toBe("application/octet-stream");
+  expect(response.headers.get("content-disposition")).toContain("attachment;");
+  expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  const credentials = walletSpendCredentialsSchema.parse(
+    JSON.parse(await response.body.text()),
+  );
+  expect(credentials).toStrictEqual({
+    spend: {
+      ...created.body,
+      status: "approved",
+      approvalUrl: null,
+      nextAction: "retrieve_credentials",
+    },
+    card: {
+      brand: card.brand,
+      number: card.number,
+      cvc: card.cvc,
+      expMonth: card.exp_month,
+      expYear: card.exp_year,
+      billingAddress: {
+        name: "Wallet Test",
+        line1: "123 Test Street",
+        city: "San Francisco",
+        state: "CA",
+        postalCode: "94103",
+        country: "US",
+      },
+      validUntil: card.valid_until,
+    },
+  });
+  expect(JSON.stringify(credentials)).not.toMatch(
+    /private-oauth-fixture|private-spt-fixture/,
+  );
+  const ordinary = await accept(
+    client().getSpend({ headers: fixture.headers, params: request.params }),
+    [200],
+  );
+  expect(JSON.stringify(ordinary.body)).not.toContain(card.number);
+  expect(ordinary.body).not.toHaveProperty("card");
+  provider.credentials({
+    card: {
+      brand: card.brand,
+      number: card.number,
+      exp_month: card.exp_month,
+      exp_year: card.exp_year,
+    },
+  });
+  const minimal = await accept(client().spendCredentials(request), [200]);
+  expect(
+    walletSpendCredentialsSchema.parse(JSON.parse(await minimal.body.text()))
+      .card,
+  ).toStrictEqual({
+    brand: card.brand,
+    number: card.number,
+    expMonth: card.exp_month,
+    expYear: card.exp_year,
+  });
+  await accept(client().cancelSpend(request), [200]);
+  const canceled = await accept(client().spendCredentials(request), [409]);
+  expect(canceled.body.error.code).toBe("WALLET_SPEND_NOT_APPROVED");
+});
+
+test.each([
+  { kind: "changed status", status: 409, code: "WALLET_SPEND_NOT_APPROVED" },
+  { kind: "changed amount", status: 409, code: "WALLET_APPROVAL_MISMATCH" },
+  { kind: "changed merchant", status: 409, code: "WALLET_APPROVAL_MISMATCH" },
+  { kind: "missing card", status: 409, code: "WALLET_CREDENTIALS_UNAVAILABLE" },
+  { kind: "malformed card", status: 502, code: "WALLET_INVALID_RESPONSE" },
+  { kind: "expired card", status: 409, code: "WALLET_CREDENTIALS_EXPIRED" },
+] as const)(
+  "withholds credentials for $kind in the expanded Link response",
+  async ({ kind, status, code }) => {
+    const fixture = await carrier();
+    server.use(tokenHandler());
+    await connect(fixture);
+    const input = purchase();
+    const provider = spendProvider(input);
+    const created = await accept(
+      client().createSpend({ headers: fixture.headers, body: input }),
+      [200],
+    );
+    provider.approve();
+    const card = virtualCard();
+    provider.credentials({
+      ...(kind === "changed status" ? { status: "canceled" } : {}),
+      ...(kind === "changed amount" ? { amount: input.amount + 1 } : {}),
+      ...(kind === "changed merchant"
+        ? { merchant_url: "https://other.example.test" }
+        : {}),
+      ...(kind === "missing card"
+        ? {}
+        : {
+            card: {
+              ...card,
+              ...(kind === "malformed card"
+                ? { exp_month: "private-card-field" }
+                : {}),
+              ...(kind === "expired card"
+                ? { valid_until: new Date(now() - 1000).toISOString() }
+                : {}),
+            },
+          }),
+    });
+    const response = await accept(
+      client().spendCredentials({
+        headers: fixture.headers,
+        params: { id: created.body.id },
+        body: {},
+      }),
+      [status],
+    );
+    expect(response.body.error.code).toBe(code);
+    expect(JSON.stringify(response.body)).not.toMatch(
+      /4000009990001984|private-card-field|123 Test Street/,
+    );
+  },
+);
+
+test("withholds retrieved credentials when the wallet is disconnected during the Link request", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  const created = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  const started = createDeferredPromise<void>(context.signal);
+  const finish = createDeferredPromise<void>(context.signal);
+  onTestFinished(() => {
+    if (!finish.settled()) {
+      finish.resolve();
+    }
+  });
+  server.use(
+    http.post("https://login.link.com/auth/revoke", () => {
+      return new HttpResponse(null, { status: 200 });
+    }),
+    http.get(
+      `https://api.link.com/spend_requests/${provider.id}`,
+      async ({ request }) => {
+        const expanded = new URL(request.url).searchParams.has("include");
+        if (expanded) {
+          started.resolve();
+          await finish.promise;
+        }
+        return HttpResponse.json({
+          id: provider.id,
+          status: "approved",
+          amount: input.amount,
+          currency: input.currency,
+          merchant_name: input.merchantName,
+          merchant_url: input.merchantUrl,
+          created_at: "2026-10-14T00:00:00Z",
+          updated_at: "2026-10-14T00:00:00Z",
+          ...(expanded ? { card: virtualCard() } : {}),
+        });
+      },
+    ),
+  );
+  const credentials = client().spendCredentials({
+    headers: fixture.headers,
+    params: { id: created.body.id },
+    body: {},
+  });
+  await started.promise;
+  await accept(
+    client().disconnect({ headers: fixture.headers, body: {} }),
+    [200],
+  );
+  finish.resolve();
+  const response = await accept(credentials, [409]);
+  expect(response.body.error.code).toBe("WALLET_AUTHORIZATION_CHANGED");
+  expect(JSON.stringify(response.body)).not.toContain("4000009990001984");
 });
 
 test("recovers a lost creation response with the same provider idempotency key and the same intent", async () => {
@@ -829,6 +1122,8 @@ test("recovers a lost creation response with the same provider idempotency key a
   const wire = {
     id: providerId,
     status: "pending_approval",
+    created_at: "2026-10-14T00:00:00Z",
+    updated_at: "2026-10-14T00:00:00Z",
     amount: input.amount,
     currency: input.currency,
     merchant_name: input.merchantName,
@@ -874,6 +1169,35 @@ test("fails closed for a non-Link action URL instead of exposing a phishing link
     [502],
   );
   expect(denied.status).toBe(502);
+});
+
+test("reports SDK response validation without exposing provider values and keeps the intent recoverable", async () => {
+  const fixture = await carrier();
+  server.use(tokenHandler());
+  await connect(fixture);
+  const input = purchase();
+  const provider = spendProvider(input);
+  provider.payload({ created_at: { value: "private-provider-fixture" } });
+
+  const rejected = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [502],
+  );
+  expect(rejected.body.error.code).toBe("WALLET_INVALID_RESPONSE");
+  expect(rejected.body.error.message).toContain("stage: response_schema");
+  expect(rejected.body.error.message).toContain("created_at:invalid_type");
+  expect(rejected.body.error.message).toMatch(/reference: [\da-f-]{36}/);
+  expect(JSON.stringify(rejected.body)).not.toContain(
+    "private-provider-fixture",
+  );
+
+  provider.payload({});
+  const recovered = await accept(
+    client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  expect(recovered.body.intentId).toBe(input.intentId);
+  expect(recovered.body.status).toBe("pending_approval");
 });
 
 test.each([null, 503, 401] as const)(

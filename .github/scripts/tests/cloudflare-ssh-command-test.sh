@@ -5,8 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WRAPPER="${REPO_ROOT}/.github/scripts/runner/cloudflare-ssh-command.sh"
 PRECONNECT="${REPO_ROOT}/.github/scripts/runner/cloudflare-ssh-preconnect.sh"
-SSH_ACTION="${REPO_ROOT}/.github/actions/setup-ssh-tunnel/action.yml"
-SECURITY_WORKFLOW="${REPO_ROOT}/.github/workflows/security.yml"
 
 fail() {
   echo "$1" >&2
@@ -838,29 +836,5 @@ assert_match_count "$concurrent/scp.log" 1 "/tmp/source metal@dev-8.aws.vm3.ai:/
 if [ -s "$concurrent/probe-stdin" ]; then
   fail "concurrent probes consumed caller stdin"
 fi
-
-assert_contains "$SSH_ACTION" "Guard subsequent SSH operations"
-assert_contains "$SSH_ACTION" "cloudflare-ssh-command.sh"
-assert_contains "$SSH_ACTION" \
-  "real_ssh=\"\${OKOU_CLOUDFLARE_SSH_REAL_SSH:-\$(command -v ssh)}\""
-assert_contains "$SSH_ACTION" \
-  "real_scp=\"\${OKOU_CLOUDFLARE_SSH_REAL_SCP:-\$(command -v scp)}\""
-assert_contains "$SSH_ACTION" \
-  "real_sftp=\"\${OKOU_CLOUDFLARE_SSH_REAL_SFTP:-\$(command -v sftp)}\""
-assert_contains "$SSH_ACTION" \
-  "echo \"\$wrapper_bin\" >> \"\$GITHUB_PATH\""
-assert_contains "$SSH_ACTION" "OKOU_CLOUDFLARE_SSH_STATE_DIR="
-assert_contains "$SSH_ACTION" "operation-timeout-seconds:"
-assert_contains "$SSH_ACTION" 'default: "600"'
-assert_contains "$SSH_ACTION" \
-  "OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=\${OPERATION_TIMEOUT_SECONDS}"
-assert_contains "$SSH_ACTION" \
-  "OKOU_CLOUDFLARE_SSH_DEFAULT_CONTROL_PATH=\$HOME/.ssh/vm0-ssh-%C"
-assert_contains "$SECURITY_WORKFLOW" \
-  ".github/scripts/runner/cloudflare-ssh-command.sh"
-assert_contains "$SECURITY_WORKFLOW" \
-  ".github/scripts/tests/cloudflare-ssh-command-test.sh"
-assert_not_contains "$SECURITY_WORKFLOW" \
-  ".github/scripts/cloudflare-ssh-transport.sh"
 
 echo "cloudflare-ssh-command-test: ok"

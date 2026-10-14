@@ -31,7 +31,11 @@ interface ObservationAttempt {
   readonly notify: boolean;
 }
 function observationSelection(
-  source: { readonly id: SQLWrapper; readonly generation: SQLWrapper },
+  source: {
+    readonly id: SQLWrapper;
+    readonly generation: SQLWrapper;
+    readonly createdAt: SQLWrapper;
+  },
   input: RunnerSshObservationRequest,
   observedAt: Date,
 ) {
@@ -42,6 +46,9 @@ function observationSelection(
     generation: sql`${source.generation}`
       .mapWith(sshConnectionObservations.generation)
       .as("generation"),
+    connectionCreatedAt: sql`${source.createdAt}`
+      .mapWith(sshConnectionObservations.connectionCreatedAt)
+      .as("connection_created_at"),
     observedAt: sql`${observedAt.toISOString()}::timestamptz`
       .mapWith(sshConnectionObservations.observedAt)
       .as("observed_at"),
@@ -75,6 +82,10 @@ export const commitRunnerSshObservationAttempt$ = command(
           eligible,
           and(
             eq(sshConnectionObservations.connectionId, eligible.id),
+            eq(
+              sshConnectionObservations.connectionCreatedAt,
+              eligible.createdAt,
+            ),
             eq(sshConnectionObservations.generation, eligible.generation),
           ),
         ),
@@ -94,6 +105,10 @@ export const commitRunnerSshObservationAttempt$ = command(
               .where(
                 and(
                   eq(eligible.generation, input.expectedGeneration),
+                  eq(
+                    eligible.createdAt,
+                    sql`${input.expectedCreatedAt}::timestamp`,
+                  ),
                   or(
                     not(exists(db.select({ id: previous.id }).from(previous))),
                     exists(
@@ -110,9 +125,11 @@ export const commitRunnerSshObservationAttempt$ = command(
         .returning({
           id: sshConnections.id,
           generation: sshConnections.generation,
+          createdAt: sshConnections.createdAt,
         }),
     );
     const values = {
+      connectionCreatedAt: input.expectedCreatedAt,
       generation: input.expectedGeneration,
       observedAt,
       failureReason: input.failureReason,
@@ -129,6 +146,10 @@ export const commitRunnerSshObservationAttempt$ = command(
           target: sshConnectionObservations.connectionId,
           set: values,
           setWhere: or(
+            ne(
+              sshConnectionObservations.connectionCreatedAt,
+              input.expectedCreatedAt,
+            ),
             ne(sshConnectionObservations.generation, input.expectedGeneration),
             lt(sshConnectionObservations.observedAt, observedAt),
           ),

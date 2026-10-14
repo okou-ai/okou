@@ -48,6 +48,11 @@ export const rustRouteBindings = [
     };
   }),
   {
+    route: runnerVncContract.observe,
+    rustModulePath: ["runners", "runs", "by_run_id", "vnc", "observations"],
+    rustConstName: "OBSERVE",
+  },
+  {
     route: runnersCancellationContract.get,
     rustModulePath: ["runners", "runs", "by_run_id", "cancellation"],
     rustConstName: "GET",

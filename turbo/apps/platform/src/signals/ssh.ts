@@ -16,6 +16,7 @@ import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-acc
 import { setAblyPayloadLoop$ } from "./realtime.ts";
 import {
   invalidateRemoteAccess$,
+  invalidateVncObservationConfiguration$,
   remoteHostDefaultsReload$,
 } from "./remote-access-refresh.ts";
 import {
@@ -485,6 +486,7 @@ export const invalidateSsh$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateVncObservationConfiguration$);
   set(invalidateRemoteAccess$);
 });
 
@@ -901,6 +903,7 @@ const invalidateAfterSshSave$ = command(
     set(reload$, (value) => {
       return value + 1;
     });
+    set(invalidateVncObservationConfiguration$);
     if (kind === "create" || kind === "edit" || kind === "delete") {
       set(invalidateCloudflareAccess$);
       set(invalidateTailscale$);

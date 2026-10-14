@@ -352,7 +352,16 @@ export function createChatResourceSignals(
   artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>,
   initialEventsReady$: Computed<boolean>,
 ) {
+  const expandedSections$ = state({ artifacts: false, links: false });
   return {
+    expandedSections$: computed((get) => {
+      return get(expandedSections$);
+    }),
+    toggleSection$: command(({ set }, section: "artifacts" | "links") => {
+      set(expandedSections$, (expanded) => {
+        return { ...expanded, [section]: !expanded[section] };
+      });
+    }),
     ...createChatResourceContentSignals(
       groups$,
       artifacts$,

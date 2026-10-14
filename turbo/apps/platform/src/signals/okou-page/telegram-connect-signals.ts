@@ -26,6 +26,7 @@ export const telegramConnectLinkStatus$ = computed(
         query: {
           botId: parsed.params.telegramBotId,
           origin: location.origin,
+          source: "connect_page",
         },
       }),
       [200],
@@ -51,7 +52,12 @@ export const connectTelegramAccount$ = command(
           },
           signal,
         )
-      : await set(authorizeTelegramBot$, params.telegramBotId, signal);
+      : await set(
+          authorizeTelegramBot$,
+          params.telegramBotId,
+          "connect_page",
+          signal,
+        );
     if (!result) {
       return null;
     }

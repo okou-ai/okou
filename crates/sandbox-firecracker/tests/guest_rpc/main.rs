@@ -124,7 +124,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     exercise_requests(sandbox, &next_run).await?;
     next_epoch.verify_provider_stop(sandbox).await?;
     println!(
-        "DUPLEX_FIRECRACKER_PASS activation=acknowledged streams=8 recovery=verified reuse=fenced cancellation=idle"
+        "DUPLEX_FIRECRACKER_PASS activation=acknowledged schema=1 diagnostics=reverse notice=verified streams=8 recovery=verified reuse=fenced cancellation=idle"
     );
     Ok(())
 }

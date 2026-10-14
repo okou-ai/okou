@@ -255,7 +255,7 @@ test("A blocked authorization tab shows an error and leaves Connect available", 
 
 test.each([
   {
-    name: "a bot whose Telegram domain is not configured",
+    name: "an unverified domain reported by an older API",
     status: {
       linked: false,
       installation: {
@@ -265,18 +265,57 @@ test.each([
         domainConfigured: false,
       },
     },
-    message: "We couldn't connect Telegram. Try again from Telegram.",
+    message:
+      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
   },
   {
     name: "a bot whose installation is no longer available",
     status: { linked: false },
-    message: "We couldn't connect Telegram. Try again from Telegram.",
+    message:
+      "Telegram connection is not configured yet. Please contact support.",
+  },
+  {
+    name: "a missing bot configuration",
+    status: { linked: false, readinessError: "bot_not_configured" },
+    message:
+      "Telegram connection is not configured yet. Please contact support.",
+  },
+  {
+    name: "an unsuccessful Telegram domain verification",
+    status: {
+      linked: false,
+      readinessError: "domain_not_verified",
+      installation: {
+        id: BOT_ID,
+        botUsername: "support_bot",
+        loginBotId: BOT_ID,
+        domainConfigured: false,
+      },
+    },
+    message:
+      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+  },
+  {
+    name: "an unreachable Telegram authorization service",
+    status: {
+      linked: false,
+      readinessError: "domain_check_failed",
+      installation: {
+        id: BOT_ID,
+        botUsername: "support_bot",
+        loginBotId: BOT_ID,
+        domainConfigured: false,
+      },
+    },
+    message:
+      "We couldn't reach Telegram to check the connection. Please try again in a moment.",
   },
 ] satisfies {
   name: string;
   status: TelegramLinkStatusResponse;
   message: string;
 }[])("Connect explains $name without opening a middle page", async (input) => {
+  const sentry = context.mocks.sentry();
   mockBot(input.status);
   const { popup } = authorizationWindow();
   const connect = await openWorks();
@@ -291,6 +330,7 @@ test.each([
     ).toBeEnabled();
   });
   expect(pathname()).toBe("/works");
+  expect(sentry.reports).toStrictEqual([]);
 });
 
 test("The official connect page reports unavailable login configuration", async () => {
@@ -314,7 +354,9 @@ test("The official connect page reports unavailable login configuration", async 
     screen.findByRole("heading", { name: "Connection failed" }),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.getByText("We couldn't connect Telegram. Try again from Telegram."),
+    screen.getByText(
+      "We couldn't verify Telegram login for this app. Try again, or contact support if the problem continues.",
+    ),
   ).toBeInTheDocument();
   expect(getAction("link", "Back to integrations")).toBeInTheDocument();
   expect(queryAction("button", "Continue with Telegram")).toBeNull();

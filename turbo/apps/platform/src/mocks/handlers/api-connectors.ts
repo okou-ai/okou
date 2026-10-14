@@ -40,6 +40,7 @@ import {
 import { customConnectorsContract } from "@okouai/api-contracts/contracts/custom-connectors";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
+import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { cloudflareAccessContract } from "@okouai/api-contracts/contracts/cloudflare-access";
 import { mockApi } from "../msw-contract.ts";
@@ -474,6 +475,9 @@ export const apiConnectorsHandlers = [
     return respond(200, { configs: [] });
   }),
   mockApi(sshConnectionsContract.observations, ({ respond }) => {
+    return respond(200, { observations: [] });
+  }),
+  mockApi(vncConnectionsContract.observations, ({ respond }) => {
     return respond(200, { observations: [] });
   }),
   mockApi(builtinConnectorsMainContract.list, ({ respond }) => {

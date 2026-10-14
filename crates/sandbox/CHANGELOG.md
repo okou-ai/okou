@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/okou-ai/okou/compare/sandbox-v0.27.0...sandbox-v0.27.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
 ## [0.27.0](https://github.com/okou-ai/okou/compare/sandbox-v0.26.4...sandbox-v0.27.0) (2026-10-13)
 
 

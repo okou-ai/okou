@@ -296,7 +296,7 @@ async fn run_case(password: bool, security: Security) {
                     },
                     "supportedProfiles":supported_profiles(true)
                 }));
-            then.status(200).json_body(json!({
+            then.status(200).header("X-VNC-Connection-Created-At", super::harness::CREATED_AT).json_body(json!({
                 "outcome":"resolved_transport",
                 "host":"127.0.0.1",
                 "port":vnc_port,
