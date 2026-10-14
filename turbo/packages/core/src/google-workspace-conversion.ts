@@ -1,9 +1,16 @@
+import {
+  convertsToGoogleSlides,
+  GOOGLE_SLIDES_MIME_TYPE,
+} from "./google-slides-conversion";
+
 /** Shared eligibility for preview actions and native Drive imports. */
-export type GoogleWorkspaceTarget = "document" | "spreadsheet";
+export type GoogleWorkspaceTarget = "document" | "spreadsheet" | "presentation";
+export type GoogleDriveUploadMode = "original" | "google";
 
 export const GOOGLE_WORKSPACE_MIME_TYPES = {
   document: "application/vnd.google-apps.document",
   spreadsheet: "application/vnd.google-apps.spreadsheet",
+  presentation: GOOGLE_SLIDES_MIME_TYPE,
 } as const;
 
 const DOCUMENT_FORMATS: Readonly<Record<string, string>> = {
@@ -24,7 +31,7 @@ const SPREADSHEET_FORMATS: Readonly<Record<string, string>> = {
 };
 
 export function googleWorkspaceConversion(filename: string): {
-  readonly target: GoogleWorkspaceTarget;
+  readonly target: Exclude<GoogleWorkspaceTarget, "presentation">;
   readonly sourceMimeType: string;
   readonly extension: string;
 } | null {
@@ -45,4 +52,13 @@ export function googleWorkspaceConversion(filename: string): {
   return spreadsheetMime
     ? { target: "spreadsheet", sourceMimeType: spreadsheetMime, extension }
     : null;
+}
+
+export function googleWorkspaceTarget(
+  filename: string,
+): GoogleWorkspaceTarget | undefined {
+  return (
+    googleWorkspaceConversion(filename)?.target ??
+    (convertsToGoogleSlides(filename) ? "presentation" : undefined)
+  );
 }

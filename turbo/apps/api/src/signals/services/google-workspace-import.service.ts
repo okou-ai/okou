@@ -276,7 +276,7 @@ function checkOfficeSource(
 
 export function prepareGoogleWorkspaceImport(
   source: { readonly filename: string; readonly file: Buffer },
-  target: GoogleWorkspaceTarget,
+  target: Exclude<GoogleWorkspaceTarget, "presentation">,
 ):
   | {
       readonly ok: true;

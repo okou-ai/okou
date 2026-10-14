@@ -1,6 +1,7 @@
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
-  googleWorkspaceConversion,
+  googleWorkspaceTarget,
+  type GoogleDriveUploadMode,
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -46,7 +47,6 @@ import {
   builtinConnectors$,
   connectorCatalogItemBySlug,
 } from "../../signals/external/connectors.ts";
-import { convertsToGoogleSlides } from "@okouai/core/google-slides-conversion";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { connectorConnectionPending$ } from "../../signals/connector-connection-progress.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -111,6 +111,7 @@ export type ArtifactDownloadSyncTarget = {
   readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly synced: boolean;
   readonly mimeType?: string | undefined;
+  readonly originalUploaded?: boolean | undefined;
   readonly webViewLink?: string | null | undefined;
 };
 
@@ -276,41 +277,24 @@ function useGoogleDriveAvailability(
   };
 }
 
-/**
- * Whether syncing this artifact produces a Slides deck. The service applies
- * the same predicate, so the label never promises a conversion it will skip.
- */
-function useGoogleSlidesTarget(filename: string): boolean {
-  const features = useLastResolved(featureSwitch$);
-  return (
-    (features?.[FeatureSwitchKey.GoogleSlidesConversion] ?? false) &&
-    convertsToGoogleSlides(filename)
-  );
-}
-
 function useGoogleWorkspaceTarget(
   filename: string,
 ): GoogleWorkspaceTarget | undefined {
   const features = useLastResolved(featureSwitch$);
-  return features?.[FeatureSwitchKey.GoogleDocsSheetsConversion]
-    ? googleWorkspaceConversion(filename)?.target
-    : undefined;
+  const target = googleWorkspaceTarget(filename);
+  const flag =
+    target === "presentation"
+      ? FeatureSwitchKey.GoogleSlidesConversion
+      : FeatureSwitchKey.GoogleDocsSheetsConversion;
+  return features?.[flag] ? target : undefined;
 }
 
-function useGoogleDriveMenuLabels(
-  slides: boolean,
-  target?: GoogleWorkspaceTarget,
-  original = false,
-) {
+function useGoogleDriveMenuLabels(target?: GoogleWorkspaceTarget) {
   const { t } = useTranslation();
   return {
-    synced: slides
-      ? t(($) => {
-          return $.artifacts.googleDrive.syncedSlides;
-        })
-      : t(($) => {
-          return $.artifacts.googleDrive.synced;
-        }),
+    synced: t(($) => {
+      return $.artifacts.googleDrive.synced;
+    }),
     upload:
       target === "document"
         ? t(($) => {
@@ -320,35 +304,29 @@ function useGoogleDriveMenuLabels(
           ? t(($) => {
               return $.artifacts.googleDrive.uploadSheets;
             })
-          : original
+          : target === "presentation"
             ? t(($) => {
-                return $.artifacts.googleDrive.uploadOriginal;
+                return $.artifacts.googleDrive.uploadSlides;
               })
-            : slides
-              ? t(($) => {
-                  return $.artifacts.googleDrive.uploadSlides;
-                })
-              : t(($) => {
-                  return $.artifacts.googleDrive.upload;
-                }),
+            : t(($) => {
+                return $.artifacts.googleDrive.upload;
+              }),
   };
 }
 
 function GoogleDriveDisabledMenuItem({
   kind,
   muted = false,
-  slides = false,
   target,
   original = false,
 }: {
   kind: "connect" | "synced" | "upload";
   muted?: boolean;
-  slides?: boolean;
   target?: GoogleWorkspaceTarget | undefined;
   original?: boolean;
 }) {
   const { t } = useTranslation();
-  const labels = useGoogleDriveMenuLabels(slides, target, original);
+  const labels = useGoogleDriveMenuLabels(target);
   const text =
     kind === "connect" && !target && !original
       ? t(($) => {
@@ -419,7 +397,7 @@ function resolveGoogleDrivePendingAction(args: {
 function useGoogleDriveMenuAction(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
   availability: ReturnType<typeof useGoogleDriveAvailability>,
-  conversionTarget?: GoogleWorkspaceTarget,
+  mode: GoogleDriveUploadMode,
 ): () => void {
   const createClient = useGet(apiClient$);
   const syncArtifact = useSet(syncArtifactFileToGoogleDrive$);
@@ -446,7 +424,7 @@ function useGoogleDriveMenuAction(
           artifactId: syncTarget.artifactId,
           ...(connectedAccountId ? { connectionId: connectedAccountId } : {}),
           filename: syncTarget.filename,
-          ...(conversionTarget ? { conversionTarget } : {}),
+          mode,
         },
         signal,
       );
@@ -535,7 +513,6 @@ type GoogleDriveCompletedAction =
 function googleDriveCompletedAction(
   syncTarget: ArtifactDownloadSyncTarget,
   target: GoogleWorkspaceTarget | undefined,
-  original: boolean,
 ): GoogleDriveCompletedAction | null {
   if (!syncTarget.synced) {
     return null;
@@ -546,23 +523,22 @@ function googleDriveCompletedAction(
       ? { kind: "open", target, url: syncTarget.webViewLink }
       : null;
   }
-  return !original ||
-    (syncTarget.mimeType !== GOOGLE_WORKSPACE_MIME_TYPES.document &&
-      syncTarget.mimeType !== GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet)
-    ? { kind: "synced" }
-    : null;
+  const originalUploaded =
+    syncTarget.originalUploaded ??
+    !Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
+      return mime === syncTarget.mimeType;
+    });
+  return originalUploaded ? { kind: "synced" } : null;
 }
 
 function GoogleDriveCompletedMenuItem({
   action,
-  slides,
 }: {
   action: GoogleDriveCompletedAction;
-  slides: boolean;
 }) {
   const { t } = useTranslation();
   if (action.kind === "synced") {
-    return <GoogleDriveDisabledMenuItem kind="synced" slides={slides} />;
+    return <GoogleDriveDisabledMenuItem kind="synced" />;
   }
   return (
     <DropdownMenuItem
@@ -573,9 +549,13 @@ function GoogleDriveCompletedMenuItem({
         ? t(($) => {
             return $.artifacts.googleDrive.openDocs;
           })
-        : t(($) => {
-            return $.artifacts.googleDrive.openSheets;
-          })}
+        : action.target === "spreadsheet"
+          ? t(($) => {
+              return $.artifacts.googleDrive.openSheets;
+            })
+          : t(($) => {
+              return $.artifacts.googleDrive.openSlides;
+            })}
     </DropdownMenuItem>
   );
 }
@@ -646,27 +626,25 @@ function GoogleDriveMenuItem({
   const syncOrConnect = useGoogleDriveMenuAction(
     syncTarget,
     availability,
-    target,
+    target ? "google" : "original",
   );
   const pending = useGet(googleDriveSyncPending$);
-  const slides = useGoogleSlidesTarget(filename);
-  const labels = useGoogleDriveMenuLabels(slides, target, original);
+  const labels = useGoogleDriveMenuLabels(target);
   const { connectorListLoaded, googleDriveReady } = availability;
 
   if (!syncTarget) {
     return (
       <GoogleDriveDisabledMenuItem
         kind="upload"
-        slides={slides}
         target={target}
         original={original}
       />
     );
   }
 
-  const completed = googleDriveCompletedAction(syncTarget, target, original);
+  const completed = googleDriveCompletedAction(syncTarget, target);
   if (completed) {
-    return <GoogleDriveCompletedMenuItem action={completed} slides={slides} />;
+    return <GoogleDriveCompletedMenuItem action={completed} />;
   }
 
   if (pending.has(syncTarget.artifactId)) {
@@ -685,7 +663,6 @@ function GoogleDriveMenuItem({
       <GoogleDriveDisabledMenuItem
         kind={syncTarget.disconnected ? "connect" : "upload"}
         muted={syncTarget.disconnected}
-        slides={slides}
         target={target}
         original={original}
       />

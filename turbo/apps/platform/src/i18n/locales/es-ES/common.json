@@ -563,6 +563,7 @@
       "noArtifacts": "No hay artefactos que sincronizar",
       "openDocs": "Abrir en Google Docs",
       "openSheets": "Abrir en Google Sheets",
+      "openSlides": "Abrir en Google Slides",
       "partial_one": "Se sincronizó {{synced}} de {{count}} archivo con Google Drive",
       "partial_many": "Se sincronizaron {{synced}} de {{count}} archivos con Google Drive",
       "partial_other": "Se sincronizaron {{synced}} de {{count}} archivos con Google Drive",
@@ -570,7 +571,6 @@
       "syncedFiles_one": "Sincronizado con Google Drive",
       "syncedFiles_many": "Se sincronizaron {{count}} archivos con Google Drive",
       "syncedFiles_other": "Se sincronizaron {{count}} archivos con Google Drive",
-      "syncedSlides": "Sincronizado con Google Slides",
       "syncFailed": "No se pudo sincronizar con Google Drive",
       "syncingArtifact": "Sincronizando artefacto...",
       "syncingFiles_one": "Sincronizando {{count}} archivo...",
@@ -579,7 +579,6 @@
       "syncingNamed": "Sincronizando {{filename}}...",
       "upload": "Subir a Google Drive",
       "uploadDocs": "Subir a Google Docs",
-      "uploadOriginal": "Subir el original a Google Drive",
       "uploadSheets": "Subir a Google Sheets",
       "uploadSlides": "Subir a Google Slides"
     },

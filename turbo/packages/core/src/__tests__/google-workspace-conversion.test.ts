@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { googleWorkspaceConversion } from "../google-workspace-conversion";
+import {
+  googleWorkspaceConversion,
+  googleWorkspaceTarget,
+} from "../google-workspace-conversion";
 
 describe("Google Workspace import eligibility", () => {
   it("recognizes document and spreadsheet extensions irrespective of case and URL suffixes", () => {
@@ -15,6 +18,14 @@ describe("Google Workspace import eligibility", () => {
     expect(googleWorkspaceConversion("table.tsv")?.sourceMimeType).toBe(
       "text/tab-separated-values",
     );
+  });
+
+  it("resolves all native editor targets while excluding unsupported binary presentations", () => {
+    expect(googleWorkspaceTarget("Report.DOCX?download=1")).toBe("document");
+    expect(googleWorkspaceTarget("table.csv")).toBe("spreadsheet");
+    expect(googleWorkspaceTarget("DECK.PPTX#preview")).toBe("presentation");
+    expect(googleWorkspaceTarget("deck.ppt")).toBeUndefined();
+    expect(googleWorkspaceTarget("report.pdf")).toBeUndefined();
   });
 
   it("does not mistake source code, PDF, macro workbooks or prototype properties for importable files", () => {

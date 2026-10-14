@@ -393,6 +393,10 @@ function artifactSidebarSyncTarget(params: {
     filename: params.item.file.filename,
     onSyncSuccess: params.onSyncSuccess,
     synced: params.item.file.googleDriveSync?.status === "synced",
+    originalUploaded:
+      params.item.file.googleDriveSync?.status === "synced"
+        ? params.item.file.googleDriveSync.originalUploaded
+        : undefined,
     mimeType:
       params.item.file.googleDriveSync?.status === "synced"
         ? params.item.file.googleDriveSync.mimeType

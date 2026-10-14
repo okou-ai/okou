@@ -360,6 +360,7 @@ function artifactDialogSyncTarget(
       }),
     synced: artifact.googleDriveSynced,
     mimeType: artifact.googleDriveMimeType,
+    originalUploaded: artifact.googleDriveOriginalUploaded,
     webViewLink: artifact.googleDriveWebViewLink,
   };
 }
@@ -412,6 +413,10 @@ function artifactDialogMetadataFromItem(params: {
         ? params.item.file.googleDriveSync.recovery
         : undefined,
     googleDriveSynced: params.item.file.googleDriveSync?.status === "synced",
+    googleDriveOriginalUploaded:
+      params.item.file.googleDriveSync?.status === "synced"
+        ? params.item.file.googleDriveSync.originalUploaded
+        : undefined,
     googleDriveMimeType:
       params.item.file.googleDriveSync?.status === "synced"
         ? params.item.file.googleDriveSync.mimeType

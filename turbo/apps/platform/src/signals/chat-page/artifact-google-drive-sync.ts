@@ -1,7 +1,8 @@
 import { command, computed, state } from "ccstate";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
-  type GoogleWorkspaceTarget,
+  googleWorkspaceTarget,
+  type GoogleDriveUploadMode,
 } from "@okouai/core/google-workspace-conversion";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
@@ -19,7 +20,7 @@ type ArtifactGoogleDriveSyncParams = {
 type ArtifactGoogleDriveSyncFile = {
   readonly artifactId: string;
   readonly filename?: string | undefined;
-  readonly conversionTarget?: GoogleWorkspaceTarget;
+  readonly mode: GoogleDriveUploadMode;
 };
 
 type ArtifactGoogleDriveSyncFilesParams = {
@@ -103,16 +104,15 @@ async function syncArtifactFilesToGoogleDrive(
     const client = params.createClient(artifactGoogleDriveContract);
     const results: ArtifactGoogleDriveSyncResult[] = [];
     for (const file of params.files) {
+      const target = googleWorkspaceTarget(file.filename ?? "");
       signal?.throwIfAborted();
       const settled = await settle(
         accept(
-          client.upload({
+          client.uploadWithMode({
             params: { artifactId: file.artifactId },
             body: {
               agentId: params.agentId,
-              ...(file.conversionTarget
-                ? { conversionTarget: file.conversionTarget }
-                : {}),
+              mode: file.mode,
               ...(params.connectionId
                 ? { connectionId: params.connectionId }
                 : {}),
@@ -125,9 +125,10 @@ async function syncArtifactFilesToGoogleDrive(
       );
       const result: ArtifactGoogleDriveSyncResult = settled.ok
         ? settled.value.status === 200
-          ? file.conversionTarget &&
-            settled.value.body.mimeType !==
-              GOOGLE_WORKSPACE_MIME_TYPES[file.conversionTarget]
+          ? file.mode === "google" &&
+            (!target ||
+              settled.value.body.mimeType !==
+                GOOGLE_WORKSPACE_MIME_TYPES[target])
             ? {
                 ok: false,
                 message: i18n.t(($) => {
@@ -151,7 +152,7 @@ async function syncArtifactFilesToGoogleDrive(
       toast.success(googleDriveSyncSuccessMessage(params.files.length), {
         id: toastId,
         ...(params.files.some((file) => {
-          return file.conversionTarget !== undefined;
+          return file.mode === "google";
         })
           ? {
               description: i18n.t(($) => {
@@ -206,9 +207,7 @@ async function syncArtifactFileToGoogleDrive(
         {
           artifactId: params.artifactId,
           filename: params.filename,
-          ...(params.conversionTarget
-            ? { conversionTarget: params.conversionTarget }
-            : {}),
+          mode: params.mode,
         },
       ],
     },

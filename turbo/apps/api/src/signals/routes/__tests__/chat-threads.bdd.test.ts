@@ -2,7 +2,7 @@ import { utils as compoundUtils, write as writeCompoundFile } from "cfb";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
-  type GoogleWorkspaceTarget,
+  type GoogleDriveUploadMode,
 } from "@okouai/core/google-workspace-conversion";
 import { chatThreadsArtifactsSyncRoutes } from "../chat-threads-artifacts-sync";
 import {
@@ -2379,6 +2379,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       accountReady: true,
       id: "drive-file-1",
       name: "data.csv",
+      originalUploaded: true,
       webViewLink: "https://drive.google.com/file/d/drive-file-1/view",
     });
     expect(
@@ -2718,10 +2719,11 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     filename: string,
     body: Buffer,
     enabled = true,
+    slidesEnabled = false,
   ) {
     const prepared = await setupSlidesConversionSync({
       agentLabel: "Workspace conversion agent",
-      conversionEnabled: false,
+      conversionEnabled: slidesEnabled,
       workspaceConversionEnabled: enabled,
       source: { filename, body },
     });
@@ -2742,14 +2744,14 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     })(artifactGoogleDriveContract);
     return {
       ...prepared,
-      upload: (target?: GoogleWorkspaceTarget) => {
+      upload: (mode: GoogleDriveUploadMode = "original") => {
         return accept(
-          client.upload({
+          client.uploadWithMode({
             headers: authHeaders(prepared.actor),
             params: { artifactId },
             body: {
               agentId: prepared.agentId,
-              ...(target ? { conversionTarget: target } : {}),
+              mode,
             },
           }),
           [200, 400],
@@ -2907,7 +2909,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       };
       const upload = mockGoogleDriveArtifactUpload(native);
       const readback = mockGoogleWorkspaceReadback(native);
-      const response = await fixture.upload(target);
+      const response = await fixture.upload("google");
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject(native);
       expect(upload.metadata[0]).toContain(`"mimeType":"${native.mimeType}"`);
@@ -2937,7 +2939,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       };
       const upload = mockGoogleDriveArtifactUpload(native);
       mockGoogleWorkspaceReadback(native);
-      const response = await fixture.upload("spreadsheet");
+      const response = await fixture.upload("google");
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({
         mimeType: native.mimeType,
@@ -2973,7 +2975,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       bytes: () => {
         return officeSource("xlsx");
       },
-      target: "document",
       message: "does not match",
     },
     {
@@ -2981,7 +2982,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       bytes: () => {
         return Buffer.from("print('hello')");
       },
-      target: "document",
       message: "cannot be converted",
     },
     {
@@ -2989,7 +2989,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       bytes: () => {
         return Buffer.from('"unfinished');
       },
-      target: "spreadsheet",
       message: "unclosed quoted field",
     },
     {
@@ -2997,7 +2996,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       bytes: () => {
         return Buffer.from([0xff, 0xfe, 0x00, 0xd8]);
       },
-      target: "spreadsheet",
       message: "UTF-8 text file",
     },
     {
@@ -3005,18 +3003,17 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       bytes: () => {
         return Buffer.from("x".repeat(50_001));
       },
-      target: "spreadsheet",
       message: "50,000",
     },
   ] as const)(
     "workspace conversion rejects invalid $filename before creating a Drive file",
-    async ({ filename, bytes, target, message }) => {
+    async ({ filename, bytes, message }) => {
       const fixture = await workspaceSource(filename, bytes());
       const upload = mockGoogleDriveArtifactUpload({
         id: "unexpected",
         name: filename,
       });
-      const response = await fixture.upload(target);
+      const response = await fixture.upload("google");
       expect(response.status).toBe(400);
       expectApiError(response.body);
       expect(response.body.error.message).toContain(message);
@@ -3034,13 +3031,115 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       name: "report.txt",
       mimeType: "text/plain",
     });
-    const blocked = await fixture.upload("document");
+    const blocked = await fixture.upload("google");
     expect(blocked.status).toBe(400);
     expect(upload.bodies).toHaveLength(0);
     const original = await fixture.upload();
     expect(original.status).toBe(200);
     expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
     expect(upload.metadata[0]).toContain('"mimeType":"text/plain"');
+    await fixture.finish();
+  }, 120_000);
+
+  it.each([
+    {
+      mode: "original",
+      slidesEnabled: true,
+      docsEnabled: false,
+      expected: 200,
+    },
+    { mode: "google", slidesEnabled: true, docsEnabled: false, expected: 200 },
+    { mode: "google", slidesEnabled: false, docsEnabled: true, expected: 400 },
+  ] as const)(
+    "slides uses explicit $mode with its own switch ($slidesEnabled)",
+    async ({ mode, slidesEnabled, docsEnabled, expected }) => {
+      const bytes = Buffer.from("presentation source");
+      const fixture = await workspaceSource(
+        "deck.pptx",
+        bytes,
+        docsEnabled,
+        slidesEnabled,
+      );
+      const native = mode === "google" && slidesEnabled;
+      const result = {
+        id: "uploaded-deck",
+        name: "deck.pptx",
+        mimeType: native
+          ? GOOGLE_WORKSPACE_MIME_TYPES.presentation
+          : "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      };
+      const upload = mockGoogleDriveArtifactUpload(result);
+      if (native) {
+        mockGoogleWorkspaceReadback(result);
+        mockGoogleSlidesReadback([{ pageElementCount: 2 }]);
+      }
+      const response = await fixture.upload(mode);
+      expect(response.status).toBe(expected);
+      if (expected === 200) {
+        expect(response.body).toMatchObject(result);
+        expect(upload.metadata[0]).toContain(`"mimeType":"${result.mimeType}"`);
+        expect(Buffer.from(upload.bodies[0]!)).toStrictEqual(bytes);
+      } else {
+        expect(upload.bodies).toHaveLength(0);
+        expectApiError(response.body);
+        expect(response.body.error.message).toContain(
+          "Google Slides conversion is not enabled",
+        );
+      }
+      await fixture.finish();
+    },
+    120_000,
+  );
+
+  it("explicit Google conversion still rejects and removes an empty Slides deck", async () => {
+    const fixture = await workspaceSource(
+      "deck.pptx",
+      Buffer.from("presentation"),
+      false,
+      true,
+    );
+    const native = {
+      id: "blank-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    mockGoogleDriveArtifactUpload(native);
+    mockGoogleWorkspaceReadback(native);
+    const readback = mockGoogleSlidesReadback([{ pageElementCount: 0 }]);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain("empty deck");
+    expect(readback.trashedFileIds).toStrictEqual(["blank-deck"]);
+    await fixture.finish();
+  }, 120_000);
+
+  it("does not report a previously converted empty Slides deck as success or delete it on retry", async () => {
+    const fixture = await workspaceSource(
+      "deck.pptx",
+      Buffer.from("presentation"),
+      false,
+      true,
+    );
+    const native = {
+      id: "previous-deck",
+      name: "deck",
+      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.presentation,
+    };
+    const upload = mockGoogleDriveArtifactUpload(native);
+    mockGoogleDriveFilesList(() => {
+      return { status: 200, files: [native] };
+    });
+    mockGoogleWorkspaceReadback(native);
+    const readback = mockGoogleSlidesReadback([{ pageElementCount: 0 }]);
+    const response = await fixture.upload("google");
+    expect(response.status).toBe(400);
+    expectApiError(response.body);
+    expect(response.body.error.message).toContain(
+      "previously converted presentation is empty",
+    );
+    expect(upload.bodies).toHaveLength(0);
+    expect(readback.trashedFileIds).toHaveLength(0);
     await fixture.finish();
   }, 120_000);
 
@@ -3054,7 +3153,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     mockGoogleDriveFilesList(() => {
       return { status: 500 };
     });
-    const response = await fixture.upload("document");
+    const response = await fixture.upload("google");
     expect(response.status).toBe(400);
     expectApiError(response.body);
     expect(response.body.error.message).toContain(
@@ -3075,8 +3174,8 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       reuseUploadedFile: true,
     });
     mockGoogleWorkspaceReadback(native);
-    expect((await fixture.upload("document")).status).toBe(200);
-    expect((await fixture.upload("document")).body).toMatchObject({
+    expect((await fixture.upload("google")).status).toBe(200);
+    expect((await fixture.upload("google")).body).toMatchObject({
       id: "native-file",
       mimeType: native.mimeType,
     });
@@ -3119,6 +3218,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expect(artifacts.runs[0]?.files[0]?.googleDriveSync).toMatchObject({
         status: "synced",
         id: "native-file",
+        originalUploaded: true,
         mimeType: native.mimeType,
         webViewLink: "https://docs.google.com/document/d/native-file/edit",
       });
@@ -3132,7 +3232,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     const raw = { id: "raw-file", name: "report.txt", mimeType: "text/plain" };
     mockGoogleDriveArtifactUpload(raw);
     const readback = mockGoogleWorkspaceReadback(raw);
-    const response = await fixture.upload("document");
+    const response = await fixture.upload("google");
     expect(response.status).toBe(400);
     expectApiError(response.body);
     expect(response.body.error.message).toContain(

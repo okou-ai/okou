@@ -248,6 +248,7 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
     name: z.string(),
     webViewLink: z.string().nullable(),
     mimeType: z.string().optional(),
+    originalUploaded: z.boolean().optional(),
   }),
   z.object({
     status: z.literal("not_synced"),

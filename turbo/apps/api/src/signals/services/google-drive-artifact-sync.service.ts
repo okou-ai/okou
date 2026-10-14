@@ -1,5 +1,7 @@
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
+  googleWorkspaceTarget,
+  type GoogleDriveUploadMode,
   type GoogleWorkspaceTarget,
 } from "@okouai/core/google-workspace-conversion";
 import { prepareGoogleWorkspaceImport } from "./google-workspace-import.service";
@@ -106,11 +108,15 @@ interface DriveSyncResult {
   readonly mimeType?: string;
 }
 
+interface DriveSyncStatusResult extends DriveSyncResult {
+  readonly originalUploaded: boolean;
+}
+
 type DriveStatusLookup =
   | {
       readonly type: "ready";
       readonly connectionId?: string;
-      readonly syncedByKey: ReadonlyMap<string, DriveSyncResult>;
+      readonly syncedByKey: ReadonlyMap<string, DriveSyncStatusResult>;
     }
   | {
       readonly type: "disconnected";
@@ -454,8 +460,8 @@ const listArtifactFilesWithRefresh$ = command(
 
 function buildStatusMap(
   files: readonly z.infer<typeof driveFileSchema>[],
-): ReadonlyMap<string, DriveSyncResult> {
-  const map = new Map<string, DriveSyncResult>();
+): ReadonlyMap<string, DriveSyncStatusResult> {
+  const map = new Map<string, DriveSyncStatusResult>();
   for (const file of files) {
     const runId = file.appProperties?.[GOOGLE_DRIVE_RUN_APP_PROPERTY];
     const fileId = file.appProperties?.[GOOGLE_DRIVE_FILE_APP_PROPERTY];
@@ -464,16 +470,23 @@ function buildStatusMap(
     }
     const key = artifactKey(runId, fileId);
     const existing = map.get(key);
-    // Prefer a native result over its historical Office attachment.
+    const originalUploaded =
+      existing?.originalUploaded === true ||
+      !Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
+        return mime === file.mimeType;
+      });
+    // Retain both actions' completion while preferring the native editor link.
     if (
       existing?.mimeType &&
       Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
         return mime === existing.mimeType;
       })
     ) {
+      map.set(key, { ...existing, originalUploaded });
       continue;
     }
     map.set(key, {
+      originalUploaded,
       id: file.id,
       name: file.name,
       webViewLink:
@@ -482,7 +495,9 @@ function buildStatusMap(
           ? `https://docs.google.com/document/d/${encodeURIComponent(file.id)}/edit`
           : file.mimeType === GOOGLE_WORKSPACE_MIME_TYPES.spreadsheet
             ? `https://docs.google.com/spreadsheets/d/${encodeURIComponent(file.id)}/edit`
-            : null),
+            : file.mimeType === GOOGLE_WORKSPACE_MIME_TYPES.presentation
+              ? `https://docs.google.com/presentation/d/${encodeURIComponent(file.id)}/edit`
+              : null),
       ...(file.mimeType ? { mimeType: file.mimeType } : {}),
     });
   }
@@ -1370,6 +1385,7 @@ async function rejectEmptyConvertedDeck(
   args: {
     readonly accessToken: string;
     readonly presentationId: string;
+    readonly discardInvalid: boolean;
   },
   signal: AbortSignal,
 ): Promise<BadRequestResponse | undefined> {
@@ -1398,6 +1414,11 @@ async function rejectEmptyConvertedDeck(
   });
   if (slides.length === 0 || hasContent) {
     return undefined;
+  }
+  if (!args.discardInvalid) {
+    return badRequestMessage(
+      "The previously converted presentation is empty. Check Google Slides before retrying.",
+    );
   }
   const discarded = await trashDriveFile(
     { accessToken: args.accessToken, fileId: args.presentationId },
@@ -1501,7 +1522,7 @@ async function verifyWorkspaceImport(
       ? "Google did not produce the requested editable format; the unsuccessful copy was removed"
       : "Google did not produce the requested editable format; an unsuccessful copy remains in Drive";
   }
-  const editor = args.target === "document" ? "document" : "spreadsheets";
+  const editor = args.target === "spreadsheet" ? "spreadsheets" : args.target;
   return {
     id: result.id,
     name: result.name,
@@ -1551,7 +1572,7 @@ interface CatalogSyncArtifactArgs {
   readonly agentId: string;
   readonly connectionId?: string;
   readonly authorizedRunId?: string;
-  readonly conversionTarget?: GoogleWorkspaceTarget;
+  readonly mode?: GoogleDriveUploadMode;
 }
 
 type SyncArtifactArgs = LegacySyncArtifactArgs | CatalogSyncArtifactArgs;
@@ -1663,17 +1684,14 @@ export const syncArtifactToGoogleDrive$ = command(
     if ("artifactId" in args && !catalogArtifact) {
       return notFound("Artifact file not found");
     }
-    if (
-      "artifactId" in args &&
-      args.conversionTarget &&
-      !isFeatureEnabled(
-        FeatureSwitchKey.GoogleDocsSheetsConversion,
+    if ("artifactId" in args && args.mode === "google" && catalogArtifact) {
+      const target = resolveGoogleConversionTarget(
+        catalogArtifact.filename ?? "",
         featureSwitchContext,
-      )
-    ) {
-      return badRequestMessage(
-        "Google Docs and Sheets conversion is not enabled",
       );
+      if (isBadRequestResponse(target)) {
+        return target;
+      }
     }
     const connectorId =
       "artifactId" in args
@@ -1743,32 +1761,71 @@ export const syncArtifactToGoogleDrive$ = command(
   },
 );
 
+function resolveGoogleConversionTarget(
+  filename: string,
+  featureSwitchContext: FeatureSwitchContext,
+): GoogleWorkspaceTarget | BadRequestResponse {
+  const target = googleWorkspaceTarget(filename);
+  if (!target) {
+    return badRequestMessage(
+      "This file cannot be converted to a Google editor format",
+    );
+  }
+  const flag =
+    target === "presentation"
+      ? FeatureSwitchKey.GoogleSlidesConversion
+      : FeatureSwitchKey.GoogleDocsSheetsConversion;
+  return isFeatureEnabled(flag, featureSwitchContext)
+    ? target
+    : badRequestMessage(
+        target === "presentation"
+          ? "Google Slides conversion is not enabled"
+          : "Google Docs and Sheets conversion is not enabled",
+      );
+}
+
 function prepareDriveUpload(
   content: ResolvedArtifactContent,
   featureSwitchContext: FeatureSwitchContext,
-  conversionTarget: GoogleWorkspaceTarget | undefined,
+  mode: GoogleDriveUploadMode | undefined,
 ):
   | BadRequestResponse
   | {
       readonly content: ResolvedArtifactContent;
       readonly targetMimeType: string | undefined;
+      readonly conversionTarget?: GoogleWorkspaceTarget;
     } {
-  const prepared = conversionTarget
-    ? prepareGoogleWorkspaceImport(content, conversionTarget)
-    : null;
-  if (prepared && !prepared.ok) {
-    return badRequestMessage(prepared.message);
+  if (mode === "original") {
+    return { content, targetMimeType: undefined };
   }
-  const uploadContent = prepared?.ok ? prepared : content;
-  const slidesTarget = resolveSlidesTarget(content, featureSwitchContext);
-  if (slidesTarget.kind === "rejected") {
-    return slidesTarget.response;
+  // Requests from cached clients keep the pre-existing Slides behavior.
+  if (mode === undefined) {
+    const slides = resolveSlidesTarget(content, featureSwitchContext);
+    return slides.kind === "rejected"
+      ? slides.response
+      : { content, targetMimeType: slides.mimeType };
   }
-  const targetMimeType = conversionTarget
-    ? GOOGLE_WORKSPACE_MIME_TYPES[conversionTarget]
-    : slidesTarget.mimeType;
-
-  return { content: uploadContent, targetMimeType };
+  const target = resolveGoogleConversionTarget(
+    content.filename,
+    featureSwitchContext,
+  );
+  if (isBadRequestResponse(target)) {
+    return target;
+  }
+  if (target === "presentation") {
+    const slides = resolveSlidesTarget(content, featureSwitchContext);
+    return slides.kind === "rejected"
+      ? slides.response
+      : { content, targetMimeType: slides.mimeType, conversionTarget: target };
+  }
+  const prepared = prepareGoogleWorkspaceImport(content, target);
+  return prepared.ok
+    ? {
+        content: prepared,
+        targetMimeType: GOOGLE_WORKSPACE_MIME_TYPES[target],
+        conversionTarget: target,
+      }
+    : badRequestMessage(prepared.message);
 }
 
 const reuseWorkspaceImport$ = command(
@@ -1850,9 +1907,24 @@ const reuseWorkspaceImport$ = command(
         signal,
       );
       signal.throwIfAborted();
-      return typeof verified === "string"
-        ? badRequestMessage(verified)
-        : { tokens: uploadTokens, existing: verified };
+      if (typeof verified === "string") {
+        return badRequestMessage(verified);
+      }
+      if (conversionTarget === "presentation") {
+        const rejected = await rejectEmptyConvertedDeck(
+          {
+            accessToken: uploadTokens.accessToken,
+            presentationId: verified.id,
+            discardInvalid: false,
+          },
+          signal,
+        );
+        signal.throwIfAborted();
+        if (rejected) {
+          return rejected;
+        }
+      }
+      return { tokens: uploadTokens, existing: verified };
     }
 
     return { tokens: uploadTokens, existing: null };
@@ -1877,12 +1949,12 @@ async function finishDriveUpload(
     (await isUnsupportedConversion(response))
   ) {
     return badRequestMessage(
-      conversionTarget
+      conversionTarget && conversionTarget !== "presentation"
         ? "Google could not convert this document or spreadsheet"
         : "Google Slides could not read this presentation",
     );
   }
-  const body = await parseUploadResponse(response);
+  let body = await parseUploadResponse(response);
   signal.throwIfAborted();
   if (conversionTarget) {
     const verified = await verifyWorkspaceImport(
@@ -1898,11 +1970,11 @@ async function finishDriveUpload(
     if (typeof verified === "string") {
       return badRequestMessage(verified);
     }
-    return { status: 200 as const, body: verified };
+    body = verified;
   }
-  if (targetMimeType !== undefined) {
+  if (targetMimeType === GOOGLE_SLIDES_MIME_TYPE) {
     const rejected = await rejectEmptyConvertedDeck(
-      { accessToken, presentationId: body.id },
+      { accessToken, presentationId: body.id, discardInvalid: true },
       signal,
     );
     signal.throwIfAborted();
@@ -1953,17 +2025,15 @@ const uploadResolvedArtifact$ = command(
       );
     }
 
-    const conversionTarget =
-      "artifactId" in args ? args.conversionTarget : undefined;
     const plan = prepareDriveUpload(
       content,
       featureSwitchContext,
-      conversionTarget,
+      "artifactId" in args ? args.mode : undefined,
     );
     if (isBadRequestResponse(plan)) {
       return plan;
     }
-    const { targetMimeType } = plan;
+    const { targetMimeType, conversionTarget } = plan;
     const previous = conversionTarget
       ? await set(
           reuseWorkspaceImport$,
