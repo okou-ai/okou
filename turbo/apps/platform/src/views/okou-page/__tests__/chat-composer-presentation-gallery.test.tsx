@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -201,4 +201,42 @@ test("Step back through a presentation template from its filmstrip", async () =>
     "true",
   );
   expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+function loadPreviewFrame(frame: HTMLIFrameElement): Document {
+  const frameDocument = frame.contentDocument;
+  if (frameDocument === null) {
+    throw new Error("Presentation preview frame has no document");
+  }
+  frameDocument.open();
+  frameDocument.write(frame.srcdoc);
+  frameDocument.close();
+  fireEvent.load(frame);
+  return frameDocument;
+}
+
+function previewThemeStyle(frameDocument: Document): string {
+  return (
+    frameDocument.querySelector("style[data-okou-preview-theme]")
+      ?.textContent ?? ""
+  );
+}
+
+test("Repaint a loaded presentation slide in place when its theme changes", async () => {
+  await openThreeSlidePreview();
+  const template = builtInTemplate();
+  const frame = screen.getByTitle(`${template.title} HTML preview`);
+  if (!(frame instanceof HTMLIFrameElement)) {
+    throw new Error("The stage preview is not a frame");
+  }
+  const frameDocument = loadPreviewFrame(frame);
+  expect(previewThemeStyle(frameDocument)).toContain("#7257E6");
+
+  click(
+    within(screen.getByRole("dialog")).getByLabelText("Select style Deep dive"),
+  );
+
+  expect(previewThemeStyle(frameDocument)).toContain("#38C7B4");
+  expect(frame.srcdoc).not.toContain("#38C7B4");
+  expect(frame).toHaveAttribute("data-loaded", "true");
 });

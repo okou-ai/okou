@@ -13,7 +13,6 @@ import {
   DropdownMenuRadioItemIndicator,
 } from "@okouai/ui";
 import type {
-  UserTemplateCatalogEntry,
   UserTemplateDetail,
   UserTemplateVisibility,
 } from "@okouai/api-contracts/contracts/user-templates";
@@ -297,33 +296,30 @@ function CustomTemplateTitleInput({
 
 export function CustomTemplateDetailSidebar({
   detail,
-  onSelect,
 }: {
   readonly detail: UserTemplateDetail;
-  readonly onSelect: (template: UserTemplateCatalogEntry) => void;
 }) {
   const { t } = useTranslation();
   const requestDelete = useSet(requestDeleteCustomTemplate$);
   return (
     // The imported deck panel's column, which this now shares: the name, what
     // it means to share it, then the action, then the way to be rid of it.
-    <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[320px]">
-      <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
-        {detail.canManage ? (
-          <CustomTemplateTitleInput detail={detail} />
-        ) : (
-          <h3 className="text-xl font-semibold text-foreground">
-            {detail.title}
-          </h3>
-        )}
-        {/*
-         * No line naming the file it was reversed from. The template is what
-         * the member uses from here on, and once it is named and renameable
-         * the original filename is a fact about an import that already
-         * happened — one the preview beside this column shows anyway, for the
-         * kinds whose source is what gets drawn.
-         */}
-        <div className="my-5 border-t border-border" />
+    <aside className="flex w-full shrink-0 flex-col lg:sticky lg:top-0 lg:w-[220px]">
+      {detail.canManage ? (
+        <CustomTemplateTitleInput detail={detail} />
+      ) : (
+        <h3 className="text-xl font-semibold text-foreground">
+          {detail.title}
+        </h3>
+      )}
+      {/*
+       * No line naming the file it was reversed from. The template is what
+       * the member uses from here on, and once it is named and renameable
+       * the original filename is a fact about an import that already
+       * happened — one the preview beside this column shows anyway, for the
+       * kinds whose source is what gets drawn.
+       */}
+      <div className="mt-6">
         {detail.canManage ? (
           <CustomTemplateVisibilityControl detail={detail} />
         ) : (
@@ -332,33 +328,22 @@ export function CustomTemplateDetailSidebar({
             <SharedByLabel ownerDisplayName={detail.ownerDisplayName} />
           </p>
         )}
+      </div>
+      {detail.canManage ? (
         <Button
           type="button"
-          className="mt-5 h-12 w-full font-semibold shadow-sm"
+          variant="quiet"
+          size="sm"
+          className="-ml-3 mt-4 self-start text-destructive hover:text-destructive"
           onClick={() => {
-            onSelect(detail);
+            requestDelete({ id: detail.id, title: detail.title });
           }}
         >
           {t(($) => {
-            return $.artifacts.templates.useThisTemplate;
+            return $.templates.actions.delete;
           })}
         </Button>
-        {detail.canManage ? (
-          <Button
-            type="button"
-            variant="quiet"
-            size="sm"
-            className="mt-2 w-full text-destructive hover:text-destructive"
-            onClick={() => {
-              requestDelete({ id: detail.id, title: detail.title });
-            }}
-          >
-            {t(($) => {
-              return $.templates.actions.delete;
-            })}
-          </Button>
-        ) : null}
-      </div>
+      ) : null}
     </aside>
   );
 }

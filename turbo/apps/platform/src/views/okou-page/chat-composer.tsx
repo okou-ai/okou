@@ -2024,12 +2024,14 @@ function PresentationTemplateHtmlFrame({
   dataTestId,
   className,
   loading,
+  frameRef,
 }: {
   readonly html: string | null;
   readonly title: string;
   readonly dataTestId?: string;
   readonly className?: string;
   readonly loading?: "eager" | "lazy";
+  readonly frameRef?: RefCallback<HTMLIFrameElement>;
 }) {
   if (html === null) {
     return null;
@@ -2037,6 +2039,7 @@ function PresentationTemplateHtmlFrame({
   return (
     <iframe
       key={html}
+      ref={frameRef}
       title={title}
       data-testid={dataTestId}
       srcDoc={html}
@@ -2233,8 +2236,10 @@ function TemplatePreviewPage({
   const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
   const detailPreview = useGet(signals.template.openedTemplateSelection$);
   const template = useLoadable(signals.template.openedTemplate$);
-  const html = useLoadable(signals.template.openedTemplateHtml$);
-  const thumbnails = useLoadable(signals.template.openedTemplateThumbnails$);
+  const slideDocuments = useLoadable(
+    signals.template.openedTemplateSlideDocuments$,
+  );
+  const setThemedFrameRef = useSet(signals.template.setOpenedTemplateFrameRef$);
   const setCardThemeId = useSet(signals.template.setTemplateCardThemeId$);
   const selectDetailPreview = useSet(signals.template.selectOpenedTemplate$);
   const visibleDetailPreview = templateDetailPreviewMatchesItem(
@@ -2257,7 +2262,9 @@ function TemplatePreviewPage({
     detailSlideCount - 1,
   );
   const htmlPreviewFailed =
-    template.state === "hasError" || html.state === "hasError";
+    template.state === "hasError" || slideDocuments.state === "hasError";
+  const documents =
+    slideDocuments.state === "hasData" ? slideDocuments.data : null;
   const detailImageSource = presentationTemplateDetailSlideImageSource(
     item,
     activeSlideIndex,
@@ -2322,40 +2329,67 @@ function TemplatePreviewPage({
           </span>
         </DialogTitle>
       </DialogHeader>
-      {/* One height owner: the dialog. From lg the body is a size container
-          and the stage takes the 16:9 box that fits beside the theme list and
-          above the filmstrip, so no viewport height clips the page. */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]">
-        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6">
+      <div className={TEMPLATE_DETAIL_BODY}>
+        <div className={TEMPLATE_DETAIL_GRID}>
           <TemplateDetailStage
             title={item.title}
             focusRef={focusPreview}
+            frameRef={setThemedFrameRef}
             activeSlideIndex={activeSlideIndex}
             slideCount={detailSlideCount}
             lowResolutionImage={detailLowResolutionImage}
             highResolutionImage={detailHighResolutionImage}
-            html={html.state === "hasData" ? html.data : null}
+            documents={documents}
             onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
           />
           <TemplateDetailFilmstrip
-            item={item}
             slideCount={Math.min(detailSlideCount, 15)}
             activeSlideIndex={activeSlideIndex}
-            theme={selectedTheme}
-            htmlPreviewFailed={htmlPreviewFailed}
-            thumbnails={thumbnails.state === "hasData" ? thumbnails.data : null}
             onChange={selectDetailSlide}
             onKeyDown={handleDetailSlideKeyDown}
+            renderThumbnail={(slideIndex) => {
+              return (
+                <>
+                  <img
+                    src={r2ImageTransformUrl(
+                      presentationTemplateDetailSlideImageSource(
+                        item,
+                        slideIndex,
+                        selectedTheme,
+                        htmlPreviewFailed,
+                      ),
+                      TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
+                    )}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                  <PresentationTemplateHtmlFrame
+                    html={documents?.[slideIndex]?.html ?? null}
+                    frameRef={setThemedFrameRef}
+                    loading="lazy"
+                    title={t(
+                      ($) => {
+                        return $.artifacts.templates.slideThumbnail;
+                      },
+                      { title: item.title, slideNumber: slideIndex + 1 },
+                    )}
+                  />
+                </>
+              );
+            }}
           />
-          <TemplateDetailThemeList
-            item={item}
-            selectedTheme={selectedTheme}
-            onSelect={selectDetailTheme}
-          />
+          <TemplateDetailSideColumn>
+            <TemplateDetailThemeList
+              item={item}
+              selectedTheme={selectedTheme}
+              onSelect={selectDetailTheme}
+            />
+          </TemplateDetailSideColumn>
         </div>
       </div>
-      <div className="flex shrink-0 items-center justify-end px-6 py-4">
+      <div className={TEMPLATE_DETAIL_FOOTER}>
         <Button
           type="button"
           size="lg"
@@ -2381,13 +2415,26 @@ function TemplatePreviewPage({
   );
 }
 
-// From lg the stage is as wide as the body allows once the theme list keeps
-// its 180px floor and the 24px gap beside it, and as tall as the body allows
-// once the filmstrip's 74px row and the 12px gap under the stage are taken.
-// The smaller of the two decides, so the slide is never cropped and never
-// letterboxed. Spelled out because Tailwind only emits what it finds written.
-const TEMPLATE_DETAIL_STAGE_WIDTH =
-  "lg:w-[min(calc(100cqw_-_204px),calc((100cqh_-_86px)*16/9))]";
+// The template detail page, shared by built-in and imported decks: one body
+// under the header, whose height the dialog alone owns, and a footer holding
+// the action. From lg the body is a size container, so the stage can take the
+// 16:9 box that fits beside the side column and above the filmstrip.
+const TEMPLATE_DETAIL_BODY =
+  "min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]";
+const TEMPLATE_DETAIL_GRID =
+  "grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6";
+const TEMPLATE_DETAIL_FOOTER =
+  "flex shrink-0 items-center justify-end px-6 py-4";
+
+// The stage is as wide as the body allows once the side column keeps its
+// 220px floor and the 24px gap beside it, and as tall as the body allows once
+// the filmstrip's 85px row and the 12px gap under the stage are taken. The
+// smaller of the two decides, so the slide is never cropped or letterboxed.
+// Spelled out because Tailwind only emits what it finds written.
+const TEMPLATE_DETAIL_STAGE = cn(
+  TEMPLATE_TILE_MEDIA,
+  "group/stage isolate aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1 lg:w-[min(calc(100cqw_-_244px),calc((100cqh_-_97px)*16/9))]",
+);
 
 // The stage controls sit on cover art, which looks the same in both themes, so
 // the counter is literal white on a literal black like `TEMPLATE_TILE_SCRIM`
@@ -2396,66 +2443,18 @@ const TEMPLATE_DETAIL_STAGE_WIDTH =
 const TEMPLATE_DETAIL_STAGE_ARROW =
   "absolute top-1/2 z-50 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-background/90 text-foreground backdrop-blur hover:bg-background focus-visible:outline-none disabled:hidden [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/stage:opacity-100 [@media(hover:hover)]:group-focus-visible/stage:opacity-100";
 
-function TemplateDetailStage({
-  title,
-  focusRef,
+function TemplateDetailStageControls({
   activeSlideIndex,
   slideCount,
-  lowResolutionImage,
-  highResolutionImage,
-  html,
   onChange,
-  onKeyDown,
 }: {
-  readonly title: string;
-  readonly focusRef: RefCallback<HTMLDivElement>;
   readonly activeSlideIndex: number;
   readonly slideCount: number;
-  readonly lowResolutionImage: string;
-  readonly highResolutionImage: string;
-  readonly html: string | null;
   readonly onChange: (index: number) => void;
-  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      ref={focusRef}
-      role="group"
-      aria-label={t(
-        ($) => {
-          return $.artifacts.templates.slidePreview;
-        },
-        { title },
-      )}
-      tabIndex={0}
-      onKeyDown={onKeyDown}
-      className={cn(
-        TEMPLATE_TILE_MEDIA,
-        TEMPLATE_DETAIL_STAGE_WIDTH,
-        "group/stage isolate aspect-video focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:col-start-1 lg:row-start-1",
-      )}
-    >
-      <ProgressiveTemplatePreviewImage
-        alt=""
-        className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
-        dataTestId={`${title} detail image preview`}
-        fetchPriority="high"
-        highResolutionUrl={highResolutionImage}
-        loading="eager"
-        lowResolutionUrl={lowResolutionImage}
-      />
-      <PresentationTemplateHtmlFrame
-        html={html}
-        title={t(
-          ($) => {
-            return $.artifacts.templates.htmlPreview;
-          },
-          { title },
-        )}
-        dataTestId={`${title} detail HTML preview`}
-        className="z-40"
-      />
+    <>
       <button
         type="button"
         aria-label={t(($) => {
@@ -2492,6 +2491,93 @@ function TemplateDetailStage({
           { current: activeSlideIndex + 1, total: slideCount },
         )}
       </span>
+    </>
+  );
+}
+
+function TemplateDetailStage({
+  title,
+  focusRef,
+  frameRef,
+  activeSlideIndex,
+  slideCount,
+  lowResolutionImage,
+  highResolutionImage,
+  documents,
+  onChange,
+  onKeyDown,
+}: {
+  readonly title: string;
+  readonly focusRef: RefCallback<HTMLDivElement>;
+  readonly frameRef: RefCallback<HTMLIFrameElement>;
+  readonly activeSlideIndex: number;
+  readonly slideCount: number;
+  readonly lowResolutionImage: string;
+  readonly highResolutionImage: string;
+  readonly documents:
+    readonly { readonly id: string; readonly html: string }[] | null;
+  readonly onChange: (index: number) => void;
+  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      ref={focusRef}
+      role="group"
+      aria-label={t(
+        ($) => {
+          return $.artifacts.templates.slidePreview;
+        },
+        { title },
+      )}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className={TEMPLATE_DETAIL_STAGE}
+    >
+      <ProgressiveTemplatePreviewImage
+        alt=""
+        className="pointer-events-none absolute inset-0 z-20 h-full w-full object-cover"
+        dataTestId={`${title} detail image preview`}
+        fetchPriority="high"
+        highResolutionUrl={highResolutionImage}
+        loading="eager"
+        lowResolutionUrl={lowResolutionImage}
+      />
+      {/* Every slide stays loaded on the stage and only the active one shows,
+          so stepping through slides swaps frames that are already painted
+          rather than loading a new one over the default-theme image. */}
+      {documents?.map((slideDocument, slideIndex) => {
+        const active = slideIndex === activeSlideIndex;
+        return (
+          <PresentationTemplateHtmlFrame
+            key={slideDocument.id}
+            html={slideDocument.html}
+            frameRef={frameRef}
+            title={
+              active
+                ? t(
+                    ($) => {
+                      return $.artifacts.templates.htmlPreview;
+                    },
+                    { title },
+                  )
+                : t(
+                    ($) => {
+                      return $.artifacts.templates.slideThumbnail;
+                    },
+                    { title, slideNumber: slideIndex + 1 },
+                  )
+            }
+            dataTestId={active ? `${title} detail HTML preview` : undefined}
+            className={cn("z-40", !active && "invisible")}
+          />
+        );
+      })}
+      <TemplateDetailStageControls
+        activeSlideIndex={activeSlideIndex}
+        slideCount={slideCount}
+        onChange={onChange}
+      />
     </div>
   );
 }
@@ -2531,24 +2617,21 @@ function scrollActiveTemplateThumbnailIntoStrip(
   };
 }
 
+// A single row with no scrollbar of its own: the edge fades say there is more,
+// and the stage arrows, the keyboard and the active tile's own scrolling move
+// along it.
 function TemplateDetailFilmstrip({
-  item,
   slideCount,
   activeSlideIndex,
-  theme,
-  htmlPreviewFailed,
-  thumbnails,
   onChange,
   onKeyDown,
+  renderThumbnail,
 }: {
-  readonly item: PresentationTemplateItem;
   readonly slideCount: number;
   readonly activeSlideIndex: number;
-  readonly theme: PresentationTemplateThemeOption;
-  readonly htmlPreviewFailed: boolean;
-  readonly thumbnails: readonly string[] | null;
   readonly onChange: (index: number) => void;
   readonly onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
+  readonly renderThumbnail: (slideIndex: number) => ReactNode;
 }) {
   const { t } = useTranslation();
   return (
@@ -2585,44 +2668,34 @@ function TemplateDetailFilmstrip({
                   onChange(slideIndex);
                 }}
                 className={cn(
-                  "relative aspect-video w-[124px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative aspect-video w-[144px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   "after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-lg after:border-(length:--border-width-emphasis) after:border-transparent after:transition-colors",
                   active
                     ? "after:border-primary"
                     : "hover:after:border-muted-foreground/40",
                 )}
               >
-                <img
-                  src={r2ImageTransformUrl(
-                    presentationTemplateDetailSlideImageSource(
-                      item,
-                      slideIndex,
-                      theme,
-                      htmlPreviewFailed,
-                    ),
-                    TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE,
-                  )}
-                  alt=""
-                  loading="lazy"
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-                <PresentationTemplateHtmlFrame
-                  html={thumbnails?.[slideIndex] ?? null}
-                  loading="lazy"
-                  title={t(
-                    ($) => {
-                      return $.artifacts.templates.slideThumbnail;
-                    },
-                    { title: item.title, slideNumber },
-                  )}
-                />
+                {renderThumbnail(slideIndex)}
               </button>
             );
           })}
         </ScrollArea.Content>
       </ScrollArea.Viewport>
-      <ScrollBar orientation="horizontal" />
     </ScrollArea.Root>
+  );
+}
+
+// The column beside the stage. From lg it is laid out against the stage's box
+// and scrolls inside it, so it never adds height to the row.
+function TemplateDetailSideColumn({
+  children,
+}: {
+  readonly children: ReactNode;
+}) {
+  return (
+    <div className="relative min-w-0 pt-3 lg:col-start-2 lg:row-start-1 lg:pt-0">
+      <div className="flex flex-col lg:absolute lg:inset-0">{children}</div>
+    </div>
   );
 }
 
@@ -2741,47 +2814,43 @@ function TemplateDetailThemeList({
       }),
     },
   ] as const;
-  // From lg the list sits beside the stage and must not add height to the row,
-  // so it is laid out against the stage's box and scrolls inside it.
   return (
-    <div className="relative min-w-0 pt-3 lg:col-start-2 lg:row-start-1 lg:pt-0">
-      <div className="flex flex-col lg:absolute lg:inset-0">
-        <p className="px-2 text-sm font-medium text-foreground">
-          {t(($) => {
-            return $.artifacts.templates.theme;
-          })}
-        </p>
-        <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
-          <ScrollArea.Viewport
-            data-slot="scroll-area-viewport"
-            className={cn(
-              "h-full focus-visible:outline-none",
-              SCROLL_FADE_Y_WHEN_OVERFLOWING,
-            )}
-          >
-            <ScrollArea.Content className="flex flex-col gap-2 pb-1">
-              {groups.map(({ group, label }) => {
-                return (
-                  <TemplateDetailThemeOptions
-                    key={group}
-                    item={item}
-                    label={label}
-                    themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
-                      (theme) => {
-                        return theme.group === group;
-                      },
-                    )}
-                    selectedTheme={selectedTheme}
-                    onSelect={onSelect}
-                  />
-                );
-              })}
-            </ScrollArea.Content>
-          </ScrollArea.Viewport>
-          <ScrollBar />
-        </ScrollArea.Root>
-      </div>
-    </div>
+    <>
+      <p className="px-2 text-sm font-medium text-foreground">
+        {t(($) => {
+          return $.artifacts.templates.theme;
+        })}
+      </p>
+      <ScrollArea.Root className="group relative mt-2 min-h-0 flex-1">
+        <ScrollArea.Viewport
+          data-slot="scroll-area-viewport"
+          className={cn(
+            "h-full focus-visible:outline-none",
+            SCROLL_FADE_Y_WHEN_OVERFLOWING,
+          )}
+        >
+          <ScrollArea.Content className="flex flex-col gap-2 pb-1">
+            {groups.map(({ group, label }) => {
+              return (
+                <TemplateDetailThemeOptions
+                  key={group}
+                  item={item}
+                  label={label}
+                  themes={PRESENTATION_TEMPLATE_THEME_OPTIONS.filter(
+                    (theme) => {
+                      return theme.group === group;
+                    },
+                  )}
+                  selectedTheme={selectedTheme}
+                  onSelect={onSelect}
+                />
+              );
+            })}
+          </ScrollArea.Content>
+        </ScrollArea.Viewport>
+        <ScrollBar />
+      </ScrollArea.Root>
+    </>
   );
 }
 
@@ -4595,7 +4664,7 @@ function ImportedPresentationTemplateUseButton({
         },
         { title: template.title },
       )}
-      className="mt-5 h-12 w-full font-semibold shadow-sm"
+      size="lg"
       onClick={() => {
         onSelect(template);
       }}
@@ -4626,7 +4695,7 @@ function ImportedPresentationTemplateDeleteControl({
       variant="quiet"
       size="sm"
       disabled={deleting}
-      className="mt-2 w-full text-destructive hover:text-destructive"
+      className="-ml-3 mt-4 self-start text-destructive hover:text-destructive"
       onClick={() => {
         detach(deleteTemplate(summary.id, pageSignal), Reason.DomCallback);
       }}
@@ -4644,14 +4713,12 @@ function ImportedPresentationTemplateSidebar({
   detail,
   title,
   slideCount,
-  onSelect,
   signals,
 }: {
   summary: PresentationTemplateSummary;
   detail: PresentationTemplateDetail | null;
   title: string;
   slideCount: number;
-  onSelect: (template: PresentationTemplateSummary) => void;
   signals: ComposerSignals;
 }) {
   const { t } = useTranslation();
@@ -4667,8 +4734,8 @@ function ImportedPresentationTemplateSidebar({
     detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
   };
   return (
-    <div className="flex min-h-0 min-w-0 flex-col lg:sticky lg:top-0 lg:overflow-y-auto">
-      <div className="rounded-lg border border-border bg-background p-4 shadow-sm">
+    <TemplateDetailSideColumn>
+      <div className="flex min-h-0 flex-col lg:overflow-y-auto">
         {activeTemplate.canManage ? (
           <ImportedPresentationTemplateRenameControl
             key={title}
@@ -4692,8 +4759,7 @@ function ImportedPresentationTemplateSidebar({
           )}
         </p>
         {activeTemplate.canManage ? (
-          <>
-            <div className="my-5 border-t border-border" />
+          <div className="mt-6">
             <ImportedPresentationTemplateVisibilityControl
               templateId={activeTemplate.id}
               visibility={activeTemplate.visibility}
@@ -4702,12 +4768,8 @@ function ImportedPresentationTemplateSidebar({
                 update({ visibility: nextVisibility });
               }}
             />
-          </>
+          </div>
         ) : null}
-        <ImportedPresentationTemplateUseButton
-          template={activeTemplate}
-          onSelect={onSelect}
-        />
         {activeTemplate.canManage ? (
           <ImportedPresentationTemplateDeleteControl
             summary={summary}
@@ -4715,7 +4777,7 @@ function ImportedPresentationTemplateSidebar({
           />
         ) : null}
       </div>
-    </div>
+    </TemplateDetailSideColumn>
   );
 }
 
@@ -4728,7 +4790,7 @@ function ImportedPresentationTemplatePreviewHeader({
 }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="flex h-[68px] shrink-0 justify-center border-b border-border px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
+    <DialogHeader className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
       <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
         <button
           type="button"
@@ -4780,7 +4842,7 @@ function ImportedPresentationTemplateMainPreview({
       data-testid={`${title} imported detail image preview`}
       tabIndex={0}
       onKeyDown={onKeyDown}
-      className="relative aspect-[16/9] overflow-hidden rounded-lg bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={TEMPLATE_DETAIL_STAGE}
     >
       <ImportedPptImage
         imageSignals={imageSignals}
@@ -4791,32 +4853,13 @@ function ImportedPresentationTemplateMainPreview({
         previewSize={TEMPLATE_CARD_PREVIEW_SIZE}
         className="pointer-events-none absolute inset-0 h-full w-full object-cover"
       />
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.previousSlide;
-        })}
-        disabled={activeSlideIndex === 0}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex - 1);
-        }}
-        className="absolute inset-y-0 left-0 w-1/2 cursor-w-resize bg-transparent focus:outline-none disabled:cursor-default"
-      />
-      <button
-        type="button"
-        aria-label={t(($) => {
-          return $.artifacts.templates.nextSlide;
-        })}
-        disabled={activeSlideIndex >= slideCount - 1}
-        tabIndex={-1}
-        onClick={() => {
-          onChange(activeSlideIndex + 1);
-        }}
-        className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize bg-transparent focus:outline-none disabled:cursor-default"
+      <TemplateDetailStageControls
+        activeSlideIndex={activeSlideIndex}
+        slideCount={slideCount}
+        onChange={onChange}
       />
       {loading ? (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-muted">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-50 h-0.5 overflow-hidden bg-muted">
           <div className="h-full w-1/3 animate-pulse bg-muted-foreground/40" />
         </div>
       ) : null}
@@ -4839,58 +4882,40 @@ function ImportedPresentationTemplateThumbnails({
 }) {
   const { t } = useTranslation();
   return (
-    <div
-      className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(96px,1fr))] gap-1.5 lg:grid-cols-8"
+    <TemplateDetailFilmstrip
+      slideCount={pageUrls.length}
+      activeSlideIndex={activeSlideIndex}
+      onChange={onChange}
       onKeyDown={onKeyDown}
-    >
-      {pageUrls.map((_pageUrl, index) => {
+      renderThumbnail={(index) => {
         const slideNumber = index + 1;
-        const active = index === activeSlideIndex;
-        const eagerlyLoad =
-          index < IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT;
-        const previewLabel = t(
-          ($) => {
-            return $.artifacts.templates.previewSlide;
-          },
-          { slideNumber },
-        );
         const thumbnailImageSignals = imageSignals[index];
         if (thumbnailImageSignals === undefined) {
           throw new Error(
             `Imported presentation thumbnail image state is missing: ${slideNumber.toString()}`,
           );
         }
+        const eagerlyLoad =
+          index < IMPORTED_PRESENTATION_TEMPLATE_EAGER_THUMBNAIL_COUNT;
         return (
-          <button
-            key={slideNumber}
-            type="button"
-            aria-label={previewLabel}
-            aria-pressed={active}
-            onClick={() => {
-              onChange(index);
-            }}
-            className={cn(
-              "relative aspect-[16/9] overflow-hidden rounded-md border bg-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              active
-                ? "border-ring ring-1 ring-ring"
-                : "border-border hover:border-muted-foreground/50",
+          <ImportedPptImage
+            imageSignals={thumbnailImageSignals}
+            label={t(
+              ($) => {
+                return $.artifacts.templates.previewSlide;
+              },
+              { slideNumber },
             )}
-          >
-            <ImportedPptImage
-              imageSignals={thumbnailImageSignals}
-              label={previewLabel}
-              loading={eagerlyLoad ? "eager" : "lazy"}
-              fetchPriority={active ? "high" : eagerlyLoad ? "auto" : "low"}
-              size={TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE}
-              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            />
-            <span className="absolute bottom-1 right-1 rounded border border-border bg-background/90 px-1.5 py-0.5 text-[10px] font-semibold text-foreground shadow-sm backdrop-blur">
-              {slideNumber}
-            </span>
-          </button>
+            loading={eagerlyLoad ? "eager" : "lazy"}
+            fetchPriority={
+              index === activeSlideIndex ? "high" : eagerlyLoad ? "auto" : "low"
+            }
+            size={TEMPLATE_DETAIL_THUMBNAIL_PREVIEW_SIZE}
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          />
         );
-      })}
-    </div>
+      }}
+    />
   );
 }
 
@@ -4967,8 +4992,8 @@ function ImportedPresentationTemplatePreviewPage({
         title={title}
         onBack={onBack}
       />
-      <div className="grid min-h-0 flex-1 gap-3 overflow-y-auto bg-muted/20 p-3 duration-200 motion-reduce:animate-none sm:gap-4 sm:p-5 lg:max-h-[72vh] lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
-        <div className="rounded-lg border border-border bg-background p-2.5 sm:p-3 lg:overflow-y-auto">
+      <div className={TEMPLATE_DETAIL_BODY}>
+        <div className={TEMPLATE_DETAIL_GRID}>
           <ImportedPresentationTemplateMainPreview
             previewRef={focusPreview}
             title={title}
@@ -4986,14 +5011,19 @@ function ImportedPresentationTemplatePreviewPage({
             onChange={changeSlide}
             onKeyDown={handleSlideKeyDown}
           />
+          <ImportedPresentationTemplateSidebar
+            summary={summary}
+            detail={detail}
+            title={title}
+            slideCount={slideCount}
+            signals={signals}
+          />
         </div>
-        <ImportedPresentationTemplateSidebar
-          summary={summary}
-          detail={detail}
-          title={title}
-          slideCount={slideCount}
+      </div>
+      <div className={TEMPLATE_DETAIL_FOOTER}>
+        <ImportedPresentationTemplateUseButton
+          template={activeTemplate}
           onSelect={onSelect}
-          signals={signals}
         />
       </div>
     </>

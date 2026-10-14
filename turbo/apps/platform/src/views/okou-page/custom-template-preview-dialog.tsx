@@ -2,6 +2,7 @@ import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
+import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -108,7 +109,7 @@ function CustomTemplateSourcePreview({
     { filename: detail.sourceFilename },
   );
   return (
-    <div className="relative min-h-80 flex-1 overflow-hidden rounded-lg border border-border bg-background">
+    <div className="relative min-h-80 flex-1 overflow-hidden rounded-xl border border-border bg-background">
       {isOfficeFilePreview(detail.sourceFilename) ? (
         <OfficeDocumentPreview
           resourceUrl={detail.sourceUrl}
@@ -160,7 +161,7 @@ function CustomTemplateIllustration({
     // is — and cropping to fill the dialog would take exactly those away. The
     // muted ground behind each is what gives a picture on white paper, or one
     // with a transparent corner, an edge to be seen against.
-    <div className="flex min-h-80 flex-1 flex-col items-center gap-4 overflow-auto rounded-lg border border-border bg-muted p-6">
+    <div className="flex min-h-80 flex-1 flex-col items-center gap-4 overflow-auto rounded-xl border border-border bg-muted p-6">
       {detail.previewAssets.map((asset) => {
         return (
           <img
@@ -242,7 +243,7 @@ export function CustomTemplatePreviewDialog({
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
-        maxWidth={1120}
+        maxWidth="6xl"
         height={760}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
@@ -253,7 +254,7 @@ export function CustomTemplatePreviewDialog({
             imported-deck preview header already carries for the same reason.
             Padding alone left the title 10px above the button and the button
             itself hanging past the border below it. */}
-        <DialogHeader className="h-[68px] shrink-0 justify-center border-b border-border px-5 pr-14 text-left sm:pr-16">
+        <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
           <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
             <button
               type="button"
@@ -272,7 +273,7 @@ export function CustomTemplatePreviewDialog({
             </span>
           </DialogTitle>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-muted/20 p-3 sm:p-5 lg:flex-row lg:overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-6 pb-6 pt-0.5 lg:flex-row lg:overflow-hidden">
           {detailLoadable.state === "hasError" ? (
             <CustomTemplatesLoadError />
           ) : detail === null ? (
@@ -285,14 +286,25 @@ export function CustomTemplatePreviewDialog({
               {/* Keyed by the template, not by anything that changes while one
                   is open: a save re-renders this subtree, and only arriving at
                   a different template may hand the editor a fresh field. */}
-              <CustomTemplateDetailSidebar
-                key={detail.id}
-                detail={detail}
-                onSelect={onSelect}
-              />
+              <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
             </>
           )}
         </div>
+        {detail === null ? null : (
+          <div className="flex shrink-0 items-center justify-end px-6 py-4">
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => {
+                onSelect(detail);
+              }}
+            >
+              {t(($) => {
+                return $.artifacts.templates.useThisTemplate;
+              })}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
