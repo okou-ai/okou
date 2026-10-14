@@ -45,13 +45,23 @@ function mockWorkflows() {
   return workflows;
 }
 
+/**
+ * A workflow row is named by its token; the description after it is not part
+ * of what identifies the row.
+ */
+function buttonLabel(candidate: HTMLElement): string {
+  const label =
+    candidate.querySelector('[data-slot="slash-workflow-name"]') ?? candidate;
+  return (
+    candidate.getAttribute("aria-label") ??
+    label.textContent ??
+    ""
+  ).trim();
+}
+
 function button(name: string): HTMLElement {
   const match = queryAllByRoleFast("button").find((candidate) => {
-    return (
-      (
-        candidate.getAttribute("aria-label") ?? candidate.textContent
-      )?.trim() === name
-    );
+    return buttonLabel(candidate) === name;
   });
   if (!match) {
     throw new Error(`Expected button ${name}`);
@@ -62,9 +72,7 @@ function button(name: string): HTMLElement {
 function workflowNames(): string[] {
   const menu = screen.getByTestId("slash-workflow-menu");
   return queryAllByRoleFast("button", menu)
-    .map((candidate) => {
-      return candidate.textContent?.trim() ?? "";
-    })
+    .map(buttonLabel)
     .filter((name) => {
       return name.startsWith("/");
     });
