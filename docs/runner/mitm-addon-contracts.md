@@ -46,8 +46,13 @@ lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
 The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
-complete native hook task outside the connection event lock before the connection
-reads again. Joining includes `HookCompleted` and any buffered events resumed by
+complete native hook task outside the connection event lock in the reader's
+`drain_writers()` boundary before the connection reads again. The native read loop
+catches cancellation there and performs its connection teardown before re-raising;
+its `DataReceived` dispatch has no equivalent cancellation handler. A task-owned
+reader scope defers only that reader's data checkpoints. Hook tasks inherit its
+context but retain their own joins, including buffered `HookCompleted`
+continuations. Joining includes `HookCompleted` and any buffered events resumed by
 it; waiting only for parser completion or inserting a hook alone would allow
 reads to accumulate in the runtime's paused queue. The pinned read loop consumes
 at most 65,535 wire bytes per read. Unrelated loop work and other connections can
@@ -60,8 +65,11 @@ explicit unparsed state and logs an inspection-interruption underbilling risk;
 it never reports the uninspected suffix as observed zero. Previously accepted
 connector row source events and model usage observations remain intact. Model
 abandonment marks parse_error/interrupted coverage and does not finalize a
-partially inspected trailing SSE event. Normal completion and connection errors
-join pending work before existing decoder and trailing-event finalization.
+partially inspected trailing SSE event. Reader cancellation preserves native
+`ConnectionClosed` delivery, writer closure and transport removal; resumed terminal
+HTTP hooks release parser/stream state and tracked-flow accounting exactly once.
+Normal completion and connection errors join pending work before existing decoder
+and trailing-event finalization.
 Original wire bytes, row ordinals, model usage update semantics and normal
 compressed failure/trailing-line semantics are unchanged. Runner and addon ship
 together with the pinned runtime; no external wire or database migration is
