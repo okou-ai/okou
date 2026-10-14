@@ -77,6 +77,7 @@ pub struct MockJobProvider {
     completions: Arc<StdMutex<Vec<Completion>>>,
     heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
     deferred_poll_deadlines: Arc<StdMutex<Vec<Instant>>>,
+    deferred_poll_notify: Arc<Notify>,
     cancel: CancellationToken,
     /// Fired each time `discover()` has reached its inner `select!` await
     /// point (lock + optional `poll_delay` complete, about to park on
@@ -122,6 +123,7 @@ pub struct MockProviderHandle {
     pub completions: Arc<StdMutex<Vec<Completion>>>,
     pub heartbeats: Arc<StdMutex<Vec<HeartbeatState>>>,
     deferred_poll_deadlines: Arc<StdMutex<Vec<Instant>>>,
+    deferred_poll_notify: Arc<Notify>,
     /// See [`Self::wait_discover_entered`].
     discover_entered: Arc<Notify>,
     /// See [`MockJobProvider::completion_notify`].
@@ -319,6 +321,7 @@ impl MockJobProvider {
         let completions = Arc::new(StdMutex::new(Vec::new()));
         let heartbeats = Arc::new(StdMutex::new(Vec::new()));
         let deferred_poll_deadlines = Arc::new(StdMutex::new(Vec::new()));
+        let deferred_poll_notify = Arc::new(Notify::new());
         let startup_readiness = Arc::new(MockStartupReadiness::default());
         let discover_entered = Arc::new(Notify::new());
         let completion_notify = Arc::new(Notify::new());
@@ -347,6 +350,7 @@ impl MockJobProvider {
             completions: Arc::clone(&completions),
             heartbeats: Arc::clone(&heartbeats),
             deferred_poll_deadlines: Arc::clone(&deferred_poll_deadlines),
+            deferred_poll_notify: Arc::clone(&deferred_poll_notify),
             cancel,
             discover_entered: Arc::clone(&discover_entered),
             completion_notify: Arc::clone(&completion_notify),
@@ -371,6 +375,7 @@ impl MockJobProvider {
             completions,
             heartbeats,
             deferred_poll_deadlines,
+            deferred_poll_notify,
             discover_entered,
             completion_notify,
             discover_poll_started,
@@ -622,6 +627,29 @@ impl MockProviderHandle {
             .clone()
     }
 
+    pub async fn wait_deferred_poll_count(&self, expected: usize, timeout: Duration) -> bool {
+        let deadline = tokio::time::Instant::now() + timeout;
+        loop {
+            let notified = self.deferred_poll_notify.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+
+            if self
+                .deferred_poll_deadlines
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .len()
+                >= expected
+            {
+                return true;
+            }
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() || tokio::time::timeout(remaining, notified).await.is_err() {
+                return false;
+            }
+        }
+    }
+
     pub fn push_ready_candidate(&self, candidate: JobCandidate) {
         self.ready_discovery
             .lock()
@@ -793,6 +821,7 @@ impl JobProvider for MockJobProvider {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .push(deadline);
+        self.deferred_poll_notify.notify_waiters();
     }
 
     /// Acquire the discovery Mutex to preserve the shutdown deadlock regression shape.
