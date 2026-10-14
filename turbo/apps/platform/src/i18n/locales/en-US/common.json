@@ -2078,8 +2078,10 @@
       "loading": "Loading remote access…",
       "off": "Off",
       "on": "On",
-      "requiresSsh": "Requires SSH access to {{name}}.",
+      "requiresSsh": "Requires SSH: {{name}}",
       "retry": "Retry",
+      "sshDisabled": "Enable SSH: {{name}}",
+      "sshEnabled": "SSH enabled: {{name}}",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
     },

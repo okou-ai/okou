@@ -2070,8 +2070,10 @@
       "loading": "Memuat akses jarak jauh…",
       "off": "Nonaktif",
       "on": "Aktif",
-      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "requiresSsh": "Memerlukan SSH: {{name}}",
       "retry": "Coba lagi",
+      "sshDisabled": "Aktifkan SSH: {{name}}",
+      "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
     },

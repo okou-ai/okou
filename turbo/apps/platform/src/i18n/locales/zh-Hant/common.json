@@ -2070,8 +2070,10 @@
       "loading": "正在載入遠端存取…",
       "off": "關閉",
       "on": "開啟",
-      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重試",
+      "sshDisabled": "需開啟 SSH：{{name}}",
+      "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
     },

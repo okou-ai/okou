@@ -2119,8 +2119,10 @@
       "loading": "Carregando acesso remoto…",
       "off": "Desativado",
       "on": "Ativado",
-      "requiresSsh": "Também requer acesso ao host SSH {{name}}.",
+      "requiresSsh": "Requer SSH: {{name}}",
       "retry": "Tentar novamente",
+      "sshDisabled": "Ative o SSH: {{name}}",
+      "sshEnabled": "SSH ativado: {{name}}",
       "title": "Acesso remoto",
       "unavailableSsh": "host SSH indisponível"
     },
