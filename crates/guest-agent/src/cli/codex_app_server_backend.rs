@@ -802,8 +802,11 @@ fn codex_app_server_config(
         .with_workload_containment(workload_containment)
         .with_opt_out_notification_methods(IGNORED_NOTIFICATION_METHODS.iter().copied());
     if runtime.use_mock_codex {
-        let scenario = std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO")
-            .unwrap_or_else(|_| "runtime-turn-complete".to_string());
+        let scenario = child_user_env
+            .get("MOCK_CODEX_APP_SERVER_SCENARIO")
+            .cloned()
+            .or_else(|| std::env::var("MOCK_CODEX_APP_SERVER_SCENARIO").ok())
+            .unwrap_or_else(|| "runtime-turn-complete".to_string());
         config = config.with_env("MOCK_CODEX_APP_SERVER_SCENARIO", scenario);
     }
     if runtime.codex_oauth_mode {
