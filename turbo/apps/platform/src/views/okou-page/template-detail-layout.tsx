@@ -34,20 +34,23 @@ import { TEMPLATE_TILE_MEDIA } from "./template-tile.ts";
  * pieces, so the three read as one surface rather than three similar ones.
  */
 
-// The template detail page, shared by built-in and imported decks: one body
-// under the header, whose height the dialog alone owns, and a footer holding
-// the action. From lg the body is a size container, so the stage can take the
-// 16:9 box that fits beside the side column and above the filmstrip.
+// The template detail page: one body under the header, whose height the dialog
+// alone owns, and a footer holding the actions. The page keeps one 24px margin
+// on every side, the footer included, so nothing pools between the content and
+// the actions. From lg the body is a size container: the stage takes the 16:9
+// box that fits beside the side column and above a filmstrip of at least 85px,
+// and the filmstrip takes whatever height is left, so its thumbnails grow
+// rather than leaving a band of empty space above the footer.
 export const TEMPLATE_DETAIL_BODY =
-  "min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:pb-0 lg:[container-type:size]";
+  "min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-0.5 duration-200 motion-reduce:animate-none lg:overflow-hidden lg:[container-type:size]";
 export const TEMPLATE_DETAIL_GRID =
-  "grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)] lg:gap-x-6";
+  "grid gap-3 lg:h-full lg:grid-cols-[auto_minmax(0,1fr)] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-x-6";
 export const TEMPLATE_DETAIL_FOOTER =
-  "flex shrink-0 items-center gap-3 px-6 py-4 [&>:last-child]:ml-auto";
+  "flex shrink-0 items-center gap-3 px-6 pb-6 [&>:last-child]:ml-auto";
 
 // The stage is as wide as the body allows once the side column keeps its
 // 220px floor and the 24px gap beside it, and as tall as the body allows once
-// the filmstrip's 85px row and the 12px gap under the stage are taken. The
+// the filmstrip's smallest 85px row and the 12px gap under it are taken. The
 // smaller of the two decides, so the slide is never cropped or letterboxed.
 // Spelled out because Tailwind only emits what it finds written.
 export const TEMPLATE_DETAIL_STAGE = cn(
@@ -167,16 +170,16 @@ export function TemplateDetailFilmstrip({
 }) {
   const { t } = useTranslation();
   return (
-    <ScrollArea.Root className="group relative -mx-0.5 min-w-0 lg:col-span-2 lg:row-start-2">
+    <ScrollArea.Root className="group relative -mx-0.5 min-w-0 lg:col-span-2 lg:row-start-2 lg:h-full">
       <ScrollArea.Viewport
         data-slot="scroll-area-viewport"
         className={cn(
           SCROLL_FADE_X_WHEN_OVERFLOWING,
-          "focus-visible:outline-none",
+          "focus-visible:outline-none lg:h-full",
         )}
       >
         <ScrollArea.Content
-          className="flex w-max gap-2 p-0.5"
+          className="flex w-max gap-2 p-0.5 lg:h-full"
           onKeyDown={onKeyDown}
         >
           {Array.from({ length: slideCount }, (_, slideIndex) => {
@@ -200,7 +203,7 @@ export function TemplateDetailFilmstrip({
                   onChange(slideIndex);
                 }}
                 className={cn(
-                  "relative aspect-video w-[144px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "relative aspect-video w-[144px] shrink-0 overflow-hidden rounded-lg border border-border bg-muted lg:h-full lg:w-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   "after:pointer-events-none after:absolute after:inset-0 after:z-10 after:rounded-lg after:border-(length:--border-width-emphasis) after:border-transparent after:transition-colors",
                   active
                     ? "after:border-primary"
@@ -232,13 +235,15 @@ export function TemplateDetailSideColumn({
 }
 
 /**
- * The title field's look, for editors that keep their own save rules: a
- * textarea over an invisible mirror of its value, so the field grows to wrap
- * the name instead of scrolling it. The mirror's `data-value` follows the
- * field on every change. `-ml-1.5` puts the text on the column's edge.
+ * A template's name, said once: as the last step of the header's breadcrumb,
+ * editable in place where the member can manage it. The field matches the
+ * breadcrumb's type and shows its edge only on hover and focus, and it grows
+ * to wrap rather than scroll a long name. A textarea over an invisible mirror
+ * of its value does the growing, so the mirror's `data-value` must follow the
+ * field on every change. `-ml-1.5` keeps the text on the breadcrumb's line.
  */
 export const TEMPLATE_DETAIL_TITLE_FIELD =
-  "-ml-1.5 grid min-w-0 flex-1 rounded-lg border border-transparent px-1.5 py-0.5 text-xl font-semibold leading-7 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10";
+  "-my-1 -ml-1.5 grid min-w-0 max-w-full rounded-md border border-transparent px-1.5 py-1 text-base font-medium leading-6 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10";
 export const TEMPLATE_DETAIL_TITLE_TEXTAREA =
   "col-start-1 row-start-1 resize-none overflow-hidden break-words bg-transparent p-0 outline-none";
 
@@ -247,9 +252,8 @@ export function normalizeTemplateTitle(value: string): string {
 }
 
 /**
- * A template's name at the top of its side column: one line of meaning but not
- * one line of layout, so it wraps instead of ellipsizing, and its text lines up
- * with the rows under it. Editable in place where the member can manage it.
+ * The breadcrumb's last step for a template the member may rename, confirmed
+ * with Enter or the check beside it.
  *
  * Closed while its own rename is in flight. Disabling the submit control is not
  * enough on its own: Enter reaches the form through `requestSubmit()`, which
@@ -270,15 +274,11 @@ export function TemplateDetailTitle({
   readonly onRename: (title: string) => void;
 }) {
   if (!canEdit) {
-    return (
-      <h3 className="break-words text-xl font-semibold leading-7 text-foreground">
-        {title}
-      </h3>
-    );
+    return <span className="block min-w-0 truncate leading-none">{title}</span>;
   }
   return (
     <form
-      className="group flex min-w-0 items-start gap-1"
+      className="group flex min-w-0 items-center gap-1"
       data-rename-dirty="false"
       onSubmit={(event) => {
         event.preventDefault();
@@ -347,7 +347,7 @@ export function TemplateDetailTitle({
                 size="icon-sm"
                 disabled={updating}
                 aria-label={label}
-                className="invisible mt-0.5 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
+                className="invisible -my-1 shrink-0 group-focus-within:visible group-hover:visible group-data-[rename-dirty=true]:visible"
               >
                 {updating ? <Loader2 className="animate-spin" /> : <Check />}
               </Button>
@@ -361,29 +361,40 @@ export function TemplateDetailTitle({
 }
 
 /**
- * Who can use a template, stated as its consequence. Where the member can
- * change it, the whole sentence is the trigger: one row, one chevron, and no
- * separator left dangling when the column is too narrow for "state · Change".
+ * Who can use a template: the level on the first line and what it means under
+ * it, the way a select states a choice. Where the member can change it, the
+ * whole block is the trigger, with its chevron on the level's line, so nothing
+ * wraps by accident and no separator is left dangling at a line end.
  */
 export function TemplateDetailAccess({
   icon: Icon,
-  state,
+  level,
+  consequence,
   triggerLabel,
   disabled = false,
   children,
 }: {
   readonly icon: LucideIcon;
-  readonly state: ReactNode;
+  readonly level: ReactNode;
+  readonly consequence?: ReactNode;
   readonly triggerLabel?: string;
   readonly disabled?: boolean;
   readonly children?: ReactNode;
 }) {
+  const body = (
+    <>
+      <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm text-foreground">{level}</span>
+        {consequence === undefined ? null : (
+          <span className="text-xs text-muted-foreground">{consequence}</span>
+        )}
+      </span>
+    </>
+  );
   if (children === undefined) {
     return (
-      <p className="flex items-start gap-2 text-sm text-muted-foreground">
-        <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 text-balance">{state}</span>
-      </p>
+      <p className="flex items-start gap-2 text-muted-foreground">{body}</p>
     );
   }
   return (
@@ -391,15 +402,10 @@ export function TemplateDetailAccess({
       <DropdownMenuTrigger
         disabled={disabled}
         aria-label={triggerLabel}
-        className="-mx-2 flex min-h-9 w-[calc(100%+1rem)] items-start gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 data-[popup-open]:bg-state-hover data-[popup-open]:text-foreground"
+        className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2 rounded-lg px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 data-[popup-open]:bg-state-hover"
       >
-        <Icon size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 flex-1 text-balance">{state}</span>
-        <ChevronDown
-          size={14}
-          className="mt-[3px] shrink-0"
-          aria-hidden="true"
-        />
+        {body}
+        <ChevronDown size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"

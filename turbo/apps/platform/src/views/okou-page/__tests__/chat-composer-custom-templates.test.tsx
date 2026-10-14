@@ -731,7 +731,10 @@ test("A PDF template opens in the browser's own viewer", async () => {
   // A PDF needs neither our viewer nor Microsoft's: the browser renders it
   // from the source URL, handed over unchanged.
   const frame = await screen.findByTitle("annual-report.pdf preview");
-  expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
+  expect(frame).toHaveAttribute(
+    "src",
+    `${DOCUMENT_SOURCE_URL}#toolbar=0&navpanes=0&view=FitH`,
+  );
 });
 
 const ILLUSTRATION_SOURCE_URL =

@@ -4242,7 +4242,8 @@ function ImportedPresentationTemplateVisibilityControl({
   return (
     <TemplateDetailAccess
       icon={visibility === "private" ? Lock : Users}
-      state={optionState(visibility)}
+      level={optionLabel(visibility)}
+      consequence={optionState(visibility)}
       disabled={updating}
       triggerLabel={t(($) => {
         return $.artifacts.templates.visibility.changeLabel;
@@ -4361,13 +4362,11 @@ function ImportedPresentationTemplateDeleteControl({
 function ImportedPresentationTemplateSidebar({
   summary,
   detail,
-  title,
   slideCount,
   signals,
 }: {
   summary: PresentationTemplateSummary;
   detail: PresentationTemplateDetail | null;
-  title: string;
   slideCount: number;
   signals: ComposerSignals;
 }) {
@@ -4378,27 +4377,13 @@ function ImportedPresentationTemplateSidebar({
   );
   const activeTemplate = detail === null ? summary : detail;
   const updating = updateLoadable.state === "loading";
-  const update = (
-    body: { title: string } | { visibility: "private" | "public" },
-  ) => {
+  const update = (body: { visibility: "private" | "public" }) => {
     detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
   };
   return (
     <TemplateDetailSideColumn>
       <div className="flex min-h-0 flex-col lg:overflow-y-auto">
-        <TemplateDetailTitle
-          key={title}
-          title={title}
-          label={t(($) => {
-            return $.artifacts.templates.renameImportedTemplate;
-          })}
-          canEdit={activeTemplate.canManage}
-          updating={updating}
-          onRename={(nextTitle) => {
-            update({ title: nextTitle });
-          }}
-        />
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t(
             ($) => {
               return $.artifacts.templates.importedSlides;
@@ -4423,11 +4408,46 @@ function ImportedPresentationTemplateSidebar({
   );
 }
 
-function ImportedPresentationTemplatePreviewHeader({
+function ImportedPresentationTemplateHeaderTitle({
+  summary,
   title,
+  canManage,
+  signals,
+}: {
+  summary: PresentationTemplateSummary;
+  title: string;
+  canManage: boolean;
+  signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const [updateLoadable, updateTemplate] = useLoadableSet(
+    signals.template.updateImportedPresentationTemplate$,
+  );
+  return (
+    <TemplateDetailTitle
+      key={title}
+      title={title}
+      label={t(($) => {
+        return $.artifacts.templates.renameImportedTemplate;
+      })}
+      canEdit={canManage}
+      updating={updateLoadable.state === "loading"}
+      onRename={(nextTitle) => {
+        detach(
+          updateTemplate(summary.id, { title: nextTitle }, pageSignal),
+          Reason.DomCallback,
+        );
+      }}
+    />
+  );
+}
+
+function ImportedPresentationTemplatePreviewHeader({
+  titleSlot,
   onBack,
 }: {
-  title: string;
+  titleSlot: ReactNode;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
@@ -4444,7 +4464,7 @@ function ImportedPresentationTemplatePreviewHeader({
           })}
         </button>
         <span className="shrink-0 text-muted-foreground">/</span>
-        <span className="block min-w-0 truncate leading-none">{title}</span>
+        {titleSlot}
       </DialogTitle>
     </DialogHeader>
   );
@@ -4631,7 +4651,14 @@ function ImportedPresentationTemplatePreviewPage({
   return (
     <>
       <ImportedPresentationTemplatePreviewHeader
-        title={title}
+        titleSlot={
+          <ImportedPresentationTemplateHeaderTitle
+            summary={summary}
+            title={title}
+            canManage={activeTemplate.canManage}
+            signals={signals}
+          />
+        }
         onBack={onBack}
       />
       <div className={TEMPLATE_DETAIL_BODY}>
@@ -4656,7 +4683,6 @@ function ImportedPresentationTemplatePreviewPage({
           <ImportedPresentationTemplateSidebar
             summary={summary}
             detail={detail}
-            title={title}
             slideCount={slideCount}
             signals={signals}
           />

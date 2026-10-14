@@ -185,7 +185,16 @@ function CustomTemplateVisibilityControl({
   return (
     <TemplateDetailAccess
       icon={detail.visibility === "private" ? Lock : Users}
-      state={
+      level={
+        detail.visibility === "private"
+          ? t(($) => {
+              return $.templates.visibility.private;
+            })
+          : t(($) => {
+              return $.templates.visibility.organization;
+            })
+      }
+      consequence={
         detail.visibility === "private"
           ? t(($) => {
               return $.templates.visibility.privateState;
@@ -223,7 +232,7 @@ function CustomTemplateVisibilityControl({
  * the order they were typed — which is how the earlier of the two could land
  * last and take the name back.
  */
-function CustomTemplateTitleInput({
+export function CustomTemplateTitleInput({
   detail,
 }: {
   readonly detail: UserTemplateDetail;
@@ -287,11 +296,11 @@ function CustomTemplateTitleInput({
         />
       </div>
       {saveLoadable.state === "hasError" ? (
-        <p role="alert" className="mt-1 text-xs text-destructive">
+        <span role="alert" className="shrink-0 text-xs text-destructive">
           {t(($) => {
             return $.templates.renameFailed;
           })}
-        </p>
+        </span>
       ) : null}
     </>
   );
@@ -304,16 +313,9 @@ export function CustomTemplateDetailSidebar({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-0 flex-col lg:overflow-y-auto">
-      {detail.canManage ? (
-        <CustomTemplateTitleInput detail={detail} />
-      ) : (
-        <h3 className="break-words text-xl font-semibold leading-7 text-foreground">
-          {detail.title}
-        </h3>
-      )}
+    <div className="flex min-h-0 flex-col gap-5 lg:overflow-y-auto">
       {detail.kind === "presentation" ? (
-        <p className="mt-1 text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {t(
             ($) => {
               return $.artifacts.templates.importedSlides;
@@ -322,16 +324,14 @@ export function CustomTemplateDetailSidebar({
           )}
         </p>
       ) : null}
-      <div className="mt-5">
-        {detail.canManage ? (
-          <CustomTemplateVisibilityControl detail={detail} />
-        ) : (
-          <TemplateDetailAccess
-            icon={User}
-            state={<SharedByLabel ownerDisplayName={detail.ownerDisplayName} />}
-          />
-        )}
-      </div>
+      {detail.canManage ? (
+        <CustomTemplateVisibilityControl detail={detail} />
+      ) : (
+        <TemplateDetailAccess
+          icon={User}
+          level={<SharedByLabel ownerDisplayName={detail.ownerDisplayName} />}
+        />
+      )}
     </div>
   );
 }

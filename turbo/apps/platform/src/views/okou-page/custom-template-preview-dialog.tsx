@@ -3,6 +3,7 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
 import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
@@ -18,6 +19,7 @@ import type {
 import {
   CustomTemplateDeleteButton,
   CustomTemplateDetailSidebar,
+  CustomTemplateTitleInput,
 } from "./custom-template-detail-sidebar.tsx";
 import {
   TEMPLATE_DETAIL_BODY,
@@ -67,23 +69,32 @@ export function CustomTemplatesLoadError() {
 }
 
 /**
- * A deck, as the pages the reverse run rendered from it, read the way every
- * other deck detail reads: one page on the stage, the rest in a filmstrip.
+ * A deck's pages, or an image style's examples, read the way every other deck
+ * detail reads: one picture on the stage, the rest in a filmstrip.
  *
- * Its own images rather than its source file through a viewer: the pages are
- * already rendered, already ours to serve, and are the same slides a viewer
- * would draw — without sending the file anywhere or waiting for someone else
- * to convert it.
+ * A deck shows its own rendered pages rather than its source file through a
+ * viewer: they are already ours to serve, and are the same slides a viewer
+ * would draw. An image style shows the examples its reverse run made and the
+ * member approved, contained rather than cropped, because a picture is judged
+ * by its whole frame.
  */
-function CustomTemplatePages({
-  detail,
+function CustomTemplateGallery({
+  title,
+  pictures,
+  fit,
+  pictureLabel,
+  thumbnailTestId,
 }: {
-  readonly detail: UserTemplateDetail;
+  readonly title: string;
+  readonly pictures: readonly string[];
+  readonly fit: "cover" | "contain";
+  readonly pictureLabel: (index: number) => string;
+  readonly thumbnailTestId?: string;
 }) {
   const { t } = useTranslation();
   const requestedIndex = useGet(openCustomTemplatePageIndex$);
   const selectPage = useSet(selectCustomTemplatePage$);
-  const pageCount = detail.pageUrls.length;
+  const pageCount = pictures.length;
   const activeIndex = Math.max(0, Math.min(requestedIndex, pageCount - 1));
   const changePage = (index: number) => {
     selectPage(Math.max(0, Math.min(pageCount - 1, index)));
@@ -109,21 +120,19 @@ function CustomTemplatePages({
           ($) => {
             return $.artifacts.templates.slidePreview;
           },
-          { title: detail.title },
+          { title },
         )}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         className={TEMPLATE_DETAIL_STAGE}
       >
         <img
-          src={detail.pageUrls[activeIndex]}
-          alt={t(
-            ($) => {
-              return $.templates.detail.page;
-            },
-            { number: activeIndex + 1 },
+          src={pictures[activeIndex]}
+          alt={pictureLabel(activeIndex)}
+          className={cn(
+            "pointer-events-none absolute inset-0 h-full w-full",
+            fit === "cover" ? "object-cover" : "object-contain",
           )}
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
         />
         <TemplateDetailStageControls
           activeSlideIndex={activeIndex}
@@ -139,9 +148,10 @@ function CustomTemplatePages({
         renderThumbnail={(index) => {
           return (
             <img
-              src={detail.pageUrls[index]}
+              src={pictures[index]}
               alt=""
               loading="lazy"
+              data-testid={thumbnailTestId}
               className="pointer-events-none absolute inset-0 h-full w-full object-cover"
             />
           );
@@ -187,56 +197,15 @@ function CustomTemplateSourcePreview({
           title={title}
           // PDF Open Parameters: #navpanes=0 hides Chromium's built-in left
           // rail, so the embedded preview opens on the page rather than on a
-          // thumbnail list of it.
-          src={`${detail.sourceUrl}#navpanes=0`}
+          // thumbnail list of it; #toolbar=0 drops the viewer's own dark
+          // toolbar, which otherwise sits inside our frame as a second header;
+          // #view=FitH fits a page to the frame's width.
+          src={`${detail.sourceUrl}#toolbar=0&navpanes=0&view=FitH`}
           scrolling="yes"
           className="block h-full w-full border-0 bg-background"
           data-testid="custom-template-source-preview"
         />
       )}
-    </div>
-  );
-}
-
-/**
- * An illustration, as the pictures its style draws.
- *
- * These are the template's preview assets: the examples the reverse run made
- * from the extracted style and the member approved. A style is judged by what
- * it produces, so the source a member uploaded is not what is shown. The branch is chosen by the row's kind rather
- * than by a filename, because the kind is what decided at publish what these
- * pictures are.
- */
-function CustomTemplateIllustration({
-  detail,
-}: {
-  readonly detail: UserTemplateDetail;
-}) {
-  const { t } = useTranslation();
-  const label = t(
-    ($) => {
-      return $.artifacts.preview.dialogLabel;
-    },
-    { filename: detail.title },
-  );
-  return (
-    // `contain` rather than `cover`: a picture is judged by its whole frame —
-    // how much of the sheet the art covers, where it sits, how wide the margin
-    // is — and cropping to fill the dialog would take exactly those away. The
-    // muted ground behind each is what gives a picture on white paper, or one
-    // with a transparent corner, an edge to be seen against.
-    <div className="flex min-h-80 min-w-0 flex-1 flex-col items-center gap-4 overflow-auto rounded-xl border border-border bg-muted p-6">
-      {detail.previewAssets.map((asset) => {
-        return (
-          <img
-            key={asset.previewAssetId}
-            src={asset.url}
-            alt={label}
-            className="max-w-full object-contain"
-            data-testid="custom-template-example-preview"
-          />
-        );
-      })}
     </div>
   );
 }
@@ -254,15 +223,47 @@ function CustomTemplatePreviewBody({
 }: {
   readonly detail: UserTemplateDetail;
 }) {
+  const { t } = useTranslation();
   switch (detail.kind) {
     case "presentation": {
-      return <CustomTemplatePages detail={detail} />;
+      return (
+        <CustomTemplateGallery
+          title={detail.title}
+          pictures={detail.pageUrls}
+          fit="cover"
+          pictureLabel={(index) => {
+            return t(
+              ($) => {
+                return $.templates.detail.page;
+              },
+              { number: index + 1 },
+            );
+          }}
+        />
+      );
     }
     case "document": {
       return <CustomTemplateSourcePreview detail={detail} />;
     }
     case "illustration": {
-      return <CustomTemplateIllustration detail={detail} />;
+      return (
+        <CustomTemplateGallery
+          title={detail.title}
+          pictures={detail.previewAssets.map((asset) => {
+            return asset.url;
+          })}
+          fit="contain"
+          pictureLabel={() => {
+            return t(
+              ($) => {
+                return $.artifacts.preview.dialogLabel;
+              },
+              { filename: detail.title },
+            );
+          }}
+          thumbnailTestId="custom-template-example-preview"
+        />
+      );
     }
   }
 }
@@ -332,9 +333,16 @@ export function CustomTemplatePreviewDialog({
               })}
             </button>
             <span className="shrink-0 text-muted-foreground">/</span>
-            <span className="block min-w-0 truncate leading-none">
-              {detail?.title ?? ""}
-            </span>
+            {detail?.canManage ? (
+              // Keyed by the template, not by anything that changes while one
+              // is open: a save re-renders this subtree, and only arriving at
+              // a different template may hand the editor a fresh field.
+              <CustomTemplateTitleInput key={detail.id} detail={detail} />
+            ) : (
+              <span className="block min-w-0 truncate leading-none">
+                {detail?.title ?? ""}
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
         <div className={TEMPLATE_DETAIL_BODY}>
@@ -344,22 +352,18 @@ export function CustomTemplatePreviewDialog({
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <Loader2 size={20} className="animate-spin" />
             </div>
-          ) : detail.kind === "presentation" ? (
+          ) : detail.kind !== "document" ? (
             <div className={TEMPLATE_DETAIL_GRID}>
-              <CustomTemplatePages detail={detail} />
+              <CustomTemplatePreviewBody detail={detail} />
               <TemplateDetailSideColumn>
-                {/* Keyed by the template, not by anything that changes while
-                    one is open: a save re-renders this subtree, and only
-                    arriving at a different template may hand the editor a
-                    fresh field. */}
-                <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
+                <CustomTemplateDetailSidebar detail={detail} />
               </TemplateDetailSideColumn>
             </div>
           ) : (
-            <div className="flex flex-col gap-6 lg:h-full lg:flex-row lg:pb-6">
+            <div className="flex flex-col gap-6 lg:h-full lg:flex-row">
               <CustomTemplatePreviewBody detail={detail} />
               <div className="lg:w-[220px] lg:shrink-0">
-                <CustomTemplateDetailSidebar key={detail.id} detail={detail} />
+                <CustomTemplateDetailSidebar detail={detail} />
               </div>
             </div>
           )}
