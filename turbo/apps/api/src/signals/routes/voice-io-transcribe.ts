@@ -1,5 +1,4 @@
 import {
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS,
   voiceIoTranscribeSegmentOptionsSchema,
   voiceIoTranscribeContract,
@@ -60,21 +59,6 @@ function audioFiles(formData: FormData): readonly File[] | null {
   return entries as readonly File[];
 }
 
-function lastAssistantReference(formData: FormData): string | undefined | null {
-  const value = formData.get("lastAssistantMessage");
-  if (value === null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return null;
-  }
-  const reference = value.trim();
-  if (!reference || reference.length > VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS) {
-    return null;
-  }
-  return reference;
-}
-
 function editorReference(
   formData: FormData,
 ): VoiceIoEditorContext | undefined | null {
@@ -103,11 +87,6 @@ function parseVoiceDraftForm(formData: FormData) {
   }
   if (files.length > 1) {
     return badRequest("Voice segments must contain at most one audio file");
-  }
-  // Validate the legacy field for older clients, but never forward it.
-  const reference = lastAssistantReference(formData);
-  if (reference === null) {
-    return badRequest("Invalid last assistant message");
   }
   const editorContext = editorReference(formData);
   if (editorContext === null) {

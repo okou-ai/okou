@@ -342,7 +342,7 @@ describe("POST /api/voice-io/polish", () => {
     await aborted.promise;
   });
 
-  it("merges ordered segments without forwarding legacy assistant history", async () => {
+  it("merges ordered segments without answering speech or translating it", async () => {
     await setupVoicePolish();
     let requestBody: unknown;
     server.use(
@@ -364,8 +364,6 @@ describe("POST /api/voice-io/polish", () => {
         headers: { authorization: "Bearer clerk-session" },
         body: {
           segments: ["um ship the nebula release Friday", "no Monday"],
-          lastAssistantMessage:
-            "The Project Nebula release is scheduled for Friday.",
         },
       }),
       [200],
