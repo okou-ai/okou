@@ -145,16 +145,24 @@ for event in ("pull_request", "push", "merge_group"):
             values[f"needs.{name}.result"] = "success" if wanted[name] else "skipped"
         assert_gate(values, True, f"{event}: valid selection")
 
-    # Selection combinations are covered above. Failure handling needs each lane
-    # selected and unselected, rather than every combination of unrelated flags.
-    for selected_context in (True, False):
-        values = context(event, selected_context, selected_context, selected_context, selected_context)
+    # Exercise each independent selection path without crossing failures with
+    # every flag combination: outer skip, each inner selector, and CI-only work.
+    for changed, ci, guest, ably in (
+        (False, False, False, False),
+        (True, False, False, False),
+        (True, False, True, False),
+        (True, False, False, True),
+        (True, False, True, True),
+        (True, True, False, False),
+    ):
+        values = context(event, changed, ci, guest, ably)
+        wanted = {name: selected(name, values) for name in lanes}
         values.update({
-            f"needs.{name}.result": "success" if selected_context else "skipped"
+            f"needs.{name}.result": "success" if wanted[name] else "skipped"
             for name in lanes
         })
         for name in lanes:
-            for result in ("failure", "cancelled", "") + (("skipped",) if selected_context else ()):
+            for result in ("failure", "cancelled", "") + (("skipped",) if wanted[name] else ()):
                 assert_gate(values | {f"needs.{name}.result": result}, False, f"{event}: {name}={result!r}")
     values = context(event, True, True, True, True)
     for output in ("any-changed", "ci-changed", "guest-control-tests-changed", "ably-subscriber-changed"):
