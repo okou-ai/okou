@@ -1,7 +1,7 @@
-// The slash panel indexes creation types and workflows. Composer-anchored menus
-// embed desktop previews on the right; the legacy menu uses a separate flyout.
+// The slash panel indexes creation types and workflows, with desktop previews
+// embedded on the right.
 // It renders inside the slash menu's popover shell from slash-workflow.tsx.
-import type { ComponentProps, Ref } from "react";
+import type { ComponentProps } from "react";
 import {
   ChevronRight,
   Ellipsis,
@@ -11,7 +11,7 @@ import {
   Presentation,
   Route,
 } from "lucide-react";
-import { Button, cn, Popover, PopoverContent, useMediaQuery } from "@okouai/ui";
+import { Button, cn, useMediaQuery } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { SlashWorkflowName } from "./slash-workflow.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -56,15 +56,12 @@ function workflowSummary(description: string): string {
 }
 
 interface SlashTemplatePanelProps {
-  readonly menuRef: Ref<HTMLDivElement>;
   /** Already filtered by the typed slash query. */
   readonly categories: readonly SlashTemplateCategory[];
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
   readonly collapseWorkflows: boolean;
   readonly onExpandWorkflows: () => void;
-  /** The menu spans the composer and embeds the preview beside its rows. */
-  readonly anchored: boolean;
   /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
@@ -80,7 +77,6 @@ interface SlashTemplatePanelProps {
   ) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
   readonly onBrowseAll: () => void;
-  readonly onClose: () => void;
   readonly workflowOptionId: (workflowId: string) => string;
   readonly categoryOptionId: (category: SlashTemplateCategory) => string;
 }
@@ -175,11 +171,9 @@ function SlashTemplateCover({
 
 function SlashTemplateDetailPane({
   category,
-  embedded = false,
   onSelectTemplate,
 }: {
   readonly category: SlashTemplateCategory;
-  readonly embedded?: boolean;
   readonly onSelectTemplate: (
     preview: SlashTemplatePreview,
     category: SlashTemplateCategory,
@@ -189,14 +183,9 @@ function SlashTemplateDetailPane({
   const nativeAspect = isSlashTemplateNativeAspectCategory(category);
   return (
     <div
-      className={cn(
-        "overflow-hidden",
-        embedded
-          ? "relative w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
-          : "h-full w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
-      )}
-      role={embedded ? "region" : undefined}
-      aria-label={embedded ? slashTemplateCategoryLabel(category) : undefined}
+      className="relative w-[400px] max-w-1/2 shrink-0 overflow-hidden border-l border-border/60"
+      role="region"
+      aria-label={slashTemplateCategoryLabel(category)}
       data-slot="slash-template-detail"
       data-category={category}
     >
@@ -206,12 +195,9 @@ function SlashTemplateDetailPane({
         above a white gutter. The trailing space lives inside the scroller.
       */}
       <div
-        className={cn(
-          "flex flex-col px-4 pt-4",
-          // The rows set the menu height; previews scroll within that height
-          // without moving the menu when the pointer switches between rows.
-          embedded ? "absolute inset-0" : "h-full",
-        )}
+        // The rows set the menu height; previews scroll within that height
+        // without moving the menu when the pointer switches between rows.
+        className="absolute inset-0 flex flex-col px-4 pt-4"
       >
         {/*
           The scroller reaches the pane's right edge and pads its content back,
@@ -268,92 +254,6 @@ function SlashTemplateDetailPane({
   );
 }
 
-/** The index popup this panel fills. The flyout hangs off it. */
-function slashPanelAnchor(): Element | null {
-  return document.querySelector('[data-slot="slash-panel"]');
-}
-
-/**
- * True while the pointer is over either card. The flyout is portalled, so
- * crossing between the two is a real `mouseleave` on the one being left even
- * though, to the user, the pointer never left the menu.
- */
-function insideSlashPanel(target: EventTarget | null): boolean {
-  return (
-    target instanceof Element &&
-    target.closest(
-      '[data-slot="slash-panel"],[data-slot="slash-template-flyout"]',
-    ) !== null
-  );
-}
-
-/**
- * The detail pane, floating beside the index instead of sharing its box. Base
- * UI anchors it to the index and flips it to the index's other side when the
- * caret leaves no room, so the pane always opens into the space there is while
- * the index itself never moves. A pane inside the box made the popover
- * content-width, and a popover that changes width re-pins itself against the
- * viewport edge — which slid the whole index out from under the pointer.
- */
-function SlashTemplateDetailFlyout({
-  menuRef,
-  onClose,
-  category,
-  onSelectTemplate,
-  onPreview,
-}: {
-  readonly menuRef: Ref<HTMLDivElement>;
-  readonly onClose: () => void;
-  readonly category: SlashTemplateCategory;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-  readonly onPreview: (index: number | null) => void;
-}) {
-  return (
-    <Popover
-      open
-      onOpenChange={(open, details) => {
-        // Hover/category selection owns this flyout's visibility, while
-        // Escape dismisses the whole suggestion interaction from any surface.
-        if (!open && details.reason === "escape-key") {
-          onClose();
-        }
-      }}
-    >
-      <PopoverContent
-        ref={menuRef}
-        aria-label={slashTemplateCategoryLabel(category)}
-        anchor={slashPanelAnchor}
-        side="right"
-        align="start"
-        sideOffset={0}
-        // The menu's keyboard navigation stays in the editor, and the row that
-        // opened this flyout keeps its focus.
-        initialFocus={false}
-        finalFocus={false}
-        // A bare positioning box: the pane paints its own surface, and the gap
-        // that reads as air between the two cards is padding on the index's
-        // side, so a pointer crossing it never leaves the flyout.
-        className="h-[min(380px,var(--available-height))] w-auto border-0 bg-transparent p-0 shadow-none data-[side=left]:pr-1.5 data-[side=right]:pl-1.5"
-        data-slot="slash-template-flyout"
-        onMouseLeave={(event) => {
-          if (insideSlashPanel(event.relatedTarget)) {
-            return;
-          }
-          onPreview(null);
-        }}
-      >
-        <SlashTemplateDetailPane
-          category={category}
-          onSelectTemplate={onSelectTemplate}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
 // Keep this ref stable: pointer previews must not re-scroll the keyboard's
 // selected row while the user browses an expanded workflow list.
 function scrollSelectedSlashOptionOnMount(
@@ -376,7 +276,6 @@ function SlashPanelWorkflowList({
   markedIndex,
   selectedIndex,
   reversed,
-  describe,
   onPreview,
   onSelect,
   workflowOptionId,
@@ -385,8 +284,6 @@ function SlashPanelWorkflowList({
   readonly loading: boolean;
   readonly selectedIndex: number;
   readonly reversed: boolean;
-  /** The composer-wide menu has room for a description after each name. */
-  readonly describe: boolean;
   /** Relative to this list; negative while no row carries the mark. */
   readonly markedIndex: number;
   readonly onPreview: (index: number) => void;
@@ -410,10 +307,9 @@ function SlashPanelWorkflowList({
           const index = reversed
             ? workflows.length - 1 - visualIndex
             : visualIndex;
-          const summary =
-            describe && workflow.description
-              ? workflowSummary(workflow.description)
-              : "";
+          const summary = workflow.description
+            ? workflowSummary(workflow.description)
+            : "";
           return (
             <button
               key={workflow.id}
@@ -530,7 +426,6 @@ function SlashPanelCategoryList({
   categories,
   markedIndex,
   selectedIndex,
-  anchored,
   reversed,
   onPreview,
   onSelectCategory,
@@ -539,14 +434,13 @@ function SlashPanelCategoryList({
   SlashTemplatePanelProps,
   | "categories"
   | "selectedIndex"
-  | "anchored"
   | "reversed"
   | "onPreview"
   | "onSelectCategory"
   | "categoryOptionId"
 > & { readonly markedIndex: number }) {
   const { t } = useTranslation();
-  if (anchored && categories.length === 0) {
+  if (categories.length === 0) {
     return null;
   }
   return (
@@ -605,16 +499,13 @@ function SlashPanelCategoryList({
 }
 
 function SlashPanelBrowseAll({
-  anchored,
   onBrowseAll,
-}: Pick<SlashTemplatePanelProps, "anchored" | "onBrowseAll">) {
+}: Pick<SlashTemplatePanelProps, "onBrowseAll">) {
   const { t } = useTranslation();
-  // Anchored, it is one more row of the list: no gap above it, and the
+  // This is one more row of the list: no gap above it, and the
   // scroller's 4px below it matches the 4px inset at the sides.
   return (
-    <div
-      className={anchored ? "px-1" : "shrink-0 border-t border-border/60 p-1"}
-    >
+    <div className="px-1">
       {/*
         Full width like the rows above it, so its hover fill has the same shape
         as theirs instead of a pill around the label.
@@ -622,19 +513,12 @@ function SlashPanelBrowseAll({
       <button
         type="button"
         data-slot="slash-browse-all"
-        className={cn(
-          "flex h-8 w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
-          anchored
-            ? "gap-2 text-[13px] text-muted-foreground hover:text-foreground"
-            : "justify-between text-sm text-foreground",
-        )}
+        className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-[13px] text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground"
         onClick={onBrowseAll}
       >
-        {anchored && (
-          <span className="flex size-4 shrink-0 items-center justify-center">
-            <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
-          </span>
-        )}
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          <LayoutGrid size={14} strokeWidth={1.6} aria-hidden />
+        </span>
         <span className="min-w-0 truncate">
           {t(($) => {
             return $.chat.composer.slashPanel.browseAll;
@@ -642,10 +526,7 @@ function SlashPanelBrowseAll({
         </span>
         <ChevronRight
           size={16}
-          className={cn(
-            "ml-auto shrink-0",
-            anchored ? "text-muted-foreground/50" : "text-muted-foreground",
-          )}
+          className="ml-auto shrink-0 text-muted-foreground/50"
           aria-hidden
         />
       </button>
@@ -654,13 +535,11 @@ function SlashPanelBrowseAll({
 }
 
 export function SlashTemplatePanel({
-  menuRef,
   categories,
   workflows,
   workflowsLoading,
   collapseWorkflows,
   onExpandWorkflows,
-  anchored,
   reversed,
   reverseWorkflows,
   selectedIndex,
@@ -670,17 +549,16 @@ export function SlashTemplatePanel({
   onSelectTemplate,
   onSelectWorkflow,
   onBrowseAll,
-  onClose,
   workflowOptionId,
   categoryOptionId,
 }: SlashTemplatePanelProps) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   // Keep the mark on the previewed row while the pointer crosses into its
-  // flyout. Keyboard navigation or leaving both cards restores the keyboard
+  // preview. Keyboard navigation or leaving the panel restores the keyboard
   // selection and its preview together.
   const markedIndex = previewIndex ?? selectedIndex;
   // A workflow row indexes past the categories, so it previews nothing and the
-  // flyout closes.
+  // preview closes.
   const detailCategory = categories[markedIndex] ?? null;
   const makeSection = (
     <SlashPanelCategoryList
@@ -688,7 +566,6 @@ export function SlashTemplatePanel({
       categories={categories}
       markedIndex={markedIndex}
       selectedIndex={selectedIndex}
-      anchored={anchored}
       reversed={reversed}
       onPreview={onPreview}
       onSelectCategory={onSelectCategory}
@@ -705,7 +582,6 @@ export function SlashTemplatePanel({
       markedIndex={markedIndex - categories.length}
       selectedIndex={selectedIndex - categories.length}
       reversed={reverseWorkflows}
-      describe={anchored}
       onPreview={(index) => {
         onPreview(categories.length + index);
       }}
@@ -713,22 +589,11 @@ export function SlashTemplatePanel({
       workflowOptionId={workflowOptionId}
     />
   );
-  const browseAll = (
-    <SlashPanelBrowseAll anchored={anchored} onBrowseAll={onBrowseAll} />
-  );
   return (
     <div
-      className={cn(
-        "group/slash-panel flex min-h-0 w-full overflow-hidden",
-        anchored ? "flex-row" : "h-full flex-col",
-      )}
+      className="group/slash-panel flex min-h-0 w-full flex-row overflow-hidden"
       data-slot="slash-panel"
-      onMouseLeave={(event) => {
-        // Moving into the flyout is not leaving the menu, even though the two
-        // cards are separate elements.
-        if (insideSlashPanel(event.relatedTarget)) {
-          return;
-        }
+      onMouseLeave={() => {
         onPreview(null);
       }}
     >
@@ -742,24 +607,13 @@ export function SlashTemplatePanel({
           {reversed
             ? [workflowSection, makeSection]
             : [makeSection, workflowSection]}
-          {anchored && browseAll}
+          <SlashPanelBrowseAll onBrowseAll={onBrowseAll} />
         </div>
-        {!anchored && browseAll}
       </div>
-      {detailCategory !== null && anchored && isDesktop && (
+      {detailCategory !== null && isDesktop && (
         <SlashTemplateDetailPane
-          embedded
           category={detailCategory}
           onSelectTemplate={onSelectTemplate}
-        />
-      )}
-      {detailCategory !== null && !anchored && (
-        <SlashTemplateDetailFlyout
-          menuRef={menuRef}
-          onClose={onClose}
-          category={detailCategory}
-          onSelectTemplate={onSelectTemplate}
-          onPreview={onPreview}
         />
       )}
     </div>

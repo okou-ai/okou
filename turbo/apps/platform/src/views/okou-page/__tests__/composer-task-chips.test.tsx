@@ -345,18 +345,8 @@ test("A slash panel cover attaches its template and lands on its task", async ()
   mockTemplateChat();
   const editor = await setupChips();
   await fill(editor, "A launch page /web");
-  await screen.findByTestId("slash-workflow-menu");
-  // The covers float beside the index in their own flyout, so they are not
-  // inside the menu's own box.
-  const pane = await waitFor(() => {
-    const element = document.querySelector<HTMLElement>(
-      '[data-slot="slash-template-flyout"]',
-    );
-    if (!element) {
-      throw new Error("Expected the template flyout");
-    }
-    return element;
-  });
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const pane = await within(menu).findByRole("region", { name: "Website" });
   const [first] = WEBSITE_TEMPLATE_ITEMS;
   if (!first) {
     throw new Error("Expected a website template");

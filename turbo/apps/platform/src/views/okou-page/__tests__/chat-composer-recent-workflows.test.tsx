@@ -1,5 +1,4 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -102,18 +101,15 @@ function mockHistory(
   return values;
 }
 
-async function openComposer(enabled = true, path = `/chats/${THREAD_ID}`) {
+async function openComposer(path = `/chats/${THREAD_ID}`) {
   await setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerAnchoredSuggestions]: enabled,
-    },
   });
   const editor = await findComposerEditor();
   await fill(editor, "Draft /");
   await waitFor(() => {
-    expect(workflowNames()).toHaveLength(enabled ? 4 : 6);
+    expect(workflowNames()).toHaveLength(4);
   });
   return editor;
 }
@@ -135,7 +131,7 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
   async (path) => {
     mockWorkflows();
     mockChatLifecycle(context, { threadId: THREAD_ID });
-    let editor = await openComposer(true, path);
+    let editor = await openComposer(path);
     click(button("Show all workflows"));
     click(button("/echo"));
     await fill(editor, "Draft /");
@@ -314,25 +310,4 @@ test("Recency leaves typed search order unchanged", async () => {
       "/alpha",
     ]);
   });
-});
-
-test("Disabling anchored suggestions retains the original full workflow order", async () => {
-  const workflows = mockWorkflows();
-  mockHistory([
-    {
-      ids: [...workflows].reverse().map((workflow) => {
-        return workflow.id;
-      }),
-    },
-  ]);
-  mockChatLifecycle(context, { threadId: THREAD_ID });
-  await openComposer(false);
-  expect(workflowNames()).toStrictEqual([
-    "/zulu",
-    "/delta",
-    "/echo",
-    "/beta",
-    "/alpha",
-    "/charlie",
-  ]);
 });
