@@ -107,6 +107,23 @@ describe("Serial private Pi maintenance", () => {
         );
         mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
         await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
+        await webhooks.requestAgentComplete(
+          {
+            ...completed.body,
+            completion: {
+              ...completed.body.completion,
+              artifactSnapshots: [
+                {
+                  name: run.memory.name,
+                  mountPath: run.memory.mountPath,
+                  version: first.versionId,
+                },
+              ],
+            },
+          },
+          run.headers,
+          [401],
+        );
         return;
       }
       await publishOrdinaryMemory(run, "First queued owned update.\n", 1);

@@ -39,7 +39,25 @@ describe("Genuine Pi maintenance publication results", () => {
   it("replays a maintenance result after private completion", async () => {
     const run = await prepareMaintenance();
     const body = await publish(run, "Prefer focused public API tests.\n");
-    await completeMaintenance(run, body.versionId);
+    const completed = await completeMaintenance(run, body.versionId, true);
+    const recovered = await webhooks.requestAgentComplete(
+      {
+        ...completed.body,
+        completion: {
+          ...completed.body.completion,
+          artifactSnapshots: [
+            {
+              name: run.memory.name,
+              mountPath: run.memory.mountPath,
+              version: run.maintenance.claimedBaseVersionId,
+            },
+          ],
+        },
+      },
+      run.headers,
+      [200],
+    );
+    expect(recovered.body).toStrictEqual(completed.response.body);
     const replay = await webhooks.requestAgentStorageCommit(
       body,
       run.headers,

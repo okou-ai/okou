@@ -508,16 +508,6 @@ async function createClaimedImageRun(
   await run(() => {
     return chat.api.ensurePersonalSubscriptionModel(actor);
   });
-  const { agentId } = await run(() => {
-    return chat.bdd.createAgent(actor, {
-      displayName: "BDD chat messages agent",
-      description: "Exercises the web chat send route.",
-      visibility: "private",
-    });
-  });
-  await run(() => {
-    return chat.api.updateUserModelPreference(actor, "claude-fable-5-1");
-  });
   await run(() => {
     return useImageModel(fixture, imageModel);
   });
@@ -528,16 +518,34 @@ async function createClaimedImageRun(
     }),
   ).resolves.toBe(20_000);
   const initialCredits = 20_000 + credits;
-  await run(() => {
-    return purchaseToolCredits(context, actor, {
-      credits,
-      customerId,
-      invoiceId: `in_image_${randomUUID()}`,
-      onExternalStateReady: (restore) => {
-        restoreSetupExternalState = restore;
-      },
-    });
-  });
+  // Agent creation and the separate credit purchase share an already active Pro
+  // owner, but neither depends on the other's result. Settle both before cleanup.
+  const [agent, purchase] = await Promise.allSettled([
+    run(() => {
+      return chat.bdd.createAgent(actor, {
+        displayName: "BDD chat messages agent",
+        description: "Exercises the web chat send route.",
+        visibility: "private",
+      });
+    }),
+    run(() => {
+      return purchaseToolCredits(context, actor, {
+        credits,
+        customerId,
+        invoiceId: `in_image_${randomUUID()}`,
+        onExternalStateReady: (restore) => {
+          restoreSetupExternalState = restore;
+        },
+      });
+    }),
+  ] as const);
+  if (agent.status === "rejected") {
+    throw agent.reason;
+  }
+  if (purchase.status === "rejected") {
+    throw purchase.reason;
+  }
+  const { agentId } = agent.value;
   restoreSetupExternalState = undefined;
   await expect(
     run(() => {
@@ -548,6 +556,7 @@ async function createClaimedImageRun(
     return chat.sendChatRun(actor, {
       agentId,
       prompt: "Generate an image for this Run",
+      model: "claude-fable-5-1",
     });
   });
   const claimedRunnerGroup = runnerGroup;
