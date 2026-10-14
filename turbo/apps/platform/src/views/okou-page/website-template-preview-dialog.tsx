@@ -1,12 +1,9 @@
 import {
   Dialog,
-  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button } from "@okouai/ui/components/ui/button";
-import { X } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
@@ -50,12 +47,11 @@ function WebsiteTemplatePreviewDialog({
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
-        maxWidth={1120}
+        maxWidth="6xl"
         height={760}
-        showCloseButton={false}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
-        <DialogHeader className="relative shrink-0 border-b border-border px-5 py-4 pr-14 text-left sm:pr-16">
+        <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
           <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
             <button
               type="button"
@@ -73,24 +69,9 @@ function WebsiteTemplatePreviewDialog({
               {item.title}
             </span>
           </DialogTitle>
-          <DialogClose
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                iconSize="lg"
-                className="absolute right-4 top-[7px] opacity-70 hover:opacity-100"
-                aria-label={t(($) => {
-                  return $.artifacts.actions.close;
-                })}
-              />
-            }
-          >
-            <X />
-          </DialogClose>
         </DialogHeader>
-        <div className="min-h-0 flex-1 bg-muted/20 p-3 sm:p-5">
-          <div className="relative h-full overflow-hidden rounded-lg border border-border bg-background">
+        <div className="min-h-0 flex-1 px-6 pb-6 pt-0.5">
+          <div className="relative h-full overflow-hidden rounded-xl border border-border bg-background">
             <img
               src={placeholderUrl}
               alt=""

@@ -88,7 +88,7 @@ test.each([true, false])(
     ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).toBeNull();
     expect(requestBody).toBeUndefined();
-    click(getAction("button", "Add new server"));
+    click(getAction("button", "Join new server"));
     await waitFor(() => {
       return expect(popup.location.href).toBe(authorizationUrl);
     });

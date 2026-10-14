@@ -56,6 +56,27 @@ pub(in crate::executor::tests) async fn test_executor_config(dir: &Path) -> Exec
     }
 }
 
+/// Keep the returned HTTP server alive while testing nominal execution timing.
+pub(in crate::executor::tests) async fn test_executor_config_with_startup_api(
+    dir: &Path,
+) -> (ExecutorConfig, httpmock::MockServer) {
+    let server = httpmock::MockServer::start_async().await;
+    server.mock(|when, then| {
+        when.method(httpmock::Method::PUT)
+            .path_matches("/api/runners/runs/[^/]+/startup");
+        then.status(204);
+    });
+    let mut config = test_executor_config(dir).await;
+    config.http = runner_provider::http::HttpClient::new(HttpClientConfig {
+        api_url: server.base_url(),
+        vercel_bypass: None,
+        client_session_id: "startup-api-test".into(),
+        runner_version: env!("CARGO_PKG_VERSION"),
+    })
+    .unwrap();
+    (config, server)
+}
+
 pub(in crate::executor::tests) fn default_params() -> JobParams {
     JobParams {
         profile_name: "vm0/default".into(),

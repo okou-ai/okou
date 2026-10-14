@@ -28,6 +28,11 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["runners", "runs", "startup"],
+    rustTypeName: "Request",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners"],
     rustTypeName: "SandboxStartupPath",
     direction: "request",

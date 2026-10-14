@@ -254,8 +254,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.LinkWallet]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Enable hosted Link wallet connection and per-purchase approval. Credential retrieval and checkout remain unavailable.",
-    enabled: false,
+      "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
+    enabled: true,
   },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
