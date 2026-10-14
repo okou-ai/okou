@@ -36,6 +36,9 @@ pub const CANONICAL_SANDBOX_REUSE_RESULT_ENV: &str = "OKOU_SANDBOX_REUSE_RESULT"
 /// Wire value for the runner's final home-reuse decision.
 pub const CANONICAL_HOME_REUSE_RESULT_ENV: &str = "OKOU_HOME_REUSE_RESULT";
 
+/// Wire value for the actual sandbox startup resource after preparation settles.
+pub const CANONICAL_SANDBOX_STARTUP_PATH_ENV: &str = "OKOU_SANDBOX_STARTUP_PATH";
+
 /// Logical run-payload field name for the user prompt.
 pub const PROMPT_RUN_PAYLOAD_FIELD: &str = "OKOU_PROMPT";
 
@@ -68,7 +71,7 @@ pub const CANONICAL_API_START_TIME_ENV: &str = "OKOU_API_START_TIME";
 ///
 /// The runner owns this fixed lifecycle budget. Guest-agent uses it to stop
 /// the CLI before the later sandbox supervisor deadline, leaving time for
-/// recovery checkpointing and final telemetry. It is intentionally not a
+/// recovery history uploads and final telemetry. It is intentionally not a
 /// local user-tuning key.
 pub const CANONICAL_AGENT_EXECUTION_TIMEOUT_SECS_ENV: &str = "OKOU_AGENT_EXECUTION_TIMEOUT_SECS";
 
@@ -251,7 +254,7 @@ pub const ARTIFACTS_RUN_PAYLOAD_FIELD: &str = "OKOU_ARTIFACTS";
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunArtifact {
-    /// VAS storage name reported in artifact checkpoint snapshots.
+    /// VAS storage name reported in artifact manifests.
     pub name: String,
     /// Absolute guest path containing the mounted artifact.
     pub mount_path: String,
@@ -259,16 +262,16 @@ pub struct RunArtifact {
     pub storage_id: String,
     /// VAS version identifier mounted at startup.
     pub version_id: String,
-    /// Behavior when the artifact root is absent during checkpointing.
+    /// Behavior when the artifact root is absent while saving artifacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing_root_policy: Option<RunArtifactMissingRootPolicy>,
 }
 
-/// Runner-to-guest policy for an artifact root missing during checkpointing.
+/// Runner-to-guest policy for an artifact root missing while saving artifacts.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum RunArtifactMissingRootPolicy {
-    /// Treat the missing artifact root as a checkpoint error.
+    /// Treat the missing artifact root as an artifact-save error.
     Fail,
     /// Preserve the artifact version mounted at startup.
     PreserveParentVersion,
@@ -356,6 +359,18 @@ pub const PI_SESSION_ID_RUN_PAYLOAD_FIELD: &str = PI_SESSION_ID_ENV;
 /// Logical run-payload field name for the installed-CLI launch requirements.
 pub const PI_INSTALLED_CLI_REQUIREMENT_RUN_PAYLOAD_FIELD: &str = "piInstalledCliRequirement";
 
+/// API-owned native continuation intent. No remote history reference is carried.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NativeContinuation {
+    /// Exact native identity to look for in the intended retained home.
+    pub session_id: Option<String>,
+    /// Existing Run that produced that retained generation.
+    pub generation_run_id: Option<String>,
+    /// Mandatory recovery item for a later round, enabled only after a miss.
+    pub recovery_prompt: Option<String>,
+}
+
 /// Runner-owned variable-length run payload sent through
 /// [`CANONICAL_RUN_PAYLOAD_FILE_ENV`].
 ///
@@ -368,6 +383,9 @@ pub struct RunPayload {
     /// Optional extra system prompt text.
     #[serde(default)]
     pub append_system_prompt: String,
+    /// Serialized native continuation intent; empty for captured legacy work.
+    #[serde(default)]
+    pub native_continuation: String,
     /// Sensitive values used by the guest-agent masker.
     #[serde(default)]
     pub secret_values: String,
@@ -414,10 +432,11 @@ pub struct RunPayloadField<'a> {
 
 impl RunPayload {
     /// Return all logical string fields carried by this run payload.
-    pub fn fields(&self) -> [RunPayloadField<'_>; 13] {
+    pub fn fields(&self) -> [RunPayloadField<'_>; 14] {
         let Self {
             prompt,
             append_system_prompt,
+            native_continuation,
             secret_values,
             disallowed_tools,
             tools,
@@ -432,6 +451,10 @@ impl RunPayload {
         } = self;
 
         [
+            RunPayloadField {
+                name: "nativeContinuation",
+                value: native_continuation,
+            },
             RunPayloadField {
                 name: PROMPT_RUN_PAYLOAD_FIELD,
                 value: prompt,
@@ -554,6 +577,7 @@ const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     CANONICAL_SANDBOX_ID_ENV,
     CANONICAL_SANDBOX_REUSE_RESULT_ENV,
     CANONICAL_HOME_REUSE_RESULT_ENV,
+    CANONICAL_SANDBOX_STARTUP_PATH_ENV,
     CANONICAL_API_START_TIME_ENV,
     PI_SESSION_ID_ENV,
     PI_LAUNCH_CONFIG_ENV,
@@ -772,6 +796,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "hello".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -789,6 +814,7 @@ mod tests {
 
         assert_eq!(json["prompt"], "hello");
         assert_eq!(json["appendSystemPrompt"], "system");
+        assert_eq!(json["nativeContinuation"], "{}");
         assert_eq!(json["secretValues"], "secret");
         assert_eq!(json["disallowedTools"], "WebFetch");
         assert_eq!(json["featureFlags"], r#"{"flag":true}"#);
@@ -810,6 +836,7 @@ mod tests {
         let payload = RunPayload {
             prompt: "prompt".to_string(),
             append_system_prompt: "system".to_string(),
+            native_continuation: "{}".to_string(),
             secret_values: "secret".to_string(),
             disallowed_tools: "WebFetch".to_string(),
             tools: "Bash".to_string(),
@@ -828,6 +855,10 @@ mod tests {
         assert_eq!(
             fields,
             [
+                RunPayloadField {
+                    name: "nativeContinuation",
+                    value: "{}"
+                },
                 RunPayloadField {
                     name: PROMPT_RUN_PAYLOAD_FIELD,
                     value: "prompt"

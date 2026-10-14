@@ -49,6 +49,11 @@ function connectorLabel(connectorSlug: ConnectorCallbackSlug | null): string {
       return $.connectors.callback.customConnectorLabel;
     });
   }
+  if (connectorSlug === "link") {
+    return i18n.t(($) => {
+      return $.connectors.callback.linkLabel;
+    });
+  }
   return connectorSlug === "github"
     ? i18n.t(($) => {
         return $.connectors.callback.githubLabel;
@@ -128,6 +133,10 @@ const loadConnectorCallbackIcon$ = command(
     connectorSlug: ConnectorSlug,
     signal: AbortSignal,
   ): Promise<PublicConnectorCatalogIcon | undefined> => {
+    // Link is a native wallet and has no connector catalog entry.
+    if (connectorSlug === "link") {
+      return undefined;
+    }
     const catalogItem = await settle(
       set(loadConnectorCatalogItem$, connectorSlug, signal),
       signal,

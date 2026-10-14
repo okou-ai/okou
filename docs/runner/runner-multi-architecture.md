@@ -19,7 +19,7 @@ mapping.
 
 ## Supported Targets
 
-`.github/scripts/runner-image-target.sh` is the implementation source of truth
+`.github/scripts/runner/runner-image-target.sh` is the implementation source of truth
 for supported runner targets and derived metadata.
 
 | Host `uname -m` | Rust target triple           | Cache suffix   | Release asset suffix | Release asset                      |
@@ -35,7 +35,7 @@ Runner release tags use `runner-rs-v${VERSION}`. Runner release assets use
 `AWS_METAL_RUNNER_HOSTS` is the single metal runner inventory for this rollout.
 There is no separate architecture-specific host secret.
 
-`.github/scripts/runner-host-architecture-groups.sh` derives architecture
+`.github/scripts/runner/runner-host-architecture-groups.sh` derives architecture
 groups by probing each host with SSH:
 
 ```bash
@@ -74,13 +74,13 @@ Host lists must not be passed through GitHub Actions job outputs or matrix JSON.
 Jobs that need concrete hosts resolve them locally for the selected group:
 
 ```bash
-.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID"
+.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID"
 ```
 
 Jobs that need one representative host use the deterministic selector:
 
 ```bash
-.github/scripts/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS"
+.github/scripts/runner/runner-host-architecture-groups.sh select-host "$RUNNER_HOST_GROUP_ID" "$JOB_REF" "$HOSTS"
 ```
 
 ## Workflow Consumers
@@ -390,13 +390,21 @@ drives NBD COW and rootfs process tests. The Crates CI gate requires selected-ta
 image preparation when applicable, including on reruns. Turbo runner preparation
 validates all configured architecture manifests before starting the runner.
 
-Native CPU fairness and guest RPC tests compile as soon as `runner-host-groups`
-selects a target, in parallel with `runner-test-prepare` waiting for the image. The
-`host-cpu-fairness-build` and `guest-rpc-firecracker-build` jobs retain their
-existing `release` and `ci` profiles and separate Cargo cache keys. Compilation
-does not use a metal host, rootfs, or snapshot. Execution waits for both its
-compiled test and the selected image, then uses the same host and immutable image
-hashes supplied by `runner-test-prepare`.
+Native CPU fairness and guest RPC tests compile after `runner-host-groups`
+resolves the architecture inventory, in parallel with `runner-test-prepare`
+waiting for its selected image. The `host-cpu-fairness-build` and
+`guest-rpc-firecracker-build` jobs retain their `release` and `ci` profiles and
+separate target-specific Cargo cache keys. Compilation does not use a metal host,
+rootfs, or snapshot.
+
+CPU fairness compiles for the selected target and executes with the host and
+immutable image hashes supplied by `runner-test-prepare`. Guest RPC filesystem
+acceptance builds and executes the full configured architecture matrix, requiring
+both amd64 and ARM64. Each consumer selects a host from its matching architecture
+group and waits for that target's validated Runner Image manifest to supply its
+immutable rootfs and snapshot hashes. Its `runner-test-prepare` dependency remains
+an image-preparation gate; that job's selected-target outputs do not supply the
+other matrix legs. Execution requires both its compiled test and matching image.
 
 Each producer uploads its compressed test binary and provenance to R2 under
 `runner-binaries/<target>/<run_id>/<producer_attempt>/<test>.zst` and the matching
@@ -409,7 +417,10 @@ seven-day lifecycle policy for the `runner-binaries/` prefix.
 Before contacting metal, the consumer validates the source SHA, repository,
 workflow run, producer attempt, test identity, target, and binary hash. A
 consumer-only rerun uses the earlier successful producer's attempt, even when its
-own attempt has advanced. Missing, expired, or invalid artifacts fail the job;
+own attempt has advanced. Matrix producers publish distinct architecture-named
+attempt outputs, and each consumer selects its matching output. A partial producer
+rerun can leave the two architectures on different attempts; a shared matrix
+output would lose that provenance. Missing, expired, or invalid artifacts fail the job;
 rerun the producer to publish a fresh artifact after expiration. There is no
 fallback to another run or target.
 
@@ -423,7 +434,7 @@ the deployed product chat flow. Architecture-specific runner behavior remains
 in the host-bound crates checks instead of being duplicated in product E2E.
 
 Release publishing builds runner assets for all supported target triples. The
-asset names come from `.github/scripts/runner-image-target.sh`.
+asset names come from `.github/scripts/runner/runner-image-target.sh`.
 
 Production build, promote, and rollback resolve the deploy/rollback target
 matrix from the configured inventory. Each matrix leg downloads or uses the

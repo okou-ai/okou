@@ -261,6 +261,7 @@ const createInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const thread = await set(
     createChatThread$,
     {
+      ...(auth.tokenType === "agent" ? { sourceRunId: auth.runId } : {}),
       userId: auth.userId,
       orgId: auth.orgId,
       agentId: body.data.agentId,

@@ -36,7 +36,7 @@ async fn original_source_crosses_raw_and_encoded_request_caps_without_transcodin
         })
         .collect::<Vec<_>>();
     for raw in [vec![b'x'; random.len()], random] {
-        // Checkpoint publishers do not request a frame checksum.
+        // Session history publishers do not request a frame checksum.
         let encoded = zstd::encode_all(raw.as_slice(), 3).unwrap();
         fs::write(&target, b"previous").unwrap();
         let measurements = h
@@ -70,7 +70,7 @@ async fn original_source_crosses_raw_and_encoded_request_caps_without_transcodin
 async fn failed_source_integrity_preserves_destination_and_cleans_each_sibling() {
     let h = Harness::new().await;
     let target = h.dir.join("integrity-history.jsonl");
-    let raw = b"{\"type\":\"message\",\"content\":\"checkpoint\"}\n";
+    let raw = b"{\"type\":\"message\",\"content\":\"transcript\"}\n";
     let source = zstd::encode_all(raw.as_slice(), 3).unwrap();
     let options = source_options(raw, &source);
     let crc = crc32fast::hash(&source);

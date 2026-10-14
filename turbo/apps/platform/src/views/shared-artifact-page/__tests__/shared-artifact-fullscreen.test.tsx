@@ -3,7 +3,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -93,6 +92,7 @@ function mockFullscreen(mode: "native" | "unsupported") {
 async function openHtmlViewer(): Promise<void> {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", previewUrl).href,
       url: previewUrl,
       expiresAt: "2099-01-01T00:00:00Z",
       filename,
@@ -115,7 +115,6 @@ async function openHtmlViewer(): Promise<void> {
     context,
     path: `${artifactReferencePath(artifactId, filename)}#counter`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   await expect(
     screen.findByTitle(`${filename} preview`),
@@ -199,6 +198,7 @@ async function openMarkdownViewer() {
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00Z",
       filename: "plan.md",
@@ -220,7 +220,6 @@ async function openMarkdownViewer() {
     context,
     path: artifactReferencePath(artifactId, "plan.md"),
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
   await screen.findByRole("img", { name: "Diagram" });
 }

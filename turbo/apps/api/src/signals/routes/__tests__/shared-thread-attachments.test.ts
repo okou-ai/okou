@@ -1,10 +1,8 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import type { UserMessageInputPart } from "@okouai/api-contracts/contracts/chat-threads";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
 import { CopyObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
@@ -12,7 +10,6 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { artifactReferenceRoutes } from "../artifact-references";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
@@ -37,13 +34,12 @@ const api = () => {
       ...artifactReferenceRoutes,
       ...uploadsPrepareRoutes,
       ...uploadsCompleteRoutes,
-      ...featureSwitchesRoutes,
       ...webFileUrlRoutes,
     ],
   });
 };
 
-async function fixture(privateFiles = false) {
+async function fixture() {
   mockEnv("APP_URL", "https://app.okou.ai");
   const actor = bdd.user();
   context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
@@ -63,13 +59,6 @@ async function fixture(privateFiles = false) {
   });
   const storage = installSharedThreadStorage(context);
   mocks.clerk.session(actor.userId, actor.orgId);
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: privateFiles } },
-    }),
-    [200],
-  );
 
   async function upload(filename: string, contentType: string, bytes: string) {
     const prepared = await accept(
@@ -195,18 +184,18 @@ test("publishes independent attachment bytes", async () => {
     if (!attachment) {
       throw new Error("Expected shared attachment");
     }
-    expect(attachment.url).toContain(`/shared-threads/${created.body.id}/`);
+    expect(attachment.url).toMatch(
+      /^https:\/\/app\.okou\.ai\/artifacts\/[a-z0-9]{10}\.(png|pdf)$/u,
+    );
     expect(attachment.size).toBe(Buffer.byteLength(expected));
-    const response = await fetch(attachment.url);
-    expect(response.status).toBe(200);
-    await expect(response.text()).resolves.toBe(expected);
+    await expect(attachmentBytes(attachment.url)).resolves.toBe(expected);
   }
   f.storage.removeUpload(image.uploadUrl);
   const imageAttachment = attachments?.[0];
   if (!imageAttachment) {
     throw new Error("Expected image attachment");
   }
-  await expect((await fetch(imageAttachment.url)).text()).resolves.toBe(
+  await expect(attachmentBytes(imageAttachment.url)).resolves.toBe(
     "original image bytes",
   );
   const publicJson = JSON.stringify(shared.body);
@@ -221,19 +210,12 @@ test("publishes independent attachment bytes", async () => {
   }
 });
 
-test("sends private attachments and shares independent private snapshots after rollout is disabled", async () => {
-  const f = await fixture(true);
+test("sends private attachments and shares independent private snapshots", async () => {
+  const f = await fixture();
   const file = await f.upload(
     "private.pdf",
     "application/pdf",
     "private bytes",
-  );
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: false } },
-    }),
-    [200],
   );
   const message = await f.send([file.part, file.part]);
   const created = await accept(f.share(message), [201]);
@@ -294,53 +276,46 @@ test("shares attachment-only prompts and reuses a copy for repeated references",
   expect(attachments?.[0]?.url).toBe(attachments?.[1]?.url);
 });
 
-test.each([false, true])(
-  "publishes the annotated image without exposing its original (private=%s)",
-  async (privateFiles) => {
-    const f = await fixture(privateFiles);
-    const original = await f.upload(
-      "screen.png",
-      "image/png",
-      "original image",
-    );
-    const annotated = await f.upload(
-      "screen.annotated.png",
-      "image/png",
-      "annotated image",
-    );
-    const message = await f.send([
-      {
-        ...original.part,
-        annotatedFileId: annotated.id,
-        annotations: {
-          marks: [
-            {
-              id: "redaction",
-              shape: "redact",
-              rect: { x: 0, y: 0, width: 0.5, height: 0.5 },
-            },
-          ],
-        },
+test("publishes the annotated image without exposing its original", async () => {
+  const f = await fixture();
+  const original = await f.upload("screen.png", "image/png", "original image");
+  const annotated = await f.upload(
+    "screen.annotated.png",
+    "image/png",
+    "annotated image",
+  );
+  const message = await f.send([
+    {
+      ...original.part,
+      annotatedFileId: annotated.id,
+      annotations: {
+        marks: [
+          {
+            id: "redaction",
+            shape: "redact",
+            rect: { x: 0, y: 0, width: 0.5, height: 0.5 },
+          },
+        ],
       },
-    ]);
-    const created = await accept(f.share(message), [201]);
-    const shared = await accept(
-      api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-      [200],
-    );
-    const attachments = shared.body.messages[0]?.attachments;
-    expect(attachments).toHaveLength(1);
-    const attachment = attachments?.[0];
-    if (!attachment) {
-      throw new Error("Expected annotated attachment");
-    }
-    expect(attachment.filename).toBe("screen.annotated.png");
-    await expect(attachmentBytes(attachment.url)).resolves.toBe(
-      "annotated image",
-    );
-    expect(JSON.stringify(shared.body)).not.toContain(original.id);
-  },
-);
+    },
+  ]);
+  const created = await accept(f.share(message), [201]);
+  const shared = await accept(
+    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
+    [200],
+  );
+  const attachments = shared.body.messages[0]?.attachments;
+  expect(attachments).toHaveLength(1);
+  const attachment = attachments?.[0];
+  if (!attachment) {
+    throw new Error("Expected annotated attachment");
+  }
+  expect(attachment.filename).toBe("screen.annotated.png");
+  await expect(attachmentBytes(attachment.url)).resolves.toBe(
+    "annotated image",
+  );
+  expect(JSON.stringify(shared.body)).not.toContain(original.id);
+});
 
 test.each(["missing source", "copy failure"])(
   "rejects sharing on %s without publishing a partial conversation",

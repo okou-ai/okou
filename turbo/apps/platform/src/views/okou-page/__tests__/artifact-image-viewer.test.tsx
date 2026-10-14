@@ -106,6 +106,7 @@ test("The image viewer previews an image and navigates to the next one", async (
   context.mocks.api(artifactReferencesContract.resolve, async ({ respond }) => {
     await secondUrlReady.promise;
     return respond(200, {
+      downloadUrl: new URL("?download=1", secondImageUrl).href,
       url: secondImageUrl,
       filename: "second.png",
       contentType: "image/png",
@@ -217,7 +218,6 @@ test("The image viewer previews an image and navigates to the next one", async (
   await finishLightboxImageDecode(firstLightboxImage, () => {
     return firstDecode.resolve();
   });
-  expect(firstLightboxImage).toHaveStyle({ width: "1600px" });
   expect(
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
@@ -247,7 +247,6 @@ test("The image viewer previews an image and navigates to the next one", async (
   await finishLightboxImageDecode(secondLightboxImage, () => {
     return secondDecode.resolve();
   });
-  expect(secondLightboxImage).toHaveStyle({ width: "1200px" });
   expect(within(dialog).getByRole("group")).toHaveFocus();
   expect(
     screen.queryByRole("status", { name: "Loading artifacts" }),

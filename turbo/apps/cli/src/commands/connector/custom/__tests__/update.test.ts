@@ -354,10 +354,7 @@ describe("okou connector custom update", () => {
         expect(requests).toBe(0);
         expect(inventoryRequests).toBe(0);
         expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-          "prefixTemplates",
-        );
-        expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-          "Invalid input",
+          "Invalid configuration input",
         );
         expect(mockExit).toHaveBeenCalledWith(1);
       } finally {

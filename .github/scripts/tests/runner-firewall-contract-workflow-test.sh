@@ -80,8 +80,10 @@ for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
     assert native_step['env']['NATIVE_TEST_OWNER'] == 'ubuntu'
     assert not any('rustup toolchain install' in step.get('run', '') for step in job['steps'])
 
-for wrapper in ['check-native-kerberos.sh', 'check-native-gssapi-peer.sh']:
-    source = (root / '.github/scripts' / wrapper).read_text()
+native_wrappers = ['crates/kerberos-worker/tests/check-native-kerberos.sh',
+                   'crates/rfb-client/tests/check-native-gssapi-peer.sh']
+for wrapper in native_wrappers:
+    source = (root / wrapper).read_text()
     assert not re.search(r'^python3\s', source, re.MULTILINE), \
         f'{wrapper}: receipt metadata must use the ordinary build owner'
 
@@ -95,19 +97,19 @@ scenarios = [
     ('workspace-lock', ['crates/Cargo.lock'], 'coverage', True, True, True, True),
     ('workspace-config', ['crates/.cargo/config.toml'], 'coverage', True, True, True, True),
     ('ci', ['.github/workflows/crates.yml'], 'coverage', True, True, True, True),
-    ('worker-harness', ['.github/scripts/check-native-kerberos.sh'], 'coverage', True, True, True, False),
-    ('peer-harness', ['.github/scripts/check-native-gssapi-peer.sh'], 'coverage', True, True, False, True),
-    ('peer-provision', ['.github/scripts/prepare-kerberos-peer-fixture.py'], 'coverage', True, True, False, True),
-    ('native-environment', ['.github/scripts/native-test-environment.sh'], 'coverage', True, True, True, True),
+    ('worker-harness', ['crates/kerberos-worker/tests/check-native-kerberos.sh'], 'coverage', True, True, True, True),
+    ('peer-harness', ['crates/rfb-client/tests/check-native-gssapi-peer.sh'], 'coverage', True, True, False, True),
+    ('peer-provision', ['crates/rfb-client/tests/fixtures/prepare-kerberos-peer-fixture.py'], 'coverage', True, True, False, True),
+    ('native-environment', ['crates/kerberos-worker/tests/native-test-environment.sh'], 'coverage', True, True, True, True),
     ('native-routing-tests', ['.github/scripts/tests/runner-firewall-contract-workflow-test.sh'],
      'coverage', True, True, True, True),
-    ('base-selector', ['.github/scripts/changed-base-ref.sh'], 'coverage', True, True, True, True),
+    ('base-selector', ['.github/scripts/checks/changed-base-ref.sh'], 'coverage', True, True, True, True),
     ('crate-selector', ['scripts/crate-changed.sh'], None, False, False, True, True),
     ('toolchain', ['docker/toolchain/Dockerfile'], None, False, False, True, True),
-    ('qemu-producer', ['.github/scripts/prepare-qemu-gssapi-fixture.py'], 'coverage', True, True, False, False),
-    ('qemu-wrapper', ['.github/scripts/check-full-qemu-producer.sh'], 'coverage', True, True, False, False),
+    ('qemu-producer', ['crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'], 'coverage', True, True, False, True),
+    ('qemu-wrapper', ['crates/rfb-client/tests/check-full-qemu-producer.sh'], 'coverage', True, True, False, True),
     ('qemu-download', ['.github/scripts/download-verified.sh'], 'coverage', True, True, False, False),
-    ('qemu-producer-tests', ['.github/scripts/tests/test-qemu-gssapi-producer.py'], 'coverage', True, True, False, False),
+    ('qemu-producer-tests', ['crates/rfb-client/tests/fixtures/test-qemu-gssapi-producer.py'], 'coverage', True, True, False, True),
     ('qemu-runtime', ['crates/rfb-client/tests/fixtures/qemu_gssapi.py'], 'coverage', True, True, False, True),
     ('qemu-pins', ['crates/rfb-client/tests/fixtures/qemu_gssapi_full_pins.json'], 'coverage', True, True, False, True),
     ('fixture-only', [corpus], standalone, False, True, False, False),
@@ -131,7 +133,7 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=targe
     native = directory / 'native-environment'
     native.mkdir()
     (native / 'crates').mkdir()
-    helper = str(root / '.github/scripts/native-test-environment.sh')
+    helper = str(root / 'crates/kerberos-worker/tests/native-test-environment.sh')
     host_env = os.environ | {'NATIVE_TEST_OWNER': ''}
     host_check = '''source "$1"
 [[ $native_uid == "$(id -u)" && $native_gid == "$(id -g)" ]]
@@ -156,9 +158,9 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=targe
     bootstrap_repo = directory / 'bootstrap-repo'
     bootstrap_repo.mkdir()
     (bootstrap_repo / 'crates').mkdir()
-    scripts = bootstrap_repo / '.github/scripts'
-    scripts.mkdir(parents=True)
-    shutil.copy2(helper, scripts / 'native-test-environment.sh')
+    copied_helper = bootstrap_repo / 'crates/kerberos-worker/tests/native-test-environment.sh'
+    copied_helper.parent.mkdir(parents=True)
+    shutil.copy2(helper, copied_helper)
     run(['git', 'init', '-q', '--initial-branch=main'], bootstrap_repo)
     bootstrap_uid = int(run(['id', '-u', owner], native).strip())
     bootstrap_gid = int(run(['id', '-g', owner], native).strip())
@@ -173,11 +175,12 @@ with tempfile.TemporaryDirectory(prefix='firewall-contract-workflow-', dir=targe
     bootstrap_home.mkdir()
     bootstrap_env = host_env | {'HOME': str(bootstrap_home), 'GIT_CONFIG_NOSYSTEM': '1',
                                'GIT_CONFIG_GLOBAL': '/dev/null'}
-    for wrapper in ['check-native-kerberos.sh', 'check-native-gssapi-peer.sh']:
-        source = (root / '.github/scripts' / wrapper).read_text()
-        prefix, separator, _ = source.partition('source .github/scripts/native-test-environment.sh\n')
+    for wrapper in native_wrappers:
+        source = (root / wrapper).read_text()
+        prefix, separator, _ = source.partition('source crates/kerberos-worker/tests/native-test-environment.sh\n')
         assert separator, f'{wrapper}: native environment bootstrap missing'
-        program = scripts / wrapper
+        program = bootstrap_repo / wrapper
+        program.parent.mkdir(parents=True, exist_ok=True)
         program.write_text(prefix + separator + '''
 [[ $PWD == "$EXPECTED_BOOTSTRAP_ROOT" ]]
 [[ $(native_build git rev-parse --show-toplevel) == "$EXPECTED_BOOTSTRAP_ROOT" ]]
@@ -204,12 +207,30 @@ BOOTSTRAP
 
     # Exercise the actual setpriv/UID/capability/environment boundary, not a
     # fabricated compiler or a namespace mock. This is not Docker/native success.
-    container_check = '''source "$1"
+    cold_temp = native / 'cold-temp'
+    cold_temp.mkdir()
+    cold_cache = cold_temp / 'kerberos-native-cache'
+    run(root_command + [
+        'env', f'NATIVE_TEST_OWNER={owner}', f'RUNNER_TEMP={cold_temp}',
+        f'KERBEROS_NATIVE_CACHE_DIR={cold_cache}', 'bash', '-euo', 'pipefail',
+        '-c', 'source "$1"; native_build touch "$KERBEROS_NATIVE_CACHE_DIR/cold-lock"',
+        'bash', helper], native, host_env)
+    assert cold_cache.stat().st_uid == (cold_cache / 'cold-lock').stat().st_uid == bootstrap_uid
+    container_check = '''
+# Model Actions restoring trusted material as root, including private entry
+# directories and the lock inode that the unprivileged compiler must reopen.
+mkdir -p "$KERBEROS_NATIVE_CACHE_DIR/entry"
+chmod 0700 "$KERBEROS_NATIVE_CACHE_DIR/entry"
+printf 'restored archive\\n' > "$KERBEROS_NATIVE_CACHE_DIR/entry/archive"
+printf 'old completion\\n' > "$KERBEROS_NATIVE_CACHE_DIR/entry/complete"
+: > "$KERBEROS_NATIVE_CACHE_DIR/entry.lock"
+source "$1"
 [[ $native_uid != 0 && ${#native_privileged_command[@]} == 0 ]]
 printf 'synthetic caller receipt\\n' > crates/target/caller-receipt.txt
 chmod 0644 crates/target/caller-receipt.txt
 native_build python3 - "$native_uid" <<'CHECK'
 import json
+import fcntl
 import os
 from pathlib import Path
 import sys
@@ -222,6 +243,14 @@ for name in ('HOME', 'CARGO_HOME'):
     path = Path(os.environ[name])
     assert path.is_dir() and path.stat().st_uid == os.geteuid()
     (path / 'owner-canary').write_text('synthetic owner canary\\n')
+cache = Path(os.environ['KERBEROS_NATIVE_CACHE_DIR'])
+assert all(path.stat().st_uid == os.geteuid() for path in [cache, *cache.rglob('*')])
+assert (cache / 'entry/archive').read_text() == 'restored archive\\n'
+with (cache / 'entry.lock').open('w') as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    (cache / 'entry/complete').write_text('rebuilt completion\\n')
+    (cache / 'new-entry').mkdir()
+assert (cache / 'entry/complete').read_text() == 'rebuilt completion\\n'
 receipt = Path('crates/target/caller-receipt.txt')
 assert receipt.stat().st_uid == 0
 assert receipt.read_text() == 'synthetic caller receipt\\n'
@@ -234,8 +263,51 @@ metadata.write_text(json.dumps(data))
 assert json.loads(metadata.read_text())['roundTrip'] is True
 CHECK
 '''
-    run(root_command + ['env', f'NATIVE_TEST_OWNER={owner}', 'bash', '-euo', 'pipefail',
+    runner_temp = native / 'runner-temp'
+    runner_temp.mkdir()
+    cache = runner_temp / 'kerberos-native-cache'
+    cache_env = [f'RUNNER_TEMP={runner_temp}', f'KERBEROS_NATIVE_CACHE_DIR={cache}']
+    run(root_command + ['env', f'NATIVE_TEST_OWNER={owner}', *cache_env, 'bash', '-euo', 'pipefail',
                         '-c', container_check, 'bash', helper], native, host_env)
+
+    # Exercise actual bootstrap refusal before ownership changes. Cache roots,
+    # ancestors, descendants and hard links must not reach outside the cache.
+    outside = native / 'outside-cache'
+    outside.mkdir()
+    # Public synthetic resources only; the ordinary fixture owner can clean
+    # them even when assertions fail after the root-owned restoration canary.
+    outside.chmod(0o777)
+    canary = outside / 'canary'
+    canary.write_text('outside ownership canary\\n')
+    run(root_command + ['chown', '0:0', str(outside), str(canary)], native, host_env)
+    before = (outside.stat().st_uid, canary.stat().st_uid, canary.read_bytes())
+    for case in ('root-link', 'ancestor-link', 'entry-link', 'hard-link', 'special-file', 'outside-path'):
+        case_temp = native / case
+        case_temp.mkdir()
+        case_cache = case_temp / 'kerberos-native-cache'
+        if case == 'root-link':
+            case_cache.symlink_to(outside, target_is_directory=True)
+        elif case == 'ancestor-link':
+            (case_temp / 'link').symlink_to(outside, target_is_directory=True)
+            case_temp = case_temp / 'link'
+            case_cache = case_temp / 'kerberos-native-cache'
+        elif case == 'outside-path':
+            case_cache = outside
+        else:
+            case_cache.mkdir()
+            if case == 'entry-link':
+                (case_cache / 'linked').symlink_to(canary)
+            elif case == 'special-file':
+                os.mkfifo(case_cache / 'fifo')
+            else:
+                run(root_command + ['ln', str(canary), str(case_cache / 'linked')], native, host_env)
+        refused = subprocess.run(root_command + [
+            'env', f'NATIVE_TEST_OWNER={owner}', f'RUNNER_TEMP={case_temp}',
+            f'KERBEROS_NATIVE_CACHE_DIR={case_cache}', 'bash', '-euo', 'pipefail',
+            '-c', 'source "$1"', 'bash', helper], cwd=native, env=host_env,
+            text=True, capture_output=True)
+        assert refused.returncode != 0, f'{case}: unsafe cache must refuse'
+        assert (outside.stat().st_uid, canary.stat().st_uid, canary.read_bytes()) == before
     refused = subprocess.run(root_command + [
         'env', 'NATIVE_TEST_OWNER=root', 'bash', '-euo', 'pipefail',
         '-c', 'source "$1"', 'bash', helper], cwd=native, env=host_env,
@@ -243,8 +315,8 @@ CHECK
     assert refused.returncode != 0 and 'must be unprivileged' in refused.stderr
     repo = directory / 'repo'
     repo.mkdir()
-    for relative in ['scripts/crate-changed.sh', '.github/scripts/changed-base-ref.sh',
-                     '.github/scripts/runner-image-context.sh', '.github/scripts/runner-image-target.sh']:
+    for relative in ['scripts/crate-changed.sh', '.github/scripts/checks/changed-base-ref.sh',
+                     '.github/scripts/runner/runner-image-context.sh', '.github/scripts/runner/runner-image-target.sh']:
         destination = repo / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(root / relative, destination)
@@ -368,11 +440,11 @@ cat "$CARGO_METADATA_FIXTURE"
             assert_gate(unrelated | {f'needs.detect.outputs.{name}': invalid}, skipped, False,
                         f'invalid {name}: {invalid!r}')
 
-    # Optional tooling changes keep the existing CI-change routing policy.
+    # Optional tooling follows the owning RFB crate's native selection.
     # Neither deletion nor moving the tool can recreate a QEMU job/dependency.
     for operation in ['delete', 'rename']:
         run(['git', 'reset', '--hard', base], repo)
-        source = '.github/scripts/prepare-qemu-gssapi-fixture.py'
+        source = 'crates/rfb-client/tests/fixtures/prepare-qemu-gssapi-fixture.py'
         if operation == 'delete':
             (repo / source).unlink()
         else:
@@ -385,23 +457,24 @@ cat "$CARGO_METADATA_FIXTURE"
             repo, env | {'GITHUB_OUTPUT': str(output)})
         operation_outputs = dict(line.split('=', 1) for line in output.read_text().splitlines())
         assert 'qemu-producer-needed' not in operation_outputs, operation
-        # Detect already selects a deletion in .github; a pure rename
-        # outside .github is not a Rust/CI change under its existing contract.
-        expected_native = operation == 'delete'
-        assert operation_outputs['ci-changed'] == operation_outputs['any-changed'] == str(expected_native).lower(), operation
+        # Both operations charge the removed crate input, even when its new
+        # path is outside crates. Neither adds a routine full-QEMU producer.
+        expected_native = True
+        assert operation_outputs['ci-changed'] == 'false', operation
+        assert operation_outputs['any-changed'] == 'true', operation
         values = contexts['qemu-producer'] | {
             f'needs.detect.outputs.{name}': value for name, value in operation_outputs.items()}
         assert selected('coverage', values) == expected_native, operation
-        for name in ['native-kerberos-runtime', 'native-gssapi-independent-peer']:
-            assert not selected(name, values), operation
+        assert not selected('native-kerberos-runtime', values), operation
+        assert selected('native-gssapi-independent-peer', values), operation
         results = {'coverage': 'success' if expected_native else 'skipped',
-                   'native-kerberos-runtime': 'skipped', 'native-gssapi-independent-peer': 'skipped'}
+                   'native-kerberos-runtime': 'skipped', 'native-gssapi-independent-peer': 'success'}
         assert_gate(values, results | {standalone: 'skipped'}, True, operation)
 
     # Charge actual deleted/renamed harness and transitive crate inputs.
     required_inputs = [
-        ('.github/scripts/check-native-kerberos.sh', True, False),
-        ('.github/scripts/check-native-gssapi-peer.sh', False, True),
+        ('crates/kerberos-worker/tests/check-native-kerberos.sh', True, True),
+        ('crates/rfb-client/tests/check-native-gssapi-peer.sh', False, True),
         ('crates/kerberos-credentials/src/lib.rs', True, True),
     ]
     for source, worker_needed, peer_needed in required_inputs:

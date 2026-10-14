@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { gunzipSync, zstdDecompressSync } from "node:zlib";
 import { isChatRunTerminalEventType } from "@okouai/api-contracts/contracts/chat-events";
 import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
@@ -18,7 +18,7 @@ import {
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { replayChatThreadEvents } from "@okouai/core/chat-thread-event-replay";
 import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
+
 import { http, HttpResponse } from "msw";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -51,7 +51,7 @@ import { createChatFilesBddApi } from "./api-bdd-chat-files";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { createMiscRoutesApi } from "./api-bdd-misc";
 import { createRunsApi } from "./api-bdd-runs";
-import { mockPiCheckpointUploads } from "./api-bdd-pi-checkpoint-uploads";
+import { mockPiHistoryUploads } from "./api-bdd-pi-history-uploads";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { chatEventDisplayText } from "./chat-event";
 import { nowDate } from "../../../../lib/time";
@@ -186,7 +186,6 @@ export interface ChatRunCompletionOptions {
   readonly cliAgentSessionId?: string;
   readonly cliAgentType?: "claude-code" | "codex" | "pi";
   readonly lastEventSequence?: number;
-  readonly sessionHistory?: string;
 }
 
 export function assistantMessages(
@@ -329,10 +328,6 @@ function mockPiDeleteObjects(
 
 export const PI_RESOURCE_ARCHIVE_DOWNLOAD_URL =
   "https://r2.example.com/storage/archive.tar.gz";
-
-export function occurrences(haystack: string, needle: string): number {
-  return haystack.split(needle).length - 1;
-}
 
 export async function readThreadMessagesAfterBackgroundWork(
   chat: ReturnType<typeof createChatFilesBddApi>,
@@ -696,24 +691,6 @@ export function createChatEventsFixture(context: TestContext) {
         [200],
       );
     }
-    const history =
-      options.sessionHistory ?? `bdd chat session history ${runId}`;
-    const historyHash = createHash("sha256").update(history).digest("hex");
-    if (options.sessionHistory !== undefined) {
-      const historyBytes = Buffer.from(history, "utf8");
-      context.sessionHistoryBlobs.set(historyHash, historyBytes);
-      await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId,
-          hash: historyHash,
-          rawSize: historyBytes.byteLength,
-          encodedSize: historyBytes.byteLength,
-          encoding: "identity",
-        },
-        sandboxHeaders,
-        [200],
-      );
-    }
     await webhooks.requestAgentComplete(
       {
         runId,
@@ -721,7 +698,7 @@ export function createChatEventsFixture(context: TestContext) {
         completion: {
           cliAgentType: options.cliAgentType ?? "claude-code",
           cliAgentSessionId: options.cliAgentSessionId ?? `bdd-cli-${runId}`,
-          cliAgentSessionHistoryHash: historyHash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
         ...(options.lastEventSequence === undefined
           ? stagedOutputEvents.length === 0
@@ -977,6 +954,7 @@ export function createChatEventsFixture(context: TestContext) {
     if (tier === "fast") {
       const oldClaim = await api.requestClaimRunnerJob(true, runId, [404], {
         capabilities: { piModelConfigGenerations: [1, 2] },
+        nativeContinuationSupported: true,
       });
       expectApiError(oldClaim.body);
       await expect(api.readRun(actor, runId)).resolves.toMatchObject({
@@ -987,12 +965,13 @@ export function createChatEventsFixture(context: TestContext) {
       capabilities: {
         piModelConfigGenerations: tier === "fast" ? [1, 2, 3] : [1, 2],
       },
+      nativeContinuationSupported: true,
     });
   }
 
   function mockPiObjectStore(): Map<string, Buffer> {
     const objects = new Map<string, Buffer>();
-    mockPiCheckpointUploads(context, objects);
+    mockPiHistoryUploads(context, objects);
     const fallback = context.mocks.s3.send.getMockImplementation();
     context.mocks.s3.send.mockImplementation((command: unknown) => {
       const candidate = command as PiObjectStoreCommand;
@@ -1123,61 +1102,6 @@ export function createChatEventsFixture(context: TestContext) {
     readonly prompt: string;
     readonly run: { readonly runId: string; readonly threadId: string };
   }): Promise<void> {
-    const h0 = piSandboxBaseSession(args.claim.claim, args.historyObjects);
-    const session = MemoryPiSession.fromJsonl(h0.toString("utf8"));
-    session.appendMessage({
-      role: "user",
-      content: args.prompt,
-      timestamp: 1,
-    });
-    session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: args.answer }],
-      api: "openai-responses",
-      provider: args.responsesModel?.provider ?? "openai",
-      model: args.responsesModel?.model ?? "gpt-6-luna",
-      usage: {
-        input: 0,
-        output: args.outputTokens ?? 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: args.outputTokens ?? 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 2,
-    });
-    const h2 = session.toJsonl();
-    const h2Hash = createHash("sha256").update(h2).digest("hex");
-    const prepared = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: args.run.runId,
-        hash: h2Hash,
-        rawSize: Buffer.byteLength(h2),
-        encodedSize: Buffer.byteLength(h2),
-        encoding: "identity",
-      },
-      args.claim.sandboxHeaders,
-      [200],
-    );
-    if (prepared.status !== 200) {
-      throw new Error("Expected checkpoint upload preparation to succeed");
-    }
-    if (!prepared.body.existing) {
-      if (!prepared.body.presignedUrl) {
-        throw new Error("Expected a prepared checkpoint upload URL");
-      }
-      const uploaded = await fetch(prepared.body.presignedUrl, {
-        method: "PUT",
-        headers: { "content-type": "application/octet-stream" },
-        body: h2,
-      });
-      if (!uploaded.ok) {
-        throw new Error(
-          `Expected checkpoint upload success, got ${uploaded.status}`,
-        );
-      }
-    }
     await webhooks.requestAgentEvents(
       {
         runId: args.run.runId,
@@ -1201,7 +1125,7 @@ export function createChatEventsFixture(context: TestContext) {
         completion: {
           cliAgentType: "pi",
           cliAgentSessionId: args.run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       },
       args.claim.sandboxHeaders,

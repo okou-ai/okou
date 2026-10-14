@@ -67,6 +67,7 @@ jobs:
         include: ${{ fromJSON(format('[{0}]', inputs.architecture-json)) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ inputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
@@ -79,7 +80,7 @@ jobs:
       - name: Validate architecture contract
         env:
           RUNNER_IMAGE_ARCHITECTURE: ${{ inputs.architecture-json }}
-        run: .github/scripts/runner-image-architecture.sh validate
+        run: .github/scripts/runner/runner-image-architecture.sh validate
 
       - name: Download private CLI build input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -107,11 +108,21 @@ jobs:
           shared-key: ${{ matrix.cacheSuffix }}-ci
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-runner-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+
       - name: Build runner binary
         id: build
         env:
           RUNNER_BINARY_METADATA_PATH: runner-binary-fresh/metadata.json
-        run: .github/scripts/runner-binary-build/build.sh build
+        run: .github/scripts/runner/runner-binary-build/build.sh build
 
       - name: Stage runner binary transport
         id: fresh
@@ -124,7 +135,7 @@ jobs:
           install -m 755 \
             "crates/target/${TARGET_TRIPLE}/ci/runner" \
             "$RUNNER_PATH"
-          .github/scripts/runner-binary-cache.sh fresh-validate
+          .github/scripts/runner/runner-binary-cache.sh fresh-validate
 
       - name: Install AWS CLI
         uses: ./.github/actions/setup-aws-cli
@@ -148,7 +159,7 @@ jobs:
           PRODUCER_HEAD_SHA: ${{ inputs.producer-head-sha }}
           PRODUCER_PR_NUMBER: ${{ inputs.pr-number }}
           PRODUCER_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: .github/scripts/runner-binary-transport.sh publish
+        run: .github/scripts/runner/runner-binary-transport.sh publish
 
       # Index this verified target before an unrelated compiler finishes. The
       # publisher already re-read R2 bytes; image consumers still validate theirs.
@@ -169,7 +180,7 @@ jobs:
           SHADOW_OUTPUT_DIR: runner-binary-shadow
         run: |
           started_at=$(date +%s)
-          .github/scripts/runner-binary-cache.sh shadow-resolve
+          .github/scripts/runner/runner-binary-cache.sh shadow-resolve
           echo "duration-seconds=$(($(date +%s) - started_at))" >> "$GITHUB_OUTPUT"
 
       - name: Resolve reusable artifact name
@@ -177,7 +188,7 @@ jobs:
         env:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
           EXPECTED_TARGET: ${{ matrix.target }}
-        run: .github/scripts/runner-binary-cache.sh artifact-name
+        run: .github/scripts/runner/runner-binary-cache.sh artifact-name
 
       - name: Upload reusable runner binary manifest
         id: manifest-upload
@@ -257,7 +268,7 @@ jobs:
           RUNNER_IMAGE_ARCHITECTURE: ${{ inputs.architecture-json }}
           RUNNER_IMAGE_CACHE_HIT: ${{ inputs.cache-hit }}
           RUNNER_IMAGE_COMPILE_RESULT: ${{ needs.compile.result }}
-        run: .github/scripts/runner-image-architecture.sh build-ready
+        run: .github/scripts/runner/runner-image-architecture.sh build-ready
 
       - name: Download private CLI build input
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -269,7 +280,7 @@ jobs:
         id: binary-input
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
-        run: .github/scripts/runner-binary-build/digest.sh "$TARGET_TRIPLE"
+        run: .github/scripts/runner/runner-binary-build/digest.sh "$TARGET_TRIPLE"
 
       - name: Download cached runner binary from R2
         if: inputs.cache-hit
@@ -283,7 +294,7 @@ jobs:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
           CACHE_REFERENCE: ${{ inputs.cache-reference }}
           RESOLVE_OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
-        run: .github/scripts/runner-binary-cache.sh download-reference
+        run: .github/scripts/runner/runner-binary-cache.sh download-reference
 
       - name: Download compiled runner binary from R2
         if: ${{ !inputs.cache-hit }}
@@ -298,7 +309,7 @@ jobs:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.binary-input.outputs.binary-input-digest }}
           EXPECTED_TARGET: ${{ matrix.target }}
           OUTPUT_DIR: runner-binary-transport/${{ matrix.target }}
-        run: .github/scripts/runner-binary-transport.sh download
+        run: .github/scripts/runner/runner-binary-transport.sh download
 
       - name: Validate runner binary transport
         env:
@@ -306,7 +317,7 @@ jobs:
           EXPECTED_TARGET: ${{ matrix.target }}
           FRESH_METADATA_PATH: runner-binary-transport/${{ matrix.target }}/metadata.json
           RUNNER_PATH: runner-binary-transport/${{ matrix.target }}/runner
-        run: .github/scripts/runner-binary-cache.sh fresh-validate
+        run: .github/scripts/runner/runner-binary-cache.sh fresh-validate
 
       - name: Setup SSH via Cloudflare Tunnel
         uses: ./.github/actions/setup-ssh-tunnel
@@ -326,7 +337,7 @@ jobs:
           RUNNER_HOST_GROUP_ID: ${{ matrix.id }}
         run: |
           set -euo pipefail
-          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          hosts=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           if [ -z "$hosts" ]; then
             echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}"
             exit 1
@@ -360,7 +371,7 @@ jobs:
           R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
           FRESH_METADATA_PATH: runner-binary-transport/${{ matrix.target }}/metadata.json
           RUNNER_PATH: runner-binary-transport/${{ matrix.target }}/runner
-        run: .github/scripts/prepare-runner-image.sh
+        run: .github/scripts/runner/prepare-runner-image.sh
 
       - name: Validate manifest
         env:
@@ -370,7 +381,7 @@ jobs:
           TARGET: ${{ env.TARGET_TRIPLE }}
           PROFILE: ${{ env.PROFILE }}
           METAL_HOSTS: ${{ steps.matrix-hosts.outputs.hosts }}
-        run: .github/scripts/runner-image-manifest.sh validate
+        run: .github/scripts/runner/runner-image-manifest.sh validate
 
       - name: Resolve manifest artifact name
         id: artifact
@@ -378,7 +389,7 @@ jobs:
           HEAD_SHA: ${{ inputs.head-sha }}
           JOB_REF: ${{ inputs.job-ref }}
           TARGET: ${{ matrix.target }}
-        run: .github/scripts/runner-image-context.sh artifact-name
+        run: .github/scripts/runner/runner-image-context.sh artifact-name
 
       - name: Upload runner image manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

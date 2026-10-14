@@ -451,7 +451,7 @@ where
                 )
                 .await
                 .unwrap_or_else(|_| {
-                    shared.poison_connection();
+                    shared.poison_connection(crate::ConnectionCloseReason::StartCancelWriteTimeout, None);
                     Err(io::Error::new(
                         io::ErrorKind::TimedOut,
                         "supervised exec start timeout cancel write timed out",

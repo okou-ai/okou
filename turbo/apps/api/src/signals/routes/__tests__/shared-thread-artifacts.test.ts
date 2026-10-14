@@ -15,9 +15,7 @@ import { z } from "zod";
 import sharp from "sharp";
 import { server } from "../../../mocks/server";
 import { createDeferredPromise } from "../../utils";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ARTIFACT_OG_BRAND } from "@okouai/core/artifact-og";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { artifactOgContract } from "@okouai/api-contracts/contracts/artifact-og";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
@@ -35,7 +33,6 @@ import { artifactShareRoutes } from "../artifact-shares";
 import { artifactOgRoutes } from "../artifact-og";
 import { artifactReferenceRoutes } from "../artifact-references";
 import { artifactDownloadRoutes } from "../artifact-downloads";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { sharedThreadRoutes } from "../shared-threads";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
@@ -66,7 +63,6 @@ function api(rethrowErrors = false) {
     rethrowErrors,
     routes: [
       ...sharedThreadRoutes,
-      ...featureSwitchesRoutes,
       ...artifactShareRoutes,
       ...artifactOgRoutes,
       ...artifactReferenceRoutes,
@@ -80,16 +76,6 @@ function api(rethrowErrors = false) {
 function headers(actor: ApiTestUser) {
   mocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
-}
-
-async function flag(actor: ApiTestUser, enabled: boolean) {
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers: headers(actor),
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: enabled } },
-    }),
-    [200],
-  );
 }
 
 async function fixture() {
@@ -288,7 +274,6 @@ async function fixture() {
         : new HttpResponse(null, { status: 404 });
     }),
   );
-  await flag(actor, true);
 
   async function upload(
     owner = actor,
@@ -748,24 +733,6 @@ test.each(["missing", "unavailable"] as const)(
     );
     expect(published.body).not.toHaveProperty("preview");
     const og = api()(artifactOgContract);
-    const disabledQuery = { kind: "reference" as const, id: reference };
-    expect(
-      (await accept(og.metadata({ query: disabledQuery }), [200])).body,
-    ).toStrictEqual({ available: false });
-    const disabledImage = await accept(
-      og.image({ query: { ...disabledQuery, version: "published" } }),
-      [302],
-    );
-    expect(disabledImage.headers.get("location")).toBe(
-      ARTIFACT_OG_BRAND.imageUrl,
-    );
-    await accept(
-      api()(featureSwitchesContract).update({
-        headers: headers(f.actor),
-        body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
-      }),
-      [200],
-    );
     const ogStatus = failure === "missing" ? 200 : 500;
     const metadata = await accept(
       og.metadata({ query: { kind: "reference", id: reference } }),
@@ -795,7 +762,6 @@ test.each(["short", "legacy"] as const)(
   async (format) => {
     const f = await fixture();
     const owner = bdd.user({ orgId: f.actor.orgId });
-    await flag(owner, true);
     const file = await f.upload(owner);
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
@@ -918,7 +884,7 @@ test("independent thread snapshots use different short references and revoke sep
   expect(retainedArtifact.body.url).toContain(second.body.id);
 });
 
-test("owner deletion revokes a snapshot after switch rollback and preserves the private original", async () => {
+test("owner deletion revokes a snapshot and preserves the private original", async () => {
   const f = await fixture();
   const file = await f.upload();
   const selection = await f.selection(file.url);
@@ -930,7 +896,6 @@ test("owner deletion revokes a snapshot after switch rollback and preserves the 
     }),
     [404],
   );
-  await flag(f.actor, false);
   await accept(
     api()(sharedThreadsContract).delete({
       headers: headers(f.actor),
@@ -954,20 +919,6 @@ test("owner deletion revokes a snapshot after switch rollback and preserves the 
   expect(f.objects.has(file.key)).toBeTruthy();
 });
 
-test("switch-off shares retain the established message-only projection", async () => {
-  const f = await fixture();
-  const file = await f.upload();
-  const selection = await f.selection(file.url);
-  await flag(f.actor, false);
-  const created = await accept(share(f.actor, selection), [201]);
-  const shared = await accept(
-    api()(sharedThreadsContract).get({ params: { id: created.body.id } }),
-    [200],
-  );
-  expect(shared.body.messages[0]!.content).toBe(file.url);
-  expect(f.copies).toStrictEqual([]);
-});
-
 test.each(["organization", "user"] as const)(
   "%s deletion revokes resource access before acknowledging the webhook",
   async (kind) => {
@@ -975,7 +926,6 @@ test.each(["organization", "user"] as const)(
     const file = await f.upload();
     const selection = await f.selection(file.url);
     const created = await accept(share(f.actor, selection), [201]);
-    await flag(f.actor, false);
     context.mocks.stripe.subscriptions.list.mockResolvedValue({
       data: [],
       has_more: false,
@@ -1347,13 +1297,6 @@ test("shares distinct files and reuses a reference for repeated links", async ()
 
 test("oG uses the published thread snapshot and revokes its old image URL with the parent share", async () => {
   const f = await fixture();
-  await accept(
-    api()(featureSwitchesContract).update({
-      headers: headers(f.actor),
-      body: { switches: { [FeatureSwitchKey.ArtifactPreviews]: true } },
-    }),
-    [200],
-  );
   const bytes = await sharp({
     create: { width: 64, height: 40, channels: 3, background: "#226688" },
   })

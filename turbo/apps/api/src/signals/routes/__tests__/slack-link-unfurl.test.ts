@@ -22,7 +22,6 @@ import { createBddApi } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -53,14 +52,12 @@ const previousBotScopes = [
 
 function compactBrandImageUrl() {
   const brandUrl = new URL(ARTIFACT_OG_BRAND.imageUrl);
-  return `${brandUrl.origin}/cdn-cgi/image/height=200,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
+  return `${brandUrl.origin}/cdn-cgi/image/height=112,fit=scale-down,format=auto,quality=85,metadata=none${brandUrl.pathname}`;
 }
 
 async function fixture(
   options: {
     readonly scopes?: string;
-    readonly enabled?: boolean;
-    readonly privateArtifacts?: boolean;
   } = {},
 ) {
   integrations.configureSlackAppMocks();
@@ -75,11 +72,6 @@ async function fixture(
   await flushWaitUntilForTest();
   context.mocks.slack.chat.postMessage.mockClear();
   context.mocks.slack.chat.unfurl.mockResolvedValue({ ok: true });
-  await updateFeatureSwitchesForUser(context, actor, {
-    artifactPreviews: true,
-    privateArtifacts: options.privateArtifacts ?? false,
-    slackLinkUnfurls: options.enabled ?? true,
-  });
   const capture = host.captureHostedSitesS3();
   const storage = context.mocks.s3.send.getMockImplementation()!;
   context.mocks.s3.send.mockImplementation((command, ...rest) => {
@@ -218,10 +210,7 @@ describe("Slack link previews", () => {
   });
 
   it("uses compact public branding for ordinary App pages without loading their content", async () => {
-    const f = await fixture({ privateArtifacts: true });
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: false,
-    });
+    const f = await fixture();
     await flushWaitUntilForTest();
     context.mocks.s3.send.mockClear();
     const origin = new URL(env("APP_URL")).origin;
@@ -361,11 +350,8 @@ describe("Slack link previews", () => {
     });
   });
 
-  it.each([
-    { name: "old installation scopes", scopes: previousBotScopes },
-    { name: "disabled workspace rollout", enabled: false },
-  ])("leaves normal connections intact with $name", async (options) => {
-    const f = await fixture(options);
+  it("leaves normal connections intact with old installation scopes", async () => {
+    const f = await fixture({ scopes: previousBotScopes });
     await accept(
       postLinks(f.teamId, [
         `https://dpl-${f.prepared.deploymentId}.okou.app/`,
@@ -389,15 +375,13 @@ describe("Slack link previews", () => {
     expect(status.body).toMatchObject({
       isInstalled: true,
       isConnected: true,
-      scopeMismatch: options.name === "old installation scopes",
+      scopeMismatch: true,
     });
-    if (options.name === "old installation scopes") {
-      expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
-    }
+    expect(status.body.reinstallUrl).toStrictEqual(expect.any(String));
   });
 
   it("requires public sharing for artifact references and honors revocation", async () => {
-    const f = await fixture({ privateArtifacts: true });
+    const f = await fixture();
     context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
       {
         data: [
@@ -503,21 +487,12 @@ describe("Slack link previews", () => {
     expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
   });
 
-  it("does not preview a deleted site or a cover whose owner disabled previews", async () => {
+  it("does not preview a deleted site", async () => {
     const f = await fixture();
     const urls = [
       `https://dpl-${f.prepared.deploymentId}.okou.app/`,
       `https://${f.prepared.publicSlug}.okou.app/`,
     ];
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: false,
-    });
-    await accept(postLinks(f.teamId, urls), [200]);
-    await flushWaitUntilForTest();
-    expect(context.mocks.slack.chat.unfurl).not.toHaveBeenCalled();
-    await updateFeatureSwitchesForUser(context, f.actor, {
-      artifactPreviews: true,
-    });
     await host.deleteHostedSite(f.actor, f.prepared.publicSlug);
     await accept(postLinks(f.teamId, urls), [200]);
     await flushWaitUntilForTest();

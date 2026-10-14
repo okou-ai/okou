@@ -1,13 +1,13 @@
 [package]
 name = "sandbox"
-version = "0.26.2"
+version = "0.27.1"
 edition.workspace = true
 
 [dependencies]
 async-trait.workspace = true
 serde = { workspace = true, features = ["derive", "std"] }
 thiserror = { workspace = true, features = ["std"] }
-tokio = { workspace = true, features = ["io-util", "sync"] }
+tokio = { workspace = true, features = ["io-util", "rt", "sync"] }
 tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true, features = ["serde", "std", "v4"] }
 

@@ -35,12 +35,9 @@ import {
 import { getDiscordAppConfig } from "./discord-config";
 import {
   discordDmBinding,
-  discordGuildBotUserId,
-  discordGuildUserBinding,
   type DiscordVerifiedBinding,
 } from "./discord-data.service";
-import { sendDiscordDmAdmissionNotice$ } from "./discord-dm-admission-notice.service";
-import { uninstallDiscordGuild$ } from "./discord-gateway-lifecycle.service";
+import { sendDiscordAdmissionNotice$ } from "./discord-admission-notice.service";
 
 const L = logger("DiscordGateway");
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -137,53 +134,38 @@ const handleDiscordMessage$ = command(
     if (message.guild_id) {
       // Ordinary guild chatter must not reach the identity provider: a
       // failure there would stall the relay's ordered delivery for everyone.
-      const botUserId = await get(discordGuildBotUserId(message.guild_id));
-      signal.throwIfAborted();
-      if (!botUserId) {
-        return ignored("unbound-disabled-or-dm-selection-required");
-      }
-      if (!hasDiscordBotMention(message, botUserId)) {
+      // Discord's bot user ID is its application ID, including before the
+      // sender connects their Okou account.
+      if (!hasDiscordBotMention(message, envelope.applicationId)) {
         return ignored("no-explicit-mention");
       }
     }
-    let selection: DiscordVerifiedBinding | null;
-    if (message.guild_id) {
-      selection = await get(
-        discordGuildUserBinding({
-          guildId: message.guild_id,
-          discordUserId: message.author.id,
-        }),
-      );
-    } else {
-      const result = await get(discordDmBinding(message.author.id));
-      signal.throwIfAborted();
-      if (result.kind !== "connected") {
-        // Tell the sender what to do instead of dropping the DM silently.
-        // A guild mention gets no public reply; see the integration guide.
-        const noticeSignal = AbortSignal.timeout(30_000);
-        waitUntil(
-          tapError(
-            set(
-              sendDiscordDmAdmissionNotice$,
-              {
-                applicationId: envelope.applicationId,
-                botToken,
-                message,
-                kind: result.kind,
-              },
-              noticeSignal,
-            ),
-            (error) => {
-              L.warn("Discord DM admission notice failed", { error });
-            },
-          ),
-        );
-        return ignored("unbound-disabled-or-dm-selection-required");
-      }
-      selection = result.binding;
-    }
+    const result = await get(discordDmBinding(message.author.id));
+    signal.throwIfAborted();
+    const selection: DiscordVerifiedBinding | null =
+      result.kind === "connected" ? result.binding : null;
+    const noticeKind =
+      result.kind === "connected" ? "not-connected" : result.kind;
     signal.throwIfAborted();
     if (!selection) {
+      const noticeSignal = AbortSignal.timeout(30_000);
+      waitUntil(
+        tapError(
+          set(
+            sendDiscordAdmissionNotice$,
+            {
+              applicationId: envelope.applicationId,
+              botToken,
+              message,
+              kind: noticeKind,
+            },
+            noticeSignal,
+          ),
+          (error) => {
+            L.warn("Discord admission notice failed", { error });
+          },
+        ),
+      );
       return ignored("unbound-disabled-or-dm-selection-required");
     }
     if (message.author.id === selection.botUserId) {
@@ -272,17 +254,9 @@ export const handleDiscordGateway$ = command(
       if (guild.data.unavailable) {
         return ignored("guild-unavailable");
       }
-      const outcome = await set(
-        uninstallDiscordGuild$,
-        {
-          applicationId: config.applicationId,
-          guildId: guild.data.id,
-          eventId: envelope.eventId,
-        },
-        signal,
-      );
-      signal.throwIfAborted();
-      return Response.json({ ok: true, outcome });
+      // Account consent survives a server removal. Provider access is checked
+      // against the actual destination before every read, run and delivery.
+      return ignored("guild-removed");
     }
 
     return await set(

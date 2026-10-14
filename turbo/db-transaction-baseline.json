@@ -792,11 +792,6 @@
       "owner": "publishAtomPlanInvoice$"
     },
     {
-      "id": "TX-0326",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "bindStripeCustomerFromMetadata"
-    },
-    {
       "id": "TX-0327",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishConcurrencyInvoice$"
@@ -857,11 +852,6 @@
       "owner": "persistEnabledWorkflowAutomation$"
     },
     {
-      "id": "TX-0340",
-      "file": "turbo/apps/api/src/signals/services/workflow-automation.service.ts",
-      "owner": "persistDisabledWorkflowAutomation$"
-    },
-    {
       "id": "TX-0341",
       "file": "turbo/apps/api/src/signals/services/workflow-delete.service.ts",
       "owner": "deleteOrphanedWorkflowVolume$"
@@ -887,26 +877,6 @@
       "owner": "applyPendingMigrations"
     },
     {
-      "id": "TX-0371",
-      "file": "turbo/packages/db/scripts/test-built-in-model-keys-permanent.ts",
-      "owner": "validateCanonicalRowLock"
-    },
-    {
-      "id": "TX-0373",
-      "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
-      "owner": "rejects"
-    },
-    {
-      "id": "TX-0374",
-      "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0375",
-      "file": "turbo/packages/db/scripts/test-cloudflare-access.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0376",
       "file": "turbo/packages/db/scripts/test-connector-catalog-columns-permanent.ts",
       "owner": "validateConnectorCatalogColumnContract"
@@ -922,28 +892,8 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0379",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0380",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0381",
-      "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0386",
-      "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0387",
-      "file": "turbo/packages/db/scripts/test-file-run-provenance.ts",
       "owner": "<module>"
     },
     {
@@ -967,54 +917,9 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0395",
-      "file": "turbo/packages/db/scripts/test-legacy-free-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0397",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
-      "id": "TX-0398",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
-      "id": "TX-0399",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
-      "id": "TX-0400",
-      "file": "turbo/packages/db/scripts/test-migration-consistency-schema.ts",
-      "owner": "validatePermanentUsagePackPendingSnapshotState"
-    },
-    {
-      "id": "TX-0401",
-      "file": "turbo/packages/db/scripts/test-migration-runner-timeouts.ts",
-      "owner": "validateMigrationRunnerTimeouts"
-    },
-    {
-      "id": "TX-0402",
-      "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
-      "owner": "validatePermanentModelCatalogConstraints/rejects"
-    },
-    {
       "id": "TX-0403",
       "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
       "owner": "validatePermanentModelCatalogConstraints"
-    },
-    {
-      "id": "TX-0407",
-      "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0408",
-      "file": "turbo/packages/db/scripts/test-oauth-contract-hash-retirement.ts",
-      "owner": "<module>"
     },
     {
       "id": "TX-0411",
@@ -1024,11 +929,6 @@
     {
       "id": "TX-0412",
       "file": "turbo/packages/db/scripts/test-pi-candidate-trigger-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0413",
-      "file": "turbo/packages/db/scripts/test-pi-inference-lifecycle.ts",
       "owner": "<module>"
     },
     {
@@ -1047,68 +947,8 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0423",
-      "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
-      "owner": "expectCheckViolation"
-    },
-    {
-      "id": "TX-0424",
-      "file": "turbo/packages/db/scripts/test-pro-suspend-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0425",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "rejects"
-    },
-    {
-      "id": "TX-0426",
-      "file": "turbo/packages/db/scripts/test-reusable-ssh-credentials.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0428",
-      "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
-      "owner": "expectCheckViolation"
-    },
-    {
-      "id": "TX-0429",
-      "file": "turbo/packages/db/scripts/test-slack-ingress-failed-status-retirement.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0431",
-      "file": "turbo/packages/db/scripts/test-usage-allowance-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0432",
       "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0433",
-      "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0434",
-      "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
-      "owner": "rejects"
-    },
-    {
-      "id": "TX-0435",
-      "file": "turbo/packages/db/scripts/test-vnc-configuration.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0436",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
-      "owner": "rejects"
-    },
-    {
-      "id": "TX-0437",
-      "file": "turbo/packages/db/scripts/test-vnc-runner-authority.ts",
       "owner": "<module>"
     }
   ]

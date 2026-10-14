@@ -23,6 +23,8 @@ from tests.model_provider_flow_helpers import (
 from tests.model_provider_websocket_helpers import (
     capture_deferred_websocket_trims,
     feed_websocket_server_message,
+    openai_websocket_usage_frame,
+    run_deferred_websocket_trims,
     set_websocket_message,
 )
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -670,6 +672,57 @@ async def test_ambiguous_websocket_recovers_observable_idle_and_pending_boundari
         mitm_addon.websocket_end(flow)
     result = read_usage(control)
     assert result["totals"]["total"] == 140
+    assert "ambiguous_response" in result["reasons"]
+
+
+async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery(
+    tmp_path,
+    control,
+    real_flow,
+    mitm_ctx,
+    fake_firewall_headers,
+    monkeypatch,
+):
+    scheduled = capture_deferred_websocket_trims(monkeypatch)
+    path = write_registration(tmp_path)
+    with mitm_ctx(registry_path=str(path)), fake_firewall_headers():
+        flow = make_openai_responses_websocket_request_flow(real_flow)
+        await mitm_addon.request(flow)
+        flow.response = tutils.tresp(
+            status_code=101, headers=make_openai_responses_websocket_response_headers()
+        )
+        mitm_addon.responseheaders(flow)
+        for _ in range(10):
+            feed_websocket_server_message(flow, b'{"usage":{"input_tokens":9007199254740992}}')
+        run_deferred_websocket_trims(scheduled)
+        after_integer_errors = read_usage(control)
+        assert "parse_error" in after_integer_errors["reasons"]
+        assert "ambiguous_response" not in after_integer_errors["reasons"]
+        assert after_integer_errors["totals"]["total"] == 0
+
+        # Correlation and accounting still inspect this frame after all four
+        # diagnostics have been spent on a different error kind.
+        feed_websocket_server_message(flow, b'{"padding":[' + b",".join([b"0"] * 40_000) + b"]}")
+        run_deferred_websocket_trims(scheduled)
+        assert "ambiguous_response" in read_usage(control)["reasons"]
+        feed_websocket_server_message(
+            flow, openai_websocket_usage_frame("after-errors", input_tokens=7, output_tokens=2)
+        )
+        run_deferred_websocket_trims(scheduled)
+        mitm_addon.websocket_end(flow)
+
+    result = read_usage(control)
+    assert result["totals"] == {
+        "input": 7,
+        "cacheRead": 0,
+        "cacheCreation": 0,
+        "output": 2,
+        "total": 9,
+    }
+    assert result["observedResponses"] == 1
+    assert result["outstandingResponses"] == 0
+    assert result["complete"] is False
+    assert "parse_error" in result["reasons"]
     assert "ambiguous_response" in result["reasons"]
 
 

@@ -189,6 +189,26 @@
      reaches this entry through `motion-safe:animate-owf-beam-flow`. */
   --animate-owf-beam-flow: owf-beam-flow 2.8s linear infinite;
 
+  /* Subscription usage meter once a window runs low. Below 20% left the fill
+     breathes on the running indicator's beat, and at 5% or less at twice that
+     rate, until the window resets. An exhausted window draws the time already
+     waited as a stripe that drifts one period per beat; the stripe tile is
+     6px * sqrt(2) square so that drift is seamless. Consumers reach these
+     through `motion-safe:animate-*`, so reduced motion keeps a still fill.
+     Keyframes stay below. */
+  --animate-usage-meter-breathe: usage-meter-breathe
+    var(--duration-running-indicator) cubic-bezier(0.33, 0, 0.66, 1) infinite;
+  --animate-usage-meter-breathe-fast: usage-meter-breathe
+    calc(var(--duration-running-indicator) / 2) cubic-bezier(0.33, 0, 0.66, 1)
+    infinite;
+  --animate-usage-meter-recharge: usage-meter-recharge
+    var(--duration-running-indicator) linear infinite;
+  --background-image-usage-meter-recharge: repeating-linear-gradient(
+    -45deg,
+    hsl(var(--gray-500) / 0.55) 0 3px,
+    transparent 3px 6px
+  );
+
   /* Avatar maker. The option grid staggers its tiles, the dice spins once when
      a random face is rolled, and each firework particle travels to its own
      offset. Registered here on the same contract as the entries above; the row
@@ -1426,6 +1446,18 @@ details > summary {
 @keyframes owf-beam-flow {
   to {
     offset-distance: 100%;
+  }
+}
+
+@keyframes usage-meter-breathe {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes usage-meter-recharge {
+  to {
+    background-position: 8.485px 0;
   }
 }
 

@@ -1,12 +1,16 @@
-import { agentRuns } from "@okouai/db/runtime/agent-run";
+import {
+  deleteRunHistoriesSql,
+  deletedRunHistorySchema,
+} from "@okouai/db/operations/run-history-deletion";
 import { blobs } from "@okouai/db/schema/blob";
-import { conversations } from "@okouai/db/schema/conversation";
-import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, sql } from "drizzle-orm";
 
 import type { Tx } from "../../lib/db-types";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
 import { settle } from "../utils";
+import { executeRawRows } from "../../lib/db-raw-rows";
+import type { z } from "zod";
 
 const L = logger("ConversationHistoryDeletion");
 const DELETION_BATCH_SIZE = 500;
@@ -25,68 +29,40 @@ async function contentFreeDatabaseOperation<T>(
   return result.value;
 }
 
+export function deletedRunHistoryReferences(
+  rows: readonly z.output<typeof deletedRunHistorySchema>[],
+) {
+  const references = new Map<string, number>();
+  for (const row of rows) {
+    if (row.hash !== null) {
+      references.set(row.hash, (references.get(row.hash) ?? 0) + 1);
+    }
+  }
+  return { references, deletedRuns: rows.length };
+}
+
 /** The caller must hold every target Run FOR UPDATE until commit. */
-export async function deleteRunConversations(
+export async function deleteLockedRunHistories(
   tx: Tx,
   runIds: readonly string[],
 ) {
-  const references = new Map<string, number>();
-  let deletedConversations = 0;
-  // Bind each complete target set once, as in preflight, instead of issuing
-  // hundreds of scalar-parameter batches while holding the same Run locks.
-  if (runIds.length > 0) {
-    const removed = tx.$with("removed_conversations").as(
-      tx
-        .delete(conversations)
-        .where(eq(conversations.runId, sql`ANY(${sql.param(runIds)}::uuid[])`))
-        .returning({ hash: conversations.cliAgentSessionHistoryHash }),
-    );
-    const groups = await contentFreeDatabaseOperation(
-      tx
-        .with(removed)
-        .select({ hash: removed.hash, references: count() })
-        .from(removed)
-        .groupBy(removed.hash),
-    );
-    for (const group of groups) {
-      deletedConversations += group.references;
-      if (group.hash !== null) {
-        references.set(
-          group.hash,
-          (references.get(group.hash) ?? 0) + group.references,
-        );
-      }
-    }
-  }
-  return { references, deletedConversations };
-}
-
-/** Delete only the locked Run set; a later scoped INSERT is not our evidence. */
-export async function deleteLockedRuns(tx: Tx, runIds: readonly string[]) {
-  let deletedRuns = 0;
-  for (let offset = 0; offset < runIds.length; offset += DELETION_BATCH_SIZE) {
-    const batch = runIds.slice(offset, offset + DELETION_BATCH_SIZE);
-    const result = await contentFreeDatabaseOperation(
-      tx.delete(agentRuns).where(inArray(agentRuns.id, batch)),
-    );
-    if (result.rowCount === null) {
-      throw new Error("Conversation deletion returned no run count");
-    }
-    deletedRuns += result.rowCount;
-  }
-  if (deletedRuns !== runIds.length) {
+  const rows = await contentFreeDatabaseOperation(
+    executeRawRows(tx, deleteRunHistoriesSql(runIds), deletedRunHistorySchema),
+  );
+  if (rows.length !== runIds.length) {
     throw new Error("Conversation deletion lost a locked run");
   }
+  return deletedRunHistoryReferences(rows);
 }
 
 /**
  * Run this LAST, after parent cascades and Storage mutations, in the SAME
- * transaction as deleteRunConversations. Never acquire parents after blobs:
+ * transaction as deleteLockedRunHistories. Never acquire parents after blobs:
  * completion and candidate cleanup hold parents before their blob writes.
  */
 export async function releaseDeletedConversationReferences(
   tx: Tx,
-  removed: Awaited<ReturnType<typeof deleteRunConversations>>,
+  removed: Awaited<ReturnType<typeof deletedRunHistoryReferences>>,
 ) {
   const references = [...removed.references]
     .sort(([a], [b]) => {
@@ -101,9 +77,7 @@ export async function releaseDeletedConversationReferences(
     offset += DELETION_BATCH_SIZE
   ) {
     const batch = references.slice(offset, offset + DELETION_BATCH_SIZE);
-    // Completion of another Run can hold this blob before promoting a
-    // surviving Session that our SET NULL locked. NOWAIT breaks that cycle;
-    // the caller rolls back and uses its existing conflict/retry boundary.
+    // Preserve the existing nonblocking blob acquisition and rollback boundary.
     // Lock hashes in one global order before UPDATE's unspecified row order.
     const locked = await contentFreeDatabaseOperation(
       tx
@@ -149,7 +123,7 @@ export async function releaseDeletedConversationReferences(
     }
   }
   return {
-    deletedConversations: removed.deletedConversations,
+    deletedRuns: removed.deletedRuns,
     releasedReferences: references.reduce((total, entry) => {
       return total + entry.release_count;
     }, 0),
@@ -162,7 +136,7 @@ export function logCommittedConversationDeletion(
   source: "agent" | "threadless" | "clerk_user" | "clerk_organization",
   receipt: Awaited<ReturnType<typeof releaseDeletedConversationReferences>>,
 ) {
-  if (receipt.deletedConversations > 0) {
-    L.info("Conversation history deletion committed", { source, ...receipt });
+  if (receipt.deletedRuns > 0 || receipt.releasedReferences > 0) {
+    L.debug("Run history deletion committed", { source, ...receipt });
   }
 }

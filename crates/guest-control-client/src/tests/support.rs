@@ -181,7 +181,7 @@ pub(crate) fn operation_count(host: &GuestControlClient) -> usize {
     let guard = host.shared.state.lock().unwrap_or_else(|e| e.into_inner());
     match &*guard {
         ConnectionState::Connected { operations, .. } => operations.len(),
-        ConnectionState::Closed => 0,
+        ConnectionState::Closed(_) => 0,
     }
 }
 
@@ -189,7 +189,7 @@ pub(crate) fn pending_request_count(host: &GuestControlClient) -> usize {
     let guard = host.shared.state.lock().unwrap_or_else(|e| e.into_inner());
     match &*guard {
         ConnectionState::Connected { pending, .. } => pending.len(),
-        ConnectionState::Closed => 0,
+        ConnectionState::Closed(_) => 0,
     }
 }
 
@@ -197,7 +197,7 @@ pub(crate) fn pending_control_count(host: &GuestControlClient) -> usize {
     let guard = host.shared.state.lock().unwrap_or_else(|e| e.into_inner());
     match &*guard {
         ConnectionState::Connected { operations, .. } => operations.pending_control_count(),
-        ConnectionState::Closed => 0,
+        ConnectionState::Closed(_) => 0,
     }
 }
 
@@ -219,7 +219,7 @@ pub(crate) fn route_reservation_count(host: &GuestControlClient) -> usize {
         ConnectionState::Connected {
             route_reservations, ..
         } => route_reservations.len(),
-        ConnectionState::Closed => 0,
+        ConnectionState::Closed(_) => 0,
     }
 }
 
@@ -238,7 +238,8 @@ pub(crate) fn fence_normal_operations(host: &GuestControlClient) -> NormalOperat
 }
 
 pub(crate) fn poison_connection(host: &GuestControlClient) {
-    host.shared.poison_connection();
+    host.shared
+        .poison_connection(crate::ConnectionCloseReason::UnclassifiedPoison, None);
 }
 
 pub(crate) async fn exec_capture_default(

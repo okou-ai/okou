@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi } from "./helpers/api-bdd";
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { hostedTextFile } from "./helpers/api-bdd-host-files";
 import { createHostMapsBddApi } from "./helpers/api-bdd-host-maps";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -12,73 +10,67 @@ const context = testContext();
 const bdd = createBddApi(context);
 const api = createHostMapsBddApi(context);
 
-async function fixture(privateArtifacts: boolean) {
+async function fixture() {
   const actor = bdd.user();
   await createRunsApi(context).grantProEntitlement(actor);
-  await createBillingMediaApi(context).updateFeatureSwitches(actor, {
-    [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-  });
   const capture = api.captureHostedSitesS3();
   return { actor, capture };
 }
 
-test.each([true, false])(
-  "issues normal 48-hour hosted PUT credentials without checksum binding (private: %s)",
-  async (privateArtifacts) => {
-    const { actor, capture } = await fixture(privateArtifacts);
-    const files = [
-      hostedTextFile("/index.html", "<main>Immutable report</main>"),
-      hostedTextFile(
-        "/assets/manifest-3f8c2d91.json",
-        '{"name":"Report"}',
-        "application/json",
-      ),
-    ];
-    const draft = await api.prepareHostedSite(actor, {
-      site: `immutable-${randomUUID().slice(0, 8)}`,
-      artifactKind: "hosted-site",
-      spaFallback: false,
-      files,
-    });
+test("issues normal 48-hour hosted PUT credentials without checksum binding", async () => {
+  const { actor, capture } = await fixture();
+  const files = [
+    hostedTextFile("/index.html", "<main>Immutable report</main>"),
+    hostedTextFile(
+      "/assets/manifest-3f8c2d91.json",
+      '{"name":"Report"}',
+      "application/json",
+    ),
+  ];
+  const draft = await api.prepareHostedSite(actor, {
+    site: `immutable-${randomUUID().slice(0, 8)}`,
+    artifactKind: "hosted-site",
+    spaFallback: false,
+    files,
+  });
 
-    for (const file of files) {
-      const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
-        return (
-          call[1] instanceof PutObjectCommand &&
-          call[1].input.Key?.endsWith(file.path)
-        );
-      });
-      if (!signing || !(signing[1] instanceof PutObjectCommand)) {
-        throw new Error("Expected a signed hosted PUT");
-      }
-      expect(signing[1].input.Key).toContain(file.path);
-      expect(signing[1].input.ChecksumSHA256).toBeUndefined();
-      expect(signing[2]).toMatchObject({ expiresIn: 172_800 });
+  for (const file of files) {
+    const signing = context.mocks.s3.getSignedUrl.mock.calls.find((call) => {
+      return (
+        call[1] instanceof PutObjectCommand &&
+        call[1].input.Key?.endsWith(file.path)
+      );
+    });
+    if (!signing || !(signing[1] instanceof PutObjectCommand)) {
+      throw new Error("Expected a signed hosted PUT");
     }
+    expect(signing[1].input.Key).toContain(file.path);
+    expect(signing[1].input.ChecksumSHA256).toBeUndefined();
+    expect(signing[2]).toMatchObject({ expiresIn: 172_800 });
+  }
 
-    await api.completeHostedSite(actor, draft.deploymentId);
-    const manifests = capture.puts.filter(({ key }) => {
-      return key.endsWith("/manifest.json");
-    });
-    expect(manifests).toHaveLength(1);
-    expect(JSON.parse(manifests[0]!.body)).toMatchObject({
-      deploymentId: draft.deploymentId,
-      immutableContent: true,
-    });
-    const downloaded = await api.readHostedSiteFiles(
-      actor,
-      `dpl-${draft.deploymentId}`,
-    );
-    expect(
-      downloaded.files.map((file) => {
-        return file.path;
-      }),
-    ).toContain("/assets/manifest-3f8c2d91.json");
-  },
-);
+  await api.completeHostedSite(actor, draft.deploymentId);
+  const manifests = capture.puts.filter(({ key }) => {
+    return key.endsWith("/manifest.json");
+  });
+  expect(manifests).toHaveLength(1);
+  expect(JSON.parse(manifests[0]!.body)).toMatchObject({
+    deploymentId: draft.deploymentId,
+    immutableContent: true,
+  });
+  const downloaded = await api.readHostedSiteFiles(
+    actor,
+    `dpl-${draft.deploymentId}`,
+  );
+  expect(
+    downloaded.files.map((file) => {
+      return file.path;
+    }),
+  ).toContain("/assets/manifest-3f8c2d91.json");
+});
 
 test("rejects uploads that would overwrite the server delivery manifest", async () => {
-  const { actor } = await fixture(true);
+  const { actor } = await fixture();
   const response = await api.requestPrepareHostedSite(
     actor,
     {
@@ -98,7 +90,7 @@ test("rejects uploads that would overwrite the server delivery manifest", async 
 });
 
 test("rejects an asset whose name does not carry its content hash", async () => {
-  const { actor } = await fixture(false);
+  const { actor } = await fixture();
   const response = await api.requestPrepareHostedSite(
     actor,
     {
@@ -122,7 +114,7 @@ test("rejects an asset whose name does not carry its content hash", async () => 
 });
 
 test("rejects republishing a published asset path with different bytes", async () => {
-  const { actor } = await fixture(false);
+  const { actor } = await fixture();
   const site = `republished-${randomUUID().slice(0, 8)}`;
   const asset = "/assets/app-4f3a9c12.css";
   const first = await api.prepareHostedSite(actor, {

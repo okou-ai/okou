@@ -176,7 +176,8 @@ impl fmt::Debug for SessionHistoryCpuMaterialization {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct SessionHistoryCpuTimings {
-    admission_wait: Duration,
+    admission_window: Option<super::session_history_attribution::HistoryTimingWindow>,
+    queue_window: Option<super::session_history_attribution::HistoryTimingWindow>,
     validation: Option<SessionHistoryCpuPhaseTiming>,
     decompression: Option<SessionHistoryCpuPhaseTiming>,
     hash_verification: Option<SessionHistoryCpuPhaseTiming>,
@@ -265,13 +266,23 @@ impl SessionHistoryCpuPool {
                 RunnerError::Internal(format!("acquire session history CPU permit: {error}"))
             })?,
         };
-        let admission_wait = admission_started.elapsed();
+        let admission_window = super::session_history_attribution::HistoryTimingWindow::new(
+            admission_started,
+            Instant::now(),
+        );
 
         let blocking_cancel = operation_cancel.clone();
         let hooks = self.hooks.clone();
+        let submitted_at = Instant::now();
         let mut task = tokio::task::spawn_blocking(move || {
+            let queue_window = super::session_history_attribution::HistoryTimingWindow::new(
+                submitted_at,
+                Instant::now(),
+            );
             let _permit = permit;
-            materialize_blocking(job, &blocking_cancel, &hooks)
+            let mut outcome = materialize_blocking(job, &blocking_cancel, &hooks);
+            outcome.timings.queue_window = Some(queue_window);
+            outcome
         });
         let mut task_guard =
             SessionHistoryCpuTaskGuard::new(operation_cancel.clone(), task.abort_handle());
@@ -290,7 +301,7 @@ impl SessionHistoryCpuPool {
         let mut outcome = joined.map_err(|error| {
             RunnerError::Internal(format!("session history CPU task failed: {error}"))
         })?;
-        outcome.timings.admission_wait = admission_wait;
+        outcome.timings.admission_window = Some(admission_window);
         Ok(outcome)
     }
 }
@@ -448,6 +459,18 @@ impl SessionHistoryCpuJob {
 }
 
 impl SessionHistoryCpuTimings {
+    pub(super) fn admission_window(
+        self,
+    ) -> Option<super::session_history_attribution::HistoryTimingWindow> {
+        self.admission_window
+    }
+
+    pub(super) fn queue_window(
+        self,
+    ) -> Option<super::session_history_attribution::HistoryTimingWindow> {
+        self.queue_window
+    }
+
     pub(super) fn validation(self) -> Option<SessionHistoryCpuPhaseTiming> {
         self.validation
     }

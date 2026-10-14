@@ -1,4 +1,4 @@
-//! Tracing layer that ships WARN+ events and scoped storage latency to Axiom.
+//! Tracing layer that ships WARN+ events to Axiom.
 //!
 //! Disabled at construction when `AXIOM_TOKEN_TELEMETRY` or
 //! `AXIOM_DATASET_SUFFIX` is unset. Dual-write: the existing fmt subscriber
@@ -245,14 +245,9 @@ pub(crate) struct AxiomLayer {
 }
 
 fn should_ingest(metadata: &Metadata<'_>) -> bool {
-    metadata.target() != INTERNAL_TARGET
-        && (*metadata.level() <= tracing::Level::WARN
-            || (*metadata.level() == tracing::Level::INFO
-                && metadata.target() == "guest_control_client::exec_operation::diagnostics"
-                && metadata
-                    .fields()
-                    .field("storage_download_latency")
-                    .is_some()))
+    // Keep a uniform WARN+ threshold; do not add target- or field-specific INFO exceptions.
+    // Inspect detailed diagnostics in the Runner's local logs instead.
+    metadata.target() != INTERNAL_TARGET && *metadata.level() <= tracing::Level::WARN
 }
 
 fn ingest_filter() -> FilterFn<fn(&Metadata<'_>) -> bool> {

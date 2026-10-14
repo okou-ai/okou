@@ -1126,7 +1126,7 @@ mod tests {
         .with_session_history_status(SessionHistoryStatus::Missing);
         let failure = executor::ExecutionFailure::new(
             1,
-            "Claude Code emitted a zero-turn result without creating session history; skipping checkpoint",
+            "Claude Code emitted a zero-turn result without creating session history; skipping history upload",
             Some(diagnostic),
         );
 
@@ -1169,7 +1169,10 @@ mod tests {
             .with_failure_reason(reason);
             let failure = executor::ExecutionFailure::new(
                 1,
-                format!("checkpoint upload failed after {} event", reason.as_str()),
+                format!(
+                    "session history upload failed after {} event",
+                    reason.as_str()
+                ),
                 Some(diagnostic),
             );
 

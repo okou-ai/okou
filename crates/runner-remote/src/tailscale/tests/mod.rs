@@ -3,6 +3,7 @@
 mod control_key;
 mod derp;
 mod fixture;
+mod map_reader;
 mod peers;
 pub(super) mod provisioning;
 mod registration;

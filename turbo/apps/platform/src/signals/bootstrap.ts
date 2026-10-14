@@ -10,6 +10,7 @@ import { initializeAppVersion$ } from "./app-version.ts";
 import { initLocale$, syncLocalePreference$ } from "./locale.ts";
 import { setRootSignal$ } from "./root-signal.ts";
 import { setApiClientRuntime$ } from "./api-client-runtime.ts";
+import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 import { readClerkToken } from "./clerk-token.ts";
 import { setupSharedDatabaseBridge$ } from "./shared-database-browser.ts";
 import { listenSharedWorkerFailure$ } from "./shared-worker-failure.ts";
@@ -32,11 +33,11 @@ import { ROUTES, type RoutePath } from "./route-paths.ts";
 import { setupGlobalMethod$ } from "./bootstrap/global-method.ts";
 import { setupLoggers$ } from "./bootstrap/loggers.ts";
 import { setupSlackConnectPage$ } from "./okou-page/slack-connect-page.ts";
+import { setupDiscordConnectPage$ } from "./okou-page/discord-connect-page.ts";
 import { setupAgentPhoneConnectPage$ } from "./okou-page/agentphone-connect-page.ts";
 import { setupGithubConnectPage$ } from "./okou-page/github-connect-page.ts";
 import { setupTeamsConnectPage$ } from "./okou-page/teams-connect-page.ts";
 import { setupTelegramConnectPage$ } from "./okou-page/telegram-connect-page.ts";
-import { setupTelegramSettingsPage$ } from "./okou-page/telegram-settings-page.ts";
 import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
@@ -46,7 +47,6 @@ import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts"
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
-import { setupOfficialWorkflowsPage$ } from "./workflows-page/official-workflows-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
 import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
@@ -315,14 +315,6 @@ const ROUTE_CONFIG = [
     setup: setupAuthPageWrapper(setupPermissionAllowPage$),
   },
   {
-    path: ROUTES.officialWorkflowDetail,
-    setup: setupAuthSidebarPageWrapper(setupOfficialWorkflowsPage$),
-  },
-  {
-    path: ROUTES.officialWorkflows,
-    setup: setupAuthSidebarPageWrapper(setupOfficialWorkflowsPage$),
-  },
-  {
     path: ROUTES.workflowDetail,
     setup: setupAuthSidebarPageWrapper(setupWorkflowDetailPage$),
   },
@@ -359,6 +351,14 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupSlackConnectPage$),
   },
   {
+    path: ROUTES.settingsDiscord,
+    setup: setupAuthSidebarPageWrapper(setupDiscordConnectPage$),
+  },
+  {
+    path: ROUTES.settingsDiscordInstall,
+    setup: setupAuthSidebarPageWrapper(setupDiscordConnectPage$),
+  },
+  {
     path: ROUTES.settingsTeams,
     setup: setupAuthSidebarPageWrapper(setupTeamsConnectPage$),
   },
@@ -369,10 +369,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.settingsLark,
     setup: setupAuthSidebarPageWrapper(setupFeishuSettingsPage$),
-  },
-  {
-    path: ROUTES.settingsTelegram,
-    setup: setupAuthSidebarPageWrapper(setupTelegramSettingsPage$),
   },
   {
     path: ROUTES.githubConnect,
@@ -607,10 +603,13 @@ export const bootstrap$ = command(
       getCapturedPreviewBypassForTarget(apiBaseUrl);
     const clerk = get(clerk$);
     set(setApiClientRuntime$, {
-      getToken: async (requestSignal) => {
+      authDiagnosticContext: createBrowserAuthDiagnosticContext(),
+      getToken: async (diagnostic, requestSignal) => {
         const resolvedClerk = await clerk;
         requestSignal?.throwIfAborted();
-        return await readClerkToken(resolvedClerk, requestSignal);
+        return await readClerkToken(resolvedClerk, requestSignal, {
+          diagnostic,
+        });
       },
       apiBaseUrl,
       oauthApiBaseUrl: resolveOAuthApiBase(),

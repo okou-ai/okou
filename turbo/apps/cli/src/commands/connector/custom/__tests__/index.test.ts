@@ -131,7 +131,11 @@ describe("okou connector custom readers", () => {
         state: "available",
         target: { kind: "custom", customConnectorId: connector.id },
         connector: {
-          ...connector,
+          id: connector.id,
+          slug: connector.slug,
+          kind: connector.kind,
+          displayName: connector.displayName,
+          authMode: connector.authMode,
           connectorType: `custom-${connector.kind}`,
           authorized: null,
         },

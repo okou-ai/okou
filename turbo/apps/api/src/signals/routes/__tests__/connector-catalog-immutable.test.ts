@@ -17,14 +17,10 @@ import {
 } from "@okouai/api-contracts/contracts/connectors";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorOverviewContract } from "@okouai/api-contracts/contracts/connector-overview";
-import {
-  onboardingSourcesContract,
-  onboardingWorkflowConnectorsContract,
-} from "@okouai/api-contracts/contracts/onboarding";
+import { onboardingSourcesContract } from "@okouai/api-contracts/contracts/onboarding";
 import { connectorCatalogRoutes } from "../connector-catalog";
 import { connectorOverviewRoutes } from "../connector-overview";
 import { onboardingSourcesRoutes } from "../onboarding-sources";
-import { onboardingWorkflowConnectorsRoutes } from "../onboarding-workflow-connectors";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
 import {
   connectorCatalogArtifactSchema,
@@ -427,15 +423,6 @@ describe("slug-first current catalog business readers", () => {
     expect(overview.body.builtinConnectors).toContainEqual(
       expect.objectContaining({ slug: "gitlab" }),
     );
-  });
-  it("lists named onboarding workflow connectors from current entries", async () => {
-    await publishedCatalog();
-    const client = setupApp({
-      context,
-      routes: onboardingWorkflowConnectorsRoutes,
-    })(onboardingWorkflowConnectorsContract);
-    const listed = await accept(client.list({ headers }), [200]);
-    expect(listed.body.connectors.length).toBeGreaterThan(0);
   });
   it("a later slug request follows current publication without a retained version", async () => {
     const first = release("2099-02-02.first", "First OpenAI", "openai");

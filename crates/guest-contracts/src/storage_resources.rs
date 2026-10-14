@@ -2,6 +2,33 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Optional completed phases outside the existing Guest-server execution timer.
+/// These are wall microseconds, not transport time or resource counters.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StorageControlTiming {
+    /// Submit entry through owned-request construction, before enqueue.
+    pub request_ownership_us: Option<u64>,
+    /// Enqueue-ready ownership through admitted worker handler entry.
+    pub worker_wait_us: Option<u64>,
+    /// Post-execution output/resource preparation through timing serialization.
+    /// Final metadata bytes, frame encoding and response writing are excluded.
+    pub response_prepare_us: Option<u64>,
+}
+
+/// Additive optional timing reader, independent of legacy resource validation.
+#[derive(Debug, Default, Deserialize)]
+pub struct StorageControlTimingMetadata {
+    /// Missing or invalid optional timing never invalidates core/resource results.
+    pub storage_control_timing: Option<StorageControlTiming>,
+}
+
+/// Distinguishes resource-less terminal timing from a malformed resource record.
+#[derive(Debug, Default, Deserialize)]
+pub struct StorageResourceAvailability {
+    /// Absent on older metadata; false carries no fabricated resource counters.
+    pub storage_resource_available: Option<bool>,
+}
+
 /// Configured leaf resource limit, distinct from an unavailable reading.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(untagged)]

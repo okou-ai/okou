@@ -43,8 +43,8 @@ Notes:
   - Authenticates via OKOU_TOKEN (requires file:write capability)
   - Persist the returned stable URL in chat messages
   - Private file URLs require the owner's authentication; they do not grant public access
-  - With privateArtifacts enabled, uploads default to only-me; --visibility org or public explicitly shares the completed file
-  - --visibility requires privateArtifacts and is checked before uploading; without the option, flag-off behavior is unchanged
+  - Uploads default to only-me; --visibility org or public explicitly shares the completed file
+  - Explicit --visibility is checked before uploading
   - Use okou web download-file <id> to retrieve a private file
   - Max file size: 1 GB
   - Markdown, TXT, CSV and TSV files use UTF-8 unless --content-type declares a charset

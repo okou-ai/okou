@@ -17,7 +17,7 @@ release = re.fullmatch(r"ghcr\.io/okou-ai/vm0-dev:([0-9]{8})", dev["image"])
 assert release, "devcontainer must use a fixed published development release"
 tag = release[1]
 files = [root / ".devcontainer/devcontainer.json",
-         root / ".github/scripts/runner-binary-build/contract.env",
+         root / ".github/scripts/runner/runner-binary-build/contract.env",
          *sorted((root / ".github/workflows").glob("*.yml"))]
 families = set()
 for path in files:

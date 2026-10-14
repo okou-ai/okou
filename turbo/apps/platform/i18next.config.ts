@@ -28,9 +28,13 @@ export default defineConfig({
     defaultNS: "common",
     functions: ["i18n.t"],
     preservePatterns: [
+      // VNC settings select one allow-listed connection failure at runtime.
+      "vnc.connectionStatus.reasons.*",
       "activity.network.details.*",
       "artifacts.templates.workflowCatalog.*",
       "artifacts.templates.workflowCategories.*",
+      // Document purposes are selected from the shared catalog at runtime.
+      "documentTemplates.categories.*",
       // Shared bot views choose the provider at runtime.
       "connectors.providerSettings.feishu.*",
       "connectors.providerSettings.lark.*",

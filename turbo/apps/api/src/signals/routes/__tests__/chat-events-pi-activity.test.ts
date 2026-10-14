@@ -5,16 +5,13 @@ import {
 } from "./helpers/google-text";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { chatThreadActivitySummaryRoutes } from "../chat-threads-activity-summary";
-import { createHash, randomUUID } from "node:crypto";
 import { PI_MEMORY_ROOT } from "@okouai/api-contracts/contracts/runners";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { z } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { env, mockOptionalEnv } from "../../../lib/env";
+import { mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -40,9 +37,7 @@ const {
   waitForRunStatus,
   cancelChatRun,
   sessionHeaders,
-  mockPiObjectStore,
   mockPiResourceArchiveDownloads,
-  piSandboxBaseSession,
 } = createChatEventsFixture(context);
 
 async function expectPiActivitySummary(
@@ -101,79 +96,6 @@ async function expectPiActivitySummary(
   mockOptionalEnv("GCP_LLM_PROJECT_ID", undefined);
 }
 
-function boundedPiSessionHistory(jsonl: string): {
-  readonly original: string;
-  readonly bounded: string;
-} {
-  // Keep the exact native pre-compact path and settled leaf while removing
-  // one old parent. The API accepts only the smaller candidate as H2.
-  const nativeLines = jsonl.trimEnd().split("\n");
-  const headerLine = nativeLines[0];
-  if (!headerLine) {
-    throw new Error("Expected a native Pi session header");
-  }
-  const piEntry = z
-    .object({
-      type: z.string(),
-      id: z.string(),
-      parentId: z.string().nullable(),
-    })
-    .passthrough();
-  const firstKept = piEntry.parse(JSON.parse(nativeLines[1] ?? "null"));
-  const finalAssistant = piEntry.parse(
-    JSON.parse(nativeLines.at(-1) ?? "null"),
-  );
-  if (
-    firstKept.parentId !== null ||
-    finalAssistant.type !== "message" ||
-    !finalAssistant.parentId
-  ) {
-    throw new Error("Expected a root and a settled native Pi leaf");
-  }
-  const oldId = randomUUID();
-  const compactId = randomUUID();
-  const compactLine = JSON.stringify({
-    type: "compaction",
-    id: compactId,
-    parentId: finalAssistant.parentId,
-    timestamp: "2026-09-27T00:00:00Z",
-    summary: "prior work summarized by Pi",
-    firstKeptEntryId: firstKept.id,
-    tokensBefore: 90_000,
-  });
-  const settledLine = JSON.stringify({
-    ...finalAssistant,
-    parentId: compactId,
-  });
-  const middleLines = nativeLines.slice(2, -1);
-  const oldLine = JSON.stringify({
-    type: "message",
-    id: oldId,
-    parentId: null,
-    timestamp: "2026-09-27T00:00:00Z",
-    message: { role: "user", content: "older work ".repeat(8192) },
-  });
-  return {
-    original: [
-      headerLine,
-      oldLine,
-      JSON.stringify({ ...firstKept, parentId: oldId }),
-      ...middleLines,
-      compactLine,
-      settledLine,
-      "",
-    ].join("\n"),
-    bounded: [
-      headerLine,
-      JSON.stringify(firstKept),
-      ...middleLines,
-      compactLine,
-      settledLine,
-      "",
-    ].join("\n"),
-  };
-}
-
 describe("CHAT-02: model-first routing", () => {
   async function piActivityScenario(): Promise<void> {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
@@ -191,7 +113,6 @@ describe("CHAT-02: model-first routing", () => {
     const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou --help`;
     const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-note.md";
     const adHocNote = "# Sandbox note\n\nPersist this staged sandbox note.\n";
-    const historyObjects = mockPiObjectStore();
     const prompt = "use the Okou CLI in the Sandbox";
     const run = await sendChatRunAfterPick(actor, {
       agentId,
@@ -203,9 +124,11 @@ describe("CHAT-02: model-first routing", () => {
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     // The first turn has no stored history, so the Sandbox starts fresh.
     expect(claimed.claim.resumeSession).toBeNull();
-    const h2Session = MemoryPiSession.fromJsonl(
-      piSandboxBaseSession(claimed.claim, historyObjects).toString("utf8"),
-    );
+    expect(claimed.claim.nativeContinuation).toStrictEqual({
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    });
     expect(claimed.claim.piModelConfig).toMatchObject({
       provider: "openai-codex",
       model: "gpt-6-luna",
@@ -241,6 +164,12 @@ describe("CHAT-02: model-first routing", () => {
       {
         runId: run.runId,
         events: [
+          {
+            type: "system",
+            subtype: "init",
+            session_id: run.threadId,
+            sequenceNumber: 0,
+          },
           {
             type: "assistant",
             sequenceNumber: 1,
@@ -310,118 +239,6 @@ describe("CHAT-02: model-first routing", () => {
     ]);
     await expectPiActivitySummary(actor, run);
 
-    h2Session.appendMessage({
-      role: "user",
-      content: prompt,
-      timestamp: 1,
-    });
-    h2Session.appendMessage({
-      role: "assistant",
-      content: [
-        { type: "text", text: "before parallel tools" },
-        {
-          type: "toolCall",
-          id: "call_pi_read",
-          name: "bash",
-          arguments: { command: okouCliCommand },
-        },
-        {
-          type: "toolCall",
-          id: "call_pi_write",
-          name: "add_ad_hoc_note",
-          arguments: { filename: adHocNoteFilename, note: adHocNote },
-        },
-        { type: "text", text: "after parallel tools" },
-      ],
-      api: "openai-responses",
-      provider: "openai-codex",
-      model: "gpt-6-luna",
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "toolUse",
-      timestamp: 2,
-    });
-    h2Session.appendMessage({
-      role: "toolResult",
-      toolCallId: "call_pi_read",
-      toolName: "bash",
-      content: [{ type: "text", text: "Okou CLI help output" }],
-      details: {},
-      isError: false,
-      timestamp: 3,
-    });
-    h2Session.appendMessage({
-      role: "toolResult",
-      toolCallId: "call_pi_write",
-      toolName: "add_ad_hoc_note",
-      content: [
-        {
-          type: "text",
-          text: `{"status":"staged","path":"extensions/ad_hoc/notes/${adHocNoteFilename}"}`,
-        },
-      ],
-      details: {},
-      isError: false,
-      timestamp: 4,
-    });
-    h2Session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "Sandbox H2 complete" }],
-      api: "openai-responses",
-      provider: "openai-codex",
-      model: "gpt-6-luna",
-      usage: {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 8,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 5,
-    });
-    // Exercise the API H2 endpoint with a compacted native candidate; the
-    // larger original remains test-owned and is never persisted as H2.
-    const { original: originalH2, bounded: h2 } = boundedPiSessionHistory(
-      h2Session.toJsonl(),
-    );
-    expect(Buffer.byteLength(originalH2)).toBeGreaterThan(
-      Buffer.byteLength(h2),
-    );
-    const originalNative = MemoryPiSession.fromJsonl(originalH2);
-    const boundedNative = MemoryPiSession.fromJsonl(h2);
-    expect(boundedNative.buildSessionContext()).toStrictEqual(
-      originalNative.buildSessionContext(),
-    );
-    expect(boundedNative.isSettledHistory()).toBeTruthy();
-    expect(boundedNative.getSessionId()).toBe(run.threadId);
-    const h2Hash = createHash("sha256").update(h2).digest("hex");
-    const preparedH2 = await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: h2Hash,
-        rawSize: Buffer.byteLength(h2),
-        encodedSize: Buffer.byteLength(h2),
-        encoding: "identity",
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    expect(preparedH2.body).toMatchObject({
-      existing: false,
-      encoding: "identity",
-    });
-    historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${h2Hash}.blob`,
-      Buffer.from(h2, "utf8"),
-    );
     const publishedMemory = await commitMemoryVersion(
       context,
       {
@@ -449,14 +266,14 @@ describe("CHAT-02: model-first routing", () => {
             }),
       },
     ];
-    const combinedH2 = await webhooks.requestAgentComplete(
+    const combinedCompletion = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
         exitCode: 0,
         completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
+          cliAgentSessionHistoryDisposition: "native_only",
           artifactSnapshots: memoryArtifactSnapshots,
         },
       },
@@ -464,7 +281,7 @@ describe("CHAT-02: model-first routing", () => {
       [200],
       undefined,
     );
-    expect(combinedH2.body).toStrictEqual({
+    expect(combinedCompletion.body).toStrictEqual({
       success: true,
       status: "completed",
     });
@@ -475,174 +292,97 @@ describe("CHAT-02: model-first routing", () => {
         artifact: { memory: publishedMemory.versionId },
       },
     });
-    const committedH2 = await webhooks.requestAgentRunOutputs(
+    const committedOutputs = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
+        cliAgentSessionHistoryDisposition: "native_only",
         artifactSnapshots: memoryArtifactSnapshots,
       },
       claimed.sandboxHeaders,
       [200],
     );
-    expect(committedH2.body).toStrictEqual({
+    expect(committedOutputs.body).toStrictEqual({
       success: true,
       status: "completed",
     });
     const committedResult = (await api.readRun(actor, run.runId)).result;
-    const idempotentH2 = await webhooks.requestAgentRunOutputs(
+    const idempotentOutputs = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
+        cliAgentSessionHistoryDisposition: "native_only",
         artifactSnapshots: memoryArtifactSnapshots,
       },
       claimed.sandboxHeaders,
       [200],
     );
-    expect(idempotentH2.body).toStrictEqual(committedH2.body);
+    expect(idempotentOutputs.body).toStrictEqual(committedOutputs.body);
     expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
       committedResult,
     );
 
-    h2Session.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "late replacement H2" }],
-      api: "openai-responses",
-      provider: "openai-codex",
-      model: "gpt-6-luna",
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 4,
-    });
-    const replacementH2 = h2Session.toJsonl();
-    expect(
-      MemoryPiSession.fromJsonl(replacementH2).isSettledHistory(),
-    ).toBeTruthy();
-    const replacementH2Hash = createHash("sha256")
-      .update(replacementH2)
-      .digest("hex");
-    await webhooks.requestAgentSessionHistoryPrepare(
-      {
-        runId: run.runId,
-        hash: replacementH2Hash,
-        rawSize: Buffer.byteLength(replacementH2),
-        encodedSize: Buffer.byteLength(replacementH2),
-        encoding: "identity",
-      },
-      claimed.sandboxHeaders,
-      [200],
-    );
-    historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${replacementH2Hash}.blob`,
-      Buffer.from(replacementH2, "utf8"),
-    );
     const replacementOutputs = await webhooks.requestAgentRunOutputs(
       {
         runId: run.runId,
         cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: replacementH2Hash,
+        cliAgentSessionId: "different-native-identity",
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       claimed.sandboxHeaders,
       [400],
     );
     expect(JSON.stringify(replacementOutputs.body)).toContain(
-      "[RUN_OUTPUT_ALREADY_COMMITTED]",
+      "Native Run output does not match its captured Framework identity",
+    );
+    expect((await api.readRun(actor, run.runId)).result).toStrictEqual(
+      committedResult,
     );
 
+    // Native Runs cannot reintroduce durable archives or change Frameworks.
     const failedRun = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "reject a non-native Sandbox H2",
+      prompt: "reject an archived native completion",
     });
     const failedClaim = await claimChatRun(runnerGroup, failedRun.runId);
-    const invalidH2 = Buffer.from(`${h2}{malformed\n`, "utf8");
-    const invalidH2Hash = createHash("sha256").update(invalidH2).digest("hex");
-    await webhooks.requestAgentSessionHistoryPrepare(
+    await webhooks.requestAgentRunOutputs(
       {
         runId: failedRun.runId,
-        hash: invalidH2Hash,
-        rawSize: invalidH2.length,
-        encodedSize: invalidH2.length,
-        encoding: "identity",
-      },
-      failedClaim.sandboxHeaders,
-      [200],
-    );
-    historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${invalidH2Hash}.blob`,
-      invalidH2,
-    );
-    const invalidCompletion = await webhooks.requestAgentComplete(
-      {
-        runId: failedRun.runId,
-        exitCode: 1,
-        error: "reject invalid native history",
-        completion: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: invalidH2Hash,
-        },
+        cliAgentType: "pi",
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryHash: "a".repeat(64),
       },
       failedClaim.sandboxHeaders,
       [400],
     );
-    expect(JSON.stringify(invalidCompletion.body)).toContain(
-      "[PI_H2_JSONL_INVALID]",
+    await webhooks.requestAgentRunOutputs(
+      {
+        runId: failedRun.runId,
+        cliAgentType: "claude-code",
+        cliAgentSessionId: run.threadId,
+        cliAgentSessionHistoryDisposition: "native_only",
+      },
+      failedClaim.sandboxHeaders,
+      [400],
     );
     await webhooks.requestAgentComplete(
       {
         runId: failedRun.runId,
         exitCode: 1,
-        error: "[PI_H2_JSONL_INVALID] rejected native history",
+        error: "failed before native initialization",
       },
       failedClaim.sandboxHeaders,
       [200],
     );
-    await waitForRunStatus(actor, failedRun.runId, "failed");
     await flushWaitUntilForTest();
-    const lateFailedH2 = await webhooks.requestAgentComplete(
-      {
-        runId: failedRun.runId,
-        exitCode: 1,
-        completion: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
-        },
-      },
-      failedClaim.sandboxHeaders,
-      [400],
-    );
-    expect(JSON.stringify(lateFailedH2.body)).toContain("[PI_H2_RUN_TERMINAL]");
-    const spoofedFailedH2 = await webhooks.requestAgentRunOutputs(
-      {
-        runId: failedRun.runId,
-        cliAgentType: "claude-code",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-      failedClaim.sandboxHeaders,
-      [400],
-    );
-    expect(JSON.stringify(spoofedFailedH2.body)).toContain(
-      "[PI_H2_TYPE_MISMATCH]",
-    );
     const cancelledRun = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
       model,
-      prompt: "reject H2 after an explicit Pi run is cancelled",
+      prompt: "cancel before native initialization",
     });
     const cancelledClaim = await claimChatRun(runnerGroup, cancelledRun.runId);
     await cancelChatRun(
@@ -650,60 +390,26 @@ describe("CHAT-02: model-first routing", () => {
       cancelledRun.runId,
       cancelledClaim.sandboxHeaders,
     );
-    const lateCancelledH2 = await webhooks.requestAgentComplete(
-      {
-        runId: cancelledRun.runId,
-        exitCode: 1,
-        completion: {
-          cliAgentType: "pi",
-          cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
-        },
-      },
-      cancelledClaim.sandboxHeaders,
-      [400],
-    );
-    expect(JSON.stringify(lateCancelledH2.body)).toContain(
-      "[PI_H2_RUN_TERMINAL]",
-    );
-
     const retry = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "resume only the last completed Pi history",
+      prompt: "retain the last initialized native context",
     });
     const retryClaim = await claimChatRun(runnerGroup, retry.runId);
-    expect(retryClaim.claim.resumeSession).toMatchObject({
+    expect(retryClaim.claim.nativeContinuation).toMatchObject({
       sessionId: run.threadId,
-      historyRef: { kind: "blob", hash: h2Hash },
+      generationRunId: run.runId,
     });
-    const retryFailure = await webhooks.requestAgentComplete(
+    await webhooks.requestAgentComplete(
       {
         runId: retry.runId,
         exitCode: 1,
-        error: "guest reported Pi failure without new native history",
+        error: "failure without native initialization",
       },
       retryClaim.sandboxHeaders,
       [200],
     );
-    expect(retryFailure.body).toStrictEqual({
-      success: true,
-      status: "failed",
-    });
-    await waitForRunStatus(actor, retry.runId, "failed");
-    const retryLateFailedH2 = await webhooks.requestAgentRunOutputs(
-      {
-        runId: retry.runId,
-        cliAgentType: "pi",
-        cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
-      },
-      retryClaim.sandboxHeaders,
-      [400],
-    );
-    expect(JSON.stringify(retryLateFailedH2.body)).toContain(
-      "[PI_H2_RUN_TERMINAL]",
-    );
+    await flushWaitUntilForTest();
 
     const reportedFailureRun = await sendChatRunAfterPick(actor, {
       agentId,
@@ -721,7 +427,7 @@ describe("CHAT-02: model-first routing", () => {
       completion: {
         cliAgentType: "pi",
         cliAgentSessionId: run.threadId,
-        cliAgentSessionHistoryHash: h2Hash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     } as const;
     const reportedFailure = await webhooks.requestAgentComplete(
@@ -741,30 +447,32 @@ describe("CHAT-02: model-first routing", () => {
       [200],
     );
     expect(repeatedReportedFailure.body).toStrictEqual(reportedFailure.body);
-    const repeatedCombinedH2 = await webhooks.requestAgentComplete(
+    const repeatedCombinedCompletion = await webhooks.requestAgentComplete(
       {
         runId: run.runId,
         exitCode: 0,
         completion: {
           cliAgentType: "pi",
           cliAgentSessionId: run.threadId,
-          cliAgentSessionHistoryHash: h2Hash,
+          cliAgentSessionHistoryDisposition: "native_only",
           artifactSnapshots: memoryArtifactSnapshots,
         },
       },
       claimed.sandboxHeaders,
       [200],
     );
-    expect(repeatedCombinedH2.body).toStrictEqual(combinedH2.body);
+    expect(repeatedCombinedCompletion.body).toStrictEqual(
+      combinedCompletion.body,
+    );
     const probe = await sendChatRunAfterPick(actor, {
       agentId,
       threadId: run.threadId,
-      prompt: "verify the canonical completed history after rejected writes",
+      prompt: "verify the current native generation after rejected writes",
     });
     const probeClaim = await claimChatRun(runnerGroup, probe.runId);
-    expect(probeClaim.claim.resumeSession).toMatchObject({
+    expect(probeClaim.claim.nativeContinuation).toMatchObject({
       sessionId: run.threadId,
-      historyRef: { kind: "blob", hash: h2Hash },
+      generationRunId: reportedFailureRun.runId,
     });
     await cancelChatRun(actor, probe.runId, probeClaim.sandboxHeaders);
 
@@ -781,6 +489,13 @@ describe("CHAT-02: model-first routing", () => {
     const explicitResumeClaim = await api.claimRunnerJob(explicitResume.runId);
     expect(explicitResumeClaim.cliAgentType).toBe("claude-code");
     expect(explicitResumeClaim.resumeSession).toBeNull();
+    expect(explicitResumeClaim.nativeContinuation).toMatchObject({
+      sessionId: null,
+      generationRunId: null,
+    });
+    expect(explicitResumeClaim.nativeContinuation?.recoveryPrompt).toContain(
+      "okou chat messages --output-dir threads",
+    );
     await cancelChatRun(actor, explicitResume.runId, {
       authorization: `Bearer ${explicitResumeClaim.sandboxToken}`,
     });

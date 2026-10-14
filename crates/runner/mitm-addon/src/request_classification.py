@@ -678,19 +678,19 @@ def classification_needs_request_timing(classification: RequestClassification) -
     )
 
 
-def should_stream_capture_request(classification: RequestClassification) -> bool:
-    if not isinstance(classification, ApiAllow | BrowserAllow | FirewallPolicyAllow | Allow):
-        return False
-    return bool(classification.sandbox_info.get("captureNetworkBodies", False))
+def should_stream_request(classification: RequestClassification) -> bool:
+    """Header-authorized passthrough streaming is independent of diagnostic capture."""
+    if isinstance(classification, FirewallPolicyAllow):
+        return not firewall_allow_uses_public_destination(classification.firewall_allow)
+    return isinstance(classification, Allow | ApiAllow | BrowserAllow)
 
 
-def should_try_firewall_stream_capture_request(classification: RequestClassification) -> bool:
+def should_try_firewall_stream_request(classification: RequestClassification) -> bool:
+    """Probe header-safe auth independently of capture, keeping destination deferral."""
     if not isinstance(classification, FirewallAllow):
         return False
     allow = classification.firewall_allow
-    if firewall_allow_uses_public_destination(allow):
-        return False
-    return bool(classification.sandbox_info.get("captureNetworkBodies", False))
+    return not firewall_allow_uses_public_destination(allow)
 
 
 def firewall_allow_uses_public_destination(allow: matching.FirewallAllow) -> bool:

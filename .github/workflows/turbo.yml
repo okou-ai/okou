@@ -183,7 +183,7 @@ jobs:
           CI_MAX_OPEN_PRS: ${{ vars.CI_MAX_OPEN_PRS }}
           CI_MAX_OPEN_PRS_PER_AUTHOR: ${{ vars.CI_MAX_OPEN_PRS_PER_AUTHOR }}
           CI_PR_ADMISSION_BYPASS_LIST: ${{ vars.CI_PR_ADMISSION_BYPASS_LIST }}
-        run: bash .github/scripts/check-pr-ci-capacity.sh
+        run: bash .github/scripts/checks/check-pr-ci-capacity.sh
 
   # Detect release-please context across all event types (PR, push, merge queue).
   # github.head_ref is empty in merge_group events, so we extract the PR number
@@ -280,7 +280,7 @@ jobs:
           )
           git fetch --no-tags origin "$release_pr_head"
 
-          .github/scripts/check-release-please-component-releases.sh \
+          .github/scripts/checks/check-release-please-component-releases.sh \
             "$MERGE_GROUP_BASE_SHA" \
             "$MERGE_GROUP_HEAD_SHA" \
             "$release_pr_head"
@@ -306,7 +306,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          selection=$(bash .github/scripts/detect-native-only.sh)
+          selection=$(bash .github/scripts/checks/detect-native-only.sh)
           printf '%s\n' "$selection" | tee -a "$GITHUB_OUTPUT"
 
   # Prepare: detect changes and set job-ref identifier
@@ -351,7 +351,7 @@ jobs:
         run: |
           echo "Checking for changes..."
 
-          BASE_REF=$(.github/scripts/changed-base-ref.sh)
+          BASE_REF=$(.github/scripts/checks/changed-base-ref.sh)
           echo "${{ github.event_name }} mode: comparing against base $BASE_REF"
 
           echo "base-ref=$BASE_REF" >> "$GITHUB_OUTPUT"
@@ -422,7 +422,7 @@ jobs:
           CRATES_CHANGED: ${{ steps.detect.outputs.crates-changed }}
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
-        run: .github/scripts/runner-image-context.sh turbo-consumer
+        run: .github/scripts/runner/runner-image-context.sh turbo-consumer
 
       - name: Select Playwright runner consumer
         id: playwright-runner
@@ -432,7 +432,7 @@ jobs:
           CLI_CHANGED: ${{ steps.detect.outputs.cli-changed }}
           CI_CHANGED: ${{ steps.detect.outputs.ci-changed }}
           E2E_CHANGED: ${{ steps.detect.outputs.e2e-changed }}
-        run: .github/scripts/runner-image-context.sh playwright-consumer
+        run: .github/scripts/runner/runner-image-context.sh playwright-consumer
 
       - name: Set job-ref
         id: set-job-ref
@@ -525,7 +525,7 @@ jobs:
           PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          BASE_SHA=$(.github/scripts/changed-base-ref.sh)
+          BASE_SHA=$(.github/scripts/checks/changed-base-ref.sh)
 
           # Get list of added/modified files (exclude deleted)
           CHANGED_FILES=$(git diff --name-only --diff-filter=AM "$BASE_SHA" HEAD)
@@ -562,7 +562,7 @@ jobs:
           fetch-depth: 1
       - uses: ./.github/actions/toolchain-init
       - name: Check DB ownership boundary
-        run: .github/scripts/check-db-boundary.sh
+        run: .github/scripts/checks/check-db-boundary.sh
       - name: Check deletion-only database transaction inventory
         working-directory: turbo
         shell: bash
@@ -1418,6 +1418,9 @@ jobs:
           /tmp/awscli/aws/install
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Resolve artifact commit SHA
         id: artifact
         run: |
@@ -1575,7 +1578,7 @@ jobs:
 
           if [[ "$ARTIFACT_EXISTS" == "true" ]]; then
             canonical_dist="$(mktemp -d)"
-            bash .github/scripts/fetch-okou-app-artifact.sh \
+            bash .github/scripts/artifacts/fetch-okou-app-artifact.sh \
               "$r2_endpoint" \
               "$artifact_uri" \
               "$canonical_dist"
@@ -1600,7 +1603,7 @@ jobs:
           CANONICAL_ASSETS: ${{ steps.worker-preview.outputs.canonical-dist }}/assets
         run: |
           r2_endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          bash .github/scripts/publish-okou-app-assets.sh \
+          bash .github/scripts/release/publish-okou-app-assets.sh \
             "$r2_endpoint" \
             "$R2_BUCKET_NAME" \
             "$CANONICAL_ASSETS"
@@ -1889,7 +1892,8 @@ jobs:
       - name: Install E2E dependencies
         run: cd e2e && pnpm install --frozen-lockfile
       - name: Check Playwright E2E types
-        run: cd e2e && pnpm check-types
+        working-directory: e2e
+        run: pnpm check-types
       - name: Install Playwright browsers
         run: cd e2e && pnpm exec playwright install --only-shell chromium
       - name: Run Playwright fixture integration tests
@@ -2037,6 +2041,9 @@ jobs:
           /tmp/awscli/aws/install
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Resolve artifact commit SHA
         id: artifact
         run: |
@@ -2097,7 +2104,7 @@ jobs:
           ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
         run: |
           mkdir -p /tmp/okou-cli-artifact
-          bash .github/scripts/build-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/build-okou-cli-artifact.sh \
             "$ARTIFACT_SHA" \
             /tmp/okou-cli-artifact
 
@@ -2160,10 +2167,10 @@ jobs:
           ARTIFACT_SHA: ${{ steps.artifact.outputs.sha }}
         run: |
           set -euo pipefail
-          bash .github/scripts/verify-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             /tmp/okou-cli-artifact \
             "$ARTIFACT_SHA"
-          bash .github/scripts/smoke-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             /tmp/okou-cli-artifact/package.tgz
 
       - name: Verify CLI artifact through CDN
@@ -2174,14 +2181,14 @@ jobs:
           set -euo pipefail
           cdn_dir="$(mktemp -d)"
           for filename in package.tgz manifest.json ready.json; do
-            bash .github/scripts/download-okou-cli-cdn-file.sh \
+            bash .github/scripts/artifacts/download-okou-cli-cdn-file.sh \
               "${CLI_STATIC_BASE_URL}/${ARTIFACT_PREFIX}/${filename}" \
               "${cdn_dir}/${filename}"
           done
-          bash .github/scripts/verify-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             "$cdn_dir" \
             "$ARTIFACT_SHA"
-          bash .github/scripts/smoke-okou-cli-artifact.sh \
+          bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             "$cdn_dir/package.tgz"
 
       - name: Upload CLI artifact
@@ -2321,7 +2328,7 @@ jobs:
           AWS_METAL_RUNNER_HOSTS: ${{ secrets.AWS_METAL_RUNNER_HOSTS }}
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           PROFILE: vm0/default
-        run: .github/scripts/wait-runner-image-groups.sh
+        run: .github/scripts/runner/wait-runner-image-groups.sh
 
   # Deploy runner start: start one service on the existing deterministic host
   # selection for runner-image-job-ref, matching the Crates Runner behavior lane.
@@ -2389,8 +2396,8 @@ jobs:
           SNAPSHOT_HASH_MAP: ${{ needs.deploy-runner-prepare.outputs.snapshot-hash-map }}
           VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
-          .github/scripts/with-runner-lifecycle-lock.sh \
-            .github/scripts/reconcile-and-start-runner-groups.sh
+          .github/scripts/runner/with-runner-lifecycle-lock.sh \
+            .github/scripts/runner/reconcile-and-start-runner-groups.sh
 
   # Prepare the runner identities and API credentials once, then fan runner
   # coverage across no more than twelve non-empty file-balanced shards.
@@ -2808,7 +2815,7 @@ jobs:
           METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
           JOB_REF: ${{ needs.prepare.outputs.runner-image-job-ref }}
           RUNNER_SERVICE_REF: ${{ needs.prepare.outputs.job-ref }}
-        run: bash .github/scripts/prune-runner-idle.sh
+        run: bash .github/scripts/runner/prune-runner-idle.sh
 
   lint-runtime-api-compat:
     runs-on: ubuntu-latest
@@ -2877,7 +2884,7 @@ jobs:
           mkdir -p /tmp/runtime-api-schema
           # The main commit this candidate merges onto: HEAD^1 of the PR merge
           # ref, or the merge group base. Not the branch's own fork point.
-          base_sha=$(.github/scripts/changed-base-ref.sh)
+          base_sha=$(.github/scripts/checks/changed-base-ref.sh)
           echo "Base commit: $base_sha"
           git show "$base_sha:turbo/apps/api/src/lib/desktop-compatibility.json" \
             > /tmp/runtime-api-schema/desktop-base-floor.json

@@ -14,6 +14,9 @@ use uuid::Uuid;
 
 use crate::host_memory_policy::{HostMemoryBounds, HostMemoryBoundsError};
 
+mod shared;
+pub use shared::{HostPressureCoordinator, OptionalPressureControl, OptionalPressureOpportunity};
+
 /// Immutable supplied scheduling bounds, with no defaults or public config.
 #[derive(Clone, Copy, Debug)]
 pub struct HostPressurePolicy {

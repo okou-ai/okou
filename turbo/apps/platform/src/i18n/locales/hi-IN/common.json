@@ -122,35 +122,15 @@
         "title": "लॉग नहीं मिला"
       },
       "runner": {
-        "cacheMiss": "कोई भी कैश की गई होम डायरेक्टरी पुन: उपयोग कुंजी से मेल नहीं खाती।",
-        "deviceLimitMismatch": "निष्क्रिय पूल प्रविष्टि मौजूद है लेकिन इसकी डिवाइस दर सीमक स्थिति मेल नहीं खाती है।",
-        "diskPressure": "रनर पर डिस्क दबाव के कारण होम डायरेक्टरी का पुन: उपयोग छोड़ दिया गया।",
         "environment": "परिवेश",
-        "featureDisabled": "इस रन के लिए सैंडबॉक्स का पुन: उपयोग अक्षम है।",
         "framework": "फ़्रेमवर्क",
         "generation": "जनरेशन",
-        "home": "होम निर्देशिका",
-        "homeNoReuseKey": "होम निर्देशिका के पुन: उपयोग की कोई कुंजी उपलब्ध नहीं थी।",
-        "homeReusedDescription": "होम निर्देशिका को रनर कैश से पुनर्स्थापित किया गया।",
         "hostname": "होस्टनाम",
-        "invalidMetadata": "कैश की गई होम डायरेक्टरी का मेटाडेटा अमान्य था।",
-        "invalidWorkingDir": "अनुरोधित कार्य निर्देशिका का पुन: उपयोग नहीं किया जा सका।",
-        "lockBusy": "कोई अन्य रन उसी होम डायरेक्टरी को तैयार कर रहा था।",
-        "noReuseKey": "निष्क्रिय सैंडबॉक्स से मिलान करने के लिए कोई पुन: उपयोग कुंजी उपलब्ध नहीं थी।",
-        "noSessionId": "पुराना परिणाम: सैंडबॉक्स का पुन: उपयोग न होने का सटीक कारण उपलब्ध नहीं है।",
-        "notConfigured": "इस रन के लिए होम डायरेक्टरी का पुन: उपयोग कॉन्फ़िगर नहीं किया गया था।",
-        "notReused": "पुन: उपयोग नहीं किया गया",
-        "outcomeUnavailableDescription": "अतिरिक्त विवरण उपलब्ध नहीं हैं।",
-        "poolMiss": "निष्क्रिय पूल में कोई मेल खाता सैंडबॉक्स नहीं मिला।",
-        "profileMismatch": "निष्क्रिय पूल प्रविष्टि मौजूद है लेकिन इसकी प्रोफ़ाइल मेल नहीं खाती।",
         "provisioning": "तैयार किया जा रहा है",
-        "reused": "पुन: उपयोग",
-        "reusedDescription": "सैंडबॉक्स को निष्क्रिय पूल से हटा दिया गया था।",
         "runnerId": "रनर आईडी",
-        "sandbox": "सैंडबॉक्स",
-        "sandboxPrepareFallback": "कैश की गई होम डायरेक्टरी मिली, लेकिन सैंडबॉक्स तैयार होने के बाद उसका उपयोग नहीं किया जा सका।",
-        "sandboxReusedDescription": "पुन: उपयोग किए गए सैंडबॉक्स में होम डायरेक्टरी उपलब्ध रही।",
         "startup": "प्रारंभ",
+        "startupBlank": "खाली सैंडबॉक्स से शुरू",
+        "startupBlankDescription": "एक तैयार सैंडबॉक्स नई होम निर्देशिका के साथ शुरू हुआ।",
         "startupCold": "कोल्ड स्टार्ट",
         "startupColdDescription": "एक नया सैंडबॉक्स और कार्यस्थान तैयार किया गया।",
         "startupHome": "होम निर्देशिका का पुन: उपयोग",
@@ -160,7 +140,6 @@
         "startupUnknown": "अज्ञात",
         "startupUnknownDescription": "स्टार्टअप पुन: उपयोग का विवरण उपलब्ध नहीं है।",
         "unavailable": "अनुपलब्ध",
-        "unparkFailed": "अनपार्क प्रयास विफल; एक ताज़ा सैंडबॉक्स का प्रावधान किया गया था।",
         "version": "संस्करण"
       },
       "steps": {
@@ -543,19 +522,25 @@
       "agentLoading": "एजेंट अभी भी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
       "connectTooltip": "आर्टिफ़ैक्ट अपलोड करने के लिए Google Drive कनेक्ट करें",
+      "conversionNotice": "संपादन योग्य कॉपी बनाता है। फ़ॉर्मैट बदल सकता है; मूल फ़ाइल सुरक्षित रहती है।",
+      "conversionUnconfirmed": "Google रूपांतरण की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले Drive देखें।",
       "noArtifacts": "सिंक करने के लिए कोई आर्टिफ़ैक्ट नहीं",
+      "openDocs": "Google Docs में खोलें",
+      "openSheets": "Google Sheets में खोलें",
+      "openSlides": "Google Slides में खोलें",
       "partial_one": "{{count}} फ़ाइल में से {{synced}} को Google Drive में समन्वयित किया गया",
       "partial_other": "{{count}} फ़ाइलों में से {{synced}} को Google Drive में समन्वयित किया गया",
       "synced": "Google Drive से समन्वयित",
       "syncedFiles_one": "Google Drive से समन्वयित",
       "syncedFiles_other": "{{count}} फ़ाइलों को Google Drive में समन्वयित किया गया",
-      "syncedSlides": "Google Slides से समन्वयित",
       "syncFailed": "Google Drive से सिंक करने में विफल",
       "syncingArtifact": "आर्टिफ़ैक्ट सिंक हो रहा है...",
       "syncingFiles_one": "{{count}} फ़ाइल सिंक हो रही है...",
       "syncingFiles_other": "{{count}} फ़ाइलें सिंक हो रही हैं...",
       "syncingNamed": "{{filename}} सिंक हो रहा है...",
       "upload": "Google Drive पर अपलोड करें",
+      "uploadDocs": "Google Docs पर अपलोड करें",
+      "uploadSheets": "Google Sheets पर अपलोड करें",
       "uploadSlides": "Google Slides पर अपलोड करें"
     },
     "kinds": {
@@ -572,6 +557,7 @@
       "markdown": "Markdown",
       "presentation": "प्रस्तुति",
       "sharedConversation": "साझा बातचीत",
+      "spreadsheet": "स्प्रेडशीट",
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
@@ -638,6 +624,8 @@
       "importedSlides_one": "{{count}} स्लाइड",
       "importedSlides_other": "{{count}} स्लाइड",
       "importFile": "टेम्पलेट आयात करें",
+      "importImage": "अपनी इमेज इंपोर्ट करें",
+      "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
       "noMatches": "कोई मेल नहीं",
@@ -655,6 +643,7 @@
       "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
       "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
       "slideThumbnail": "{{title}} स्लाइड {{slideNumber}} पूर्वावलोकन",
       "template": "खाका",
@@ -684,7 +673,6 @@
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
-        "change": "बदलें",
         "changeLabel": "टेम्पलेट की दृश्यता बदलें",
         "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं",
         "workspaceState": "इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है"
@@ -1516,6 +1504,15 @@
       },
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
+    "agentSuggestions": {
+      "continueChat": "चैट जारी रखें",
+      "dismiss": "खारिज करें",
+      "label": "सुझाव",
+      "newChat": "नई चैट",
+      "next": "अगला सुझाव",
+      "position": "{{total}} में से {{current}}",
+      "previous": "पिछला सुझाव"
+    },
     "attachments": {
       "attach": "अटैच करें",
       "fileTooLarge": "{{filename}} 1 GB सीमा से अधिक है",
@@ -1757,9 +1754,8 @@
       "threadSuggestions": "चैट थ्रेड",
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
       "workflows": {
-        "empty": "कोई मेल खाता वर्कफ़्लो नहीं",
         "loading": "वर्कफ़्लो लोड हो रहा है...",
-        "showAll": "सभी वर्कफ़्लो दिखाएँ",
+        "showAllCount": "सभी {{total}} दिखाएँ",
         "title": "वर्कफ़्लो"
       }
     },
@@ -1933,15 +1929,6 @@
       "threads": "चैट",
       "title": "फ़ॉरवर्ड करें"
     },
-    "homeTasks": {
-      "empty": "अभी कोई सुझाया गया कार्य नहीं",
-      "existingThread": "चैट जारी रखें",
-      "exploreWorkflow": "वर्कफ़्लो देखें",
-      "heading": "आपके हाल के काम से लिया गया",
-      "newTasksAvailable": "नए कार्य उपलब्ध हैं",
-      "newThread": "नई चैट",
-      "reload": "कार्य फिर से लोड करें"
-    },
     "mail": {
       "bcc": "गुप्त प्रतिलिपि",
       "cc": "प्रतिलिपि",
@@ -1985,6 +1972,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "चैट खोलें",
       "openChatIn": "{{integration}} में चैट खोलें",
       "openDiscordMessage": "Discord में मूल संदेश खोलें",
@@ -2041,6 +2029,26 @@
       "removeQueuedMessage": "पंक्तिबद्ध संदेश हटाएँ",
       "skipAutomationEvent": "ऑटोमेशन ईवेंट छोड़ें"
     },
+    "relations": {
+      "communications": "संदेश",
+      "created": "बनाई गई",
+      "idle": "निष्क्रिय",
+      "loadFailed": "लोड नहीं हुआ",
+      "loading": "लोड हो रहा है…",
+      "messageUnavailable": "संदेश उपलब्ध नहीं",
+      "more": "और देखें",
+      "origin": "शुरुआत",
+      "parallelHint": "कई चैट साथ चलाएँ। इंतज़ार घटाएँ।",
+      "queued": "कतार में",
+      "received": "प्राप्त हुआ",
+      "refresh": "रीफ़्रेश करें",
+      "running": "चल रहा है",
+      "sent": "भेजा गया",
+      "title": "संबंधित चैट",
+      "toggleMessages": "{{title}} के साथ संदेश",
+      "unavailable": "उपलब्ध नहीं",
+      "untitled": "बिना शीर्षक"
+    },
     "remoteAccess": {
       "default": "डिफ़ॉल्ट",
       "defaultEnabled": "चैट के लिए डिफ़ॉल्ट रूप से सक्षम",
@@ -2050,10 +2058,25 @@
       "loading": "रिमोट एक्सेस लोड हो रहा है…",
       "off": "बंद",
       "on": "चालू",
-      "requiresSsh": "SSH होस्ट {{name}} का एक्सेस भी आवश्यक है।",
+      "requiresSsh": "SSH आवश्यक: {{name}}",
       "retry": "फिर से कोशिश करें",
+      "sshDisabled": "SSH चालू करें: {{name}}",
+      "sshEnabled": "SSH चालू: {{name}}",
       "title": "रिमोट एक्सेस",
       "unavailableSsh": "अनुपलब्ध SSH होस्ट"
+    },
+    "resources": {
+      "collapse": "समेटें",
+      "copyLink": "लिंक कॉपी करें",
+      "empty": "इस चैट में अभी कोई आर्टिफ़ैक्ट या लिंक नहीं है",
+      "emptyLinks": "इस चैट में अभी कोई लिंक नहीं है",
+      "expand": "विस्तार करें",
+      "links": "लिंक",
+      "loadFailed": "संसाधन लोड नहीं हो सके",
+      "loadingLinks": "लिंक लोड हो रहे हैं",
+      "retry": "फिर कोशिश करें",
+      "title": "चैट संसाधन",
+      "viewAll": "सभी देखें"
     },
     "run": {
       "collapseWorkHistory": "कार्य इतिहास संक्षिप्त करें",
@@ -2383,6 +2406,7 @@
       "tasks": {
         "image": "चित्र",
         "presentation": "स्लाइड",
+        "suggestions": "सुझाव",
         "visualization": "विज़ुअलाइज़ेशन",
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
@@ -2729,7 +2753,6 @@
         "workflow": "वर्कफ़्लो"
       },
       "importedLoadFailed": "अपलोड किए गए टेम्पलेट लोड नहीं हो सके।",
-      "importedLoading": "अपलोड किए गए टेम्पलेट लोड हो रहे हैं…",
       "importedUnavailable": "अपलोड किए गए टेम्पलेट फ़िलहाल उपलब्ध नहीं हैं।",
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
       "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
@@ -2808,6 +2831,22 @@
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
       "transcriptionFailed": "ध्वनि प्रतिलेखन विफल रहा. पुनः प्रयास करें।"
+    },
+    "walletAction": {
+      "approveButton": "समीक्षा करें",
+      "approveTitle": "खरीद की समीक्षा करें",
+      "authorized": "अधिकृत",
+      "callbackFailed": "अधिकृत हो गया। संदेश फिर से भेजने के लिए जारी रखें चुनें।",
+      "callbackPrompt": "Link वॉलेट का प्राधिकरण पूरा हो गया है। पिछला कार्य जारी रखें।",
+      "checkFailed": "प्राधिकरण की जाँच नहीं हो सकी। फिर से प्रयास करें।",
+      "connectButton": "अधिकृत करें",
+      "connectTitle": "Link वॉलेट अधिकृत करें",
+      "continueButton": "जारी रखें",
+      "continueTitle": "Link में जारी रखें",
+      "expired": "प्राधिकरण की समय-सीमा समाप्त",
+      "failed": "प्राधिकरण अधूरा है",
+      "unavailable": "प्राधिकरण उपलब्ध नहीं है",
+      "waiting": "प्राधिकरण की प्रतीक्षा है"
     },
     "workflows": {
       "named": "वर्कफ़्लो {{title}}",
@@ -2979,6 +3018,7 @@
       "genericLabel": "कनेक्टर",
       "githubLabel": "GitHub",
       "invalidUrl": "अमान्य कनेक्टर कॉलबैक URL.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -3422,13 +3462,15 @@
         "alreadyDescription": "आप पहले से ही जुड़े हुए हैं. चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyDescriptionNamed": "आप पहले से ही {{bot}} से जुड़े हुए हैं। चैटिंग शुरू करने के लिए Telegram में एक संदेश भेजें।",
         "alreadyTitle": "पहले से ही Telegram से जुड़ा है",
-        "back": "Telegram सेटिंग्स पर वापस जाएँ",
+        "botNotConfigured": "Telegram कनेक्शन अभी कॉन्फ़िगर नहीं किया गया है। कृपया सहायता टीम से संपर्क करें।",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके Telegram कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
         "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectionCheckFailed": "कनेक्शन की जाँच करने के लिए Telegram से संपर्क नहीं हो सका। कृपया थोड़ी देर में फिर से कोशिश करें।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
+        "domainNotVerified": "इस ऐप के लिए Telegram लॉगिन की पुष्टि नहीं हो सकी। फिर से कोशिश करें या समस्या बनी रहने पर सहायता टीम से संपर्क करें।",
         "errorFallback": "हम Telegram कनेक्ट नहीं कर सके। Telegram से पुनः प्रयास करें।",
         "invalidSignature": "इस लिंक पर हस्ताक्षर मान्य नहीं हैं।",
         "invalidTimestamp": "इस लिंक पर टाइमस्टैम्प मान्य नहीं है।",
@@ -3743,16 +3785,8 @@
       },
       "telegram": {
         "backToIntegrations": "एकीकरण पर वापस जाएँ",
-        "botFallback": "Telegram बॉट",
-        "disconnectAria": "{{bot}} को डिस्कनेक्ट करें",
-        "documentTitle": "Telegram",
         "loadError": "Telegram सेटिंग लोड नहीं हो सकी.",
-        "moreOptions": "{{bot}} के लिए अधिक विकल्प",
-        "notConnected": "जुड़े नहीं हैं",
-        "officialBot": "आधिकारिक Telegram बॉट",
-        "officialDescription": "{{brandName}} द्वारा प्रदान किया गया आधिकारिक बॉट।",
-        "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है.",
-        "pageDescription": "इस वर्कस्पेस के लिए बॉट रूटिंग प्रबंधित करें"
+        "officialMissing": "आधिकारिक बॉट कॉन्फ़िगरेशन अनुपलब्ध है."
       },
       "toasts": {
         "agentphoneConnected": "फ़ोन नंबर कनेक्ट हो गया",
@@ -3788,6 +3822,65 @@
     "toasts": {
       "connected": "{{connector}} कनेक्ट हुआ"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "आपके समझौते के लिए एक शुरुआती मसौदा। हस्ताक्षर करने से पहले अपने प्रोजेक्ट और लागू क्षेत्राधिकार के अनुसार शर्तों की समीक्षा करें।",
+    "back": "टेम्पलेट पर वापस जाएँ",
+    "categories": {
+      "all": "सभी",
+      "business-record": "व्यावसायिक रिकॉर्ड",
+      "contract": "अनुबंध",
+      "creative-brief": "क्रिएटिव ब्रीफ़",
+      "guide": "गाइड",
+      "invoice": "इनवॉइस",
+      "letter": "पत्र",
+      "report": "रिपोर्ट",
+      "resume": "रिज़्यूमे",
+      "service-agreement": "सेवा समझौता"
+    },
+    "contents": {
+      "agreement": {
+        "content": "शर्तें और ज़िम्मेदारियाँ",
+        "delivery": "समीक्षा और हस्ताक्षर",
+        "details": "अवधि और समाप्ति",
+        "overview": "पक्ष और कार्यक्षेत्र"
+      },
+      "brief": {
+        "content": "लक्षित दर्शक और मुख्य संदेश",
+        "delivery": "समयरेखा और समीक्षा प्रक्रिया",
+        "details": "डिलिवरेबल और प्रारूप",
+        "overview": "प्रोजेक्ट का परिचय और लक्ष्य"
+      },
+      "general": {
+        "content": "आपकी सामग्री के लिए अनुभाग",
+        "delivery": "संपादन योग्य Word या PDF",
+        "details": "एकसमान पृष्ठ लेआउट",
+        "overview": "स्पष्ट दस्तावेज़ संरचना"
+      },
+      "invoice": {
+        "content": "सेवाओं और दरों का विवरण",
+        "delivery": "भुगतान विवरण",
+        "details": "कर, कुल राशि और देय तिथि",
+        "overview": "विक्रेता और ग्राहक का विवरण"
+      }
+    },
+    "filter": "दस्तावेज़ श्रेणी",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word दस्तावेज़"
+    },
+    "imageError": "पूर्वावलोकन उपलब्ध नहीं है",
+    "included": "शामिल सामग्री",
+    "nextPage": "अगला नमूना पृष्ठ",
+    "openLarger": "बड़ा पूर्वावलोकन खोलें",
+    "page": "पृष्ठ {{page}}",
+    "preview": "{{title}} का पूर्वावलोकन",
+    "previousPage": "पिछला नमूना पृष्ठ",
+    "retry": "फिर से कोशिश करें",
+    "samplePages": "नमूना पृष्ठ: {{total}}",
+    "title": "दस्तावेज़",
+    "use": "टेम्पलेट इस्तेमाल करें",
+    "useNamed": "{{title}} इस्तेमाल करें"
   },
   "global": {
     "actions": {
@@ -4495,17 +4588,9 @@
       "settings": "सेटिंग्स",
       "signOut": "साइन आउट",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
-        "usageRemaining": "{{provider}} {{window}} शेष",
-        "windows": {
-          "fiveHour": "5 घंटे",
-          "week": "सप्ताह"
-        }
+        "usageRemaining": "{{provider}} {{window}} शेष"
       },
       "switchAccount": "खाता स्थानांतरित करें",
       "userFallback": "उपयोगकर्ता"
@@ -4674,10 +4759,16 @@
       "personal": {
         "accountFallback": "खाता {{number}}",
         "activeAccount": "सक्रिय",
+        "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
+        "claudeGroup": "आपका Claude प्लान",
+        "claudePlans": "Pro या Max",
         "claudeTitle": "Claude",
+        "codexGroup": "आपका ChatGPT प्लान",
+        "codexPlans": "Plus, Pro या Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "कनेक्ट करें",
         "connectAccount": "खाता कनेक्ट करें",
         "disconnectAccount": "खाता डिस्कनेक्ट करें",
         "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
@@ -4685,7 +4776,9 @@
         "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "loadError": "आपके खाते लोड नहीं हो सके।",
         "loadingAccounts": "खाते लोड हो रहे हैं…",
+        "managePlans": "प्लान मैनेज करें",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
+        "ownPlan": "अपने प्लान से चलाएं",
         "reconnectAccount": "फिर से कनेक्ट करें",
         "retry": "फिर से कोशिश करें",
         "status": {
@@ -4880,26 +4973,22 @@
           "title": "IndexedDB स्टोरेज",
           "unavailable": "IndexedDB स्टोरेज उपलब्ध नहीं है।"
         },
-        "morningBriefEmail": {
-          "checkStatus": "डिलीवरी की स्थिति देखें",
-          "description": "Morning Brief टेम्पलेट से अपने खाते के ईमेल पर एक तय नमूना भेजें। इससे कोई Agent नहीं चलेगा और आपका शेड्यूल नहीं बदलेगा।",
-          "reasons": {
-            "delivery-failed": "डिलीवरी विफल हुई। सेवा ने पिछला प्रयास स्वीकार किया हो सकता है।",
-            "expired": "डिलीवरी का समय समाप्त हो गया। सेवा ने पिछला प्रयास स्वीकार किया हो सकता है।",
-            "no-email": "छोड़ दिया गया: आपके खाते में ईमेल पता नहीं है।",
-            "suppressed": "छोड़ दिया गया: आपके खाते के ईमेल पर डिलीवरी रोकी गई है।",
-            "unsubscribed": "छोड़ दिया गया: आपके खाते ने ईमेल अपडेट की सदस्यता रद्द कर दी है।"
-          },
-          "requestFailed": "अनुरोध पूरा नहीं हुआ। दोबारा प्रयास में वही अनुरोध इस्तेमाल होगा ताकि ईमेल दो बार न भेजा जाए।",
-          "retry": "परीक्षण ईमेल फिर आज़माएँ",
-          "send": "परीक्षण ईमेल भेजें",
-          "sendAnother": "एक और परीक्षण ईमेल भेजें",
-          "sending": "भेजा जा रहा है…",
+        "morningBrief": {
+          "checkStatus": "स्थिति देखें",
+          "description": "अपने खाते के सक्रिय वर्कफ़्लो से ब्रीफ़ एक बार चलाएँ। इससे सुझाव अपडेट हो सकते हैं और वास्तविक ईमेल भेजा जा सकता है। दैनिक समय-सारणी नहीं बदलेगी।",
+          "openChat": "बातचीत खोलें",
+          "requestFailed": "अनुरोध पूरा नहीं हुआ। दोबारा कोशिश करने पर वही अनुरोध इस्तेमाल होगा ताकि दोहरी प्रक्रिया न चले।",
+          "retry": "दोबारा कोशिश करें",
+          "run": "ब्रीफ़ चलाएँ",
+          "runAgain": "फिर से चलाएँ",
+          "starting": "शुरू हो रहा है…",
           "status": {
-            "queued": "डिलीवरी की कतार में है। दूसरा नमूना भेजने से पहले स्थिति देखें।",
-            "sent": "ईमेल सेवा ने स्वीकार कर लिया है। इनबॉक्स और स्पैम फ़ोल्डर देखें; इनबॉक्स में पहुँचने की पुष्टि नहीं हुई है।"
+            "completed": "ब्रीफ़ पूरी हुई।",
+            "failed": "ब्रीफ़ विफल हुई। विवरण के लिए बातचीत खोलें।",
+            "queued": "कतार में है। प्रगति देखने के लिए बातचीत खोलें।",
+            "running": "ब्रीफ़ चल रही है।"
           },
-          "title": "Morning Brief परीक्षण ईमेल"
+          "title": "सुबह की ब्रीफ़"
         },
         "openrouterPreset": {
           "description": "पूरे संगठन के नए Auto और बिल्ट-इन Okou 1.0 रन पर लागू होता है। मौजूदा रन नहीं बदलते।",
@@ -5307,23 +5396,11 @@
     "unavailable": "इस खाते के लिए SSH ऐक्सेस उपलब्ध नहीं है।",
     "username": "SSH उपयोगकर्ता नाम"
   },
-  "subscriptionLinking": {
-    "connect": "सदस्यता जोड़ें",
-    "description": "अपनी मौजूदा ChatGPT या Claude सदस्यता को {{brandName}} से जोड़ें।",
-    "dismiss": "सदस्यता का सुझाव बंद करें",
-    "hint": "क्या आपके पास ChatGPT या Claude की सदस्यता है?",
-    "limits": "उपलब्धता और उपयोग की सीमाएँ आपकी सदस्यता पर निर्भर करती हैं।",
-    "manage": "AI सदस्यताएँ प्रबंधित करें",
-    "menuConnect": "AI सदस्यता जोड़ें",
-    "menuLoading": "AI सदस्यताएँ",
-    "title": "अपनी सदस्यता जोड़ें"
-  },
   "tailscale": {
     "add": "Tailscale जोड़ें",
     "addressHelp": "पंजीकृत tailnet पीयर का IP, पूरा होस्टनाम या छोटा नाम इस्तेमाल करें। SSH लॉगिन और होस्ट कुंजी सत्यापन अभी भी आवश्यक हैं।",
     "adoptHelp": "इस संगठन के नेटवर्क को अपना निजी नेटवर्क बनाएं। अन्य मालिकों को अपने सहेजे गए होस्ट दोबारा जोड़ने होंगे।",
     "changed": "यह Tailscale नेटवर्क बदल गया है। ड्राफ्ट सहेजने से पहले नवीनतम सेटिंग देखें।",
-    "cleanupHelp": "कनेक्शन बंद होने के बाद अस्थायी नोड Tailscale में रह सकते हैं। प्रदाता के सफाई समय की गारंटी नहीं है।",
     "clientId": "OAuth क्लाइंट ID",
     "clientSecret": "OAuth क्लाइंट सीक्रेट",
     "createNew": "नया Tailscale नेटवर्क बनाएं",
@@ -5332,6 +5409,24 @@
     "edit": "Tailscale संपादित करें",
     "failed": "Tailscale बदलाव सहेजा नहीं जा सका। फिर कोशिश करें।",
     "forbidden": "आप इस Tailscale नेटवर्क का प्रबंधन नहीं कर सकते। संगठन के नेटवर्क के लिए व्यवस्थापक चाहिए।",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "Trust credentials में Credential → OAuth चुनें। Keys → Auth Keys में Write और tag:okou चुनें। Generate credential चुनकर Client ID और Client secret नीचे दिए फ़ील्ड में कॉपी करें।",
+      "policyHelp": "यह नियम tag:okou को सभी पोर्ट और प्रोटोकॉल पर सभी उपयोगकर्ताओं और डिवाइस तक पहुँच देता है। इसे मौजूदा grants में जोड़ें और बाकी नीति बनाए रखें।",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "Access controls → Visual editor → General access rules में Add rule चुनें और ये सुझाए गए मान इस्तेमाल करें।",
+      "source": "Source",
+      "stepsLabel": "Tailscale सेटअप के चरण",
+      "tags": "Tags",
+      "tagsHelp": "लक्षित डिवाइस की tailnet इस्तेमाल करें। Access controls → Visual editor → Tags में Create tag चुनें। Tag name में okou भरें और Tag owners चुनें। नीचे पंजीकरण टैग में tag:okou भरें।",
+      "title": "Tailscale कैसे कॉन्फ़िगर करें?",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "आपके SSH होस्ट अभी भी इस नेटवर्क का उपयोग करते हैं। पहले उन्हें दोबारा जोड़ें या हटाएं।",
     "invalid": "कुछ Tailscale सेटिंग अमान्य हैं। फ़ील्ड जांचकर फिर कोशिश करें।",
     "loadFailed": "Tailscale लोड नहीं हो सका। फिर कोशिश करें।",
@@ -5346,7 +5441,6 @@
     "rebindHelp": "इस होस्ट को दोबारा जोड़ने के लिए Tailscale नेटवर्क चुनें या बनाएं। SSH लॉगिन और विश्वसनीय होस्ट कुंजी सुरक्षित रहती हैं।",
     "replace": "OAuth क्रेडेंशियल बदलें",
     "select": "Tailscale नेटवर्क चुनें",
-    "setupHelp": "इन टैग तक सीमित OAuth क्लाइंट इस्तेमाल करें। आपकी tailnet नीति में SSH पोर्ट की अनुमति होनी चाहिए। सहेजने से कनेक्शन की जांच या चैट की पहुंच नहीं मिलती।",
     "summary_one": "{{count}} Tailscale सेट है",
     "summary_other": "{{count}} Tailscale सेट हैं",
     "tags": "पंजीकरण टैग",
@@ -5385,6 +5479,11 @@
     },
     "importHint": "दस्तावेज़, प्रेज़ेंटेशन या इमेज आयात करें।",
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
+    "rename": {
+      "action": "नाम बदलें",
+      "cancel": "रद्द करें",
+      "save": "सहेजें"
+    },
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "retry": "फिर से कोशिश करें",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",
@@ -5456,6 +5555,25 @@
     "cancel": "रद्द करें",
     "close": "बंद करें",
     "configured": "कॉन्फ़िगर किया गया",
+    "connectionStatus": {
+      "attention_one": "{{count}} VNC होस्ट पर ध्यान देने की ज़रूरत है",
+      "attention_other": "{{count}} VNC होस्ट पर ध्यान देने की ज़रूरत है",
+      "observedAt": "रिकॉर्ड का समय {{time}}",
+      "reasons": {
+        "authentication_failed": "प्रमाणीकरण या सर्वर की पहचान की पुष्टि विफल रही।",
+        "disconnected": "कनेक्शन प्रयास के दौरान सर्वर ने कनेक्शन बंद कर दिया।",
+        "invalid_credential": "सहेजे गए क्रेडेंशियल का उपयोग नहीं किया जा सका।",
+        "kerberos_expired": "Kerberos क्रेडेंशियल की समय सीमा समाप्त हो गई।",
+        "kerberos_non_renewable": "Kerberos क्रेडेंशियल का नवीनीकरण नहीं किया जा सकता।",
+        "kerberos_renewal_exhausted": "Kerberos क्रेडेंशियल के नवीनीकरण की सीमा पूरी हो गई।",
+        "network_failure": "कनेक्शन ट्रांसपोर्ट विफल रहा।",
+        "protocol": "सर्वर ने चुना गया कनेक्शन प्रोटोकॉल पूरा नहीं किया।",
+        "timed_out": "कनेक्शन प्रयास का समय समाप्त हो गया।",
+        "unsafe_destination": "नेटवर्क नीति ने गंतव्य को अस्वीकार कर दिया।",
+        "unsupported_profile": "सर्वर चुने गए सुरक्षा प्रोफ़ाइल का समर्थन नहीं करता।"
+      },
+      "unavailable": "VNC कनेक्शन की स्थिति उपलब्ध नहीं है"
+    },
     "credential": {
       "add": "क्रेडेंशियल जोड़ें",
       "appleDhFieldHelp": "हर फ़ील्ड 1–63 UTF-8 बाइट का होना चाहिए। NUL की अनुमति नहीं है।",
@@ -5567,9 +5685,17 @@
     },
     "save": "सहेजें",
     "saveRecovery": {
+      "deleteHelp": "हटाने से पहले इन सहेजे गए विवरणों की समीक्षा करें। यह कार्रवाई केवल संस्करण चुनती है; हटाने की पुष्टि अलग से करें।",
+      "incompatible": "प्रमाणीकरण का तरीका बदल गया है। इस संवाद को बंद करें और मौजूदा तरीके को संपादित करने के लिए क्रेडेंशियल फिर से खोलें।",
+      "keepChanges": "इस संस्करण के साथ मेरे बदलाव रखें",
+      "keepDeletion": "हटाने के लिए इस संस्करण का उपयोग करें",
+      "keepHelp": "इन विवरणों की समीक्षा करें, फिर अपना ड्राफ़्ट रखें और इस संस्करण के आधार पर सहेजें। आपके प्रमाणीकरण और भरोसे के विकल्प बरकरार रहेंगे।",
+      "latest": "अभी सहेजे गए विवरण",
       "resourceIdConflict": "यह संसाधन बनाया नहीं जा सका। यह संवाद बंद करें और फिर से कोशिश करें।",
       "review": "कॉन्फ़िगरेशन रीफ़्रेश कर दिया गया है। फिर से कोशिश करने से पहले यह संवाद बंद करें और मौजूदा विवरण जाँचें।",
-      "uncertain": "सहेजने का परिणाम अज्ञात है। आपका मूल ड्राफ़्ट लॉक है। वही अनुरोध फिर से करें या सहेजे गए कॉन्फ़िगरेशन की जाँच करने के लिए बंद करके रीफ़्रेश करें।"
+      "unavailable": "यह संसाधन अब उपलब्ध नहीं है। इस संवाद को बंद करें और दोबारा कोशिश करने से पहले कॉन्फ़िगरेशन रीफ़्रेश करें।",
+      "uncertain": "सहेजने का परिणाम अज्ञात है। आपका मूल ड्राफ़्ट लॉक है। वही अनुरोध फिर से करें या सहेजे गए कॉन्फ़िगरेशन की जाँच करने के लिए बंद करके रीफ़्रेश करें।",
+      "version": "संस्करण {{version}}"
     },
     "saving": "सेव हो रहा है…",
     "security": {
@@ -6283,68 +6409,6 @@
       "title": "वर्कफ़्लो",
       "viewAutomations": "ऑटोमेशन देखें"
     },
-    "official": {
-      "activeInstallationDescription": "यह आधिकारिक वर्कफ़्लो चालू रहता है और इसकी प्रबंधित सामग्री केवल पढ़ने योग्य रहती है।",
-      "activeInstallationTitle": "आधिकारिक वर्कफ़्लो",
-      "agent": "एजेंट",
-      "automationCount_one": "{{count}} ऑटोमेशन",
-      "automationCount_other": "{{count}} ऑटोमेशन",
-      "badge": "आधिकारिक",
-      "browse": "आधिकारिक वर्कफ़्लो देखें",
-      "chooseValue": "मान चुनें",
-      "copySucceededUninstallFailed": "कॉपी तैयार है, लेकिन मूल आधिकारिक वर्कफ़्लो को अनइंस्टॉल नहीं किया जा सका।",
-      "description": "Okou Official Team द्वारा प्रबंधित वर्कफ़्लो इंस्टॉल करें।",
-      "empty": "कोई आधिकारिक वर्कफ़्लो उपलब्ध नहीं है।",
-      "includedAutomations": "शामिल ऑटोमेशन",
-      "install": "इंस्टॉल करें",
-      "installDescription": "एक एजेंट चुनें और हर आवश्यक पैरामीटर पूरा करें। सभी शामिल ऑटोमेशन इंस्टॉल किए जाएंगे।",
-      "installed": "आधिकारिक वर्कफ़्लो इंस्टॉल हो गया",
-      "installedStatus": "इंस्टॉल किया गया",
-      "installErrorDescription": "एजेंट और पैरामीटर मान जांचें, फिर दोबारा कोशिश करें।",
-      "installErrorTitle": "आधिकारिक वर्कफ़्लो इंस्टॉल नहीं किया जा सका",
-      "installTitle": "{{name}} इंस्टॉल करें",
-      "intendedOff": "बंद रहना चाहिए",
-      "intendedOn": "चालू रहना चाहिए",
-      "loadErrorDescription": "यह कैटलॉग उपलब्ध नहीं हो सकता है या आपके खाते के लिए सक्षम नहीं है।",
-      "loadErrorTitle": "आधिकारिक वर्कफ़्लो लोड नहीं किए जा सके",
-      "no": "नहीं",
-      "noParameters": "किसी पैरामीटर की आवश्यकता नहीं है।",
-      "noResults": "आपकी खोज से कोई आधिकारिक वर्कफ़्लो मेल नहीं खाता।",
-      "notFound": "यह आधिकारिक वर्कफ़्लो नहीं मिला।",
-      "parameterCount_one": "{{count}} पैरामीटर",
-      "parameterCount_other": "{{count}} पैरामीटर",
-      "parameterRequired": "{{key}} (आवश्यक)",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "फिर से कॉन्फ़िगर करें",
-      "reconfigured": "आधिकारिक वर्कफ़्लो फिर से कॉन्फ़िगर किया गया",
-      "reconfigureDescription": "इस वर्कफ़्लो या इसके ऑटोमेशन को बदले बिना टाइप किए गए पैरामीटर अपडेट करें।",
-      "reconfigureDialogDescription": "हर प्रबंधित ऑटोमेशन की समीक्षा करें और उसके पैरामीटर अपडेट करें।",
-      "reconfigureErrorDescription": "आवश्यक मानों की समीक्षा करें और फिर से कोशिश करें।",
-      "reconfigureErrorTitle": "आधिकारिक वर्कफ़्लो फिर से कॉन्फ़िगर नहीं किया जा सका",
-      "reconfigureTitle": "इंस्टॉलेशन पैरामीटर",
-      "reconfigureUnavailable": "प्रामाणिक पैरामीटर मेटाडेटा अस्थायी रूप से उपलब्ध नहीं है।",
-      "retiredBadge": "आधिकारिक · सेवानिवृत्त",
-      "retiredDefinitionDescription": "इस सुरक्षित परिभाषा को देखा जा सकता है, लेकिन अब इसे इंस्टॉल नहीं किया जा सकता।",
-      "retiredInstallationDescription": "यह परिभाषा सेवानिवृत्त है। आपकी मौजूदा इंस्टॉलेशन अनइंस्टॉल किए जाने तक चालू और केवल पढ़ने योग्य रहेगी।",
-      "retiredInstallationTitle": "आधिकारिक वर्कफ़्लो सेवानिवृत्त",
-      "retiredTitle": "सेवानिवृत्त परिभाषा",
-      "retry": "फिर से कोशिश करें",
-      "search": "आधिकारिक वर्कफ़्लो खोजें",
-      "selectAgent": "एजेंट चुनें",
-      "statusCurrent": "वर्तमान",
-      "statusFailed": "विफल",
-      "statusNeedsReconfiguration": "फिर से कॉन्फ़िगर करना आवश्यक है",
-      "statusReconciling": "समन्वय हो रहा है",
-      "title": "आधिकारिक वर्कफ़्लो",
-      "unavailableInstallationDescription": "स्वीकृत परिभाषा अस्थायी रूप से उपलब्ध नहीं है। मौजूदा संचालन नियंत्रण उपलब्ध रहते हैं।",
-      "unavailableInstallationTitle": "आधिकारिक परिभाषा उपलब्ध नहीं है",
-      "uninstall": "अनइंस्टॉल करें",
-      "uninstallConfirm": "इससे आधिकारिक इंस्टॉलेशन और उसके सभी ऑटोमेशन हट जाएंगे। इस क्रिया को पूर्ववत नहीं किया जा सकता।",
-      "uninstallDescription": "इस आधिकारिक वर्कफ़्लो इंस्टॉलेशन को उसके प्रबंधित जीवनचक्र के माध्यम से हटाएं।",
-      "uninstallTitle": "आधिकारिक वर्कफ़्लो अनइंस्टॉल करें",
-      "viewAndInstall": "देखें और इंस्टॉल करें",
-      "yes": "हाँ"
-    },
     "skillImport": {
       "action": "स्किल्स इम्पोर्ट करें",
       "description": "यह प्रॉम्प्ट वहाँ चलाएँ जहाँ आपकी स्किल्स हैं। हर स्किल एक निजी वर्कफ़्लो बन जाती है।",
@@ -6364,7 +6428,6 @@
       "connect": "जोड़ना",
       "disconnect": "डिस्कनेक्ट",
       "disconnecting": "डिस्कनेक्ट हो रहा है...",
-      "manage": "प्रबंधित करना",
       "moreOptions": "अधिक विकल्प",
       "uninstall": "अनइंस्टॉल करें",
       "uninstalling": "अनइंस्टॉल किया जा रहा है...",
@@ -6373,30 +6436,27 @@
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
-      "accountSetup": "आधिकारिक ब्राउज़र सहमति से अपना Discord खाता कनेक्ट करें।",
-      "adminSetup": "अपने Discord सर्वर पर Okou इंस्टॉल करें, फिर अपना खाता कनेक्ट करें।",
-      "approvalConfirmed": "Works में कनेक्शन पूरा करने के लिए यह टैब बंद करें।",
+      "addNewServer": "नए सर्वर से जुड़ें",
       "approvalFailed": "पुष्टि नहीं हो सकी। मूल Okou खाते और संगठन से लॉग इन करें या अनुमति फिर शुरू करें।",
-      "authorizationError": "Discord की अनुमति पूरी नहीं हो सकी। इस कार्ड से फिर कोशिश करें।",
-      "authorizing": "अनुमति ली जा रही है…",
-      "browserConsent": "Discord विंडो में अनुमति दें। यह पेज अपने आप अपडेट हो जाएगा।",
-      "chooseDmServer": "सर्वर चुनें",
+      "authorizationError": "Discord प्राधिकरण पूरा नहीं हो सका। फिर से प्रयास करें।",
+      "chooseWorkspace": "वर्कस्पेस चुनें",
+      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना Discord खाता कनेक्ट करें।",
+      "connectedTitle": "Discord से कनेक्ट है",
+      "connectTitle": "Discord से कनेक्ट करें",
+      "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
       "description": "सर्वर में Okou को मेंशन करें या बॉट को सीधा संदेश भेजें।",
       "disconnect": "Discord को डिस्कनेक्ट करें",
-      "dmServer": "सीधे संदेशों के लिए डिफ़ॉल्ट सर्वर",
-      "install": "Discord पर इंस्टॉल करें",
-      "limitedContext": "सीमित संदर्भ: Okou को चैनल के सामान्य संदेश शायद न मिलें। Okou को मेंशन करें और उसे ज़रूरी जानकारी दें।",
-      "memberSetup": "संगठन के एडमिन से अपने Discord सर्वर पर Okou इंस्टॉल करने को कहें।",
-      "moreOptions": "Discord के और विकल्प",
-      "pendingConsent": "इस टैब में अनुमति का प्रमाण नहीं है। इसे बंद करके मूल Works टैब से अनुमति फिर शुरू करें।",
+      "installDescription": "सर्वर प्रबंधित करने की अनुमति वाले खाते से Discord में Okou को अधिकृत करें।",
+      "installTitle": "Okou को सर्वर में जोड़ें",
+      "invalidLink": "यह Discord कनेक्शन लिंक अमान्य है। Discord से एक नया लिंक खोलें।",
+      "open": "Discord खोलें",
+      "openInBrowser": "ब्राउज़र में खोलें",
+      "pendingConsent": "इस टैब को बंद करें और मूल टैब से कनेक्शन फिर से शुरू करें।",
       "popupBlocked": "Discord की अनुमति के लिए पॉप-अप की अनुमति दें, फिर कोशिश करें।",
       "retry": "फिर से कोशिश करें",
       "suspended": "Discord अस्थायी रूप से उपलब्ध नहीं है। मौजूदा कनेक्शन बने रहते हैं।",
       "title": "Discord",
-      "unconfigured": "इस संगठन के लिए Discord अभी कॉन्फ़िगर नहीं किया गया है।",
-      "uninstall": "Discord हटाएँ",
-      "uninstallDescription": "इससे इस संगठन के सभी लोगों का Discord कनेक्शन हट जाएगा। अन्य संगठनों के कनेक्शन बने रहेंगे।",
-      "uninstallTitle": "इस संगठन से Discord हटाएँ?"
+      "unconfigured": "इस संगठन के लिए Discord अभी कॉन्फ़िगर नहीं किया गया है।"
     },
     "documentTitle": "काम करता है",
     "feishuConnected": "Feishu सफलतापूर्वक कनेक्ट हुआ",
@@ -6435,7 +6495,6 @@
     },
     "telegram": {
       "description": "एजेंटों को Telegram संदेश रूट करें",
-      "openSettings": "Telegram सेटिंग्स खोलें",
       "title": "Telegram"
     }
   }

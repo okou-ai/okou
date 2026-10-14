@@ -1,9 +1,10 @@
 import { orgConcurrencySubscriptions } from "@okouai/db/schema/org-concurrency-subscription";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, gt, inArray, sql, sum } from "drizzle-orm";
 import { pgIntegerDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
 import { nowDate } from "../../lib/time";
-import type { Db } from "../external/db";
+import { db$ } from "../external/db";
 
 export const CONCURRENCY_SUBSCRIPTION_PURPOSE = "concurrency_subscription";
 const CONCURRENCY_SUBSCRIPTION_ACTIVE_STATUSES = [
@@ -15,8 +16,6 @@ export const CONCURRENCY_SUBSCRIPTION_PAYMENT_FAILED_STATUSES = [
   "unpaid",
 ] as const;
 const CONCURRENCY_PAYMENT_FAILURE_GRACE_MS = 24 * 60 * 60 * 1000;
-
-type ReadDb = Pick<Db, "select">;
 
 export interface ActiveConcurrencySubscription {
   readonly id: string;
@@ -77,20 +76,34 @@ export function activeConcurrencySubscriptionPredicate(
   );
 }
 
-export async function activePaidConcurrencySlots(
-  db: ReadDb,
-  orgId: string,
-  at: Date = nowDate(),
-): Promise<number> {
-  const [row] = await db
-    .select({
-      slots:
-        sql`COALESCE(${sum(orgConcurrencySubscriptions.slots)}, 0)::int`.mapWith(
-          pgIntegerDecoder,
-        ),
-    })
-    .from(orgConcurrencySubscriptions)
-    .where(activeConcurrencySubscriptionPredicate(orgId, at));
+const PAID_CONCURRENCY_SLOT_SELECTION = {
+  slots:
+    sql`COALESCE(${sum(orgConcurrencySubscriptions.slots)}, 0)::int`.mapWith(
+      pgIntegerDecoder,
+    ),
+} as const;
 
-  return row?.slots ?? 0;
+export function activePaidConcurrencySlots(
+  orgId: string,
+): Computed<Promise<number>> {
+  return computed(async (get): Promise<number> => {
+    const at = nowDate();
+    const db = get(db$);
+    const [row] = await db
+      .select(PAID_CONCURRENCY_SLOT_SELECTION)
+      .from(orgConcurrencySubscriptions)
+      .where(activeConcurrencySubscriptionPredicate(orgId, at));
+    return row?.slots ?? 0;
+  });
 }
+
+export const loadActivePaidConcurrencySlots$ = command(
+  async ({ get }, orgId: string, at: Date = nowDate()): Promise<number> => {
+    const db = get(db$);
+    const [row] = await db
+      .select(PAID_CONCURRENCY_SLOT_SELECTION)
+      .from(orgConcurrencySubscriptions)
+      .where(activeConcurrencySubscriptionPredicate(orgId, at));
+    return row?.slots ?? 0;
+  },
+);

@@ -199,6 +199,466 @@ async function openAddHostPage() {
   );
 }
 
+test("VNC settings show a current-generation failure and its observation time", async () => {
+  mockSettings();
+  let failed = true;
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "authentication_failed" : null,
+        },
+      ],
+    });
+  });
+  await page();
+  const failure = await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  expect(failure).toBeInTheDocument();
+  const card = failure.closest("article");
+  if (!card) {
+    throw new Error("Expected a VNC host card");
+  }
+  expect(within(card).getByText(/^Observed /)).toHaveAttribute(
+    "datetime",
+    "2026-10-14T00:00:00.000Z",
+  );
+  expect(within(card).getByText("Configured")).toBeInTheDocument();
+  await screen.findByRole("status", { name: "1 VNC host needs attention" });
+  failed = false;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: "another-org",
+  });
+  expect(failure).toBeInTheDocument();
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).not.toBeInTheDocument();
+  expect(within(card).getByText("Configured")).toBeInTheDocument();
+});
+
+test.each([
+  {
+    name: "generation",
+    generation: host.generation - 1,
+    createdAt: host.createdAt,
+  },
+  {
+    name: "creation instance",
+    generation: host.generation,
+    createdAt: "2026-08-01T00:00:00.000Z",
+  },
+])(
+  "VNC settings do not render a previous $name's failure as current",
+  async ({ generation, createdAt }) => {
+    mockSettings({
+      connections: [host, plainHost],
+      credentials: [credential, plainCredential],
+    });
+    context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: createdAt,
+            generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+          {
+            connectionId: plainHost.id,
+            connectionCreatedAt: plainHost.createdAt,
+            generation: plainHost.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "network_failure",
+          },
+        ],
+      });
+    });
+    await page();
+    await screen.findByText("The connection transport failed.");
+    expect(screen.getAllByText("Configured")).toHaveLength(2);
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "1 VNC host needs attention" }),
+    ).toBeInTheDocument();
+  },
+);
+
+test("VNC settings refresh observations when their SSH carrier changes", async () => {
+  const data = mockSettings({
+    connections: [tunneledHost],
+    sshConnections: [sshHost],
+  });
+  let currentCarrier = true;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
+  await page();
+  await expect(
+    screen.findByText("Authentication or server identity verification failed."),
+  ).resolves.toBeInTheDocument();
+  currentCarrier = false;
+  data.sshConnections = [{ ...sshHost, generation: sshHost.generation + 1 }];
+  context.mocks.ably.trigger("ssh:changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await started.promise;
+  try {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  } finally {
+    release.resolve();
+  }
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("Configured")).toBeInTheDocument();
+});
+
+test("A local SSH carrier reset invalidates retained VNC diagnostics before realtime delivery", async () => {
+  const data = mockSettings({
+    connections: [tunneledHost],
+    sshConnections: [
+      {
+        ...sshHost,
+        learnedHostKey: {
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:fixture",
+        },
+      },
+    ],
+  });
+  let currentCarrier = true;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
+  context.mocks.api(sshConnectionsContract.resetHostKey, ({ respond }) => {
+    currentCarrier = false;
+    const updated = { ...sshHost, generation: sshHost.generation + 1 };
+    data.sshConnections = [updated];
+    return respond(200, updated);
+  });
+  await page("/connectors?scope=remote-control");
+  await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  click(getAction("button", "Reset host key"));
+  const dialog = await screen.findByRole("dialog", { name: "Reset host key" });
+  click(getAction("button", "Reset host key", dialog));
+  try {
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    await started.promise;
+  } finally {
+    release.resolve();
+  }
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeNull();
+  expect(screen.getByText(tunneledHost.displayName)).toBeInTheDocument();
+});
+
+test("VNC settings distinguish successful and unobserved hosts from failed hosts", async () => {
+  const failedHost = {
+    ...host,
+    id: "b0000000-0000-4000-8000-000000000005",
+    displayName: "Failed workstation",
+  };
+  mockSettings({
+    connections: [host, plainHost, failedHost],
+    credentials: [credential, plainCredential],
+  });
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: null,
+        },
+        {
+          connectionId: failedHost.id,
+          connectionCreatedAt: failedHost.createdAt,
+          generation: failedHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: "network_failure",
+        },
+      ],
+    });
+  });
+  await page();
+  const failure = await screen.findByText("The connection transport failed.");
+  expect(
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("Configured")).toHaveLength(3);
+  const failedCard = failure.closest("article");
+  if (!failedCard) {
+    throw new Error("Expected a VNC host card");
+  }
+  expect(
+    within(failedCard).getByText(failedHost.displayName),
+  ).toBeInTheDocument();
+  for (const connection of [host, plainHost]) {
+    const card = screen.getByText(connection.displayName).closest("article");
+    if (!card) {
+      throw new Error("Expected a VNC host card");
+    }
+    expect(within(card).queryByRole("status")).toBeNull();
+    expect(within(card).getByText("Configured")).toBeInTheDocument();
+  }
+});
+
+test.each([404, 500] as const)(
+  "VNC settings keep configured hosts with unavailable diagnostics from API %s",
+  async (status) => {
+    mockSettings();
+    context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+      return respond(status, {
+        error: { code: "UNAVAILABLE", message: "Not available" },
+      });
+    });
+    await page();
+    await expect(
+      screen.findByRole("status", {
+        name: "VNC connection status is unavailable",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText(host.displayName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: /VNC.*attention/ })).toBeNull();
+  },
+);
+
+test("VNC settings retain the current owner's warning while observations refresh", async () => {
+  mockSettings();
+  let refreshing = false;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (refreshing) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
+            generation: host.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: refreshing ? null : "authentication_failed",
+          },
+        ],
+      });
+    },
+  );
+  await page();
+  const failure = await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  refreshing = true;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await started.promise;
+  expect(failure).toBeInTheDocument();
+  expect(
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
+  release.resolve();
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeNull();
+});
+
+test("VNC settings never retain the previous owner's diagnostic warning", async () => {
+  const data = mockSettings();
+  let changedOwner = false;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (changedOwner) {
+        started.resolve();
+        await release.promise;
+        return respond(200, { observations: [] });
+      }
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
+            generation: host.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+        ],
+      });
+    },
+  );
+  await page();
+  await screen.findByRole("status", { name: "1 VNC host needs attention" });
+  changedOwner = true;
+  data.connections = [plainHost];
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "other-vnc-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
+    clerk.stateChanged();
+  });
+  await started.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+    ).toBeNull();
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  release.resolve();
+  await screen.findByText(plainHost.displayName);
+});
+
+test("VNC settings summarize failed hosts and clear attention after recovery", async () => {
+  const recoveredHost = {
+    ...host,
+    id: "b0000000-0000-4000-8000-000000000004",
+    displayName: "Recovery workstation",
+  };
+  mockSettings({ connections: [host, plainHost, recoveredHost] });
+  let failed = true;
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "authentication_failed" : null,
+        },
+        {
+          connectionId: plainHost.id,
+          connectionCreatedAt: plainHost.createdAt,
+          generation: plainHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "network_failure" : null,
+        },
+        {
+          connectionId: recoveredHost.id,
+          connectionCreatedAt: recoveredHost.createdAt,
+          generation: recoveredHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: null,
+        },
+      ],
+    });
+  });
+  await page();
+  await screen.findByRole("status", { name: "2 VNC hosts need attention" });
+  expect(screen.getByText(recoveredHost.displayName)).toBeInTheDocument();
+  failed = false;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "2 VNC hosts need attention" }),
+    ).toBeNull();
+  });
+  expect(screen.getAllByText("Configured")).toHaveLength(3);
+});
+
 test("VNC host settings update the chat remote access default", async () => {
   mockSettings();
   let enabled = false;
@@ -2110,14 +2570,27 @@ test("Deleting an unused credential sends the reviewed revision after confirmati
   ]);
 });
 
-test("A host conflict requires closing and reviewing the refreshed host before another save", async () => {
+test("Host conflicts keep the draft and require explicit review of each newer generation", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
   context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
     requests.push(body);
-    if (body.expectedGeneration === 4) {
+    if (body.expectedGeneration === 4 || body.expectedGeneration === 5) {
       data.connections = [
-        { ...host, displayName: "Changed elsewhere", generation: 5 },
+        {
+          ...host,
+          displayName:
+            body.expectedGeneration === 4
+              ? "Changed elsewhere"
+              : "Changed twice",
+          host: "updated.example.com",
+          port: 5902,
+          security: {
+            type: "x509_vnc",
+            trust: { mode: "custom_ca", caBundle },
+          },
+          generation: body.expectedGeneration + 1,
+        },
       ];
       return respond(409, {
         error: {
@@ -2129,7 +2602,7 @@ test("A host conflict requires closing and reviewing the refreshed host before a
     const updated = {
       ...host,
       displayName: body.displayName ?? host.displayName,
-      generation: 6,
+      generation: 7,
     };
     data.connections = [updated];
     return respond(200, updated);
@@ -2139,50 +2612,118 @@ test("A host conflict requires closing and reviewing the refreshed host before a
   click(getAction("button", "Edit host"));
   const dialog = await screen.findByRole("dialog", { name: "Edit host" });
   await fill(within(dialog).getByLabelText("Display name"), "My edit");
-  click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    /Close this dialog and review the current details/u,
+  await fill(
+    within(dialog).getByLabelText("RFB destination host"),
+    "draft.example.com",
   );
+  await fill(within(dialog).getByLabelText("RFB destination port"), "5901");
+  await choose(dialog, "Credential", "Create new credential");
+  await fill(within(dialog).getByLabelText("Credential name"), "Draft login");
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, "draft pw");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Changed elsewhere");
+  expect(within(review).getByText("Version 5")).toBeInTheDocument();
+  expect(
+    within(review).getByText("RFB destination: updated.example.com:5902"),
+  ).toBeInTheDocument();
+  expect(within(review).getByText(/TEST-CA-CERTIFICATE/u)).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue("My edit");
+  expect(within(dialog).getByLabelText("RFB destination host")).toHaveValue(
+    "draft.example.com",
+  );
+  expect(within(dialog).getByLabelText("RFB destination port")).toHaveValue(
+    5901,
+  );
+  expect(
+    within(dialog).getByLabelText("Server certificate trust"),
+  ).toHaveTextContent("System certificate authorities");
+  expect(secret).toHaveValue("draft pw");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(queryAction("button", "Retry", dialog)).toBeNull();
   expect(requests).toStrictEqual([
     expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
   ]);
   expect(document.body.textContent).not.toContain("private host conflict");
-  click(getAction("button", "Close", dialog));
-  await screen.findByText("Changed elsewhere");
-  click(getAction("button", "Edit host"));
-  const reopened = await screen.findByRole("dialog", { name: "Edit host" });
-  expect(within(reopened).getByLabelText("Display name")).toHaveValue(
-    "Changed elsewhere",
-  );
-  await fill(within(reopened).getByLabelText("Display name"), "Reviewed edit");
-  click(getAction("button", "Save", reopened));
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(secret).toHaveValue("draft pw");
+  expect(
+    within(dialog).queryByRole("region", { name: "Current saved details" }),
+  ).toBeNull();
+  expect(requests).toStrictEqual([
+    expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
+  ]);
+  click(getAction("button", "Save", dialog));
+  const repeated = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(repeated).findByText("Changed twice");
+  expect(within(repeated).getByText("Version 6")).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(secret).toHaveValue("draft pw");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
   await waitFor(() => {
     return expect(screen.queryByRole("dialog")).toBeNull();
   });
-  await screen.findByText("Reviewed edit");
-  expect(requests).toStrictEqual([
-    expect.objectContaining({ expectedGeneration: 4, displayName: "My edit" }),
-    expect.objectContaining({
-      expectedGeneration: 5,
-      displayName: "Reviewed edit",
+  await screen.findByText("My edit");
+  expect(requests).toStrictEqual(
+    [4, 5, 6].map((expectedGeneration) => {
+      return {
+        expectedGeneration,
+        displayName: "My edit",
+        host: "draft.example.com",
+        port: 5901,
+        transport: { type: "direct" },
+        credential: {
+          create: {
+            name: "Draft login",
+            authentication: { method: "vnc_password", password: "draft pw" },
+          },
+        },
+        security: { type: "x509_vnc", trust: { mode: "system" } },
+      };
     }),
-  ]);
+  );
+  expect(secret).toHaveValue("");
 });
 
-test("A credential conflict never rotates a password against an unseen revision", async () => {
+test("Credential conflicts preserve a replacement password and require each reviewed revision", async () => {
   const data = mockSettings();
   const requests: unknown[] = [];
   context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
     requests.push(body);
-    data.credentials = [{ ...credential, name: "Updated login", revision: 4 }];
-    return respond(409, {
-      error: {
-        code: "VNC_CREDENTIAL_REVISION_CONFLICT",
-        message: "private credential conflict",
-      },
-    });
+    if (body.expectedRevision === 3 || body.expectedRevision === 4) {
+      data.credentials = [
+        {
+          ...credential,
+          name: body.expectedRevision === 3 ? "Updated login" : "Updated again",
+          revision: body.expectedRevision + 1,
+        },
+      ];
+      return respond(409, {
+        error: {
+          code: "VNC_CREDENTIAL_REVISION_CONFLICT",
+          message: "private credential conflict",
+        },
+      });
+    }
+    const updated = {
+      ...credential,
+      name: body.name ?? credential.name,
+      revision: 6,
+    };
+    data.credentials = [updated];
+    return respond(200, updated);
   });
   await page();
   click(getAction("radio", "Credentials"));
@@ -2196,9 +2737,16 @@ test("A credential conflict never rotates a password against an unseen revision"
   const secret = within(dialog).getByLabelText("VNC password");
   await fill(secret, "new-pass");
   click(getAction("button", "Save", dialog));
-  await within(dialog).findByText(
-    /Close this dialog and review the current details/u,
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Updated login");
+  expect(within(review).getByText("Version 4")).toBeInTheDocument();
+  expect(within(review).getByText(host.displayName)).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("Credential name")).toHaveValue(
+    "My login",
   );
+  expect(secret).toHaveValue("new-pass");
   expect(getAction("button", "Save", dialog)).toBeDisabled();
   expect(requests).toStrictEqual([
     {
@@ -2210,17 +2758,643 @@ test("A credential conflict never rotates a password against an unseen revision"
   expect(document.body.textContent).not.toContain(
     "private credential conflict",
   );
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  expect(secret).toHaveValue("new-pass");
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 3,
+      name: "My login",
+      authentication: { method: "vnc_password", password: "new-pass" },
+    },
+  ]);
+  click(getAction("button", "Save", dialog));
+  const repeated = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(repeated).findByText("Updated again");
+  expect(within(repeated).getByText("Version 5")).toBeInTheDocument();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(secret).toHaveValue("new-pass");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  await screen.findByText("My login");
+  expect(requests).toStrictEqual(
+    [3, 4, 5].map((expectedRevision) => {
+      return {
+        expectedRevision,
+        name: "My login",
+        authentication: { method: "vnc_password", password: "new-pass" },
+      };
+    }),
+  );
+  expect(secret).toHaveValue("");
+});
+
+test.each(["host", "credential"] as const)(
+  "A missing %s cannot supply a reviewed version for a preserved draft",
+  async (resource) => {
+    const data = mockSettings({ credentials: [{ ...credential, hosts: [] }] });
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      data.connections = [];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    });
+    context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      data.credentials = [];
+      return respond(409, {
+        error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+      });
+    });
+    await page();
+    if (resource === "credential") {
+      click(getAction("radio", "Credentials"));
+      await screen.findByText(credential.name);
+    } else {
+      await screen.findByText(host.displayName);
+    }
+    click(
+      getAction(
+        "button",
+        resource === "host" ? "Edit host" : "Edit credential",
+      ),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: resource === "host" ? "Edit host" : "Edit credential",
+    });
+    const name = within(dialog).getByLabelText(
+      resource === "host" ? "Display name" : "Credential name",
+    );
+    await fill(name, "Kept draft");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText(/This resource is no longer available/u);
+    expect(name).toHaveValue("Kept draft");
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(
+      queryAction("button", "Keep my changes with this version", dialog),
+    ).toBeNull();
+    expect(requests).toStrictEqual([
+      expect.objectContaining(
+        resource === "host"
+          ? { expectedGeneration: 4, displayName: "Kept draft" }
+          : { expectedRevision: 3, name: "Kept draft" },
+      ),
+    ]);
+    click(getAction("button", "Close", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  },
+);
+
+test("A changed credential method is inspectable but cannot reuse the original authentication draft", async () => {
+  const data = mockSettings({
+    connections: [],
+    credentials: [{ ...credential, hosts: [] }],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncCredentialsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    data.credentials = [
+      {
+        ...plainCredential,
+        id: credential.id,
+        name: "Changed method",
+        hosts: [],
+        revision: 4,
+      },
+    ];
+    return respond(409, {
+      error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+    });
+  });
+  await page();
+  click(getAction("radio", "Credentials"));
+  await screen.findByText(credential.name);
+  click(getAction("button", "Edit credential"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit credential" });
+  await userEvent.click(
+    within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+  );
+  const secret = within(dialog).getByLabelText("VNC password");
+  await fill(secret, "old-dft");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Changed method");
+  expect(within(review).getByText("Username and password")).toBeInTheDocument();
+  expect(
+    within(review).getByText(plainCredential.username),
+  ).toBeInTheDocument();
+  expect(within(review).getByRole("alert")).toHaveTextContent(
+    "The authentication method changed.",
+  );
+  expect(secret).toHaveValue("old-dft");
+  expect(
+    getAction("button", "Keep my changes with this version", dialog),
+  ).toBeDisabled();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(requests).toStrictEqual([
+    {
+      expectedRevision: 3,
+      name: credential.name,
+      authentication: { method: "vnc_password", password: "old-dft" },
+    },
+  ]);
   click(getAction("button", "Close", dialog));
   expect(secret).toHaveValue("");
-  await screen.findByText("Updated login");
-  click(getAction("button", "Edit credential"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Edit credential",
+});
+
+test.each(["credential", "ssh"] as const)(
+  "A reviewed host conflict requires explicitly repairing a changed %s dependency",
+  async (dependency) => {
+    const original = {
+      ...tunneledHost,
+      host: "desktop.example.com",
+      transport: { type: "ssh" as const, connectionId: sshHost.id },
+    };
+    const data = mockSettings({
+      connections: [original],
+      sshConnections: [sshHost],
+    });
+    const requests: unknown[] = [];
+    context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+      requests.push(body);
+      if (body.expectedGeneration === 4) {
+        data.connections = [
+          dependency === "credential"
+            ? { ...plainHost, id: original.id, generation: 5 }
+            : { ...host, id: original.id, generation: 5 },
+        ];
+        if (dependency === "credential") {
+          data.credentials = [plainCredential];
+        } else {
+          data.sshConnections = [];
+        }
+        return respond(409, {
+          error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+        });
+      }
+      return respond(200, {
+        ...host,
+        id: original.id,
+        displayName: "Draft route",
+        generation: 6,
+      });
+    });
+    await page();
+    await screen.findByText(original.displayName);
+    click(getAction("button", "Edit host"));
+    const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+    await fill(within(dialog).getByLabelText("Display name"), "Draft route");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText("Version 5");
+    click(getAction("button", "Keep my changes with this version", dialog));
+    await waitFor(() => {
+      expect(
+        within(dialog).queryByRole("region", { name: "Current saved details" }),
+      ).toBeNull();
+    });
+    expect(getAction("button", "Save", dialog)).toBeDisabled();
+    expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+      "Draft route",
+    );
+    expect(
+      within(dialog).getByText(
+        dependency === "credential"
+          ? "The selected credential is no longer available."
+          : /The selected SSH host is no longer available/u,
+      ),
+    ).toBeInTheDocument();
+    if (dependency === "credential") {
+      await choose(
+        dialog,
+        "Security profile",
+        "Encrypted username and password (X509Plain)",
+      );
+      await choose(dialog, "Credential", plainCredential.name);
+    } else {
+      await choose(dialog, "Connection route", "Direct from Runner");
+    }
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+    click(getAction("button", "Save", dialog));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(requests).toStrictEqual([
+      expect.objectContaining({
+        expectedGeneration: 4,
+        displayName: "Draft route",
+        transport: original.transport,
+        credential: { id: credential.id },
+      }),
+      expect.objectContaining({
+        expectedGeneration: 5,
+        displayName: "Draft route",
+        transport:
+          dependency === "ssh" ? { type: "direct" } : original.transport,
+        credential: {
+          id: dependency === "credential" ? plainCredential.id : credential.id,
+        },
+        security:
+          dependency === "credential"
+            ? {
+                type: "x509_plain",
+                serverName: "desktop.internal.example.com",
+                trust: { mode: "system" },
+              }
+            : original.security,
+      }),
+    ]);
+  },
+);
+
+test("A failed conflict metadata reload preserves the draft until an explicit successful retry", async () => {
+  const data = mockSettings();
+  let unavailable = false;
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.list, ({ respond }) => {
+    return unavailable
+      ? respond(500, {
+          error: { code: "INTERNAL_ERROR", message: "private reload failure" },
+        })
+      : respond(200, { connections: data.connections });
   });
-  expect(within(reopened).getByLabelText("Credential name")).toHaveValue(
-    "Updated login",
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        { ...host, displayName: "Latest after retry", generation: 5 },
+      ];
+      unavailable = true;
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...host, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(within(dialog).getByLabelText("Display name"), "Retry draft");
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Could not load VNC configuration.");
+  expect(within(dialog).getByLabelText("Display name")).toHaveValue(
+    "Retry draft",
   );
-  expect(within(reopened).queryByLabelText("VNC password")).toBeNull();
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(
+    queryAction("button", "Keep my changes with this version", dialog),
+  ).toBeNull();
+  expect(document.body.textContent).not.toContain("private reload failure");
+  unavailable = false;
+  click(getAction("button", "Try again", review));
+  await within(review).findByText("Latest after retry");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual(
+    [4, 5].map((expectedGeneration) => {
+      return expect.objectContaining({
+        expectedGeneration,
+        displayName: "Retry draft",
+      });
+    }),
+  );
+});
+
+test.each([
+  "close",
+  "owner",
+  "session",
+  "logout",
+  "revoked admission",
+] as const)(
+  "A conflicted authentication draft is cleared on %s and never restored",
+  async (event) => {
+    const data = mockSettings({ credentials: [{ ...credential, hosts: [] }] });
+    context.mocks.api(vncCredentialsContract.update, ({ respond }) => {
+      data.credentials = [
+        { ...credential, name: "Latest login", revision: 4, hosts: [] },
+      ];
+      return respond(409, {
+        error: { code: "VNC_CREDENTIAL_REVISION_CONFLICT", message: "private" },
+      });
+    });
+    await setupPage({
+      context,
+      path: "/connectors?scope=remote-control&type=vnc",
+      auth: {
+        ...auth,
+        session: { id: "vnc-conflict-original", token: "original-token" },
+      },
+      featureSwitches: { [FeatureSwitchKey.VncAccess]: true },
+    });
+    click(getAction("radio", "Credentials"));
+    await screen.findByText(credential.name);
+    click(getAction("button", "Edit credential"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Edit credential",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Replace authentication" }),
+    );
+    const secret = within(dialog).getByLabelText("VNC password");
+    await fill(secret, "discard");
+    click(getAction("button", "Save", dialog));
+    const review = await within(dialog).findByRole("region", {
+      name: "Current saved details",
+    });
+    await within(review).findByText("Latest login");
+    expect(secret).toHaveValue("discard");
+    if (event === "close") {
+      click(getAction("button", "Close", dialog));
+    } else {
+      const clerk = context.mocks.clerk();
+      act(() => {
+        if (event === "logout") {
+          clerk.sessionSignedOut(true);
+        } else if (event === "revoked admission") {
+          clerk.organization({ activeOrg: null, memberships: [] });
+        } else {
+          clerk.user(
+            event === "owner"
+              ? { id: "another-vnc-owner", fullName: "Another Owner" }
+              : auth.user,
+            { id: "vnc-conflict-new", token: "new-token" },
+          );
+        }
+        clerk.stateChanged();
+      });
+    }
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(secret).toHaveValue("");
+    if (event !== "close") {
+      const clerk = context.mocks.clerk();
+      act(() => {
+        if (event === "logout") {
+          clerk.sessionSignedOut(false);
+        } else if (event === "revoked admission") {
+          clerk.organization(auth.organization);
+        }
+        clerk.user(auth.user, {
+          id: "vnc-conflict-original",
+          token: "returned-token",
+        });
+        clerk.stateChanged();
+      });
+    }
+    await screen.findByText("Latest login");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    click(getAction("button", "Edit credential"));
+    const reopened = await screen.findByRole("dialog", {
+      name: "Edit credential",
+    });
+    expect(within(reopened).getByLabelText("Credential name")).toHaveValue(
+      "Latest login",
+    );
+    expect(within(reopened).queryByLabelText("VNC password")).toBeNull();
+    expect(
+      within(reopened).queryByRole("region", { name: "Current saved details" }),
+    ).toBeNull();
+  },
+);
+
+test("A reviewed Kerberos host keeps its separate KDC draft and requires an explicit route repair", async () => {
+  const initiator = { realm: "EXAMPLE.INVALID", components: ["Alice"] };
+  const savedCredential: VncCredentialResponse = {
+    ...credential,
+    authMethod: "qemu_kerberos_password",
+    initiator,
+  };
+  const security = {
+    type: "qemu_x509_gssapi" as const,
+    trust: { mode: "system" as const },
+    service: {
+      realm: initiator.realm,
+      components: ["vnc", "desktop.identity.invalid"],
+    },
+    kdc: {
+      host: "127.0.0.1",
+      port: 88,
+      transport: { type: "ssh" as const, connectionId: sshHost.id },
+      ticketLifetimeSeconds: 1200,
+      renewableLifetimeSeconds: 7200,
+    },
+  };
+  const original: VncConnectionResponse = {
+    ...host,
+    kerberosAuthentication: "qemu_kerberos_password",
+    security,
+  };
+  const data = mockSettings({
+    connections: [original],
+    credentials: [savedCredential],
+    sshConnections: [sshHost],
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        {
+          ...original,
+          generation: 5,
+          security: {
+            ...security,
+            kdc: {
+              ...security.kdc,
+              host: "latest.kdc.example.com",
+              transport: { type: "direct" },
+            },
+          },
+        },
+      ];
+      data.sshConnections = [];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...original, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(within(dialog).getByLabelText("Display name"), "Kerberos draft");
+  await fill(
+    within(dialog).getByLabelText("Requested ticket lifetime (seconds)"),
+    "600",
+  );
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Version 5");
+  expect(
+    within(review).getByText("KDC host: latest.kdc.example.com:88"),
+  ).toBeInTheDocument();
+  expect(
+    within(review).getByText("Separate KDC route: Direct from Runner"),
+  ).toBeInTheDocument();
+  expect(within(dialog).getByLabelText("KDC host")).toHaveValue("127.0.0.1");
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(
+      within(dialog).queryByRole("region", { name: "Current saved details" }),
+    ).toBeNull();
+  });
+  expect(getAction("button", "Save", dialog)).toBeDisabled();
+  expect(within(dialog).getByRole("alert")).toHaveTextContent(
+    "The selected SSH host is no longer available.",
+  );
+  await choose(dialog, "Separate KDC route", "Direct from Runner");
+  await fill(
+    within(dialog).getByLabelText("KDC host"),
+    "draft.kdc.example.com",
+  );
+  expect(getAction("button", "Save", dialog)).toBeEnabled();
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    expect.objectContaining({
+      expectedGeneration: 4,
+      security: {
+        ...security,
+        kdc: { ...security.kdc, ticketLifetimeSeconds: 600 },
+      },
+    }),
+    expect.objectContaining({
+      expectedGeneration: 5,
+      displayName: "Kerberos draft",
+      security: {
+        ...security,
+        kdc: {
+          ...security.kdc,
+          host: "draft.kdc.example.com",
+          transport: { type: "direct" },
+          ticketLifetimeSeconds: 600,
+        },
+      },
+    }),
+  ]);
+});
+
+test("Accepting a host conflict cannot revive a pending RSA public-key import", async () => {
+  const original: VncConnectionResponse = {
+    ...host,
+    rsaAesAuthentication: "rsa_aes_password",
+    security: { type: "rsa_aes_ra2", serverKeySha256: "ab".repeat(32) },
+  };
+  const data = mockSettings({
+    connections: [original],
+    credentials: [{ ...credential, authMethod: "rsa_aes_password" }],
+  });
+  const started = context.mocks.deferred<void>();
+  const result = context.mocks.deferred<void>();
+  const requests: unknown[] = [];
+  context.mocks.api(
+    vncConnectionsContract.inspectRsaKey,
+    async ({ respond }) => {
+      started.resolve();
+      await result.promise;
+      return respond(200, {
+        serverKeySha256: "cd".repeat(32),
+        modulusBits: 2048,
+      });
+    },
+  );
+  context.mocks.api(vncConnectionsContract.update, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [
+        {
+          ...original,
+          generation: 5,
+          security: { type: "rsa_aes_ra2", serverKeySha256: "ef".repeat(32) },
+        },
+      ];
+      return respond(409, {
+        error: { code: "VNC_GENERATION_CONFLICT", message: "private" },
+      });
+    }
+    return respond(200, { ...original, generation: 6 });
+  });
+  await page();
+  await screen.findByText(host.displayName);
+  click(getAction("button", "Edit host"));
+  const dialog = await screen.findByRole("dialog", { name: "Edit host" });
+  await fill(
+    within(dialog).getByLabelText(
+      "Independently trusted RSA public PEM (optional)",
+    ),
+    "public-key-draft",
+  );
+  click(getAction("button", "Import trusted public key", dialog));
+  await started.promise;
+  click(getAction("button", "Save", dialog));
+  const review = await within(dialog).findByRole("region", {
+    name: "Current saved details",
+  });
+  await within(review).findByText("Version 5");
+  expect(
+    within(review).getByText(new RegExp("ef".repeat(32), "u")),
+  ).toBeInTheDocument();
+  click(getAction("button", "Keep my changes with this version", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Save", dialog)).toBeEnabled();
+  });
+  await act(async () => {
+    result.resolve();
+    await result.promise;
+  });
+  expect(
+    within(dialog).getByLabelText("Server RSA wire-key SHA256"),
+  ).toHaveValue("ab".repeat(32));
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual(
+    [4, 5].map((expectedGeneration) => {
+      return expect.objectContaining({
+        expectedGeneration,
+        security: original.security,
+      });
+    }),
+  );
 });
 
 test("An uncertain host creation freezes its draft and explicitly retries the same UUID and password", async () => {

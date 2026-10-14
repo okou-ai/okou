@@ -19,10 +19,7 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { db$, writeDb$, type Db } from "../external/db";
-import {
-  publishHomeTaskRecommendationsChangedSafely,
-  publishUserSignal,
-} from "../external/realtime";
+import { publishUserSignal } from "../external/realtime";
 import { nowDate } from "../../lib/time";
 import {
   nullableDriverValueDecoder,
@@ -31,6 +28,7 @@ import {
 import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { deleteAgentById$ } from "../services/agent-deletion.service";
+import { publishVncLifecycleInvalidation$ } from "../services/remote-runtime-wakeup.service";
 import {
   agentResponse,
   agentDetail,
@@ -640,6 +638,19 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return result.response;
   }
 
+  if (body.data.visibility === "private") {
+    await set(
+      publishVncLifecycleInvalidation$,
+      {
+        kind: "agent",
+        orgId: auth.orgId,
+        agentId: params.id,
+        ownerId: result.agent.owner,
+      },
+      signal,
+    );
+  }
+
   return {
     status: 200 as const,
     body: agentResponse(result.agent),
@@ -733,6 +744,19 @@ const updateAgentMetadataInner$ = command(
 
     if ("response" in result) {
       return result.response;
+    }
+
+    if (body.data.visibility === "private") {
+      await set(
+        publishVncLifecycleInvalidation$,
+        {
+          kind: "agent",
+          orgId: auth.orgId,
+          agentId: params.id,
+          ownerId: result.agent.owner,
+        },
+        signal,
+      );
     }
 
     return {
@@ -938,11 +962,6 @@ const updateAgentUserConnectorsInner$ = command(
     await publishUserSignal([auth.userId], "composerAgentConnectorsChanged", {
       agentId: params.id,
     });
-    signal.throwIfAborted();
-    await publishHomeTaskRecommendationsChangedSafely(
-      { userId: auth.userId, orgId: auth.orgId },
-      { agentId: params.id },
-    );
     signal.throwIfAborted();
     return {
       status: 200 as const,

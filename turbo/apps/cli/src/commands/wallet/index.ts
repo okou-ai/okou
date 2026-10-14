@@ -1,4 +1,6 @@
 import { Command, InvalidArgumentError } from "commander";
+import { open, unlink } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   walletCreateSpendSchema,
   type WalletSpend,
@@ -12,11 +14,15 @@ import {
   walletDisconnect,
   walletGetSpend,
   walletStatus,
+  walletSpendCredentials,
 } from "../../lib/api/domains/wallet";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 
 interface JsonOptions {
   readonly json?: boolean;
+}
+interface CredentialsOptions extends JsonOptions {
+  readonly outputFile: string;
 }
 interface SpendOptions extends JsonOptions {
   readonly intentId: string;
@@ -61,8 +67,39 @@ function renderSpend(value: WalletSpend, options: JsonOptions): void {
   }
   if (value.status === "approved") {
     console.log(
-      "Approved is not paid. Managed checkout and credential retrieval are not available.",
+      `Approved is not paid. Retrieve the one-time card with: okou wallet spend credentials ${value.id} --output-file <private-json-path>`,
     );
+  }
+}
+
+async function saveCredentials(id: string, outputFile: string) {
+  const path = resolve(outputFile);
+  const file = await open(path, "wx", 0o600);
+  let completed = false;
+  try {
+    const credentials = await walletSpendCredentials(id);
+    await file.writeFile(`${JSON.stringify(credentials)}\n`, "utf8");
+    completed = true;
+    const { card } = credentials;
+    return {
+      spend: credentials.spend,
+      credentialsFile: path,
+      card: {
+        brand: card.brand,
+        last4: card.number.slice(-4),
+        expMonth: card.expMonth,
+        expYear: card.expYear,
+        validUntil: card.validUntil,
+      },
+    };
+  } finally {
+    try {
+      await file.close();
+    } finally {
+      if (!completed) {
+        await unlink(path);
+      }
+    }
   }
 }
 
@@ -112,6 +149,39 @@ const spend = new Command("spend")
       ),
   )
   .addCommand(
+    new Command("credentials")
+      .description(
+        "Retrieve an approved purchase's one-time card into a private JSON file",
+      )
+      .argument("<id>", "Okou spend request ID")
+      .requiredOption(
+        "--output-file <path>",
+        "New credential file (mode 0600); existing files are never overwritten",
+      )
+      .option(
+        "--json",
+        "Print only the file path, spend details and redacted card summary",
+      )
+      .action(
+        withErrorHandler(async (id: string, options: CredentialsOptions) => {
+          const result = await saveCredentials(id, options.outputFile);
+          if (options.json) {
+            console.log(JSON.stringify(result));
+            return;
+          }
+          console.log(
+            `Payment credentials saved to: ${result.credentialsFile}`,
+          );
+          console.log(
+            `Card: ${result.card.brand} ending in ${result.card.last4}`,
+          );
+          console.log(
+            "Approved is not paid. Pass the file to the payment tool without printing its contents; delete it after use.",
+          );
+        }),
+      ),
+  )
+  .addCommand(
     new Command("cancel")
       .argument("<id>", "Okou spend request ID")
       .option("--json", "Print only the redacted JSON response")
@@ -124,7 +194,7 @@ const spend = new Command("spend")
 
 export const walletCommand = new Command("wallet")
   .description(
-    "Connect Link and request purchase approval (checkout is not yet available)",
+    "Connect Link, request purchase approval and retrieve one-time payment credentials",
   )
   .addCommand(
     new Command("status")
@@ -182,5 +252,5 @@ export const walletCommand = new Command("wallet")
   .addCommand(spend)
   .addHelpText(
     "after",
-    "\nClient credentials and user tokens stay on the backend. No card/token retrieval or checkout commands are provided. Requires wallet:write and the default-off linkWallet feature switch.",
+    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. No polling or checkout commands are provided. Requires wallet:write and the default-off linkWallet feature switch.",
   );

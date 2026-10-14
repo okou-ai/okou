@@ -85,6 +85,7 @@ function ArtifactDiagramDialog({
             src={current.url}
             alt={current.filename}
             signals={signals.imageCanvas}
+            expanded={expanded}
             imageTestId="attachment-lightbox-image"
             canvasTestId="artifact-diagram-image-stage"
             contentClassName="p-6"

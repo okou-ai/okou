@@ -1,4 +1,5 @@
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import {
   chatThreadEventsContract,
   chatThreadsContract,
@@ -34,8 +35,30 @@ import {
   sharedDatabaseClientMessageSchema,
   sharedDatabaseWorkerMessageSchema,
 } from "../protocol.ts";
-import { requestTokenFromLatestConnection$ } from "../worker-context.ts";
+import { requestTokenFromTabs$ } from "../worker-context.ts";
 import { initializeSharedDatabaseWorker$ } from "../worker-signals.ts";
+
+const axiomTelemetry = vi.hoisted(() => {
+  return {
+    ingest:
+      vi.fn<
+        (dataset: string, events: readonly Record<string, unknown>[]) => void
+      >(),
+  };
+});
+
+vi.mock("@axiomhq/js", () => {
+  return {
+    Axiom: class {
+      ingest(
+        dataset: string,
+        events: readonly Record<string, unknown>[],
+      ): void {
+        axiomTelemetry.ingest(dataset, events);
+      }
+    },
+  };
+});
 
 const context = testContext();
 const CREATED_AT = "2026-08-14T09:00:00.000Z";
@@ -158,8 +181,8 @@ function initializeWorker(
       appVersion: WORKER_APP_VERSION,
       identity: workerIdentity,
       apiBaseUrl: location.origin,
-      getToken: (signal) => {
-        return workerStore.set(requestTokenFromLatestConnection$, signal);
+      getToken: (diagnostic, signal) => {
+        return workerStore.set(requestTokenFromTabs$, diagnostic, signal);
       },
       oauthApiBaseUrl: location.origin,
       onForceUpgrade: vi.fn<() => void>(),
@@ -175,6 +198,7 @@ function connectProtocolTransport(
   },
   events: SharedDatabaseBridgeEvents = bridgeEvents(),
   workerStore: Store = context.workerStore,
+  heartbeatLoop: SharedDatabaseHeartbeatLoop = holdHeartbeatLoop,
 ): {
   readonly bridge: MessagePortSharedDatabaseBridge;
   readonly platformPort: InMemoryMessagePort;
@@ -188,12 +212,259 @@ function connectProtocolTransport(
       events,
       bridgeSignal,
       getToken,
-      holdHeartbeatLoop,
+      heartbeatLoop,
     ),
     platformPort,
     workerPort,
   };
 }
+
+function authLifecycleTelemetry() {
+  return axiomTelemetry.ingest.mock.calls.flatMap(([, events]) => {
+    return events.filter((event) => {
+      return event.name === "auth.lifecycle";
+    });
+  });
+}
+
+// Observe the external Axiom payload through real token bridge round trips.
+function tokenRequestTelemetry() {
+  return axiomTelemetry.ingest.mock.calls.flatMap(([dataset, events]) => {
+    expect(dataset).toBe("vm0-client-telemetry-prod");
+    return events.filter((event) => {
+      return event.name === "shared_database.token_request";
+    });
+  });
+}
+
+async function prepareTokenTelemetryRequest(ownerSignal = context.signal) {
+  mockNow(new Date("2026-10-14T02:00:00Z"), context.signal);
+  axiomTelemetry.ingest.mockReset();
+  vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "xaat-test-ingest-token");
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      vi.unstubAllEnvs();
+    },
+    { once: true },
+  );
+  context.mocks.browser.url("https://app.okou.ai/");
+  initializeWorker();
+  const tokenRequested = context.mocks.deferred<void>();
+  const tokenResponse = context.mocks.deferred<string | null>();
+  let holdToken = false;
+  const transport = connectProtocolTransport(ownerSignal, () => {
+    if (!holdToken) {
+      return Promise.resolve("bootstrap-token");
+    }
+    tokenRequested.resolve();
+    return tokenResponse.promise;
+  });
+  await transport.bridge.registerTab(ownerSignal);
+  await vi.waitFor(() => {
+    expect(
+      context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
+    ).toBeTruthy();
+  });
+  holdToken = true;
+  axiomTelemetry.ingest.mockReset();
+  transport.workerPort.postedMessages.length = 0;
+  return { ...transport, tokenRequested, tokenResponse };
+}
+
+function expectTokenRequestTelemetry(
+  events: readonly Record<string, unknown>[],
+  requestId: string,
+  outcome: "success" | "error" | "aborted",
+): void {
+  expect(events).toHaveLength(2);
+  for (const [index, event] of events.entries()) {
+    expect(event).toMatchObject({
+      "attributes.custom": {
+        "okou.client.outcome": index === 0 ? "started" : outcome,
+        "okou.shared_database.token_request.request_id": requestId,
+      },
+      name: "shared_database.token_request",
+      "scope.name": "okou-app/shared-worker",
+      "resource.deployment.environment.name": "production",
+    });
+    expect(event.duration).toStrictEqual(expect.any(Number));
+  }
+  expect(events[0]).not.toHaveProperty("status.code");
+  expect(events[1]?.["status.code"]).toBe(
+    outcome === "aborted" ? undefined : outcome === "success" ? "OK" : "ERROR",
+  );
+}
+
+function tokenRequestId(workerPort: InMemoryMessagePort): string {
+  const requests = workerPort.postedMessages
+    .map((message) => {
+      return sharedDatabaseWorkerMessageSchema.parse(message);
+    })
+    .filter((message) => {
+      return message.type === "get-token";
+    });
+  expect(requests).toHaveLength(1);
+  return requests[0]!.requestId;
+}
+
+test("Report a pending token request before its response and correlate success without leaking credentials", async () => {
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest();
+  const clock = vi.spyOn(performance, "now").mockReturnValue(100);
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  expect(tokenRequestTelemetry()).toMatchObject([
+    {
+      "attributes.custom": {
+        "okou.client.outcome": "started",
+        "okou.shared_database.token_request.request_id": requestId,
+      },
+    },
+  ]);
+  const credential = "private-token-must-not-be-reported";
+  clock.mockReturnValue(125);
+  tokenResponse.resolve(credential);
+  await indicators;
+  const events = tokenRequestTelemetry();
+  expectTokenRequestTelemetry(events, requestId, "success");
+  expect(events[0]).toHaveProperty("duration", 0);
+  expect(events[1]).toHaveProperty("duration", 25_000_000);
+  const milestones = authLifecycleTelemetry();
+  for (const stage of [
+    "tab_token_requested",
+    "tab_token_received",
+    "tab_token_read_finished",
+    "tab_token_reply",
+    "worker_token_received",
+    "worker_token_selected",
+  ]) {
+    expect(milestones).toContainEqual(
+      expect.objectContaining({
+        "attributes.custom": expect.objectContaining({
+          "okou.auth.stage": stage,
+          "okou.auth.token_attempt_id": requestId,
+        }),
+      }),
+    );
+  }
+  const sent = milestones.find((event) => {
+    const attrs = event["attributes.custom"];
+    return (
+      typeof attrs === "object" &&
+      attrs !== null &&
+      "okou.auth.stage" in attrs &&
+      attrs["okou.auth.stage"] === "http_send_invoked"
+    );
+  });
+  expect(sent).toMatchObject({
+    "attributes.custom": {
+      "okou.auth.operation_id": expect.any(String),
+      "okou.auth.token_attempt_id": requestId,
+      "okou.auth.http_request_id": expect.any(String),
+    },
+  });
+  const payload = JSON.stringify([...events, ...milestones]);
+  expect(payload).not.toContain(credential);
+  expect(payload).not.toContain(identity().userId);
+  expect(payload).not.toContain(identity().orgId);
+});
+
+test("Correlate token bridge failures without reporting raw error text", async () => {
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest();
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  const failure = new Error("private-token-provider-error");
+  const rejected = Promise.allSettled([indicators]);
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  tokenResponse.reject(failure);
+  await expect(rejected).resolves.toMatchObject([
+    { status: "rejected", reason: { message: failure.message } },
+  ]);
+  const events = tokenRequestTelemetry();
+  expectTokenRequestTelemetry(events, requestId, "error");
+  expect(JSON.stringify(events)).not.toContain(failure.message);
+});
+
+test("Report token request cancellation when its serving tab disconnects", async () => {
+  const resetOwner$ = resetSignal();
+  const ownerSignal = context.store.set(resetOwner$, context.signal);
+  const { bridge, workerPort, tokenRequested, tokenResponse } =
+    await prepareTokenTelemetryRequest(ownerSignal);
+  const indicators = bridge.getComputed("chat-thread-indicators");
+  const cancelled = Promise.allSettled([indicators]);
+  await tokenRequested.promise;
+  const requestId = tokenRequestId(workerPort);
+  context.store.set(resetOwner$);
+  await expect(cancelled).resolves.toMatchObject([
+    { status: "rejected", reason: { name: "AbortError" } },
+  ]);
+  await vi.waitFor(() => {
+    expectTokenRequestTelemetry(tokenRequestTelemetry(), requestId, "aborted");
+  });
+  tokenResponse.resolve("late-private-token");
+});
+
+test.each([
+  { outcome: "success", sdkErrorName: "Error" },
+  { outcome: "error", sdkErrorName: "Error" },
+  { outcome: "aborted", sdkErrorName: "Error" },
+  { outcome: "success", sdkErrorName: "AbortError" },
+  { outcome: "error", sdkErrorName: "AbortError" },
+  { outcome: "aborted", sdkErrorName: "AbortError" },
+] as const)(
+  "Preserve token request $outcome when the telemetry SDK throws $sdkErrorName",
+  async ({ outcome, sdkErrorName }) => {
+    const resetOwner$ = resetSignal();
+    const ownerSignal = context.store.set(resetOwner$, context.signal);
+    const { bridge, workerPort, tokenRequested, tokenResponse } =
+      await prepareTokenTelemetryRequest(ownerSignal);
+    axiomTelemetry.ingest.mockImplementation((_dataset, events) => {
+      if (
+        events.some((event) => {
+          return (
+            event.name === "shared_database.token_request" ||
+            event.name === "auth.lifecycle"
+          );
+        })
+      ) {
+        throw new DOMException("Telemetry SDK unavailable", sdkErrorName);
+      }
+    });
+    const result = Promise.allSettled([
+      bridge.getComputed("chat-thread-indicators"),
+    ]);
+    await tokenRequested.promise;
+    const requestId = tokenRequestId(workerPort);
+    const failure = new Error("Original token provider failure");
+    if (outcome === "aborted") {
+      context.store.set(resetOwner$);
+    } else if (outcome === "error") {
+      tokenResponse.reject(failure);
+    } else {
+      tokenResponse.resolve("private-token");
+    }
+    const expectedResult =
+      outcome === "success"
+        ? { status: "fulfilled" }
+        : {
+            status: "rejected",
+            reason:
+              outcome === "error"
+                ? { message: failure.message }
+                : { name: "AbortError" },
+          };
+    await expect(result).resolves.toMatchObject([expectedResult]);
+    await vi.waitFor(() => {
+      expectTokenRequestTelemetry(tokenRequestTelemetry(), requestId, outcome);
+    });
+    if (outcome === "aborted") {
+      tokenResponse.resolve("late-private-token");
+    }
+  },
+);
 
 // Multiple tabs share one Worker; exercise their independent MessagePorts.
 test("Keep foreground presence until the last visible tab hides or disconnects", async () => {
@@ -542,80 +813,239 @@ test("Keep concurrent shared chat loads independent", async () => {
   await expect(first).resolves.toStrictEqual([firstRow]);
 });
 
-test("Authenticate worker requests through the tab with the latest heartbeat", async () => {
-  initializeWorker();
-  const resetFirstOwner$ = resetSignal();
-  const firstOwnerSignal = context.store.set(resetFirstOwner$, context.signal);
-  const resetSecondOwner$ = resetSignal();
-  const secondOwnerSignal = context.store.set(
-    resetSecondOwner$,
-    context.signal,
-  );
-  const first = connectProtocolTransport(firstOwnerSignal, () => {
-    return Promise.resolve("first-tab-token");
-  });
-  const second = connectProtocolTransport(secondOwnerSignal, () => {
-    return Promise.resolve("second-tab-token");
-  });
-  mockNow(1000, context.signal);
-  await first.bridge.registerTab(firstOwnerSignal);
-  mockNow(2000, context.signal);
-  await second.bridge.registerTab(secondOwnerSignal);
-  const key = dataKey(crypto.randomUUID());
-  let requestTokens = new Set<string | null>();
+// Delay heartbeats so the requesting tab, rather than daemon startup, initiates
+// the first token round trip. Registration and query messages remain unchanged.
+const deferHeartbeatLoop: SharedDatabaseHeartbeatLoop = (
+  _heartbeat,
+  signal,
+) => {
+  signal.throwIfAborted();
+};
 
-  context.mocks.api(chatThreadEventsContract.snapshot, ({ respond }) => {
-    return respond(404, {
-      error: {
-        code: "CHAT_EVENT_SNAPSHOT_NOT_FOUND",
-        message: "Chat event snapshot not found",
+test.each([
+  { response: "second-tab-token", outcome: "a token" },
+  { response: null, outcome: "null" },
+])(
+  "Remember the first broadcast responder returning $outcome despite later responses and heartbeats",
+  async ({ response }) => {
+    initializeWorker();
+    const delayedToken = context.mocks.deferred<string | null>();
+    const firstRequested = context.mocks.deferred<void>();
+    let firstResponsePending = true;
+    const first = connectProtocolTransport(
+      context.signal,
+      () => {
+        if (firstResponsePending) {
+          firstResponsePending = false;
+          firstRequested.resolve();
+          return delayedToken.promise;
+        }
+        return Promise.resolve("first-tab-token");
       },
+      bridgeEvents(),
+      context.workerStore,
+      deferHeartbeatLoop,
+    );
+    let secondToken = response;
+    const second = connectProtocolTransport(
+      context.signal,
+      () => {
+        return Promise.resolve(secondToken);
+      },
+      bridgeEvents(),
+      context.workerStore,
+      deferHeartbeatLoop,
+    );
+    await first.bridge.registerTab(context.signal);
+    await second.bridge.registerTab(context.signal);
+    let requestTokens = new Set<string | null>();
+    const indicators = { agents: {}, threads: {}, unreadAt: {} };
+    context.mocks.api(
+      chatThreadsContract.indicators,
+      ({ request, respond }) => {
+        requestTokens.add(request.headers.get("authorization"));
+        return respond(200, indicators);
+      },
+    );
+    context.mocks.api(
+      chatThreadEventsContract.rows,
+      ({ query, request, respond }) => {
+        requestTokens.add(request.headers.get("authorization"));
+        return respond(200, chatEventRowsResponse([], query));
+      },
+    );
+
+    const pending = second.bridge.getComputed("chat-thread-indicators");
+    await firstRequested.promise;
+    await expect(pending).resolves.toStrictEqual(indicators);
+    expect(requestTokens).toStrictEqual(
+      new Set([response ? `Bearer ${response}` : null]),
+    );
+
+    // A null responder is remembered too: its next valid token must be used
+    // without broadcasting to the now-responsive first tab.
+    secondToken = "second-tab-fresh-token";
+    delayedToken.resolve("late-first-tab-token");
+    await vi.waitFor(() => {
+      expect(first.platformPort.postedMessages).toContainEqual({
+        type: "token-result",
+        requestId: tokenRequestId(first.workerPort),
+        token: "late-first-tab-token",
+      });
     });
-  });
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ query, request, respond }) => {
-      requestTokens.add(request.headers.get("authorization"));
-      return respond(200, chatEventRowsResponse([], query));
-    },
-  );
+    first.platformPort.postMessage({ type: "heartbeat" });
+    await vi.waitFor(() => {
+      expect(
+        context.mocks.ably.hasChannelSubscriptionOnChannel(credentialChannel()),
+      ).toBeTruthy();
+    });
+    requestTokens = new Set<string | null>();
+    await expect(
+      first.bridge.query(
+        {
+          dataKey: dataKey(crypto.randomUUID()),
+          afterSeqId: null,
+          consistency: "catch-up",
+        },
+        context.signal,
+      ),
+    ).resolves.toStrictEqual([]);
+    expect(requestTokens).toStrictEqual(
+      new Set(["Bearer second-tab-fresh-token"]),
+    );
+    // The query round trip follows the late response and heartbeat on the
+    // first tab's port, so this negative assertion has a completion boundary.
+    tokenRequestId(first.workerPort);
+  },
+);
 
-  await expect(
-    second.bridge.query(
-      { dataKey: key, afterSeqId: null, consistency: "catch-up" },
-      secondOwnerSignal,
-    ),
-  ).resolves.toStrictEqual([]);
-  expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
-  requestTokens = new Set<string | null>();
-
-  mockNow(3000, context.signal);
-  first.platformPort.postMessage({ type: "heartbeat" });
-  await expect(
-    second.bridge.query(
-      {
-        dataKey: dataKey(crypto.randomUUID()),
-        afterSeqId: null,
-        consistency: "catch-up",
-      },
-      secondOwnerSignal,
-    ),
-  ).resolves.toStrictEqual([]);
-  expect(requestTokens).toStrictEqual(new Set(["Bearer first-tab-token"]));
-  requestTokens = new Set<string | null>();
-
-  second.platformPort.postMessage({ type: "heartbeat" });
-  await expect(
-    first.bridge.query(
-      {
-        dataKey: dataKey(crypto.randomUUID()),
-        afterSeqId: null,
-        consistency: "catch-up",
-      },
+test.each(["null", "unresponsive", "disconnected"] as const)(
+  "Recover a live tab's query when the preferred token provider is %s",
+  async (failure) => {
+    initializeWorker();
+    const resetFirstOwner$ = resetSignal();
+    const firstOwnerSignal = context.store.set(
+      resetFirstOwner$,
+      context.signal,
+    );
+    const preferredRequested = context.mocks.deferred<void>();
+    const delayedToken = context.mocks.deferred<string | null>();
+    let preferredUnavailable = false;
+    let preferredRequestStarted = false;
+    const first = connectProtocolTransport(
       firstOwnerSignal,
-    ),
-  ).resolves.toStrictEqual([]);
-  expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
+      () => {
+        if (!preferredUnavailable) {
+          return Promise.resolve("first-tab-token");
+        }
+        if (!preferredRequestStarted) {
+          preferredRequestStarted = true;
+          preferredRequested.resolve();
+          if (failure === "null") {
+            return Promise.resolve(null);
+          }
+        }
+        return delayedToken.promise;
+      },
+      bridgeEvents(),
+      context.workerStore,
+      deferHeartbeatLoop,
+    );
+    await first.bridge.registerTab(firstOwnerSignal);
+    await first.bridge.getComputed("chat-thread-indicators");
+    preferredUnavailable = true;
+    const second = connectProtocolTransport(
+      context.signal,
+      () => {
+        return Promise.resolve("second-tab-token");
+      },
+      bridgeEvents(),
+      context.workerStore,
+      deferHeartbeatLoop,
+    );
+    await second.bridge.registerTab(context.signal);
+    const key = dataKey(crypto.randomUUID());
+    const recoveredRow = row(key.threadId, 1);
+    const requestTokens = new Set<string | null>();
+    context.mocks.api(
+      chatThreadEventsContract.rows,
+      ({ query, request, respond }) => {
+        requestTokens.add(request.headers.get("authorization"));
+        return respond(
+          200,
+          chatEventRowsResponse(
+            query.sinceSeqId === 0 ? [recoveredRow] : [],
+            query,
+          ),
+        );
+      },
+    );
+
+    const pending = second.bridge.query(
+      { dataKey: key, afterSeqId: null, consistency: "catch-up" },
+      context.signal,
+    );
+    await preferredRequested.promise;
+    if (failure === "disconnected") {
+      context.store.set(resetFirstOwner$);
+    }
+    // The unresponsive case awaits the production two-second deadline through
+    // the live caller's result, without sleeping or changing the clock.
+    await expect(pending).resolves.toStrictEqual([recoveredRow]);
+    expect(requestTokens).toStrictEqual(new Set(["Bearer second-tab-token"]));
+    expect(second.workerPort.closed).toBeFalsy();
+    delayedToken.resolve("late-first-tab-token");
+  },
+);
+
+test("Keep overlapping token broadcasts independent when the later request completes first", async () => {
+  initializeWorker();
+  const firstRequested = context.mocks.deferred<void>();
+  const secondRequested = context.mocks.deferred<void>();
+  const firstToken = context.mocks.deferred<string | null>();
+  const secondToken = context.mocks.deferred<string | null>();
+  let firstRequest = true;
+  const { bridge } = connectProtocolTransport(
+    context.signal,
+    () => {
+      if (firstRequest) {
+        firstRequest = false;
+        firstRequested.resolve();
+        return firstToken.promise;
+      }
+      secondRequested.resolve();
+      return secondToken.promise;
+    },
+    bridgeEvents(),
+    context.workerStore,
+    deferHeartbeatLoop,
+  );
+  await bridge.registerTab(context.signal);
+  const indicators = { agents: {}, threads: {}, unreadAt: {} };
+  const requestTokens = new Map<string, string | null>();
+  context.mocks.api(chatThreadsContract.indicators, ({ request, respond }) => {
+    requestTokens.set("indicators", request.headers.get("authorization"));
+    return respond(200, indicators);
+  });
+  context.mocks.api(computerUseHostsContract.list, ({ request, respond }) => {
+    requestTokens.set("hosts", request.headers.get("authorization"));
+    return respond(200, { hosts: [] });
+  });
+
+  const first = bridge.getComputed("chat-thread-indicators");
+  await firstRequested.promise;
+  const second = bridge.getComputed("computer-use-hosts");
+  await secondRequested.promise;
+  secondToken.resolve("host-token");
+  await expect(second).resolves.toStrictEqual([]);
+  firstToken.resolve("indicator-token");
+  await expect(first).resolves.toStrictEqual(indicators);
+  expect(requestTokens).toStrictEqual(
+    new Map([
+      ["hosts", "Bearer host-token"],
+      ["indicators", "Bearer indicator-token"],
+    ]),
+  );
 });
 
 test("Cancel one shared chat load without cancelling worker progress", async () => {

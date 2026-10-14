@@ -31,6 +31,7 @@ from tests.request_handler_helpers import _write_github_firewall_registry
 
 
 @pytest.mark.parametrize("framing", ["content-length", "chunked", "http2"])
+@pytest.mark.parametrize("capture_body", [False, True])
 @pytest.mark.parametrize("body_queued", [False, True], ids=["headers-only", "queued-body"])
 @pytest.mark.parametrize(
     ("auth_error", "error_code", "action"),
@@ -52,13 +53,14 @@ from tests.request_handler_helpers import _write_github_firewall_registry
 async def test_failed_header_auth_terminates_before_body_eof(
     tmp_path: Path,
     framing: Literal["content-length", "chunked", "http2"],
+    capture_body: bool,
     body_queued: bool,
     auth_error: Exception,
     error_code: str,
     action: str,
 ) -> None:
     registry_path = _write_github_firewall_registry(
-        tmp_path, sandbox_fields={"captureNetworkBodies": True}
+        tmp_path, sandbox_fields={"captureNetworkBodies": capture_body}
     )
     auth_fetch = AsyncMock(side_effect=auth_error)
     body_fragment = b"x" * 16384

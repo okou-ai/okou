@@ -134,7 +134,7 @@ path; successful acknowledgements never rely on a future prompt or process.
 Cancellation gates surround awaited context conversion, auth, turn preparation,
 and prepared-tool entry. Started tools and event callbacks are joined even if
 a sibling fails. Interrupted/unstarted calls retain upstream history handling;
-there is no second result journal, replay engine, or checkpoint format.
+there is no second result journal or replay engine.
 
 Cancellation is cooperative: completed external effects are not rolled back,
 and a tool that ignores cancellation can delay settlement. Guest's existing
@@ -199,7 +199,7 @@ before public settlement, without triggering another model request. The
 regression covers messages accepted during a tool and an awaited settlement
 extension, with successful and cancelled outcomes.
 
-API first-turn preflight still compares a settled checkpoint against the public
+API first-turn preflight still compares settled session history against the public
 pre-prompt compaction semantics and delegates unproven cases to the sandbox.
 The API transport issues one response only; next-response compaction belongs
 to the sandbox's native continuation. `MemoryPiSession` remains byte-backed.

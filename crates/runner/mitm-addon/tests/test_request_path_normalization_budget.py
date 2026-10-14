@@ -11,6 +11,7 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
+from tests.requestheaders_helpers import await_requestheaders_result
 
 
 @pytest.fixture
@@ -125,7 +126,7 @@ async def test_path_normalization_budget_preserves_supported_requests(
         mitm_ctx(registry_path=str(path_firewall_registry)),
         fake_firewall_headers(headers={"Authorization": "Bearer resolved"}) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
         await mitm_addon.request(flow)
 
     auth_fetch.assert_awaited_once()

@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.22.44](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.43...claude-mock-v0.22.44) (2026-10-14)
+
+## [0.22.43](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.42...claude-mock-v0.22.43) (2026-10-14)
+
+## [0.22.42](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.41...claude-mock-v0.22.42) (2026-10-14)
+
+## [0.22.41](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.40...claude-mock-v0.22.41) (2026-10-14)
+
+## [0.22.40](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.39...claude-mock-v0.22.40) (2026-10-13)
+
+## [0.22.39](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.38...claude-mock-v0.22.39) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
 ## [0.22.38](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.37...claude-mock-v0.22.38) (2026-10-12)
 
 ## [0.22.37](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.36...claude-mock-v0.22.37) (2026-10-12)

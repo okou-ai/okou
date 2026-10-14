@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -21,6 +22,7 @@ const collector = z
     initial: oomEvidenceSchema,
     sample: oomEvidenceSchema,
     cleanup: oomEvidenceSchema,
+    tasks: oomEvidenceSchema,
   })
   .parse(
     JSON.parse(
@@ -34,7 +36,126 @@ const collector = z
     ),
   );
 
+const workload = collector.tasks.groups[0].cgroup;
+const taskDomain = `${workload}/tools/task-00000000-0000-0000-0000-000000000001`;
+const nestedTaskDomain = `${taskDomain}/tools/task-00000000-0000-0000-0000-000000000002`;
+
 describe("OOM evidence wire compatibility", () => {
+  it("preserves the Rust collector's single-task and nested-task victims", () => {
+    const oomEvidence = collector.tasks;
+    expect(
+      oomEvidence.incidents.map((incident) => {
+        return incident.kernel_events[0]?.task_cgroup;
+      }),
+    ).toEqual([
+      `${taskDomain}/tools/tool-95`,
+      `${nestedTaskDomain}/tools/tool-269`,
+    ]);
+    expect(oomEvidence.incidents[1]?.kernel_events[0]?.oom_cgroup).toBe(
+      nestedTaskDomain,
+    );
+    const body = { runId: "collector-run", oomEvidence };
+    expect(webhookTelemetryContract.send.body.parse(body)).toEqual(body);
+    const metricBody = {
+      runId: "collector-run",
+      metrics: [
+        {
+          ts: oomEvidence.sampled_at,
+          cpu: 1,
+          mem_used: 4096,
+          mem_total: 16384,
+          disk_used: 1024,
+          disk_total: 8192,
+          memory: oomEvidence,
+        },
+      ],
+    };
+    expect(webhookTelemetryContract.send.body.parse(metricBody)).toEqual(
+      metricBody,
+    );
+  });
+
+  it("accepts canonical task domains and leaves at each nesting level", () => {
+    for (const domain of [
+      taskDomain,
+      nestedTaskDomain,
+      `${nestedTaskDomain}/tools/task-ffffffff-ffff-ffff-ffff-ffffffffffff`,
+    ]) {
+      for (const suffix of [
+        "",
+        "/runtime",
+        "/tools",
+        "/tools/tool-0",
+        "/tools/tool-18446744073709551615",
+      ]) {
+        for (const field of ["task_cgroup", "oom_cgroup"] as const) {
+          const evidence = structuredClone(collector.tasks);
+          const event = evidence.incidents[0]?.kernel_events[0];
+          assert(event, "Expected a task collector kernel event");
+          event[field] = `${domain}${suffix}`;
+          expect(oomEvidenceSchema.parse(evidence)).toEqual(evidence);
+        }
+      }
+    }
+  });
+
+  it("rejects malformed, aliased, unrelated and cross-operation task paths", () => {
+    for (const path of [
+      `${workload}/tools/task-1/runtime`,
+      `${workload}/tools/task-00000000-0000-0000-0000-00000000000A/runtime`,
+      `${taskDomain}/tools/task-1/runtime`,
+      `${taskDomain}/tools/task-00000000-0000-0000-0000-00000000000A/runtime`,
+      `${workload}/tools/task-{00000000-0000-0000-0000-000000000001}/runtime`,
+      `${workload}/tools/task-00000000000000000000000000000001/runtime`,
+      `${taskDomain}/`,
+      `${taskDomain}/runtime/`,
+      `${taskDomain}/runtime/../tools`,
+      `${taskDomain}//runtime`,
+      `${taskDomain}/%72untime`,
+      `${taskDomain}/task-00000000-0000-0000-0000-000000000002/runtime`,
+      `${taskDomain}/runtime/nested`,
+      `${taskDomain}/tools/tool-1/../runtime`,
+      `${taskDomain}/tools/tool-`,
+      `${taskDomain}/tools/tool-1-2`,
+      `${taskDomain}/tools/tool-${"1".repeat(21)}`,
+      `${nestedTaskDomain}/tools/tool-1/nested`,
+      `${nestedTaskDomain}/runtime\n`,
+      `${nestedTaskDomain}/runtime\r`,
+      `${nestedTaskDomain}/runtime\u2028`,
+      `${taskDomain}${"/tools/task-00000000-0000-0000-0000-000000000002".repeat(5)}`,
+      `${nestedTaskDomain}/runtime`.slice(1),
+      `/sys/fs/cgroup${nestedTaskDomain}/runtime`,
+      `${nestedTaskDomain}/runtime`.replace("exec-281-10-3", "exec-281-10-30"),
+      "/host/tools/task-00000000-0000-0000-0000-000000000001/runtime",
+    ]) {
+      for (const field of ["task_cgroup", "oom_cgroup"] as const) {
+        const evidence = structuredClone(collector.tasks);
+        const event = evidence.incidents[0]?.kernel_events[0];
+        assert(event, "Expected a task collector kernel event");
+        event[field] = path;
+        expect(oomEvidenceSchema.safeParse(evidence).success).toBe(false);
+      }
+    }
+  });
+
+  it("keeps fixed snapshots, group ordering and observation time strict for task evidence", () => {
+    const nestedSnapshot = structuredClone(collector.tasks);
+    nestedSnapshot.groups[2].cgroup = `${nestedTaskDomain}/tools`;
+    const reorderedGroups = structuredClone(collector.tasks);
+    reorderedGroups.groups = [
+      reorderedGroups.groups[1],
+      reorderedGroups.groups[0],
+      reorderedGroups.groups[2],
+    ];
+    const oldEvent = structuredClone(collector.tasks);
+    const event = oldEvent.incidents[1]?.kernel_events[0];
+    assert(event, "Expected a nested task collector kernel event");
+    event.boottime_us = oldEvent.started_boottime_us - 1;
+    for (const evidence of [nestedSnapshot, reorderedGroups, oldEvent]) {
+      expect(oomEvidenceSchema.safeParse(evidence).success).toBe(false);
+    }
+  });
+
   it("accepts collector output in mixed metric batches and urgent or fallback evidence", () => {
     for (const memory of [collector.initial, collector.sample]) {
       const body = {

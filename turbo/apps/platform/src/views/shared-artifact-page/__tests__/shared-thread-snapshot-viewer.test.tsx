@@ -1,7 +1,6 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactDownloadsContract } from "@okouai/api-contracts/contracts/artifact-downloads";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -72,8 +71,6 @@ test.each([false, true])(
       path: `${IMAGE_PATH}#detail`,
       host: "app.okou.ai",
       ...(!signedIn ? { auth: null } : {}),
-      // Shared snapshots remain viewable for recipients outside the owner's rollout.
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
     });
 
     await expect(
@@ -130,7 +127,6 @@ test("an anonymous HTML snapshot keeps its temporary credential and slide fragme
     path: "/artifacts/snaphtml01.html#slide-2",
     host: "app.okou.ai",
     auth: null,
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
   });
 
   const frame = await screen.findByTitle("index.html preview");
@@ -168,6 +164,7 @@ test("a snapshot pasted into an ordinary thread cannot expose source permissions
   });
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", IMAGE_URL).href,
       url: IMAGE_URL,
       expiresAt: EXPIRES_AT,
       sharedThreadSnapshot: true,
@@ -193,7 +190,6 @@ test("a snapshot pasted into an ordinary thread cannot expose source permissions
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 
   const link = await findNamedLink("Snapshot");

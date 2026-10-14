@@ -1,5 +1,4 @@
 import {
-  VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS,
   VOICE_IO_TRANSCRIBE_MAX_SEGMENT_SECONDS,
   voiceIoTranscribeSegmentOptionsSchema,
   voiceIoTranscribeContract,
@@ -16,10 +15,7 @@ import { authRoute } from "../auth/auth-route";
 import { request$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
-import {
-  audioInputLifetimeQuota,
-  recordAudioInputUsage$,
-} from "../services/voice-io.service";
+import { audioInputLifetimeQuota } from "../services/voice-io.service";
 import {
   badRequest,
   getAudioDuration,
@@ -27,7 +23,7 @@ import {
   recordSttUsage$,
   sttDailyPolicy$,
 } from "../services/voice-io-post.service";
-import { transcribeCompatibleVoiceSegment$ } from "../services/voice-io-finalize.service";
+import { transcribeVoiceSegment$ } from "../services/voice-io-transcribe.service";
 import { safeJsonParse } from "../utils";
 
 const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
@@ -35,6 +31,8 @@ const ALLOWED_VOICE_DRAFT_MIME_TYPES = [
   "audio/wave",
   "audio/x-wav",
 ] as const;
+
+const lifetimeQuota$ = audioInputLifetimeQuota(organizationAuthContext$);
 
 const voiceIoFeatureContext$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
@@ -61,21 +59,6 @@ function audioFiles(formData: FormData): readonly File[] | null {
   return entries as readonly File[];
 }
 
-function lastAssistantReference(formData: FormData): string | undefined | null {
-  const value = formData.get("lastAssistantMessage");
-  if (value === null) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    return null;
-  }
-  const reference = value.trim();
-  if (!reference || reference.length > VOICE_IO_TRANSCRIBE_MAX_CONTEXT_CHARS) {
-    return null;
-  }
-  return reference;
-}
-
 function editorReference(
   formData: FormData,
 ): VoiceIoEditorContext | undefined | null {
@@ -98,19 +81,12 @@ function parseVoiceDraftForm(formData: FormData) {
     return badRequest("Invalid voice segment options");
   }
   const segment = options.data;
-  const files =
-    segment.final && formData.getAll("file").length === 0
-      ? []
-      : audioFiles(formData);
+  const files = audioFiles(formData);
   if (!files) {
     return badRequest("No audio file provided");
   }
   if (files.length > 1) {
     return badRequest("Voice segments must contain at most one audio file");
-  }
-  const reference = lastAssistantReference(formData);
-  if (reference === null) {
-    return badRequest("Invalid last assistant message");
   }
   const editorContext = editorReference(formData);
   if (editorContext === null) {
@@ -129,7 +105,7 @@ function parseVoiceDraftForm(formData: FormData) {
     }
   }
 
-  return { files, segment, reference, editorContext };
+  return { files, segment, editorContext };
 }
 
 async function validateVoiceDraftDuration(
@@ -185,7 +161,7 @@ const voiceIoTranscribeHandler$ = command(
     signal.throwIfAborted();
 
     const auth = get(organizationAuthContext$);
-    const quota = await get(audioInputLifetimeQuota(auth.orgId, auth.userId));
+    const quota = await get(lifetimeQuota$);
     signal.throwIfAborted();
     if (!quota.allowed) {
       return {
@@ -207,7 +183,7 @@ const voiceIoTranscribeHandler$ = command(
     if ("status" in parsed) {
       return parsed;
     }
-    const { files, segment, reference, editorContext } = parsed;
+    const { files, segment, editorContext } = parsed;
     const duration = await validateVoiceDraftDuration(files, segment, signal);
     signal.throwIfAborted();
     if ("status" in duration) {
@@ -230,11 +206,10 @@ const voiceIoTranscribeHandler$ = command(
       files,
       audioDurationSeconds,
       debug: isFeatureEnabled(FeatureSwitchKey.OkouDebug, featureContext),
-      ...(reference === undefined ? {} : { lastAssistantMessage: reference }),
       ...(editorContext === undefined ? {} : { editorContext }),
     };
     const result = await set(
-      transcribeCompatibleVoiceSegment$,
+      transcribeVoiceSegment$,
       { ...input, ...segment },
       signal,
     );
@@ -251,9 +226,6 @@ const voiceIoTranscribeHandler$ = command(
       },
       signal,
     );
-    if (segment.final && quota.limit !== null) {
-      await set(recordAudioInputUsage$, auth.orgId, auth.userId, signal);
-    }
     return result;
   },
 );

@@ -381,8 +381,7 @@ describe("GET /api/cron/project-chat-event-search", () => {
       });
       expect(response.isError).not.toBeTruthy();
       const result = mcpChatSearchContract.search.responses[200].parse(
-        response.structuredContent ??
-          JSON.parse(response.content[0]?.text ?? "null"),
+        response.structuredContent,
       );
       const native = await chat.searchChat(owner, keyword, {
         agentId: agent.agentId,

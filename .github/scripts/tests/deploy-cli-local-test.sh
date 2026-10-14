@@ -3,15 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 deploy_script="${repo_root}/scripts/deploy-cli-local.sh"
-build_script="${repo_root}/.github/scripts/build-okou-cli-artifact.sh"
-verify_script="${repo_root}/.github/scripts/verify-okou-cli-artifact.sh"
+build_script="${repo_root}/.github/scripts/artifacts/build-okou-cli-artifact.sh"
+verify_script="${repo_root}/.github/scripts/artifacts/verify-okou-cli-artifact.sh"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 test_root="${tmp_dir}/repo"
 mkdir -p \
   "${test_root}/scripts" \
-  "${test_root}/.github/scripts" \
+  "${test_root}/.github/scripts/artifacts" \
   "${test_root}/turbo/apps/cli/dist/migrations" \
   "${test_root}/turbo/apps/cli/dist" \
   "${test_root}/turbo/packages/pi-agent-runtime" \
@@ -19,10 +19,10 @@ mkdir -p \
   "${test_root}/bin"
 
 ln -s "$deploy_script" "${test_root}/scripts/deploy-cli-local.sh"
-ln -s "$build_script" "${test_root}/.github/scripts/build-okou-cli-artifact.sh"
-ln -s "$verify_script" "${test_root}/.github/scripts/verify-okou-cli-artifact.sh"
-ln -s "${repo_root}/.github/scripts/read-okou-cli-package-identity.py" \
-  "${test_root}/.github/scripts/read-okou-cli-package-identity.py"
+ln -s "$build_script" "${test_root}/.github/scripts/artifacts/build-okou-cli-artifact.sh"
+ln -s "$verify_script" "${test_root}/.github/scripts/artifacts/verify-okou-cli-artifact.sh"
+ln -s "${repo_root}/.github/scripts/artifacts/read-okou-cli-package-identity.py" \
+  "${test_root}/.github/scripts/artifacts/read-okou-cli-package-identity.py"
 
 cat >"${test_root}/scripts/.env.local" <<'EOF'
 R2_ACCOUNT_ID=test-account

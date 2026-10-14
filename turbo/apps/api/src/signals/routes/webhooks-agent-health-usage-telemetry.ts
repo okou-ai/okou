@@ -1,8 +1,10 @@
 import { command } from "ccstate";
+import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
   webhookUsageEventContract,
+  sessionHistoryDownloadAttributionFields,
   type ArchiveConnectionAttempt,
   type ArchiveSizeMismatch,
   type RunnerPreSpawnConcurrencyBucket,
@@ -10,6 +12,7 @@ import {
   type RunnerResourceBudgetUtilizationBucket,
   type RunnerStartupPath,
   type SandboxReuseResult,
+  type SessionHistoryDownloadAttribution,
 } from "@okouai/api-contracts/contracts/webhooks";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -61,7 +64,7 @@ const AGENTPHONE_TYPING_REFRESH_INTERVAL_SECONDS = 4;
 
 const L = logger("webhooks:agent");
 
-interface SandboxOperationDimensionInput {
+interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownloadAttribution> {
   readonly error?: string;
   readonly outcome?: string;
   readonly reason?: string;
@@ -84,9 +87,26 @@ interface SandboxOperationDimensionInput {
   readonly storage_batch_result_decode_ms?: number;
   readonly storage_batch_resource_log_ms?: number;
   readonly storage_batch_host_timing?: string;
+  readonly storage_batch_guest_timing?: string;
+  readonly storage_batch_resources?: string;
+  readonly storage_batch_guest_request_ownership_us?: number;
+  readonly storage_batch_guest_worker_wait_us?: number;
+  readonly storage_batch_guest_response_prepare_us?: number;
+  readonly storage_batch_containment_wall_us?: number;
+  readonly storage_batch_resource_collection_us?: number;
+  readonly storage_batch_cpu_usage_us?: number;
+  readonly storage_batch_cpu_throttled_us?: number;
+  readonly storage_batch_memory_peak_bytes?: number;
+  readonly storage_batch_memory_events_oom?: number;
+  readonly storage_batch_memory_events_oom_kill?: number;
+  readonly storage_batch_memory_events_oom_group_kill?: number;
+  readonly storage_batch_pids_events_max?: number;
   readonly storage_batch_payload_size_bucket?: string;
   readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
+  readonly is_first_run?: boolean;
+  readonly reuse_key?: string;
+  readonly home_reuse_result?: HomeReuseResult;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
   readonly runner_resource_budget_vcpu_utilization_bucket?: RunnerResourceBudgetUtilizationBucket;
@@ -175,10 +195,81 @@ function dnsReadinessDimensions(
   };
 }
 
+function storageBatchGuestEvidenceDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.storage_batch_guest_timing !== undefined
+      ? { storage_batch_guest_timing: op.storage_batch_guest_timing }
+      : {}),
+    ...(op.storage_batch_resources !== undefined
+      ? { storage_batch_resources: op.storage_batch_resources }
+      : {}),
+    ...(op.storage_batch_guest_request_ownership_us !== undefined
+      ? {
+          storage_batch_guest_request_ownership_us:
+            op.storage_batch_guest_request_ownership_us,
+        }
+      : {}),
+    ...(op.storage_batch_guest_worker_wait_us !== undefined
+      ? {
+          storage_batch_guest_worker_wait_us:
+            op.storage_batch_guest_worker_wait_us,
+        }
+      : {}),
+    ...(op.storage_batch_guest_response_prepare_us !== undefined
+      ? {
+          storage_batch_guest_response_prepare_us:
+            op.storage_batch_guest_response_prepare_us,
+        }
+      : {}),
+    ...(op.storage_batch_containment_wall_us !== undefined
+      ? {
+          storage_batch_containment_wall_us:
+            op.storage_batch_containment_wall_us,
+        }
+      : {}),
+    ...(op.storage_batch_resource_collection_us !== undefined
+      ? {
+          storage_batch_resource_collection_us:
+            op.storage_batch_resource_collection_us,
+        }
+      : {}),
+    ...(op.storage_batch_cpu_usage_us !== undefined
+      ? { storage_batch_cpu_usage_us: op.storage_batch_cpu_usage_us }
+      : {}),
+    ...(op.storage_batch_cpu_throttled_us !== undefined
+      ? { storage_batch_cpu_throttled_us: op.storage_batch_cpu_throttled_us }
+      : {}),
+    ...(op.storage_batch_memory_peak_bytes !== undefined
+      ? { storage_batch_memory_peak_bytes: op.storage_batch_memory_peak_bytes }
+      : {}),
+    ...(op.storage_batch_memory_events_oom !== undefined
+      ? { storage_batch_memory_events_oom: op.storage_batch_memory_events_oom }
+      : {}),
+    ...(op.storage_batch_memory_events_oom_kill !== undefined
+      ? {
+          storage_batch_memory_events_oom_kill:
+            op.storage_batch_memory_events_oom_kill,
+        }
+      : {}),
+    ...(op.storage_batch_memory_events_oom_group_kill !== undefined
+      ? {
+          storage_batch_memory_events_oom_group_kill:
+            op.storage_batch_memory_events_oom_group_kill,
+        }
+      : {}),
+    ...(op.storage_batch_pids_events_max !== undefined
+      ? { storage_batch_pids_events_max: op.storage_batch_pids_events_max }
+      : {}),
+  };
+}
+
 function storageBatchDimensions(
   op: SandboxOperationDimensionInput,
 ): Record<string, string | number> {
   return {
+    ...storageBatchGuestEvidenceDimensions(op),
     ...(op.storage_batch_admission_ms !== undefined
       ? { storage_batch_admission_ms: op.storage_batch_admission_ms }
       : {}),
@@ -279,9 +370,7 @@ function sandboxOperationDimensions(
     ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
     ...storageBatchDimensions(op),
-    ...(op.runner_startup_path
-      ? { runner_startup_path: op.runner_startup_path }
-      : {}),
+    ...sandboxStartupContextDimensions(op),
     ...(op.sandbox_reuse_result
       ? { sandbox_reuse_result: op.sandbox_reuse_result }
       : {}),
@@ -294,6 +383,7 @@ function sandboxOperationDimensions(
     ...runnerResourceBudgetDimensions(op),
     ...workspaceHistoryRestoreDimensions(op),
     ...historyTransferDimensions(op),
+    ...historyDownloadAttributionDimensions(op),
     ...(op.encoding ? { encoding: op.encoding } : {}),
     ...(op.session_history_raw_size_bucket
       ? {
@@ -346,6 +436,34 @@ function sandboxOperationDimensions(
       ? { session_history_download_source: op.session_history_download_source }
       : {}),
   };
+}
+
+function sandboxStartupContextDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | boolean> {
+  return {
+    ...(op.runner_startup_path
+      ? { runner_startup_path: op.runner_startup_path }
+      : {}),
+    ...(op.is_first_run !== undefined ? { is_first_run: op.is_first_run } : {}),
+    ...(op.reuse_key !== undefined ? { reuse_key: op.reuse_key } : {}),
+    ...(op.home_reuse_result
+      ? { home_reuse_result: op.home_reuse_result }
+      : {}),
+  };
+}
+
+function historyDownloadAttributionDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  const dimensions: Record<string, string | number> = {};
+  for (const key of sessionHistoryDownloadAttributionFields) {
+    const value = op[key];
+    if (value !== undefined) {
+      dimensions[key] = value;
+    }
+  }
+  return dimensions;
 }
 
 function historyTransferDimensions(

@@ -1,4 +1,4 @@
-import { AlertCircle, Check, Loader2 } from "lucide-react";
+import { AlertCircle, Check, Loader2, WalletCards } from "lucide-react";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { Button } from "@okouai/ui/components/ui/button";
@@ -8,6 +8,10 @@ import { ConnectorFlowCard } from "./connector-flow-card.tsx";
 import { MercuryDisclosure } from "./components/settings/mercury-disclosure.tsx";
 
 type ConnectorCallbackPageStatus = "loading" | "success" | "error";
+
+function linkWalletIcon(label: string) {
+  return <WalletCards size={20} role="img" aria-label={label} />;
+}
 
 export function ConnectorCallbackPage({
   connectorIcon,
@@ -80,7 +84,9 @@ export function ConnectorCallbackPage({
   return (
     <ConnectorFlowCard
       connectorIcon={connectorIcon}
-      iconContent={iconContent}
+      iconContent={
+        connectorSlug === "link" ? linkWalletIcon(connectorLabel) : iconContent
+      }
       title={title}
       description={description}
     >

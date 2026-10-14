@@ -108,7 +108,8 @@ async fn fresh_pre_spawn_admission_cancels_before_factory_create() {
 #[tokio::test]
 async fn fresh_pre_spawn_admission_releases_after_agent_ready() {
     let dir = tempfile::tempdir().unwrap();
-    let config = Arc::new(test_executor_config(dir.path()).await);
+    let (config, _startup_api) = test_executor_config_with_startup_api(dir.path()).await;
+    let config = Arc::new(config);
     let total_tokens = config.pre_spawn_admission.total_tokens();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let start_gate = MockLifecycleGate::new();
@@ -1959,6 +1960,7 @@ async fn execute_inner_passes_device_rate_limits_to_sandbox_create() {
     assert_eq!(
         configs[0].home_drive,
         Some(sandbox::HomeDriveConfig {
+            space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
             size_mb: 512,
             seed_image: None,
         })

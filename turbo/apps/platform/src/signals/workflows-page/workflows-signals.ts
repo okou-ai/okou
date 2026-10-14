@@ -34,7 +34,6 @@ import {
   type WorkflowUpdateRequest,
   type WorkflowAutomationUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -58,7 +57,11 @@ import {
   reloadWorkflowData$,
   workflowReloadVersion$,
 } from "./workflow-reload.ts";
-import { onRef } from "../utils.ts";
+import { bestEffort, onRef } from "../utils.ts";
+import {
+  captureRecentWorkflowUse$,
+  recordRecentWorkflowUse$,
+} from "../okou-page/recent-workflows.ts";
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
@@ -750,12 +753,11 @@ export const reloadWorkflows$ = command(({ set }) => {
   set(reloadWorkflowData$);
 });
 
-export function isMorningBriefWorkflow(
+/** Official Workflows are system-managed and never listed as user Workflows. */
+function isOfficialWorkflow(
   workflow: Pick<WorkflowSummary, "official">,
 ): boolean {
-  return (
-    workflow.official?.definitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-  );
+  return workflow.official !== null;
 }
 
 /** The current agent detail route's visible workflows. */
@@ -769,7 +771,7 @@ export const currentAgentVisibleWorkflows$ = computed(
     const client = get(apiClient$)(workflowsCollectionContract);
     const result = await accept(client.list({ query: { agentId } }), [200]);
     return result.body.filter((workflow) => {
-      return !isMorningBriefWorkflow(workflow);
+      return !isOfficialWorkflow(workflow);
     });
   },
 );
@@ -782,7 +784,7 @@ export const allVisibleWorkflows$ = computed(
     const result = await accept(client.list({ query: {} }), [200]);
     return result.body
       .filter((workflow) => {
-        return !isMorningBriefWorkflow(workflow);
+        return !isOfficialWorkflow(workflow);
       })
       .sort((a, b) => {
         if (a.visibility !== b.visibility) {
@@ -806,7 +808,7 @@ export const allWorkflowAutomationEntries$ = computed(
     );
     return automationResult.body
       .filter((entry) => {
-        return !isMorningBriefWorkflow(entry.workflow);
+        return !isOfficialWorkflow(entry.workflow);
       })
       .sort((a, b) => {
         if (a.automation.enabled !== b.automation.enabled) {
@@ -1647,10 +1649,14 @@ export const pauseWorkflowAutomations$ = command(
 
 export const runWorkflowAutomationNow$ = command(
   async (
-    { get },
+    { get, set },
     automationId: string,
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
+    const workflowId = get(currentWorkflowId$);
+    const usage = workflowId
+      ? set(captureRecentWorkflowUse$, [workflowId])
+      : null;
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1660,6 +1666,9 @@ export const runWorkflowAutomationNow$ = command(
       [201],
     );
     signal.throwIfAborted();
+    if (usage) {
+      await bestEffort(set(recordRecentWorkflowUse$, usage, signal));
+    }
     return result.body;
   },
 );

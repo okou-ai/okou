@@ -33,6 +33,8 @@ import {
   type State,
 } from "ccstate";
 import { i18n } from "../../i18n/index.ts";
+import { createChatResourceSignals } from "./chat-resources.ts";
+import { createChatRelationSignals } from "./chat-relations.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,
@@ -202,6 +204,7 @@ import { compareCreatedAt } from "./compare-created-at.ts";
 import { createComputerUseAuthorizationCardSignalsRegistry } from "./computer-use-authorization-block.ts";
 import { createConnectorAccountActionCardSignalsRegistry } from "./connector-account-action-block.ts";
 import { createConnectorCardSignalsRegistry } from "./connector-action-block.ts";
+import { createWalletCardSignalsRegistry } from "./wallet-action-block.ts";
 import {
   createMailDraftCardSignalsRegistry,
   type MailDraftCardSignalsRegistry,
@@ -1518,6 +1521,9 @@ interface EventTreeRegistries {
   readonly bankingCardSignals: ReturnType<
     typeof createBankingCardSignalsRegistry
   >;
+  readonly walletCardSignals: ReturnType<
+    typeof createWalletCardSignalsRegistry
+  >;
   readonly browserUserActionCardSignals: ReturnType<
     typeof createBrowserUserActionCardSignalsRegistry
   >;
@@ -1541,6 +1547,7 @@ function createCardRefRegistrar({
   connectorAccountActionCardSignals,
   permissionCardSignals,
   bankingCardSignals,
+  walletCardSignals,
   browserUserActionCardSignals,
   computerUseAuthorizationCardSignals,
   planUpgradeCardSignals,
@@ -1587,6 +1594,12 @@ function createCardRefRegistrar({
           return {
             kind: descriptor.type,
             signals: set(bankingCardSignals.register$, descriptor.descriptor),
+          };
+        }
+        case "wallet-action": {
+          return {
+            kind: descriptor.type,
+            signals: set(walletCardSignals.register$, descriptor.descriptor),
           };
         }
         case "browser-user-action": {
@@ -1993,6 +2006,7 @@ function createPagedEventResources({
     createConnectorAccountActionCardSignalsRegistry(connector);
   const permissionCardSignals = createPermissionCardSignalsRegistry();
   const bankingCardSignals = createBankingCardSignalsRegistry();
+  const walletCardSignals = createWalletCardSignalsRegistry(chatActionContext);
   const browserUserActionCardSignals =
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
@@ -2031,6 +2045,7 @@ function createPagedEventResources({
     connectorAccountActionCardSignals,
     permissionCardSignals,
     bankingCardSignals,
+    walletCardSignals,
     browserUserActionCardSignals,
     computerUseAuthorizationCardSignals,
     planUpgradeCardSignals,
@@ -3902,6 +3917,12 @@ export function createChatPanelSignals(
     sharing,
     pin: createChatThreadPinSignals(threadId, threadMeta$),
     locator,
+    resources: createChatResourceSignals(
+      messagePipeline.allChatGroups$,
+      artifact.artifacts$,
+      messagePipeline.initialEventsReady$,
+    ),
+    relations: createChatRelationSignals(threadId, messagePipeline),
     ...threadOwned,
     sidebar: messages.sidebar,
     ...publicChatThreadEventSignals(messages),

@@ -38,6 +38,36 @@ describe("Morning Brief notification source authorization", () => {
     expect(isMorningBriefNotificationSource(owner, run, source)).toBeTruthy();
   });
 
+  it("authorizes the test definition and captured Runs across a rollout switch", () => {
+    const testSource = {
+      ...source,
+      officialDefinitionName: "internal-test-morning-brief",
+    };
+    expect(
+      isMorningBriefNotificationSource(owner, run, testSource),
+    ).toBeTruthy();
+    const testRun = {
+      ...run,
+      officialWorkflowProvenance: {
+        ...run.officialWorkflowProvenance,
+        definitions: run.officialWorkflowProvenance.definitions.map(
+          (definition) => {
+            return {
+              ...definition,
+              name: "internal-test-morning-brief",
+            };
+          },
+        ),
+      },
+    };
+    expect(
+      isMorningBriefNotificationSource(owner, testRun, testSource),
+    ).toBeTruthy();
+    expect(
+      isMorningBriefNotificationSource(owner, testRun, source),
+    ).toBeTruthy();
+  });
+
   it.each([
     { automationId: "unrelated-automation" },
     { automationOrgId: "other-org" },

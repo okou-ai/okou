@@ -1,11 +1,15 @@
 import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
-import type { ChatAgentRunSourceAnnotation } from "./chat-user-message.service";
+import type {
+  ChatAgentRunSourceAnnotation,
+  UserMessageReferences,
+} from "./chat-user-message.service";
 
 export interface WebChatSessionPromptContext {
   readonly generationTemplatePrompt: string;
   readonly computerUseHostDisplayName: string | null;
   readonly triggerSource: "web" | "agent";
   readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
+  readonly references: UserMessageReferences;
   readonly integrationNote: string;
 }
 
@@ -37,6 +41,30 @@ function buildCurrentThreadContext(threadId: string): string {
     `- \`okou chat messages --thread-id ${threadId} --output-dir threads\` synchronizes the raw snapshot and hot events into \`threads/${threadId}/\` (chat-event:read)`,
     `- \`rg -n '"seqId":<SEQ_ID>' threads/${threadId}/\` finds an event in the synchronized history`,
     '- `okou search "<query>" --source agent-session` prints both the Claude Code and Codex session-file locations so you can analyze those files directly',
+  ].join("\n");
+}
+
+/**
+ * Agents and chat threads the user linked in the current message. The links
+ * only carry IDs, so this states that delegated work does not report back and
+ * points at the event-driven alternative to polling for its result.
+ */
+function buildReferencesContext(references: UserMessageReferences): string {
+  if (references.agents.length === 0 && references.chatThreads.length === 0) {
+    return "";
+  }
+  return [
+    "# Referenced Agents and Threads",
+    "",
+    "The current message links:",
+    ...references.agents.map((agent) => {
+      return `- Agent ${JSON.stringify(agent.nameSnapshot)}: AGENT_ID=${agent.agentId}`;
+    }),
+    ...references.chatThreads.map((thread) => {
+      return `- Chat thread ${JSON.stringify(thread.titleSnapshot)}: CHAT_THREAD_ID=${thread.threadId}`;
+    }),
+    "",
+    "Work sent to another agent or thread with `okou chat send` runs on its own and does not report back to this run. If you need its result, consider a `chat-run-finished` automation on that thread instead of polling. Automations of a workflow created from this chat run here when the watched run finishes.",
   ].join("\n");
 }
 
@@ -100,6 +128,7 @@ export function buildWebChatAppendSystemPrompt(args: {
   return [
     buildWebChatPrompt(args.context.integrationNote),
     buildCurrentThreadContext(args.threadId),
+    buildReferencesContext(args.context.references),
     args.context.agentRunSource
       ? buildAgentRunSourceContext(
           args.context.agentRunSource,

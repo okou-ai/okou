@@ -133,6 +133,27 @@ const sendBodySchema = z.object({
   content: z.string(),
   nonce: z.union([z.string(), z.number()]).optional(),
   enforce_nonce: z.boolean().optional(),
+  components: z
+    .array(
+      z.object({
+        type: z.literal(1),
+        components: z.array(
+          z.object({
+            type: z.literal(2),
+            style: z.literal(5),
+            label: z.string(),
+            url: z.url(),
+          }),
+        ),
+      }),
+    )
+    .optional(),
+  message_reference: z
+    .object({
+      message_id: z.string(),
+      fail_if_not_exists: z.boolean().optional(),
+    })
+    .optional(),
   allowed_mentions: z.object({
     parse: z.array(z.string()),
     replied_user: z.boolean(),
@@ -142,7 +163,9 @@ const sendBodySchema = z.object({
 /** Discord deduplicates an enforced nonce for "the past few minutes". */
 const DISCORD_NONCE_DEDUPE_MS = 5 * 60_000;
 
-export function mockDiscordProvider(actor: ConnectedDiscordActor) {
+export function mockDiscordProvider(
+  actor: Pick<ConnectedDiscordActor, "guildId" | "discordUserId" | "botUserId">,
+) {
   const guildChannelId = uniqueDiscordSnowflake();
   const dmChannelId = uniqueDiscordSnowflake();
   const botRoleId = uniqueDiscordSnowflake();
@@ -166,9 +189,32 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
       },
     ],
   ]);
+  // Model a thread created by a Discord user as well as the bot's REST write.
+  function createThread(messageId: string) {
+    const channel: DiscordChannel = {
+      id: messageId,
+      parent_id: guildChannelId,
+      guild_id: actor.guildId,
+      type: 11,
+      name: "Okou conversation",
+      permission_overwrites: [],
+      thread_metadata: {
+        archived: false,
+        locked: false,
+        auto_archive_duration: 1440,
+        archive_timestamp: "2026-09-24T00:00:00.000Z",
+      },
+    };
+    channels.set(channel.id, channel);
+    return channel;
+  }
   const messages = new Map<string, DiscordMessage>();
   const guildIds = new Set([actor.guildId]);
-  const sentMessages: DiscordMessage[] = [];
+  const sentMessages: (DiscordMessage &
+    Pick<
+      z.infer<typeof sendBodySchema>,
+      "components" | "message_reference" | "allowed_mentions"
+    >)[] = [];
   /** Channels whose typing indicator Discord accepted, in request order. */
   const typingChannels: string[] = [];
   const deniedChannels = new Set<string>();
@@ -311,21 +357,17 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     http.post(
       `${base}/channels/:channelId/messages/:messageId/threads`,
       async ({ params }) => {
-        const channel: DiscordChannel = {
-          id: String(params.messageId),
-          parent_id: String(params.channelId),
-          guild_id: actor.guildId,
-          type: 11,
-          name: "Okou conversation",
-          permission_overwrites: [],
-          thread_metadata: {
-            archived: false,
-            locked: false,
-            auto_archive_duration: 1440,
-            archive_timestamp: "2026-09-24T00:00:00.000Z",
-          },
-        };
-        channels.set(channel.id, channel);
+        if (channels.has(String(params.messageId))) {
+          return HttpResponse.json(
+            {
+              message: "A thread has already been created for this message",
+              code: 160_004,
+            },
+            { status: 400 },
+          );
+        }
+        const channel = createThread(String(params.messageId));
+        channel.parent_id = String(params.channelId);
         const overridden = await state.afterThreadCreated?.(channel);
         return overridden ?? HttpResponse.json(channel);
       },
@@ -333,6 +375,12 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
     http.post(
       `${base}/channels/:channelId/messages`,
       async ({ params, request }) => {
+        if (!channels.has(String(params.channelId))) {
+          return HttpResponse.json(
+            { message: "Unknown channel" },
+            { status: 404 },
+          );
+        }
         const blocked = await state.beforeMessageCreate?.();
         if (blocked) {
           return blocked;
@@ -362,10 +410,18 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
           content: body.content,
           attachments: [],
           timestamp: new Date(now()).toISOString(),
+          ...(body.message_reference
+            ? { message_reference: body.message_reference }
+            : {}),
           ...(nonce === undefined ? {} : { nonce }),
         };
         messages.set(message.id, message);
-        sentMessages.push(message);
+        sentMessages.push({
+          ...message,
+          components: body.components,
+          message_reference: body.message_reference,
+          allowed_mentions: body.allowed_mentions,
+        });
         const overridden = await state.afterMessageCreated?.(message);
         return overridden ?? HttpResponse.json(message);
       },
@@ -389,6 +445,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
   return {
     guildChannelId,
     dmChannelId,
+    createThread,
     channels,
     guildIds,
     messages,
@@ -401,7 +458,7 @@ export function mockDiscordProvider(actor: ConnectedDiscordActor) {
 }
 
 export function discordMessageForTest(
-  actor: ConnectedDiscordActor,
+  actor: Pick<ConnectedDiscordActor, "guildId" | "discordUserId" | "botUserId">,
   args: {
     readonly id?: string;
     readonly channelId: string;
@@ -462,7 +519,7 @@ export function postDiscordGatewayEnvelope(
 
 export async function discordChatThreads(
   context: TestContext,
-  actor: ConnectedDiscordActor,
+  actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
 ) {
   createRouteMocks(context).clerk.session(
     actor.userId,

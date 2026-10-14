@@ -2,7 +2,7 @@ import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
-import * as homeTaskRecommendationSchema from "./schema/home-task-recommendation";
+import * as agentSuggestionSchema from "./schema/agent-suggestion";
 import * as artifactShareSchema from "./schema/artifact-share";
 import * as userSchema from "./schema/user";
 import * as deviceCodesSchema from "./schema/device-codes";
@@ -10,8 +10,6 @@ import * as cliTokensSchema from "./schema/cli-tokens";
 import * as agentSchema from "./schema/agent";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
-import * as conversationSchema from "./schema/conversation";
-import * as agentSessionSchema from "./runtime/agent-session";
 import * as storageSchema from "./schema/storage";
 import * as storagePublicationFenceSchema from "./schema/storage-publication-fence";
 import * as systemStoragePresignedUrlCacheSchema from "./schema/system-storage-presigned-url-cache";
@@ -22,6 +20,7 @@ import * as runnerSchema from "./schema/runner-job-queue";
 import * as runnerStateSchema from "./runtime/runner-state";
 import * as runnerWssTicketSchema from "./schema/runner-wss-ticket";
 import * as chatAgentRunContextSchema from "./schema/chat-agent-run-context";
+import * as chatRelationSchema from "./schema/chat-relation";
 import * as chatNetworkBodyCaptureSchema from "./schema/chat-network-body-capture";
 import * as chatAgentphoneContextSchema from "./schema/chat-agentphone-context";
 import * as chatAutomationContextSchema from "./schema/chat-automation-context";
@@ -166,7 +165,7 @@ export const schema = {
   ...mailNotificationSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
-  ...homeTaskRecommendationSchema,
+  ...agentSuggestionSchema,
   ...userSchema,
   ...artifactShareSchema,
   ...deviceCodesSchema,
@@ -174,8 +173,6 @@ export const schema = {
   ...agentSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,
-  ...conversationSchema,
-  ...agentSessionSchema,
   ...storageSchema,
   ...storagePublicationFenceSchema,
   ...systemStoragePresignedUrlCacheSchema,
@@ -186,6 +183,7 @@ export const schema = {
   ...runnerStateSchema,
   ...runnerWssTicketSchema,
   ...chatAgentRunContextSchema,
+  ...chatRelationSchema,
   ...chatNetworkBodyCaptureSchema,
   ...chatAgentphoneContextSchema,
   ...chatAutomationContextSchema,

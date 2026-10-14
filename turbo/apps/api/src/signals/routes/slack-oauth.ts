@@ -2,7 +2,7 @@ import { connectSlackWorkspace$ } from "../services/slack-workspace-write.servic
 import { persistSlackInstallation$ } from "../services/slack-installation-write.service";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { slackOauthContract } from "@okouai/api-contracts/contracts/slack-oauth";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { eq } from "drizzle-orm";
@@ -273,6 +273,20 @@ const installOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   return noStoreRedirect(authUrl.toString());
 });
 
+const connectInstallation$ = computed(async (get) => {
+  const query = get(queryOf(slackOauthContract.connect));
+  if (!query.orgId) {
+    return undefined;
+  }
+  const db = get(db$);
+  const [installation] = await db
+    .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
+    .from(slackOrgInstallations)
+    .where(eq(slackOrgInstallations.orgId, query.orgId))
+    .limit(1);
+  return installation;
+});
+
 const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
   const request = get(request$).raw;
   const origin = getOAuthApiOrigin(request);
@@ -298,12 +312,7 @@ const connectOauth$ = command(async ({ get, set }, signal: AbortSignal) => {
     return jsonErrorResponse("Missing orgId or userId", 400);
   }
 
-  const db = get(db$);
-  const [installation] = await db
-    .select({ slackWorkspaceId: slackOrgInstallations.slackWorkspaceId })
-    .from(slackOrgInstallations)
-    .where(eq(slackOrgInstallations.orgId, query.orgId))
-    .limit(1);
+  const installation = await get(connectInstallation$);
   signal.throwIfAborted();
 
   if (!installation) {

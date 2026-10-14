@@ -101,7 +101,10 @@ impl<S> Records<S> {
         }
     }
     fn reset_read(&mut self) {
-        self.body.zeroize();
+        // Wipe this record before clearing its length, without re-wiping spare
+        // capacity from larger records. The Zeroizing owner still wipes it on drop.
+        self.body.as_mut_slice().zeroize();
+        self.body.clear();
         self.body_read = 0;
         self.header_read = 0;
         self.reading_body = false;
@@ -212,6 +215,8 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for Records<S> {
                 this.failed = true;
                 return Poll::Ready(Err(error));
             }
+            // Erase initialized bytes before moving the tag into spare capacity.
+            encoded_tag.zeroize();
             this.body.truncate(len);
             if len == 0 {
                 this.empty += 1;
@@ -352,6 +357,63 @@ mod tests {
         send.await.unwrap();
         assert_eq!(got, expected);
     }
+
+    #[tokio::test]
+    async fn cancelled_partial_record_read_resumes_after_a_large_record() {
+        for key_len in [16, 32] {
+            let (mut peer, stream) = tokio::io::duplex(MAX_PAYLOAD + 32);
+            let key = vec![7; key_len];
+            let mut receiver = Records::new(
+                stream,
+                Zeroizing::new(key.clone()),
+                Zeroizing::new(key.clone()),
+            );
+            let mut direction = Direction {
+                key: Zeroizing::new(key),
+                nonce: 0,
+            };
+            let mut large = vec![0x5a; MAX_PAYLOAD];
+            let header = u16::MAX.to_be_bytes();
+            let tag = direction.encrypt(&header, &mut large).unwrap();
+            peer.write_all(&header).await.unwrap();
+            peer.write_all(&large).await.unwrap();
+            peer.write_all(&tag).await.unwrap();
+            let mut got = vec![0; MAX_PAYLOAD];
+            receiver.read_exact(&mut got).await.unwrap();
+            assert_eq!(got, vec![0x5a; MAX_PAYLOAD]);
+
+            // Cancel at a partial header, ciphertext, and authentication tag.
+            for prefix_len in [1, 5, 2 + 1024 + 7] {
+                let expected = vec![prefix_len as u8; 1024];
+                let mut data = expected.clone();
+                let header = 1024_u16.to_be_bytes();
+                let tag = direction.encrypt(&header, &mut data).unwrap();
+                let mut frame = header.to_vec();
+                frame.extend_from_slice(&data);
+                frame.extend_from_slice(&tag);
+                peer.write_all(&frame[..prefix_len]).await.unwrap();
+                let mut out = vec![0xa5; 1024];
+                let mut waiting = Box::pin(receiver.read_exact(&mut out));
+                let mut cx = Context::from_waker(std::task::Waker::noop());
+                assert!(std::future::Future::poll(waiting.as_mut(), &mut cx).is_pending());
+                drop(waiting);
+                assert_eq!(out, vec![0xa5; 1024]);
+
+                peer.write_all(&frame[prefix_len..]).await.unwrap();
+                receiver.read_exact(&mut out).await.unwrap();
+                assert_eq!(out, expected);
+            }
+            // A fully consumed record still permits the authenticated-to-raw boundary.
+            let mut raw = receiver.into_raw().unwrap();
+            peer.write_all(b"raw").await.unwrap();
+            let mut out = [0; 3];
+            raw.read_exact(&mut out).await.unwrap();
+            assert_eq!(&out, b"raw");
+            drop(raw);
+            assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+        }
+    }
+
     #[tokio::test]
     async fn bad_tag_never_releases_plaintext_and_raw_transition_rejects_unread_data() {
         let (mut a, b) = tokio::io::duplex(100);

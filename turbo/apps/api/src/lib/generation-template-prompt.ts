@@ -1,3 +1,4 @@
+import { findDocumentTemplateItem } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   buildPresentationRunbookInstructionLines,
@@ -21,8 +22,9 @@ import {
 import {
   PRESENTATION_IMAGE_BATCH_INSTRUCTION,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
-  PRESENTATION_PREVIEW_INSTRUCTION,
+  presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
+import { artifactPreviewInstructions } from "@okouai/core/artifact-preview-instructions";
 import { WEBSITE_IMAGE_BATCH_INSTRUCTION } from "@okouai/core/website-generation-instructions";
 import { generationTemplateKind } from "@okouai/core/generation-template-kind";
 import { userTemplateDirectory } from "@okouai/core/user-template-selection";
@@ -78,7 +80,13 @@ interface CustomGenerationTemplateInput {
   readonly selection: { readonly userTemplateId: string };
 }
 
+interface DocumentGenerationTemplateInput {
+  readonly type: "document";
+  readonly selection: { readonly documentTemplateId: string };
+}
+
 type GenerationTemplateInput =
+  | DocumentGenerationTemplateInput
   | CustomGenerationTemplateInput
   | PresentationGenerationTemplateInput
   | IllustrationGenerationTemplateInput
@@ -106,7 +114,6 @@ type GenerationTemplatePromptResult =
  * leave it empty and lose the guidance rather than point at nothing.
  */
 interface GenerationTemplatePromptOptions {
-  readonly artifactPreviewsEnabled?: boolean;
   readonly mountedUserPresentationTemplateIds?: readonly string[];
   /**
    * The custom templates this run will carry, each with the kind its row says
@@ -132,11 +139,11 @@ export function buildGenerationTemplatePrompt(
   if (generationTemplate.type === "workflow") {
     return buildWorkflowGenerationTemplatePrompt(generationTemplate);
   }
+  if (generationTemplate.type === "document") {
+    return buildDocumentGenerationTemplatePrompt(generationTemplate);
+  }
   if (generationTemplate.type === "website") {
-    return buildWebsiteGenerationTemplatePrompt(
-      generationTemplate,
-      options.artifactPreviewsEnabled === true,
-    );
+    return buildWebsiteGenerationTemplatePrompt(generationTemplate);
   }
   if (generationTemplate.type === "custom") {
     return buildCustomGenerationTemplatePrompt(
@@ -148,7 +155,6 @@ export function buildGenerationTemplatePrompt(
   return buildPresentationGenerationTemplatePrompt(
     generationTemplate,
     options.mountedUserPresentationTemplateIds ?? [],
-    options.artifactPreviewsEnabled === true,
   );
 }
 
@@ -283,7 +289,7 @@ function buildCustomGenerationTemplatePrompt(
       ...templateFraming(customTemplateArtifactNoun(mounted.kind)),
       `Selected custom template: one this workspace compiled from its own file, mounted at ./${directory}.`,
       "",
-      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names. It was written for this template and is the authority on how to apply it.`,
+      `- Read ./${directory}/SKILL.md fully and follow only the files and assets it names for content, visual style, and content QA.`,
       "- Do not substitute a house style, a built-in template, or your own defaults for what it specifies.",
     ].join("\n"),
   };
@@ -292,7 +298,6 @@ function buildCustomGenerationTemplatePrompt(
 function buildPresentationGenerationTemplatePrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   mountedUserPresentationTemplateIds: readonly string[],
-  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const { templateId } = generationTemplate.selection;
   if (isUserPresentationTemplateId(templateId)) {
@@ -305,7 +310,7 @@ function buildPresentationGenerationTemplatePrompt(
     if (!mountedUserPresentationTemplateIds.includes(rowId)) {
       return { status: "invalid", message: "Presentation template not found" };
     }
-    return buildUserPresentationTemplatePrompt(rowId, artifactPreviewsEnabled);
+    return buildUserPresentationTemplatePrompt(rowId);
   }
   // Presentation picker selections are valid only when they resolve to a
   // self-contained runbook package. The legacy multi-resource registry flow has
@@ -314,11 +319,7 @@ function buildPresentationGenerationTemplatePrompt(
   if (!runbookPackage) {
     return { status: "invalid", message: "Unknown generation template" };
   }
-  return buildPresentationRunbookPrompt(
-    generationTemplate,
-    runbookPackage,
-    artifactPreviewsEnabled,
-  );
+  return buildPresentationRunbookPrompt(generationTemplate, runbookPackage);
 }
 
 /**
@@ -336,7 +337,6 @@ function buildPresentationGenerationTemplatePrompt(
  */
 function buildUserPresentationTemplatePrompt(
   rowId: string,
-  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   return {
     status: "resolved",
@@ -353,9 +353,7 @@ function buildUserPresentationTemplatePrompt(
       "- Use the slide count the user asks for; if unspecified, default to 8 pages.",
       PRESENTATION_IMAGE_BATCH_INSTRUCTION,
       PRESENTATION_STATIC_HTML_INSTRUCTION,
-      ...(artifactPreviewsEnabled ? [PRESENTATION_PREVIEW_INSTRUCTION] : []),
-      `- Host the finished deck: okou host <output-dir> --site <slug> --artifact-kind presentation-html${artifactPreviewsEnabled ? " --preview ./generated/previews/cover.png" : ""}`,
-      "- Return only the generated HTML deck as the final deliverable.",
+      ...presentationDeliveryInstructions(),
     ].join("\n"),
   };
 }
@@ -363,7 +361,6 @@ function buildUserPresentationTemplatePrompt(
 function buildPresentationRunbookPrompt(
   generationTemplate: PresentationGenerationTemplateInput,
   runbookPackage: PresentationRunbookPackage,
-  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const color = resolvePresentationRunbookColorToken(
     runbookPackage,
@@ -382,7 +379,6 @@ function buildPresentationRunbookPrompt(
       ...templateFraming("a presentation"),
       ...buildPresentationRunbookInstructionLines({
         runbookPackage,
-        artifactPreviewsEnabled,
         colorSystemToken: color.token,
       }),
     ].join("\n"),
@@ -391,7 +387,6 @@ function buildPresentationRunbookPrompt(
 
 function buildWebsiteGenerationTemplatePrompt(
   generationTemplate: WebsiteGenerationTemplateInput,
-  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const item = findWebsiteTemplateItem(
     generationTemplate.selection.websiteTemplateId,
@@ -405,13 +400,12 @@ function buildWebsiteGenerationTemplatePrompt(
     return { status: "invalid", message: "Unknown website template" };
   }
 
-  return buildWebsiteTemplatePackagePrompt(item, pkg, artifactPreviewsEnabled);
+  return buildWebsiteTemplatePackagePrompt(item, pkg);
 }
 
 function buildWebsiteTemplatePackagePrompt(
   item: WebsiteTemplateItem,
   pkg: WebsiteTemplatePackage,
-  artifactPreviewsEnabled: boolean,
 ): GenerationTemplatePromptResult {
   const packageDir = `./generated/resources/${pkg.slug}`;
 
@@ -434,14 +428,9 @@ function buildWebsiteTemplatePackagePrompt(
       "- Assemble the page once with `node tools/compose.mjs <section-ids...>`, then author the composed index.html directly. The command refuses a second compose pass; bypassing that guard would discard authored work.",
       `- ${WEBSITE_IMAGE_BATCH_INSTRUCTION}`,
       "- Repair every blocking failure from `bash checks/verify.sh index.html qa` until it prints QA_READY.",
-      ...(artifactPreviewsEnabled
-        ? [
-            "- Stage once: `node tools/stage.mjs publish` writes a clean ./publish directory. Capture it with `okou host screenshot ./publish --out ./generated/previews/cover.png`, inspect the PNG and repair/re-capture incomplete content, then publish once with `okou host ./publish --site <slug> --preview ./generated/previews/cover.png`.",
-            "- Keep the PNG and receipt outside ./publish. Use the user's local PNG/JPEG cover with --preview if provided. Never omit --preview to hide a capture failure.",
-          ]
-        : [
-            "- Stage and host once: `node tools/stage.mjs publish` writes a clean ./publish directory, then `okou host ./publish --site <slug>`.",
-          ]),
+      "- Stage once: `node tools/stage.mjs publish` writes the final clean ./publish directory before cover capture.",
+      ...artifactPreviewInstructions({ outputDir: "./publish" }),
+      "- Publish once: `okou host ./publish --site <slug> --preview ./generated/previews/cover.png --json`.",
       "- Check the deployed page with `bash checks/verify-published.sh <url>`; a local pass is not evidence about the deployment.",
       "- Use this built-in R2-backed package; do not substitute generic Open Design website templates for the selected template.",
       "- Return the hosted website URL and keep the generated static site as the final deliverable.",
@@ -478,6 +467,32 @@ function buildIllustrationGenerationTemplatePrompt(
       `- ${sourceInstruction}`,
       '- Then run `okou generate image --provider built-in --compiled-prompt "<compiled prompt>"` with the resolved compatible CLI options and required reference image URLs, without `--style`.',
       "- If a flag above no longer applies, run `okou generate image -h` to discover the current flags, models, providers, and styles.",
+    ].join("\n"),
+  };
+}
+
+function buildDocumentGenerationTemplatePrompt(
+  selection: DocumentGenerationTemplateInput,
+): GenerationTemplatePromptResult {
+  const item = findDocumentTemplateItem(selection.selection.documentTemplateId);
+  if (!item) {
+    return { status: "invalid", message: "Unknown document template" };
+  }
+  const { source } = item;
+  const sourceBaseUrl = `https://raw.githubusercontent.com/${source.repo}/${source.ref}`;
+  const sourceUrl = `${sourceBaseUrl}/${source.path.split("/").map(encodeURIComponent).join("/")}`;
+  const licenseUrl = `${sourceBaseUrl}/${source.licensePath.split("/").map(encodeURIComponent).join("/")}`;
+  return {
+    status: "resolved",
+    prompt: [
+      ...templateFraming("a document"),
+      `Selected document template: ${item.title}`,
+      `- Template file: ${sourceUrl}`,
+      `- License: ${licenseUrl}`,
+      `- Layout previews: ${item.previewPages.join(", ")}`,
+      "- Read the template, license, and referenced files at the linked commit. Use the source for structure and clauses, and the previews for layout.",
+      "- Use the office-files skill for the user's requested Word or PDF output.",
+      "- Replace sample content with the user's facts; leave missing business details as placeholders.",
     ].join("\n"),
   };
 }

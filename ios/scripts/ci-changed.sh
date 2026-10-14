@@ -15,7 +15,7 @@ case "${EVENT_NAME:?EVENT_NAME is required}" in
       echo false
       exit 0
     fi
-    base=$(bash .github/scripts/changed-base-ref.sh)
+    base=$(bash .github/scripts/checks/changed-base-ref.sh)
     ;;
   merge_group)
     # The event base covers every entry in the group, not only HEAD's last parent.
@@ -44,7 +44,7 @@ git diff --no-renames --name-only -z "$base" HEAD > "$changed_files"
 needed=false
 while IFS= read -r -d '' changed_file; do
   case "$changed_file" in
-    ios/* | .github/workflows/ios.yml | .github/workflows/ios-archive-proof.yml | .github/workflows/release-please.yml | .github/scripts/changed-base-ref.sh | release-please-config.json) needed=true ;;
+    ios/* | .github/workflows/ios.yml | .github/workflows/ios-archive-proof.yml | .github/workflows/release-please.yml | .github/scripts/checks/changed-base-ref.sh | release-please-config.json) needed=true ;;
   esac
 done < "$changed_files"
 echo "$needed"

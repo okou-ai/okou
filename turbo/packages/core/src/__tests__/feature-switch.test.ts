@@ -48,25 +48,6 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables artifact previews for staff and honors explicit overrides", () => {
-    for (const [context, enabled] of [
-      [{}, false],
-      [{ orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }, true],
-      [{ orgId: "external-org" }, false],
-    ] as const) {
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.ArtifactPreviews],
-      ).toBe(enabled);
-      for (const override of [true, false]) {
-        expect(
-          isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, {
-            ...context,
-            overrides: { [FeatureSwitchKey.ArtifactPreviews]: override },
-          }),
-        ).toBe(override);
-      }
-    }
-  });
   it("enables presentation conversion for Bingjie across workspaces", () => {
     for (const orgId of [
       undefined,
@@ -99,24 +80,6 @@ describe("isFeatureEnabled", () => {
       ).toBe(false);
       expect(
         getAllFeatureStates(context)[FeatureSwitchKey.PresentationConvert],
-      ).toBe(false);
-    }
-  });
-
-  it("enables private artifacts for everyone and honors explicit opt-outs", () => {
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent", userId: "external-user" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
-      expect(isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, context)).toBe(
-        true,
-      );
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, {
-          ...context,
-          overrides: { [FeatureSwitchKey.PrivateArtifacts]: false },
-        }),
       ).toBe(false);
     }
   });
@@ -248,23 +211,23 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
-  it("should apply user overrides to the staff-default Official Workflows switch", () => {
+  it("should apply user overrides to a staff-default switch", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: staffOrgId,
       }),
     ).toBe(true);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: staffOrgId,
-        overrides: { [FeatureSwitchKey.OfficialWorkflows]: false },
+        overrides: { [FeatureSwitchKey.Lab]: false },
       }),
     ).toBe(false);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.OfficialWorkflows]: true },
+        overrides: { [FeatureSwitchKey.Lab]: true },
       }),
     ).toBe(true);
   });
@@ -280,25 +243,6 @@ describe("isFeatureEnabled", () => {
 });
 
 describe("getAllFeatureStates", () => {
-  it("defaults private artifacts on for everyone and honors explicit opt-outs", () => {
-    expect(getAllFeatureStates()[FeatureSwitchKey.PrivateArtifacts]).toBe(true);
-    for (const context of [
-      {},
-      { orgId: "org_nonexistent", userId: "external-user" },
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
-    ]) {
-      expect(
-        getAllFeatureStates(context)[FeatureSwitchKey.PrivateArtifacts],
-      ).toBe(true);
-      expect(
-        getAllFeatureStates({
-          ...context,
-          overrides: { [FeatureSwitchKey.PrivateArtifacts]: false },
-        })[FeatureSwitchKey.PrivateArtifacts],
-      ).toBe(false);
-    }
-  });
-
   it("should return states for all feature switches", () => {
     const states = getAllFeatureStates();
     // Globally enabled switches should be true
@@ -333,7 +277,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
@@ -345,7 +288,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 
@@ -471,9 +413,6 @@ describe("getFeatureSwitchMetadata", () => {
   it("should classify non-internal switches by rollout audience", () => {
     const metadata = getFeatureSwitchMetadata();
 
-    expect(metadata[FeatureSwitchKey.PrivateArtifacts].rolloutStage).toBe(
-      "released",
-    );
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",

@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.11.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.23...runner-executor-v0.11.0) (2026-10-14)
+
+
+### Features
+
+* persist sandbox startup path on agent runs ([#39972](https://github.com/okou-ai/okou/issues/39972)) ([db59569](https://github.com/okou-ai/okou/commit/db595699439f7f221fb5df8b9eba14a9a4faac73))
+
+## [0.10.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.22...runner-executor-v0.10.23) (2026-10-14)
+
+## [0.10.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.21...runner-executor-v0.10.22) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
+## [0.10.21](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.20...runner-executor-v0.10.21) (2026-10-14)
+
+## [0.10.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.19...runner-executor-v0.10.20) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
+## [0.10.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.18...runner-executor-v0.10.19) (2026-10-14)
+
+## [0.10.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.17...runner-executor-v0.10.18) (2026-10-14)
+
+## [0.10.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.16...runner-executor-v0.10.17) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** distinguish blank and cold sandbox startup ([#39847](https://github.com/okou-ai/okou/issues/39847)) ([03a34c1](https://github.com/okou-ai/okou/commit/03a34c1f15dc5f0d807658b7687ad300bbfe90ec))
+
+## [0.10.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.15...runner-executor-v0.10.16) (2026-10-14)
+
+## [0.10.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.14...runner-executor-v0.10.15) (2026-10-13)
+
+## [0.10.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.13...runner-executor-v0.10.14) (2026-10-13)
+
+## [0.10.13](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.12...runner-executor-v0.10.13) (2026-10-13)
+
+## [0.10.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.11...runner-executor-v0.10.12) (2026-10-13)
+
+## [0.10.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.10...runner-executor-v0.10.11) (2026-10-13)
+
+
+### Refactoring
+
+* finish retired checkpoint terminology cleanup ([#39682](https://github.com/okou-ai/okou/issues/39682)) ([c45c269](https://github.com/okou-ai/okou/commit/c45c2697daeb0c4dc825fbce66fcc89d888471ed))
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.10.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.9...runner-executor-v0.10.10) (2026-10-13)
+
+## [0.10.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.8...runner-executor-v0.10.9) (2026-10-13)
+
 ## [0.10.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.7...runner-executor-v0.10.8) (2026-10-13)
 
 ## [0.10.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.10.6...runner-executor-v0.10.7) (2026-10-12)

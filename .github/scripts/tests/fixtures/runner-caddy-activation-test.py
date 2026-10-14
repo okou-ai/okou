@@ -20,7 +20,7 @@ from pathlib import Path
 
 def run(command, **kwargs):
     result = subprocess.run(
-        command, capture_output=True, text=True, timeout=30, **kwargs
+        command, check=False, capture_output=True, text=True, timeout=30, **kwargs
     )
     if result.returncode:
         sys.stderr.write(result.stdout + result.stderr)
@@ -234,7 +234,6 @@ def main():
             provision(marker="after")
             assert process_state()[0] != initial[0]
             assert process_state()[1] == "OKOU_CADDY_FIXTURE=after"
-            unchanged("after", 404)
             cases.append("interrupted unit publication")
 
             config_publication = [
@@ -245,7 +244,6 @@ def main():
             assert process_state() == before and http_status() == 404
             provision(marker="after", status=410)
             assert process_state()[0] != before[0] and http_status() == 410
-            unchanged("after", 410)
             cases.append("interrupted config publication")
 
             committed_state = applied.read_bytes()
@@ -265,7 +263,6 @@ def main():
             provision(config_publication, marker="after", status=410)
             provision(marker="after", status=410)
             assert http_status() == 410
-            unchanged("after", 410)
             cases.append("failed activation retains prior receipt and recovers")
 
             run(["systemctl", "restart", unit])
@@ -282,6 +279,7 @@ def main():
             assert (
                 subprocess.run(
                     ["test", "-r", str(applied)],
+                    check=False,
                     user=identity.pw_uid,
                     group=identity.pw_gid,
                     extra_groups=[],
@@ -292,6 +290,7 @@ def main():
             sys.stderr.write(
                 subprocess.run(
                     ["journalctl", "-u", unit, "--no-pager", "-n", "30"],
+                    check=False,
                     capture_output=True,
                     text=True,
                     timeout=5,

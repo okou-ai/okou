@@ -15,7 +15,7 @@ const SANDBOX_USER_BASE_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/local/ga
 const AGENT_SHELL: &str = "/bin/bash";
 // [sync:etc-environment] Keep in sync with:
 // - crates/runner/scripts/customize-rootfs.sh
-// - .github/scripts/runner-behavior-exec-remote.sh (Test 10)
+// - crates/runner/tests/behavior/exec/inventory.sh
 const TRUSTED_ROOTFS_ENVIRONMENT: [(&str, &str); 7] = [
     ("LANG", "C.UTF-8"),
     ("RUSTUP_HOME", "/usr/local/rustup"),

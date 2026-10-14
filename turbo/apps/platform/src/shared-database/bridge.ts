@@ -1,3 +1,4 @@
+import type { AuthTokenProvider } from "../lib/auth-diagnostics.ts";
 import type {
   SharedDatabaseDataKey,
   SharedDatabaseQuery,
@@ -30,9 +31,7 @@ export interface SharedDatabaseBridge {
   ): Promise<SharedDatabaseQueryResult<TKey>>;
 }
 
-export type SharedDatabaseTokenProvider = (
-  signal?: AbortSignal,
-) => Promise<string | null>;
+export type SharedDatabaseTokenProvider = AuthTokenProvider;
 
 export interface SharedDatabaseBridgeEvents {
   readonly databaseInvalidated: (

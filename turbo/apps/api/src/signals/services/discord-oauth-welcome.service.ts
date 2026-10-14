@@ -56,8 +56,8 @@ export const notifyDiscordConnection$ = command(
           "'",
         )
       : undefined;
-    // Reauthorize local ownership, current Clerk membership, bot identity, guild
-    // membership and this exact bot/sender DM before each independent delivery.
+    // Reauthorize local ownership, current Clerk membership, bot identity
+    // and this exact bot/sender DM before each independent delivery.
     const access = await set(
       requireDiscordConversationAccess$,
       {

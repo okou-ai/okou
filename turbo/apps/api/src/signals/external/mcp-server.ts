@@ -7,6 +7,7 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server";
 import { agentsMainContract } from "@okouai/api-contracts/contracts/agents";
+import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import {
   chatEventsContract,
@@ -541,11 +542,40 @@ const activity = chatThreadActivitySummaryContract.summarize;
 const rename = chatThreadRenameContract.rename;
 const model = chatThreadModelSelectionContract.update;
 
+function registerInputStatusTool(
+  server: McpServer,
+  access: McpChatAccess,
+  requestSignal: AbortSignal,
+): void {
+  registerWebTool(
+    server,
+    access,
+    {
+      name: "get_chat_input_status",
+      scope: "okou:chat:read",
+      description: chatInputStatusContract.get.description,
+      inputSchema: chatInputStatusContract.get.pathParams,
+      outputSchema: chatInputStatusContract.get.responses[200],
+      annotations: readAnnotations,
+      operation: (pathParams, signal) => {
+        return requestWebApi(
+          access,
+          chatInputStatusContract.get,
+          { pathParams },
+          signal,
+        );
+      },
+    },
+    requestSignal,
+  );
+}
+
 function registerReadTools(
   server: McpServer,
   access: McpChatAccess,
   requestSignal: AbortSignal,
 ): void {
+  registerInputStatusTool(server, access, requestSignal);
   registerWebTool(
     server,
     access,
@@ -582,10 +612,10 @@ function registerReadTools(
     server,
     access,
     {
-      name: "get_chat_thread",
+      name: "get_chat_thread_list",
       scope: "okou:chat:read",
       description:
-        "Get the organization conversation-list R2 snapshot pointer and one bounded lifecycle-event page with canonical eventId and threadId references. Omit sinceSeqId initially; continue with the last event's seqId when hasMore is true. Downloaded snapshots retain their native Web format. Does not download or reconstruct the snapshot.",
+        "Get the current user's chat thread list in the authorized organization as an R2 snapshot pointer and one bounded page of lifecycle events, with canonical eventId and threadId references. Download the snapshot and apply lifecycle events to reconstruct the list; this tool does not return one individual thread or download or reconstruct the snapshot. Omit sinceSeqId initially; when hasMore is true, continue with the last event's seqId until all pages are read. Downloaded snapshots retain their native Web format.",
       inputSchema: mcpGetChatThreadInputSchema,
       outputSchema: mcpGetChatThreadOutputSchema,
       annotations: readAnnotations,
@@ -741,7 +771,7 @@ function registerMutationTools(
       name: "send_chat_message",
       scope: "okou:chat:send",
       description:
-        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Does not wait for a Run or provide safe retries after a lost acknowledgement.",
+        "Send plain text through POST /api/chat/events using Web validation and enqueue semantics. Generates and returns the accepted input's eventId with threadId and createdAt. Use eventId with revoke_queued_message to recall it while queued. Use get_chat_input_status with threadId and eventId for a bounded read of its queue/consumption state and matching Run outcome. Does not wait for a Run or provide safe retries after a lost acknowledgement.",
       inputSchema: mcpSendChatMessageInputSchema,
       outputSchema: mcpSendChatMessageOutputSchema,
       annotations: writeAnnotations,

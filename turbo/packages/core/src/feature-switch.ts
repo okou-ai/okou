@@ -44,11 +44,36 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.RemoteControlCliManagement]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Remote control CLI management",
+    description:
+      "Manage owned SSH, VNC and private-network configuration through the CLI.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatRelations]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat relationships",
+    description:
+      "Show chat origins, created chats, and cross-chat communication.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.ChatResourcePanel]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Chat resources",
+    description:
+      "Show a responsive panel of outputs and links from the current chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.TailscaleAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Tailscale setup",
     description: "Manage Tailscale networks and bind or rebind SSH hosts.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ArtifactSidebarPreview]: {
     maintainer: "ethan@okou.ai",
@@ -57,29 +82,25 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
-  [FeatureSwitchKey.ArtifactPreviews]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Capture and publish sandbox covers for HTML artifacts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.SlackLinkUnfurls]: {
-    maintainer: "bingjie@okou.ai",
-    description: "Show public artifact covers in Slack link previews.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.SubscriptionLinkingEntry]: {
     maintainer: "bingjie@okou.ai",
     description:
-      "Expose personal subscription linking below the composer and in the account menu.",
+      "Expose personal subscription linking in the composer model slot and the account menu.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.HomeTaskRecommendations]: {
-    maintainer: "yuma@okou.ai",
+  [FeatureSwitchKey.AgentSuggestion]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "Agent Suggestion",
+    description: "Let Okou manage actionable suggestions on your home page.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
+  [FeatureSwitchKey.BuiltinDocumentTemplates]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Built-in document templates",
     description:
-      "Recommend personalized tasks from Agent-visible threads and authorized Gmail evidence.",
+      "Document templates in the picker, using pinned public GitHub sources. Enable after preview assets are published.",
     enabled: false,
   },
   [FeatureSwitchKey.CustomTemplates]: {
@@ -105,6 +126,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.ChatThreadInlineRename]: {
+    maintainer: "tongx@okou.ai",
+    displayName: "Inline chat rename",
+    description: "Double-click a chat in the sidebar to rename it in place.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatHomeCompliance]: {
     maintainer: "tongx@okou.ai",
@@ -149,7 +177,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.CopperConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Copper CRM connector",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.DatadogConnector]: {
     maintainer: "yuma@okou.ai",
@@ -241,8 +269,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.LinkWallet]: {
     maintainer: "yuma@okou.ai",
     description:
-      "Enable hosted Link wallet connection and per-purchase approval. Credential retrieval and checkout remain unavailable.",
-    enabled: false,
+      "Enable hosted Link wallet consent, per-purchase approval, and one-time payment credential retrieval.",
+    enabled: true,
   },
   [FeatureSwitchKey.Banking]: {
     maintainer: "yuma@okou.ai",
@@ -261,13 +289,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Enable Stripe invoice-paid workflow automations with immutable Live-mode OAuth bindings.",
     enabled: false,
-  },
-  [FeatureSwitchKey.OfficialWorkflows]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Enable Official Workflow catalog discovery and new installations.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.TestOauthConnector]: {
     maintainer: "liangyou@okou.ai",
@@ -322,17 +343,10 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the Zapier connector. When disabled, Zapier is hidden from the connectors list and cannot be connected.",
     enabled: false,
   },
-  // Every artifact privacy slice in #32492 uses this same rollout switch.
-  [FeatureSwitchKey.PrivateArtifacts]: {
-    maintainer: "yuma@okou.ai",
-    description:
-      "Use private artifact storage, the Okou viewer, and organization and public sharing.",
-    enabled: true,
-  },
   [FeatureSwitchKey.SidebarSubscriptionUsage]: {
     maintainer: "ethan@okou.ai",
     description:
-      "Show Codex and Claude Code personal subscription usage in the sidebar footer.",
+      "Show Codex and Claude Code personal subscription usage in the account menu and on the Me page.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -365,6 +379,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description: "Enable owner-scoped VNC host and credential configuration",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatThreadArchiving]: {
     maintainer: "ethan@okou.ai",
@@ -377,13 +392,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Anchor slash and mention suggestions above the full composer, with the highest-priority candidate at the bottom and no template preview flyout on mobile.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -402,6 +410,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.GoogleDocsSheetsConversion]: {
+    maintainer: "bingjie@okou.ai",
+    description:
+      "Create editable Google Docs and Sheets from document and spreadsheet previews, preserving CSV and TSV fields as text.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
 };
 

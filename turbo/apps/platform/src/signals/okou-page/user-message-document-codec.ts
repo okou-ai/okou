@@ -59,6 +59,35 @@ export function shouldUseUserMessage(
   return document !== null && document !== undefined;
 }
 
+/** Preserve editable parts while keeping the current draft's source envelope. */
+export function prependMessageDocument(
+  prefix: UserMessageDocument,
+  current: UserMessageDocument | null,
+): UserMessageDocument {
+  if (!current) {
+    return userMessageDocumentSchema.parse(prefix);
+  }
+  const hasCurrentSource = current.parts.some((part) => {
+    return part.type === "source" || part.type === "automation";
+  });
+  const parts: UserMessagePart[] = prefix.parts.map((part) => {
+    if (
+      hasCurrentSource &&
+      (part.type === "source" || part.type === "automation")
+    ) {
+      return {
+        type: "additional_info",
+        text: `Suggested action source context: ${JSON.stringify(part)}`,
+      };
+    }
+    return part;
+  });
+  return userMessageDocumentSchema.parse({
+    version: 1,
+    parts: [...parts, { type: "text", text: "\n\n" }, ...current.parts],
+  });
+}
+
 interface TextMessageTemplateSnapshot {
   readonly titleSnapshot: string;
   readonly template: GenerationTemplateRequest;

@@ -1,7 +1,6 @@
 import { artifacts } from "@okouai/db/schema/artifact";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/schema/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { connectors } from "@okouai/db/schema/connector";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import { userBuiltinConnectors } from "@okouai/db/schema/user-connector";
@@ -78,13 +77,13 @@ export const artifactGoogleDriveAccount$ = command(
       const [run] = await db
         .select({ id: agentRuns.id })
         .from(agentRuns)
-        .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
+
         .where(
           and(
             eq(agentRuns.id, args.authorizedRunId),
             eq(agentRuns.orgId, args.orgId),
             eq(agentRuns.userId, args.userId),
-            eq(agentSessions.agentId, args.agentId),
+            eq(agentRuns.agentId, args.agentId),
           ),
         )
         .limit(1);

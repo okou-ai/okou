@@ -16,6 +16,7 @@ async fn run_in_sandbox_folds_timezone_sync_into_fixed_restore_operation() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Sandbox,
             restore_guest_state: true,
             reuse_result: SandboxReuseResult::Reused,
             home_reuse_result: runner_types::types::HomeReuseResult::SandboxReused,
@@ -62,6 +63,7 @@ async fn run_in_sandbox_runs_standalone_timezone_sync_without_restore_exec() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

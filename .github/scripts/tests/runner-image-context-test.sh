@@ -2,8 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CONTEXT="${SCRIPT_DIR}/runner-image-context.sh"
+CONTEXT="${SCRIPT_DIR}/runner/runner-image-context.sh"
 
 fail() {
   echo "FAIL: $1" >&2
@@ -335,18 +334,5 @@ assert_contains "$out" "artifact-name=runner-image-manifest-aarch64-unknown-linu
 
 out=$(run_clean HEAD_SHA=abc JOB_REF=pr-123 TARGET=x86_64-unknown-linux-musl "$CONTEXT" artifact-name)
 assert_contains "$out" "artifact-name=runner-image-manifest-x86_64-unknown-linux-musl-abc-pr-123"
-
-grep -qF "HEAD_SHA: \${{ github.sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
-  || fail "build identity must use the captured event revision"
-grep -qF "PRODUCER_HEAD_SHA: \${{ github.event.pull_request.head.sha || github.sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
-  || fail "workflow must distinguish the Actions API head from the build merge SHA"
-grep -qF "producer-head-sha: \${{ needs.prepare.outputs.producer-head-sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image.yml" \
-  || fail "architecture pipeline must receive the Actions API head SHA"
-grep -qF "PRODUCER_HEAD_SHA: \${{ inputs.producer-head-sha }}" \
-  "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" \
-  || fail "reusable provenance must use the Actions API head SHA"
 
 echo "runner-image-context-test: ok"

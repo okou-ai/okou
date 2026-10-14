@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PREPARE="${SCRIPT_DIR}/prepare-runner-image.sh"
+PREPARE="${SCRIPT_DIR}/runner/prepare-runner-image.sh"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 
@@ -119,10 +119,6 @@ if JOB_REF=pr-123 \
 fi
 grep -q "EXPECTED_REMOTE_ARCH mismatch: aarch64-unknown-linux-musl maps to aarch64, got x86_64" "${TMPDIR}/arch-mismatch.err" || fail "expected expected remote arch mismatch message"
 
-if grep -q 'runner-binary-build/build.sh' "$PREPARE"; then
-  fail "host preparation must not invoke the runner binary build"
-fi
-
 if JOB_REF=pr-123 \
   HEAD_SHA=abc \
   METAL_HOSTS=dev-1 \
@@ -134,8 +130,8 @@ if JOB_REF=pr-123 \
 fi
 grep -q "missing required env: RUNNER_PATH" "${TMPDIR}/missing-runner.err" || fail "expected missing runner path message"
 
-. "${SCRIPT_DIR}/runner-guest-binaries.sh"
-. "${SCRIPT_DIR}/runner-binary-build/contract.env"
+. "${SCRIPT_DIR}/runner/runner-guest-binaries.sh"
+. "${SCRIPT_DIR}/runner/runner-binary-build/contract.env"
 runner_guest_binaries_load
 runner="${TMPDIR}/runner"
 cat > "$runner" <<'BASH'
@@ -423,7 +419,13 @@ case "$command" in
     ;;
 esac
 BASH
-chmod +x "${TMPDIR}/bin/ssh" "${TMPDIR}/bin/sudo" "${TMPDIR}/bin/systemctl"
+# Retry outcomes and candidate isolation are exercised through the real script;
+# waiting through each fixed backoff adds no independent coverage.
+cat > "${TMPDIR}/bin/sleep" <<'BASH'
+#!/usr/bin/env bash
+exit 0
+BASH
+chmod +x "${TMPDIR}/bin/ssh" "${TMPDIR}/bin/sudo" "${TMPDIR}/bin/systemctl" "${TMPDIR}/bin/sleep"
 
 prepare_remote_case() {
   local case_dir=$1

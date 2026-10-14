@@ -41,6 +41,7 @@ use crate::telemetry::{
     RunnerResourceBudgetLeaseCountBucket, RunnerResourceBudgetOccupancy,
     RunnerResourceBudgetUtilizationBucket, RunnerStartupPath,
 };
+use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 use runner_provider::RunCancellationSignals;
 use runner_provider::http::{HttpClient, HttpClientConfig};
 use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
@@ -159,22 +160,11 @@ fn blank_pool_selection_reason_vocabulary_is_stable() {
 
 #[test]
 fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
-    for (reuse_result, home_reuse_result, expected_path) in [
-        (
-            SandboxReuseResult::Reused,
-            HomeReuseResult::SandboxReused,
-            RunnerStartupPath::Sandbox,
-        ),
-        (
-            SandboxReuseResult::NoReuseKey,
-            HomeReuseResult::Reused,
-            RunnerStartupPath::Home,
-        ),
-        (
-            SandboxReuseResult::PoolMiss,
-            HomeReuseResult::CacheMiss,
-            RunnerStartupPath::Cold,
-        ),
+    for (reuse_result, expected_path) in [
+        (SandboxReuseResult::Reused, RunnerStartupPath::Sandbox),
+        (SandboxReuseResult::NoReuseKey, RunnerStartupPath::Home),
+        (SandboxReuseResult::PoolMiss, RunnerStartupPath::Cold),
+        (SandboxReuseResult::PoolMiss, RunnerStartupPath::Blank),
     ] {
         let mut context = minimal_context();
         context.api_start_time =
@@ -192,7 +182,7 @@ fn api_startup_boundaries_record_the_effective_path_and_exact_reuse_result() {
             &context,
             &mut telemetry,
             reuse_result,
-            home_reuse_result,
+            expected_path,
             shell_started_at,
             agent_ready_at,
         );
@@ -1757,9 +1747,106 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
 }
 
 #[tokio::test]
-async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution() {
+async fn execute_job_publishes_first_run_startup_without_api_start_time() {
     let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
+    let mut config = test_executor_config(dir.path()).await;
+    let server = startup_telemetry_server().await;
+    config.http = startup_telemetry_client(&server);
+    let mut context = minimal_context();
+    context.is_first_run = Some(true);
+    assert!(context.api_start_time.is_none());
+    let run_id = context.run_id;
+    let factory = MockSandboxFactory::new();
+    let (mut outcome, telemetry) = execute_job(
+        &factory,
+        context,
+        NewSandboxDispatch {
+            id: SandboxId::new_v4(),
+            reuse_result: SandboxReuseResult::NoReuseKey,
+        },
+        &config,
+        &default_params(),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await;
+
+    assert!(outcome.failure.is_none());
+    outcome
+        .startup_report
+        .take()
+        .expect("startup report should remain owned")
+        .finish()
+        .await;
+    assert_startup_observation(telemetry, server, run_id, "cold", true).await;
+    let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
+    sandbox.stop().await.unwrap();
+    factory.destroy(sandbox).await;
+}
+
+async fn startup_telemetry_server() -> RawHttpTestServer {
+    // StartupReport requires 204; telemetry accepts the same successful ack.
+    // The resource report and two telemetry batches can arrive in either order.
+    let response = b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    RawHttpTestServer::spawn(vec![
+        RawHttpAction::Respond(response.to_vec()),
+        RawHttpAction::Respond(response.to_vec()),
+        RawHttpAction::Respond(response.to_vec()),
+    ])
+    .await
+}
+
+fn startup_telemetry_client(server: &RawHttpTestServer) -> HttpClient {
+    HttpClient::new(HttpClientConfig {
+        api_url: server.url(),
+        vercel_bypass: None,
+        client_session_id: "startup-observation-test".into(),
+        runner_version: "test",
+    })
+    .unwrap()
+}
+
+async fn assert_startup_observation(
+    telemetry: JobTelemetry,
+    server: RawHttpTestServer,
+    run_id: RunId,
+    path: &str,
+    is_first_run: bool,
+) {
+    telemetry.flush().await;
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 3);
+    let mut startup = Vec::new();
+    let mut resource_reports = 0;
+    for request in requests {
+        let body: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+        if request.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup ")) {
+            assert_eq!(body, serde_json::json!({ "sandboxStartupPath": path }));
+            resource_reports += 1;
+            continue;
+        }
+        assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+        assert_eq!(body["runId"], run_id.to_string());
+        for operation in body["sandboxOperations"].as_array().unwrap() {
+            assert_eq!(operation["is_first_run"], is_first_run);
+            if operation["action_type"] == "runner_sandbox_startup" {
+                startup.push(operation.clone());
+            }
+        }
+    }
+    assert_eq!(resource_reports, 1);
+    assert_eq!(startup.len(), 1);
+    assert_eq!(startup[0]["runner_startup_path"], path);
+    assert_eq!(startup[0]["success"], true);
+    assert_eq!(startup[0]["home_reuse_result"], "notConfigured");
+}
+
+#[tokio::test]
+async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_executor_config(dir.path()).await;
+    let server = startup_telemetry_server().await;
+    config.http = startup_telemetry_client(&server);
     let params = default_params();
     let factory: Arc<Box<dyn SandboxFactory>> = Arc::new(Box::new(MockSandboxFactory::new()));
     let sandbox_id = SandboxId::new_v4();
@@ -1772,6 +1859,7 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
             },
             device_rate_limits: None,
             home_drive: Some(sandbox::HomeDriveConfig {
+                space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 size_mb: params.home_disk_mb,
                 seed_image: None,
             }),
@@ -1814,13 +1902,16 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     let cancel = tokio_util::sync::CancellationToken::new();
     let mut pre_spawn_timing = RunnerPreSpawnTiming::start_after_claim();
     pre_spawn_timing.record_blank_pool_selection(BlankPoolSelection::Hit);
-    let (outcome, telemetry) = execute_job_reuse_with_hooks(
+    let mut context = minimal_context();
+    context.is_first_run = Some(false);
+    let run_id = context.run_id;
+    let (mut outcome, telemetry) = execute_job_reuse_with_hooks(
         crate::executor::ReusedSandboxDispatch {
             factory: &MockSandboxFactory::new(),
             idle_sandbox,
             reuse_result: SandboxReuseResult::PoolMiss,
         },
-        minimal_context(),
+        context,
         &config,
         &params,
         RunCancellationSignals::from_hard_token(cancel),
@@ -1841,6 +1932,11 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     );
     assert_has_action(&telemetry, "sandbox_reuse_miss");
     assert_has_action(&telemetry, "sandbox_blank_pool_hit");
+    let startup = telemetry.pending_ops_with_runner_startup_snapshot();
+    assert!(startup.iter().any(|operation| {
+        operation.action_type == "runner_agent_start_to_ready"
+            && operation.runner_startup_path == Some(RunnerStartupPath::Blank)
+    }));
     let blank_selection = telemetry.pending_ops_with_outcome_snapshot();
     assert!(blank_selection.iter().any(|operation| {
         operation.0 == "runner_claim_blank_pool_selection"
@@ -1851,6 +1947,13 @@ async fn execute_job_claims_blank_sandbox_without_changing_cold_path_attribution
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");
+    outcome
+        .startup_report
+        .take()
+        .expect("startup report should remain owned")
+        .finish()
+        .await;
+    assert_startup_observation(telemetry, server, run_id, "blank", false).await;
 
     let mut sandbox = outcome.sandbox.expect("sandbox should remain alive");
     sandbox.stop().await.unwrap();

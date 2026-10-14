@@ -124,35 +124,15 @@
         "title": "Log non trovato"
       },
       "runner": {
-        "cacheMiss": "Nessuna directory home nella cache corrispondeva alla chiave di riutilizzo.",
-        "deviceLimitMismatch": "Esiste una voce del pool inattivo ma lo stato del limitatore di velocità del dispositivo non corrisponde.",
-        "diskPressure": "Il riutilizzo della directory home è stato ignorato a causa della pressione sul disco del runner.",
         "environment": "Ambiente",
-        "featureDisabled": "Il riutilizzo del sandbox è disabilitato per questa esecuzione.",
         "framework": "Framework",
         "generation": "Generazione",
-        "home": "Directory home",
-        "homeNoReuseKey": "Non era disponibile alcuna chiave di riutilizzo della directory home.",
-        "homeReusedDescription": "La directory home è stata ripristinata dalla cache del runner.",
         "hostname": "Nome host",
-        "invalidMetadata": "I metadati della directory home nella cache non erano validi.",
-        "invalidWorkingDir": "Non è stato possibile riutilizzare la directory di lavoro richiesta.",
-        "lockBusy": "Un'altra esecuzione stava preparando la stessa directory home.",
-        "noReuseKey": "Non era disponibile alcuna chiave di riutilizzo per trovare una sandbox inattiva.",
-        "noSessionId": "Risultato legacy: il motivo esatto per cui la sandbox non è stata riutilizzata non è disponibile.",
-        "notConfigured": "Il riutilizzo della directory home non era configurato per questa esecuzione.",
-        "notReused": "Non riutilizzato",
-        "outcomeUnavailableDescription": "Non sono disponibili ulteriori dettagli.",
-        "poolMiss": "Nessun sandbox corrispondente trovato nel pool inattivo.",
-        "profileMismatch": "La voce del pool inattivo esiste ma il suo profilo non corrisponde.",
         "provisioning": "Provisioning",
-        "reused": "Riutilizzato",
-        "reusedDescription": "La sandbox è stata riattivata dal pool inattivo.",
         "runnerId": "ID runner",
-        "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "È stata trovata una directory home nella cache, ma non è stato possibile utilizzarla dopo la preparazione della sandbox.",
-        "sandboxReusedDescription": "La directory home è rimasta disponibile nella sandbox riutilizzata.",
         "startup": "Avvio",
+        "startupBlank": "Avvio da sandbox vuota",
+        "startupBlankDescription": "Una sandbox preparata è stata avviata con una nuova directory home.",
         "startupCold": "Avvio a freddo",
         "startupColdDescription": "Sono stati preparati una nuova sandbox e un nuovo spazio di lavoro.",
         "startupHome": "Riutilizzo della directory home",
@@ -162,7 +142,6 @@
         "startupUnknown": "Sconosciuto",
         "startupUnknownDescription": "I dettagli sul riutilizzo all'avvio non sono disponibili.",
         "unavailable": "Non disponibile",
-        "unparkFailed": "Impossibile riattivare la sandbox; ne è stata predisposta una nuova.",
         "version": "Versione"
       },
       "steps": {
@@ -558,7 +537,12 @@
       "agentLoading": "L'agente è ancora in fase di caricamento",
       "connect": "Connetti Google Drive",
       "connectTooltip": "Connetti Google Drive per caricare gli artefatti",
+      "conversionNotice": "Crea una copia modificabile. La formattazione potrebbe cambiare; il file originale viene conservato.",
+      "conversionUnconfirmed": "Impossibile confermare la conversione Google. Controlla Drive prima di riprovare.",
       "noArtifacts": "Nessun artefatto da sincronizzare",
+      "openDocs": "Apri in Google Docs",
+      "openSheets": "Apri in Google Sheets",
+      "openSlides": "Apri in Google Slides",
       "partial_one": "Sincronizzazione completata per {{synced}} file su {{count}} in Google Drive",
       "partial_many": "Sincronizzazione completata per {{synced}} file su {{count}} in Google Drive",
       "partial_other": "Sincronizzazione completata per {{synced}} file su {{count}} in Google Drive",
@@ -566,7 +550,6 @@
       "syncedFiles_one": "Sincronizzato con Google Drive",
       "syncedFiles_many": "{{count}} file sincronizzati con Google Drive",
       "syncedFiles_other": "{{count}} file sincronizzati con Google Drive",
-      "syncedSlides": "Sincronizzato con Google Slides",
       "syncFailed": "Impossibile sincronizzare con Google Drive",
       "syncingArtifact": "Sincronizzazione dell'artefatto...",
       "syncingFiles_one": "Sincronizzazione di {{count}} file...",
@@ -574,6 +557,8 @@
       "syncingFiles_other": "Sincronizzazione di {{count}} file...",
       "syncingNamed": "Sincronizzazione {{filename}}...",
       "upload": "Carica su Google Drive",
+      "uploadDocs": "Carica su Google Docs",
+      "uploadSheets": "Carica su Google Sheets",
       "uploadSlides": "Carica su Google Slides"
     },
     "kinds": {
@@ -590,6 +575,7 @@
       "markdown": "Markdown",
       "presentation": "Presentazione",
       "sharedConversation": "Conversazione condivisa",
+      "spreadsheet": "Foglio di calcolo",
       "text": "Testo",
       "video": "Video"
     },
@@ -657,6 +643,8 @@
       "importedSlides_many": "{{count}} diapositive",
       "importedSlides_other": "{{count}} diapositive",
       "importFile": "Importa modello",
+      "importImage": "Importa la tua immagine",
+      "importImageHint": "Salva come stile",
       "multiAccent": "Multiaccento",
       "nextSlide": "Anteprima della diapositiva successiva",
       "noMatches": "Nessuna corrispondenza",
@@ -674,6 +662,7 @@
       "selectWorkflow": "Seleziona il modello di flusso di lavoro {{title}}",
       "showVariant": "Mostra variante {{variantNumber}}",
       "singleAccent": "Singolo accento",
+      "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} anteprima diapositiva",
       "slideThumbnail": "{{title}} diapositiva {{slideNumber}} anteprima",
       "template": "Modello",
@@ -703,7 +692,6 @@
       "use": "Utilizzare",
       "useThisTemplate": "Usa questo modello",
       "visibility": {
-        "change": "Modifica",
         "changeLabel": "Modifica la visibilità del modello",
         "privateState": "Solo tu puoi vederlo e usarlo",
         "workspaceState": "Chiunque in quest'area di lavoro può usarlo"
@@ -1540,6 +1528,15 @@
       },
       "viewAgentProfile": "Visualizza il profilo dell'agente"
     },
+    "agentSuggestions": {
+      "continueChat": "Continua la chat",
+      "dismiss": "Ignora",
+      "label": "Suggerimenti",
+      "newChat": "Nuova chat",
+      "next": "Suggerimento successivo",
+      "position": "{{current}} di {{total}}",
+      "previous": "Suggerimento precedente"
+    },
     "attachments": {
       "attach": "Allega",
       "fileTooLarge": "{{filename}} supera il limite di 1 GB",
@@ -1786,9 +1783,8 @@
       "threadSuggestions": "Thread di chat",
       "useForFutureChats": "Usa questo modello per le chat future",
       "workflows": {
-        "empty": "Nessun flusso di lavoro corrispondente",
         "loading": "Caricamento flussi di lavoro...",
-        "showAll": "Mostra tutti i flussi di lavoro",
+        "showAllCount": "Mostra tutti e {{total}}",
         "title": "Flussi di lavoro"
       }
     },
@@ -1969,15 +1965,6 @@
       "threads": "Chat",
       "title": "Inoltra a"
     },
-    "homeTasks": {
-      "empty": "Nessuna attività suggerita",
-      "existingThread": "Continua la chat",
-      "exploreWorkflow": "Esplora un workflow",
-      "heading": "Ripreso dal tuo lavoro recente",
-      "newTasksAvailable": "Nuove attività disponibili",
-      "newThread": "Nuova chat",
-      "reload": "Ricarica attività"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2021,6 +2008,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "Apri la chat",
       "openChatIn": "Apri chat in {{integration}}",
       "openDiscordMessage": "Apri il messaggio originale in Discord",
@@ -2081,6 +2069,26 @@
       "removeQueuedMessage": "Rimuovi il messaggio in coda",
       "skipAutomationEvent": "Salta evento di automazione"
     },
+    "relations": {
+      "communications": "Messaggi",
+      "created": "Create",
+      "idle": "Inattiva",
+      "loadFailed": "Caricamento non riuscito",
+      "loading": "Caricamento…",
+      "messageUnavailable": "Messaggio non disponibile",
+      "more": "Altro",
+      "origin": "Da",
+      "parallelHint": "Prova chat in parallelo. Meno attese.",
+      "queued": "In coda",
+      "received": "Ricevuto",
+      "refresh": "Aggiorna",
+      "running": "In esecuzione",
+      "sent": "Inviato",
+      "title": "Chat collegate",
+      "toggleMessages": "Messaggi con {{title}}",
+      "unavailable": "Non disponibile",
+      "untitled": "Senza titolo"
+    },
     "remoteAccess": {
       "default": "Predefinito",
       "defaultEnabled": "Abilitato per impostazione predefinita nelle chat",
@@ -2091,10 +2099,25 @@
       "loading": "Caricamento accesso remoto…",
       "off": "Disattivo",
       "on": "Attivo",
-      "requiresSsh": "Richiede anche l'accesso all'host SSH {{name}}.",
+      "requiresSsh": "Richiede SSH: {{name}}",
       "retry": "Riprova",
+      "sshDisabled": "Attiva SSH: {{name}}",
+      "sshEnabled": "SSH attivo: {{name}}",
       "title": "Accesso remoto",
       "unavailableSsh": "host SSH non disponibile"
+    },
+    "resources": {
+      "collapse": "Comprimi",
+      "copyLink": "Copia link",
+      "empty": "Questa chat non contiene ancora artefatti o link",
+      "emptyLinks": "Non ci sono ancora link in questa chat",
+      "expand": "Espandi",
+      "links": "Link",
+      "loadFailed": "Impossibile caricare le risorse",
+      "loadingLinks": "Caricamento dei link",
+      "retry": "Riprova",
+      "title": "Risorse della chat",
+      "viewAll": "Mostra tutto"
     },
     "run": {
       "collapseWorkHistory": "Comprimi la cronologia lavorativa",
@@ -2431,6 +2454,7 @@
       "tasks": {
         "image": "Immagine",
         "presentation": "Diapositive",
+        "suggestions": "Suggerimenti",
         "visualization": "Visualizzazione",
         "website": "Sito web",
         "workflow": "Workflow"
@@ -2777,7 +2801,6 @@
         "workflow": "Flusso di lavoro"
       },
       "importedLoadFailed": "Impossibile caricare i modelli caricati.",
-      "importedLoading": "Caricamento dei modelli caricati…",
       "importedUnavailable": "I modelli caricati sono temporaneamente non disponibili.",
       "previewTemplate": "Modello di anteprima {{title}}",
       "previewWebsite": "Anteprima del modello di sito web {{title}}",
@@ -2856,6 +2879,22 @@
       "textTakingShape": "Il testo sta prendendo forma",
       "transcribing": "Trascrizione",
       "transcriptionFailed": "La trascrizione vocale non è riuscita. Riprova."
+    },
+    "walletAction": {
+      "approveButton": "Verifica",
+      "approveTitle": "Verifica acquisto",
+      "authorized": "Autorizzato",
+      "callbackFailed": "Autorizzato. Seleziona Continua per riprovare a inviare il messaggio.",
+      "callbackPrompt": "Il wallet Link è stato autorizzato. Continua l’attività precedente.",
+      "checkFailed": "Impossibile verificare l’autorizzazione. Riprova.",
+      "connectButton": "Autorizza",
+      "connectTitle": "Autorizza il wallet Link",
+      "continueButton": "Continua",
+      "continueTitle": "Continua su Link",
+      "expired": "Autorizzazione scaduta",
+      "failed": "Autorizzazione non completata",
+      "unavailable": "Autorizzazione non disponibile",
+      "waiting": "In attesa di autorizzazione"
     },
     "workflows": {
       "named": "Flusso di lavoro {{title}}",
@@ -3035,6 +3074,7 @@
       "genericLabel": "Connettore",
       "githubLabel": "GitHub",
       "invalidUrl": "Richiamata del connettore non valida URL.",
+      "linkLabel": "Link",
       "mercuryAttribution": "Powered by Mercury",
       "mercuryDisclosure": "Mercury is a fintech company, not an FDIC-insured bank. Banking services provided through Choice Financial Group and Column N.A., Members FDIC.",
       "mercuryDisclosureLabel": "Mercury banking disclosure",
@@ -3482,13 +3522,15 @@
         "alreadyDescription": "Sei già connesso. Invia un messaggio in Telegram per iniziare a chattare.",
         "alreadyDescriptionNamed": "Sei già connesso a {{bot}}. Invia un messaggio in Telegram per iniziare a chattare.",
         "alreadyTitle": "Già connesso a Telegram",
-        "back": "Torna alle impostazioni Telegram",
+        "botNotConfigured": "La connessione a Telegram non è ancora configurata. Contatta l'assistenza.",
         "checkingConnectionDescription": "Attendi mentre controlliamo la tua connessione Telegram.",
         "checkingConnectionTitle": "Verifica della connessione...",
         "checkingSession": "Attendi mentre verifichiamo la tua sessione {{brandName}}.",
         "connectDescription": "Collega il tuo account a questo bot Telegram per interagire con il tuo agente direttamente da Telegram.",
+        "connectionCheckFailed": "Impossibile raggiungere Telegram per verificare la connessione. Riprova tra poco.",
         "connectTitle": "Connetti a Telegram",
         "continue": "Continua con Telegram",
+        "domainNotVerified": "Impossibile verificare l'accesso a Telegram per questa app. Riprova o contatta l'assistenza se il problema persiste.",
         "errorFallback": "Impossibile connettersi Telegram. Riprova da Telegram.",
         "invalidSignature": "La firma su questo collegamento non è valida.",
         "invalidTimestamp": "Il timestamp su questo collegamento non è valido.",
@@ -3803,16 +3845,8 @@
       },
       "telegram": {
         "backToIntegrations": "Torniamo alle integrazioni",
-        "botFallback": "Telegram bot",
-        "disconnectAria": "Disconnetti {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Impossibile caricare le impostazioni Telegram.",
-        "moreOptions": "Altre opzioni per {{bot}}",
-        "notConnected": "Non connesso",
-        "officialBot": "Bot ufficiale di Telegram",
-        "officialDescription": "Bot ufficiale fornito da {{brandName}}.",
-        "officialMissing": "Manca la configurazione ufficiale del bot.",
-        "pageDescription": "Gestisci il routing dei bot per questa area di lavoro"
+        "officialMissing": "Manca la configurazione ufficiale del bot."
       },
       "toasts": {
         "agentphoneConnected": "Numero di telefono collegato",
@@ -3848,6 +3882,65 @@
     "toasts": {
       "connected": "{{connector}} connesso"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "Un punto di partenza per il tuo accordo. Prima di firmare, verifica i termini in base al progetto e alla giurisdizione applicabile.",
+    "back": "Torna ai modelli",
+    "categories": {
+      "all": "Tutti",
+      "business-record": "Documenti commerciali",
+      "contract": "Contratto",
+      "creative-brief": "Brief creativo",
+      "guide": "Guide",
+      "invoice": "Fattura",
+      "letter": "Lettere",
+      "report": "Rapporti",
+      "resume": "Curriculum",
+      "service-agreement": "Accordo di servizi"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Termini e responsabilità",
+        "delivery": "Revisione e firme",
+        "details": "Durata e risoluzione",
+        "overview": "Parti e ambito"
+      },
+      "brief": {
+        "content": "Pubblico e messaggio principale",
+        "delivery": "Tempistiche e processo di revisione",
+        "details": "Risultati da consegnare e formati",
+        "overview": "Panoramica e obiettivi del progetto"
+      },
+      "general": {
+        "content": "Sezioni per i tuoi contenuti",
+        "delivery": "Word modificabile o PDF",
+        "details": "Impaginazione coerente",
+        "overview": "Struttura chiara del documento"
+      },
+      "invoice": {
+        "content": "Servizi e tariffe dettagliati",
+        "delivery": "Dati di pagamento",
+        "details": "Imposte, totali e scadenza",
+        "overview": "Dati del fornitore e del cliente"
+      }
+    },
+    "filter": "Categoria del documento",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Documento Word"
+    },
+    "imageError": "Anteprima non disponibile",
+    "included": "Contenuti inclusi",
+    "nextPage": "Pagina di esempio successiva",
+    "openLarger": "Apri anteprima ingrandita",
+    "page": "Pagina {{page}}",
+    "preview": "Anteprima di {{title}}",
+    "previousPage": "Pagina di esempio precedente",
+    "retry": "Riprova",
+    "samplePages": "Pagine di esempio: {{total}}",
+    "title": "Documento",
+    "use": "Usa modello",
+    "useNamed": "Usa {{title}}"
   },
   "global": {
     "actions": {
@@ -4560,17 +4653,9 @@
       "settings": "Impostazioni",
       "signOut": "Esci",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
-        "usageRemaining": "{{provider}} {{window}} rimanente",
-        "windows": {
-          "fiveHour": "5 ore",
-          "week": "settimana"
-        }
+        "usageRemaining": "{{provider}} {{window}} rimanente"
       },
       "switchAccount": "Cambia account",
       "userFallback": "Utente"
@@ -4739,10 +4824,16 @@
       "personal": {
         "accountFallback": "Account {{number}}",
         "activeAccount": "Attivo",
+        "autoCredits": "Usa i crediti Okou",
         "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
         "autoTitle": "Usa più modelli",
+        "claudeGroup": "Il tuo piano Claude",
+        "claudePlans": "Pro o Max",
         "claudeTitle": "Claude",
+        "codexGroup": "Il tuo piano ChatGPT",
+        "codexPlans": "Plus, Pro o Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "Collega",
         "connectAccount": "Collega account",
         "disconnectAccount": "Disconnetti account",
         "disconnectDescription": "Questa azione rimuove l'account da Okou. Non annulla l'abbonamento con il provider.",
@@ -4750,7 +4841,9 @@
         "disconnectTitle": "Disconnettere {{account}}?",
         "loadError": "Impossibile caricare i tuoi account.",
         "loadingAccounts": "Caricamento degli account…",
+        "managePlans": "Gestisci piani",
         "noAccounts": "Nessun account collegato.",
+        "ownPlan": "Usa il tuo piano",
         "reconnectAccount": "Riconnetti",
         "retry": "Riprova",
         "status": {
@@ -4948,26 +5041,22 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
-        "morningBriefEmail": {
-          "checkStatus": "Controlla lo stato di consegna",
-          "description": "Invia un esempio fisso all’email del tuo account con il modello Morning Brief. Non esegue un Agent e non modifica la programmazione.",
-          "reasons": {
-            "delivery-failed": "Consegna non riuscita. Il provider potrebbe aver accettato un tentativo precedente.",
-            "expired": "Il termine di consegna è scaduto. Il provider potrebbe aver accettato un tentativo precedente.",
-            "no-email": "Saltata: il tuo account non ha un indirizzo email.",
-            "suppressed": "Saltata: la consegna all’email del tuo account è bloccata.",
-            "unsubscribed": "Saltata: il tuo account ha annullato l’iscrizione agli aggiornamenti email."
-          },
-          "requestFailed": "La richiesta non è stata completata. Il nuovo tentativo usa la stessa richiesta per evitare un’email duplicata.",
-          "retry": "Riprova l’email di prova",
-          "send": "Invia email di prova",
-          "sendAnother": "Invia un’altra email di prova",
-          "sending": "Invio in corso…",
+        "morningBrief": {
+          "checkStatus": "Controlla lo stato",
+          "description": "Esegue una volta il workflow attivo del tuo account. Può aggiornare i suggerimenti e inviare una vera email. La pianificazione giornaliera resta invariata.",
+          "openChat": "Apri conversazione",
+          "requestFailed": "La richiesta non è terminata. Il nuovo tentativo usa la stessa richiesta per evitare esecuzioni duplicate.",
+          "retry": "Riprova",
+          "run": "Esegui il brief",
+          "runAgain": "Esegui un altro brief",
+          "starting": "Avvio…",
           "status": {
-            "queued": "In coda per la consegna. Controlla lo stato prima di inviare un altro esempio.",
-            "sent": "Accettata dal provider email. Controlla posta in arrivo e spam; l’arrivo nella casella non è confermato."
+            "completed": "Il brief è completato.",
+            "failed": "Il brief non è riuscito. Apri la conversazione per i dettagli.",
+            "queued": "In coda. Apri la conversazione per seguire il brief.",
+            "running": "Il brief è in esecuzione."
           },
-          "title": "Email di prova di Morning Brief"
+          "title": "Brief del mattino"
         },
         "openrouterPreset": {
           "description": "Si applica alle nuove esecuzioni di Auto e Okou 1.0 integrato per tutta l’organizzazione. Le esecuzioni esistenti non cambiano.",
@@ -5379,23 +5468,11 @@
     "unavailable": "L’accesso SSH non è disponibile per questo account.",
     "username": "Nome utente SSH"
   },
-  "subscriptionLinking": {
-    "connect": "Collega abbonamento",
-    "description": "Usa il tuo abbonamento ChatGPT o Claude con {{brandName}}.",
-    "dismiss": "Chiudi avviso abbonamento",
-    "hint": "Hai già ChatGPT o Claude?",
-    "limits": "La disponibilità e i limiti di utilizzo dipendono dal tuo abbonamento.",
-    "manage": "Gestisci abbonamenti IA",
-    "menuConnect": "Collega abbonamento IA",
-    "menuLoading": "Abbonamenti IA",
-    "title": "Collega il tuo abbonamento"
-  },
   "tailscale": {
     "add": "Aggiungi Tailscale",
     "addressHelp": "Usa l'IP, il nome completo o il nome breve di un peer registrato nel tailnet. Restano necessari l'accesso SSH e la verifica della chiave host.",
     "adoptHelp": "Trasforma questa rete dell'organizzazione nella tua rete personale. Gli altri proprietari dovranno ricollegare gli host salvati.",
     "changed": "Questa rete Tailscale è cambiata. Controlla le impostazioni attuali prima di salvare la bozza.",
-    "cleanupHelp": "I nodi temporanei possono restare in Tailscale dopo la chiusura della connessione. I tempi di pulizia del provider non sono garantiti.",
     "clientId": "ID client OAuth",
     "clientSecret": "Segreto del client OAuth",
     "createNew": "Crea una rete Tailscale",
@@ -5404,6 +5481,24 @@
     "edit": "Modifica Tailscale",
     "failed": "Impossibile salvare la modifica Tailscale. Riprova.",
     "forbidden": "Non puoi gestire questa rete Tailscale. Le reti dell'organizzazione richiedono un amministratore.",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "In Trust credentials, seleziona Credential → OAuth. In Keys → Auth Keys, seleziona Write e tag:okou. Seleziona Generate credential e copia Client ID e Client secret nei campi qui sotto.",
+      "policyHelp": "Questa regola consente a tag:okou di raggiungere tutti gli utenti e dispositivi su tutte le porte e i protocolli. Aggiungila ai grants esistenti e conserva il resto della policy.",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "In Access controls → Visual editor → General access rules, seleziona Add rule e usa questi valori consigliati.",
+      "source": "Source",
+      "stepsLabel": "Passaggi di configurazione di Tailscale",
+      "tags": "Tags",
+      "tagsHelp": "Usa la tailnet del dispositivo di destinazione. In Access controls → Visual editor → Tags, seleziona Create tag. Inserisci okou in Tag name e scegli Tag owners. Inserisci tag:okou nei tag di registrazione qui sotto.",
+      "title": "Come configurare Tailscale?",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "I tuoi host SSH usano ancora questa rete. Ricollegali o eliminali prima.",
     "invalid": "Alcune impostazioni Tailscale non sono valide. Controlla i campi e riprova.",
     "loadFailed": "Impossibile caricare Tailscale. Riprova.",
@@ -5418,7 +5513,6 @@
     "rebindHelp": "Seleziona o crea una rete Tailscale per ricollegare questo host. L'accesso SSH e la chiave host attendibile vengono conservati.",
     "replace": "Sostituisci le credenziali OAuth",
     "select": "Seleziona una rete Tailscale",
-    "setupHelp": "Usa un client OAuth limitato a questi tag. La policy del tailnet deve consentire la porta SSH. Il salvataggio non verifica la connessione né autorizza l'accesso alla chat.",
     "summary_one": "{{count}} Tailscale impostato",
     "summary_many": "{{count}} Tailscale impostati",
     "summary_other": "{{count}} Tailscale impostati",
@@ -5458,6 +5552,11 @@
     },
     "importHint": "Importa un documento, una presentazione o un’immagine.",
     "loadFailed": "Impossibile caricare i modelli.",
+    "rename": {
+      "action": "Rinomina",
+      "cancel": "Annulla",
+      "save": "Salva"
+    },
     "renameFailed": "Impossibile rinominare il modello.",
     "retry": "Riprova",
     "sharedBy": "Condiviso da {{owner}}",
@@ -5531,6 +5630,26 @@
     "cancel": "Annulla",
     "close": "Chiudi",
     "configured": "Configurato",
+    "connectionStatus": {
+      "attention_one": "{{count}} host VNC richiede attenzione",
+      "attention_many": "{{count}} host VNC richiedono attenzione",
+      "attention_other": "{{count}} host VNC richiedono attenzione",
+      "observedAt": "Osservato {{time}}",
+      "reasons": {
+        "authentication_failed": "Autenticazione o verifica dell’identità del server non riuscita.",
+        "disconnected": "Il server si è disconnesso durante il tentativo di connessione.",
+        "invalid_credential": "Impossibile utilizzare la credenziale salvata.",
+        "kerberos_expired": "La credenziale Kerberos è scaduta.",
+        "kerberos_non_renewable": "La credenziale Kerberos non può essere rinnovata.",
+        "kerberos_renewal_exhausted": "È stato raggiunto il limite di rinnovo della credenziale Kerberos.",
+        "network_failure": "Il trasporto della connessione non è riuscito.",
+        "protocol": "Il server non ha completato il protocollo di connessione selezionato.",
+        "timed_out": "Il tentativo di connessione è scaduto.",
+        "unsafe_destination": "La destinazione è stata rifiutata dalla politica di rete.",
+        "unsupported_profile": "Il server non supporta il profilo di sicurezza selezionato."
+      },
+      "unavailable": "Stato della connessione VNC non disponibile"
+    },
     "credential": {
       "add": "Aggiungi credenziali",
       "appleDhFieldHelp": "Ogni campo deve contenere da 1 a 63 byte UTF-8. NUL non è consentito.",
@@ -5644,9 +5763,17 @@
     },
     "save": "Salva",
     "saveRecovery": {
+      "deleteHelp": "Controlla questi dettagli salvati prima di eliminare. Questa azione seleziona solo la versione; conferma l’eliminazione separatamente.",
+      "incompatible": "Il metodo di autenticazione è cambiato. Chiudi questa finestra e riapri la credenziale per modificare il metodo attuale.",
+      "keepChanges": "Mantieni le mie modifiche con questa versione",
+      "keepDeletion": "Usa questa versione per l’eliminazione",
+      "keepHelp": "Controlla questi dati, poi mantieni la bozza e salvala a partire da questa versione. Le scelte di autenticazione e attendibilità saranno mantenute.",
+      "latest": "Dati attualmente salvati",
       "resourceIdConflict": "Impossibile creare questa risorsa. Chiudi questa finestra e riprova.",
       "review": "La configurazione è stata aggiornata. Chiudi questa finestra e controlla i dati attuali prima di riprovare.",
-      "uncertain": "L’esito del salvataggio è sconosciuto. La bozza originale è bloccata. Riprova la stessa richiesta oppure chiudi e aggiorna per verificare la configurazione salvata."
+      "unavailable": "Questa risorsa non è più disponibile. Chiudi questa finestra e aggiorna la configurazione prima di riprovare.",
+      "uncertain": "L’esito del salvataggio è sconosciuto. La bozza originale è bloccata. Riprova la stessa richiesta oppure chiudi e aggiorna per verificare la configurazione salvata.",
+      "version": "Versione {{version}}"
     },
     "saving": "Salvataggio…",
     "security": {
@@ -6365,70 +6492,6 @@
       "title": "Flussi di lavoro",
       "viewAutomations": "Visualizza le automazioni"
     },
-    "official": {
-      "activeInstallationDescription": "Questo workflow ufficiale resta operativo e i suoi contenuti gestiti rimangono di sola lettura.",
-      "activeInstallationTitle": "Workflow ufficiale",
-      "agent": "Agente",
-      "automationCount_one": "{{count}} automazione",
-      "automationCount_many": "",
-      "automationCount_other": "{{count}} automazioni",
-      "badge": "Ufficiale",
-      "browse": "Sfoglia gli ufficiali",
-      "chooseValue": "Scegli un valore",
-      "copySucceededUninstallFailed": "La copia è pronta, ma non è stato possibile disinstallare il workflow ufficiale originale.",
-      "description": "Installa workflow gestiti e mantenuti dall’Okou Official Team.",
-      "empty": "Non sono disponibili workflow ufficiali.",
-      "includedAutomations": "Automazioni incluse",
-      "install": "Installa",
-      "installDescription": "Scegli un agente e completa tutti i parametri obbligatori. Verranno installate tutte le automazioni incluse.",
-      "installed": "Workflow ufficiale installato",
-      "installedStatus": "Installato",
-      "installErrorDescription": "Controlla l’agente e i valori dei parametri, quindi riprova.",
-      "installErrorTitle": "Impossibile installare il workflow ufficiale",
-      "installTitle": "Installa {{name}}",
-      "intendedOff": "deve essere disattivato",
-      "intendedOn": "deve essere attivato",
-      "loadErrorDescription": "Questo catalogo potrebbe non essere disponibile o abilitato per il tuo account.",
-      "loadErrorTitle": "Impossibile caricare i workflow ufficiali",
-      "no": "No",
-      "noParameters": "Non sono richiesti parametri.",
-      "noResults": "Nessun workflow ufficiale corrisponde alla ricerca.",
-      "notFound": "Questo workflow ufficiale non è stato trovato.",
-      "parameterCount_one": "{{count}} parametro",
-      "parameterCount_many": "",
-      "parameterCount_other": "{{count}} parametri",
-      "parameterRequired": "{{key}} (obbligatorio)",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "Riconfigura",
-      "reconfigured": "Workflow ufficiale riconfigurato",
-      "reconfigureDescription": "Aggiorna i parametri tipizzati senza sostituire questo workflow o le sue automazioni.",
-      "reconfigureDialogDescription": "Controlla ogni automazione gestita e aggiornane i parametri.",
-      "reconfigureErrorDescription": "Controlla i valori obbligatori e riprova.",
-      "reconfigureErrorTitle": "Impossibile riconfigurare il workflow ufficiale",
-      "reconfigureTitle": "Parametri di installazione",
-      "reconfigureUnavailable": "I metadati autorevoli dei parametri non sono temporaneamente disponibili.",
-      "retiredBadge": "Ufficiale · Ritirato",
-      "retiredDefinitionDescription": "Questa definizione conservata può essere visualizzata, ma non può più essere installata.",
-      "retiredInstallationDescription": "Questa definizione è stata ritirata. L’installazione esistente resta operativa e di sola lettura finché non viene disinstallata.",
-      "retiredInstallationTitle": "Workflow ufficiale ritirato",
-      "retiredTitle": "Definizione ritirata",
-      "retry": "Riprova",
-      "search": "Cerca workflow ufficiali",
-      "selectAgent": "Seleziona un agente",
-      "statusCurrent": "Aggiornato",
-      "statusFailed": "Non riuscito",
-      "statusNeedsReconfiguration": "Richiede riconfigurazione",
-      "statusReconciling": "Sincronizzazione",
-      "title": "Workflow ufficiali",
-      "unavailableInstallationDescription": "La definizione accettata non è temporaneamente disponibile. I controlli operativi esistenti restano disponibili.",
-      "unavailableInstallationTitle": "Definizione ufficiale non disponibile",
-      "uninstall": "Disinstalla",
-      "uninstallConfirm": "Questa operazione rimuove l’installazione ufficiale e tutte le sue automazioni. Non può essere annullata.",
-      "uninstallDescription": "Rimuovi questa installazione di workflow ufficiale tramite il relativo ciclo di vita gestito.",
-      "uninstallTitle": "Disinstalla workflow ufficiale",
-      "viewAndInstall": "Visualizza e installa",
-      "yes": "Sì"
-    },
     "skillImport": {
       "action": "Importa skill",
       "description": "Esegui questo prompt dove si trovano le tue skill. Ognuna diventa un workflow privato.",
@@ -6448,7 +6511,6 @@
       "connect": "Connettiti",
       "disconnect": "Disconnetti",
       "disconnecting": "Disconnessione…",
-      "manage": "Gestisci",
       "moreOptions": "Più opzioni",
       "uninstall": "Disinstallare",
       "uninstalling": "Disinstallazione…",
@@ -6457,30 +6519,27 @@
     "connected": "Connesso",
     "connectedWithDetail": "Connesso ({{detail}})",
     "discord": {
-      "accountSetup": "Connetti il tuo account Discord tramite il consenso ufficiale nel browser.",
-      "adminSetup": "Installa Okou sul tuo server Discord, quindi connetti il tuo account.",
-      "approvalConfirmed": "Chiudi questa scheda per completare la connessione in Works.",
+      "addNewServer": "Unisciti a un nuovo server",
       "approvalFailed": "Conferma non riuscita. Accedi con l’account e l’organizzazione Okou originali o riavvia l’autorizzazione.",
-      "authorizationError": "Non è stato possibile completare l’autorizzazione Discord. Riprova da questa scheda.",
-      "authorizing": "Autorizzazione in corso…",
-      "browserConsent": "Completa l’autorizzazione nella finestra di Discord. Questa pagina si aggiornerà automaticamente.",
-      "chooseDmServer": "Scegli un server",
+      "authorizationError": "Impossibile completare l’autorizzazione di Discord. Riprova.",
+      "chooseWorkspace": "Scegli uno spazio di lavoro",
+      "connectDescription": "Collega il tuo account Discord per chattare con il tuo agente.",
+      "connectedTitle": "Connesso a Discord",
+      "connectTitle": "Connetti a Discord",
+      "defaultWorkspace": "Spazio di lavoro predefinito per Discord",
       "description": "Menziona Okou in un server o invia un messaggio diretto al bot.",
       "disconnect": "Disconnetti Discord",
-      "dmServer": "Server predefinito per i messaggi diretti",
-      "install": "Installa su Discord",
-      "limitedContext": "Contesto limitato: Okou potrebbe non ricevere i normali messaggi dei canali. Menziona Okou e includi i dettagli di cui ha bisogno.",
-      "memberSetup": "Chiedi a un amministratore dell’organizzazione di installare Okou sul tuo server Discord.",
-      "moreOptions": "Altre opzioni di Discord",
-      "pendingConsent": "Questa scheda non ha una prova di autorizzazione. Chiudila e riavvia l’autorizzazione dalla scheda Works originale.",
+      "installDescription": "Autorizza Okou su Discord con un account che possa gestire il server.",
+      "installTitle": "Aggiungi Okou a un server",
+      "invalidLink": "Questo link di connessione Discord non è valido. Apri un nuovo link da Discord.",
+      "open": "Apri Discord",
+      "openInBrowser": "Apri nel browser",
+      "pendingConsent": "Chiudi questa scheda e riavvia la connessione dalla scheda originale.",
       "popupBlocked": "Consenti i popup per autorizzare Discord, quindi riprova.",
       "retry": "Riprova",
       "suspended": "Discord è temporaneamente non disponibile. Le connessioni esistenti vengono mantenute.",
       "title": "Discord",
-      "unconfigured": "Discord non è ancora configurato per questa organizzazione.",
-      "uninstall": "Rimuovi Discord",
-      "uninstallDescription": "Questa operazione disconnette da Discord tutte le persone di questa organizzazione. Le altre organizzazioni mantengono le proprie connessioni.",
-      "uninstallTitle": "Rimuovere Discord da questa organizzazione?"
+      "unconfigured": "Discord non è ancora configurato per questa organizzazione."
     },
     "documentTitle": "Integrazioni",
     "feishuConnected": "Feishu si è connesso correttamente",
@@ -6519,7 +6578,6 @@
     },
     "telegram": {
       "description": "Instrada i messaggi Telegram agli agenti",
-      "openSettings": "Apri le impostazioni Telegram",
       "title": "Telegram"
     }
   }

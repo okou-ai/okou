@@ -6,8 +6,8 @@
 //! Runtime entry still publishes initial status, binds prune control, awaits
 //! provider readiness and creates factories before announcing readiness.
 //!
-//! Local siblings own factory lifecycle, claim/discovery, job dispatch, terminal
-//! logging, prune admission and signal consumption. Adjacent Supervisor modules
+//! Local siblings own startup/rollback, factory lifecycle, claim/discovery, job
+//! dispatch, terminal logging, prune admission and signal consumption. Adjacent Supervisor modules
 //! retain their admission/finalization/heartbeat/orphan policies; Network owns
 //! MITM recovery. No executable types, upward dependencies, caller futures,
 //! copied provider fixtures or normal-feature test hooks are required.
@@ -38,14 +38,16 @@ use std::time::{Duration, Instant};
 use futures_util::future::BoxFuture;
 use sandbox::SandboxRuntime;
 use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
-use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
+#[cfg(test)]
+use crate::home_image_cache::HomeImageCache;
+use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -79,9 +81,13 @@ mod heartbeat;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
+mod maintenance;
+mod pending_candidate;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
+mod soft_drain;
+mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
@@ -89,16 +95,17 @@ use crate::heartbeat::{
     HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
     refresh_initial_home_cache_snapshot,
 };
-use crate::idle_lifecycle::{IdleCleanupTask, IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
+use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
-use crate::pre_claim_admission::PendingFinalizingCandidate;
 use claim_tasks::ClaimTasks;
-use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
+use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
 use job_spawn::{SpawnContext, handle_job_result};
+use maintenance::{MaintenanceCompletion, MaintenanceTasks};
+use pending_candidate::PendingCandidate;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
@@ -184,44 +191,6 @@ async fn next_home_cache_change(
     }
 }
 
-// Maintenance tasks are joined during teardown, not aborted: filesystem work
-// may continue after its async future is dropped. If the reactor itself is
-// cancelled, these tasks retain their locks until their work completes.
-fn home_cache_gc_task(cache: HomeImageCache) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            match cache.try_routine_gc(HOME_CACHE_GC_PERIOD).await {
-                Ok(Some(freed_bytes)) if freed_bytes > 0 => {
-                    info!(freed_bytes, "periodic home image cache GC completed");
-                }
-                Ok(Some(_) | None) => {}
-                Err(error) => warn!(%error, "periodic home image cache GC failed"),
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-fn status_retry_task(status: Arc<StatusTracker>) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            if let Err(error) = status.retry_unpublished_snapshot().await {
-                warn!(%error, "failed to retry unpublished runner status");
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-async fn next_maintenance_task(task: &mut Option<JoinHandle<()>>, name: &str) -> RunnerResult<()> {
-    match task {
-        Some(task) => task
-            .await
-            .map_err(|error| RunnerError::Internal(format!("{name} task failed: {error}"))),
-        None => std::future::pending().await,
-    }
-}
-
 struct TeardownTimer {
     start: Instant,
 }
@@ -276,40 +245,6 @@ impl TeardownTimer {
             elapsed_ms = self.elapsed_ms(),
             "teardown phase event"
         );
-    }
-}
-
-struct StartupFailureResources<'a> {
-    provider: &'a dyn JobProvider,
-    runtime: Option<&'a mut dyn SandboxRuntime>,
-    mitm: &'a mut proxy::MitmProxy,
-    kmsg_handle: kmsg_log::KmsgHandle,
-    dns_handle: dns::DnsProxy,
-    memory_prefetch: &'a mut prefetch::MemoryPrefetchTasks,
-    status: &'a StatusTracker,
-}
-
-async fn shutdown_startup_resources_after_startup_failure(
-    resources: StartupFailureResources<'_>,
-    context: &'static str,
-) {
-    resources.memory_prefetch.cancel();
-    resources.provider.shutdown().await;
-    if let Err(error) = resources.dns_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    if let Some(runtime) = resources.runtime {
-        runtime.shutdown().await;
-    }
-    if let Err(e) = resources.mitm.kill_now().await {
-        warn!(error = %e, context, "failed to kill proxy after startup failed");
-    }
-    if let Err(error) = resources.kmsg_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    resources.memory_prefetch.drain().await;
-    if let Err(error) = resources.status.set_mode(RunnerMode::Stopped).await {
-        warn!(%error, context, "failed to persist stopped status after startup failure");
     }
 }
 
@@ -584,20 +519,21 @@ impl StartLoopTestObserver {
         &self,
         timeout: Duration,
         context: &'static str,
-        predicate: impl FnMut(&StartLoopEvent) -> Option<T>,
+        mut predicate: impl FnMut(&StartLoopEvent) -> Option<T> + Send,
     ) -> T {
         let (value, _) = self
-            .wait_after(StartLoopCursor(0), timeout, context, predicate)
+            .wait_after(StartLoopCursor(0), timeout, context, &mut predicate)
             .await;
         value
     }
 
+    // Keep predicate ownership with callers while sharing the waiting future.
     async fn wait_after<T>(
         &self,
         cursor: StartLoopCursor,
         timeout: Duration,
         context: &'static str,
-        mut predicate: impl FnMut(&StartLoopEvent) -> Option<T>,
+        predicate: &mut (dyn FnMut(&StartLoopEvent) -> Option<T> + Send),
     ) -> (T, StartLoopCursor) {
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
@@ -739,7 +675,7 @@ impl StartLoopTestObserver {
         timeout: Duration,
     ) -> StartLoopCursor {
         let ((), cursor) = self
-            .wait_after(cursor, timeout, "routine heartbeat request", |event| {
+            .wait_after(cursor, timeout, "routine heartbeat request", &mut |event| {
                 matches!(
                     event,
                     StartLoopEvent::RoutineHeartbeatRequested {
@@ -758,7 +694,7 @@ impl StartLoopTestObserver {
         timeout: Duration,
     ) -> StartLoopCursor {
         let ((), cursor) = self
-            .wait_after(cursor, timeout, "home-cache change", |event| {
+            .wait_after(cursor, timeout, "home-cache change", &mut |event| {
                 matches!(event, StartLoopEvent::HomeCacheChangeObserved).then_some(())
             })
             .await;
@@ -849,7 +785,7 @@ mod start_loop_observer_tests {
                 cursor,
                 Duration::from_secs(1),
                 "second ownership transfer",
-                ownership_transfer_run_id,
+                &mut ownership_transfer_run_id,
             )
             .await;
         assert_eq!(
@@ -863,7 +799,7 @@ mod start_loop_observer_tests {
                 cursor,
                 Duration::from_secs(1),
                 "third ownership transfer",
-                ownership_transfer_run_id,
+                &mut ownership_transfer_run_id,
             )
             .await;
         assert_eq!(
@@ -882,7 +818,7 @@ mod start_loop_observer_tests {
                 StartLoopCursor(1),
                 Duration::from_secs(1),
                 "invalid cursor",
-                |_| Some(()),
+                &mut |_| Some(()),
             )
             .await;
     }
@@ -1064,321 +1000,55 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         mut test_hooks,
     } = config;
-    let SandboxRuntimeConfig { mut runtime } = sandbox_runtime;
-    let ProxyState {
-        mut mitm,
-        mut mitm_crash_rx,
-    } = proxy;
-    let ShutdownHandles {
-        mut kmsg_handle,
-        mut dns_handle,
-        mut memory_prefetch,
-    } = shutdown;
-
-    // -----------------------------------------------------------------------
-    // Signal handling / mode channel
-    // -----------------------------------------------------------------------
-    let signal = match signals.signal_source {
-        SignalSource::Real(signals) => SignalController::spawn(
-            provider_state.cancel.clone(),
-            provider_state.cancel_tokens.clone(),
-            signals,
-            shared.parking_gate.clone(),
-        ),
-        #[cfg(test)]
-        SignalSource::Override(controller) => controller,
-    };
-    let mut mode_rx = signal.mode_rx;
-    let lifecycle = signal.lifecycle;
-    let mut signal_handler_task = signal.handler_task;
-
-    if let Err(error) = shared.status.write_initial().await {
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "initial_status_persistence_failure",
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, "initial_status_persistence_failure").await;
-        }
-        return Err(RunnerError::Internal(format!(
-            "persist initial runner status: {error}"
-        )));
-    }
-
-    let prune_listener = match crate::idle_prune_control::PruneIdleListener::bind(
-        &paths.home,
-        &paths.base_dir,
-        runner.identity,
-    ) {
-        Ok(listener) => listener,
-        Err(error) => {
-            shutdown_startup_resources_after_startup_failure(
-                StartupFailureResources {
-                    provider: provider_state.provider.as_ref(),
-                    runtime: Some(runtime.as_mut()),
-                    mitm: &mut mitm,
-                    kmsg_handle,
-                    dns_handle,
-                    memory_prefetch: &mut memory_prefetch,
-                    status: shared.status.as_ref(),
-                },
-                "prune_control_startup_failure",
-            )
-            .await;
-            if let Some(handler_task) = signal_handler_task.take() {
-                abort_signal_handler_task(handler_task, "prune_control_startup_failure").await;
-            }
-            return Err(error.into());
-        }
-    };
-    let prune_admission = Arc::new(tokio::sync::Semaphore::new(1));
-    // Required binding and bounded admission precede readiness, factories,
-    // healthy status and claims. The reactor owns stop/join through teardown.
-    let (mut wss_task, wss_failed, wss_started) = match wss {
-        Some(config) => match runner_wss::start(
-            config,
-            runner.identity.runner_id(),
-            exec_config.guest_duplex.clone(),
-            &shared,
-            &provider_state,
-            &lifecycle,
-        ) {
-            Ok(listener) => (
-                Some(listener.task),
-                Some(listener.failed),
-                Some(listener.started),
-            ),
-            Err(error) => {
-                shutdown_startup_resources_after_startup_failure(
-                    StartupFailureResources {
-                        provider: provider_state.provider.as_ref(),
-                        runtime: Some(runtime.as_mut()),
-                        mitm: &mut mitm,
-                        kmsg_handle,
-                        dns_handle,
-                        memory_prefetch: &mut memory_prefetch,
-                        status: shared.status.as_ref(),
-                    },
-                    "wss_socket_startup_failure",
-                )
-                .await;
-                if let Some(task) = signal_handler_task.take() {
-                    abort_signal_handler_task(task, "wss_socket_startup_failure").await;
-                }
-                return Err(RunnerError::Internal(format!(
-                    "bind required Runner WSS listener: {error}"
-                )));
-            }
+    let Some(started) = startup::start(
+        startup::StartupResources {
+            sandbox_runtime,
+            proxy,
+            shutdown,
         },
-        None => (None, None, None),
+        startup::StartupContext {
+            runner: &runner,
+            paths: &paths,
+            shared: &shared,
+            provider: &provider_state,
+            exec_config: &exec_config,
+        },
+        signals,
+        wss,
+    )
+    .await?
+    else {
+        return Ok(());
     };
-    if let Some(started) = wss_started
-        && started.await.is_err()
-    {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
+    let startup::StartedRunner {
+        resources:
+            startup::StartupResources {
+                sandbox_runtime: SandboxRuntimeConfig { mut runtime },
+                proxy:
+                    ProxyState {
+                        mut mitm,
+                        mut mitm_crash_rx,
+                    },
+                shutdown:
+                    ShutdownHandles {
+                        mut kmsg_handle,
+                        mut dns_handle,
+                        mut memory_prefetch,
+                    },
             },
-            "wss_accept_startup_failure",
-        )
-        .await;
-        if let Some(task) = signal_handler_task.take() {
-            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
-        }
-        return Err(RunnerError::Internal(
-            "required Runner WSS accept loop failed to start".into(),
-        ));
-    }
-
-    let readiness: RunnerResult<()> = if let Some(task) = wss_task.as_mut() {
-        tokio::select! {
-            result = provider_state.provider.prepare_startup_readiness() => result.map_err(Into::into),
-            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during startup: {result:?}"))),
-        }
-    } else {
-        provider_state
-            .provider
-            .prepare_startup_readiness()
-            .await
-            .map_err(Into::into)
-    };
-    if let Err(e) = readiness {
-        let listener_failed = wss_failed
-            .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
-            || wss_task
-                .as_ref()
-                .is_some_and(runner_wss::AcceptTask::is_finished);
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        let startup_readiness_cancelled = provider_state.cancel.is_cancelled();
-        let cleanup_reason = if startup_readiness_cancelled {
-            "provider_startup_readiness_cancelled"
-        } else {
-            "provider_startup_readiness_failure"
-        };
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
+        signal:
+            SignalController {
+                mut mode_rx,
+                lifecycle,
+                handler_task: mut signal_handler_task,
             },
-            cleanup_reason,
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, cleanup_reason).await;
-        }
-        if startup_readiness_cancelled && !listener_failed {
-            return Ok(());
-        }
-        return Err(e);
-    }
-
-    let (factory_result, startup_listener_error) = if let Some(task) = wss_task.as_mut() {
-        let startup = start_factories(&runner.profiles, runtime.as_mut());
-        tokio::pin!(startup);
-        tokio::select! {
-            result = &mut startup => (result, None),
-            result = task.wait() => {
-                let error = RunnerError::Internal(format!(
-                    "required Runner WSS accept loop stopped during factory startup: {result:?}"
-                ));
-                // Listener failure already closes admission and changes lifecycle.
-                // Keep the external factory work owned until it returns: dropping
-                // it would bypass partial-factory shutdown and detach physical IO
-                // over shared runtime resources. The failed-ready path below then
-                // joins every completed factory before runtime teardown.
-                (startup.await, Some(error))
-            }
-        }
-    } else {
-        (
-            start_factories(&runner.profiles, runtime.as_mut()).await,
-            None,
-        )
-    };
-    let mut factories = match factory_result {
-        Ok(factories) => factories,
-        Err(e) => {
-            if let Some(task) = wss_task.take() {
-                task.stop().await;
-            }
-            shutdown_startup_resources_after_startup_failure(
-                StartupFailureResources {
-                    provider: provider_state.provider.as_ref(),
-                    runtime: Some(runtime.as_mut()),
-                    mitm: &mut mitm,
-                    kmsg_handle,
-                    dns_handle,
-                    memory_prefetch: &mut memory_prefetch,
-                    status: shared.status.as_ref(),
-                },
-                "factory_startup_failure",
-            )
-            .await;
-            if let Some(handler_task) = signal_handler_task.take() {
-                abort_signal_handler_task(handler_task, "factory_startup_failure").await;
-            }
-            return Err(e);
-        }
-    };
-    // A dead listener cannot be followed by healthy status, heartbeat or claims.
-    if startup_listener_error.is_some()
-        || wss_failed
-            .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
-        || wss_task
-            .as_ref()
-            .is_some_and(runner_wss::AcceptTask::is_finished)
-    {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        if let Err(error) = shutdown_factory_instances(&mut factories, None).await {
-            warn!(%error, "failed to shut down factories after WSS startup failure");
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "wss_accept_startup_failure",
-        )
-        .await;
-        if let Some(task) = signal_handler_task.take() {
-            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
-        }
-        return Err(startup_listener_error.unwrap_or_else(|| {
-            RunnerError::Internal("required Runner WSS accept loop exited during startup".into())
-        }));
-    }
-    let startup_mode = lifecycle.mark_startup_ready();
-    if let Err(error) = shared.status.set_mode(startup_mode).await {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        handle_stopping_signal(
-            "startup status persistence failure",
-            &provider_state.cancel,
-            &provider_state.cancel_tokens,
-            &lifecycle,
-        )
-        .await;
-        if let Err(factory_error) = shutdown_factory_instances(&mut factories, None).await {
-            warn!(
-                error = %factory_error,
-                "failed to shut down factories after startup status persistence failure"
-            );
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "startup_status_persistence_failure",
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, "startup_status_persistence_failure").await;
-        }
-        return Err(RunnerError::Internal(format!(
-            "persist ready runner status: {error}"
-        )));
-    }
+        mut wss_task,
+        wss_failed,
+        mut factories,
+        prune_listener,
+        prune_admission,
+        startup_mode,
+    } = started;
 
     let mut jobs: JoinSet<RunCancellationRegistration> = JoinSet::new();
 
@@ -1593,13 +1263,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         HOME_CACHE_RECONCILIATION_PERIOD,
     );
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut home_cache_gc_handle = None;
-    let mut status_retry_handle = None;
-    let mut draining_idle_pool_drained = false;
-    let mut idle_drain_task: Option<IdleCleanupTask<()>> = None;
-    let mut idle_drain_current = false;
-    let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
-    let mut pending_finalizing_retry = false;
+    let mut maintenance = MaintenanceTasks::new();
+    let mut soft_drain = soft_drain::SoftDrain::new();
+    let mut pending_candidate = PendingCandidate::new();
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
@@ -1629,10 +1295,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 break;
             }
         }
-        if mode != RunnerMode::Running {
-            pending_finalizing_candidate.clear();
-            pending_finalizing_retry = false;
-        }
+        pending_candidate.clear_if_inactive(mode);
         blank_pool.cancel_if_inactive(mode);
         match mode {
             RunnerMode::Starting => {}
@@ -1643,31 +1306,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // to teardown.
             RunnerMode::Stopping => break,
             RunnerMode::Draining => {
-                if !draining_idle_pool_drained
-                    && idle_drain_task.is_none()
-                    && claim_tasks.is_empty()
-                {
+                if claim_tasks.is_empty() {
                     // Settle admission before removing inventory that an
                     // in-flight claim may return or need for activation. Then
                     // release idle budget and keep servicing running jobs.
-                    idle_drain_task = Some(
-                        idle_destroy_tracker
-                            .start_drain(
-                                Arc::clone(&shared.idle_pool),
-                                Arc::clone(&shared.status),
-                                "draining",
-                            )
-                            .await,
-                    );
-                    idle_drain_current = true;
+                    soft_drain
+                        .start_if_needed(&idle_destroy_tracker, &shared.idle_pool, &shared.status)
+                        .await;
                 }
-                if draining_idle_pool_drained && jobs.is_empty() && claim_tasks.is_empty() {
+                if soft_drain.batch_completed() && jobs.is_empty() && claim_tasks.is_empty() {
                     // Watch updates can coalesce a resume and renewed drain.
                     // Recheck inventory under the same exclusive access that
                     // commits natural stop so a prior batch cannot skip it.
                     let pool = shared.idle_pool.lock().await;
                     if !pool.is_empty() {
-                        draining_idle_pool_drained = false;
+                        soft_drain.inventory_changed();
                         continue;
                     }
                     // Natural drain complete — commit to Stopping so teardown
@@ -1689,8 +1342,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             RunnerMode::Running => {
-                draining_idle_pool_drained = false;
-                idle_drain_current = false;
+                soft_drain.resume();
             }
         }
 
@@ -1708,12 +1360,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
-        if pending_finalizing_retry
-            && mode == RunnerMode::Running
-            && claim_tasks.has_capacity()
-            && let Some(candidate) = pending_finalizing_candidate.take()
-        {
-            pending_finalizing_retry = false;
+        if let Some(candidate) = pending_candidate.take_retry(mode, claim_tasks.has_capacity()) {
             claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
         }
         let can_discover = if matches!(mode, RunnerMode::Running) {
@@ -1734,31 +1381,21 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
-        let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
+        let pending_finalizing_deadline =
+            pending_candidate.expiry_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
-            result = async {
-                match idle_drain_task.as_mut() {
-                    Some(task) => task.join().await,
-                    None => std::future::pending().await,
-                }
-            }, if idle_drain_task.is_some() => {
-                idle_drain_task = None;
-                match result {
-                    Ok(()) => {
-                        draining_idle_pool_drained = idle_drain_current && lifecycle.current_mode() == RunnerMode::Draining;
-                    }
-                    Err(error) => {
-                        warn!(%error, "idle drain cleanup producer lost");
-                        handle_stopping_signal(
-                            "idle drain cleanup producer lost",
-                            &provider_state.cancel,
-                            &provider_state.cancel_tokens,
-                            &lifecycle,
-                        ).await;
-                        terminal_error.get_or_insert_with(|| {
-                            RunnerError::Internal("idle drain cleanup producer lost".to_owned())
-                        });
-                    }
+            result = soft_drain.join(), if soft_drain.is_in_flight() => {
+                if let Err(error) = soft_drain.complete(result, &lifecycle) {
+                    warn!(%error, "idle drain cleanup producer lost");
+                    handle_stopping_signal(
+                        "idle drain cleanup producer lost",
+                        &provider_state.cancel,
+                        &provider_state.cancel_tokens,
+                        &lifecycle,
+                    ).await;
+                    terminal_error.get_or_insert_with(|| {
+                        RunnerError::Internal("idle drain cleanup producer lost".to_owned())
+                    });
                 }
             }
             result = async {
@@ -1821,7 +1458,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = pending_finalizing_candidate.for_admission(candidate);
+                let candidate = pending_candidate.for_admission(candidate);
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
             }
@@ -1830,7 +1467,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             {
                 if let Some(candidate) = candidate {
                     ready_direct_candidates_left -= 1;
-                    let candidate = pending_finalizing_candidate.for_admission(candidate);
+                    let candidate = pending_candidate.for_admission(candidate);
                     claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 } else {
                     ready_direct_candidates_left = 0;
@@ -1875,10 +1512,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                if let Some(candidate) = result.pending_candidate
-                    && *mode_rx.borrow() == RunnerMode::Running
-                {
-                    pending_finalizing_candidate.retain(candidate);
+                if let Some(candidate) = result.pending_candidate {
+                    pending_candidate.retain(candidate, *mode_rx.borrow());
                 }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
@@ -1935,25 +1570,19 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     )?;
                 }
             }
-            result = next_maintenance_task(&mut home_cache_gc_handle, "home cache GC") => {
-                home_cache_gc_handle = None;
-                home_cache_gc_tick.reset();
+            completion = maintenance.wait() => {
+                let (result, stopping_reason) = match completion {
+                    MaintenanceCompletion::HomeCacheGc(result) => {
+                        home_cache_gc_tick.reset();
+                        (result, "home cache GC task failure")
+                    }
+                    MaintenanceCompletion::StatusRetry(result) => {
+                        (result, "status retry task failure")
+                    }
+                };
                 if let Err(error) = result {
                     handle_stopping_signal(
-                        "home cache GC task failure",
-                        &provider_state.cancel,
-                        &provider_state.cancel_tokens,
-                        &lifecycle,
-                    ).await;
-                    terminal_error = Some(error);
-                    break;
-                }
-            }
-            result = next_maintenance_task(&mut status_retry_handle, "status retry") => {
-                status_retry_handle = None;
-                if let Err(error) = result {
-                    handle_stopping_signal(
-                        "status retry task failure",
+                        stopping_reason,
                         &provider_state.cancel,
                         &provider_state.cancel_tokens,
                         &lifecycle,
@@ -1963,11 +1592,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             _ = home_cache_gc_tick.tick() => {
-                if home_cache_gc_handle.is_none()
-                    && let Some(cache) = exec_config.home_cache.clone()
-                {
-                    home_cache_gc_handle = Some(home_cache_gc_task(cache));
-                }
+                maintenance.request_home_cache_gc(exec_config.home_cache.as_ref());
             }
             // Mode changes (signals)
             _ = mode_rx.changed() => {}
@@ -2066,19 +1691,15 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
                 heartbeat.request(live_mode)?;
-                if status_retry_handle.is_none() {
-                    status_retry_handle = Some(status_retry_task(Arc::clone(&shared.status)));
-                }
+                maintenance.request_status_retry(&shared.status);
                 #[cfg(test)]
                 test_hooks
                     .test_observer
                     .notify_routine_heartbeat_requested(live_mode);
             }
-            _ = sleep_until_optional_instant(pending_finalizing_deadline),
-                if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running
-                    && claim_tasks.has_capacity() =>
+            _ = sleep_until_optional_instant(pending_finalizing_deadline) =>
             {
-                let Some(candidate) = pending_finalizing_candidate.take_expired() else {
+                let Some(candidate) = pending_candidate.take_expired() else {
                     continue;
                 };
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
@@ -2087,11 +1708,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // up-to-10s blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                if live_mode == RunnerMode::Running {
-                    // A wakeup observed while all claim slots are occupied must
-                    // survive until a completion opens a slot.
-                    pending_finalizing_retry = true;
-                }
+                pending_candidate.request_retry(live_mode);
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
                     RunnerMode::Running => "budget_exhausted",
@@ -2209,17 +1826,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     test_hooks
         .test_observer
         .record(StartLoopEvent::MaintenanceDrainEntered);
-    for (name, task) in [
-        ("status retry", &mut status_retry_handle),
-        ("home cache GC", &mut home_cache_gc_handle),
-    ] {
-        if task.is_some()
-            && let Err(error) = next_maintenance_task(task, name).await
-        {
-            error!(%error, "failed to drain maintenance task");
-            terminal_error.get_or_insert(error);
-        }
-        *task = None;
+    if let Err(error) = maintenance.drain().await {
+        terminal_error.get_or_insert(error);
     }
     teardown.phase_complete("maintenance_drain", phase);
 
@@ -2340,6 +1948,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         .test_observer
         .notify_destroy_tasks_drain_completed();
     teardown.phase_complete("destroy_tasks_drain", phase);
+    let phase = teardown.phase_start("memory_prefetch_drain");
+    memory_prefetch.drain().await;
+    teardown.phase_complete("memory_prefetch_drain", phase);
     let phase = teardown.phase_start("background_fill_shutdown");
     exec_config.background_fill.shutdown().await;
     exec_config.decoded_cache.shutdown().await;
@@ -2397,10 +2008,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         terminal_error.get_or_insert(error.into());
     }
     teardown.phase_complete("kmsg_stop", phase);
-    let phase = teardown.phase_start("memory_prefetch_drain");
-    memory_prefetch.drain().await;
-    teardown.phase_complete("memory_prefetch_drain", phase);
-
     let phase = teardown.phase_start("status_stopped");
     if let Err(error) = shared.status.set_mode(RunnerMode::Stopped).await {
         warn!(%error, "failed to persist final stopped runner status");

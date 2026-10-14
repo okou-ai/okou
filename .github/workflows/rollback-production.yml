@@ -91,7 +91,7 @@ jobs:
           VERCEL_ORG_ID: ${{ vars.VERCEL_TEAM_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID_API }}
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: bash .github/scripts/resolve-production-rollback-target.sh
+        run: bash .github/scripts/release/resolve-production-rollback-target.sh
 
   rollback-runner:
     name: Roll back Runner (${{ matrix.label }})
@@ -143,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          hosts=$(.github/scripts/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
+          hosts=$(.github/scripts/runner/runner-host-architecture-groups.sh hosts "$RUNNER_HOST_GROUP_ID")
           if [ -z "$hosts" ]; then
             echo "::error::No metal hosts resolved for ${RUNNER_HOST_GROUP_ID}."
             exit 1

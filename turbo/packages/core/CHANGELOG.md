@@ -1,5 +1,225 @@
 # Changelog
 
+## [8.757.0](https://github.com/okou-ai/okou/compare/core-v8.756.0...core-v8.757.0) (2026-10-14)
+
+
+### Features
+
+* log link wallet usage and enable general availability ([#40058](https://github.com/okou-ai/okou/issues/40058)) ([a74aa11](https://github.com/okou-ai/okou/commit/a74aa11ef6782fbd5d70513e95cb0352cf6409b4))
+
+
+### Bug Fixes
+
+* clarify when to use link wallet for purchases ([#40051](https://github.com/okou-ai/okou/issues/40051)) ([fde8e03](https://github.com/okou-ai/okou/commit/fde8e038215a1ec8d899e6318931e10a73fb179d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.561.0
+
+## [8.756.0](https://github.com/okou-ai/okou/compare/core-v8.755.0...core-v8.756.0) (2026-10-14)
+
+
+### Features
+
+* add write-only connector and remote control cli management ([#40008](https://github.com/okou-ai/okou/issues/40008)) ([80c57de](https://github.com/okou-ai/okou/commit/80c57de957fa0f4b38fdd064181b54f0a0caa24f))
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+
+## [8.755.0](https://github.com/okou-ai/okou/compare/core-v8.754.0...core-v8.755.0) (2026-10-14)
+
+
+### Features
+
+* **core:** enable agent suggestions for staff organizations ([#40020](https://github.com/okou-ai/okou/issues/40020)) ([8f9c3da](https://github.com/okou-ai/okou/commit/8f9c3da31b7745ebf99d2285963bed426220edae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.0
+
+## [8.754.0](https://github.com/okou-ai/okou/compare/core-v8.753.2...core-v8.754.0) (2026-10-14)
+
+
+### Features
+
+* add link payment credential retrieval to wallet cli ([#40016](https://github.com/okou-ai/okou/issues/40016)) ([6844864](https://github.com/okou-ai/okou/commit/6844864ee67b12e4d95967214a6487f454fa82c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.559.0
+
+## [8.753.2](https://github.com/okou-ai/okou/compare/core-v8.753.1...core-v8.753.2) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.3
+
+## [8.753.1](https://github.com/okou-ai/okou/compare/core-v8.753.0...core-v8.753.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.2
+
+## [8.753.0](https://github.com/okou-ai/okou/compare/core-v8.752.2...core-v8.753.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive token and realtime auth diagnostics ([#39916](https://github.com/okou-ai/okou/issues/39916)) ([ba5b45a](https://github.com/okou-ai/okou/commit/ba5b45a6d899ac1c387c94babeeca1cd080b1a8a))
+
+## [8.752.2](https://github.com/okou-ai/okou/compare/core-v8.752.1...core-v8.752.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* align wallet authorization cards and resume chat after consent ([#39918](https://github.com/okou-ai/okou/issues/39918)) ([b8f5ba9](https://github.com/okou-ai/okou/commit/b8f5ba9616117089475b8aef8854808195ec09f4))
+
+
+### Refactoring
+
+* remove abandoned home task recommendations ([#39928](https://github.com/okou-ai/okou/issues/39928)) ([334940b](https://github.com/okou-ai/okou/commit/334940bb4da2cf321bf65b6a376c4dc1ae12daa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.1
+
+## [8.752.1](https://github.com/okou-ai/okou/compare/core-v8.752.0...core-v8.752.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.0
+
+## [8.752.0](https://github.com/okou-ai/okou/compare/core-v8.751.2...core-v8.752.0) (2026-10-14)
+
+
+### Features
+
+* add shared sandbox channel protocol and peer ([#39789](https://github.com/okou-ai/okou/issues/39789)) ([e50944d](https://github.com/okou-ai/okou/commit/e50944da2ecbf4eb66b6518f4cbad7598fd72833))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.557.0
+
+## [8.751.2](https://github.com/okou-ai/okou/compare/core-v8.751.1...core-v8.751.2) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.2
+
+## [8.751.1](https://github.com/okou-ai/okou/compare/core-v8.751.0...core-v8.751.1) (2026-10-13)
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.1
+
+## [8.751.0](https://github.com/okou-ai/okou/compare/core-v8.750.0...core-v8.751.0) (2026-10-13)
+
+
+### Features
+
+* enable vnc access for staff ([#39748](https://github.com/okou-ai/okou/issues/39748)) ([99cb991](https://github.com/okou-ai/okou/commit/99cb991fd7e35f63f479801ac25219385bbed6bd))
+
+
+### Refactoring
+
+* remove slack link unfurls feature switch ([#39745](https://github.com/okou-ai/okou/issues/39745)) ([18435fb](https://github.com/okou-ai/okou/commit/18435fb32d76f20197f1f9174529bcf0c3215287))
+
+## [8.750.0](https://github.com/okou-ai/okou/compare/core-v8.749.0...core-v8.750.0) (2026-10-13)
+
+
+### Features
+
+* add agent-managed next-step suggestions ([#39632](https://github.com/okou-ai/okou/issues/39632)) ([dad6cd0](https://github.com/okou-ai/okou/commit/dad6cd007f63399ea88652e0a9fcb99123e5a87a))
+* enable artifact previews and slack link unfurls for everyone ([#39701](https://github.com/okou-ai/okou/issues/39701)) ([e8018ca](https://github.com/okou-ai/okou/commit/e8018cab8f6008bafa6905432215399d5893eac5))
+* enable the copper connector by default ([#39723](https://github.com/okou-ai/okou/issues/39723)) ([82b584e](https://github.com/okou-ai/okou/commit/82b584e5f6f3b7cbce92e8d49ce49f2f5ad9aa8d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.556.0
+
+## [8.749.0](https://github.com/okou-ai/okou/compare/core-v8.748.4...core-v8.749.0) (2026-10-13)
+
+
+### Features
+
+* **app:** add responsive chat resources behind the artifact button ([#39607](https://github.com/okou-ai/okou/issues/39607)) ([f2f1158](https://github.com/okou-ai/okou/commit/f2f1158a9328ab4c4e2b0d2569109f553501d724))
+
+
+### Bug Fixes
+
+* let agents select presentation delivery format ([#39650](https://github.com/okou-ai/okou/issues/39650)) ([264b178](https://github.com/okou-ai/okou/commit/264b17803dafe5243656a898078250880efe0a16))
+
+
+### Refactoring
+
+* remove private artifacts feature switch ([#39694](https://github.com/okou-ai/okou/issues/39694)) ([c1bcf92](https://github.com/okou-ai/okou/commit/c1bcf9249b6cedec9d52fd0115e3348bf616af6b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.555.0
+
+## [8.748.4](https://github.com/okou-ai/okou/compare/core-v8.748.3...core-v8.748.4) (2026-10-13)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.554.0
+
+## [8.748.3](https://github.com/okou-ai/okou/compare/core-v8.748.2...core-v8.748.3) (2026-10-13)
+
+
+### Bug Fixes
+
+* apply artifact cover prompts to every html publication ([#39611](https://github.com/okou-ai/okou/issues/39611)) ([f8b01e9](https://github.com/okou-ai/okou/commit/f8b01e90332fd4fc9c06d85d61cfb01e0045bdf5))
+
 ## [8.748.2](https://github.com/okou-ai/okou/compare/core-v8.748.1...core-v8.748.2) (2026-10-13)
 
 

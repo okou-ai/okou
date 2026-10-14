@@ -7,6 +7,9 @@ import posthogClientMetadata from "../assets/posthog-metadata.json" with { type:
 
 const POSTHOG_CLIENT_METADATA_PATH = "/connectors/posthog/metadata.json";
 const POSTHOG_CLIENT_METADATA_BODY = JSON.stringify(posthogClientMetadata);
+const COPPER_CALLBACK_PATH = "/connectors/copper/callback";
+const COPPER_CALLBACK_FIELDS = ["code", "state", "error", "error_description"];
+const COPPER_CALLBACK_MAX_BODY_BYTES = 16 * 1024;
 const SHARED_THREAD_PATH =
   /^\/share\/threads\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/?$/iu;
 const PREVIEW_API_ORIGIN_PATTERN =
@@ -805,7 +808,16 @@ function withAppHeaders(response, requestUrl) {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
     headers.set(name, value);
   }
-  if (requestUrl.pathname === POSTHOG_CLIENT_METADATA_PATH && response.ok) {
+  if (requestUrl.pathname === COPPER_CALLBACK_PATH) {
+    headers.set("Cache-Control", "no-store");
+    headers.set("CDN-Cache-Control", "no-store");
+    headers.set("Cloudflare-CDN-Cache-Control", "no-store");
+    headers.set("Referrer-Policy", "no-referrer");
+    headers.set("X-Robots-Tag", "noindex, nofollow");
+  } else if (
+    requestUrl.pathname === POSTHOG_CLIENT_METADATA_PATH &&
+    response.ok
+  ) {
     headers.set("Cache-Control", "public, max-age=300");
   } else if (requestUrl.pathname === "/sw.js") {
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
@@ -888,6 +900,103 @@ async function artifactPageResponse(
     200,
     "private, no-store",
   );
+}
+
+async function copperCallbackForm(request) {
+  if (!request.body) {
+    return new globalThis.URLSearchParams();
+  }
+  const reader = request.body.getReader();
+  const decoder = new globalThis.TextDecoder();
+  let cancellation;
+  const cancelReader = () => {
+    cancellation ??= reader.cancel();
+    return cancellation;
+  };
+  const cancelOnAbort = () => {
+    // Observe early rejection; this same cancellation is awaited in finally.
+    void cancelReader().catch(() => {});
+  };
+  request.signal.addEventListener("abort", cancelOnAbort, { once: true });
+  let body = "";
+  let byteLength = 0;
+  try {
+    while (true) {
+      request.signal.throwIfAborted();
+      const chunk = await reader.read();
+      request.signal.throwIfAborted();
+      if (chunk.done) {
+        break;
+      }
+      byteLength += chunk.value.byteLength;
+      if (byteLength > COPPER_CALLBACK_MAX_BODY_BYTES) {
+        return null;
+      }
+      body += decoder.decode(chunk.value, { stream: true });
+    }
+    return new globalThis.URLSearchParams(body + decoder.decode());
+  } finally {
+    request.signal.removeEventListener("abort", cancelOnAbort);
+    try {
+      await cancelReader();
+    } finally {
+      reader.releaseLock();
+    }
+  }
+}
+
+async function copperPostCallbackResponse(request, requestUrl) {
+  const contentType = request.headers
+    .get("Content-Type")
+    ?.split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  if (contentType !== "application/x-www-form-urlencoded") {
+    return new Response("Unsupported OAuth callback content type", {
+      status: 415,
+    });
+  }
+  let form;
+  try {
+    form = await copperCallbackForm(request);
+  } catch {
+    // An unreadable or cancelled provider body cannot resume authorization.
+    return new Response("Invalid OAuth callback", { status: 400 });
+  }
+  if (form === null) {
+    return new Response("OAuth callback body too large", { status: 413 });
+  }
+  if (
+    COPPER_CALLBACK_FIELDS.some((field) => {
+      return (
+        form.getAll(field).length > 1 || requestUrl.searchParams.has(field)
+      );
+    }) ||
+    requestUrl.searchParams.getAll(VERCEL_PROTECTION_BYPASS).length > 1 ||
+    form.has(VERCEL_PROTECTION_BYPASS) ||
+    !form.get("state") ||
+    Boolean(form.get("code")) === Boolean(form.get("error"))
+  ) {
+    return new Response("Invalid OAuth callback", { status: 400 });
+  }
+
+  // Copper posts the grant. Resume the existing App GET callback; the API still
+  // owns state validation, token exchange, and the original registered redirect URI.
+  const target = new URL(COPPER_CALLBACK_PATH, requestUrl.origin);
+  for (const field of COPPER_CALLBACK_FIELDS) {
+    const value = form.get(field);
+    if (value !== null) {
+      target.searchParams.set(field, value);
+    }
+  }
+  const bypass = requestUrl.searchParams.get(VERCEL_PROTECTION_BYPASS);
+  if (bypass !== null) {
+    target.searchParams.set(VERCEL_PROTECTION_BYPASS, bypass);
+  }
+  return new Response(null, {
+    status: 303,
+    headers: { Location: target.toString() },
+  });
 }
 
 async function handleRequest(
@@ -1022,14 +1131,18 @@ export function createWorker(
   return {
     async fetch(request, env) {
       const requestUrl = new URL(request.url);
-      const response = await handleRequest(
-        request,
-        env,
-        requestUrl,
-        embeddedShell,
-        clerkClientFactory,
-        apiFetcher,
-      );
+      const response =
+        request.method === "POST" &&
+        requestUrl.pathname === COPPER_CALLBACK_PATH
+          ? await copperPostCallbackResponse(request, requestUrl)
+          : await handleRequest(
+              request,
+              env,
+              requestUrl,
+              embeddedShell,
+              clerkClientFactory,
+              apiFetcher,
+            );
       const result = withAppHeaders(response, requestUrl);
       if (
         requestUrl.pathname.startsWith("/artifacts/") ||

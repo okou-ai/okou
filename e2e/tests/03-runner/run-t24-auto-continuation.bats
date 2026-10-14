@@ -51,7 +51,7 @@ assert_auto_route() {
     THREAD_ID="$(jq -er '.threadId | select(type == "string" and length > 0)' <<<"$output")"
     run runner_wait_for_run "$RUN_ID" 180
     assert_success
-    first_session="$(jq -er '.result.agentSessionId | select(type == "string" and length > 0)' <<<"$output")"
+    first_session="$(jq -er '.result.frameworkSessionId | select(type == "string" and length > 0)' <<<"$output")"
     run _wait_for_runner_chat_output "$THREAD_ID" "$RUN_ID" "$expected" 60
     assert_success
     run assert_auto_route "$RUN_ID"

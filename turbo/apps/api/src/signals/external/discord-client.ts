@@ -68,6 +68,15 @@ export const discordGuildSchema = z.object({
   owner_id: discordSnowflakeSchema,
 });
 
+const discordInviteSchema = z.object({
+  type: z.number().int().optional(),
+  guild: z
+    .object({ id: discordSnowflakeSchema, name: z.string() })
+    .nullable()
+    .optional(),
+  expires_at: z.iso.datetime({ offset: true }).nullable().optional(),
+});
+
 export const discordThreadMemberSchema = z.object({
   id: discordSnowflakeSchema,
   user_id: discordSnowflakeSchema,
@@ -302,6 +311,19 @@ async function fetchDiscordCurrentApplication(
   return result;
 }
 
+function fetchDiscordInvite(code: string, signal: AbortSignal) {
+  // Invites are public metadata. Never follow the supplied URL or attach a
+  // bot token, and never call the user-only endpoint that accepts an invite.
+  return requestDiscord(
+    {
+      path: `/invites/${encodeURIComponent(code)}?with_expiration=true`,
+      method: "GET",
+      schema: discordInviteSchema,
+    },
+    signal,
+  );
+}
+
 function fetchDiscordChannel(
   args: DiscordBotCredentials & { readonly channelId: string },
   signal?: AbortSignal,
@@ -446,6 +468,7 @@ function createDiscordMessage(
     readonly channelId: string;
     readonly content: string;
     readonly replyToMessageId?: string;
+    readonly components?: readonly DiscordActionRow[];
     readonly files?: readonly DiscordUploadFile[];
     readonly nonce?: string;
   },
@@ -466,6 +489,14 @@ function createDiscordMessage(
   const payload = {
     content,
     allowed_mentions: allowedMentions,
+    ...(args.components !== undefined
+      ? {
+          components: z
+            .array(discordActionRowSchema)
+            .max(5)
+            .parse(args.components),
+        }
+      : {}),
     ...(args.replyToMessageId !== undefined
       ? {
           message_reference: {
@@ -748,6 +779,7 @@ function editDiscordOriginalInteractionResponse(
 export const discordClient = Object.freeze({
   fetchDiscordCurrentUser,
   fetchDiscordCurrentApplication,
+  fetchDiscordInvite,
   fetchDiscordChannel,
   fetchDiscordGuild,
   fetchDiscordGuildMember,

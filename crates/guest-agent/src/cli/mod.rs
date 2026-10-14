@@ -345,12 +345,14 @@ struct AgentExecutionDeadline {
     timeout_secs: u64,
 }
 
+#[derive(Clone)]
 pub(super) struct CliRuntimeConfig<'a> {
     framework: env::Framework,
     run_id: Cow<'a, str>,
     prompt: Cow<'a, str>,
     resume_session_id: Cow<'a, str>,
     append_system_prompt: Cow<'a, str>,
+    native_continuation: Option<&'a guest_contracts::env::NativeContinuation>,
     disallowed_tools: Cow<'a, str>,
     tools: Cow<'a, str>,
     settings: Cow<'a, str>,
@@ -386,6 +388,19 @@ pub(super) struct CliRuntimeConfig<'a> {
 }
 
 impl<'a> CliRuntimeConfig<'a> {
+    fn enable_native_recovery(&mut self) {
+        if let Some(prompt) = self
+            .native_continuation
+            .and_then(|native| native.recovery_prompt.as_deref())
+        {
+            self.append_system_prompt = Cow::Owned(if self.append_system_prompt.is_empty() {
+                prompt.to_owned()
+            } else {
+                format!("{}\n\n{prompt}", self.append_system_prompt)
+            });
+        }
+    }
+
     fn from_config(
         config: &'a env::GuestConfig,
         paths: &'a paths::GuestPaths,
@@ -425,6 +440,7 @@ impl<'a> CliRuntimeConfig<'a> {
             prompt: Cow::Borrowed(&config.prompt),
             resume_session_id: Cow::Borrowed(&config.resume_session_id),
             append_system_prompt: Cow::Borrowed(&config.append_system_prompt),
+            native_continuation: config.native_continuation.as_ref(),
             disallowed_tools,
             tools: Cow::Borrowed(&config.tools),
             settings: Cow::Borrowed(&config.settings),
@@ -1064,7 +1080,47 @@ pub async fn execute_cli_with_controls_for_config_started_at(
     paths: &paths::GuestPaths,
     execution_started_at: Instant,
 ) -> Result<CliExecutionResult, AgentError> {
-    let runtime = CliRuntimeConfig::from_config(config, paths, execution_started_at)?;
+    let mut runtime = CliRuntimeConfig::from_config(config, paths, execution_started_at)?;
+    if let Some(native) = runtime.native_continuation {
+        if native.session_id.is_some() != native.generation_run_id.is_some() {
+            return Err(AgentError::Execution(
+                "native continuation provenance is incomplete".into(),
+            ));
+        }
+        let requested = native.session_id.clone();
+        let framework = runtime.framework;
+        let pi_session_id = runtime.pi_session_id.to_string();
+        let claude_dir = runtime.claude_config_dir.to_string();
+        let codex_home = runtime.codex_home_dir.to_string();
+        let retained = tokio::task::spawn_blocking(move || {
+            let Some(id) = requested else { return Ok(None) };
+            if framework == env::Framework::Pi && id != pi_session_id {
+                return Ok(None);
+            }
+            crate::native_continuation::retained_session_is_usable(
+                framework,
+                &id,
+                &claude_dir,
+                &codex_home,
+            )
+            .map(|usable| usable.then_some(id))
+        })
+        .await
+        .map_err(|error| {
+            AgentError::Execution(format!("native continuation preparation failed: {error}"))
+        })??;
+        let resumed = retained.is_some();
+        runtime.resume_session_id = Cow::Owned(retained.unwrap_or_default());
+        if !resumed {
+            if framework == env::Framework::Pi {
+                crate::native_continuation::prepare_fresh_pi_session(
+                    runtime.pi_session_id.as_ref(),
+                    runtime.run_id.as_ref(),
+                )?;
+            }
+            runtime.enable_native_recovery();
+        }
+    }
     execute_cli_inner(masker, heartbeat_monitor, http, controls, &runtime).await
 }
 
@@ -2455,6 +2511,7 @@ mod tests {
 
     fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::GuestConfig {
         env::GuestConfig {
+            sandbox_startup_path: None,
             run_id: "run-okou-env-test".to_string(),
             api_url: "https://runner.example".to_string(),
             api_token: "test-token".to_string(),
@@ -2463,6 +2520,7 @@ mod tests {
             home_reuse_result: String::new(),
             prompt: "prompt".to_string(),
             append_system_prompt: String::new(),
+            native_continuation: None,
             vercel_bypass: String::new(),
             resume_session_id: String::new(),
             api_start_time: String::new(),
@@ -2530,6 +2588,7 @@ mod tests {
             prompt: Cow::Borrowed(prompt),
             resume_session_id: Cow::Borrowed(""),
             append_system_prompt: Cow::Borrowed(append_system_prompt),
+            native_continuation: None,
             disallowed_tools: Cow::Borrowed(""),
             tools: Cow::Borrowed(""),
             settings: Cow::Borrowed(""),

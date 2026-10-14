@@ -141,8 +141,17 @@ function mockUsageStory(): UsageStoryRequests {
               providers: [
                 {
                   provider: "gpt-5.6-sol",
-                  credits: aliceModelCredits,
-                  usageKinds: [{ kind: "model", credits: aliceModelCredits }],
+                  credits: aliceModelCredits / 2,
+                  usageKinds: [
+                    { kind: "model", credits: aliceModelCredits / 2 },
+                  ],
+                },
+                {
+                  provider: "openai/gpt-5.6-sol",
+                  credits: aliceModelCredits / 2,
+                  usageKinds: [
+                    { kind: "model", credits: aliceModelCredits / 2 },
+                  ],
                 },
               ],
             },
@@ -358,7 +367,10 @@ test("Explain a member's model credit usage", async () => {
   await expect(
     screen.findByText("Models - 6,000"),
   ).resolves.toBeInTheDocument();
-  expect(screen.getByText("GPT 5.6 Sol")).toBeInTheDocument();
+  expect(screen.getByText("GPT 5.6 Sol").parentElement).toHaveTextContent(
+    "GPT 5.6 Sol6,000",
+  );
+  expect(screen.queryByText("openai/gpt-5.6-sol")).not.toBeInTheDocument();
 });
 
 test("Review workspace credit usage for the last seven days", async () => {

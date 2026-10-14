@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 ruby -rjson -ropen3 -rtmpdir -rfileutils -ryaml - "$repo_root" <<'RUBY'
 root = ARGV.fetch(0)
-helper = File.join(root, ".github/scripts/runner-native-test-artifact.sh")
+helper = File.join(root, ".github/scripts/runner/runner-native-test-artifact.sh")
 
 def run_helper(helper, env, operation, success: true)
   output, error, status = Open3.capture3(env, "bash", helper, operation)
@@ -243,13 +243,61 @@ Dir.mktmpdir("native-test-artifact") do |dir|
   %w[host-cpu-fairness guest-rpc-firecracker].each do |prefix|
     producer = jobs.fetch("#{prefix}-build")
     consumer = jobs.fetch("#{prefix}-test")
-    upload = producer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner-native-test-artifact.sh publish" }
-    download = consumer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner-native-test-artifact.sh download" }
+    upload = producer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner/runner-native-test-artifact.sh publish" }
+    download = consumer.fetch("steps").find { |step| step["run"] == "bash .github/scripts/runner/runner-native-test-artifact.sh download" }
     raise "missing R2 transport" unless upload && download
     raise "R2 failures must fail jobs" if upload["continue-on-error"] || download["continue-on-error"]
-    raise "consumer must retain producer attempt" unless consumer.dig("env", "PRODUCER_ATTEMPT") == "${{ needs.#{prefix}-build.outputs.producer-attempt }}"
+    if prefix == "host-cpu-fairness"
+      raise "consumer must retain producer attempt" unless consumer.dig("env", "PRODUCER_ATTEMPT") == "${{ needs.#{prefix}-build.outputs.producer-attempt }}"
+    end
     [producer, consumer].each do |job|
       raise "credentials must stay step-scoped" if job.fetch("env").key?("AWS_SECRET_ACCESS_KEY")
+    end
+  end
+
+  # Partial matrix reruns leave successful producers on different attempts.
+  # Exercise the workflow's real receipt command and exact R2 consumer, in both
+  # output completion orders, without changing the artifact validation policy.
+  producer = jobs.fetch("guest-rpc-firecracker-build")
+  consumer = jobs.fetch("guest-rpc-firecracker-test")
+  selection = consumer.dig("env", "PRODUCER_ATTEMPT").match(
+    /\A\$\{\{ needs\.guest-rpc-firecracker-build\.outputs\[format\('([^']+)', matrix\.id\)\] \}\}\z/
+  )
+  raise "matrix consumer must select its architecture's producer attempt" unless selection
+  receipt = producer.fetch("steps").find { |step| step["id"] == "producer" }
+  raise "missing architecture receipt" unless receipt && receipt.dig("env", "NATIVE_ARCH") == '${{ matrix.id }}'
+  published = producer.fetch("steps").index { |step| step["run"] == "bash .github/scripts/runner/runner-native-test-artifact.sh publish" }
+  raise "attempt advertised before publication" unless published < producer.fetch("steps").index(receipt)
+  mixed = [["arm64", "aarch64-unknown-linux-musl", "2"], ["x86_64", "x86_64-unknown-linux-musl", "1"]]
+  outputs = mixed.map do |arch, target, attempt|
+    built = File.join(dir, "mixed-#{arch}")
+    inputs = env.merge("GITHUB_RUN_ID" => "789", "TARGET_TRIPLE" => target,
+                       "TEST_NAME" => "guest_rpc", "PRODUCER_ATTEMPT" => attempt, "ARTIFACT_DIR" => built)
+    run_helper(helper, inputs, "build")
+    run_helper(helper, inputs, "publish")
+    output_file = File.join(dir, "attempt-#{arch}")
+    _, error, status = Open3.capture3(inputs.merge("NATIVE_ARCH" => arch, "GITHUB_OUTPUT" => output_file),
+                                    "bash", "-euo", "pipefail", "-c", receipt.fetch("run"))
+    raise "architecture receipt failed: #{error}" unless status.success?
+    key = selection[1].gsub("{0}", arch)
+    raise "unbound architecture output" unless producer.fetch("outputs").fetch(key) == "${{ steps.producer.outputs.#{key} }}"
+    emitted = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
+    raise "shared or incorrect producer receipt" unless emitted == {key => attempt}
+    emitted
+  end
+  [outputs, outputs.reverse].each_with_index do |ordered, order|
+    combined = ordered.reduce({}, :merge)
+    mixed.each do |arch, target, attempt|
+      received = File.join(dir, "mixed-consumer-#{arch}-#{order}")
+      inputs = env.merge("GITHUB_RUN_ID" => "789", "GITHUB_RUN_ATTEMPT" => "3",
+                         "TARGET_TRIPLE" => target, "TEST_NAME" => "guest_rpc", "ARTIFACT_DIR" => received,
+                         "PRODUCER_ATTEMPT" => combined.fetch(selection[1].gsub("{0}", arch)))
+      other_attempt = attempt == "1" ? "2" : "1"
+      run_helper(helper, inputs.merge("PRODUCER_ATTEMPT" => other_attempt), "download", success: false)
+      raise "wrong architecture attempt exposed a directory" if File.exist?(received)
+      run_helper(helper, inputs, "download")
+      run_helper(helper, inputs, "validate")
+      raise "mixed rerun fetched wrong producer" unless JSON.parse(File.read(File.join(received, "manifest.json"))).fetch("attempt") == attempt
     end
   end
 end

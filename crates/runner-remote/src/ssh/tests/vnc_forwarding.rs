@@ -1,3 +1,4 @@
+use runner_provider::AblySideMessageHandler;
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use tokio::{io::AsyncWriteExt, net::TcpStream, task::JoinHandle};
@@ -6,6 +7,7 @@ use super::{
     harness::{CONNECTION, Harness, PASSWORD, Reply, TOKEN},
     terminal, wait_for,
 };
+use crate::guest_rpc::Runtime;
 use crate::test_fixtures::{
     http::{HttpClientConfig, http_client},
     vnc::{optional_kerberos_request, supported_profiles},
@@ -16,6 +18,154 @@ use crate::vnc::{
 };
 
 struct BridgeTask(JoinHandle<()>);
+
+async fn desktop(
+    h: &Harness,
+    peer: &Peer,
+    connection: &str,
+    vnc: Arc<VncRuntime>,
+) -> (Runtime, String, JoinHandle<()>) {
+    h.api.mock_async(|when, then| {
+        when.method("POST").path(format!("/api/runners/runs/{}/vnc/resolve", h.run))
+            .json_body_includes(json!({"connectionId":connection}).to_string());
+            then.status(200).header("X-VNC-Connection-Created-At", super::harness::CREATED_AT).json_body(json!({
+            "outcome":"resolved_transport","host":"desktop.internal","port":5900,"generation":11,
+            "serverName":"vnc.example.test","transport":{"type":"ssh","connectionId":CONNECTION,"generation":7},
+            "authentication":{"method":"vnc_password","password":" secret "},
+            "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":peer.ca}}
+        }));
+    }).await;
+    h.api
+        .mock_async(|when, then| {
+            when.method("POST")
+                .path(format!("/api/runners/runs/{}/vnc/check", h.run))
+                .json_body_includes(
+                    json!({"connectionId":connection,"expectedGeneration":11,
+                "expectedTransport":{"type":"ssh","connectionId":CONNECTION,"generation":7}})
+                    .to_string(),
+                );
+            then.status(200).json_body(json!({"outcome":"valid"}));
+        })
+        .await;
+    let start = h.raw(
+        json!({"version":1,"method":"vnc.session.start","remaining_ms":60000,
+        "params":{"connectionId":connection,"mode":"shared"}})
+        .to_string(),
+    );
+    let bridge = async {
+        let mut forwarded = h.accept_forwarded().await;
+        let mut target = TcpStream::connect(peer.address).await.unwrap();
+        BridgeTask(tokio::spawn(async move {
+            let _ = tokio::io::copy_bidirectional(&mut forwarded, &mut target).await;
+            let _ = forwarded.shutdown().await;
+            let _ = target.shutdown().await;
+        }))
+    };
+    let (started, BridgeTask(bridge)) = tokio::join!(start, bridge);
+    assert_eq!(terminal(&started)["outcome"], "started");
+    let session = terminal(&started)["session"]["sessionId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    (
+        Runtime {
+            ssh: Some(Arc::clone(&h.runtime)),
+            vnc: Some(vnc),
+            usage: None,
+        },
+        session,
+        bridge,
+    )
+}
+
+#[tokio::test]
+async fn vnc_revocation_and_cleanup_preserve_ssh_peers_while_ssh_revocation_retires_its_dependent_vnc()
+ {
+    use super::sessions::{bytes, rpc, state, write};
+    const VNC: &str = "2d4b8991-a043-4d4d-a79d-d0051ca09aee";
+    const INDEPENDENT: &str = "58629e7e-6504-46f7-a294-ce1732b83b82";
+    for action in ["vnc", "close", "ssh"] {
+        let mut h = Harness::new(Reply::Process).await;
+        let peer = Peer::new().await;
+        let vnc = VncRuntime::official(
+            http_client(HttpClientConfig {
+                api_url: h.api.base_url(),
+                vercel_bypass: None,
+                client_session_id: "vnc-isolation".into(),
+            }),
+            TOKEN,
+            h.identity,
+        )
+        .unwrap()
+        .unwrap();
+        h.restart_with_vnc(Arc::clone(&vnc)).await;
+        let resolve = h.resolve(h.credential(true)).await;
+        let independent = h.resolve_connection(INDEPENDENT, h.credential(true)).await;
+        let (runtime, session, bridge) = desktop(&h, &peer, VNC, vnc).await;
+        let ssh_id = if action == "ssh" {
+            INDEPENDENT
+        } else {
+            CONNECTION
+        };
+        let shell = rpc(
+            &h,
+            "start",
+            json!({"sshConnectionId":ssh_id,"program":{"type":"shell"},"pty":false}),
+        )
+        .await;
+        assert_eq!(shell["type"], "started");
+        let shell = shell["session_id"].clone();
+        state(&h, &shell, "running").await;
+        let directory = tempfile::tempdir().unwrap();
+        let release = directory.path().join("release");
+        let mut request = super::harness::params();
+        request["sshConnectionId"] = json!(ssh_id);
+        request["command"] = json!(format!(
+            "while [ ! -e '{}' ]; do sleep 0.01; done; printf once",
+            release.display()
+        ));
+        let (exec, ()) = tokio::join!(h.request(request), async {
+            wait_for(|| h.observed.commands.lock().unwrap().len() == 1).await;
+            if action == "close" {
+                let closed = h
+                    .raw(
+                        json!({"version":1,"method":"vnc.session.close","remaining_ms":60000,
+                    "params":{"sessionId":session}})
+                        .to_string(),
+                    )
+                    .await;
+                assert_eq!(terminal(&closed)["outcome"], "closed");
+            } else {
+                assert!(runtime.handle(&ably_subscriber::Message {
+                    name: Some(format!("{action}-authority-invalidated")),
+                    data: json!({"runId":h.run,"connectionId":if action=="vnc" {VNC} else {CONNECTION}}),
+                    id: None, client_id: None, timestamp: None,
+                }));
+            }
+            tokio::time::timeout(Duration::from_secs(5), bridge)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!h.cancel.is_cancelled());
+            let listed = h.raw(json!({"version":1,"method":"vnc.session.list","remaining_ms":60000,"params":{}}).to_string()).await;
+            assert_eq!(terminal(&listed)["sessions"], json!([]));
+            write(&h, &shell, "printf live; exit 0\n", false).await;
+            state(&h, &shell, "finished").await;
+            assert_eq!(
+                bytes(&rpc(&h, "read", json!({"sessionId":shell,"cursor":0})).await),
+                b"live"
+            );
+            std::fs::write(&release, []).unwrap();
+        });
+        assert_eq!(terminal(&exec)["type"], "finished");
+        assert_eq!(super::output(&exec, "stdout"), b"once");
+        resolve.assert_calls_async(1).await;
+        independent
+            .assert_calls_async(usize::from(action == "ssh"))
+            .await;
+        h.shutdown().await;
+    }
+}
 
 fn password_credential(harness: &Harness) -> serde_json::Value {
     let mut credential = harness.credential(true);
@@ -111,20 +261,22 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                         }),
                         true,
                     ));
-                then.status(200).json_body(json!({
-                    "outcome": "resolved_transport",
-                    "host": "desktop.internal",
-                    "port": 5900,
-                    "generation": 11,
-                    "serverName": server_name,
-                    "transport": {
-                        "type": "ssh",
-                        "connectionId": CONNECTION,
-                        "generation": 7
-                    },
-                    "authentication": authentication,
-                    "security": security
-                }));
+                then.status(200)
+                    .header("X-VNC-Connection-Created-At", super::harness::CREATED_AT)
+                    .json_body(json!({
+                        "outcome": "resolved_transport",
+                        "host": "desktop.internal",
+                        "port": 5900,
+                        "generation": 11,
+                        "serverName": server_name,
+                        "transport": {
+                            "type": "ssh",
+                            "connectionId": CONNECTION,
+                            "generation": 7
+                        },
+                        "authentication": authentication,
+                        "security": security
+                    }));
             })
             .await;
         let vnc_check = harness
@@ -247,7 +399,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
             pin.assert_calls_async(1).await;
         }
         vnc_resolve.assert_calls_async(1).await;
-        vnc_check.assert_calls_async(2).await;
+        vnc_check.assert_calls_async(1).await;
         harness.shutdown().await;
     }
 }

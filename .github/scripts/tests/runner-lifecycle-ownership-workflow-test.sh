@@ -5,17 +5,11 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cleanup_workflow="${repo_root}/.github/workflows/cleanup.yml"
 stale_workflow="${repo_root}/.github/workflows/cleanup-stale.yml"
 turbo_workflow="${repo_root}/.github/workflows/turbo.yml"
-namespace_cleanup="${repo_root}/.github/scripts/cleanup-pr-runner-namespace.sh"
-namespace_discovery="${repo_root}/.github/scripts/discover-runner-pr-namespaces.sh"
-runner_cleanup_playbook="${repo_root}/ansible/playbooks/cleanup-pr-runner.yml"
 
 ruby -ryaml - \
   "$cleanup_workflow" \
   "$stale_workflow" \
-  "$turbo_workflow" \
-  "$namespace_cleanup" \
-  "$namespace_discovery" \
-  "$runner_cleanup_playbook" <<'RUBY'
+  "$turbo_workflow" <<'RUBY'
 def named_step(job, name)
   job.fetch("steps").find { |step| step["name"] == name }
 end
@@ -77,8 +71,8 @@ unless cleanup_names.index("Wait for active CI owners before runner cleanup") <
 end
 cleanup_runner = named_step(cleanup, "Cleanup PR runners on all metal hosts")
 cleanup_runner_script = cleanup_runner.fetch("run")
-cleanup_lock_index = cleanup_runner_script.index(".github/scripts/with-runner-lifecycle-lock.sh")
-cleanup_action_index = cleanup_runner_script.index(".github/scripts/cleanup-pr-runner-namespace.sh")
+cleanup_lock_index = cleanup_runner_script.index(".github/scripts/runner/with-runner-lifecycle-lock.sh")
+cleanup_action_index = cleanup_runner_script.index(".github/scripts/runner/cleanup-pr-runner-namespace.sh")
 unless cleanup_lock_index && cleanup_action_index && cleanup_lock_index < cleanup_action_index &&
     cleanup_runner_script.include?('JOB_REF="pr-${PR_NUMBER}"') &&
     cleanup_runner_script.include?("export JOB_REF") &&
@@ -117,7 +111,7 @@ unless ssh_index && discovery_index && selection_index && cleanup_index &&
 end
 
 discovery = named_step(stale, "Discover runner PR namespaces")
-unless discovery.fetch("run") == ".github/scripts/discover-runner-pr-namespaces.sh" &&
+unless discovery.fetch("run") == ".github/scripts/runner/discover-runner-pr-namespaces.sh" &&
     discovery.dig("env", "METAL_HOSTS") == "${{ secrets.AWS_METAL_RUNNER_HOSTS }}" &&
     discovery.dig("env", "METAL_USER") == "${{ vars.AWS_METAL_RUNNER_USER }}"
   raise "stale cleanup must derive candidates from configured metal hosts"
@@ -142,8 +136,8 @@ end
 stale_script = stale_cleanup.fetch("run")
 stale_dry_run_index = stale_script.index('if [ "$DRY_RUN" = "true" ]')
 stale_handoff_index = stale_script.index("RUNNER_OWNER_SCOPE=closed-pr-cleanup")
-stale_lock_index = stale_script.index(".github/scripts/with-runner-lifecycle-lock.sh")
-stale_action_index = stale_script.index(".github/scripts/cleanup-pr-runner-namespace.sh")
+stale_lock_index = stale_script.index(".github/scripts/runner/with-runner-lifecycle-lock.sh")
+stale_action_index = stale_script.index(".github/scripts/runner/cleanup-pr-runner-namespace.sh")
 unless stale_dry_run_index && stale_handoff_index && stale_lock_index && stale_action_index &&
     stale_dry_run_index < stale_handoff_index && stale_handoff_index < stale_lock_index &&
     stale_lock_index < stale_action_index &&
@@ -153,39 +147,6 @@ end
 unless stale_script.include?('if [ "$FAILED" -gt 0 ]') &&
     !stale_script.include?("playbooks/cleanup-crates-runner.yml")
   raise "stale runner cleanup must report failures and avoid a duplicated Crates cleanup list"
-end
-
-namespace_cleanup = File.read(ARGV.fetch(3))
-state_index = namespace_cleanup.index("pr_state=")
-closed_index = namespace_cleanup.index('if [ "$pr_state" != "closed" ]')
-locked_probe_index = namespace_cleanup.index("RUNNER_OWNER_ASSERT_IDLE=true")
-barrier_index = namespace_cleanup.index("cancel-superseded-merge-group-runs.sh")
-delete_index = namespace_cleanup.index("playbooks/cleanup-pr-runner.yml")
-unless state_index && closed_index && locked_probe_index && barrier_index && delete_index &&
-    locked_probe_index < barrier_index && barrier_index < state_index &&
-    state_index < closed_index && closed_index < delete_index &&
-    namespace_cleanup.include?("RUNNER_OWNER_SCOPE=closed-pr-cleanup")
-  raise "locked cleanup must recheck PR state and stabilized ownership before deletion"
-end
-
-namespace_discovery = File.read(ARGV.fetch(4))
-unless namespace_discovery.include?("systemctl list-units") &&
-    namespace_discovery.include?("systemctl list-unit-files") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/bin") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/runners") &&
-    namespace_discovery.include?("/var/lib/vm0-runner/groups") &&
-    namespace_discovery.include?('(^|-)pr-([1-9][0-9]*)(-|$)')
-  raise "runner namespace discovery must cover services and delimited PR directories"
-end
-
-runner_cleanup_playbook = File.read(ARGV.fetch(5))
-unless runner_cleanup_playbook.include?("job_ref is match('^pr-[1-9][0-9]*$')") &&
-    runner_cleanup_playbook.include?("'vm0-runner-{{ job_ref }}-*'") &&
-    runner_cleanup_playbook.include?('/^vm0-runner-{{ job_ref }}-[a-z0-9][a-z0-9.-]*\\.service$/') &&
-    runner_cleanup_playbook.include?('- "{{ job_ref }}-*"') &&
-    runner_cleanup_playbook.include?('- "*-{{ job_ref }}-*"') &&
-    !runner_cleanup_playbook.include?("process-containment")
-  raise "runner cleanup must select one strict PR namespace without per-lane duplication"
 end
 
 turbo = YAML.load_file(ARGV.fetch(2)).fetch("jobs")
@@ -208,8 +169,8 @@ unless locked_start.dig("env", "AWS_METAL_RUNNER_HOSTS") ==
     locked_start.dig("env", "METAL_HOSTS") == "${{ secrets.AWS_METAL_RUNNER_HOSTS }}" &&
     locked_start.dig("env", "RUNNER_SHA_MAP") ==
       "${{ needs.deploy-runner-prepare.outputs.runner-sha-map }}" &&
-    locked_start.fetch("run").include?(".github/scripts/with-runner-lifecycle-lock.sh") &&
-    locked_start.fetch("run").include?(".github/scripts/reconcile-and-start-runner-groups.sh") &&
+    locked_start.fetch("run").include?(".github/scripts/runner/with-runner-lifecycle-lock.sh") &&
+    locked_start.fetch("run").include?(".github/scripts/runner/reconcile-and-start-runner-groups.sh") &&
     !locked_start.key?("continue-on-error")
   raise "runner reconciliation and readiness must share cleanup's namespace lifecycle lock"
 end

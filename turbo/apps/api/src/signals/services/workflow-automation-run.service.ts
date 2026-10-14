@@ -85,7 +85,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 
-const publishEnqueuedWorkflowInput$ = command(
+export const publishEnqueuedWorkflowInput$ = command(
   async (
     { set },
     input: {

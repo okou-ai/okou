@@ -37,6 +37,21 @@ pub struct Runtime {
     pub usage: Option<run_usage::Runtime>,
 }
 
+impl runner_provider::AblySideMessageHandler for Runtime {
+    fn handle(&self, message: &ably_subscriber::Message) -> bool {
+        let ssh = self
+            .ssh
+            .as_ref()
+            .is_some_and(|runtime| runtime.handle(message));
+        // Both owners must see SSH revocation: VNC can depend on that route.
+        let vnc = self
+            .vnc
+            .as_ref()
+            .is_some_and(|runtime| runtime.handle(message));
+        ssh || vnc
+    }
+}
+
 /// The stream and permit move together into a consumer. Host work may retain
 /// the permit independently after releasing guest I/O and its park reservation.
 pub(crate) struct Request {

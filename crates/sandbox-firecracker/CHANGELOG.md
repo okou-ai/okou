@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.49.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.1...sandbox-firecracker-v0.49.2) (2026-10-14)
+
+## [0.49.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.0...sandbox-firecracker-v0.49.1) (2026-10-14)
+
+## [0.49.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.6...sandbox-firecracker-v0.49.0) (2026-10-14)
+
+
+### Features
+
+* add native sandbox channel peer and diagnostics ([#39953](https://github.com/okou-ai/okou/issues/39953)) ([0fed55f](https://github.com/okou-ai/okou/commit/0fed55fb786b7532d9f4cf9b38aa0f7a1cc9c7e7))
+
+## [0.48.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.5...sandbox-firecracker-v0.48.6) (2026-10-14)
+
+
+### Documentation
+
+* **rust:** correct balloon settle extension bounds ([#39994](https://github.com/okou-ai/okou/issues/39994)) ([8944c6e](https://github.com/okou-ai/okou/commit/8944c6eee4d77a8625ecc4d1dbcb5e29b62be53a))
+
+## [0.48.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.4...sandbox-firecracker-v0.48.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
+## [0.48.4](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.3...sandbox-firecracker-v0.48.4) (2026-10-14)
+
+## [0.48.3](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.2...sandbox-firecracker-v0.48.3) (2026-10-14)
+
+## [0.48.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.1...sandbox-firecracker-v0.48.2) (2026-10-14)
+
+## [0.48.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.0...sandbox-firecracker-v0.48.1) (2026-10-14)
+
+## [0.48.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.14...sandbox-firecracker-v0.48.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+## [0.47.14](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.13...sandbox-firecracker-v0.47.14) (2026-10-13)
+
+## [0.47.13](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.12...sandbox-firecracker-v0.47.13) (2026-10-13)
+
+## [0.47.12](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.11...sandbox-firecracker-v0.47.12) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
+## [0.47.11](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.10...sandbox-firecracker-v0.47.11) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.47.10](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.9...sandbox-firecracker-v0.47.10) (2026-10-13)
+
+## [0.47.9](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.8...sandbox-firecracker-v0.47.9) (2026-10-13)
+
 ## [0.47.8](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.7...sandbox-firecracker-v0.47.8) (2026-10-13)
 
 ## [0.47.7](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.47.6...sandbox-firecracker-v0.47.7) (2026-10-12)

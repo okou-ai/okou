@@ -26,6 +26,8 @@ const APPEND_PROMPT_TRANSPORT_MARKER: &str = "@append-prompt-transport:";
 const PARALLEL_SHELL_TOOL_OOM_MARKER: &str = "@parallel-shell-tool-oom";
 const GUEST_WIDE_TOOL_OOM_MARKER: &str = "@guest-wide-tool-oom";
 const GUEST_WIDE_TOOL_OOM_INJECTED_MARKER: &str = "@guest-wide-tool-oom-injected";
+const MANAGED_TASK_OOM_MARKER: &str = "@managed-task-oom";
+const GUEST_WIDE_TASK_OOM_MARKER: &str = "@guest-wide-task-oom";
 const RUNTIME_ONLY_OOM_MARKER: &str = "@runtime-only-oom";
 const HANG_AFTER_RESULT_MARKER: &str = "@hang-after-result";
 
@@ -56,6 +58,8 @@ pub(crate) enum MockScenario<'a> {
     ParallelShellToolOom,
     GuestWideToolOom,
     GuestWideToolOomInjected,
+    ManagedTaskOom,
+    GuestWideTaskOom,
     RuntimeOnlyOom,
     Shell,
 }
@@ -93,6 +97,8 @@ enum ScenarioKind {
     ParallelShellToolOom,
     GuestWideToolOom,
     GuestWideToolOomInjected,
+    ManagedTaskOom,
+    GuestWideTaskOom,
     RuntimeOnlyOom,
 }
 
@@ -249,6 +255,16 @@ const SCENARIO_RULES: &[ScenarioRule] = &[
         scenario_kind: ScenarioKind::GuestWideToolOomInjected,
     },
     ScenarioRule {
+        marker: MANAGED_TASK_OOM_MARKER,
+        match_kind: ScenarioMatchKind::Exact,
+        scenario_kind: ScenarioKind::ManagedTaskOom,
+    },
+    ScenarioRule {
+        marker: GUEST_WIDE_TASK_OOM_MARKER,
+        match_kind: ScenarioMatchKind::Exact,
+        scenario_kind: ScenarioKind::GuestWideTaskOom,
+    },
+    ScenarioRule {
         marker: RUNTIME_ONLY_OOM_MARKER,
         match_kind: ScenarioMatchKind::Exact,
         scenario_kind: ScenarioKind::RuntimeOnlyOom,
@@ -330,6 +346,8 @@ impl ScenarioKind {
             (Self::GuestWideToolOomInjected, ScenarioMatch::Marker) => {
                 MockScenario::GuestWideToolOomInjected
             }
+            (Self::ManagedTaskOom, ScenarioMatch::Marker) => MockScenario::ManagedTaskOom,
+            (Self::GuestWideTaskOom, ScenarioMatch::Marker) => MockScenario::GuestWideTaskOom,
             (Self::RuntimeOnlyOom, ScenarioMatch::Marker) => MockScenario::RuntimeOnlyOom,
             _ => return None,
         };
@@ -526,6 +544,8 @@ mod tests {
                 MockScenario::GuestWideToolOomInjected,
             ),
             ("@runtime-only-oom", MockScenario::RuntimeOnlyOom),
+            ("@managed-task-oom", MockScenario::ManagedTaskOom),
+            ("@guest-wide-task-oom", MockScenario::GuestWideTaskOom),
             (
                 "@hang-after-result",
                 MockScenario::HangAfterResult { deaf: false },

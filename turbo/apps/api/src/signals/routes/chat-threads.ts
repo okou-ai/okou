@@ -1,5 +1,8 @@
+import { chatThreadEventRows } from "../services/chat-event-row-read.service";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
+import { chatRelationsRoutes } from "./chat-relations";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
+import { chatInputStatusRoutes } from "./chat-input-status";
 import { command, computed } from "ccstate";
 import {
   chatSearchContract,
@@ -30,7 +33,6 @@ import {
 import { chatSearch } from "../services/chat-search.service";
 import {
   catchUpChatThreadEvents,
-  chatThreadEventRows,
   chatThreadEventSnapshot,
 } from "../services/chat-event-snapshot.service";
 import {
@@ -359,6 +361,7 @@ const searchChatInner$ = computed(async (get) => {
 });
 
 export const chatThreadRoutes: readonly RouteEntry[] = [
+  ...chatRelationsRoutes,
   {
     route: chatThreadsContract.indicators,
     handler: authRoute(
@@ -446,6 +449,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   ...chatThreadUsageRoutes,
   ...chatThreadActivitySummaryRoutes,
+  ...chatInputStatusRoutes,
   ...chatThreadArchiveRoutes,
   ...chatThreadMuteRoutes,
   ...chatThreadsArtifactsSyncRoutes,

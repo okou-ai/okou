@@ -1,5 +1,6 @@
 import { createStore } from "ccstate";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
 import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -19,6 +20,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { teamsConnectRoutes } from "../teams-connect";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -294,6 +296,113 @@ describe("Teams OAuth API routes", () => {
       tenantId: fixture.teamsTenantId,
       botName: "Nova",
     });
+  });
+
+  it("preserves an OAuth-prepared connection when Teams is installed later", async () => {
+    const fixture = await track(Promise.resolve(teamsConnectFixture()));
+    await seedMembership(fixture.orgId, fixture.userId, "admin");
+    mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
+    mockMicrosoftOAuth({
+      tenantId: fixture.teamsTenantId,
+      aadObjectId: fixture.teamsAadObjectId,
+      userPrincipalName: fixture.teamsUserPrincipalName,
+    });
+    const statusClient = setupApp({ context, routes: teamsConnectRoutes })(
+      teamsConnectContract,
+    );
+    const before = await accept(
+      statusClient.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(before.body).toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+      isAdmin: true,
+    });
+    expect(
+      new URL(before.body.installUrl!).searchParams.has("tenantId"),
+    ).toBeFalsy();
+
+    const oauthClient = setupApp({
+      context,
+      routes: teamsOauthRoutes,
+      baseUrl: API_ORIGIN,
+    })(teamsOauthContract);
+    const callback = await accept(
+      oauthClient.callback({
+        query: {
+          code: "valid-code",
+          state: JSON.stringify({
+            orgId: fixture.orgId,
+            userId: fixture.userId,
+            redirectUri: CALLBACK_REDIRECT_URI,
+          }),
+        },
+      }),
+      [307],
+    );
+    const installUrl = new URL(
+      "https://teams.microsoft.com/l/app/00000000-0000-0000-0000-000000000001",
+    );
+    installUrl.search = new URLSearchParams({
+      installAppPackage: "true",
+      appTenantId: "11111111-1111-1111-1111-111111111111",
+      tenantId: fixture.teamsTenantId,
+    }).toString();
+    expect(callback.headers.get("location")).toBe(installUrl.toString());
+    expect(callback.headers.get("cache-control")).toBe("no-store");
+    const prepared = await accept(
+      statusClient.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(prepared.body).toMatchObject({
+      isInstalled: false,
+      isConnected: false,
+      isAdmin: true,
+      installUrl: installUrl.toString(),
+    });
+    expect(
+      Object.fromEntries(new URL(prepared.body.connectUrl!).searchParams),
+    ).toStrictEqual({ orgId: fixture.orgId, userId: fixture.userId });
+
+    await installTeamsForTest(context.signal, fixture);
+    await flushWaitUntilForTest();
+    const installed = await accept(
+      statusClient.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(installed.body).toMatchObject({
+      isInstalled: true,
+      isConnected: true,
+      isAdmin: true,
+      tenantId: fixture.teamsTenantId,
+      connectUrl: null,
+    });
+
+    const otherUserId = `user_other_${fixture.fixtureId}`;
+    await seedMembership(fixture.orgId, otherUserId, "member");
+    mocks.clerk.session(otherUserId, fixture.orgId, "org:member");
+    const otherMember = await accept(
+      statusClient.getStatus({
+        headers: { authorization: "Bearer clerk-session" },
+      }),
+      [200],
+    );
+    expect(otherMember.body).toMatchObject({
+      isInstalled: true,
+      isConnected: false,
+      isAdmin: false,
+      tenantId: fixture.teamsTenantId,
+    });
+    expect(
+      Object.fromEntries(new URL(otherMember.body.connectUrl!).searchParams),
+    ).toStrictEqual({ orgId: fixture.orgId, userId: otherUserId });
   });
 
   it("exchanges the code with the redirect URI recorded in the connect state", async () => {

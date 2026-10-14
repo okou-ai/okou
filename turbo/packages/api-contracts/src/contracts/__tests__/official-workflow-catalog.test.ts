@@ -4,7 +4,6 @@ import {
   officialWorkflowCatalogReleasePayloadSchema,
   officialWorkflowDefinitionRevisionPayloadSchema,
 } from "../official-workflow-catalog";
-import { officialWorkflowCatalogDetailSchema } from "../official-workflows";
 
 const REVISION = "a".repeat(64);
 const FINGERPRINT = "b".repeat(64);
@@ -93,23 +92,5 @@ describe("persisted Official Workflow catalog payloads", () => {
     expect(schema.safeParse(catalogPayload(4, [v3Blueprint])).success).toBe(
       false,
     );
-  });
-
-  it("returns either supported Blueprint shape in public catalog detail", () => {
-    for (const blueprint of [v2Blueprint, v3Blueprint]) {
-      const detail = {
-        name: "morning-brief",
-        revision: REVISION,
-        lifecycle: "active" as const,
-        displayName: workflow.displayName,
-        description: workflow.description,
-        blueprints: [blueprint],
-        presentation: { category: "productivity" },
-        workflow,
-      };
-      expect(officialWorkflowCatalogDetailSchema.parse(detail)).toStrictEqual(
-        detail,
-      );
-    }
   });
 });

@@ -13,16 +13,13 @@ import {
   ListPartsCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { uploadsPrepareRoutes } from "../uploads-prepare";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { uploadsMultipartRoutes } from "../uploads-multipart";
@@ -44,7 +41,6 @@ const body = Object.freeze({
   size: 13,
 });
 const routes = Object.freeze([
-  ...featureSwitchesRoutes,
   ...uploadsPrepareRoutes,
   ...uploadsCompleteRoutes,
   ...uploadsMultipartRoutes,
@@ -56,16 +52,6 @@ const routes = Object.freeze([
 
 function api() {
   return setupApp({ context, routes });
-}
-
-async function setPrivateArtifacts(enabled: boolean) {
-  return await accept(
-    api()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { [FeatureSwitchKey.PrivateArtifacts]: enabled } },
-    }),
-    [200],
-  );
 }
 
 function mockStoredFile(id: string) {
@@ -126,7 +112,6 @@ beforeEach(() => {
 
 describe("private artifact uploads", () => {
   it("cancels private completion during storage verification and permits a fresh replay", async () => {
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -184,7 +169,6 @@ describe("private artifact uploads", () => {
   });
 
   it("keeps one downloadable catalog artifact after concurrent completion and replay", async () => {
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -260,7 +244,6 @@ describe("private artifact uploads", () => {
   it.each(["missing", "unknown-size"] as const)(
     "publishes only verified private bytes after a %s storage response and replay",
     async (failure) => {
-      await setPrivateArtifacts(true);
       const prepared = await accept(
         api()(uploadsContract).prepare({
           headers,
@@ -310,9 +293,8 @@ describe("private artifact uploads", () => {
     },
   );
 
-  it("keeps a guarded upload private after the creation switch is disabled", async () => {
+  it("keeps a guarded upload private through completion", async () => {
     installSharedThreadStorage(context);
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).preparePrivate({ headers, body }),
       [200],
@@ -323,7 +305,6 @@ describe("private artifact uploads", () => {
     expect(prepared.body.url).toMatch(
       /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
     );
-    await setPrivateArtifacts(false);
     await fetch(prepared.body.uploadUrl, {
       method: "PUT",
       body: "private bytes",
@@ -354,9 +335,9 @@ describe("private artifact uploads", () => {
     expect(download.body).toBe("private bytes");
   });
 
-  it("keeps old public uploads readable after private creation is enabled", async () => {
+  it("keeps organization-less public uploads readable", async () => {
+    mocks.clerk.session(`user_${randomUUID()}`, null);
     installSharedThreadStorage(context);
-    await setPrivateArtifacts(false);
     const prepared = await accept(
       api()(uploadsContract).prepare({ headers, body }),
       [200],
@@ -375,7 +356,6 @@ describe("private artifact uploads", () => {
       }),
       [200],
     );
-    await setPrivateArtifacts(true);
     const preview = await accept(
       api()(webFilesContract).fileUrl({
         headers,
@@ -395,7 +375,6 @@ describe("private artifact uploads", () => {
   });
 
   it("previews private bytes uploaded by an older composer without a complete request", async () => {
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({ headers, body }),
       [200],
@@ -420,14 +399,7 @@ describe("private artifact uploads", () => {
     });
   });
 
-  it("makes attachments and outputs private by default and supports explicit opt-outs", async () => {
-    const flags = await accept(
-      api()(featureSwitchesContract).get({ headers }),
-      [200],
-    );
-    expect(
-      flags.body.effectiveSwitches[FeatureSwitchKey.PrivateArtifacts],
-    ).toBeTruthy();
+  it("makes attachments and outputs private by default", async () => {
     const input = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -449,19 +421,9 @@ describe("private artifact uploads", () => {
     expect(artifact.body.url).toMatch(
       /^http:\/\/localhost:3002\/artifacts\/[a-z0-9]{10}\.html$/u,
     );
-
-    await setPrivateArtifacts(false);
-    const legacy = await accept(
-      api()(uploadsContract).prepare({ headers, body }),
-      [200],
-    );
-    expect(legacy.body.url).toMatch(
-      /^https:\/\/a\.okou\.io\/[0-9a-z]{10}\.html$/u,
-    );
   });
 
   it("returns a stable owner URL, signs only the private bucket, and downloads safely from the API origin", async () => {
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({
         headers,
@@ -565,18 +527,16 @@ describe("private artifact uploads", () => {
     });
   });
 
-  it("enforces owner and organization after the switch is disabled, including complete and multipart operations", async () => {
+  it("enforces owner and organization for complete and multipart operations", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({ headers, body }),
       [200],
     );
     const id = prepared.body.id;
     mockStoredFile(id);
-    await setPrivateArtifacts(false);
     const owner = await accept(
       api()(webFilesContract).fileUrl({ headers, query: { file_id: id } }),
       [200],
@@ -644,7 +604,6 @@ describe("private artifact uploads", () => {
   });
 
   it("does not consult public storage when a private object is missing", async () => {
-    await setPrivateArtifacts(true);
     const prepared = await accept(
       api()(uploadsContract).prepare({ headers, body }),
       [200],
@@ -668,9 +627,8 @@ describe("private artifact uploads", () => {
   });
 
   it.each(["complete", "abort"] as const)(
-    "%s multipart uploads in their recorded bucket after rollout is disabled",
+    "%s multipart uploads in their recorded bucket",
     async (action) => {
-      await setPrivateArtifacts(true);
       const storage = context.mocks.s3.send.getMockImplementation()!;
       context.mocks.s3.send.mockImplementation((command) => {
         if (
@@ -702,7 +660,6 @@ describe("private artifact uploads", () => {
           parts: [{ partNumber: 1 }, { partNumber: 2 }],
         },
       });
-      await setPrivateArtifacts(false);
       const identity = { id, filename: body.filename, uploadId: "upload-1" };
       const multipartActions: string[] = [];
       context.mocks.s3.send.mockImplementation((command) => {
@@ -753,7 +710,6 @@ describe("private artifact uploads", () => {
   );
 
   it("fails visibly when private storage credentials are absent", async () => {
-    await setPrivateArtifacts(true);
     mockEnv("R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID", undefined);
     const failed = await api()(uploadsContract).prepare({ headers, body });
     expect(failed.status).toBe(500);

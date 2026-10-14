@@ -119,7 +119,7 @@ export const materializeActiveInputSource$ = command(
     source: ActiveInputSourceRow,
     auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     if (
       !source.userMessage ||
       (source.eventType !== "input.prompt" &&
@@ -137,6 +137,17 @@ export const materializeActiveInputSource$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.BuiltinDocumentTemplates,
+        featureSwitchContext,
+      ) &&
+      projectUserMessage(source.userMessage).templates.some((template) => {
+        return template.type === "document";
+      })
+    ) {
+      return null;
+    }
     return await set(
       materializeActiveInputPrompt$,
       db,
@@ -157,18 +168,11 @@ export const materializeActiveInputSource$ = command(
   },
 );
 
-function activeInputGenerationTemplates(
-  userMessage: ChatEventUserMessage,
-  featureSwitchContext: FeatureSwitchContext,
-) {
+function activeInputGenerationTemplates(userMessage: ChatEventUserMessage) {
   const projection = projectUserMessage(userMessage);
   return {
     projection,
     templatePrompt: resolveThreadGenerationTemplatePrompt({
-      artifactPreviewsEnabled: isFeatureEnabled(
-        FeatureSwitchKey.ArtifactPreviews,
-        featureSwitchContext,
-      ),
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
       // Steered into a run that is already executing, whose volumes were fixed
@@ -284,10 +288,8 @@ const materializeActiveInputPrompt$ = command(
         `${args.event.contextType} active input is missing launch material`,
       );
     }
-    const { projection, templatePrompt } = activeInputGenerationTemplates(
-      userMessage,
-      args.featureSwitchContext,
-    );
+    const { projection, templatePrompt } =
+      activeInputGenerationTemplates(userMessage);
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

@@ -1,4 +1,5 @@
 use std::io;
+mod cancellation;
 mod timing;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -200,6 +201,7 @@ async fn shutdown_preserves_connection_failure() {
         .unwrap_err();
     assert_eq!(error.kind(), io::ErrorKind::ConnectionReset);
     assert_eq!(error.to_string(), "connection closed");
+    assert!(crate::ConnectionClosedAtAdmission::from_error(&error).is_none());
 }
 
 #[tokio::test]

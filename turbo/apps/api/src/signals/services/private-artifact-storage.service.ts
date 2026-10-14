@@ -15,8 +15,6 @@ import {
 } from "@okouai/api-contracts/contracts/link-layout";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import type { RunUploadedFileMetadata } from "@okouai/db/jsonb-contracts/run-uploaded-file";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { env } from "../../lib/env";
 import { sanitizeArtifactFilename } from "../../lib/file-url";
@@ -24,7 +22,6 @@ import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { apiBackendUrl } from "../../lib/api-backend-url";
 import { db$, writeDb$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { safeUrlParse } from "../utils";
 import {
   allocateArtifactReference$,
@@ -46,19 +43,6 @@ const privateMetadataSchema = z.object({
     .regex(/^[a-z0-9]{10}$/u)
     .optional(),
 });
-
-export const privateArtifactCreationEnabled$ = command(
-  async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      orgId,
-      userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    return isFeatureEnabled(FeatureSwitchKey.PrivateArtifacts, context);
-  },
-);
 
 export function artifactFileReference(
   value: string,

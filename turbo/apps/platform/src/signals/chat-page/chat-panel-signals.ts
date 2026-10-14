@@ -1,3 +1,4 @@
+import type { ChatRelationSignals } from "./chat-relations.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
@@ -32,6 +33,7 @@ import type { ChatThreadSharingSignals } from "./chat-thread-sharing.ts";
 import type { ChatThreadPinSignals } from "./chat-thread-pin.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
+import type { ChatResourceSignals } from "./chat-resources.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -198,6 +200,8 @@ export interface ChatPanelSignals {
   readonly sharing: ChatThreadSharingSignals;
   readonly pin: ChatThreadPinSignals;
   readonly locator: ChatConversationLocatorSignals;
+  readonly resources: ChatResourceSignals;
+  readonly relations: ChatRelationSignals;
   // -- Thread-owned automation resources -----------------------------------
   readonly headerAutomations: HeaderAutomationSignals;
   // -- Thread-owned utility sidebar -----------------------------------------

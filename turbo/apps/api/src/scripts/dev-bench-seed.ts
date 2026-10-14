@@ -11,7 +11,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   chatEvents,
   type ChatEventUsagePayload,
@@ -28,7 +27,7 @@ import { onRejection } from "../signals/utils";
 
 const store = createStore();
 const BULK_INSERT_CHUNK = 500;
-const SCRIPT_MARKER = "dev-bench-seed";
+
 const ALLOW_NON_LOCAL_ENV = "DEV_BENCH_SEED_ALLOW_NON_LOCAL";
 
 type Database = ReturnType<typeof db>;
@@ -52,8 +51,8 @@ export interface BuiltProfileRows {
 export interface BuildProfileRowsArgs {
   readonly userId: string;
   readonly orgId: string;
+  readonly agentId: string;
   readonly threadId: string;
-  readonly sessionId: string;
   readonly profile: ThreadProfile;
 }
 
@@ -463,7 +462,7 @@ function followups(
     },
     {
       kind: "talk",
-      prompt: "Compare this run with the previous synthetic checkpoint.",
+      prompt: "Compare this run with the previous synthetic run.",
     },
   ];
 }
@@ -542,31 +541,8 @@ async function cleanupExistingBenchThreads(
   const runIds = runRows.map((row) => {
     return row.id;
   });
-  const sessionRows =
-    runIds.length === 0
-      ? []
-      : await database
-          .select({ id: agentRuns.sessionId })
-          .from(agentRuns)
-          .where(inArray(agentRuns.id, runIds));
-  const sessionIds = [
-    ...new Set(
-      sessionRows.map((row) => {
-        return row.id;
-      }),
-    ),
-  ];
-
-  await database
-    .delete(chatEvents)
-    .where(inArray(chatEvents.chatThreadId, threadIds));
   if (runIds.length > 0) {
     await database.delete(agentRuns).where(inArray(agentRuns.id, runIds));
-  }
-  if (sessionIds.length > 0) {
-    await database
-      .delete(agentSessions)
-      .where(inArray(agentSessions.id, sessionIds));
   }
   await database.delete(chatThreads).where(inArray(chatThreads.id, threadIds));
 
@@ -643,13 +619,13 @@ function appendRunEvents(
     id: runId,
     userId: args.userId,
     orgId: args.orgId,
-    sessionId: args.sessionId,
+    agentId: args.agentId,
     status: failed ? "failed" : "completed",
     prompt,
     result: failed
       ? null
       : {
-          agentSessionId: `${SCRIPT_MARKER}-${args.profile.slug}-${args.runIndex}`,
+          storageOutputs: [],
         },
     error: failed ? "Synthetic benchmark failure" : null,
     lastEventSequence: args.profile.sequenceMax,
@@ -967,18 +943,10 @@ async function seedProfile(
   },
 ): Promise<{ readonly threadId: string; readonly eventCount: number }> {
   const threadId = randomUUID();
-  const sessionId = randomUUID();
   const startAt = new Date(args.profile.startAt);
   const endAt = new Date(args.profile.endAt);
   const pinnedAt = addMs(startAt, 2000);
   const renamedAt = addMs(startAt, 250_000);
-
-  await database.insert(agentSessions).values({
-    id: sessionId,
-    userId: args.userId,
-    orgId: args.orgId,
-    agentId: args.agentId,
-  });
 
   await database.insert(chatThreads).values({
     id: threadId,
@@ -993,7 +961,7 @@ async function seedProfile(
     lastMessageAt: addMs(endAt, 33),
   });
 
-  const rows = buildProfileRows({ ...args, threadId, sessionId });
+  const rows = buildProfileRows({ ...args, threadId });
   await insertProfileRows(database, rows);
 
   const lastReadRow =

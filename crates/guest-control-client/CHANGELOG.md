@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.23.16](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.15...guest-control-client-v0.23.16) (2026-10-14)
+
+## [0.23.15](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.14...guest-control-client-v0.23.15) (2026-10-14)
+
+## [0.23.14](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.13...guest-control-client-v0.23.14) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
+## [0.23.13](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.12...guest-control-client-v0.23.13) (2026-10-14)
+
+## [0.23.12](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.11...guest-control-client-v0.23.12) (2026-10-14)
+
+## [0.23.11](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.10...guest-control-client-v0.23.11) (2026-10-13)
+
+## [0.23.10](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.9...guest-control-client-v0.23.10) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** attribute guest storage dispatch and response preparation ([#39756](https://github.com/okou-ai/okou/issues/39756)) ([416309e](https://github.com/okou-ai/okou/commit/416309e883204e493c82c389bd90014067627b7c))
+
+## [0.23.9](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.8...guest-control-client-v0.23.9) (2026-10-13)
+
+## [0.23.8](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.7...guest-control-client-v0.23.8) (2026-10-13)
+
 ## [0.23.7](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.6...guest-control-client-v0.23.7) (2026-10-12)
 
 ## [0.23.6](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.5...guest-control-client-v0.23.6) (2026-10-12)

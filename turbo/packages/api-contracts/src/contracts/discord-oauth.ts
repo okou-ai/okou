@@ -17,8 +17,9 @@ export const discordOauthContract = c.router({
     path: "/api/integrations/discord/oauth/start",
     headers: authHeadersSchema,
     body: z.strictObject({
-      flow: z.enum(["install", "connect"]),
       guildId: discordSnowflakeSchema.optional(),
+      // Current Connect actions omit this: a guild ID means connect, otherwise install.
+      flow: z.enum(["install", "connect"]).optional(),
     }),
     responses: {
       200: z.object({
@@ -32,7 +33,7 @@ export const discordOauthContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary: "Start browser-correlated Discord installation or account linking",
+    summary: "Connect Discord or install Okou into a selected server",
   },
   approve: {
     method: "POST",
@@ -56,7 +57,7 @@ export const discordOauthContract = c.router({
     headers: authHeadersSchema,
     body: z.strictObject({ state: proofSchema, completionToken: proofSchema }),
     responses: {
-      200: z.object({ status: z.enum(["installed", "connected"]) }),
+      200: z.object({ status: z.literal("connected") }),
       400: apiErrorSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,

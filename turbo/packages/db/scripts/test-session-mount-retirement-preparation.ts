@@ -5,17 +5,32 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { z } from "zod";
+import { jsonb, pgTable } from "drizzle-orm/pg-core";
 
 import { schema } from "../src/index";
-import { agentSessions } from "../src/runtime/agent-session";
-import { agentSessions as retainedSessions } from "../src/schema/agent-session";
+import { agentSessions } from "../src/schema/agent-session";
+import { agentSessionColumns } from "../src/columns/agent-session";
+import { resolveAgentConversationId } from "../src/schema/agent-run-reference";
 import type { PersistedStorageMount } from "../src/types";
+
+// The outgoing projection is a fixture; production mappings omit this column.
+const retainedSessions = pgTable("agent_sessions", {
+  ...agentSessionColumns(resolveAgentConversationId),
+  storageMounts: jsonb("storage_mounts").$type<PersistedStorageMount[]>(),
+});
 
 // The consistency suite temporarily replaces the migration directory while
 // generating a fresh schema. Capture the actual preparation before that phase.
 const preparationSql = await readFile(
   new URL(
     "../src/migrations/1377_prepare_session_mount_retirement.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const contractionSql = await readFile(
+  new URL(
+    "../src/migrations/1384_retire_session_storage_mounts.sql",
     import.meta.url,
   ),
   "utf8",
@@ -36,7 +51,9 @@ export async function validateSessionMountRetirementPreparation(
 ): Promise<void> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
-  const db = drizzle(client, { schema });
+  // Freeze the outgoing root projection for this historical preparation proof.
+  // The application root schema has since retired Session ownership entirely.
+  const db = drizzle(client, { schema: { ...schema, agentSessions } });
   const namespace = `session_mounts_${randomUUID().replaceAll("-", "")}`;
   try {
     await client.query(`CREATE SCHEMA "${namespace}"`);
@@ -45,7 +62,7 @@ export async function validateSessionMountRetirementPreparation(
     );
     await client.query(`SET search_path TO "${namespace}", public`);
     await client.query(
-      "ALTER TABLE agent_sessions ALTER COLUMN storage_mounts DROP DEFAULT",
+      "ALTER TABLE agent_sessions ADD COLUMN storage_mounts jsonb",
     );
 
     const userId = `user-${namespace}`;
@@ -106,9 +123,7 @@ export async function validateSessionMountRetirementPreparation(
 
     for (const phase of ["retained", "contracted"] as const) {
       if (phase === "contracted") {
-        await client.query(
-          "ALTER TABLE agent_sessions DROP COLUMN storage_mounts RESTRICT",
-        );
+        await client.query(contractionSql);
       }
       const id = randomUUID();
       const identity = { id, userId, orgId, agentId, conversationId };

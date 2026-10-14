@@ -14,11 +14,6 @@ command -v yq >/dev/null || fail "yq is required"
 crates_json=$(yq -o=json '.' "$CRATES_WORKFLOW")
 
 jq -e '
-  def behavior_commands($lane):
-    [$lane.steps[]? |
-      .run? |
-      select(type == "string") |
-      select(startswith(".github/scripts/runner-behavior-"))];
   .jobs.detect as $detect |
   .jobs.check as $check |
   .jobs["api-contracts-rust-bindings"] as $bindings |
@@ -52,12 +47,12 @@ jq -e '
   all($required_outputs | to_entries[]; $detect.outputs[.key] == .value) and
   any($detect.steps[]?;
     .id == "detect" and
-    (.run // "" | contains(".github/scripts/changed-base-ref.sh")) and
+    (.run // "" | contains(".github/scripts/checks/changed-base-ref.sh")) and
     (.run // "" | contains("./scripts/crate-changed.sh"))
   ) and
   any($detect.steps[]?;
     .id == "runner-tests" and
-    .run == ".github/scripts/runner-image-context.sh crates-consumer"
+    .run == ".github/scripts/runner/runner-image-context.sh crates-consumer"
   ) and
   any($detect.steps[]?;
     .id == "runner-job-ref" and
@@ -87,23 +82,12 @@ jq -e '
   ($host_cpu.if | contains("needs.detect.outputs.ci-changed")) and
   ([$lane_a, $lane_b, $lane_c, $lane_d] |
     all(.[]; .needs == ["runner-test-prepare"])) and
-  ([$lane_a, $lane_b, $lane_c, $lane_d] | map(behavior_commands(.)) | add | sort) == ([
-    ".github/scripts/runner-behavior-balloon.sh",
-    ".github/scripts/runner-behavior-home-cache-promotion.sh",
-    ".github/scripts/runner-behavior-exec.sh",
-    ".github/scripts/runner-behavior-cancel.sh",
-    ".github/scripts/runner-behavior-systemd-reload.sh",
-    ".github/scripts/runner-behavior-process-containment.sh",
-    ".github/scripts/runner-behavior-drain-resume.sh",
-    ".github/scripts/runner-behavior-keep-alive.sh",
-    ".github/scripts/runner-behavior-upgrade-local.sh"
-  ] | sort) and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
   any($host_cpu_build.steps[]?;
-    .run == "bash .github/scripts/runner-native-test-artifact.sh build"
+    .run == "bash .github/scripts/runner/runner-native-test-artifact.sh build"
   ) and
   any($host_cpu.steps[]?;
-    .run == ".github/scripts/runner-behavior-host-cpu-fairness.sh"
+    .run == "crates/sandbox-firecracker/tests/native/runner-behavior-host-cpu-fairness.sh"
   ) and
   ($gate.needs | index("host-cpu-fairness-test")) != null and
   ($gate.needs | index("host-cpu-fairness-build")) != null and

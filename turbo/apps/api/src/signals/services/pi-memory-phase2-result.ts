@@ -1,5 +1,5 @@
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import {
   nullableDriverValueDecoder,
   pgTextDecoder,
@@ -39,6 +39,54 @@ export function maintenancePublicationResultCondition(
       "no_diff",
     ]),
   );
+}
+
+/** The original owned attempt, or its explicit unpublished failure, proves base recovery. */
+export function maintenanceUnpublishedRecoveryCondition(
+  binding: MaintenancePublicationBinding,
+) {
+  return and(
+    eq(piMemoryPhase2Jobs.memoryStorageId, binding.memoryStorageId),
+    eq(piMemoryPhase2Jobs.orgId, binding.orgId),
+    eq(piMemoryPhase2Jobs.userId, binding.userId),
+    or(
+      and(
+        eq(piMemoryPhase2Jobs.status, "leased"),
+        eq(piMemoryPhase2Jobs.maintenanceRunId, binding.runId),
+        eq(piMemoryPhase2Jobs.leaseToken, binding.leaseToken),
+        eq(piMemoryPhase2Jobs.claimedRevision, binding.claimedRevision),
+        eq(
+          piMemoryPhase2Jobs.claimedBaseVersionId,
+          binding.claimedBaseVersionId,
+        ),
+        eq(piMemoryPhase2Jobs.claimedSelectionDigest, binding.selectionDigest),
+      ),
+      and(
+        eq(piMemoryPhase2Jobs.lastMaintenanceRunId, binding.runId),
+        eq(piMemoryPhase2Jobs.lastMaintenanceRevision, binding.claimedRevision),
+        eq(
+          piMemoryPhase2Jobs.lastMaintenanceBaseVersionId,
+          binding.claimedBaseVersionId,
+        ),
+        eq(
+          piMemoryPhase2Jobs.lastMaintenanceSelectionDigest,
+          binding.selectionDigest,
+        ),
+        eq(piMemoryPhase2Jobs.lastMaintenanceOutcome, "failed"),
+      ),
+    ),
+  );
+}
+
+/** Select a version only after the exact published/unpublished predicate admitted its row. */
+export function maintenanceOutputResultVersion(runId: string) {
+  return sql`CASE
+    WHEN ${eq(piMemoryPhase2Jobs.lastMaintenanceRunId, runId)}
+      THEN CASE WHEN ${eq(piMemoryPhase2Jobs.lastMaintenanceOutcome, "published")}
+        THEN ${piMemoryPhase2Jobs.lastPublishedVersionId}
+        ELSE ${piMemoryPhase2Jobs.lastMaintenanceBaseVersionId} END
+    ELSE ${piMemoryPhase2Jobs.claimedBaseVersionId}
+  END`.mapWith(nullableDriverValueDecoder(pgTextDecoder));
 }
 
 /** Published results use the published version; no-diff results retain their base. */

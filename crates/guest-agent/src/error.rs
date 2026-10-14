@@ -45,6 +45,26 @@ pub enum AgentError {
     #[error("finalization: {0}")]
     Finalization(String),
 
+    /// Preserve filesystem error identity for native continuation preparation.
+    #[error("finalization: Failed to read session history: {0}")]
+    SessionHistoryRead(#[source] std::io::Error),
+
+    /// No retained Codex file names the requested native thread.
+    #[error("finalization: Codex session file not found under {}", root.display())]
+    SessionHistoryMissing { root: std::path::PathBuf },
+
+    /// More than one retained file names the requested native thread.
+    #[error("finalization: Multiple Codex session files found under {}", root.display())]
+    SessionHistoryAmbiguous { root: std::path::PathBuf },
+
+    /// A named native-history leaf is not a regular file.
+    #[error("finalization: Session history source is not a regular file: {}", path.display())]
+    SessionHistoryNotRegular { path: std::path::PathBuf },
+
+    /// Bounded native discovery cannot establish a unique retained identity.
+    #[error("finalization: {framework} session lookup exceeded scan budget")]
+    SessionHistoryLookupBudgetExceeded { framework: &'static str },
+
     /// Session history exceeded the native-history upload size limit.
     #[error("finalization: Session history exceeds maximum size of {max_bytes} bytes")]
     SessionHistoryTooLarge { max_bytes: u64 },

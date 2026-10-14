@@ -15,6 +15,11 @@ import { resolveCustomConnectorId } from "../custom-connector-selector";
 import { createCustomConnectorCommand } from "./create";
 import { updateCustomConnectorCommand } from "./update";
 import { connectorInspectionType } from "../inspection";
+import { customConnectorMetadata } from "../management";
+import {
+  showCustomConnectorCommand,
+  deleteCustomConnectorCommand,
+} from "./manage";
 
 const LABEL_WIDTH = 18;
 
@@ -24,7 +29,7 @@ function customConnectorJson(
 ) {
   const target = { kind: "custom", customConnectorId: connector.id } as const;
   return {
-    ...connector,
+    ...customConnectorMetadata(connector),
     target,
     connectorType: connectorInspectionType(target, connector),
     connectionId: connector.connectedAccountId ?? null,
@@ -293,6 +298,8 @@ export const customConnectorCommand = new Command()
   .description("Create, update, and inspect org custom connectors")
   .addCommand(createCustomConnectorCommand)
   .addCommand(updateCustomConnectorCommand)
+  .addCommand(showCustomConnectorCommand)
+  .addCommand(deleteCustomConnectorCommand)
   .addCommand(listCommand)
   .addCommand(statusCommand)
   .addHelpText(

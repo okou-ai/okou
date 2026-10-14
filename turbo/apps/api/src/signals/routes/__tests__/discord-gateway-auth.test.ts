@@ -177,7 +177,7 @@ describe("Discord Gateway authentication and ignored transport events", () => {
     });
   });
 
-  it("durably accepts an absent guild removal and deduplicates its signed replay", async () => {
+  it("acknowledges a guild removal and its replay without account mutations", async () => {
     const guildId = missingGuildId();
     const eventId = `GUILD_DELETE:${randomUUID()}:1`;
     const timestamp = String(Math.floor(now() / 1000));
@@ -197,17 +197,19 @@ describe("Discord Gateway authentication and ignored transport events", () => {
     expect(accepted.status).toBe(200);
     await expect(accepted.json()).resolves.toStrictEqual({
       ok: true,
-      outcome: "accepted",
+      outcome: "ignored",
+      reason: "guild-removed",
     });
     const replayed = await postRaw(body, timestamp);
     expect(replayed.status).toBe(200);
     await expect(replayed.json()).resolves.toStrictEqual({
       ok: true,
-      outcome: "duplicate",
+      outcome: "ignored",
+      reason: "guild-removed",
     });
   });
 
-  it("arbitrates concurrent signed guild removals through one durable receipt", async () => {
+  it("acknowledges concurrent signed guild removals without account mutations", async () => {
     const body = eventBody(
       { id: missingGuildId() },
       "GUILD_DELETE",
@@ -229,8 +231,10 @@ describe("Discord Gateway authentication and ignored transport events", () => {
       }),
     );
     expect(receipts).toHaveLength(2);
-    expect(receipts).toContainEqual({ ok: true, outcome: "accepted" });
-    expect(receipts).toContainEqual({ ok: true, outcome: "duplicate" });
+    expect(receipts).toStrictEqual([
+      { ok: true, outcome: "ignored", reason: "guild-removed" },
+      { ok: true, outcome: "ignored", reason: "guild-removed" },
+    ]);
   });
 
   it.each([

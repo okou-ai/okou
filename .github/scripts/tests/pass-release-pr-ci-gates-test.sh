@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SOURCE_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/pass-release-pr-ci-gates.sh"
-CHECK_COVERAGE="${SOURCE_REPO_ROOT}/.github/scripts/check-release-please-workspace-coverage.sh"
-CHECK_CYCLES="${SOURCE_REPO_ROOT}/.github/scripts/check-rust-workspace-cycles.py"
-CHECK_ACTION_PINS="${SOURCE_REPO_ROOT}/.github/scripts/tests/action-pins-test.py"
+PASS_GATES="${SOURCE_REPO_ROOT}/.github/scripts/release/pass-release-pr-ci-gates.sh"
+CHECK_COVERAGE="${SOURCE_REPO_ROOT}/.github/scripts/checks/check-release-please-workspace-coverage.sh"
+CHECK_CYCLES="${SOURCE_REPO_ROOT}/.github/scripts/checks/check-rust-workspace-cycles.py"
+CHECK_ACTION_PINS="${SOURCE_REPO_ROOT}/.github/scripts/checks/check-action-pins.py"
 SECURITY_WORKFLOW="${SOURCE_REPO_ROOT}/.github/workflows/security.yml"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
@@ -33,15 +33,15 @@ git init -q -b main "$SEED"
 git -C "$SEED" config user.email test@example.com
 git -C "$SEED" config user.name Test
 mkdir -p \
-  "${SEED}/.github/scripts/tests" \
+  "${SEED}/.github/scripts/checks" \
   "${SEED}/.github/workflows" \
   "${SEED}/native/helper/src" \
   "${SEED}/native/guest-control-tests/src" \
   "${SEED}/turbo/apps/app/src" \
   "${SEED}/turbo/packages/tool"
-cp "$CHECK_COVERAGE" "${SEED}/.github/scripts/check-release-please-workspace-coverage.sh"
-cp "$CHECK_CYCLES" "${SEED}/.github/scripts/check-rust-workspace-cycles.py"
-cp "$CHECK_ACTION_PINS" "${SEED}/.github/scripts/tests/action-pins-test.py"
+cp "$CHECK_COVERAGE" "${SEED}/.github/scripts/checks/check-release-please-workspace-coverage.sh"
+cp "$CHECK_CYCLES" "${SEED}/.github/scripts/checks/check-rust-workspace-cycles.py"
+cp "$CHECK_ACTION_PINS" "${SEED}/.github/scripts/checks/check-action-pins.py"
 cat > "${SEED}/.github/workflows/pins.yml" <<'YAML'
 jobs:
   test:
@@ -148,7 +148,7 @@ jobs:
 YAML
 # The release head cannot approve its own bad references with a replaced checker.
 printf '%s\n' 'print("untrusted release-head checker")' \
-  >"${SEED}/.github/scripts/tests/action-pins-test.py"
+  >"${SEED}/.github/scripts/checks/check-action-pins.py"
 git -C "$SEED" add --all
 git -C "$SEED" commit -qm "chore: release invalid action pins"
 INVALID_PINS_HEAD=$(git -C "$SEED" rev-parse HEAD)
@@ -271,7 +271,7 @@ for gate in ci-gate-turbo ci-gate-crates ci-gate-security ci-gate-ios; do
     fail "the valid fast path should pass ${gate}"
 done
 
-for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/changed-base-ref.sh; do
+for ios_input in ios/Okou/App/OkouApp.swift .github/workflows/ios.yml .github/scripts/checks/changed-base-ref.sh; do
   : >"$GH_LOG"
   ios_output=""
   ios_output=$(MOCK_ADDITIONAL_CHANGED_FILE="$ios_input" run_gates "$VALID_HEAD" 2>&1)
@@ -323,7 +323,7 @@ jq -e '
     .with.ref == "${{ github.event_name == '\''pull_request'\'' && github.event.pull_request.head.sha || github.sha }}"
   ) and
   any($pins.steps[];
-    .run == "python3 .github/scripts/tests/action-pins-test.py ."
+    .run == "python3 .github/scripts/checks/check-action-pins.py ."
   ) and
   ($gate.needs | index("action-pins") != null) and
   $gate.steps[0].env.ACTION_PINS_RESULT == "${{ needs.action-pins.result }}" and
@@ -336,7 +336,7 @@ jq -e '
   ) and
   any($validation.steps[];
     .name == "Check Release Please workspace coverage" and
-    .run == ".github/scripts/check-release-please-workspace-coverage.sh"
+    .run == ".github/scripts/checks/check-release-please-workspace-coverage.sh"
   ) and
   ($gate.needs | index("release-workspace-coverage") != null) and
   $gate.steps[0].env.RELEASE_WORKSPACE_COVERAGE_RESULT ==

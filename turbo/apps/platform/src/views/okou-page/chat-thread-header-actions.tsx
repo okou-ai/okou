@@ -89,6 +89,26 @@ export function ChatThreadPinButton({
   );
 }
 
+function MobileArtifactsMenuItem({ thread }: { thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const reloadArtifacts = useSet(thread.reloadArtifacts$);
+  const openArtifacts = useOpenThreadArtifacts(thread);
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      onClick={() => {
+        reloadArtifacts();
+        openArtifacts();
+      }}
+    >
+      <Package size={16} />
+      {t(($) => {
+        return $.appShell.sidebar.navigation.artifacts;
+      })}
+    </DropdownMenuItem>
+  );
+}
+
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -102,6 +122,8 @@ export function MobileChatThreadMoreMenu({
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
+  const resourcesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
   const archived = useGet(thread.threadMeta$)?.archived === true;
   const [archiveLoadable, archive] = useLoadableSet(
     setChatThreadArchivedWithFeedback$,
@@ -110,8 +132,6 @@ export function MobileChatThreadMoreMenu({
   const automations = useLastResolved(thread.headerAutomations.automations$);
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomations = useSet(openThreadAutomations$);
-  const reloadArtifacts = useSet(thread.reloadArtifacts$);
-  const openArtifacts = useOpenThreadArtifacts(thread);
 
   return (
     <DropdownMenu>
@@ -188,7 +208,9 @@ export function MobileChatThreadMoreMenu({
                 })}
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
+        {(!resourcesEnabled || (automations && automations.length > 0)) && (
+          <DropdownMenuSeparator />
+        )}
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
@@ -203,18 +225,7 @@ export function MobileChatThreadMoreMenu({
             })}
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
-          className="min-h-11"
-          onClick={() => {
-            reloadArtifacts();
-            openArtifacts();
-          }}
-        >
-          <Package size={16} />
-          {t(($) => {
-            return $.appShell.sidebar.navigation.artifacts;
-          })}
-        </DropdownMenuItem>
+        {!resourcesEnabled && <MobileArtifactsMenuItem thread={thread} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );

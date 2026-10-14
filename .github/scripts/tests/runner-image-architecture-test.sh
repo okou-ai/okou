@@ -15,6 +15,11 @@ const load = name => JSON.parse(execFileSync("yq", ["-o=json", ".",
   path.join(root, ".github/workflows", name)], { encoding: "utf8" }));
 const caller = load("runner-image.yml");
 const branch = caller.jobs.build;
+const identity = caller.jobs.prepare.steps.find(step => step.id === "identity");
+assert.equal(identity.env.HEAD_SHA, "${{ github.sha }}",
+  "runner builds must use the immutable event revision");
+assert.equal(identity.env.PRODUCER_HEAD_SHA, "${{ github.event.pull_request.head.sha || github.sha }}",
+  "provenance must distinguish the Actions API head from the build merge revision");
 
 // This assertion fails against the pre-change production workflow, including
 // the mixed hit/miss case where a cached target waited for another compiler.
@@ -65,12 +70,12 @@ for (const job of [compile, image]) {
   assert.equal(checkouts.length, 1);
   assert.equal(checkouts[0].with.ref, "${{ inputs.head-sha }}");
 }
-assert.equal(compile.steps[1].run, ".github/scripts/runner-image-architecture.sh validate");
+assert.equal(compile.steps[1].run, ".github/scripts/runner/runner-image-architecture.sh validate");
 assert.equal(compile.steps[1].env.RUNNER_IMAGE_ARCHITECTURE, "${{ inputs.architecture-json }}");
 assert.equal(compile.steps[1].if, undefined);
 assert.equal(compile.steps[1]["continue-on-error"], undefined);
 const guard = image.steps.findIndex(step =>
-  step.run === ".github/scripts/runner-image-architecture.sh build-ready");
+  step.run === ".github/scripts/runner/runner-image-architecture.sh build-ready");
 assert.equal(guard, 1, "the image prerequisite guard must follow checkout before other work");
 assert.equal(image.steps[guard].env.RUNNER_IMAGE_COMPILE_RESULT, "${{ needs.compile.result }}");
 assert.equal(image.steps[guard].env.RUNNER_IMAGE_CACHE_HIT, "${{ inputs.cache-hit }}");
@@ -105,10 +110,10 @@ try {
   const env = { ...process.env, PATH: `${fixture}:${process.env.PATH}`,
     AWS_METAL_RUNNER_HOSTS: "arm.fixture,x86.fixture", METAL_USER: "fixture" };
   const groups = JSON.parse(execFileSync("bash",
-    [path.join(root, ".github/scripts/runner-host-architecture-groups.sh"), "matrix"],
+    [path.join(root, ".github/scripts/runner/runner-host-architecture-groups.sh"), "matrix"],
     { env, encoding: "utf8" }));
   assert.deepEqual(groups.map(group => group.id), ["arm64", "x86_64"]);
-  const validator = path.join(root, ".github/scripts/runner-image-architecture.sh");
+  const validator = path.join(root, ".github/scripts/runner/runner-image-architecture.sh");
   assert.notEqual(spawnSync("bash", [validator, "validate"], {
     env: { ...env, RUNNER_IMAGE_ARCHITECTURE: "{invalid JSON" }, encoding: "utf8",
   }).status, 0);

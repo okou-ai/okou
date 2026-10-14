@@ -134,7 +134,7 @@ import {
 
 import {
   loadRunCreditAdmissionState,
-  resolveOrgCreditAvailability,
+  resolveOrgCreditAvailability$,
   runHasActiveCreditAdmission,
   type RunCreditAdmissionState,
 } from "./run-admission.service";
@@ -494,8 +494,7 @@ export const resolveBillableFirewallCacheExpiry$ = command(
     if (!firewallAuthRunIsActive(run.status)) {
       return forbiddenTerminalRun();
     }
-    const availability = await resolveOrgCreditAvailability({
-      db: set(writeDb$),
+    const availability = await set(resolveOrgCreditAvailability$, {
       orgId: params.auth.orgId,
       userId: params.auth.userId,
     });

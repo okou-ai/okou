@@ -3,7 +3,6 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { setupApp } from "../../../__tests__/test-helpers";
 import { chatThreadRoutes } from "../chat-threads";
 import { createRouteMocks } from "./helpers/route-test";
-import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { gzipSync } from "node:zlib";
 import { Header } from "tar";
@@ -12,6 +11,7 @@ import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { oomEvidenceSchema } from "@okouai/api-contracts/contracts/oom-evidence";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createHash, randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import homeStartupTelemetry from "../../../../../../packages/api-contracts/src/contracts/__tests__/fixtures/runner-home-startup-telemetry.json";
 
@@ -97,7 +97,7 @@ function successfulAxiomIngestStatus(ingested: number) {
   };
 }
 
-function collectorEvidence(stage: "initial" | "sample" | "cleanup") {
+function collectorEvidence(stage: "initial" | "sample" | "cleanup" | "tasks") {
   const fixture: unknown = JSON.parse(
     readFileSync(
       new URL(
@@ -226,15 +226,6 @@ async function sandboxStorageWriteFixture(label: string) {
             "Storage writer failed",
           );
         } else {
-          const hash = await prepareSessionHistoryBytes(
-            context,
-            claimed.runId,
-            claimed.sandboxHeaders,
-            Buffer.from(`Public storage writer session ${claimed.runId}`),
-            (restore) => {
-              restoreAccepted = restore;
-            },
-          );
           await run(() => {
             return api.requestAgentComplete(
               {
@@ -243,7 +234,7 @@ async function sandboxStorageWriteFixture(label: string) {
                 completion: {
                   cliAgentType: "claude-code",
                   cliAgentSessionId: claimed.threadId,
-                  cliAgentSessionHistoryHash: hash,
+                  cliAgentSessionHistoryDisposition: "native_only",
                 },
               },
               claimed.sandboxHeaders,
@@ -1981,6 +1972,65 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     });
   });
 
+  it("acknowledges owned managed-task OOM evidence and rejects invalid task paths", async () => {
+    const {
+      runId,
+      headers,
+      run: own,
+    } = await createEventWebhookRun(`task OOM evidence ${randomUUID()}`);
+    await own(async () => {
+      const evidence = collectorEvidence("tasks");
+      let ingestRequests = 0;
+      mockOptionalEnv("AXIOM_TOKEN_TELEMETRY", `xaat-task-oom-${randomUUID()}`);
+      server.use(
+        http.post(
+          "https://api.axiom.co/v1/datasets/sandbox-telemetry-metrics/ingest",
+          async ({ request }) => {
+            ingestRequests += 1;
+            return HttpResponse.json(
+              successfulAxiomIngestStatus(await ingestedEventCount(request)),
+            );
+          },
+        ),
+      );
+      const response = await api.requestAgentTelemetry(
+        { runId, oomEvidence: evidence },
+        headers,
+        [200],
+      );
+      expect(response.body).toMatchObject({
+        success: true,
+        oomEvidenceVersion: 1,
+      });
+      const workload = evidence.groups[0].cgroup;
+      const nestedEvent = evidence.incidents[1]?.kernel_events[0];
+      assert(nestedEvent, "Expected a nested task collector kernel event");
+      const nestedVictim = nestedEvent.task_cgroup;
+      for (const path of [
+        `${workload}/tools/task-1/runtime`,
+        nestedVictim.replace(
+          "task-00000000-0000-0000-0000-000000000002",
+          "task-1",
+        ),
+        `${nestedVictim}/../runtime`,
+        nestedVictim.replace("exec-281-10-3", "exec-281-10-30"),
+      ]) {
+        for (const field of ["task_cgroup", "oom_cgroup"] as const) {
+          const altered = structuredClone(evidence);
+          const event = altered.incidents[1]?.kernel_events[0];
+          assert(event, "Expected a nested task collector kernel event");
+          event[field] = path;
+          await api.requestAgentTelemetryUnchecked(
+            { runId, oomEvidence: altered },
+            headers,
+            [400],
+          );
+        }
+      }
+      expect(ingestRequests).toBe(1);
+    });
+  });
+
   it("does not acknowledge OOM evidence when the Axiom destination is unavailable", async () => {
     const {
       runId,
@@ -2131,12 +2181,24 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
     } = await createEventWebhookRun(`home startup telemetry ${randomUUID()}`);
     await own(async () => {
       const body = { ...homeStartupTelemetry, runId };
-      for (const startupPath of ["home", "workspace", "sandbox", "cold"]) {
+      for (const startupPath of [
+        "home",
+        "workspace",
+        "sandbox",
+        "blank",
+        "cold",
+      ]) {
         const response = await api.requestAgentTelemetryUnchecked(
           {
             ...body,
             sandboxOperations: body.sandboxOperations.map((operation) => {
-              return { ...operation, runner_startup_path: startupPath };
+              return {
+                ...operation,
+                runner_startup_path: startupPath,
+                is_first_run: false,
+                reuse_key: `thread:${runId}`,
+                home_reuse_result: "cacheMiss",
+              };
             }),
           },
           headers,
@@ -2594,49 +2656,6 @@ describe("WHCB-09: sandbox storage writes and native history blobs land in the r
       const headers = {
         authorization: `Bearer ${claim.sandboxToken}`,
       };
-
-      // Native history blobs: first prepare issues an upload URL, the
-      // second sees the registered blob and skips the upload.
-      const historyHash = createHash("sha256")
-        .update(`bdd history blob ${run.runId}`)
-        .digest("hex");
-      const firstHistory = await api.requestAgentSessionHistoryPrepare(
-        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-        headers,
-        [200],
-      );
-      if (firstHistory.status !== 200) {
-        throw new Error("Expected the first history prepare to succeed");
-      }
-      expect(firstHistory.body.existing).toBeFalsy();
-      expect(firstHistory.body.presignedUrl).toMatch(/^https/);
-
-      const repeatedHistory = await api.requestAgentSessionHistoryPrepare(
-        { runId: run.runId, hash: historyHash, rawSize: 456, encodedSize: 456 },
-        headers,
-        [200],
-      );
-      if (repeatedHistory.status !== 200) {
-        throw new Error("Expected the repeated history prepare to succeed");
-      }
-      expect(repeatedHistory.body).toStrictEqual({
-        existing: true,
-        encoding: "identity",
-      });
-
-      // A real Run token cannot authorize a different, unknown Run identity.
-      const foreignHistory = await api.requestAgentSessionHistoryPrepare(
-        {
-          runId: randomUUID(),
-          hash: historyHash,
-          rawSize: 456,
-          encodedSize: 456,
-        },
-        headers,
-        [401],
-      );
-      expectApiError(foreignHistory.body);
-      expect(foreignHistory.body.error.code).toBe("UNAUTHORIZED");
 
       const unmountedStorage = await api.requestAgentStoragePrepare(
         {

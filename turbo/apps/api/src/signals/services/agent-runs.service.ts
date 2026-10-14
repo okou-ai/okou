@@ -17,11 +17,12 @@ import {
   type SandboxReuseResult,
   homeReuseResultSchema,
   type HomeReuseResult,
+  sandboxStartupPathSchema,
+  type SandboxStartupPath,
 } from "@okouai/api-contracts/contracts/runner-primitives";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { userCache } from "@okouai/db/schema/user-cache";
 import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
@@ -32,7 +33,7 @@ import {
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { orgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
 type ReadDb = Pick<Db, "select">;
@@ -70,93 +71,106 @@ function effectiveConcurrencyLimit(
 }
 
 /** One `active_agent_runs` row is one occupied slot; see the admission count. */
-async function concurrencyUsage(
-  db: ReadDb,
-  orgId: string,
-): Promise<{
-  readonly memberUsage: ConcurrencyMemberUsage[];
-}> {
-  const active = count();
-  const rows = await db
-    .select({ userId: activeAgentRuns.userId, active })
-    .from(activeAgentRuns)
-    .where(eq(activeAgentRuns.orgId, orgId))
-    .groupBy(activeAgentRuns.userId)
-    .orderBy(desc(active), asc(activeAgentRuns.userId));
-  const users =
-    rows.length > 0
-      ? await db
-          .select({
-            userId: userCache.userId,
-            name: userCache.name,
-            email: userCache.email,
-          })
-          .from(userCache)
-          .where(
-            inArray(
-              userCache.userId,
-              rows.map((row) => {
-                return row.userId;
-              }),
-            ),
-          )
-      : [];
-  const displayNames = new Map(
-    users.map((user) => {
-      return [user.userId, user.name?.trim() || user.email] as const;
-    }),
-  );
+function concurrencyUsage(orgId: string): Computed<
+  Promise<{
+    readonly memberUsage: ConcurrencyMemberUsage[];
+  }>
+> {
+  return computed(
+    async (
+      get,
+    ): Promise<{
+      readonly memberUsage: ConcurrencyMemberUsage[];
+    }> => {
+      const db = get(db$);
+      const active = count();
+      const rows = await db
+        .select({ userId: activeAgentRuns.userId, active })
+        .from(activeAgentRuns)
+        .where(eq(activeAgentRuns.orgId, orgId))
+        .groupBy(activeAgentRuns.userId)
+        .orderBy(desc(active), asc(activeAgentRuns.userId));
+      const users =
+        rows.length > 0
+          ? await db
+              .select({
+                userId: userCache.userId,
+                name: userCache.name,
+                email: userCache.email,
+              })
+              .from(userCache)
+              .where(
+                inArray(
+                  userCache.userId,
+                  rows.map((row) => {
+                    return row.userId;
+                  }),
+                ),
+              )
+          : [];
+      const displayNames = new Map(
+        users.map((user) => {
+          return [user.userId, user.name?.trim() || user.email] as const;
+        }),
+      );
 
-  return {
-    memberUsage: rows.map((row) => {
       return {
-        userId: row.userId,
-        displayName: displayNames.get(row.userId) || "unknown",
-        active: row.active,
+        memberUsage: rows.map((row) => {
+          return {
+            userId: row.userId,
+            displayName: displayNames.get(row.userId) || "unknown",
+            active: row.active,
+          };
+        }),
       };
-    }),
-  };
-}
-
-function runningRunRows(db: ReadDb, orgId: string): Promise<RunningRunRow[]> {
-  return db
-    .select({
-      id: agentRuns.id,
-      runUserId: agentRuns.userId,
-      startedAt: agentRuns.startedAt,
-      agentName: agents.name,
-      agentDisplayName: agents.displayName,
-    })
-    .from(agentRuns)
-    .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-    .leftJoin(agents, eq(agentSessions.agentId, agents.id))
-    .where(and(eq(agentRuns.orgId, orgId), eq(agentRuns.status, "running")))
-    .orderBy(asc(agentRuns.startedAt));
-}
-
-async function userEmailMap(
-  db: ReadDb,
-  runningRuns: readonly RunningRunRow[],
-): Promise<ReadonlyMap<string, string>> {
-  const userIds = [
-    ...new Set(
-      runningRuns.map((run) => {
-        return run.runUserId;
-      }),
-    ),
-  ];
-  const rows =
-    userIds.length > 0
-      ? await db
-          .select({ userId: userCache.userId, email: userCache.email })
-          .from(userCache)
-          .where(inArray(userCache.userId, userIds))
-      : [];
-  return new Map(
-    rows.map((row) => {
-      return [row.userId, row.email] as const;
-    }),
+    },
   );
+}
+
+function runningRunRows(orgId: string): Computed<Promise<RunningRunRow[]>> {
+  return computed(async (get): Promise<RunningRunRow[]> => {
+    const db = get(db$);
+    return await db
+      .select({
+        id: agentRuns.id,
+        runUserId: agentRuns.userId,
+        startedAt: agentRuns.startedAt,
+        agentName: agents.name,
+        agentDisplayName: agents.displayName,
+      })
+      .from(agentRuns)
+      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
+      .where(and(eq(agentRuns.orgId, orgId), eq(agentRuns.status, "running")))
+      .orderBy(asc(agentRuns.startedAt));
+  });
+}
+
+function userEmailMap(
+  runningRuns$: Computed<Promise<RunningRunRow[]>>,
+): Computed<Promise<ReadonlyMap<string, string>>> {
+  return computed(async (get): Promise<ReadonlyMap<string, string>> => {
+    const runningRuns = await get(runningRuns$);
+    const db = get(db$);
+    const userIds = [
+      ...new Set(
+        runningRuns.map((run) => {
+          return run.runUserId;
+        }),
+      ),
+    ];
+    const rows =
+      userIds.length > 0
+        ? await db
+            .select({ userId: userCache.userId, email: userCache.email })
+            .from(userCache)
+            .where(inArray(userCache.userId, userIds))
+        : [];
+    return new Map(
+      rows.map((row) => {
+        return [row.userId, row.email] as const;
+      }),
+    );
+  });
 }
 
 function runningTaskItem(
@@ -314,6 +328,7 @@ export function agentRunRunner(args: {
   Promise<{
     readonly sandboxReuseResult: SandboxReuseResult | null;
     readonly homeReuseResult: HomeReuseResult | null;
+    readonly sandboxStartupPath: SandboxStartupPath | null;
     readonly runnerHostname: string | null;
     readonly runnerVersion: string | null;
     readonly runnerId: string | null;
@@ -325,6 +340,7 @@ export function agentRunRunner(args: {
       .select({
         sandboxReuseResult: agentRuns.sandboxReuseResult,
         homeReuseResult: agentRuns.homeReuseResult,
+        sandboxStartupPath: agentRuns.sandboxStartupPath,
         runnerHostname: agentRuns.runnerHostname,
         runnerVersion: agentRuns.runnerVersion,
         runnerId: agentRuns.runnerId,
@@ -351,6 +367,9 @@ export function agentRunRunner(args: {
     return {
       sandboxReuseResult: sandboxResult.success ? sandboxResult.data : null,
       homeReuseResult: homeResult.success ? homeResult.data : null,
+      sandboxStartupPath: sandboxStartupPathSchema
+        .nullable()
+        .parse(row.sandboxStartupPath),
       runnerHostname: row.runnerHostname,
       runnerVersion: row.runnerVersion,
       runnerId: row.runnerId,
@@ -379,13 +398,17 @@ export function agentRunQueueStatus(args: {
   readonly orgId: string;
   readonly orgTier: OrgTier;
 }): Computed<Promise<QueueResponse>> {
+  const usage$ = concurrencyUsage(args.orgId);
+  const runningRuns$ = runningRunRows(args.orgId);
+  const paidSlots$ = activePaidConcurrencySlots(args.orgId);
+  const capabilities$ = orgPlanCapabilities(args.orgId);
+  const emails$ = userEmailMap(runningRuns$);
   return computed(async (get): Promise<QueueResponse> => {
-    const db = get(db$);
     const [usage, runningRuns, paidSlots, capabilities] = await Promise.all([
-      concurrencyUsage(db, args.orgId),
-      runningRunRows(db, args.orgId),
-      activePaidConcurrencySlots(db, args.orgId),
-      loadOrgPlanCapabilities(db, args.orgId),
+      get(usage$),
+      get(runningRuns$),
+      get(paidSlots$),
+      get(capabilities$),
     ]);
     const { memberUsage } = usage;
     const limit = effectiveConcurrencyLimit(
@@ -395,7 +418,7 @@ export function agentRunQueueStatus(args: {
     const active = memberUsage.reduce((total, member) => {
       return total + member.active;
     }, 0);
-    const emails = await userEmailMap(db, runningRuns);
+    const emails = await get(emails$);
 
     return {
       concurrency: {

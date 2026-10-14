@@ -20,7 +20,7 @@ export function artifactVisibilityUnavailable() {
   return httpError(
     403,
     "FORBIDDEN",
-    "Artifact visibility requires private artifacts to be enabled",
+    "Private artifact creation is unavailable for this request",
   );
 }
 

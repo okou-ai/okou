@@ -2,9 +2,14 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod evidence;
 mod finalizing;
 mod fixture;
+mod optional;
 mod pressure;
+mod pressure_condition;
+mod refusal;
+mod tail;
 mod transitions;
 
 use std::{error::Error, io, path::PathBuf, sync::Arc};
@@ -38,6 +43,38 @@ type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
 
+#[test]
+fn native_report_consumer_validates_external_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/report_test.py"
+        ))
+        .output()
+        .expect("native report contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_pressure_report_consumer_validates_external_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/pressure_report_test.py"
+        ))
+        .output()
+        .expect("native pressure report contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native pressure report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
@@ -45,6 +82,8 @@ enum NativeScope {
     Replacement,
     Restore,
     Aged,
+    OptionalOrdinary,
+    OptionalAged,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -72,28 +111,144 @@ async fn guarded_terminal_saving_restores_home_without_private_runtime_bytes() -
     result
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, compiled source identity and P1 measurement"]
+async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult<()> {
+    measured_corpus(&[
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::CallerOwned,
+        NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
+    ])
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real Critical-policy observation and P1 measurement"]
+async fn native_policy_pressure_records_saving_and_free_logical_capacity() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Pressure]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real fitting headroom and P1 measurement"]
+async fn native_logical_pressure_records_replacement_and_required_saving() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Logical]).await
+}
+
+async fn measured_corpus(scopes: &[NativeScope]) -> TestResult<()> {
+    native_logging()?;
+    if !nix::unistd::getuid().is_root() {
+        return Err(io::Error::other("native terminal corpus requires root").into());
+    }
+    let artifacts = evidence::Artifacts::load_and_verify()?;
+    let inputs = fixture::Inputs::load()?;
+    if inputs.envelope().tail_growth_bytes < (evidence::TAIL_BYTES + 1024 * 1024) as u64 {
+        return Err(
+            io::Error::other("supplied tail bound cannot cover the complete fixture IO").into(),
+        );
+    }
+    let base = PathBuf::from(std::env::var("OKOU_TEST_RPC_BASE_DIR")?);
+    if !base.is_dir() || std::fs::symlink_metadata(&base)?.file_type().is_symlink() {
+        return Err(
+            io::Error::other("native terminal base must be an owned existing directory").into(),
+        );
+    }
+    let mut runtime = FirecrackerRuntime::new(RuntimeConfig {
+        proxy_port: None,
+        dns_port: None,
+        host_cpu_placement: None,
+    })
+    .await?;
+    let result =
+        exercise_selected_factories(&runtime, &base, &inputs, scopes, Some(&artifacts)).await;
+    if result.is_ok() {
+        runtime.shutdown().await;
+    }
+    result
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "prepares a new matching snapshot from explicitly supplied disposable native artifacts"]
+async fn prepare_native_terminal_snapshot() -> TestResult<()> {
+    native_logging()?;
+    if !nix::unistd::getuid().is_root() {
+        return Err(io::Error::other("snapshot preparation requires root").into());
+    }
+    let output_dir = PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?);
+    if output_dir.exists() {
+        return Err(
+            io::Error::other("snapshot preparation requires a new output directory").into(),
+        );
+    }
+    sandbox_firecracker::create_snapshot(sandbox::SnapshotCreateConfig {
+        id: std::env::var("OKOU_TEST_RPC_SNAPSHOT_HASH")?,
+        binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
+        kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
+        rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
+        output_dir,
+        vcpu_count: 2,
+        memory_mb: 4096,
+        home_disk_mb: 16384,
+    })
+    .await?;
+    Ok(())
+}
+
+fn native_logging() -> TestResult<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_ansi(false)
+        .with_writer(io::stderr)
+        .try_init()
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(())
+}
+
 async fn exercise_factories(
     runtime: &FirecrackerRuntime,
     base: &std::path::Path,
     inputs: &fixture::Inputs,
 ) -> TestResult<()> {
-    for scope in [
+    let scopes = [
         NativeScope::Batch(IdleRetirementBatchScope::Exact),
         NativeScope::Batch(IdleRetirementBatchScope::All),
         NativeScope::Logical,
         NativeScope::Replacement,
         NativeScope::Restore,
         NativeScope::Aged,
+        NativeScope::OptionalOrdinary,
+        NativeScope::OptionalAged,
         NativeScope::CallerOwned,
         NativeScope::SpeculativeGuestFailure,
         NativeScope::FinalizingParked,
         NativeScope::FinalizingRunning,
         NativeScope::Pressure,
-    ] {
+    ];
+    exercise_selected_factories(runtime, base, inputs, &scopes, None).await
+}
+
+async fn exercise_selected_factories(
+    runtime: &FirecrackerRuntime,
+    base: &std::path::Path,
+    inputs: &fixture::Inputs,
+    scopes: &[NativeScope],
+    artifacts: Option<&evidence::Artifacts>,
+) -> TestResult<()> {
+    for &scope in scopes {
         for restored in [false, true] {
             // Never share a production Runner directory or another invocation's cache.
-            let owned = tempfile::tempdir_in(base)?;
-            let paths = RunnerPaths::new(owned.path().to_owned());
+            let owned = tempfile::tempdir_in(base)?.keep();
+            let paths = RunnerPaths::new(owned.clone());
+            let proof = artifacts
+                .map(|artifacts| {
+                    evidence::Case::new(
+                        format!("{scope:?}-{}", if restored { "snapshot" } else { "fresh" }),
+                        artifacts.clone(),
+                    )
+                })
+                .transpose()?;
             let snapshot = if restored {
                 Some(SnapshotRef {
                     output_dir: PathBuf::from(std::env::var("OKOU_TEST_RPC_SNAPSHOT_DIR")?),
@@ -108,16 +263,42 @@ async fn exercise_factories(
                     binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                     kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
                     rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                    base_dir: owned.path().to_owned(),
+                    base_dir: owned.clone(),
                     snapshot,
                 })
                 .await?;
+            let factory: Box<dyn SandboxFactory> = if let Some(proof) = &proof {
+                Box::new(tail::MeasuredFactory {
+                    inner: factory,
+                    case: proof.clone(),
+                    directory: owned.clone(),
+                    physical: tokio_util::task::TaskTracker::new(),
+                })
+            } else {
+                factory
+            };
             let factory = Arc::new(factory);
-            let result = exercise_retirement(factory.clone(), paths, inputs, scope).await;
+            let result =
+                exercise_retirement(factory.clone(), paths, inputs, scope, proof.as_ref()).await;
+            // A failed measured case is not permission to tear down dependencies
+            // or delete its files. Accepted cleanup retains its own factory owner.
+            if proof.is_some() {
+                result
+                    .as_ref()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+            }
+            if let Some(proof) = &proof {
+                proof.release_completed_owners();
+            }
             let mut factory = Arc::try_unwrap(factory)
                 .map_err(|_| io::Error::other("native fixture lost its exclusive factory owner"))?;
             factory.shutdown().await;
             result?;
+            if let Some(proof) = proof {
+                proof.finish().await?;
+            }
+            // Only verified data/exit/physical tail and dependency teardown permit removal.
+            std::fs::remove_dir_all(&owned)?;
             println!("GUARDED_IDLE_TERMINAL_PASS restored={restored} scope={scope:?}");
         }
     }
@@ -129,6 +310,7 @@ async fn exercise_retirement(
     paths: RunnerPaths,
     inputs: &fixture::Inputs,
     scope: NativeScope,
+    proof: Option<&Arc<evidence::Case>>,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -156,15 +338,27 @@ async fn exercise_retirement(
         return Err(error);
     }
     let (vcpu, memory) = match scope {
+        NativeScope::Pressure => (6, 12288),
         NativeScope::Replacement | NativeScope::Restore => (4, 8192),
-        NativeScope::Aged => (12, 24576),
+        NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+            (12, 24576)
+        }
         _ => (2, 4096),
     };
     let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
+    if let Some(proof) = proof {
+        let backing = sandbox
+            .backing_process()
+            .ok_or_else(|| io::Error::other("native receipt has no backing"))?;
+        proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
+    }
     if matches!(
         scope,
         NativeScope::FinalizingParked | NativeScope::FinalizingRunning
     ) {
+        if let Some(proof) = proof {
+            proof.event("terminal_started", serde_json::json!({}))?;
+        }
         return finalizing::exercise(
             finalizing::Context {
                 factory,
@@ -180,6 +374,7 @@ async fn exercise_retirement(
             },
             inputs,
             matches!(scope, NativeScope::FinalizingRunning),
+            proof,
         )
         .await;
     }
@@ -213,7 +408,13 @@ async fn exercise_retirement(
             return Err(error);
         }
     };
-    let mut pool = IdlePool::new(IdlePoolConfig { max_idle: 1 });
+    let mut pool = IdlePool::new(IdlePoolConfig {
+        max_idle: if matches!(scope, NativeScope::OptionalOrdinary) {
+            2
+        } else {
+            1
+        },
+    });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
     let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
         .with_sandbox(sandbox)
@@ -234,7 +435,7 @@ async fn exercise_retirement(
             .await?;
         return Err(error.into());
     }
-    let parked = if matches!(scope, NativeScope::Aged) {
+    let parked = if matches!(scope, NativeScope::Aged | NativeScope::OptionalAged) {
         pool.park_at_for_test(
             candidate,
             std::time::Instant::now() - std::time::Duration::from_secs(40 * 60),
@@ -244,10 +445,27 @@ async fn exercise_retirement(
     };
     assert!(matches!(parked, ParkResult::Parked));
     let pool = Arc::new(tokio::sync::Mutex::new(pool));
+    if let Some(proof) = proof {
+        proof.retain(pool.clone());
+        proof.retain(tracker.clone());
+        proof.retain(operations.clone());
+        if matches!(scope, NativeScope::Pressure | NativeScope::Logical) {
+            pressure_condition::observe(&operations, &budget, inputs, scope, proof).await?;
+        }
+        proof.event("terminal_started", serde_json::json!({}))?;
+    }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
+                optional::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, matches!(scope, NativeScope::OptionalAged)).await?;
+                Ok(None)
+            }
             NativeScope::Pressure => {
-                pressure::exercise(&pool, &status, &tracker, &operations, inputs).await?;
+                pressure::exercise(&pool, &status, &tracker, &operations, inputs, proof).await?;
                 Ok(None)
             }
             NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
@@ -287,6 +505,9 @@ async fn exercise_retirement(
                     ))
                     .to_string();
                     if result.as_ref().err() != Some(&expected_error) {
+                        if let Some(proof) = proof {
+                            proof.retain(speculative);
+                        }
                         return Err(io::Error::other(format!(
                             "native speculative guest restore expected {expected_error:?}, got {result:?}"
                         ))
@@ -297,14 +518,23 @@ async fn exercise_retirement(
                     IdleActivationOwner::new(reservation)
                         .map_err(|_| io::Error::other("native caller received running handoff"))?
                 });
-                let mut task = tracker
+                let accepted = tracker
                     .retire_activation_owner(
                         &mut owner,
                         &operations,
                         inputs.envelope(),
                         "native_caller_cleanup",
                     )
-                    .await?;
+                    .await;
+                let mut task = match accepted {
+                    Ok(task) => task,
+                    Err(error) => {
+                        if let Some(proof) = proof {
+                            proof.retain(owner.take());
+                        }
+                        return Err(error.into());
+                    }
+                };
                 assert!(owner.is_none());
                 let outcome = task.join().await??;
                 if !matches!(
@@ -413,52 +643,83 @@ async fn exercise_retirement(
                 };
                 assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
                 assert_eq!(result.retirements.len(), 1);
-                // Prepare a different guest before joining old cleanup. Ordinary
-                // external gates establish still-live overlap, without timing claims.
-                let next_factory = factory.clone();
-                let next_cache = cache.clone();
-                let next_rootfs = rootfs_hash.clone();
-                let work = permit.spawn(move |mut operation| async move {
-                    let next_run = RunId::new_v4();
-                    let next_id = SandboxId::new_v4();
-                    let key = format!("thread:native-logical-replacement-{next_run}");
-                    let mut home =
-                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
-                    let mut next = next_factory
-                        .create(fixture::sandbox_config(next_id, &mut home))
-                        .await?;
-                    let prepared: TestResult<()> = async {
-                        let backing = next
-                            .backing_process()
-                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
-                        operation.bind_backing(backing)?;
-                        fixture::prepare_guest(&mut *next, next_run).await?;
-                        loop {
-                            match operation.complete_phase().await {
-                                Ok(()) => break,
-                                Err(MemoryOperationError::AccountingChanged) => {
-                                    tokio::task::yield_now().await
+                let completed: TestResult<()> = async {
+                    // Prepare a different guest before joining old cleanup;
+                    // this adds no old-exit barrier or still-live overlap claim.
+                    let next_factory = factory.clone();
+                    let next_cache = cache.clone();
+                    let next_rootfs = rootfs_hash.clone();
+                    let next_proof = proof.cloned();
+                    let work = permit.spawn(move |mut operation| async move {
+                        let next_run = RunId::new_v4();
+                        let next_id = SandboxId::new_v4();
+                        let key = format!("thread:native-logical-replacement-{next_run}");
+                        let mut home =
+                            fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                        let mut next = next_factory
+                            .create(fixture::sandbox_config(next_id, &mut home))
+                            .await?;
+                        let prepared: TestResult<()> = async {
+                            // The Fresh operation covers startup; Firecracker exposes
+                            // its backing only after the process has started.
+                            fixture::start_guest(&mut *next, next_run).await?;
+                            let backing = next
+                                .backing_process()
+                                .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                            operation.bind_backing(backing)?;
+                            fixture::prepare_started_guest(&mut *next, next_run).await?;
+                            loop {
+                                match operation.complete_phase().await {
+                                    Ok(()) => break,
+                                    Err(MemoryOperationError::AccountingChanged) => {
+                                        tokio::task::yield_now().await
+                                    }
+                                    Err(error) => return Err(error.into()),
                                 }
-                                Err(error) => return Err(error.into()),
                             }
+                            if let Some(proof) = &next_proof {
+                                proof.pressure_witness(
+                                    "different_guest_prepared",
+                                    serde_json::json!({
+                                        "incoming_sandbox_id": next_id.to_string(),
+                                        "admitted": true,
+                                    }),
+                                )?;
+                            }
+                            Ok(())
                         }
-                        Ok(())
+                        .await;
+                        next_factory.destroy(next).await;
+                        prepared
+                    })?;
+                    work.join().await??;
+                    if let Some(proof) = proof {
+                        proof.pressure_witness(
+                            "original_join_requested",
+                            serde_json::json!({"retirements": result.retirements.len()}),
+                        )?;
                     }
-                    .await;
-                    next_factory.destroy(next).await;
-                    prepared
-                })?;
-                work.join().await??;
-                for task in &mut result.retirements {
-                    let completion = task.join().await??;
-                    if completion.outcome != DestroyOutcome::Completed
-                        || !completion.home_cache_promoted
-                    {
-                        return Err(io::Error::other(
-                            "native logical retirement did not prove complete saving",
-                        )
-                        .into());
+                    for task in &mut result.retirements {
+                        let completion = task.join().await??;
+                        if completion.outcome != DestroyOutcome::Completed
+                            || !completion.home_cache_promoted
+                        {
+                            return Err(io::Error::other(
+                                "native logical retirement did not prove complete saving",
+                            )
+                            .into());
+                        }
                     }
+                    Ok(())
+                }
+                .await;
+                if let Err(error) = completed {
+                    if let Some(proof) = proof {
+                        // Accepted saving can outlive failed replacement work.
+                        // Preserve its complete original lease with the owners.
+                        proof.retain(lease);
+                    }
+                    return Err(error);
                 }
                 Ok(Some(lease))
             }
@@ -468,6 +729,11 @@ async fn exercise_retirement(
     let logical_lease = match retirement {
         Ok(lease) => lease,
         Err(error) => {
+            if proof.is_some() {
+                // Real retained pool/tracker/operation owners above keep refusal
+                // or uncertainty intact; raw destruction cannot prove saving.
+                return Err(error);
+            }
             let jobs = pool.lock().await.drain();
             for job in jobs {
                 job.run_with_context("native_fixture_refused_batch_cleanup")

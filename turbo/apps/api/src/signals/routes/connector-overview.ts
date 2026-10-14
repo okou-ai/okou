@@ -19,7 +19,7 @@ import {
   agentExists,
 } from "../services/agent-data.service";
 import { executableConnectorSlugs } from "../services/connector-action-resolver.service";
-import { listConnectorAccountSummaries } from "../services/connector-account-lifecycle.service";
+import { connectorAccountSummaries } from "../services/connector-account-lifecycle.service";
 import {
   isConnectorCatalogUnavailableError,
   connectorBriefsFromRows,
@@ -35,13 +35,15 @@ import { userFeatureSwitchOverrides } from "../services/feature-switches.service
 import { userPreferences } from "../services/user-data.service";
 import { settle } from "../utils";
 
+const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+
 const overview$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const owner = { orgId: auth.orgId, userId: auth.userId };
   const db = get(db$);
   const [summaries, customConnectors, preferences, hosts, overrides] =
     await Promise.all([
-      listConnectorAccountSummaries(db, owner),
+      get(accountSummaries$),
       get(customConnectorList(owner)),
       get(userPreferences(owner)),
       set(listComputerUseHosts$, owner, signal),

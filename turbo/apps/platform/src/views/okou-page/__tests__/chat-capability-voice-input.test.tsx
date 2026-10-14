@@ -162,22 +162,26 @@ test("Start and stop voice input from the focused composer shortcut", async () =
   expect(normalizedComposerText()).toBe("Shortcut voice note");
 });
 
-test("Transcribe a voice draft using the latest assistant reference", async () => {
+test("Transcribe a voice draft without sending assistant history", async () => {
   const user = userEvent.setup({ delay: null });
   const transcriptionStarted = context.mocks.deferred<void>();
   const transcriptionReady = context.mocks.deferred<void>();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   installAvailableVoiceQuota();
-  context.mocks.http.post("*/api/voice-io/polish/segments", () => {
-    return HttpResponse.json({ text: "Send the launch update tomorrow." });
-  });
+  context.mocks.http.post(
+    "*/api/voice-io/polish/segments",
+    async ({ request }) => {
+      await expect(request.json()).resolves.toStrictEqual({
+        segments: ["um send the launch update tomorrow"],
+      });
+      return HttpResponse.json({ text: "Send the launch update tomorrow." });
+    },
+  );
   context.mocks.http.post(
     "*/api/voice-io/transcribe/segment",
     async ({ request }) => {
       const body = await request.formData();
-      expect(body.get("lastAssistantMessage")).toBe(
-        "Use LaunchPad for the rollout.",
-      );
+      expect(body.has("lastAssistantMessage")).toBeFalsy();
       expect(JSON.parse(String(body.get("editorContext")))).toStrictEqual({
         before: "Opening  closing",
         selected: "",

@@ -1,4 +1,11 @@
-"""Version-locked bridges for mitmproxy state that public hooks omit."""
+"""Version-locked bridges for mitmproxy state that public hooks omit.
+
+Prefer public addon hooks and dependency APIs. Keep monkey patches and private
+state access to the minimum required by a demonstrated missing capability,
+delegate protocol logic to upstream, and retire bridges when public APIs suffice.
+Prefer state-specific boundaries over shared event dispatch.
+See the compatibility policy in docs/runner/mitm-addon-contracts.md.
+"""
 
 import asyncio
 from contextvars import ContextVar
@@ -6,6 +13,7 @@ from dataclasses import dataclass, field
 
 import wsproto
 from mitmproxy import http, version
+from mitmproxy.connection import Connection
 from mitmproxy.proxy import commands, events, layer
 from mitmproxy.proxy.layers.http import HttpStream
 from mitmproxy.proxy.layers.http._events import RequestHeaders
@@ -41,6 +49,17 @@ class ResponseInspectionHook(commands.StartHook):
         return [self.flow]
 
 
+@dataclass
+class _ReaderInspectionCheckpoints:
+    owner: asyncio.Task[object] | None
+    pending: list[ResponseInspectionHook] = field(default_factory=list)
+
+
+_READER_INSPECTION: ContextVar[_ReaderInspectionCheckpoints | None] = ContextVar(
+    "reader_response_inspection", default=None
+)
+
+
 def install_runtime_compatibility() -> None:
     """Install all exact-version mitmproxy compatibility adaptations."""
     if version.VERSION != _SUPPORTED_MITMPROXY_VERSION:
@@ -60,7 +79,11 @@ def install_runtime_compatibility() -> None:
 
 
 def _install_request_end_stream_bridge() -> None:
-    """Expose RequestHeaders.end_stream to the matching public hook once."""
+    """Expose RequestHeaders.end_stream to the matching public hook once.
+
+    Patch only the request-header state; upstream retains framing and protocol
+    decisions without an extra shared-dispatch filter.
+    """
     current_handler = HttpStream.state_wait_for_request_headers
     if hasattr(current_handler, _BRIDGE_MARKER_ATTRIBUTE):
         return
@@ -102,16 +125,22 @@ def _install_request_end_stream_bridge() -> None:
 def _install_response_inspection_bridge() -> None:
     """Pause the stream AND its connection reader, outside the event lock.
 
-    In 12.2.3, handle_connection awaits server_event between 65,535-byte reads.
+    In 12.2.3, handle_connection catches cancellation in drain_writers, but not
+    in DataReceived dispatch. Join reader checkpoints in that native boundary
+    so cancellation still closes the connection and completes its HTTP flows.
     A hook alone does not backpressure those reads. Join the complete hook task
     (including HookCompleted and any buffered body events it resumes), not just
     the parser future, before allowing the read loop to continue.
+    Insert checkpoints only in the streamed-response state, keeping shared
+    HTTP event dispatch with upstream.
     """
     current_stream = HttpStream.state_stream_response_body
     if hasattr(current_stream, _RESPONSE_INSPECTION_BRIDGE):
         return
     current_event = ConnectionHandler.server_event
     current_hook = ConnectionHandler.hook_task
+    current_connection = ConnectionHandler.handle_connection
+    current_drain = ConnectionHandler.drain_writers
 
     def state_stream_response_body(
         self: HttpStream, event: events.Event
@@ -133,6 +162,17 @@ def _install_response_inspection_bridge() -> None:
             await current_event(self, event)
         finally:
             _INSPECTION_CHECKPOINTS.reset(token)
+        reader = _READER_INSPECTION.get()
+        if (
+            isinstance(event, events.DataReceived)
+            and reader is not None
+            and reader.owner is asyncio.current_task()
+        ):
+            reader.pending.extend(checkpoints)
+        else:
+            await join_checkpoints(checkpoints)
+
+    async def join_checkpoints(checkpoints: list[ResponseInspectionHook]) -> None:
         try:
             for checkpoint in checkpoints:
                 if checkpoint.completed is not None:
@@ -141,6 +181,25 @@ def _install_response_inspection_bridge() -> None:
             for checkpoint in checkpoints:
                 response_streaming.abandon_response_inspection(checkpoint.flow)
             raise
+
+    async def handle_connection(self: ConnectionHandler, connection: Connection) -> None:
+        reader = _ReaderInspectionCheckpoints(asyncio.current_task())
+        token = _READER_INSPECTION.set(reader)
+        try:
+            await current_connection(self, connection)
+        finally:
+            _READER_INSPECTION.reset(token)
+            for checkpoint in reader.pending:
+                response_streaming.abandon_response_inspection(checkpoint.flow)
+
+    async def drain_writers(self: ConnectionHandler) -> None:
+        reader = _READER_INSPECTION.get()
+        # Native hook tasks inherit the reader's context, but their buffered
+        # HookCompleted continuations must keep their own checkpoint joins.
+        if reader is not None and reader.owner is asyncio.current_task():
+            checkpoints, reader.pending = reader.pending, []
+            await join_checkpoints(checkpoints)
+        await current_drain(self)
 
     async def hook_task(self: ConnectionHandler, hook: commands.StartHook) -> None:
         if not isinstance(hook, ResponseInspectionHook):
@@ -164,6 +223,8 @@ def _install_response_inspection_bridge() -> None:
     HttpStream.state_stream_response_body = state_stream_response_body
     ConnectionHandler.server_event = server_event
     ConnectionHandler.hook_task = hook_task
+    ConnectionHandler.handle_connection = handle_connection
+    ConnectionHandler.drain_writers = drain_writers
 
 
 def take_request_end_stream(flow: http.HTTPFlow) -> bool | None:

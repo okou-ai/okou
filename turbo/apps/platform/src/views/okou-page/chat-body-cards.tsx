@@ -75,6 +75,7 @@ import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
+import { WalletActionCard } from "./wallet-action-card.tsx";
 import { ConnectorAccountActionCard } from "./connector-account-action-card.tsx";
 import { SubscriptionResetCard } from "./subscription-reset-card.tsx";
 import { MailDraftCard } from "./mail-draft-card.tsx";
@@ -330,6 +331,9 @@ export function MarkdownCardView({
     }
     case "banking-action": {
       return <BankingActionCard signals={card.signals} />;
+    }
+    case "wallet-action": {
+      return <WalletActionCard signals={card.signals} />;
     }
     case "unavailable-action": {
       return <UnavailableActionCard />;

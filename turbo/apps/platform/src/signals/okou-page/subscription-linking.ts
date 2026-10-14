@@ -1,21 +1,30 @@
 import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/contracts/model-providers";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
-import { user$ } from "../auth.ts";
+import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { localStorageSignals } from "../external/local-storage.ts";
-import {
-  personalModelProviders$,
-  refreshPersonalModelProvidersIfStale$,
-} from "../external/personal-model-providers.ts";
-import { onRef } from "../utils.ts";
+import { personalModelProviders$ } from "../external/personal-model-providers.ts";
 import { setSidebarExpanded$ } from "./nav.ts";
 import { openSettingsDialogAt$ } from "./settings/settings-dialog.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
 import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth.ts";
 
-type SubscriptionLinkingSource = "composer_hint" | "account_menu";
+export type SubscriptionLinkingSource =
+  "composer_model_slot" | "composer_model_panel" | "account_menu" | "me_page";
+
+/** Both subscriptions, in the order every entry lists them. */
+export const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] =
+  ["codex-oauth-token", "claude-code-oauth-token"];
+
+export interface SubscriptionPlanStatus {
+  readonly type: PersonalSubscriptionProviderType;
+  readonly linked: boolean;
+  /** The tighter usage window of the active account, when it is reported. */
+  readonly remainingPercent: number | null;
+  /** Which window `remainingPercent` belongs to, so the caption can name it. */
+  readonly limitingWindow: "fiveHour" | "week" | null;
+}
 
 export const subscriptionLinkingEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry];
@@ -29,87 +38,53 @@ export const subscriptionLinkingUnlinked$ = computed(async (get) => {
   return modelProviders.length === 0;
 });
 
-const hintDismissalStorage$ = computed(async (get) => {
-  const user = await get(user$);
-  return user
-    ? localStorageSignals(`subscription-hint-dismissed:${user.id}`)
-    : null;
-});
-
-export const subscriptionLinkingHintVisible$ = computed(async (get) => {
+/**
+ * Each subscription, linked or not, so the model panel can keep an entry for
+ * the one still missing instead of reading as if only one can be linked.
+ */
+export const subscriptionPlanStatuses$ = computed(async (get) => {
   if (!get(subscriptionLinkingEnabled$)) {
-    return false;
+    return null;
   }
-  const storage = await get(hintDismissalStorage$);
-  if (!storage || get(storage.get$) === "1") {
-    return false;
-  }
-  return (await get(subscriptionLinkingUnlinked$)) === true;
+  const { modelProviders } = await get(personalModelProviders$);
+  return SUBSCRIPTION_PROVIDERS.map((type): SubscriptionPlanStatus => {
+    const accounts = modelProviders.filter((account) => {
+      return account.type === type;
+    });
+    const active = accounts.find((account) => {
+      return account.isActive !== false;
+    });
+    const limiting = limitingSubscriptionUsageWindow(active?.subscriptionUsage);
+    const remainingPercent = limiting?.remainingPercent ?? null;
+    return {
+      type,
+      linked: accounts.length > 0,
+      remainingPercent,
+      limitingWindow:
+        limiting !== null && remainingPercent !== null ? limiting.kind : null,
+    };
+  });
 });
 
-export const dismissSubscriptionLinkingHint$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
-    const storage = await get(hintDismissalStorage$);
-    signal.throwIfAborted();
-    if (storage) {
-      set(storage.set$, "1");
-      captureSubscriptionLinkingEvent("hint_dismissed", "composer_hint");
-    }
-  },
-);
-
-export const subscriptionLinkingHintRef$ = onRef(
-  command((_, element: HTMLElement, signal: AbortSignal) => {
-    const observer = new IntersectionObserver((entries) => {
-      if (
-        entries.some((entry) => {
-          return entry.isIntersecting;
-        })
-      ) {
-        captureSubscriptionLinkingEvent("hint_viewed", "composer_hint");
-        observer.disconnect();
-      }
-    });
-    observer.observe(element);
-    signal.addEventListener("abort", () => {
-      return observer.disconnect();
-    });
-  }),
-);
-
-const internalSubscriptionLinkingSource$ =
-  state<SubscriptionLinkingSource | null>(null);
-
-export const subscriptionLinkingSource$ = computed((get) => {
-  return get(internalSubscriptionLinkingSource$);
-});
-
-export const openSubscriptionLinking$ = command(
-  ({ set }, source: SubscriptionLinkingSource) => {
-    set(setSidebarExpanded$, false);
+export const trackSubscriptionLinkingOpened$ = command(
+  (_, source: SubscriptionLinkingSource) => {
     captureSubscriptionLinkingEvent("entry_clicked", source);
-    set(refreshPersonalModelProvidersIfStale$);
-    set(internalSubscriptionLinkingSource$, source);
   },
 );
 
-export const closeSubscriptionLinking$ = command(({ set }) => {
-  set(internalSubscriptionLinkingSource$, null);
-});
-
+/** Every entry names the provider itself, so it opens that provider's sign-in. */
 export const connectSubscriptionLinkingProvider$ = command(
   async (
     { get, set },
+    source: SubscriptionLinkingSource,
     provider: PersonalSubscriptionProviderType,
     signal: AbortSignal,
   ) => {
-    const source = get(internalSubscriptionLinkingSource$);
-    if (!source || !get(subscriptionLinkingEnabled$)) {
+    if (!get(subscriptionLinkingEnabled$)) {
       return;
     }
+    set(setSidebarExpanded$, false);
     captureSubscriptionLinkingEvent("provider_selected", source, provider);
-    set(closeSubscriptionLinking$);
-    signal.throwIfAborted();
     const args = { mode: "connect" as const };
     if (provider === "codex-oauth-token") {
       await set(openCodexDeviceAuthDialogPersonal$, args, signal);
@@ -119,10 +94,15 @@ export const connectSubscriptionLinkingProvider$ = command(
   },
 );
 
-export const manageLinkedSubscriptions$ = command(
-  async ({ set }, signal: AbortSignal) => {
+/** Me and the model panel's Manage plans open Models, which lists both. */
+export const openSubscriptionLinkingSettings$ = command(
+  async (
+    { set },
+    source: "me_page" | "composer_model_panel",
+    signal: AbortSignal,
+  ) => {
     set(setSidebarExpanded$, false);
-    captureSubscriptionLinkingEvent("manage_opened", "account_menu");
+    captureSubscriptionLinkingEvent("entry_clicked", source);
     await set(openSettingsDialogAt$, "model", signal);
   },
 );

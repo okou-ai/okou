@@ -25,7 +25,6 @@ import {
   formatCreditDate,
   type CreditAddition,
 } from "../../org-manage/org-usage-tab.tsx";
-import { emptyUsageImg } from "../../../platform-assets.ts";
 import { UserAvatar } from "../../../../components/avatar.tsx";
 import { isOrgAdmin$ } from "../../../../../signals/org.ts";
 import { pageSignal$ } from "../../../../../signals/page-signal.ts";
@@ -561,6 +560,7 @@ function UsagePackCreditActions({
 
 function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
   const pageSignal = useGet(pageSignal$);
+  const capabilities = useLastResolved(orgPlanCapabilities$);
   const [configureLoadable, openConfiguration] = useLoadableSet(
     openSettingsUsagePackConfiguration$,
   );
@@ -594,7 +594,7 @@ function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
             totalCredits={data.totalCredits}
           />
           <UsagePackCreditDetails data={data} />
-          {isAdmin ? (
+          {isAdmin && capabilities?.showUsagePack ? (
             <UsagePackCreditActions
               loading={configureLoadable.state === "loading"}
               onConfigure={() => {
@@ -608,29 +608,11 @@ function UsagePackCreditCard({ isAdmin }: { isAdmin: boolean }) {
   );
 }
 
-function CreditBalanceEmptyState() {
-  return (
-    <div
-      data-testid="credit-balance-empty"
-      className="flex min-h-[20rem] items-center justify-center px-6"
-    >
-      <img
-        src={emptyUsageImg}
-        alt=""
-        role="presentation"
-        loading="lazy"
-        className="h-24 w-24 object-contain opacity-80"
-      />
-    </div>
-  );
-}
-
 export function CreditBalanceSection() {
   const { t } = useTranslation();
   const setActiveSection = useSet(setSettingsActiveSection$);
   const setBillingSubPage = useSet(setBillingSubPage$);
   const requestBuyCredits = useSet(requestBuyCreditsScroll$);
-  const capabilities = useLastResolved(orgPlanCapabilities$);
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
@@ -644,9 +626,7 @@ export function CreditBalanceSection() {
     setActiveSection("billing");
   };
 
-  const usagePackCreditCard = capabilities?.showUsagePack ? (
-    <UsagePackCreditCard isAdmin={isAdmin} />
-  ) : null;
+  const usagePackCreditCard = <UsagePackCreditCard isAdmin={isAdmin} />;
 
   const creditCard = (
     <CreditBalanceCard
@@ -655,17 +635,10 @@ export function CreditBalanceSection() {
     />
   );
 
-  // Members only see credits assigned by their usage pack. Organization
+  // Members see their own purchased and bonus credits. Organization
   // balances remain available to organization admins.
   if (!isAdmin) {
-    const showEmptyState =
-      isAdminLoadable.state === "hasData" && capabilities !== undefined;
-    return (
-      <div>
-        {usagePackCreditCard ??
-          (showEmptyState ? <CreditBalanceEmptyState /> : null)}
-      </div>
-    );
+    return <div>{usagePackCreditCard}</div>;
   }
 
   return (

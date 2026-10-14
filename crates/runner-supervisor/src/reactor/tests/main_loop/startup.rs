@@ -86,6 +86,134 @@ async fn status_mode_if_exists(status_path: &std::path::Path) -> Option<String> 
         .map(str::to_string)
 }
 
+#[derive(Clone, Copy, Debug)]
+enum EarlyStartupFailure {
+    InitialStatus,
+    PruneBind,
+}
+
+async fn assert_early_startup_failure_drains_and_joins(failure: EarlyStartupFailure) {
+    struct ReleaseOnDrop(Arc<tokio::sync::Semaphore>);
+
+    impl Drop for ReleaseOnDrop {
+        fn drop(&mut self) {
+            self.0.add_permits(1);
+        }
+    }
+
+    let runtime_shutdowns = Arc::new(AtomicUsize::new(0));
+    let factory_creates = Arc::new(AtomicUsize::new(0));
+    let runtime =
+        ShutdownRecordingRuntime::new(Arc::clone(&runtime_shutdowns), Arc::clone(&factory_creates));
+    let (mut config, env) =
+        mock_run_config_with_runtime(test_profiles(), 8, 32768, 4, Box::new(runtime));
+    let status_path = env._temp_dir.path().join("status.json");
+    let control_path = config.paths.home.runner_control_dir();
+    match failure {
+        EarlyStartupFailure::InitialStatus => tokio::fs::create_dir(&status_path).await.unwrap(),
+        EarlyStartupFailure::PruneBind => {
+            tokio::fs::write(&control_path, b"existing control obstruction")
+                .await
+                .unwrap();
+        }
+    }
+
+    let dropped = Arc::new(tokio::sync::Semaphore::new(0));
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let handler_task = {
+        let dropped = Arc::clone(&dropped);
+        tokio::spawn(async move {
+            let _guard = ReleaseOnDrop(dropped);
+            started_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(5), started_rx)
+        .await
+        .expect("signal handler should start")
+        .unwrap();
+    config.signals.signal_source = SignalSource::Override(SignalController {
+        mode_rx: env.mode_tx.subscribe(),
+        lifecycle: env.lifecycle.clone(),
+        handler_task: Some(SignalHandlerTask::new(handler_task)),
+    });
+
+    let prefetch_cancel = CancellationToken::new();
+    let task_cancel = prefetch_cancel.clone();
+    let (cancelled_tx, cancelled_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+    let prefetch_task = tokio::spawn(async move {
+        task_cancel.cancelled().await;
+        cancelled_tx.send(()).unwrap();
+        release_rx.await.unwrap();
+    });
+    config.shutdown.memory_prefetch =
+        prefetch::MemoryPrefetchTasks::from_test_handle(prefetch_cancel, prefetch_task);
+    let run_handle = tokio::spawn(run(config));
+
+    tokio::time::timeout(Duration::from_secs(5), cancelled_rx)
+        .await
+        .expect("startup failure should cancel prefetch")
+        .unwrap();
+    assert!(!run_handle.is_finished(), "startup must join prefetch");
+    assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 0);
+    assert!(dropped.try_acquire().is_err());
+    if matches!(failure, EarlyStartupFailure::PruneBind) {
+        assert_eq!(
+            status_mode_if_exists(&status_path).await.as_deref(),
+            Some("starting")
+        );
+    }
+
+    release_tx.send(()).unwrap();
+    let error = tokio::time::timeout(Duration::from_secs(5), run_handle)
+        .await
+        .expect("startup should return after prefetch drains")
+        .unwrap()
+        .expect_err("filesystem obstruction must fail startup");
+    assert_eq!(runtime_shutdowns.load(Ordering::SeqCst), 1);
+    assert_eq!(factory_creates.load(Ordering::SeqCst), 0);
+    assert_eq!(env.handle.startup_readiness_calls(), 0);
+    assert_eq!(env.handle.discover_started_count(), 0);
+    let _permit = dropped
+        .try_acquire()
+        .expect("startup must join the aborted signal handler");
+
+    match (failure, error) {
+        (EarlyStartupFailure::InitialStatus, RunnerError::Internal(message)) => {
+            assert!(message.starts_with("persist initial runner status: "));
+            assert!(tokio::fs::metadata(&status_path).await.unwrap().is_dir());
+            assert!(
+                !control_path.exists(),
+                "failed status must precede prune binding"
+            );
+        }
+        (EarlyStartupFailure::PruneBind, RunnerError::Io(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            assert!(error.to_string().contains("runner control"));
+            assert_eq!(
+                tokio::fs::read(control_path).await.unwrap(),
+                b"existing control obstruction"
+            );
+            assert_eq!(
+                status_mode_if_exists(&status_path).await.as_deref(),
+                Some("stopped")
+            );
+        }
+        (failure, other) => panic!("unexpected {failure:?} error: {other}"),
+    }
+}
+
+#[tokio::test]
+async fn initial_status_failure_drains_prefetch_and_joins_startup_owners() {
+    assert_early_startup_failure_drains_and_joins(EarlyStartupFailure::InitialStatus).await;
+}
+
+#[tokio::test]
+async fn prune_bind_failure_drains_prefetch_and_joins_startup_owners() {
+    assert_early_startup_failure_drains_and_joins(EarlyStartupFailure::PruneBind).await;
+}
+
 #[tokio::test]
 async fn startup_does_not_publish_running_before_factories_are_ready() {
     let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();

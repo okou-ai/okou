@@ -16,7 +16,7 @@ use crate::resource_budget::ResourceBudget;
 use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
-use runner_types::types::SandboxReuseResult;
+use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 pub(crate) use session_history::{
     SessionHistoryCacheProbeMetadata, SessionHistoryContentEncodingState,
     SessionHistoryContentLengthState, SessionHistoryResponseTelemetryMetadata,
@@ -28,8 +28,12 @@ mod dns_readiness;
 mod history_transfer;
 mod rejection;
 mod session_history;
+mod session_history_download;
 mod storage_batch;
 
+pub(crate) use session_history_download::{
+    SessionHistoryDownloadFields, SessionHistoryDownloadRecord, SessionHistoryObservationStage,
+};
 pub(crate) use storage_batch::StorageBatchDimensions;
 
 pub(crate) use history_transfer::{
@@ -105,14 +109,8 @@ impl OomEvidenceUploadFailure {
     }
 }
 
-/// Effective resource path once the guest process has spawned.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum RunnerStartupPath {
-    Sandbox,
-    Home,
-    Cold,
-}
+/// Actual startup resource after preparation settles.
+pub(crate) use runner_types::types::SandboxStartupPath as RunnerStartupPath;
 
 /// Inclusive number of Runner jobs in post-claim work before guest process spawn.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
@@ -260,6 +258,8 @@ pub struct JobTelemetry {
     run_id: RunId,
     sandbox_token: String,
     runner_hostname: Option<String>,
+    sandbox_startup_path: Option<RunnerStartupPath>,
+    is_first_run: Option<bool>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
     pending_ops: Vec<SandboxOp>,
     oldest_pending: Option<Instant>,
@@ -281,6 +281,12 @@ struct SandboxOp {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_startup_path: Option<RunnerStartupPath>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    is_first_run: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reuse_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    home_reuse_result: Option<HomeReuseResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     sandbox_reuse_result: Option<SandboxReuseResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_pre_spawn_concurrency_bucket: Option<RunnerPreSpawnConcurrencyBucket>,
@@ -292,6 +298,8 @@ struct SandboxOp {
     runner_resource_budget_lease_count_bucket: Option<RunnerResourceBudgetLeaseCountBucket>,
     #[serde(flatten)]
     session_history: Option<SessionHistoryTelemetryFields>,
+    #[serde(flatten)]
+    session_history_download: Option<SessionHistoryDownloadFields>,
     #[serde(flatten)]
     history_transfer: Option<history_transfer::HistoryTransferTelemetry>,
     #[serde(flatten)]
@@ -314,6 +322,8 @@ struct StorageBatchTelemetryFields {
     storage_batch_payload_size_bucket: &'static str,
     #[serde(flatten)]
     host: storage_batch::HostTimingFields,
+    #[serde(flatten)]
+    guest: storage_batch::GuestEvidenceFields,
 }
 
 #[derive(Serialize)]
@@ -340,6 +350,8 @@ impl JobTelemetry {
             run_id,
             sandbox_token,
             runner_hostname,
+            sandbox_startup_path: None,
+            is_first_run: None,
             runner_pre_spawn_attribution: None,
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -354,6 +366,42 @@ impl JobTelemetry {
         self.runner_pre_spawn_attribution = Some(attribution);
     }
 
+    /// Decorate subsequent observations only after preparation has settled.
+    pub(crate) fn set_sandbox_startup_path(&mut self, path: RunnerStartupPath) {
+        self.sandbox_startup_path = Some(path);
+    }
+
+    pub(crate) fn set_first_run(&mut self, is_first_run: Option<bool>) {
+        self.is_first_run = is_first_run;
+    }
+
+    /// Publish one actual-start fact promptly without changing the batching
+    /// cadence of preparation/timing observations. The parent owns its send.
+    pub(crate) fn record_sandbox_startup(
+        &mut self,
+        path: RunnerStartupPath,
+        sandbox_reuse_result: SandboxReuseResult,
+        home_reuse_result: HomeReuseResult,
+        reuse_key: Option<&str>,
+    ) {
+        let mut phase = self.fork_concurrent_phase();
+        let mut op = sandbox_op(
+            "runner_sandbox_startup",
+            Duration::ZERO,
+            true,
+            None,
+            None,
+            None,
+        );
+        op.runner_startup_path = Some(path);
+        op.sandbox_reuse_result = Some(sandbox_reuse_result);
+        op.home_reuse_result = Some(home_reuse_result);
+        op.reuse_key = reuse_key.map(str::to_owned);
+        phase.push_operation(op);
+        phase.start_auto_flush();
+        self.merge_concurrent_phase(phase);
+    }
+
     /// Create an empty collector for one concurrently owned job phase.
     ///
     /// The fork carries the same job identity and attribution but owns its own
@@ -365,6 +413,8 @@ impl JobTelemetry {
             run_id: self.run_id,
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
+            sandbox_startup_path: self.sandbox_startup_path,
+            is_first_run: self.is_first_run,
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -555,6 +605,7 @@ impl JobTelemetry {
             storage_batch_timing: timing,
             storage_batch_payload_size_bucket: dimensions.payload_size_bucket,
             host: storage_batch::HostTimingFields::new(host_timing),
+            guest: storage_batch::GuestEvidenceFields::new(host_timing),
         });
         self.push_operation(op);
     }
@@ -578,7 +629,27 @@ impl JobTelemetry {
             run_id: self.run_id,
             sandbox_token: self.sandbox_token.clone(),
             runner_hostname: self.runner_hostname.clone(),
+            sandbox_startup_path: self.sandbox_startup_path,
+            is_first_run: self.is_first_run,
         }
+    }
+
+    pub(crate) fn record_session_history_download_attribution(
+        &mut self,
+        record: SessionHistoryDownloadRecord,
+        metadata: Option<SessionHistoryTelemetryMetadata>,
+    ) {
+        let mut op = sandbox_op_at(
+            record.action_type,
+            record.duration,
+            record.success,
+            None,
+            Some(record.outcome),
+            metadata,
+            record.completed_at,
+        );
+        op.session_history_download = Some(record.fields);
+        self.push_operation(op);
     }
 
     /// Record the existing local restore interval with validated payload
@@ -697,6 +768,10 @@ impl JobTelemetry {
     }
 
     fn push_operation(&mut self, mut operation: SandboxOp) {
+        operation.is_first_run = self.is_first_run;
+        if operation.runner_startup_path.is_none() {
+            operation.runner_startup_path = self.sandbox_startup_path;
+        }
         if let Some(attribution) = self
             .runner_pre_spawn_attribution
             .as_ref()
@@ -879,6 +954,8 @@ pub(crate) struct SandboxOpReporter {
     run_id: RunId,
     sandbox_token: String,
     runner_hostname: Option<String>,
+    sandbox_startup_path: Option<RunnerStartupPath>,
+    is_first_run: Option<bool>,
 }
 
 impl SandboxOpReporter {
@@ -886,14 +963,17 @@ impl SandboxOpReporter {
         let ops = records
             .into_iter()
             .map(|record| {
-                sandbox_op(
+                let mut operation = sandbox_op(
                     record.action_type,
                     record.duration,
                     record.success,
                     record.error,
                     None,
                     None,
-                )
+                );
+                operation.runner_startup_path = self.sandbox_startup_path;
+                operation.is_first_run = self.is_first_run;
+                operation
             })
             .collect();
         send_telemetry(
@@ -1014,12 +1094,16 @@ fn sandbox_op_at(
         outcome: outcome.map(String::from),
         reason: None,
         runner_startup_path: None,
+        is_first_run: None,
+        reuse_key: None,
+        home_reuse_result: None,
         sandbox_reuse_result: None,
         runner_pre_spawn_concurrency_bucket: None,
         runner_resource_budget_vcpu_utilization_bucket: None,
         runner_resource_budget_memory_utilization_bucket: None,
         runner_resource_budget_lease_count_bucket: None,
         session_history: metadata.map(SessionHistoryTelemetryFields::from),
+        session_history_download: None,
         history_transfer: None,
         dns_readiness: None,
         storage_batch: None,
@@ -1170,12 +1254,16 @@ mod tests {
             outcome: None,
             reason: None,
             runner_startup_path: None,
+            is_first_run: None,
+            reuse_key: None,
+            home_reuse_result: None,
             sandbox_reuse_result: None,
             runner_pre_spawn_concurrency_bucket: None,
             runner_resource_budget_vcpu_utilization_bucket: None,
             runner_resource_budget_memory_utilization_bucket: None,
             runner_resource_budget_lease_count_bucket: None,
             session_history: None,
+            session_history_download: None,
             history_transfer: None,
             dns_readiness: None,
             storage_batch: None,
@@ -1274,6 +1362,22 @@ mod tests {
                 frame_write: Some(Duration::from_millis(6)),
                 response_wait: Some(Duration::from_millis(7)),
                 result_decode: Some(Duration::from_millis(8)),
+                guest: sandbox::StorageManifestGuestTiming {
+                    request_ownership_us: Some(0),
+                    worker_wait_us: Some(9_007_199_254_740_991),
+                    response_prepare_us: Some(42),
+                },
+                resources: sandbox::StorageManifestResources {
+                    containment_wall_us: Some(1),
+                    collection_us: Some(0),
+                    cpu_usage_us: Some(2),
+                    cpu_throttled_us: Some(0),
+                    memory_peak_bytes: Some(9_007_199_254_740_991),
+                    memory_events_oom: Some(0),
+                    memory_events_oom_kill: Some(0),
+                    memory_events_oom_group_kill: Some(0),
+                    pids_events_max: Some(0),
+                },
             },
             resource_log: Some(Duration::from_millis(9)),
         };
@@ -1288,6 +1392,16 @@ mod tests {
             admission: Some(Duration::ZERO),
             request: StorageManifestRequestTiming {
                 setup: Some(Duration::from_nanos(1)),
+                guest: sandbox::StorageManifestGuestTiming {
+                    request_ownership_us: Some(9_007_199_254_740_992),
+                    worker_wait_us: Some(0),
+                    ..sandbox::StorageManifestGuestTiming::default()
+                },
+                resources: sandbox::StorageManifestResources {
+                    cpu_usage_us: Some(0),
+                    memory_peak_bytes: Some(u64::MAX),
+                    ..sandbox::StorageManifestResources::default()
+                },
                 result_decode: Some(Duration::from_millis(u64::from(u32::MAX) + 1)),
                 ..StorageManifestRequestTiming::default()
             },
@@ -1309,6 +1423,19 @@ mod tests {
         );
         let batches = telemetry.pending_storage_batch_payloads();
         assert_eq!(batches[0]["storage_batch_host_timing"], "complete");
+        assert_eq!(batches[0]["storage_batch_guest_timing"], "complete");
+        assert_eq!(batches[0]["storage_batch_resources"], "complete");
+        assert_eq!(batches[0]["storage_batch_guest_request_ownership_us"], 0);
+        assert_eq!(
+            batches[0]["storage_batch_guest_worker_wait_us"],
+            9_007_199_254_740_991_u64
+        );
+        assert_eq!(batches[0]["storage_batch_guest_response_prepare_us"], 42);
+        assert_eq!(batches[0]["storage_batch_resource_collection_us"], 0);
+        assert_eq!(
+            batches[0]["storage_batch_memory_peak_bytes"],
+            9_007_199_254_740_991_u64
+        );
         for (field, value) in [
             ("storage_batch_admission_ms", 1),
             ("storage_batch_request_setup_ms", 2),
@@ -1327,6 +1454,16 @@ mod tests {
             "64_to_256_kib"
         );
         assert_eq!(batches[1]["storage_batch_host_timing"], "partial");
+        assert_eq!(batches[1]["storage_batch_guest_timing"], "partial");
+        assert_eq!(batches[1]["storage_batch_resources"], "partial");
+        assert_eq!(batches[1]["storage_batch_guest_worker_wait_us"], 0);
+        assert_eq!(batches[1]["storage_batch_cpu_usage_us"], 0);
+        assert!(
+            batches[1]
+                .get("storage_batch_guest_request_ownership_us")
+                .is_none()
+        );
+        assert!(batches[1].get("storage_batch_memory_peak_bytes").is_none());
         assert_eq!(batches[1]["success"], false);
         assert_eq!(batches[1]["storage_batch_admission_ms"], 0);
         assert_eq!(batches[1]["storage_batch_request_setup_ms"], 0);
@@ -1334,6 +1471,8 @@ mod tests {
         assert!(batches[1].get("storage_batch_result_decode_ms").is_none());
         assert!(batches[1].get("storage_batch_resource_log_ms").is_none());
         assert_eq!(batches[2]["storage_batch_host_timing"], "unavailable");
+        assert_eq!(batches[2]["storage_batch_guest_timing"], "unavailable");
+        assert_eq!(batches[2]["storage_batch_resources"], "unavailable");
         assert!(batches[2].get("storage_batch_admission_ms").is_none());
     }
 
@@ -1615,12 +1754,16 @@ mod tests {
                 outcome: None,
                 reason: None,
                 runner_startup_path: None,
+                is_first_run: None,
+                reuse_key: None,
+                home_reuse_result: None,
                 sandbox_reuse_result: None,
                 runner_pre_spawn_concurrency_bucket: None,
                 runner_resource_budget_vcpu_utilization_bucket: None,
                 runner_resource_budget_memory_utilization_bucket: None,
                 runner_resource_budget_lease_count_bucket: None,
                 session_history: Some(metadata.into()),
+                session_history_download: None,
                 history_transfer: None,
                 dns_readiness: None,
                 storage_batch: None,
@@ -2104,6 +2247,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn history_download_attribution_payload_matches_shared_contract_fixture() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::from(uuid::Uuid::nil()),
+            "history-attribution-token".to_owned(),
+            None,
+        );
+        let origin = DateTime::parse_from_rfc3339("2026-01-15T10:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        telemetry.record_session_history_download_attribution(
+            SessionHistoryDownloadRecord {
+                action_type: "session_history_download_attempt",
+                duration: Duration::from_millis(10),
+                success: true,
+                outcome: "succeeded",
+                completed_at: origin + chrono::Duration::milliseconds(10),
+                fields: SessionHistoryDownloadFields {
+                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
+                    session_history_download_attempt: Some(1),
+                    session_history_request_start_offset_ms: Some(0),
+                    session_history_request_end_offset_ms: Some(4),
+                    session_history_body_start_offset_ms: Some(5),
+                    session_history_body_end_offset_ms: Some(10),
+                    session_history_chunk_wait_ms: Some(4),
+                    session_history_chunk_wait_max_ms: Some(3),
+                    session_history_chunk_count: Some(2),
+                    session_history_body_copy_ms: Some(1),
+                    session_history_body_allocation_ms: Some(0),
+                    ..Default::default()
+                },
+            },
+            None,
+        );
+        telemetry.record_session_history_download_attribution(
+            SessionHistoryDownloadRecord {
+                action_type: "session_history_download_attribution",
+                duration: Duration::from_millis(13),
+                success: true,
+                outcome: "succeeded",
+                completed_at: origin + chrono::Duration::milliseconds(13),
+                fields: SessionHistoryDownloadFields {
+                    session_history_timing_origin_unix_ms: origin.timestamp_millis() as u64,
+                    session_history_attempt_count: Some(1),
+                    session_history_observation_stage: Some(
+                        SessionHistoryObservationStage::Restore,
+                    ),
+                    session_history_failed_attempt_count: Some(0),
+                    session_history_interrupted_attempt_count: Some(0),
+                    session_history_retry_count: Some(0),
+                    session_history_retry_backoff_ms: Some(0),
+                    session_history_cpu_admission_start_offset_ms: Some(10),
+                    session_history_cpu_admission_end_offset_ms: Some(11),
+                    session_history_cpu_queue_start_offset_ms: Some(11),
+                    session_history_cpu_queue_end_offset_ms: Some(12),
+                    session_history_restore_wait_start_offset_ms: Some(2),
+                    session_history_restore_wait_end_offset_ms: Some(13),
+                    ..Default::default()
+                },
+            },
+            None,
+        );
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        assert_eq!(requests.len(), 1);
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let actual: serde_json::Value = serde_json::from_str(body).unwrap();
+        let mut expected: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../turbo/packages/api-contracts/src/contracts/__tests__/fixtures/runner-history-download-attribution.json"
+        )).unwrap();
+        expected["runnerVersion"] = serde_json::json!(RUNNER_VERSION);
+        assert_eq!(actual, expected);
+    }
+
+    #[tokio::test]
     async fn home_startup_http_payload_matches_shared_contract_fixture() {
         let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
             "200 OK",
@@ -2370,12 +2593,14 @@ mod tests {
         .await;
         let api_url = server.url();
 
-        let telemetry = JobTelemetry::new(
+        let mut telemetry = JobTelemetry::new(
             http_client_for_api_url(&api_url),
             RunId::from(uuid::Uuid::nil()),
             "tok".to_string(),
             Some("prod-1.aws.vm3.ai".to_string()),
         );
+        telemetry.set_sandbox_startup_path(RunnerStartupPath::Blank);
+        telemetry.set_first_run(Some(false));
         telemetry
             .reporter()
             .report(vec![SandboxOpRecord::new(
@@ -2391,5 +2616,164 @@ mod tests {
         assert!(!request.contains(r#""runnerName""#));
         assert!(request.contains(r#""runnerHostname":"prod-1.aws.vm3.ai""#));
         assert!(request.contains(&format!(r#""runnerVersion":"{RUNNER_VERSION}""#)));
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(
+            payload["sandboxOperations"][0]["runner_startup_path"],
+            "blank"
+        );
+        assert_eq!(payload["sandboxOperations"][0]["is_first_run"], false);
+    }
+
+    #[tokio::test]
+    async fn sandbox_startup_fact_is_published_before_final_flush_without_flushing_preparation() {
+        for (path, wire_path, sandbox_result, home_result) in [
+            (
+                RunnerStartupPath::Sandbox,
+                "sandbox",
+                SandboxReuseResult::Reused,
+                HomeReuseResult::SandboxReused,
+            ),
+            (
+                RunnerStartupPath::Home,
+                "home",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::Reused,
+            ),
+            (
+                RunnerStartupPath::Blank,
+                "blank",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::CacheMiss,
+            ),
+            (
+                RunnerStartupPath::Cold,
+                "cold",
+                SandboxReuseResult::PoolMiss,
+                HomeReuseResult::CacheMiss,
+            ),
+        ] {
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let mut server = RawHttpTestServer::spawn(vec![
+                RawHttpAction::WaitThenRespond {
+                    release: release_rx,
+                    response: json_response("200 OK", r#"{"success":true}"#),
+                },
+                RawHttpAction::Respond(json_response("200 OK", r#"{"success":true}"#)),
+            ])
+            .await;
+            let mut telemetry = JobTelemetry::new(
+                http_client_for_api_url(&server.url()),
+                RunId::new_v4(),
+                "tok".into(),
+                None,
+            );
+            telemetry.set_first_run(Some(false));
+            telemetry.set_sandbox_startup_path(path);
+            telemetry.record("preparation", Duration::ZERO, true, None);
+            telemetry.record_sandbox_startup(
+                path,
+                sandbox_result,
+                home_result,
+                Some("thread:tracked"),
+            );
+
+            let request = server.next_request("startup fact before final flush").await;
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            let operations = payload["sandboxOperations"].as_array().unwrap();
+            assert_eq!(operations.len(), 1);
+            let operation = &operations[0];
+            assert_eq!(operation["action_type"], "runner_sandbox_startup");
+            assert_eq!(operation["runner_startup_path"], wire_path);
+            assert_eq!(operation["is_first_run"], false);
+            assert_eq!(operation["success"], true);
+            assert_eq!(operation["reuse_key"], "thread:tracked");
+            assert_eq!(
+                operation["home_reuse_result"],
+                serde_json::to_value(home_result).unwrap()
+            );
+            assert_eq!(
+                operation["sandbox_reuse_result"],
+                serde_json::to_value(sandbox_result).unwrap()
+            );
+
+            // Recording continues while the startup request's response is held.
+            telemetry.record("after_start", Duration::ZERO, true, None);
+            release_tx.send(()).unwrap();
+            telemetry.flush().await;
+            let request = server.next_request("ordinary batch at final flush").await;
+            let (_, body) = request.split_once("\r\n\r\n").unwrap();
+            let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            let operations = payload["sandboxOperations"].as_array().unwrap();
+            assert_eq!(operations.len(), 2);
+            assert_eq!(operations[0]["action_type"], "preparation");
+            assert_eq!(operations[1]["action_type"], "after_start");
+            assert!(operations.iter().all(|op| op["is_first_run"] == false));
+            server.assert_finished().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn sandbox_startup_without_first_context_omits_it_and_keeps_the_send_owned() {
+        use futures_util::FutureExt;
+
+        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+        let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+            release: release_rx,
+            response: json_response("200 OK", r#"{"success":true}"#),
+        }])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::new_v4(),
+            "tok".into(),
+            None,
+        );
+        telemetry.record_sandbox_startup(
+            RunnerStartupPath::Cold,
+            SandboxReuseResult::NoReuseKey,
+            HomeReuseResult::NoReuseKey,
+            None,
+        );
+        let request = server.next_request("startup without context").await;
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operation = &payload["sandboxOperations"][0];
+        assert!(operation.get("is_first_run").is_none());
+        assert!(operation.get("reuse_key").is_none());
+        assert_eq!(operation["runner_startup_path"], "cold");
+        let mut flush = Box::pin(telemetry.flush());
+        assert!(flush.as_mut().now_or_never().is_none());
+        release_tx.send(()).unwrap();
+        flush.await;
+        server.assert_finished().await;
+    }
+
+    #[tokio::test]
+    async fn first_run_context_survives_concurrent_phase_ownership() {
+        let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(
+            "200 OK",
+            r#"{"success":true}"#,
+        ))])
+        .await;
+        let mut telemetry = JobTelemetry::new(
+            http_client_for_api_url(&server.url()),
+            RunId::new_v4(),
+            "tok".into(),
+            None,
+        );
+        telemetry.set_first_run(Some(true));
+        let mut phase = telemetry.fork_concurrent_phase();
+        phase.record("concurrent", Duration::ZERO, true, None);
+        telemetry.merge_concurrent_phase(phase);
+        telemetry.record("continued", Duration::ZERO, true, None);
+        telemetry.flush().await;
+        let requests = server.assert_finished_with_requests().await;
+        let (_, body) = requests[0].split_once("\r\n\r\n").unwrap();
+        let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+        let operations = payload["sandboxOperations"].as_array().unwrap();
+        assert_eq!(operations.len(), 2);
+        assert!(operations.iter().all(|op| op["is_first_run"] == true));
     }
 }

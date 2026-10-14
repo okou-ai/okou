@@ -30,6 +30,8 @@ import {
   canonicalKerberosTicket,
 } from "@okouai/api-contracts/contracts/vnc-kerberos-format";
 import { now } from "../lib/time.ts";
+import { vncObservationChangedPayloadSchema } from "@okouai/api-contracts/contracts/vnc-connection-observations";
+import { setAblyPayloadLoop$ } from "./realtime.ts";
 import {
   isVncRsaAesSecurityType,
   isVncRsaAesAuthenticationOnly,
@@ -41,11 +43,21 @@ import {
   type RsaAesProfile,
 } from "./vnc-rsa-aes.ts";
 import { accept } from "../lib/accept.ts";
-import { authenticatedSessionKey$, clerk$, user$ } from "./auth.ts";
+import {
+  authenticatedSessionKey$,
+  clerk$,
+  currentOrgInfo$,
+  user$,
+} from "./auth.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
-import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
+import {
+  invalidateRemoteAccess$,
+  invalidateVncObservationConfiguration$,
+  vncObservationConfigurationRevision$,
+} from "./remote-access-refresh.ts";
+import { invalidateSsh$ } from "./ssh.ts";
 import {
   onRef,
   resetSignal,
@@ -97,10 +109,12 @@ export const vncClients$ = computed(async (get) => {
 });
 
 const reload$ = state(0);
+const observationsReload$ = state(0);
 export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;
   });
+  set(invalidateVncObservationConfiguration$);
   set(invalidateRemoteAccess$);
 });
 
@@ -121,6 +135,61 @@ export const vncConnections$ = computed(async (get) => {
   );
   return result.status === 200 ? result.body.connections : null;
 });
+
+export const vncObservationsSnapshot$ = computed(async (get) => {
+  get(observationsReload$);
+  const configurationRevision = get(vncObservationConfigurationRevision$);
+  const identity = await get(vncIdentity$);
+  if (!identity) {
+    return { identity, configurationRevision, observations: null };
+  }
+  const result = await accept(
+    (await get(vncClients$)).connections.observations(),
+    [200, 404],
+    undefined,
+    { showErrorToast: false },
+  );
+  return {
+    identity,
+    configurationRevision,
+    observations: result.status === 200 ? result.body.observations : null,
+  };
+});
+
+export const invalidateVncObservations$ = command(({ set }) => {
+  set(observationsReload$, (value) => {
+    return value + 1;
+  });
+  return false;
+});
+const onVncObservationChanged$ = command(
+  async ({ get, set }, payload: unknown, signal: AbortSignal) => {
+    const parsed = vncObservationChangedPayloadSchema.safeParse(payload);
+    if (!parsed.success) {
+      return false;
+    }
+    const org = await get(currentOrgInfo$);
+    signal.throwIfAborted();
+    if (org?.id === parsed.data.orgId) {
+      set(invalidateVncObservations$);
+    }
+    return false;
+  },
+);
+export const subscribeVncObservations$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(
+      setAblyPayloadLoop$,
+      {
+        topic: "vnc:observations-changed",
+        loopCommand$: onVncObservationChanged$,
+        initializeCommand$: invalidateVncObservations$,
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  },
+);
 
 export const vncCredentials$ = computed(async (get) => {
   get(reload$);
@@ -152,6 +221,7 @@ export const vncSummary$ = computed(async (get) => {
 
 export interface VncDialogState {
   readonly identity: string;
+  readonly sessionKey: string;
   readonly creationId: string;
   readonly kind:
     | "create"
@@ -358,6 +428,7 @@ const editor$ = state({
 const uncertain$ = state(false);
 const saveMessage$ = state<string | null>(null);
 const conflict$ = state(false);
+const reviewedVersion$ = state<number | null>(null);
 const resetSave$ = resetSignal();
 const resetRsaImport$ = resetSignal();
 const resetKerberosImport$ = resetSignal();
@@ -367,7 +438,11 @@ const editorLocked$ = computed((get) => {
 
 export const vncDialog$ = computed(async (get) => {
   const dialog = get(dialog$);
-  return dialog?.identity === (await get(vncIdentity$)) ? dialog : null;
+  const sessionKey = get(authenticatedSessionKey$);
+  return dialog?.sessionKey === sessionKey &&
+    dialog.identity === (await get(vncIdentity$))
+    ? dialog
+    : null;
 });
 export const vncEditor$ = computed((get) => {
   return get(editor$);
@@ -381,6 +456,117 @@ export const vncSaveMessage$ = computed((get) => {
 export const vncConflict$ = computed((get) => {
   return get(conflict$);
 });
+
+export type VncConflictReviewState = VncDialogState &
+  (
+    | {
+        readonly kind: "edit";
+        readonly connection: VncConnectionResponse;
+      }
+    | {
+        readonly kind: "delete";
+        readonly connection: VncConnectionResponse;
+      }
+    | {
+        readonly kind: "edit-credential";
+        readonly credential: VncCredentialResponse;
+      }
+    | {
+        readonly kind: "delete-credential";
+        readonly credential: VncCredentialResponse;
+      }
+  );
+
+export function isVncReviewableConflict(
+  dialog: VncDialogState,
+  message: string | null,
+) {
+  return (
+    ((dialog.kind === "edit" || dialog.kind === "delete") &&
+      message === VNC_ERROR_CODES.GENERATION_CONFLICT) ||
+    ((dialog.kind === "edit-credential" ||
+      dialog.kind === "delete-credential") &&
+      message === VNC_ERROR_CODES.CREDENTIAL_REVISION_CONFLICT) ||
+    (dialog.kind === "delete-credential" &&
+      message === VNC_ERROR_CODES.CREDENTIAL_IN_USE)
+  );
+}
+
+function isSameVncDialog(current: VncDialogState, reviewed: VncDialogState) {
+  return (
+    reviewed.identity === current.identity &&
+    reviewed.sessionKey === current.sessionKey &&
+    reviewed.creationId === current.creationId &&
+    reviewed.kind === current.kind &&
+    reviewed.connection?.id === current.connection?.id &&
+    reviewed.credential?.id === current.credential?.id
+  );
+}
+
+export const vncConflictReview$ = computed(
+  async (get): Promise<VncConflictReviewState | null> => {
+    const dialog = await get(vncDialog$);
+    const message = get(saveMessage$);
+    if (
+      !dialog ||
+      !get(conflict$) ||
+      !isVncReviewableConflict(dialog, message)
+    ) {
+      return null;
+    }
+    if (dialog.kind === "edit" || dialog.kind === "delete") {
+      const connection = (await get(vncConnections$))?.find((candidate) => {
+        return candidate.id === dialog.connection?.id;
+      });
+      return connection ? { ...dialog, kind: dialog.kind, connection } : null;
+    }
+    if (
+      dialog.kind === "edit-credential" ||
+      dialog.kind === "delete-credential"
+    ) {
+      const credential = (await get(vncCredentials$))?.find((candidate) => {
+        return candidate.id === dialog.credential?.id;
+      });
+      return credential ? { ...dialog, kind: dialog.kind, credential } : null;
+    }
+    return null;
+  },
+);
+
+export const acceptVncConflictReview$ = command(
+  async (
+    { get, set },
+    reviewed: VncConflictReviewState,
+    signal: AbortSignal,
+  ) => {
+    const current = await get(vncDialog$);
+    signal.throwIfAborted();
+    const message = get(saveMessage$);
+    if (
+      !current ||
+      get(dialog$) !== current ||
+      !get(conflict$) ||
+      !isSameVncDialog(current, reviewed) ||
+      (current.kind === "edit-credential" &&
+        reviewed.credential?.authMethod !== current.credential?.authMethod) ||
+      (reviewed.kind === "delete-credential" &&
+        reviewed.credential.hosts.length > 0) ||
+      !isVncReviewableConflict(current, message)
+    ) {
+      return;
+    }
+    set(resetRsaImport$);
+    set(resetKerberosImport$);
+    set(
+      reviewedVersion$,
+      reviewed.kind === "edit" || reviewed.kind === "delete"
+        ? reviewed.connection.generation
+        : reviewed.credential.revision,
+    );
+    set(conflict$, false);
+    set(saveMessage$, null);
+  },
+);
 export const chooseVncCredential$ = command(
   ({ get, set }, selection: string | null) => {
     if (selection !== null && !get(editorLocked$)) {
@@ -596,6 +782,7 @@ export const closeVncDialog$ = command(({ set }) => {
   set(uncertain$, false);
   set(saveMessage$, null);
   set(conflict$, false);
+  set(reviewedVersion$, null);
   set(editor$, {
     selection: "",
     profile: "x509_vnc",
@@ -818,7 +1005,8 @@ export const openVncDialog$ = command(
   ) => {
     const identity = await get(vncIdentity$);
     signal.throwIfAborted();
-    if (!identity) {
+    const sessionKey = get(authenticatedSessionKey$);
+    if (!identity || !sessionKey) {
       return;
     }
     const connection = resource && "host" in resource ? resource : null;
@@ -827,6 +1015,7 @@ export const openVncDialog$ = command(
     set(editor$, initialVncEditor(kind, connection, credential));
     const dialog: VncDialogState = {
       identity,
+      sessionKey,
       kind,
       connection,
       credential,
@@ -1128,11 +1317,15 @@ function connectionFields(form: HTMLFormElement, editor: Editor) {
   };
 }
 
+interface RequestEditor extends Editor {
+  readonly reviewedVersion: number | null;
+}
+
 function connectionRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: Editor,
+  editor: RequestEditor,
   signal: AbortSignal,
 ) {
   if (dialog.kind === "create") {
@@ -1158,14 +1351,16 @@ function connectionRequest(
     return () => {
       return clients.connections.delete({
         params,
-        body: { expectedGeneration: connection.generation },
+        body: {
+          expectedGeneration: editor.reviewedVersion ?? connection.generation,
+        },
         fetchOptions: { signal },
       });
     };
   }
   const body = updateVncConnectionRequestSchema.safeParse({
     ...connectionFields(form, editor),
-    expectedGeneration: connection.generation,
+    expectedGeneration: editor.reviewedVersion ?? connection.generation,
   });
   return body.success
     ? () => {
@@ -1182,7 +1377,7 @@ function credentialRequest(
   clients: VncClients,
   dialog: VncDialogState,
   form: HTMLFormElement,
-  editor: Editor,
+  editor: RequestEditor,
   signal: AbortSignal,
 ) {
   if (dialog.kind === "create-credential") {
@@ -1207,13 +1402,15 @@ function credentialRequest(
     return () => {
       return clients.credentials.delete({
         params,
-        body: { expectedRevision: credential.revision },
+        body: {
+          expectedRevision: editor.reviewedVersion ?? credential.revision,
+        },
         fetchOptions: { signal },
       });
     };
   }
   const body = updateVncCredentialRequestSchema.safeParse({
-    expectedRevision: credential.revision,
+    expectedRevision: editor.reviewedVersion ?? credential.revision,
     name: textField(form, "credentialName"),
     ...(editor.replace
       ? {
@@ -1248,7 +1445,10 @@ export const saveVnc$ = command(
     if (clients.identity !== dialog.identity) {
       return;
     }
-    const editor = get(editor$);
+    const editor = {
+      ...get(editor$),
+      reviewedVersion: get(reviewedVersion$),
+    };
     const request = dialog.kind.endsWith("-credential")
       ? credentialRequest(clients, dialog, form, editor, signal)
       : connectionRequest(clients, dialog, form, editor, signal);
@@ -1293,8 +1493,14 @@ export const saveVnc$ = command(
     set(uncertain$, false);
     set(saveMessage$, result.body.error.code);
     if (result.status !== 400) {
+      set(resetRsaImport$);
+      set(resetKerberosImport$);
+      set(reviewedVersion$, null);
       set(conflict$, true);
       set(invalidateVnc$);
+      if (dialog.kind === "edit") {
+        set(invalidateSsh$);
+      }
     }
   },
 );

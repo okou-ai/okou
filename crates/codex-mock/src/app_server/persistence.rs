@@ -23,7 +23,7 @@ pub(super) fn persist_input_events(
     context: &InputEventContext<'_>,
     inputs: &[String],
 ) -> io::Result<()> {
-    let events = inputs
+    let mut events = inputs
         .iter()
         .map(|text| {
             json!({
@@ -55,6 +55,16 @@ pub(super) fn persist_input_events(
             })
         })
         .collect::<Vec<_>>();
+    events.extend(inputs.iter().map(|text| {
+        json!({
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": text}]
+            }
+        })
+    }));
     let home = session::codex_home();
     session::persist_resume_session(
         &home,

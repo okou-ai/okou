@@ -5,6 +5,27 @@ normalization. Read the relevant section before changing the addon or its pinned
 mitmproxy/wsproto dependencies. See the [testing guide](mitm-addon-testing.md)
 for environment setup, commands, and executable coverage.
 
+## Dependency compatibility policy
+
+Prefer documented addon hooks and public dependency APIs. Minimize monkey patches
+and reliance on private dependency logic: each adaptation must address a concrete
+capability unavailable through the public interface. Keep its affected events,
+replaced methods/classes, private state access and ordering assumptions as narrow
+as possible. A smaller replacement count alone does not establish lower risk.
+Prefer an existing state-specific boundary when it covers the required capability.
+Choose patch boundaries by their behavioral scope and upstream assumptions.
+
+Keep adaptations in `mitmproxy_compat.py` and `websocket_framing.py`, delegate
+protocol state machines to upstream, and use public extension hooks when local
+behavior is required. Pass unrelated events through without adapting their command
+generators. Avoid copying upstream algorithms or accessing private compression
+state. Preserve authentication, accounting, cancellation and resource boundaries
+when simplifying an adapter.
+
+Retain exact version gates and real protocol coverage for necessary adaptations.
+Re-audit private integration when upgrading dependencies, and remove a bridge when
+a supported public API provides the required capability.
+
 ## Cooperative response inspection
 
 Model SSE scanners and opted-in connector parsers use bounded owner-loop work
@@ -25,8 +46,13 @@ lifetime row limit, a billing cutoff, or an alternate price/count fallback.
 
 The exact mitmproxy 12.2.3 compatibility bridge provides two ownership boundaries:
 it pauses the HTTP stream before its next body event, and joins the checkpoint's
-complete native hook task outside the connection event lock before the connection
-reads again. Joining includes `HookCompleted` and any buffered events resumed by
+complete native hook task outside the connection event lock in the reader's
+`drain_writers()` boundary before the connection reads again. The native read loop
+catches cancellation there and performs its connection teardown before re-raising;
+its `DataReceived` dispatch has no equivalent cancellation handler. A task-owned
+reader scope defers only that reader's data checkpoints. Hook tasks inherit its
+context but retain their own joins, including buffered `HookCompleted`
+continuations. Joining includes `HookCompleted` and any buffered events resumed by
 it; waiting only for parser completion or inserting a hook alone would allow
 reads to accumulate in the runtime's paused queue. The pinned read loop consumes
 at most 65,535 wire bytes per read. Unrelated loop work and other connections can
@@ -39,8 +65,11 @@ explicit unparsed state and logs an inspection-interruption underbilling risk;
 it never reports the uninspected suffix as observed zero. Previously accepted
 connector row source events and model usage observations remain intact. Model
 abandonment marks parse_error/interrupted coverage and does not finalize a
-partially inspected trailing SSE event. Normal completion and connection errors
-join pending work before existing decoder and trailing-event finalization.
+partially inspected trailing SSE event. Reader cancellation preserves native
+`ConnectionClosed` delivery, writer closure and transport removal; resumed terminal
+HTTP hooks release parser/stream state and tracked-flow accounting exactly once.
+Normal completion and connection errors join pending work before existing decoder
+and trailing-event finalization.
 Original wire bytes, row ordinals, model usage update semantics and normal
 compressed failure/trailing-line semantics are unchanged. Runner and addon ship
 together with the pinned runtime; no external wire or database migration is
@@ -493,6 +522,15 @@ record (4096 bytes). Non-pipe stderr and transport setup/write errors also drop
 the event. Input validation and serialization errors still propagate. This
 best-effort policy does not change billing delivery or run-local JSONL logging.
 
+Model usage parse-error diagnostics retain at most four initial warnings per
+SSE response or activated Responses WebSocket flow. The quota is spent before
+JSON serialization, so cumulative warnings stay bounded even when the JSONL
+writer drains continuously. WebSocket parser-error kinds share one quota;
+valid later messages and correlation transitions do not refill it. Inspection,
+parse-error accounting, independent correlation diagnostics, message forwarding,
+and valid usage recovery continue after exhaustion. Each WebSocket flow owns its
+budget, released with its state by the end or connection-error hook.
+
 ### Capture header inspection
 
 Opt-in network capture serializes a header prefix bounded to 512 raw fields
@@ -557,6 +595,42 @@ record already embedded in a malformed line or serialize independently
 interleaved short-write sequences. The existing Runner uploader continues to
 skip malformed physical lines and upload independently parseable records.
 
+## Allowed upload streaming and deferred body admission
+
+Large and unknown-length ordinary, platform API, browser and policy-only requests
+stream after their header-phase authorization, independently of
+`captureNetworkBodies`. Non-public-destination connector requests use the same
+streaming path only after stream-safe credential resolution and current
+registry, connector ownership and TLS/destination checks succeed. The shared
+request stream counts every forwarded byte. Diagnostic capture retains at most
+64 KiB and remains optional. Response/error consumers read the full
+byte count before terminal cleanup releases the stream state. Billable connector
+endpoints requiring request-body pricing inspection retain a prefix through the
+same 64 KiB stream buffer even with capture off. Only complete,
+untruncated bodies refine pricing; inspection never enables persisted body fields.
+Other uncaptured requests retain only byte counters. Small declared
+bodies up to 64 KiB retain their existing buffered path and billing inspection.
+
+Body-dependent auth.base and AWS SigV4 retain their separate bounded admissions.
+Both credential and policy-only `publicDestination` requests stay buffered for
+request-phase destination revalidation. Large bodies outside the specialized
+auth admissions reserve an independent budget: at most 32 MiB per request,
+16 admitted requests and 128 MiB aggregate. A valid bounded Content-Length is
+required, except when mitmproxy proves the request ends at headers. Chunked,
+unknown/conflicting/invalid-length, oversized and saturated requests terminate
+at headers before body consumption, credential resolution or upstream forwarding.
+Small declared bodies keep their bounded path. The reservation remains held
+through buffered request forwarding and response/error processing; request
+failure or cancellation also releases it. An asterisk-form policy allow never
+uses its API entry's auth.base/SigV4 owner, so it uses this destination budget.
+
+No registry, API or network-log schema changes are required. Old Runners retain
+their embedded-addon behavior until replaced. Native dependency coverage in
+`test_mitmproxy_allowed_upload_streaming.py` and
+`test_public_destination_body_admission.py` verifies forwarding, retained bytes,
+byte accounting, capture privacy, admission and terminal release; cryptographic
+TLS verification remains covered by the native auth-wait suites.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated
@@ -571,7 +645,10 @@ diagnostic remain available; the error hook records a connection failure with
 status `0` and releases terminal resources. The unsent local error response is
 discarded so it cannot appear as a captured response. Auth failures first
 resolved in the normal buffered request hook keep their structured responses.
-Successful authenticated streaming retains its bounded capture behavior.
+Successful authenticated streaming retains its bounded capture behavior when
+capture is enabled; capture off retains byte counters and only billing-required
+inspection bytes as described above. The same
+early credential-failure termination applies with either capture setting.
 
 This changes only the addon lifecycle. Runner/API and network-log schemas stay
 unchanged, and old Runner instances keep their previous behavior until replaced.
@@ -666,6 +743,10 @@ adapter neither inherits nor reads/writes upstream private compression state.
 Terminal cleanup replaces that opaque sender through public construction,
 releasing its prior resources while preserving close-frame encoding.
 
+Compressed input uses the shared bounded cursor: fresh chunks and copied EOF
+tails stay within 1 KiB, and carried tails are consumed before fresh source
+input. All chunks in one callback share a cumulative decoded-output allowance.
+
 It asks zlib for at most one byte beyond the remaining message and
 aggregate budgets. Extra output or a non-empty zlib unconsumed tail is treated as
 an overflow lower bound, clears the decompressor and message budget, and closes
@@ -680,9 +761,17 @@ marker. Their completion leaves an interrupted message's marker, decompressor
 and cumulative budgets intact; only data-message completion or terminal cleanup
 can end that state.
 
-RFC 7692 messages omit the final deflate block on the wire. The adapter restores
-the empty-deflate trailer (`00 00 ff ff`) at the end of a compressed message and
-runs that output through the same bound before dispatch. Uncompressed messages
+RFC 7692 messages omit the final four bytes of an empty stored block on the
+wire. The adapter restores that trailer (`00 00 ff ff`) at the end of a
+compressed message and runs that output through the same bound before dispatch.
+Permitted `BFINAL=1` blocks end a raw zlib stream, including within a fragmented
+message. The adapter continues through unused input with a replacement raw
+decoder seeded by the retained sliding window. Every stream shares the same
+cumulative output allowance. Retained history is limited to the directional
+negotiated window (at most 32 KiB), survives controls and uncompressed messages,
+and clears with the decoder on negotiated no-context-takeover completion or
+terminal cleanup. No-context-takeover still preserves history between streams
+within one logical message. Uncompressed messages
 after a compressed message, context takeover, and negotiated no-context-takeover
 are connection-local states covered by the real-layer tests. Any rejected or
 terminally closed compressed flow clears its decompressor and partial framing

@@ -1,0 +1,5 @@
+The first-parent main commit that adds this marker is the minimum API rollback
+target after native-only Run admission. Earlier APIs require Session ownership,
+cannot serve native-only completion, and do not own the transferred legacy blob
+references. Recover through a supporting artifact or roll forward; database
+rollback does not reconstruct retired runtime ownership or native archives.

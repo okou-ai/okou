@@ -47,11 +47,10 @@ import { SharedDatabaseMessagePortServer } from "./message-port-server.ts";
 import {
   forwardChatThreadReadCursorUpdated$,
   openConnection$,
-  recordConnectionHeartbeat$,
   recordTabVisibility$,
   registerConnection$,
   reportWorkerUnavailableForConnections$,
-  requestTokenFromLatestConnection$,
+  requestTokenFromTabs$,
   type WorkerBroadcastMessage,
 } from "./worker-context.ts";
 import {
@@ -255,7 +254,6 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
       this.getToken,
       connectionSignal,
     );
-    this.workerStore.set(recordConnectionHeartbeat$, this.connectionId);
     this.connectionSignal.addEventListener(
       "abort",
       () => {
@@ -417,9 +415,10 @@ export const setupSharedWorkerTestBootstrap$ = command(
           appVersion: options.appVersion,
           identity: options.identity,
           apiBaseUrl: resolveApiBaseForTarget("api"),
-          getToken: (requestSignal) => {
+          getToken: (diagnostic, requestSignal) => {
             return options.workerStore.set(
-              requestTokenFromLatestConnection$,
+              requestTokenFromTabs$,
+              diagnostic,
               requestSignal,
             );
           },

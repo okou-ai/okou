@@ -65,6 +65,7 @@ function mockSnapshotResources() {
         throw new Error(`Unexpected artifact reference: ${params.reference}`);
       }
       return respond(200, {
+        downloadUrl: new URL("?download=1", resource.url).href,
         url: resource.url,
         filename: resource.filename,
         contentType: resource.contentType,

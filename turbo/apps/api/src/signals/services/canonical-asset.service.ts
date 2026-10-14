@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import {
   linkLayoutFromSegment,
-  linkLayoutSegment,
   type LinkLayout,
 } from "@okouai/api-contracts/contracts/link-layout";
 import type {
@@ -45,7 +44,6 @@ import {
 } from "../external/s3";
 import { settle, settleIncludingAbort } from "../utils";
 import {
-  allocateArtifactObject$,
   artifactObjectMetadata,
   type ArtifactObjectLocation,
 } from "./artifact-storage.service";
@@ -57,7 +55,6 @@ import { publishArtifactsChangedForRun$ } from "./artifact-realtime.service";
 import { sourceForRun$ } from "./run-uploaded-files.service";
 import {
   artifactStorageBucket,
-  privateArtifactCreationEnabled$,
   allocatePrivateArtifactLocation$,
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
@@ -68,42 +65,6 @@ const MAX_INPUT_FILE_SIZE_BYTES = 100 * 1024 * 1024;
 type CanonicalArtifactLocation = ArtifactObjectLocation & {
   readonly storageMetadata: RunUploadedFileMetadata;
 };
-
-const allocateCanonicalArtifact$ = command(
-  async (
-    { set },
-    args: {
-      readonly userId: string;
-      readonly orgId: string;
-      readonly filename: string;
-    },
-    signal: AbortSignal,
-  ): Promise<CanonicalArtifactLocation> => {
-    const enabled = await set(
-      privateArtifactCreationEnabled$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    signal.throwIfAborted();
-    if (enabled) {
-      return await set(
-        allocatePrivateArtifactLocation$,
-        {
-          id: randomUUID(),
-          filename: args.filename,
-        },
-        signal,
-      );
-    }
-    const location = await set(allocateArtifactObject$, args, signal);
-    // Persisted link-layout marker; stored assets without it are legacy.
-    return {
-      ...location,
-      storageMetadata: { publicBrand: linkLayoutSegment(location.layout) },
-    };
-  },
-);
 
 function canonicalAssetUrl(asset: CanonicalAssetRow): string {
   if (!asset.storageKey || !asset.filename) {
@@ -851,7 +812,11 @@ const resolveCanonicalInputIdentity$ = command(
     let asset = await set(canonicalAssetByIdentity$, args, signal);
     signal.throwIfAborted();
     if (!asset) {
-      const artifact = await set(allocateCanonicalArtifact$, args, signal);
+      const artifact = await set(
+        allocatePrivateArtifactLocation$,
+        { id: randomUUID(), filename: args.filename },
+        signal,
+      );
       asset = await set(
         ensureCanonicalInputAsset$,
         { ...args, artifact },
@@ -1561,12 +1526,8 @@ export const prepareCanonicalPublishedAsset$ = command(
     signal.throwIfAborted();
     if (!asset) {
       const artifact = await set(
-        allocateCanonicalArtifact$,
-        {
-          userId: args.userId,
-          orgId: args.orgId,
-          filename: args.filename,
-        },
+        allocatePrivateArtifactLocation$,
+        { id: randomUUID(), filename: args.filename },
         signal,
       );
       const assetResult = await settle(

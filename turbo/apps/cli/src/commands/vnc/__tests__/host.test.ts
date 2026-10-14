@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -168,7 +171,7 @@ describe("okou vnc host list", () => {
 
     expect(output).not.toHaveBeenCalled();
     expect(errors.mock.calls.flat().join("\n")).toContain(
-      "VNC access is not available",
+      "Cannot list VNC hosts (HTTP 404)",
     );
   });
 
@@ -310,4 +313,220 @@ describe("okou vnc host list", () => {
       expect(process.exitCode).toBe(1);
     },
   );
+});
+
+const configuredHost = {
+  id: host.id,
+  displayName: host.displayName,
+  host: host.host,
+  port: host.port,
+  credentialId: "a0000000-0000-4000-8000-000000000002",
+  credentialName: "Login",
+  security: { type: "x509_plain" },
+  generation: 7,
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-02T00:00:00.000Z",
+};
+const secrets = {
+  username: "USERNAME_CANARY",
+  password: "SECRET_CANARY",
+  privateKey: "KEY_CANARY",
+  certificateChain: "CERTIFICATE_CANARY",
+  ticketCache: "TICKET_CANARY",
+  keytab: "KEYTAB_CANARY",
+};
+describe("okou vnc host configuration management", () => {
+  let directory: string;
+  function input(value: unknown) {
+    const path = join(directory, "input.json");
+    writeFileSync(path, JSON.stringify(value));
+    return path;
+  }
+  async function manage(...args: string[]) {
+    await createVncHostCommand().parseAsync(args, { from: "user" });
+  }
+  function text() {
+    return [...output.mock.calls, ...errors.mock.calls].flat().join("\n");
+  }
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "okou-vnc-host-"));
+    vi.stubEnv("OKOU_TOKEN", runToken(["connector:read", "connector:write"]));
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it("allows personal-token configured-host inspection", async () => {
+    vi.stubEnv("OKOU_TOKEN", "personal-token");
+    server.use(
+      http.get("http://localhost:3000/api/vnc/connections", ({ request }) => {
+        expect(request.headers.get("authorization")).toBe(
+          "Bearer personal-token",
+        );
+        return HttpResponse.json({ connections: [configuredHost] });
+      }),
+    );
+    await manage("list", "--scope", "configured", "--json");
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      connections: [configuredHost],
+    });
+  });
+
+  it("lists and shows only safe configured metadata", async () => {
+    server.use(
+      http.get("http://localhost:3000/api/vnc/connections", () => {
+        return HttpResponse.json({
+          connections: [
+            {
+              ...configuredHost,
+              ...secrets,
+              security: {
+                type: "x509_plain",
+                trust: { mode: "custom_ca", caBundle: "PEM_CANARY" },
+                ...secrets,
+              },
+              transport: { type: "ssh", connectionId: host.id, ...secrets },
+            },
+          ],
+          ...secrets,
+        });
+      }),
+    );
+    await manage("list", "--scope", "configured", "--json");
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      connections: [
+        {
+          ...configuredHost,
+          transport: { type: "ssh", connectionId: host.id },
+        },
+      ],
+    });
+    await manage("show", host.id, "--json");
+    expect(text()).toContain('"generation":');
+    expect(text()).not.toContain("CANARY");
+  });
+
+  it("creates an SSH-backed host and rebinds saved credentials without echoing secrets", async () => {
+    const security = {
+      type: "x509_plain",
+      trust: { mode: "custom_ca", caBundle: "PEM_CANARY" },
+      serverName: host.host,
+    };
+    const transport = { type: "ssh", connectionId: host.id };
+    const authentication = {
+      method: "username_password",
+      username: "USERNAME_CANARY",
+      password: "SECRET_CANARY",
+    };
+    const credential = { create: { name: "Login", authentication } };
+    let created: unknown;
+    let updated: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/vnc/connections",
+        async ({ request }) => {
+          created = await request.json();
+          return HttpResponse.json(
+            {
+              ...configuredHost,
+              security: { ...security, ...secrets },
+              transport: { ...transport, ...secrets },
+              ...secrets,
+            },
+            { status: 201 },
+          );
+        },
+      ),
+      http.patch(
+        `http://localhost:3000/api/vnc/connections/${host.id}`,
+        async ({ request }) => {
+          updated = await request.json();
+          return HttpResponse.json({
+            ...configuredHost,
+            generation: 8,
+            security: { ...security, ...secrets },
+            transport,
+          });
+        },
+      ),
+    );
+    const body = {
+      displayName: host.displayName,
+      host: host.host,
+      security,
+      credential,
+      transport,
+    };
+    await manage("create", "--input", input(body), "--json");
+    expect(created).toEqual({
+      ...body,
+      port: 5900,
+      id: expect.stringMatching(/^[a-f0-9-]{36}$/u),
+    });
+    expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
+      ...configuredHost,
+      security: { type: security.type },
+      transport,
+    });
+    const update = {
+      expectedGeneration: 7,
+      security,
+      credential: { id: configuredHost.credentialId },
+      transport,
+    };
+    await manage("update", host.id, "--input", input(update));
+    expect(updated).toStrictEqual(update);
+    expect(text()).not.toContain("CANARY");
+  });
+
+  it("preserves explicit create UUID and direct transport, including credentialless X509None", async () => {
+    let received: unknown;
+    server.use(
+      http.post(
+        "http://localhost:3000/api/vnc/connections",
+        async ({ request }) => {
+          received = await request.json();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    const body = {
+      id: host.id,
+      displayName: host.displayName,
+      host: host.host,
+      port: 5901,
+      credential: { type: "none" },
+      security: { type: "x509_none", trust: { mode: "system" } },
+      transport: { type: "direct" },
+    };
+    await manage("create", "--input", input(body), "--json");
+    expect(received).toStrictEqual(body);
+    expect(output).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({ id: host.id }),
+    );
+  });
+
+  it("deletes with expectedGeneration without a new confirmation or self-grant", async () => {
+    let body: unknown;
+    server.use(
+      http.delete(
+        `http://localhost:3000/api/vnc/connections/${host.id}`,
+        async ({ request }) => {
+          body = await request.json();
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    await manage(
+      "delete",
+      host.id,
+      "--input",
+      input({ expectedGeneration: 7 }),
+      "--json",
+    );
+    expect(body).toStrictEqual({ expectedGeneration: 7 });
+    expect(output).toHaveBeenCalledExactlyOnceWith(
+      JSON.stringify({ id: host.id, deleted: true }),
+    );
+  });
 });

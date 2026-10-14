@@ -141,6 +141,7 @@ export const runnerSshContract = c.router({
     body: resolveRequestSchema
       .extend({
         expectedGeneration: generationSchema,
+        expectedCreatedAt: z.string().datetime(),
         observedAt: z.string().datetime(),
         failureReason: sshConnectionFailureReasonSchema.nullable(),
       })

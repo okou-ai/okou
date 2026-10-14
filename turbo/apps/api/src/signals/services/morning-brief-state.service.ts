@@ -1,6 +1,6 @@
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agents } from "@okouai/db/schema/agent";
 import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
@@ -10,7 +10,7 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { db$ } from "../external/db";
@@ -160,10 +160,9 @@ const loadMorningBriefInstallations$ = command(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
           eq(workflows.visibility, "private"),
-          eq(
-            workflows.officialDefinitionName,
-            MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-          ),
+          inArray(workflows.officialDefinitionName, [
+            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+          ]),
         ),
       )
       .orderBy(asc(workflows.createdAt), asc(workflows.id));

@@ -33,9 +33,9 @@ export async function validatePermanentDiscordChat(
       `WITH consent AS (
          INSERT INTO discord_oauth_states (id, state_hash, completion_token_hash, phase, user_id, org_id, flow, redirect_uri, verified_guild_id, verified_guild_name, verified_discord_user_id, verified_bot_user_id, expires_at)
          VALUES ($1::uuid, $1::text, NULL, 'approved', $3, $4, 'connect', 'https://example.test/callback', $2, 'guild', 'sender', 'bot', now() + interval '10 minutes')
-         RETURNING id, user_id, verified_guild_id, verified_discord_user_id
-       ) INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id, oauth_grant_id)
-         SELECT id, verified_guild_id, verified_discord_user_id, user_id, id FROM consent`,
+         RETURNING id, user_id, org_id, verified_guild_id, verified_discord_user_id
+       ) INSERT INTO discord_org_connections (id, guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+         SELECT id, verified_guild_id, verified_discord_user_id, user_id, id, org_id FROM consent`,
       [connection, guild, user, org],
     );
     await client.query(
@@ -62,6 +62,18 @@ export async function validatePermanentDiscordChat(
       "DELETE FROM discord_org_installations WHERE guild_id = $1",
       [guild],
     );
+    assert.equal(
+      (
+        await client.query(
+          "SELECT id FROM discord_org_connections WHERE id = $1",
+          [connection],
+        )
+      ).rowCount,
+      1,
+    );
+    await client.query("DELETE FROM discord_oauth_states WHERE id = $1", [
+      connection,
+    ]);
     assert.deepEqual(
       (
         await client.query(

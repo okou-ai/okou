@@ -606,6 +606,36 @@ describe("chat thread generation template contract", () => {
     ).toMatchObject({ success: false });
   });
 
+  it("accepts a document reference without a custom template row", () => {
+    expect(
+      generationTemplateRequestSchema.parse({
+        type: "document",
+        selection: { documentTemplateId: "document-template:creative-brief" },
+      }),
+    ).toEqual({
+      type: "document",
+      selection: { documentTemplateId: "document-template:creative-brief" },
+    });
+  });
+
+  it("rejects incomplete document selections and ambiguous legacy fields", () => {
+    for (const selection of [
+      { documentTemplateId: "" },
+      { userTemplateId: "document-template:creative-brief" },
+      {
+        documentTemplateId: "document-template:creative-brief",
+        websiteTemplateId: "website-template:landing",
+      },
+    ]) {
+      expect(
+        generationTemplateRequestSchema.safeParse({
+          type: "document",
+          selection,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts presentation template selections", () => {
     const parsed = generationTemplateRequestSchema.safeParse({
       type: "presentation",

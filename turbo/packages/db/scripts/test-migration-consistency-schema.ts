@@ -38,7 +38,8 @@ import { Client } from "pg";
 import { validateCanonicalModelSelections } from "./test-canonical-model-selections-permanent";
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
-import { validateOfficialAutomationResultEmailSchema } from "./test-official-automation-result-email-schema";
+import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
+import { validateOfficialAutomationBindingSchema } from "./test-official-automation-binding-schema";
 import { validatePermanentBuiltInModelKeyState } from "./test-built-in-model-keys-permanent";
 import { validatePermanentDiscordFoundation } from "./test-discord-foundation-permanent";
 import { validatePermanentDiscordChat } from "./test-discord-chat-permanent";
@@ -49,11 +50,13 @@ import { validateModelCatalogSeed } from "./test-model-catalog-seed";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 import { validatePermanentConnectorCatalogColumns } from "./test-connector-catalog-columns-permanent";
 import { validatePermanentChatThreadStorage } from "./test-chat-thread-storage-permanent";
+import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentMemberMetadata } from "./test-member-metadata-permanent";
 import { validatePermanentPiMemoryJobs } from "./test-pi-memory-job-permanent";
 import { validateSessionMountRetirementPreparation } from "./test-session-mount-retirement-preparation";
 import { validatePermanentComputerUseHostStorage } from "./test-computer-use-host-storage-permanent";
 import { validatePermanentPlatformGenerationReceipts } from "./test-platform-generation-receipts-permanent";
+import { validateChatRelations } from "./test-chat-relations-permanent";
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 
@@ -1071,10 +1074,17 @@ async function expectDatabaseError(
   try {
     await client.query(args.query, args.values ? [...args.values] : undefined);
   } catch (error) {
-    assert.equal(databaseErrorCode(error), args.code);
-    if (args.messageIncludes !== undefined) {
-      assert.ok(error instanceof Error);
-      assert.ok(error.message.includes(args.messageIncludes));
+    try {
+      assert.equal(databaseErrorCode(error), args.code);
+      if (args.messageIncludes !== undefined) {
+        assert.ok(error instanceof Error);
+        assert.ok(error.message.includes(args.messageIncludes));
+      }
+    } catch (assertionError) {
+      if (assertionError instanceof Error) {
+        assertionError.cause = error;
+      }
+      throw assertionError;
     }
     return;
   }
@@ -2598,54 +2608,196 @@ async function validatePermanentUsagePackPendingSnapshotState(
 ): Promise<void> {
   console.log("=== Validate permanent usage-pack pending snapshot state ===\n");
   const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0397; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
-
   const orgId = "permanent-usage-pack-pending-snapshot-org";
+  const failures: unknown[] = [];
+  let rejectNativeError: (error: Error) => void;
+  const nativeError = new Promise<never>((_, reject) => {
+    rejectNativeError = reject;
+  });
+  void nativeError.catch(() => {});
+  client.on("error", (error: Error) => {
+    failures.push(error);
+    rejectNativeError(error);
+  });
+  let connectSettled = false;
   try {
+    const connecting = client.connect().then(
+      () => {
+        connectSettled = true;
+      },
+      (error: unknown) => {
+        connectSettled = true;
+        failures.push(error);
+        throw error;
+      },
+    );
+    // Some native authentication errors emit without settling connect. Race only
+    // this wait; every cleanup below must still be attempted and awaited.
+    await Promise.race([connecting, nativeError]);
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+    // This suite owns a disposable database. Commit the uniqueness/range fixture
+    // and delete it before starting the separate NULL fixture.
+    // Counts above one represent grandfathered purchases. Admission and release
+    // are owned by the API service; the database retains uniqueness and range.
     await client.query(
       `INSERT INTO usage_pack_pending_snapshot_guards
       (org_id, pending_snapshot_count) VALUES ($1, 2)`,
       [orgId],
     );
-    // Counts above one represent grandfathered purchases. Admission and release
-    // are owned by the API service; the database retains uniqueness and range.
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0398; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23505",
-      query: `INSERT INTO usage_pack_pending_snapshot_guards
+    try {
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      await expectDatabaseError(client, {
+        code: "23505",
+        query: `INSERT INTO usage_pack_pending_snapshot_guards
         (org_id, pending_snapshot_count) VALUES ($1, 0)`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0399; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23514",
-      messageIncludes: "chk_usage_pack_pending_snapshot_guard_count",
-      query: `UPDATE usage_pack_pending_snapshot_guards
+        values: [orgId],
+      });
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      const preserved = await client.query(
+        `SELECT org_id, pending_snapshot_count
+        FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+        [orgId],
+      );
+      assert.deepEqual(preserved.rows, [
+        { org_id: orgId, pending_snapshot_count: 2 },
+      ]);
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      await expectDatabaseError(client, {
+        code: "23514",
+        messageIncludes: "chk_usage_pack_pending_snapshot_guard_count",
+        query: `UPDATE usage_pack_pending_snapshot_guards
         SET pending_snapshot_count = -1 WHERE org_id = $1`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0400; new non-billing transactions are prohibited.
-    await client.query("SAVEPOINT guard_constraint");
-    await expectDatabaseError(client, {
-      code: "23502",
-      query: `UPDATE usage_pack_pending_snapshot_guards
-        SET pending_snapshot_count = NULL WHERE org_id = $1`,
-      values: [orgId],
-    });
-    await client.query("ROLLBACK TO SAVEPOINT guard_constraint");
-    console.log(
-      "   ✅ pending guards retain unique organization and nonnegative count constraints\n",
+        values: [orgId],
+      });
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      const rangePreserved = await client.query(
+        `SELECT org_id, pending_snapshot_count
+        FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+        [orgId],
+      );
+      assert.deepEqual(rangePreserved.rows, [
+        { org_id: orgId, pending_snapshot_count: 2 },
+      ]);
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      await client
+        .query(
+          `DELETE FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+          [orgId],
+        )
+        .catch((error: unknown) => {
+          failures.push(error);
+        });
+    }
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+    const cleaned = await client.query(
+      `SELECT org_id, pending_snapshot_count
+      FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+      [orgId],
     );
+    assert.deepEqual(cleaned.rows, []);
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+
+    // The NULL probe owns a separate committed fixture only after previous
+    // cleanup/native failures are clear and the exact key is observed absent.
+    const absent = await client.query(
+      `SELECT org_id, pending_snapshot_count
+      FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+      [orgId],
+    );
+    assert.deepEqual(absent.rows, []);
+    if (failures.length > 0) {
+      throw failures[0];
+    }
+    const inserted = await client.query(
+      `INSERT INTO usage_pack_pending_snapshot_guards
+      (org_id, pending_snapshot_count) VALUES ($1, 2)`,
+      [orgId],
+    );
+    assert.equal(inserted.command, "INSERT");
+    assert.equal(inserted.rowCount, 1);
+    try {
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      await expectDatabaseError(client, {
+        code: "23502",
+        query: `UPDATE usage_pack_pending_snapshot_guards
+        SET pending_snapshot_count = NULL WHERE org_id = $1`,
+        values: [orgId],
+      });
+      if (failures.length > 0) {
+        throw failures[0];
+      }
+      const nullPreserved = await client.query(
+        `SELECT org_id, pending_snapshot_count
+        FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+        [orgId],
+      );
+      assert.deepEqual(nullPreserved.rows, [
+        { org_id: orgId, pending_snapshot_count: 2 },
+      ]);
+    } catch (error) {
+      failures.push(error);
+    } finally {
+      await client
+        .query(
+          `DELETE FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+          [orgId],
+        )
+        .catch((error: unknown) => {
+          failures.push(error);
+        });
+      await client
+        .query(
+          `SELECT org_id, pending_snapshot_count
+          FROM usage_pack_pending_snapshot_guards WHERE org_id = $1`,
+          [orgId],
+        )
+        .then((nullCleaned) => {
+          assert.deepEqual(nullCleaned.rows, []);
+        })
+        .catch((error: unknown) => {
+          failures.push(error);
+        });
+    }
+  } catch (error) {
+    failures.push(error);
   } finally {
-    await client.query("ROLLBACK");
-    await client.end();
+    await client.end().catch((error: unknown) => {
+      failures.push(error);
+    });
   }
+  if (!connectSettled) {
+    console.error("   Native connect settlement is unacknowledged (unknown)");
+  }
+  if (failures.length > 0) {
+    console.error("   Pending guard failure occurrences:", failures);
+    if (new Set(failures).size === 1) {
+      throw failures[0];
+    }
+    throw new AggregateError(failures, "Pending guard validation failed", {
+      cause: failures[0],
+    });
+  }
+  console.log(
+    "   ✅ pending guards retain unique organization and nonnegative count constraints\n",
+  );
 }
 
 async function main(): Promise<void> {
@@ -2691,12 +2843,14 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl1);
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
+    await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
     await validatePermanentPiMemoryJobs(dbUrl1);
     await validateSessionMountRetirementPreparation(dbUrl1);
     await validatePermanentComputerUseHostStorage(dbUrl1);
     await validatePermanentSshStorage(dbUrl1);
     await validatePermanentPlatformGenerationReceipts(dbUrl1);
+    await validateChatRelations(dbUrl1);
     await validatePermanentRunnerStateStorage(dbUrl1);
     await validatePermanentModelCatalogConstraints(dbUrl1);
     await validateCanonicalModelSelections(dbUrl1);
@@ -2704,7 +2858,8 @@ async function main(): Promise<void> {
     await validateXResourceUsageSchema(dbUrl1);
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
-    await validateOfficialAutomationResultEmailSchema(dbUrl1);
+    await validatePermanentWorkflowNameScopes(dbUrl1);
+    await validateOfficialAutomationBindingSchema(dbUrl1);
     await validateExpandedBrowserSchema(dbUrl1);
     await validateCanonicalChatEventStorage(dbUrl1);
     await validateChatEventContextPointerConstraints(dbUrl1);
@@ -2730,19 +2885,22 @@ async function main(): Promise<void> {
     await validatePermanentOrgPlanEntitlementState(dbUrl2);
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
+    await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentMemberMetadata(dbUrl2);
     await validatePermanentPiMemoryJobs(dbUrl2);
     await validateSessionMountRetirementPreparation(dbUrl2);
     await validatePermanentComputerUseHostStorage(dbUrl2);
     await validatePermanentSshStorage(dbUrl2);
     await validatePermanentPlatformGenerationReceipts(dbUrl2);
+    await validateChatRelations(dbUrl2);
     await validatePermanentRunnerStateStorage(dbUrl2);
     await validatePermanentModelCatalogConstraints(dbUrl2);
     await validateCanonicalModelSelections(dbUrl2);
     await validateXResourceUsageSchema(dbUrl2);
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
-    await validateOfficialAutomationResultEmailSchema(dbUrl2);
+    await validatePermanentWorkflowNameScopes(dbUrl2);
+    await validateOfficialAutomationBindingSchema(dbUrl2);
     await validateConnectorAutomaticOAuthConstraints(dbUrl2);
 
     // Step 4: Restore original migrations

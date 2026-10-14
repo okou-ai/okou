@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.7.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.20...runner-provider-v0.7.21) (2026-10-14)
+
+## [0.7.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.19...runner-provider-v0.7.20) (2026-10-14)
+
+## [0.7.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.18...runner-provider-v0.7.19) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
+## [0.7.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.17...runner-provider-v0.7.18) (2026-10-14)
+
+## [0.7.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.16...runner-provider-v0.7.17) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** extend firewall catalog download timeout ([#39910](https://github.com/okou-ai/okou/issues/39910)) ([33803f4](https://github.com/okou-ai/okou/commit/33803f4d00fe3f6ef0f1672f90ac3a89306cfab7))
+* **runner:** log completion retries at info ([#39913](https://github.com/okou-ai/okou/issues/39913)) ([b757880](https://github.com/okou-ai/okou/commit/b7578800e9d0c3a80c830f60425dac05fd344436))
+
+## [0.7.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.15...runner-provider-v0.7.16) (2026-10-14)
+
+## [0.7.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.14...runner-provider-v0.7.15) (2026-10-13)
+
+## [0.7.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.13...runner-provider-v0.7.14) (2026-10-13)
+
+## [0.7.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.12...runner-provider-v0.7.13) (2026-10-13)
+
+## [0.7.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.11...runner-provider-v0.7.12) (2026-10-13)
+
+## [0.7.11](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.10...runner-provider-v0.7.11) (2026-10-13)
+
 ## [0.7.10](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.9...runner-provider-v0.7.10) (2026-10-12)
 
 ## [0.7.9](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.8...runner-provider-v0.7.9) (2026-10-12)

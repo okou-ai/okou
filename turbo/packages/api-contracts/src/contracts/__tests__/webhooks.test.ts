@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import homeStartupTelemetry from "./fixtures/runner-home-startup-telemetry.json";
+import historyDownloadAttribution from "./fixtures/runner-history-download-attribution.json";
 
 import {
   RESUME_SESSION_HISTORY_MAX_BYTES,
@@ -28,6 +29,66 @@ import {
 
 const storageId = "00000000-0000-4000-8000-000000000000";
 const manifestHash = "a".repeat(64);
+
+describe("bounded session-history download attribution", () => {
+  it("accepts the shared Runner upload fixture without changing its measurements", () => {
+    expect(
+      webhookTelemetryContract.send.body.parse(historyDownloadAttribution),
+    ).toEqual(historyDownloadAttribution);
+  });
+
+  it("accepts legacy uploads and strips undeclared customer/transport details", () => {
+    const legacy = {
+      ts: "2026-01-15T10:00:00Z",
+      action_type: "session_history_download",
+      duration_ms: 10,
+      success: true,
+    };
+    expect(
+      webhookTelemetryContract.send.body.parse({
+        runId: "run",
+        sandboxOperations: [
+          {
+            ...legacy,
+            session_history_download_url:
+              "https://private.invalid/history?signature=private",
+            session_history_ref_hash: "private",
+            session_history_attempts: [{ body: "private", key: "private" }],
+          },
+        ],
+      }),
+    ).toEqual({ runId: "run", sandboxOperations: [legacy] });
+  });
+
+  it.each([
+    { session_history_observation_stage: "arbitrary" },
+    { session_history_download_attempt: 0 },
+    { session_history_download_attempt: 4 },
+    { session_history_attempt_count: 4 },
+    { session_history_failed_attempt_count: -1 },
+    { session_history_interrupted_attempt_count: 4 },
+    { session_history_retry_count: 3 },
+    { session_history_request_start_offset_ms: -1 },
+    { session_history_body_end_offset_ms: 0.5 },
+    { session_history_chunk_wait_ms: Number.MAX_SAFE_INTEGER + 1 },
+    { session_history_chunk_wait_max_ms: Infinity },
+    { session_history_chunk_count: 4_294_967_296 },
+    { session_history_body_copy_ms: "private" },
+    { session_history_cpu_admission_end_offset_ms: -1 },
+    { session_history_cpu_queue_end_offset_ms: NaN },
+    { session_history_restore_wait_end_offset_ms: -1 },
+    { session_history_timing_origin_unix_ms: -1 },
+  ])("rejects out-of-contract measurements %j", (invalid) => {
+    expect(
+      webhookTelemetryContract.send.body.safeParse({
+        ...historyDownloadAttribution,
+        sandboxOperations: [
+          { ...historyDownloadAttribution.sandboxOperations[0], ...invalid },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+});
 
 describe("captured runtime usage identities", () => {
   it.each(["okou-1.0", "@preset/okou-1-0", "@preset/" + "x".repeat(247)])(
@@ -235,6 +296,20 @@ describe("storage batch timing telemetry", () => {
       storage_batch_result_decode_ms: 7,
       storage_batch_resource_log_ms: 8,
       storage_batch_host_timing: "complete",
+      storage_batch_guest_timing: "complete",
+      storage_batch_resources: "complete",
+      storage_batch_guest_request_ownership_us: 0,
+      storage_batch_guest_worker_wait_us: 1,
+      storage_batch_guest_response_prepare_us: 2,
+      storage_batch_containment_wall_us: 3,
+      storage_batch_resource_collection_us: 4,
+      storage_batch_cpu_usage_us: 5,
+      storage_batch_cpu_throttled_us: 6,
+      storage_batch_memory_peak_bytes: Number.MAX_SAFE_INTEGER,
+      storage_batch_memory_events_oom: 0,
+      storage_batch_memory_events_oom_kill: 0,
+      storage_batch_memory_events_oom_group_kill: 0,
+      storage_batch_pids_events_max: 0,
       storage_batch_payload_size_bucket: "64_to_256_kib",
     };
     const parsed = webhookTelemetryContract.send.body.parse({
@@ -245,9 +320,70 @@ describe("storage batch timing telemetry", () => {
       ],
     });
     expect(parsed.sandboxOperations).toStrictEqual([operation, measured]);
+    // Previous API's tolerant object reader accepts the new Runner payload and
+    // preserves its own fields. Runner/Guest internal artifacts deploy together.
+    const olderOperationReader =
+      webhookTelemetryContract.send.body.shape.sandboxOperations
+        .unwrap()
+        .element.omit({
+          storage_batch_guest_timing: true,
+          storage_batch_resources: true,
+          storage_batch_guest_request_ownership_us: true,
+          storage_batch_guest_worker_wait_us: true,
+          storage_batch_guest_response_prepare_us: true,
+          storage_batch_containment_wall_us: true,
+          storage_batch_resource_collection_us: true,
+          storage_batch_cpu_usage_us: true,
+          storage_batch_cpu_throttled_us: true,
+          storage_batch_memory_peak_bytes: true,
+          storage_batch_memory_events_oom: true,
+          storage_batch_memory_events_oom_kill: true,
+          storage_batch_memory_events_oom_group_kill: true,
+          storage_batch_pids_events_max: true,
+        });
+    expect(olderOperationReader.parse(measured)).toStrictEqual({
+      ...operation,
+      storage_batch_guest_duration_ms: 0,
+      storage_batch_outer_residual_ms: 42,
+      storage_batch_timing: "paired",
+      storage_batch_admission_ms: 0,
+      storage_batch_request_setup_ms: 1,
+      storage_batch_frame_builder_wait_ms: 2,
+      storage_batch_frame_encode_ms: 3,
+      storage_batch_writer_wait_ms: 4,
+      storage_batch_frame_write_ms: 5,
+      storage_batch_response_wait_ms: 6,
+      storage_batch_result_decode_ms: 7,
+      storage_batch_resource_log_ms: 8,
+      storage_batch_host_timing: "complete",
+      storage_batch_payload_size_bucket: "64_to_256_kib",
+    });
   });
 
   it("rejects negative, oversized, and unbounded timing values", () => {
+    for (const field of [
+      "storage_batch_guest_request_ownership_us",
+      "storage_batch_guest_worker_wait_us",
+      "storage_batch_guest_response_prepare_us",
+      "storage_batch_containment_wall_us",
+      "storage_batch_resource_collection_us",
+      "storage_batch_cpu_usage_us",
+      "storage_batch_cpu_throttled_us",
+      "storage_batch_memory_peak_bytes",
+      "storage_batch_memory_events_oom",
+      "storage_batch_memory_events_oom_kill",
+      "storage_batch_memory_events_oom_group_kill",
+      "storage_batch_pids_events_max",
+    ]) {
+      for (const value of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, "0"]) {
+        expect(
+          webhookTelemetryContract.send.body.safeParse({
+            runId: "run",
+            sandboxOperations: [{ ...operation, [field]: value }],
+          }).success,
+        ).toBe(false);
+      }
+    }
     for (const invalid of [
       { storage_batch_guest_duration_ms: -1 },
       { storage_batch_guest_duration_ms: 4_294_967_296 },
@@ -283,6 +419,8 @@ describe("storage batch timing telemetry", () => {
       { storage_batch_resource_log_ms: 4_294_967_296 },
       { storage_batch_resource_log_ms: 1.5 },
       { storage_batch_host_timing: "private diagnostic" },
+      { storage_batch_guest_timing: "private diagnostic" },
+      { storage_batch_resources: "private diagnostic" },
       { storage_batch_payload_size_bucket: "private path" },
     ]) {
       expect(
@@ -620,7 +758,7 @@ function manifestFile(path: string) {
 }
 
 describe("storage webhook manifest limits", () => {
-  it("accepts the exact v2 maintenance checkpoint attestation", () => {
+  it("accepts the exact v2 maintenance publication attestation", () => {
     const body = {
       runId: "run-id",
       storageId,
@@ -1008,11 +1146,43 @@ describe("webhook telemetry contract", () => {
     ).toStrictEqual(homeStartupTelemetry);
   });
 
+  it("preserves false first-run context and actual home-use evidence", () => {
+    const payload = {
+      runId: "00000000-0000-4000-8000-000000000000",
+      sandboxOperations: [
+        {
+          ts: "2026-10-14T03:00:00.000Z",
+          action_type: "runner_sandbox_startup",
+          duration_ms: 0,
+          success: true,
+          runner_startup_path: "blank",
+          is_first_run: false,
+          reuse_key: "thread:00000000-0000-4000-8000-000000000000",
+          sandbox_reuse_result: "poolMiss",
+          home_reuse_result: "cacheMiss",
+        },
+      ],
+    };
+    expect(webhookTelemetryContract.send.body.parse(payload)).toStrictEqual(
+      payload,
+    );
+    expect(
+      webhookTelemetryContract.send.body.safeParse({
+        ...payload,
+        sandboxOperations: [
+          { ...payload.sandboxOperations[0], is_first_run: "false" },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("accepts bounded startup outcomes and keeps them optional", () => {
     const startupOutcomes = [
       ["sandbox", "reused"],
       ["workspace", "noReuseKey"],
       ["home", "poolMiss"],
+      ["blank", "poolMiss"],
+      ["blank", "noReuseKey"],
       ["cold", "poolMiss"],
       ["cold", "profileMismatch"],
       ["cold", "deviceLimitMismatch"],

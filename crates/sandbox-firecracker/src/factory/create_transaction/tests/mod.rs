@@ -6,6 +6,8 @@ use std::sync::{
 
 use crate::factory::cleanup_group::FactoryCleanupGroup;
 
+mod custody;
+
 struct SandboxCreateResourcesWithoutCow {
     sandbox_paths: SandboxPaths,
     sock_paths: SockPaths,
@@ -568,6 +570,7 @@ impl CreateRollbackCleanup for BlockingNetworkAfterCowCleanup {
 fn test_leaked_resource(sandbox_id: &str) -> LeakedResources {
     LeakedResources {
         sandbox_id: sandbox_id.into(),
+        create_custody: None,
         process_exit: None,
         cow_device: None,
         network: None,

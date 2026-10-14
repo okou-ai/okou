@@ -26,6 +26,7 @@ import { createFixtureTracker, createRouteMocks } from "./helpers/route-test";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthOrgAgentsBddApi } from "./helpers/api-bdd-auth-org";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
+import { claimPublicDiscordTestRun } from "./helpers/discord-run";
 
 const context = testContext();
 const track = createFixtureTracker((fixture: DiscordFixture) => {
@@ -35,6 +36,7 @@ const track = createFixtureTracker((fixture: DiscordFixture) => {
 beforeEach(() => {
   mockEnv("ENV", "development");
   configureDiscordApp();
+  mockEnv("DISCORD_OAUTH_CLIENT_SECRET", "discord-test-client-secret");
 });
 
 function createActors() {
@@ -150,6 +152,151 @@ async function registerMemberCache(value: DiscordActor): Promise<void> {
   await api.requestReadMeWithBearer(token, profile, [200]);
 }
 
+describe("Discord server installation links", () => {
+  const invite = "https://discord.gg/example";
+  const guild = { id: "1559819014036000790", name: "New server" };
+
+  async function resolve(invitation: string) {
+    const owner = createActors().actor();
+    await enable(owner);
+    return client().installLink({
+      headers: authenticate(owner),
+      body: { invite: invitation },
+    });
+  }
+
+  it.each([
+    invite,
+    "https://discord.com/invite/example?utm_source=share",
+    "https://discordapp.com/invite/example/",
+  ])(
+    "resolves %s without an existing binding or provider credentials",
+    async (invitation) => {
+      mockEnv("APP_URL", "https://preview-app.example");
+      const lookups: string[] = [];
+      server.use(
+        http.get(
+          "https://discord.com/api/v10/invites/example",
+          ({ request }) => {
+            lookups.push(request.method);
+            expect(request.headers.get("authorization")).toBeNull();
+            expect(
+              new URL(request.url).searchParams.get("with_expiration"),
+            ).toBe("true");
+            return HttpResponse.json({ type: 0, guild, expires_at: null });
+          },
+        ),
+      );
+      const result = await accept(resolve(invitation), [200]);
+      expect(result.body).toStrictEqual({
+        url: `https://preview-app.example/settings/discord/install?guild_id=${guild.id}`,
+        guildId: guild.id,
+        guildName: guild.name,
+      });
+      expect(lookups).toStrictEqual(["GET"]);
+      await expectDiscordChanges([]);
+    },
+  );
+
+  it.each([
+    "https://attacker.example/invite/example",
+    "https://discord.gg.attacker.example/example",
+    "https://discord.gg@attacker.example/example",
+    "http://discord.gg/example",
+    "https://discord.gg:444/example",
+    "https://discord.gg/example/another",
+    "https://discord.com/channels/123",
+  ])(
+    "rejects an unsupported URL without fetching it: %s",
+    async (invitation) => {
+      const response = await accept(resolve(invitation), [400]);
+      expect(response.body.error.code).toBe("BAD_REQUEST");
+    },
+  );
+
+  it.each([
+    { providerStatus: 404, body: {}, expected: 404 },
+    { providerStatus: 200, body: { type: 1 }, expected: 400 },
+    {
+      providerStatus: 200,
+      body: { type: 0, guild, expires_at: "2020-01-01T00:00:00Z" },
+      expected: 404,
+    },
+    {
+      providerStatus: 429,
+      body: { retry_after: 5, global: false },
+      expected: 429,
+    },
+    { providerStatus: 500, body: {}, expected: 502 },
+  ] as const)(
+    "handles provider status $providerStatus as $expected",
+    async ({ providerStatus, body, expected }) => {
+      server.use(
+        http.get("https://discord.com/api/v10/invites/example", () => {
+          return HttpResponse.json(body, { status: providerStatus });
+        }),
+      );
+      expect((await resolve(invite)).status).toBe(expected);
+    },
+  );
+
+  it("requires authentication and the Discord feature switch", async () => {
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    await accept(
+      client().installLink({ headers: {}, body: { invite } }),
+      [401],
+    );
+    const owner = createActors().actor();
+    await updateFeatureSwitchesForUser(context, owner, {
+      [FeatureSwitchKey.DiscordIntegration]: false,
+    });
+    const response = await accept(
+      client().installLink({ headers: authenticate(owner), body: { invite } }),
+      [403],
+    );
+    expect(response.body.error.code).toBe("FORBIDDEN");
+  });
+});
+
+describe("Discord installation link run access", () => {
+  it.each([true, false])(
+    "honors the run's captured Discord read capability without requiring a server binding (enabled: %s)",
+    async (enabled) => {
+      const { actor, restore } = createActors();
+      const owner = actor();
+      await updateFeatureSwitchesForUser(context, owner, {
+        [FeatureSwitchKey.DiscordIntegration]: enabled,
+      });
+      const profile = createAuthOrgAgentsBddApi(context).user(owner);
+      const run = await claimPublicDiscordTestRun(context, profile);
+      // Web runs can use the CLI, but must not receive Discord-only invite guidance.
+      expect(run.claim.appendSystemPrompt).not.toContain(
+        "okou discord install-link",
+      );
+      await enable(owner);
+      restore();
+      server.use(
+        http.get("https://discord.com/api/v10/invites/example", () => {
+          return HttpResponse.json({
+            type: 0,
+            guild: { id: "1559819014036000790", name: "New server" },
+          });
+        }),
+      );
+      const result = await client().installLink({
+        headers: run.headers,
+        body: { invite: "https://discord.gg/example" },
+      });
+      expect(result.status).toBe(enabled ? 200 : 403);
+      if (result.status === 403) {
+        expect(result.body.error.message).toContain("discord:read");
+      }
+    },
+  );
+});
+
 describe("verified Discord integration settings", () => {
   it("requires authenticated organization membership", async () => {
     context.mocks.clerk.authenticateRequest.mockResolvedValue({
@@ -195,7 +342,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: false,
       isConnected: false,
       guildId: null,
       discordUserId: null,
@@ -221,7 +367,7 @@ describe("verified Discord integration settings", () => {
     });
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: false,
+      isConnected: false,
     });
     await accept(
       client().setDmSelection({
@@ -240,33 +386,17 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [404],
     );
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId, owner.userId, peer.userId]);
+    await expectDiscordChanges([owner.userId]);
 
     await enable(owner);
     await enable(peer);
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: true,
-      isInstalled: false,
       isConnected: false,
     });
     await expect(status(peer)).resolves.toMatchObject({
-      isInstalled: false,
-      isConnected: false,
+      isConnected: true,
     });
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [404],
-    );
   });
 
   it("reports existing bindings and unavailable context when app configuration is missing", async () => {
@@ -277,7 +407,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: true,
       isConnected: true,
       guildId: installed.guildId,
       contextMode: "unavailable",
@@ -293,7 +422,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toStrictEqual({
       isAvailable: true,
-      isInstalled: true,
       isConnected: true,
       isAdmin: true,
       guildId: installed.guildId,
@@ -309,6 +437,7 @@ describe("verified Discord integration settings", () => {
           connectionId: installed.connectionId,
           guildId: installed.guildId,
           guildName: "Customer workspace",
+          workspaceName: "Discord test workspace",
         },
       ],
     });
@@ -413,14 +542,12 @@ describe("verified Discord integration settings", () => {
 
     const disconnected = await status(owner);
     expect(disconnected).toMatchObject({
-      isInstalled: true,
       isConnected: false,
       discordUserId: null,
     });
     expect(disconnected.dmBindings).toStrictEqual([]);
     expect(disconnected.dmSelectionConnectionId).toBeNull();
     await expect(status(peer)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       discordUserId: second.discordUserId,
     });
@@ -431,49 +558,7 @@ describe("verified Discord integration settings", () => {
     await expectDiscordChanges([owner.userId]);
   });
 
-  it("requires the current admin role for uninstall and removes only that guild", async () => {
-    const { actor, restore } = createActors();
-    const owner = actor();
-    await fixture(owner);
-    const otherOwner = actor();
-    const second = await fixture(otherOwner);
-    mockDiscordMemberships(context, [
-      { ...owner, orgRole: "org:member" },
-      otherOwner,
-    ]);
-
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [403],
-    );
-    await expectDiscordChanges([]);
-    await expect(status(owner)).resolves.toMatchObject({ isInstalled: true });
-
-    restore();
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [200],
-    );
-    await expectDiscordChanges([owner.userId]);
-    await expect(status(owner)).resolves.toMatchObject({
-      isAvailable: true,
-      isInstalled: false,
-      guildId: null,
-    });
-    await expect(status(otherOwner)).resolves.toMatchObject({
-      isAvailable: true,
-      isInstalled: true,
-      guildId: second.guildId,
-    });
-  });
-
-  it("notifies the uninstalling user, connected users, and cached admins once each", async () => {
+  it("notifies only the disconnecting user and preserves peers and cached admins", async () => {
     const { actor } = createActors();
     const owner = actor();
     const installed = await fixture(owner);
@@ -496,7 +581,6 @@ describe("verified Discord integration settings", () => {
     }
     await enable(unconnectedAdmin);
     await expect(status(unconnectedAdmin)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: false,
     });
     await expectDiscordChanges([]);
@@ -504,22 +588,16 @@ describe("verified Discord integration settings", () => {
     await accept(
       client().disconnect({
         headers: authenticate(owner),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [200],
     );
-    const recipients = [
-      owner.userId,
-      connected.userId,
-      unconnectedAdmin.userId,
-    ];
+    const recipients = [owner.userId];
     await expectDiscordChanges(recipients);
     await expect(status(connected)).resolves.toMatchObject({
-      isInstalled: false,
-      isConnected: false,
+      isConnected: true,
     });
     await expect(status(otherOwner)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: otherInstalled.guildId,
     });
@@ -527,7 +605,7 @@ describe("verified Discord integration settings", () => {
     await accept(
       client().disconnect({
         headers: authenticate(owner),
-        query: { action: "uninstall" },
+        query: {},
       }),
       [404],
     );
@@ -541,7 +619,6 @@ describe("verified Discord integration settings", () => {
     mockDiscordMemberships(context, []);
 
     await expect(status(owner)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
       dmBindings: [],
     });
@@ -597,6 +674,7 @@ describe("verified Discord integration settings", () => {
             connectionId: binding.connectionId,
             guildId: binding.guildId,
             guildName: binding.guildName,
+            workspaceName: "Discord test workspace",
           },
         ],
         dmSelectionConnectionId: binding.connectionId,
@@ -764,6 +842,7 @@ describe("verified Discord integration settings", () => {
               connectionId: first.connectionId,
               guildId: first.guildId,
               guildName: first.guildName,
+              workspaceName: "Discord test workspace",
             },
           ],
         });
@@ -878,6 +957,7 @@ describe("verified Discord integration settings", () => {
           connectionId: first.connectionId,
           guildId: first.guildId,
           guildName: first.guildName,
+          workspaceName: "Discord test workspace",
         },
       ],
     });
@@ -913,6 +993,7 @@ describe("verified Discord integration settings", () => {
         connectionId: current.connectionId,
         guildId: current.guildId,
         guildName: current.guildName,
+        workspaceName: "Discord test workspace",
       },
     ]);
 

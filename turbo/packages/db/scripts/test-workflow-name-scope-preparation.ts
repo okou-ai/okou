@@ -22,6 +22,10 @@ assert.ok(
   preparation,
   "Retain this validator until same-name coexistence is activated",
 );
+const contraction = journal.entries.find((entry) => {
+  return entry.tag.endsWith("_workflow_name_coexistence");
+});
+assert.ok(contraction, "The shared-name contraction must remain in history");
 const databaseUrl = process.env.DATABASE_URL;
 assert.ok(databaseUrl, "DATABASE_URL is required");
 const adminUrl = new URL(databaseUrl);
@@ -116,7 +120,9 @@ try {
   await insertWorkflow("ordinary-first");
   await insertWorkflow("official-first", "installing");
   await assertOutgoingNameReads();
-  await applyPendingMigrations(migrationSql);
+  await applyPendingMigrations(migrationSql, {
+    beforeMillis: contraction.when,
+  });
   await assertOutgoingNameReads();
   const sharedKey = "idx_workflows_private_owner_agent_name_unique";
   await assert.rejects(
@@ -133,11 +139,8 @@ try {
     [agentId],
   );
 
-  // Only this owned disposable database drops the outgoing guard to exercise
-  // each future key independently. The shipped preparation never drops it.
-  await client.query(
-    `DROP INDEX "idx_workflows_private_owner_agent_name_unique"`,
-  );
+  // Apply the generated contraction only after outgoing readers are excluded.
+  await applyPendingMigrations(migrationSql);
   await insertWorkflow("ordinary-first", "installing");
   await insertWorkflow("official-first");
   await insertWorkflow("ordinary-first", null, "public");
@@ -160,7 +163,7 @@ try {
     uniqueConstraint("idx_workflows_public_agent_name_unique"),
   );
   console.log(
-    "Workflow name preparation preserves outgoing readers and both independent namespace keys",
+    "Workflow preparation preserves outgoing readers until the generated contraction activates independent namespaces",
   );
 } finally {
   await client.end();

@@ -83,9 +83,7 @@ describe("okou generate sprite command", () => {
       "uses the image model selected in Settings › Built-in tools",
     );
     expect(stdout).toContain("okou web upload-file -f <file>`");
-    expect(stdout).toContain(
-      "With privateArtifacts enabled, new artifacts default to only-me.",
-    );
+    expect(stdout).toContain("New artifacts default to only-me.");
   });
 
   it.each(["only-me", "org", "public"])(

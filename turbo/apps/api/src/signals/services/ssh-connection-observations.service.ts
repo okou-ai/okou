@@ -4,12 +4,14 @@ import { sshConnectionObservations } from "@okouai/db/schema/ssh-connection-obse
 import { and, asc, eq } from "drizzle-orm";
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
+import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 
 export const listSshConnectionObservations$ = command(
   async ({ set }, orgId: string, userId: string, signal: AbortSignal) => {
     const rows = await set(writeDb$)
       .select({
         connectionId: sshConnectionObservations.connectionId,
+        connectionCreatedAt: sshCreationTimestamp,
         generation: sshConnectionObservations.generation,
         observedAt: sshConnectionObservations.observedAt,
         failureReason: sshConnectionObservations.failureReason,
@@ -20,6 +22,10 @@ export const listSshConnectionObservations$ = command(
         and(
           eq(sshConnectionObservations.connectionId, sshConnections.id),
           eq(sshConnectionObservations.generation, sshConnections.generation),
+          eq(
+            sshConnectionObservations.connectionCreatedAt,
+            sshConnections.createdAt,
+          ),
         ),
       )
       .where(

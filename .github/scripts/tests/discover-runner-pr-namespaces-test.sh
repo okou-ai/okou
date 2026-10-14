@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/discover-runner-pr-namespaces.sh"
+script="${repo_root}/.github/scripts/runner/discover-runner-pr-namespaces.sh"
 test_root=$(mktemp -d)
 trap 'rm -rf "$test_root"' EXIT
 

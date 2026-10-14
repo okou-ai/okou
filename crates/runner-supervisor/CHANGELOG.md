@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.14.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.9...runner-supervisor-v0.14.0) (2026-10-14)
+
+
+### Features
+
+* persist sandbox startup path on agent runs ([#39972](https://github.com/okou-ai/okou/issues/39972)) ([db59569](https://github.com/okou-ai/okou/commit/db595699439f7f221fb5df8b9eba14a9a4faac73))
+
+## [0.13.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.8...runner-supervisor-v0.13.9) (2026-10-14)
+
+
+### Refactoring
+
+* **runner-supervisor:** own startup resources and rollback ([#40028](https://github.com/okou-ai/okou/issues/40028)) ([68dabea](https://github.com/okou-ai/okou/commit/68dabea4f59c75adf45f1e67890c7b0f5bb7d34d))
+
+## [0.13.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.7...runner-supervisor-v0.13.8) (2026-10-14)
+
+## [0.13.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.6...runner-supervisor-v0.13.7) (2026-10-14)
+
+## [0.13.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.5...runner-supervisor-v0.13.6) (2026-10-14)
+
+## [0.13.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.4...runner-supervisor-v0.13.5) (2026-10-14)
+
+## [0.13.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.3...runner-supervisor-v0.13.4) (2026-10-14)
+
+
+### Refactoring
+
+* **runner-supervisor:** share terminal finalization completion ([#39930](https://github.com/okou-ai/okou/issues/39930)) ([d34c7bf](https://github.com/okou-ai/okou/commit/d34c7bf1279cd3175e8f089ca0118d5314e7fdcb))
+
+## [0.13.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.2...runner-supervisor-v0.13.3) (2026-10-14)
+
+## [0.13.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.1...runner-supervisor-v0.13.2) (2026-10-14)
+
+## [0.13.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.13.0...runner-supervisor-v0.13.1) (2026-10-14)
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.5...runner-supervisor-v0.13.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+## [0.12.5](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.4...runner-supervisor-v0.12.5) (2026-10-13)
+
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.3...runner-supervisor-v0.12.4) (2026-10-13)
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.2...runner-supervisor-v0.12.3) (2026-10-13)
+
+## [0.12.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.1...runner-supervisor-v0.12.2) (2026-10-13)
+
+
+### Refactoring
+
+* **runner-supervisor:** converge early startup failure cleanup ([#39687](https://github.com/okou-ai/okou/issues/39687)) ([0bb4f3d](https://github.com/okou-ai/okou/commit/0bb4f3d023e59462f30f7e491d03dcb42f5c8ba2))
+
+
+### Performance Improvements
+
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+## [0.12.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.12.0...runner-supervisor-v0.12.1) (2026-10-13)
+
+
+### Refactoring
+
+* clarify history and memory publication terminology ([#39590](https://github.com/okou-ai/okou/issues/39590)) ([f823402](https://github.com/okou-ai/okou/commit/f8234029d7e29d76cc64ea09d8210c34e1c07f28))
+
+## [0.12.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.11.1...runner-supervisor-v0.12.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** own pressure-gated snapshot prefetch ([#39624](https://github.com/okou-ai/okou/issues/39624)) ([d4eb35a](https://github.com/okou-ai/okou/commit/d4eb35a53cf3859cc2702cded172449c1fbc3f2c))
+
 ## [0.11.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.11.0...runner-supervisor-v0.11.1) (2026-10-13)
 
 

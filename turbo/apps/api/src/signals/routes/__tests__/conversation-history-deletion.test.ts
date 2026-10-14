@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { testContext } from "../../../__tests__/test-context";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
@@ -27,16 +25,13 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
     agentId: targetAgentId,
     prompt: "retain history",
   });
-  const hash = createHash("sha256")
-    .update(`bdd session history ${run.runId}`)
-    .digest("hex");
   await runs.heartbeatRunner(runnerGroup);
   const claim = await runs.claimRunnerJob(run.runId);
   const headers = { authorization: `Bearer ${claim.sandboxToken}` };
   const completion = {
     cliAgentType: "claude-code" as const,
     cliAgentSessionId: run.runId,
-    cliAgentSessionHistoryHash: hash,
+    cliAgentSessionHistoryDisposition: "native_only" as const,
   };
   await webhooks.requestAgentComplete(
     { runId: run.runId, exitCode: 0, completion },
@@ -46,10 +41,10 @@ async function completedRun(actor: ApiTestUser, agentId?: string) {
   await expect(runs.readRun(actor, run.runId)).resolves.toMatchObject({
     status: "completed",
   });
-  return { ...run, agentId: targetAgentId, hash, headers, completion };
+  return { ...run, agentId: targetAgentId, headers, completion };
 }
 
-test("deletes a completed Run with its Agent and rejects repeated deletion", async () => {
+test("deletes a native-only completed Run with its Agent", async () => {
   const actor = bdd.user();
   const run = await completedRun(actor);
   await bdd.requestDeleteAgent(actor, run.agentId, [204]);
@@ -80,3 +75,20 @@ test.each(["user", "organization"] as const)(
     });
   },
 );
+
+test("agent deletion preserves another Agent's completed Run and callback", async () => {
+  const actor = bdd.user();
+  const target = await completedRun(actor);
+  const survivor = await completedRun(actor);
+  await bdd.requestDeleteAgent(actor, target.agentId, [204]);
+  await expect(runs.readRun(actor, survivor.runId)).resolves.toMatchObject({
+    runId: survivor.runId,
+    status: "completed",
+  });
+  await webhooks.requestAgentComplete(
+    { runId: survivor.runId, exitCode: 0, completion: survivor.completion },
+    survivor.headers,
+    [200],
+  );
+  await bdd.requestDeleteAgent(actor, survivor.agentId, [204]);
+});

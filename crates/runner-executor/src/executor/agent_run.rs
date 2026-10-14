@@ -18,9 +18,10 @@ use guest_contracts::session_history_identity::{
 };
 use sandbox::{
     ExecTermination, GuestProcessCancelHandle, GuestProcessControlHandle, GuestProcessHandle,
-    ProcessControlFailureKind, ProcessControlGuestStatus, ProcessControlOutcome, ProcessOutputMode,
-    Sandbox, SessionHistoryIdentityVerifyRequest, StagedFileDisposition, StagedFileFinalizeOutcome,
-    StagedFileFinalizeRequest, StagedFileNotPublishedReason, StartAgentProcessRequest,
+    OperationCancellationContext, ProcessControlFailureKind, ProcessControlGuestStatus,
+    ProcessControlOutcome, ProcessOutputMode, Sandbox, SessionHistoryIdentityVerifyRequest,
+    StagedFileDisposition, StagedFileFinalizeOutcome, StagedFileFinalizeRequest,
+    StagedFileNotPublishedReason, StartAgentProcessRequest,
 };
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -46,6 +47,10 @@ use super::env::{
     PreparedRunPayload, build_env_json_for_run, build_user_env_json, write_required_agent_files,
 };
 use super::guest_state::{restore_guest_state, sync_guest_timezone};
+use super::session_history_attribution::{
+    HistoryMaterializationObservation, HistoryMaterializationOutcome, HistoryTimingWindow,
+    record_download_attribution,
+};
 use super::session_history_cpu::{SessionHistoryCpuJob, SessionHistoryPrefixOutcome};
 use super::session_history_download::{
     SessionHistoryDownloadPhaseTiming, SessionHistoryDownloadTimings,
@@ -249,6 +254,8 @@ fn record_session_history_prefix_outcome(
 fn record_session_history_download_timings(
     telemetry: &mut JobTelemetry,
     timings: &SessionHistoryDownloadTimings,
+    restore_wait: HistoryTimingWindow,
+    outcome: HistoryMaterializationOutcome,
 ) {
     let metadata = timings.metadata();
     record_session_history_download_phase(
@@ -280,6 +287,15 @@ fn record_session_history_download_timings(
         "session_history_download_hash_verification",
         timings.hash_verification(),
         metadata,
+    );
+    record_download_attribution(
+        telemetry,
+        timings,
+        HistoryMaterializationObservation {
+            window: restore_wait,
+            stage: crate::telemetry::SessionHistoryObservationStage::Restore,
+            outcome,
+        },
     );
 }
 
@@ -1090,7 +1106,8 @@ const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
 /// Whether this failed run was terminated by a guest out-of-memory kill of the
 /// agent process itself.
 ///
-/// The kernel record supplies the attribution. The terminal exit code only
+/// Kernel victims or reliable local counters supply the domain attribution.
+/// The terminal exit code only
 /// corroborates that the process the guest waited on was killed: depending on
 /// the launcher, that arrives either as an observed signal or as a shell's
 /// `137` exit translation, so a signal field is not required here.
@@ -1189,6 +1206,7 @@ pub(super) struct RunStart<'a> {
     pub(super) restore_guest_state: bool,
     pub(super) reuse_result: SandboxReuseResult,
     pub(super) home_reuse_result: HomeReuseResult,
+    pub(super) sandbox_startup_path: runner_types::types::SandboxStartupPath,
     pub(super) prev_storage: Option<&'a crate::storage_fingerprints::StorageFingerprints>,
 }
 
@@ -1429,16 +1447,24 @@ struct PreparedAgentProcess {
 
 async fn run_pre_spawn_phase<T>(
     cancel: &CancellationToken,
+    owner: &OperationCancellationContext,
     phase: impl Future<Output = T>,
 ) -> Option<T> {
     if cancel.is_cancelled() {
         return None;
     }
 
+    // Select on a borrow: the owned future must outlive branch selection so
+    // its guards see the selected cancellation before they are destroyed.
+    let phase = owner.scope(phase);
+    tokio::pin!(phase);
     tokio::select! {
         biased;
-        result = phase => Some(result),
-        () = cancel.cancelled() => None,
+        result = &mut phase => Some(result),
+        () = cancel.cancelled() => {
+            owner.mark_cancelled();
+            None
+        },
     }
 }
 
@@ -1673,7 +1699,9 @@ async fn prepare_staged_session_restore(
     let completed_before_restore = remote_materializer.is_download_finished();
     let wait_started = Instant::now();
     let materialization = remote_materializer.finish(cancel).await;
-    let materialization_wait = wait_started.elapsed();
+    let wait_finished = Instant::now();
+    let restore_wait_window = HistoryTimingWindow::new(wait_started, wait_finished);
+    let materialization_wait = restore_wait_window.elapsed();
     let downloaded = match materialization {
         SessionHistoryMaterialization::Missing
         | SessionHistoryMaterialization::NoDownloadNeeded => None,
@@ -1707,7 +1735,12 @@ async fn prepare_staged_session_restore(
                 None,
                 timings.metadata(),
             );
-            record_session_history_download_timings(telemetry, &timings);
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                HistoryMaterializationOutcome::Succeeded,
+            );
             if let Some(prefix_outcome) = prefix_outcome {
                 record_session_history_prefix_outcome(telemetry, prefix_outcome);
             }
@@ -1742,7 +1775,16 @@ async fn prepare_staged_session_restore(
                 Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
                 timings.metadata(),
             );
-            record_session_history_download_timings(telemetry, &timings);
+            record_session_history_download_timings(
+                telemetry,
+                &timings,
+                restore_wait_window,
+                if matches!(&error, RunnerError::Cancelled) {
+                    HistoryMaterializationOutcome::Cancelled
+                } else {
+                    HistoryMaterializationOutcome::Failed
+                },
+            );
             return Err(error);
         }
     };
@@ -1827,6 +1869,11 @@ async fn prepare_guest_runtime_state_phase(
 ) -> GuestRuntimeStatePreparation {
     match run_pre_spawn_phase(
         cancel,
+        &OperationCancellationContext::new(
+            &context.run_id.to_string(),
+            sandbox.id(),
+            "guest_runtime_state",
+        ),
         prepare_guest_runtime_state(sandbox, context, restore_guest_state_required, telemetry),
     )
     .await
@@ -2100,7 +2147,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     Ok(result)
                 }
             };
-            session_history_restore_plan.cancel_and_drain().await;
+            session_history_restore_plan
+                .cancel_and_drain(telemetry)
+                .await;
             return result;
         }
     };
@@ -2179,7 +2228,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                         && !storage_apply_admitted.load(Ordering::Acquire);
                     let should_discard_staging = match staged_result {
                         Ok(StagedSessionRestorePreparation::Serial(plan)) => {
-                            plan.cancel_and_drain().await;
+                            plan.cancel_and_drain(telemetry).await;
                             false
                         }
                         Ok(StagedSessionRestorePreparation::Ready(staged)) => {
@@ -2247,7 +2296,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             if cancel.is_cancelled() {
                 let should_discard_staging = match staged {
                     StagedSessionRestorePreparation::Serial(plan) => {
-                        plan.cancel_and_drain().await;
+                        plan.cancel_and_drain(telemetry).await;
                         false
                     }
                     StagedSessionRestorePreparation::Ready(staged) => {
@@ -2499,6 +2548,11 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             let storage_result = model_catalog_prefetch
                 .race(run_pre_spawn_phase(
                     &cancel,
+                    &OperationCancellationContext::new(
+                        &context.run_id.to_string(),
+                        sandbox.id(),
+                        "guest_storage",
+                    ),
                     prepare_guest_storage(
                         sandbox,
                         context,
@@ -2546,7 +2600,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                             Ok(result)
                         }
                     };
-                    session_history_restore_plan.cancel_and_drain().await;
+                    session_history_restore_plan
+                        .cancel_and_drain(telemetry)
+                        .await;
                     return result;
                 }
             }
@@ -2554,8 +2610,13 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     let pre_spawn_cancel = cancel.clone();
     let pre_spawn_start = &start;
     let pre_spawn_telemetry = &mut *telemetry;
+    let pre_spawn_owner = OperationCancellationContext::new(
+        &context.run_id.to_string(),
+        sandbox.id(),
+        "guest_agent_preparation",
+    );
     let prepared_agent = model_catalog_prefetch
-        .race(run_pre_spawn_phase(&cancel, async move {
+        .race(run_pre_spawn_phase(&cancel, &pre_spawn_owner, async move {
             let cancel = pre_spawn_cancel;
             let start = pre_spawn_start;
             let telemetry = pre_spawn_telemetry;
@@ -2565,6 +2626,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // inputs before crossing the process-spawn ownership boundary.
     let mut session_restore_diagnostics = staged_restore_diagnostics;
     let mut pre_run_restored_session_identity = None;
+    let mut native_home_proof_failed = false;
     if let Some(session_history_restore_plan) = session_history_restore_plan {
     let session_history_materializer = match session_history_restore_plan {
         SessionHistoryRestorePlan::SkipVerified(identity) => {
@@ -2650,6 +2712,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     CliFramework::from(effective_cli_framework(&context.cli_agent_type)).as_cli_agent_type(), None);
                 None
             } else {
+                native_home_proof_failed = context.native_continuation.is_some();
                 record_session_history_restore_fallback(telemetry, fallback);
                 telemetry.record("session_history_home_cache_miss", Duration::ZERO, true, None);
                 Some(SessionHistoryMaterializer::start_cancellable(
@@ -2667,7 +2730,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             session_history_materializer.is_download_finished();
         let materialization_wait_started = Instant::now();
         let materialization = session_history_materializer.finish(&cancel).await;
-        let materialization_wait = materialization_wait_started.elapsed();
+        let materialization_wait_finished = Instant::now();
+        let restore_wait_window = HistoryTimingWindow::new(materialization_wait_started, materialization_wait_finished);
+        let materialization_wait = restore_wait_window.elapsed();
         let downloaded_resume_session = match materialization {
             SessionHistoryMaterialization::Missing => None,
             SessionHistoryMaterialization::NoDownloadNeeded => None,
@@ -2701,7 +2766,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     None,
                     timings.metadata(),
                 );
-                record_session_history_download_timings(telemetry, &timings);
+                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
+                    HistoryMaterializationOutcome::Succeeded);
                 if let Some(prefix_outcome) = prefix_outcome {
                     record_session_history_prefix_outcome(telemetry, prefix_outcome);
                 }
@@ -2736,7 +2802,9 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     Some(SESSION_HISTORY_DOWNLOAD_TELEMETRY_ERROR),
                     timings.metadata(),
                 );
-                record_session_history_download_timings(telemetry, &timings);
+                record_session_history_download_timings(telemetry, &timings, restore_wait_window,
+                    if matches!(&error, RunnerError::Cancelled) { HistoryMaterializationOutcome::Cancelled }
+                    else { HistoryMaterializationOutcome::Failed });
                 return Err(error);
             }
         };
@@ -2778,7 +2846,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
     // guest file and injected into the CLI child after guest-agent has started.
     let mut user_env_map = build_user_env_json(context);
     let env_build_started = Instant::now();
-    let run_payload = match prepared_run_payload.into_run_payload(context) {
+    let mut run_payload = match prepared_run_payload.into_run_payload(context) {
         Ok(run_payload) => run_payload,
         Err(error) => {
             telemetry.record(
@@ -2790,6 +2858,12 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    if native_home_proof_failed {
+        let mut native = context.native_continuation.clone().ok_or_else(|| RunnerError::Internal("native home proof lost its intent".into()))?;
+        native.session_id = None;
+        native.generation_run_id = None;
+        run_payload.native_continuation = serde_json::to_string(&native).map_err(|error| RunnerError::Internal(format!("serialize fresh native intent: {error}")))?;
+    }
     info!(
         run_id = %context.run_id,
         prompt_bytes = run_payload.prompt.len(),
@@ -2820,6 +2894,10 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             return Err(error);
         }
     };
+    env_map.insert(
+        guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV.into(),
+        guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path).into(),
+    );
     telemetry.record(
         "runner_agent_env_build",
         env_build_started.elapsed(),
@@ -2939,14 +3017,21 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                 context,
                 telemetry,
                 start.reuse_result,
-                start.home_reuse_result,
+                start.sandbox_startup_path,
                 timing.shell_started_at,
                 timing.ready_at,
+            );
+            telemetry.record_sandbox_startup(
+                start.sandbox_startup_path,
+                start.reuse_result,
+                start.home_reuse_result,
+                context.reuse_key(),
             );
             info!(
                 run_id = %context.run_id,
                 sandbox_reuse = ?start.reuse_result,
                 home_reuse = ?start.home_reuse_result,
+                sandbox_startup_path = guest_contracts::sandbox_startup::as_wire(start.sandbox_startup_path),
                 shell_spawn_ms = timing.shell_started_at.saturating_duration_since(t).as_millis(),
                 agent_ready_ms = timing.ready_at.saturating_duration_since(t).as_millis(),
                 containment_create_us = timing.containment_create.as_micros(),
@@ -3205,7 +3290,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
-                oom_classification = if agent_domain_oom_kill { "agent_oom_kill" } else { "contained_tool_oom" },
+                oom_classification = evidence.classification().map_or("", guest_contracts::oom_evidence::OomClassification::as_str),
                 "preserved operation-scoped guest kernel oom evidence");
         }
         let path = config.log_paths.oom_evidence_log(context.run_id);
@@ -3445,6 +3530,8 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
 
 #[cfg(test)]
 mod tests {
+    mod cancellation;
+
     use super::*;
     use guest_contracts::diagnostics::{
         AgentFramework, CliTerminationDiagnostic, FailureClass, PromptMetadata,

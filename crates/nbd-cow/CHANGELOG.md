@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.6](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.5...nbd-cow-v0.5.6) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
 ## [0.5.5](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.4...nbd-cow-v0.5.5) (2026-10-11)
 
 

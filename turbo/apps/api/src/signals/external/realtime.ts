@@ -1,5 +1,6 @@
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
+import type { RunnerVncInvalidate } from "@okouai/api-contracts/contracts/runner-vnc";
 import {
   foregroundChannelName,
   sessionOutputChannelName,
@@ -10,7 +11,6 @@ import {
   computerUseCommandResultChangedEvent,
   type RealtimeSubscription,
   type BrowserSessionChangedPayload,
-  type HomeTaskRecommendationsChangedPayload,
   type SessionOutputDelta,
   type UserPreferenceChangedPayload,
 } from "@okouai/api-contracts/contracts/realtime";
@@ -282,15 +282,11 @@ function publishChatDatabaseSignal(
   return Promise.resolve();
 }
 
-export function publishHomeTaskRecommendationsChangedSafely(
-  target: { readonly userId: string; readonly orgId: string },
-  payload: HomeTaskRecommendationsChangedPayload,
-): Promise<void> {
-  return publishChatDatabaseSignal(
-    target,
-    "homeTaskRecommendationsChanged",
-    payload,
-  );
+export function publishAgentSuggestionsChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  return publishChatDatabaseSignal(target, "agentSuggestionsChanged");
 }
 
 /**
@@ -588,6 +584,14 @@ export async function publishSshInvalidationToRunnerGroup(
 ): Promise<void> {
   const channel = ablyClient().channels.get(`runner-group:${group}`);
   await channel.publish("ssh-authority-invalidated", notification);
+}
+
+export async function publishVncInvalidationToRunnerGroup(
+  group: string,
+  notification: RunnerVncInvalidate,
+): Promise<void> {
+  const channel = ablyClient().channels.get(`runner-group:${group}`);
+  await channel.publish("vnc-authority-invalidated", notification);
 }
 
 export async function publishActiveInputToRunnerGroup(

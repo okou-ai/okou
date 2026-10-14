@@ -1,7 +1,6 @@
 import type { RunnerSshResolveRequest } from "@okouai/api-contracts/contracts/runner-ssh";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
@@ -92,6 +91,7 @@ function authorityQuery(
       .select({
         id: host.id,
         generation: host.generation,
+        createdAt: host.createdAt,
         algorithm: host.learnedHostKeyAlgorithm,
         fingerprint: host.learnedHostKeyFingerprint,
         transport: host.transport,
@@ -118,18 +118,11 @@ function authorityQuery(
           .as("current_tailscale_generation"),
       })
       .from(agentRuns)
-      .innerJoin(
-        agentSessions,
-        and(
-          eq(agentSessions.id, agentRuns.sessionId),
-          eq(agentSessions.orgId, agentRuns.orgId),
-          eq(agentSessions.userId, agentRuns.userId),
-        ),
-      )
+
       .innerJoin(
         agents,
         and(
-          eq(agents.id, agentSessions.agentId),
+          eq(agents.id, agentRuns.agentId),
           eq(agents.orgId, agentRuns.orgId),
           or(
             eq(agents.visibility, "public"),
@@ -158,7 +151,7 @@ function authorityQuery(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentSessions.agentId),
+          eq(chatThreads.agentId, agentRuns.agentId),
         ),
       )
       .leftJoin(
@@ -191,7 +184,7 @@ function authorityQuery(
       )
       .where(authorityPredicate(input, queries))
       .for("share", {
-        of: [agentRuns, agentSessions, agents, sshCredentials],
+        of: [agentRuns, agents, sshCredentials],
       }),
   );
 }
@@ -253,7 +246,11 @@ export function createRunnerSshMutationReads(
   );
   const eligible = qb.$with("eligible_runner_ssh_authority").as(
     qb
-      .select({ id: current.id, generation: current.generation })
+      .select({
+        id: current.id,
+        generation: current.generation,
+        createdAt: current.createdAt,
+      })
       .from(current)
       .where(
         and(

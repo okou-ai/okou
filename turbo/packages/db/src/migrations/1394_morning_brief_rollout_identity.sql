@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "idx_workflows_morning_brief_owner_agent_unique" ON "workflows" USING btree ("org_id","agent_id","owner_user_id") WHERE official_definition_name IN ('morning-brief', 'internal-test-morning-brief');

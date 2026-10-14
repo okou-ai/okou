@@ -803,6 +803,7 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
             ...body,
           },
         }),
@@ -972,7 +973,11 @@ export function createRunsApi(context: TestContext) {
           headers: authorization === undefined ? {} : { authorization },
           ...(extraHeaders ? { extraHeaders } : {}),
           params: { id: runId },
-          body: { capabilities: defaultClaimCapabilities(), ...body },
+          body: {
+            capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
+            ...body,
+          },
         }),
         statuses,
       );
@@ -1435,6 +1440,7 @@ export function createRunsApi(context: TestContext) {
           body: {
             runnerIdentity: defaultRunnerIdentity,
             capabilities: defaultClaimCapabilities(),
+            nativeContinuationSupported: true,
             ...body,
           },
         }),

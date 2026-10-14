@@ -1,11 +1,15 @@
+import {
+  chatEventRowFromDbRow,
+  ARCHIVE_ROW_CONTRACT_REVISION,
+  LEGACY_ARCHIVE_OBJECT_KEY_PATTERN,
+  isCurrentChatEventSnapshotObjectKey,
+  isLegacyChatEventSnapshotObjectKey,
+} from "./chat-event-row-read.service";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -116,11 +120,6 @@ interface SnapshotCandidate {
 const ARCHIVE_CONTENT_TYPE = "application/x-ndjson";
 const ARCHIVE_CONTENT_ENCODING = "gzip";
 /** Object-key revision for snapshots validated after Phase B. */
-const ARCHIVE_ROW_CONTRACT_REVISION = 1;
-const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
-const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
-const LEGACY_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
-const CURRENT_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}-r${ARCHIVE_ROW_CONTRACT_REVISION.toString()}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 /**
@@ -196,23 +195,6 @@ function encodeArchiveLine(line: ChatEventRow): Buffer {
  * explicitly so a chat_events schema change cannot silently alter the durable
  * wire shape.
  */
-export function chatEventRowFromDbRow(row: ArchiveEventRow): ChatEventRow {
-  return chatEventRowSchema.parse({
-    id: row.id,
-    chatThreadId: row.chatThreadId,
-    runId: row.runId,
-    revokesEventId: row.revokesEventId,
-    eventType: row.eventType,
-    payload: row.payload,
-    ...(row.failureReason === null ? {} : { failureReason: row.failureReason }),
-    contextType: row.contextType,
-    contextId: row.contextId,
-    runEventSequenceNumber: row.runEventSequenceNumber,
-    runEventId: row.runEventId,
-    seqId: row.seqId,
-    createdAt: row.createdAt.toISOString(),
-  });
-}
 
 function archiveLine(row: ArchiveEventRow): Buffer {
   return encodeArchiveLine(chatEventRowFromDbRow(row));
@@ -228,16 +210,6 @@ function chatEventSnapshotObjectKey(
   contentSha256: string,
 ): string {
   return `chat-events/${chatThreadId}/${lastSeqId}-r${ARCHIVE_ROW_CONTRACT_REVISION.toString()}-${contentSha256}.ndjson.gz`;
-}
-
-export function isCurrentChatEventSnapshotObjectKey(
-  objectKey: string,
-): boolean {
-  return new RegExp(CURRENT_ARCHIVE_OBJECT_KEY_PATTERN, "u").test(objectKey);
-}
-
-export function isLegacyChatEventSnapshotObjectKey(objectKey: string): boolean {
-  return new RegExp(LEGACY_ARCHIVE_OBJECT_KEY_PATTERN, "u").test(objectKey);
 }
 
 interface CanonicalEventArchive {

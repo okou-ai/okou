@@ -21,6 +21,11 @@ checkers separate from their regression fixtures. Group related tools by purpose
 preserve useful existing modules. Local invocation instructions belong next to
 the owner, and task progress belongs in the issue or PR.
 
+[Artifact tools](../.github/scripts/artifacts/) own build/fetch/verify/smoke phases;
+[release tools](../.github/scripts/release/) own promotion and publication adapters.
+[Runner tools](../.github/scripts/runner/) own CI build, image, deployment,
+lifecycle and supporting SSH adapters.
+
 ## Writing Scripts
 
 - Use Bash for simple process orchestration and existing Python/JavaScript modules
@@ -48,6 +53,28 @@ the owner, and task progress belongs in the issue or PR.
 - Stage and verify artifacts before atomic publication. Preserve source/byte
   identity, publish-last readiness, architecture, signing, and rollback contracts.
   Keep distinct artifact phases and their actual trust boundaries explicit.
+
+## Cloudflare SSH Diagnostics
+
+The SSH tunnel setup records `-v` (`DEBUG1`) output from the shared SSH master and its
+proxy stderr in files restricted to the job user. Initial master logs remain at
+`$RUNNER_TEMP/cloudflare-ssh-master-<target-key>.stderr`; recovered masters use
+`<control-path>.stderr`. Retain these files while the detached masters are alive.
+Command-channel probes also run with `-v`; keep their restricted stderr files
+at the same append-only master log path because `ControlMaster auto` can start a
+master during a probe. This preserves its diagnostics across later callers that
+reuse that master. Classify probe failures using only that probe's appended bytes,
+then discard the temporary snapshot.
+Verbose output from a multiplexed caller alone cannot explain the master's
+connection failure.
+
+When a guarded SSH, SCP, or SFTP operation fails, its wrapper prints the target,
+original exit status, UTC start/end times, and a folded, redacted master/probe tail
+limited to a combined 100 lines and 64 KiB. Probe failures also include the selected master's
+log. Successful operations keep diagnostics out of their output. These diagnostic
+reads preserve caller stdout and status and do not reconnect or replay the caller.
+Keep raw logs local; apply the existing credential redaction before exposing them.
+Use `DEBUG1` for routine collection to avoid packet-level logging during transfers.
 
 ## Tests
 

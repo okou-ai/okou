@@ -13,19 +13,6 @@ export const internalRunCallbackKinds = [
 
 export type InternalRunCallbackKind = (typeof internalRunCallbackKinds)[number];
 
-// Registered at Run claim only by release-1 APIs (1.729.0 and earlier) for
-// Official Automations with platform completion email. No current producer may
-// register it, so it is absent from `InternalRunCallbackKind`; it is recognized
-// only to dispatch those captured callbacks to the bounded legacy consumer
-// (#39524) instead of failing them as URL-less HTTP callbacks. Release 3 of
-// #39378 removes it with that consumer.
-const LEGACY_OFFICIAL_RESULT_EMAIL_CALLBACK_KIND =
-  "workflow-automation:result-email";
-
-/** Kinds a persisted callback record can carry, including drain-only kinds. */
-export type DispatchedInternalRunCallbackKind =
-  InternalRunCallbackKind | typeof LEGACY_OFFICIAL_RESULT_EMAIL_CALLBACK_KIND;
-
 export type InternalRunCallbackStatus = "completed" | "failed" | "progress";
 
 export type InternalRunCallbackDispatchResult =
@@ -55,9 +42,9 @@ interface InternalRunCallbackRecord {
   readonly internalKind: string | null;
 }
 
-function isDispatchedInternalRunCallbackKind(
+function isInternalRunCallbackKind(
   value: string | null,
-): value is DispatchedInternalRunCallbackKind {
+): value is InternalRunCallbackKind {
   switch (value) {
     case "agentphone:chat":
     case "chat":
@@ -68,7 +55,6 @@ function isDispatchedInternalRunCallbackKind(
     case "feishu:org":
     case "workflow-automation:cron":
     case "workflow-automation:loop":
-    case LEGACY_OFFICIAL_RESULT_EMAIL_CALLBACK_KIND:
     case "pi-memory:phase2": {
       return true;
     }
@@ -80,8 +66,8 @@ function isDispatchedInternalRunCallbackKind(
 
 export function internalRunCallbackKindForRecord(
   callback: InternalRunCallbackRecord,
-): DispatchedInternalRunCallbackKind | null {
-  return isDispatchedInternalRunCallbackKind(callback.internalKind)
+): InternalRunCallbackKind | null {
+  return isInternalRunCallbackKind(callback.internalKind)
     ? callback.internalKind
     : null;
 }

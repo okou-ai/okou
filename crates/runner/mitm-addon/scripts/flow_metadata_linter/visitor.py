@@ -107,6 +107,27 @@ class _LoopControlAliasState:
             self.record_continue(other.continue_aliases)
 
 
+@dataclass(frozen=True)
+class _FinallyTransferKey:
+    body: tuple[ast.stmt, ...]
+    aliases: frozenset[str]
+    module_aliases: frozenset[str]
+    class_aliases: frozenset[str] | None
+    in_loop: bool
+
+
+@dataclass(frozen=True)
+class _FinallyTransfer:
+    aliases: frozenset[str]
+    falls_through: bool
+    may_raise: bool
+    exception_aliases: frozenset[str]
+    may_break: bool
+    break_aliases: frozenset[str]
+    may_continue: bool
+    continue_aliases: frozenset[str]
+
+
 def _metadata_match_pattern_alias_names(pattern: ast.pattern) -> set[str]:
     if isinstance(pattern, ast.MatchAs):
         names = set() if pattern.name is None else {pattern.name}
@@ -201,9 +222,9 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
       checks produced violations. Generic and specialized traversal can inspect the
       same node, so these identities prevent duplicate checks while
       ``_violation_messages`` independently de-duplicates equal diagnostics and
-      ``violations`` preserves first-seen order. State-only ``finally`` replay
-      snapshots and restores all three diagnostic collections so repeated traversal
-      contributes transfer state without repeating diagnostics.
+      ``violations`` preserves first-seen order. State-only ``finally`` transfers
+      suppress diagnostic bookkeeping and reuse complete transfer results, including
+      their exceptional and loop-control effects, without changing diagnostic scans.
     * ``_named_expr_target_scope_indexes`` contains indexes into
       ``_metadata_alias_scopes`` for active comprehensions. The first iterable is
       visited before the implicit comprehension scope is pushed; afterward, named
@@ -239,6 +260,8 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._named_expr_target_scope_indexes: list[int] = []
         self._implicit_exception_alias_scope_projections: list[tuple[int, set[str]]] = []
         self._loop_control_alias_scopes: list[_LoopControlAliasState] = []
+        self._state_only = False
+        self._finally_transfers: dict[_FinallyTransferKey, _FinallyTransfer] = {}
 
     @property
     def _metadata_aliases(self) -> set[str]:
@@ -251,7 +274,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         return self._metadata_alias_scopes[self._named_expr_target_scope_indexes[-1]]
 
     def _add_violation(self, violation: str) -> None:
-        if violation in self._violation_messages:
+        if self._state_only or violation in self._violation_messages:
             return
         self._violation_messages.add(violation)
         self.violations.append(violation)
@@ -347,7 +370,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         return []
 
     def _record_metadata_merge_key_violations(self, node: ast.AST | None) -> None:
-        if node is None:
+        if self._state_only or node is None:
             return
         node_id = id(node)
         if node_id in self._metadata_key_checked_node_ids:
@@ -359,7 +382,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._add_violations(violations)
 
     def _record_metadata_dict_key_violations(self, node: ast.AST | None) -> None:
-        if node is None:
+        if self._state_only or node is None:
             return
         node_id = id(node)
         if node_id in self._metadata_key_checked_node_ids:
@@ -512,17 +535,58 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
         self._exception_alias_scopes.pop()
         return result_aliases, falls_through, exception_state
 
-    def _visit_branch_body_state_only(
+    def _visit_finally_body_state_only(
         self, body: list[ast.stmt], aliases: set[str]
     ) -> tuple[set[str], bool]:
-        violation_count = len(self.violations)
-        violation_messages = set(self._violation_messages)
-        checked_node_ids = set(self._metadata_key_checked_node_ids)
-        result = self._visit_branch_body(body, aliases)
-        del self.violations[violation_count:]
-        self._violation_messages = violation_messages
-        self._metadata_key_checked_node_ids = checked_node_ids
-        return result
+        # A parsed statement body cannot be entered from a comprehension expression.
+        # Intermediate branch scopes are not lexical lookup inputs: only the module
+        # and nearest non-class base can be read outside this body's own alias scope.
+        # Exit collectors are additive outputs, not inputs to the transfer.
+        key = _FinallyTransferKey(
+            tuple(body),
+            frozenset(aliases),
+            frozenset(self._metadata_alias_scopes[0]),
+            (
+                frozenset(self._class_nested_scope_alias_scopes[-1])
+                if self._class_nested_scope_alias_scopes
+                else None
+            ),
+            bool(self._loop_control_alias_scopes),
+        )
+        transfer = self._finally_transfers.get(key)
+        if transfer is None:
+            exception_state = _ExceptionAliasState()
+            loop_control_state = _LoopControlAliasState()
+            self._exception_alias_scopes.append(exception_state)
+            if key.in_loop:
+                self._loop_control_alias_scopes.append(loop_control_state)
+            previous_state_only = self._state_only
+            self._state_only = True
+            result_aliases, falls_through = self._visit_branch_body(body, aliases)
+            self._state_only = previous_state_only
+            if key.in_loop:
+                self._loop_control_alias_scopes.pop()
+            self._exception_alias_scopes.pop()
+            transfer = _FinallyTransfer(
+                frozenset(result_aliases),
+                falls_through,
+                exception_state.may_raise,
+                frozenset(exception_state.aliases),
+                loop_control_state.may_break,
+                frozenset(loop_control_state.break_aliases),
+                loop_control_state.may_continue,
+                frozenset(loop_control_state.continue_aliases),
+            )
+            self._finally_transfers[key] = transfer
+        if transfer.may_raise:
+            self._record_exception_aliases(set(transfer.exception_aliases))
+        if self._loop_control_alias_scopes:
+            loop_control_state = self._loop_control_alias_scopes[-1]
+            if transfer.may_break:
+                loop_control_state.record_break(set(transfer.break_aliases))
+            if transfer.may_continue:
+                loop_control_state.record_continue(set(transfer.continue_aliases))
+        return set(transfer.aliases), transfer.falls_through
 
     def _visit_except_handler_branch(
         self, handler: ast.ExceptHandler, aliases: set[str]
@@ -1308,19 +1372,24 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 finalbody_scan_aliases.update(try_loop_control_state.continue_aliases)
             finalbody_exception_state = _ExceptionAliasState()
             self._exception_alias_scopes.append(finalbody_exception_state)
-            finalbody_scan_result, finalbody_falls_through = self._visit_branch_body(
-                node.finalbody, finalbody_scan_aliases
-            )
+            if self._state_only:
+                finalbody_scan_result, finalbody_falls_through = (
+                    self._visit_finally_body_state_only(node.finalbody, finalbody_scan_aliases)
+                )
+            else:
+                finalbody_scan_result, finalbody_falls_through = self._visit_branch_body(
+                    node.finalbody, finalbody_scan_aliases
+                )
             falls_through = has_normal_exit and finalbody_falls_through
             if finalbody_scan_aliases == exit_aliases:
                 exit_aliases = finalbody_scan_result
             elif has_normal_exit:
-                exit_aliases = self._visit_branch_body_state_only(node.finalbody, exit_aliases)[0]
+                exit_aliases = self._visit_finally_body_state_only(node.finalbody, exit_aliases)[0]
             if exception_state.may_raise and finalbody_falls_through:
                 exception_state.aliases = (
                     finalbody_scan_result
                     if finalbody_scan_aliases == exception_state.aliases
-                    else self._visit_branch_body_state_only(
+                    else self._visit_finally_body_state_only(
                         node.finalbody, exception_state.aliases
                     )[0]
                 )
@@ -1335,7 +1404,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 and try_loop_control_state is not None
                 and try_loop_control_state.may_break
             ):
-                break_aliases, break_falls_through = self._visit_branch_body_state_only(
+                break_aliases, break_falls_through = self._visit_finally_body_state_only(
                     node.finalbody, try_loop_control_state.break_aliases
                 )
                 if break_falls_through:
@@ -1345,7 +1414,7 @@ class _MetadataKeyVisitor(ast.NodeVisitor):
                 and try_loop_control_state is not None
                 and try_loop_control_state.may_continue
             ):
-                continued_aliases, continued_falls_through = self._visit_branch_body_state_only(
+                continued_aliases, continued_falls_through = self._visit_finally_body_state_only(
                     node.finalbody, try_loop_control_state.continue_aliases
                 )
                 if continued_falls_through:

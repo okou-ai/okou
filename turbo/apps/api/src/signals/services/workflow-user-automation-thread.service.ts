@@ -1,3 +1,7 @@
+import {
+  isMorningBriefDefinitionName,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
   userLocaleSchema,
@@ -104,9 +108,11 @@ export const prepareWorkflowUserAutomationThread$ = command(
     if (context?.officialDefinitionName) {
       const locale = userLocaleSchema.parse(member?.locale ?? "en-US");
       const localized =
-        OFFICIAL_WORKFLOW_THREAD_TITLES[context.officialDefinitionName]?.[
-          locale
-        ];
+        OFFICIAL_WORKFLOW_THREAD_TITLES[
+          isMorningBriefDefinitionName(context.officialDefinitionName)
+            ? MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+            : context.officialDefinitionName
+        ]?.[locale];
       if (localized) {
         title = localized;
       } else {

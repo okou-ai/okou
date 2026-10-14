@@ -7,6 +7,7 @@ import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import type { MailDraftSignals } from "./mail-draft.ts";
 import type {
   ArtifactRefInput,
+  ThreadResourceSection,
   ThreadSidebarOpenTarget,
   ThreadSidebarTarget,
 } from "./thread-sidebar.ts";
@@ -61,6 +62,14 @@ export const syncActiveBrowserFitAction$ = command(({ get, set }) => {
   set(active.thread.browserSessionSignals.syncFitActionVisibility$);
 });
 
+/** The sidebar shell acknowledges its committed image viewport layout. */
+export const syncActiveImageLayout$ = command(({ get, set }) => {
+  const active = get(activeThreadSidebar$);
+  if (active?.target.type === "artifact") {
+    set(active.thread.sidebar.imageCanvas.syncLayout$);
+  }
+});
+
 const closeOtherThreadSidebars$ = command(
   ({ get, set }, thread: ChatPanelSignals): void => {
     for (const other of [get(currentLeftThread$), get(currentRightThread$)]) {
@@ -98,8 +107,13 @@ const openAttachmentOnThread$ = command(
 );
 
 export const openThreadArtifacts$ = command(
-  ({ get, set }, thread: ChatPanelSignals) => {
-    set(openOnThread$, thread, { type: "artifacts" }, get(pageSignal$));
+  ({ get, set }, thread: ChatPanelSignals, section?: ThreadResourceSection) => {
+    set(
+      openOnThread$,
+      thread,
+      { type: "artifacts", section },
+      get(pageSignal$),
+    );
   },
 );
 

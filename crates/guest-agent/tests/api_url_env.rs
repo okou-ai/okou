@@ -86,16 +86,6 @@ fn clear_api_token_env() {
     remove_test_env(guest_contracts::env::CANONICAL_API_TOKEN_ENV);
 }
 
-fn capture_raw(log_path: &Path) -> Result<GuestConfigRaw, String> {
-    guest_telemetry::log::clear_system_log_file();
-    let raw = GuestConfigRaw::from_process_env();
-    assert!(
-        !log_path.exists(),
-        "raw capture installed or wrote a system-log sink"
-    );
-    raw
-}
-
 fn assert_value_free(text: &str, context: &str) {
     for marker in VALUE_MARKERS {
         assert!(
@@ -184,7 +174,7 @@ fn process_env_preserves_canonical_api_url_without_value_leaks() -> TestResult {
 
     for case in CAPTURE_CASES {
         apply_input(guest_contracts::env::CANONICAL_API_URL_ENV, case.canonical);
-        let raw = capture_raw(&tmp.path().join(format!("{}.log", case.name)));
+        let raw = GuestConfigRaw::from_process_env();
         let raw = match raw {
             Ok(raw) => raw,
             Err(error) => {

@@ -1,9 +1,11 @@
+import { INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
+  type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
-const MORNING_BRIEF_INSTRUCTION = `# Morning Brief
+const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
 
 Prepare a concise Markdown briefing that helps the user start the day with the most important current work.
 
@@ -23,7 +25,9 @@ If a source, connector, thread, or capability is unavailable, say that it was un
 
 Prepare the briefing as concise Markdown and return it in the Chat. Choose short headings and bullets based on the information actually found instead of following a fixed schema. Prioritize time-sensitive commitments, decisions, blockers, conflicts, and clear next actions; include source names and dates or times when useful.
 
-## Decide whether to email the briefing
+`;
+
+const MORNING_BRIEF_DELIVERY_INSTRUCTION = `## Decide whether to email the briefing
 
 You own the email decision. Send only when the verified briefing contains useful information worth notifying the user about, such as an upcoming commitment, a decision or request needing attention, a blocker, a conflict, or a clear next action. A completed run, an empty briefing, routine noise, or unavailable sources alone are not reasons to send. When there is nothing useful to notify, skip email and leave the briefing and coverage information in the Chat.
 
@@ -43,6 +47,58 @@ Preserve the exact subject, file contents, and event key for retries. A \`queued
 
 Do not read application database tables or use internal application APIs, signed input or output URLs, or callback endpoints.`;
 
+const MORNING_BRIEF_SUGGESTION_INSTRUCTION = `## Curate next-step suggestions
+
+Before completing the briefing or making its email decision, run \`okou suggestion list --json\` to inspect the user's active suggestions and recent consumed/removed identities. Only Okou, the primary Agent, manages this user-owned pool. Retain useful actions, update changed content or priority, withdraw obsolete actions, and create verified new actions. There may be zero to ten active suggestions; do not fill a quota or replace the pool by calendar date. Larger integer priorities appear first, with no requirement for consecutive or unique values.
+
+Use \`okou suggestion create --file suggestion.json --json\`, \`okou suggestion update <id> --file changes.json --json\`, and \`okou suggestion delete <id> --json\`. A creation file contains a stable UUID \`id\`, concise \`title\` and \`rationale\`, integer \`priority\`, nullable \`threadId\`, and \`draft\` in the normal saved composer format: \`{ "draftUserMessage": { "version": 1, "parts": [{ "type": "text", "text": "A self-contained next-step prompt" }] }, "draftAttachments": null }\`. Existing authorized conversations use their exact thread ID; new conversations use null and are handled by Okou. Include verified background and source references in the draft. Do not modify the user's live composer or execute suggested work.
+
+Preserve the same UUID and exact creation file after an uncertain result. A consumed/removed identity is terminal; do not replay it to restore an item. A genuinely new next action needs a new UUID. If the pool is full, explicitly decide which item to withdraw before creating another. If the command or capability is unavailable, explicitly report that suggestion curation was unavailable and why; continue producing the useful briefing and its normal email decision without another publication channel. Otherwise, complete this phase even when no new suggestions are warranted, and briefly report whether existing suggestions were retained, updated, removed, or new ones published.`;
+
+const MORNING_BRIEF_INSTRUCTION =
+  MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;
+
+// Temporary AgentSuggestion rollout (#39591): at GA, include the curation phase
+// in MORNING_BRIEF_INSTRUCTION, switch installations back to morning-brief,
+// retire internal-test-morning-brief, and remove the rollout selection code.
+// Retain immutable revisions needed by captured and historical Runs.
+const INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION = [
+  MORNING_BRIEF_CONTEXT_INSTRUCTION.trimEnd(),
+  MORNING_BRIEF_SUGGESTION_INSTRUCTION,
+  MORNING_BRIEF_DELIVERY_INSTRUCTION,
+].join("\n\n");
+
+function morningBriefDefinition(
+  name: string,
+  instruction: string,
+): OfficialWorkflowSourceDefinition {
+  return {
+    name,
+    lifecycle: "active",
+    workflow: {
+      displayName: "Morning Brief",
+      description:
+        "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and unread Chat priorities.",
+      instruction,
+      files: [],
+    },
+    blueprints: [
+      {
+        key: "daily-delivery",
+        parameters: [],
+        desiredState: {
+          kind: "schedule",
+          schedule: {
+            type: "cron",
+            cronExpression: "0 7 * * *",
+          },
+        },
+      },
+    ],
+    presentation: { category: "productivity" },
+  };
+}
+
 /**
  * The sole deployed source candidate. Every Definition uses the same validated
  * release boundary and immutable shared-artifact publication path.
@@ -51,31 +107,11 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
-      {
-        name: "morning-brief",
-        lifecycle: "active",
-        workflow: {
-          displayName: "Morning Brief",
-          description:
-            "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and unread Chat priorities.",
-          instruction: MORNING_BRIEF_INSTRUCTION,
-          files: [],
-        },
-        blueprints: [
-          {
-            key: "daily-delivery",
-            parameters: [],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "cron",
-                cronExpression: "0 7 * * *",
-              },
-            },
-          },
-        ],
-        presentation: { category: "productivity" },
-      },
+      morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
+      morningBriefDefinition(
+        INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
+        INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION,
+      ),
       {
         name: "connector-doctor",
         lifecycle: "retired",

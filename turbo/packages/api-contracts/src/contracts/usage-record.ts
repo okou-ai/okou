@@ -26,9 +26,8 @@ export const usageRecordKindSchema = z.enum([
 export type UsageRecordKind = z.infer<typeof usageRecordKindSchema>;
 
 export const usageRecordProviderBreakdownSchema = z.object({
-  // Display identity of the usage. Model usage of a run names the model the
-  // run used (its catalog model ID), not the `usage_pricing` provider it was
-  // billed under; other usage names its recorded provider.
+  // Captured ledger provider for every usage kind. Clients resolve model aliases
+  // through the product catalog for display; reporting does not rewrite billing.
   provider: z.string(),
   credits: z.number(),
   usageKinds: z.array(

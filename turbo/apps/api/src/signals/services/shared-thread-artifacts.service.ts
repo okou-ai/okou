@@ -30,10 +30,7 @@ import { settle } from "../utils";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { signHostedSiteFiles$ } from "./hosted-site-files.service";
-import {
-  privateArtifactCreationEnabled$,
-  privateArtifactsBucket,
-} from "./private-artifact-storage.service";
+import { privateArtifactsBucket } from "./private-artifact-storage.service";
 import {
   copySharedThreadArtifacts$,
   SharedThreadArtifactUnavailable,
@@ -443,17 +440,6 @@ export const deleteSharedThread$ = command(
       );
     signal.throwIfAborted();
     if (!row || (row.orgId !== null && row.orgId !== args.orgId)) {
-      return false;
-    }
-    if (
-      !row.hasArtifactSnapshot &&
-      !(await set(
-        privateArtifactCreationEnabled$,
-        args.orgId,
-        args.userId,
-        signal,
-      ))
-    ) {
       return false;
     }
     await set(removeSharedThreadArtifactCopies$, row, signal);

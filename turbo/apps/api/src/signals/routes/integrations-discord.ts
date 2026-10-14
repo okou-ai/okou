@@ -1,24 +1,19 @@
 import { command, computed } from "ccstate";
-import {
-  and,
-  count,
-  eq,
-  exists,
-  gte,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-} from "drizzle-orm";
-import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
+import { and, eq } from "drizzle-orm";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
+import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
+import { env } from "../../lib/env";
+import { now } from "../../lib/time";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, queryOf } from "../context/request";
+import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
-import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
+import { discordClient } from "../external/discord-client";
+import {
+  discordIntegrationEnabledForOwner$,
+  getDiscordAppConfig,
+} from "../services/discord-config";
 import type { RouteEntry } from "../route-entry";
 import {
   discordOrgStatus,
@@ -28,11 +23,6 @@ import {
   disconnectDiscordBinding$,
 } from "../services/discord-data.service";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
-import {
-  discordCleanupRecipients,
-  discordRemovalProjection,
-  publishDiscordChanged,
-} from "../services/discord-realtime.service";
 
 function unavailable() {
   return {
@@ -45,6 +35,113 @@ function unavailable() {
 
 const discordStatus$ = discordOrgStatus(organizationAuthContext$);
 
+function inviteCode(invite: string): string | null {
+  const url = new URL(invite);
+  if (url.protocol !== "https:" || url.username || url.password || url.port) {
+    return null;
+  }
+  const path =
+    url.hostname === "discord.gg"
+      ? /^\/([A-Za-z0-9_-]{1,100})\/?$/u
+      : [
+            "discord.com",
+            "www.discord.com",
+            "discordapp.com",
+            "www.discordapp.com",
+          ].includes(url.hostname)
+        ? /^\/invite\/([A-Za-z0-9_-]{1,100})\/?$/u
+        : null;
+  return path?.exec(url.pathname)?.[1] ?? null;
+}
+
+const createDiscordInstallLink$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const body = await get(
+      bodyResultOf(integrationsDiscordContract.installLink),
+    );
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    if (
+      !(await set(
+        discordIntegrationEnabledForOwner$,
+        auth.orgId,
+        auth.userId,
+        signal,
+      ))
+    ) {
+      return createErrorResponse(
+        "FORBIDDEN",
+        "Discord integration is not enabled.",
+      );
+    }
+    if (!getDiscordAppConfig() || !env("DISCORD_OAUTH_CLIENT_SECRET")) {
+      return createErrorResponse(
+        "PROVIDER_UNAVAILABLE",
+        "Discord installation is not configured.",
+      );
+    }
+    const code = inviteCode(body.data.invite);
+    if (!code) {
+      return createErrorResponse(
+        "BAD_REQUEST",
+        "Use an HTTPS discord.gg or discord.com/invite server invitation link.",
+      );
+    }
+    const result = await discordClient.fetchDiscordInvite(code, signal);
+    signal.throwIfAborted();
+    if (result.kind === "unavailable") {
+      return createErrorResponse(
+        "NOT_FOUND",
+        "The Discord invitation is invalid, expired, or unavailable. Ask for a new server invite.",
+      );
+    }
+    if (result.kind === "discord-error") {
+      if (result.status === 429) {
+        return createErrorResponse(
+          "TOO_MANY_REQUESTS",
+          "Discord is rate limiting invitation lookups. Try again later.",
+        );
+      }
+      return {
+        status: 502 as const,
+        body: {
+          error: {
+            code: "DISCORD_UNAVAILABLE",
+            message:
+              "Discord could not verify this invitation. Try again later.",
+          },
+        },
+      };
+    }
+    const { guild, type, expires_at: expiresAt } = result.data;
+    if (!guild || (type !== undefined && type !== 0)) {
+      return createErrorResponse(
+        "BAD_REQUEST",
+        "This invitation is not for a Discord server.",
+      );
+    }
+    if (expiresAt && Date.parse(expiresAt) <= now()) {
+      return createErrorResponse(
+        "NOT_FOUND",
+        "The Discord invitation has expired. Ask for a new server invite.",
+      );
+    }
+    // Only public server context travels in this stable link. The recipient
+    // chooses their workspace and starts browser-owned OAuth after opening it.
+    // A distinct route also prevents an older App from mistaking installation
+    // intent for an already-completed account connection.
+    const url = new URL("/settings/discord/install", env("APP_URL"));
+    url.searchParams.set("guild_id", guild.id);
+    return {
+      status: 200 as const,
+      body: { url: url.toString(), guildId: guild.id, guildName: guild.name },
+    };
+  },
+);
+
 const getDiscordStatus$ = computed(async (get) => {
   return {
     status: 200 as const,
@@ -52,98 +149,9 @@ const getDiscordStatus$ = computed(async (get) => {
   };
 });
 
-const commitDiscordOrganizationUninstall$ = command(
-  async (
-    { set },
-    auth: { readonly orgId: string; readonly userId: string },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    signal.throwIfAborted();
-    const revoked = db.$with("revoked_discord_workspace_personal_grants").as(
-      db
-        .delete(discordOauthStates)
-        .where(eq(discordOauthStates.orgId, auth.orgId))
-        .returning({
-          userId: discordOauthStates.userId,
-          completionTokenHash: discordOauthStates.completionTokenHash,
-        }),
-    );
-    const consents = db
-      .$with("revoked_discord_workspace_installation_consent")
-      .as(
-        db
-          .delete(discordOrgGrants)
-          .where(
-            and(
-              eq(discordOrgGrants.orgId, auth.orgId),
-              gte(db.select({ count: count() }).from(revoked), 0),
-            ),
-          )
-          .returning({
-            approvedAt: discordOrgGrants.approvedAt,
-            guildId: discordOrgGrants.verifiedGuildId,
-          }),
-      );
-    const removed = db
-      .$with("removed_discord_workspace_guild")
-      .as(
-        db
-          .select({ guildId: consents.guildId })
-          .from(consents)
-          .where(isNotNull(consents.approvedAt)),
-      );
-    const hasRemoval = exists(
-      db.select({ guildId: removed.guildId }).from(removed),
-    );
-    const admins = db
-      .select(discordRemovalProjection(sql`${orgMembersCache.userId}`, true))
-      .from(orgMembersCache)
-      .where(
-        and(
-          eq(orgMembersCache.orgId, auth.orgId),
-          eq(orgMembersCache.role, "admin"),
-          hasRemoval,
-        ),
-      );
-    const connections = db
-      .select(
-        discordRemovalProjection(sql`${discordOrgConnections.userId}`, true),
-      )
-      .from(discordOrgConnections)
-      .where(
-        and(
-          inArray(
-            discordOrgConnections.guildId,
-            db.select({ guildId: removed.guildId }).from(removed),
-          ),
-          hasRemoval,
-        ),
-      );
-    const grantOwners = db
-      .select(discordRemovalProjection(sql`${revoked.userId}`, true))
-      .from(revoked)
-      .where(and(isNull(revoked.completionTokenHash), hasRemoval));
-    // UNION ALL is linear in returned recipients, not grants × members × admins.
-    const recipients = db.$with("discord_workspace_cleanup_recipients").as(
-      db
-        .select(discordRemovalProjection(sql`NULL`, true))
-        .from(removed)
-        .unionAll(admins)
-        .unionAll(connections)
-        .unionAll(grantOwners),
-    );
-    return await db
-      .with(revoked, consents, removed, recipients)
-      .select({ removed: recipients.removed, userId: recipients.userId })
-      .from(recipients);
-  },
-);
-
 const deleteDiscordIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const query = get(queryOf(integrationsDiscordContract.disconnect));
     // Data removal stays available while the feature is rolled back.
     const role = await get(discordMemberRole(auth));
     signal.throwIfAborted();
@@ -151,42 +159,20 @@ const deleteDiscordIntegration$ = command(
       return unavailable();
     }
     const db = set(writeDb$);
-    if (query.action === "uninstall") {
-      if (role !== "admin") {
-        return {
-          status: 403 as const,
-          body: {
-            error: { code: "FORBIDDEN", message: "Admin access required" },
-          },
-        };
-      }
-      const rows = await set(commitDiscordOrganizationUninstall$, auth, signal);
-      const recipients = discordCleanupRecipients(rows, [auth.userId]);
-      if (!recipients.removed) {
-        signal.throwIfAborted();
-        return unavailable();
-      }
-      // Committed changes publish before observing a post-commit cancellation.
-      await publishDiscordChanged(recipients.userIds);
-      signal.throwIfAborted();
-      return { status: 200 as const, body: { ok: true as const } };
-    }
     const [connection] = await db
       .select({
         id: discordOrgConnections.id,
         discordUserId: discordOrgConnections.discordUserId,
       })
       .from(discordOrgConnections)
+      .innerJoin(
+        discordOauthStates,
+        eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
+      )
       .where(
         and(
           eq(discordOrgConnections.userId, auth.userId),
-          eq(
-            discordOrgConnections.guildId,
-            db
-              .select({ guildId: discordOrgInstallations.guildId })
-              .from(discordOrgInstallations)
-              .where(eq(discordOrgInstallations.orgId, auth.orgId)),
-          ),
+          eq(discordOauthStates.orgId, auth.orgId),
         ),
       )
       .limit(1);
@@ -249,6 +235,13 @@ const discordAuth = {
 } as const;
 
 export const integrationsDiscordRoutes: readonly RouteEntry[] = [
+  {
+    route: integrationsDiscordContract.installLink,
+    handler: authRoute(
+      { ...discordAuth, requiredCapability: "discord:read" },
+      createDiscordInstallLink$,
+    ),
+  },
   {
     route: integrationsDiscordContract.getStatus,
     handler: authRoute(discordAuth, getDiscordStatus$),

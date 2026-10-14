@@ -45,7 +45,9 @@ async function fixture(
     .replaceAll("__OKOU_CLERK_UI_SCRIPT_URL__", `${APP_URL}/clerk-ui.js`)
     .replaceAll("__OKOU_CLERK_UI_VERSION__", "fixture")
     .replaceAll("%VITE_CLERK_PUBLISHABLE_KEY_PREVIEW%", "pk_test_fixture");
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({
+    executablePath: process.env.E2E_CHROMIUM_EXECUTABLE_PATH,
+  });
   context.after(() => browser.close());
   const page = await browser.newPage();
   const coreRequests: string[] = [];
@@ -103,6 +105,10 @@ const CLERK_FIXTURE = `
   };
 `;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 for (const failures of [0, 1, 2]) {
   test(`email-code sign-in succeeds after ${failures} core resource failures`, async (context) => {
     let attempts = 0;
@@ -159,11 +165,21 @@ test(
     );
     assert.deepEqual(coreRequests, [CORE_URL, CORE_URL, CORE_URL]);
     const report = await readFile(diagnosticPath, "utf8");
-    assert.equal(
-      [...report.matchAll(/"failureCode": "net::ERR_CONNECTION_RESET"/gu)]
-        .length,
-      3,
-    );
+    const diagnostic: unknown = JSON.parse(report);
+    assert.ok(isRecord(diagnostic) && isRecord(diagnostic.network));
+    assert.equal(diagnostic.network.kind, "observed");
+    for (const requests of [diagnostic.requests, diagnostic.network.requests]) {
+      assert.ok(Array.isArray(requests));
+      const coreFailures = requests.filter((request: unknown) => {
+        assert.ok(isRecord(request));
+        return (
+          request.url === CORE_URL &&
+          request.outcome === "failed" &&
+          request.failureCode === "net::ERR_CONNECTION_RESET"
+        );
+      });
+      assert.equal(coreFailures.length, 3);
+    }
     assert.match(report, /"clerk": "absent"/u);
     assert.doesNotMatch(report, /email-secret|fixture-token/u);
   },

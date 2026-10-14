@@ -268,12 +268,14 @@ impl Root {
         }
         let maps = registration.maps(&client).await?;
         tokio::pin!(maps);
+        super::diagnostics::Stage::MapResponse.record();
         let mut first = maps.next().await.ok_or(Failure::DomainFailed)?;
         if first.pop_browser_url.is_some() {
             return Err(Failure::DomainFailed);
         }
         let local = first.node.take().ok_or(Failure::DomainFailed)?;
         let keys = registration.keys().node_keys.clone();
+        super::diagnostics::Stage::DerpMap.record();
         let map = first.derp.take().ok_or(Failure::DomainFailed)?;
         let regions = map.keys().copied().collect();
         let (driver, mut port, routes, home) = super::regional_driver::RegionalDriver::new(
@@ -284,12 +286,15 @@ impl Root {
             dial,
         )?;
         let ready = port.ready.take().ok_or(Failure::DomainFailed)?;
+        super::diagnostics::Stage::LocalNode.record();
         let mut core = Core::new(keys, local, port)?;
         core.set_regions(home, regions);
+        super::diagnostics::Stage::Peers.record();
         core.update(first)?;
         routes.update(None, core.relay_peers())?;
         registration.announce_home(&client, home).await?;
         let changed = routes.changed();
+        super::diagnostics::Stage::Relay.record();
         self.serve(
             core,
             maps,
@@ -345,6 +350,8 @@ impl Root {
                 result = &mut ready, if !announced => {
                     result.map_err(|_| Failure::DomainFailed)?;
                     announced = true;
+                    // Carrier readiness precedes each host's SSH trust and login.
+                    super::diagnostics::Stage::Ready.record();
                     control.ready();
                 }
                 update = maps.next() => {

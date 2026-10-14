@@ -75,9 +75,9 @@ pub(in crate::exec_operation) struct ExecTerminalLogContext<'a> {
     /// The transported evidence proves an OOM decision rather than recording an
     /// inspected-and-empty capture candidate.
     pub(in crate::exec_operation) evidence_has_proof: bool,
-    /// Retained kernel records name a victim in the agent's own containment
-    /// domain rather than in a separately contained tool leaf.
-    pub(in crate::exec_operation) agent_domain_oom_kill: bool,
+    /// Shared domain attribution; positive evidence may still be unproven.
+    pub(in crate::exec_operation) classification:
+        Option<guest_contracts::oom_evidence::OomClassification>,
     /// A line claimed the evidence prefix but broke its bounds or encoding.
     pub(in crate::exec_operation) evidence_malformed: bool,
     pub(in crate::exec_operation) host_cancel_requested: bool,
@@ -207,19 +207,16 @@ impl ExecOperationDiagnostic {
         let evidence_has_proof = split.has_proof();
         let evidence_malformed = split.malformed_lines > 0;
         let oom_evidence = split.evidence.is_some();
-        let agent_domain_oom_kill = split
+        let classification = split
             .evidence
             .as_ref()
-            .is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill);
-        // The classification names which cgroup the kernel killed, so only a
-        // record whose evidence proves an OOM decision carries one. A plain
+            .and_then(guest_contracts::oom_evidence::OomEvidence::classification);
+        // Classification uses independent domain counters when kernel records
+        // are incomplete; uncertainty must not imply tool containment. A plain
         // string keeps the field groupable; `?` formatting would emit
         // `Some(...)` and break equality matching in the log backend.
-        let oom_classification = match (evidence_has_proof, agent_domain_oom_kill) {
-            (false, _) => "",
-            (true, true) => "agent_oom_kill",
-            (true, false) => "contained_tool_oom",
-        };
+        let oom_classification =
+            classification.map_or("", guest_contracts::oom_evidence::OomClassification::as_str);
         // Parse identity before logging so malformed payload text never becomes
         // an unbounded log field. The owning Runner supplies run_id separately.
         let operation_id = split
@@ -252,7 +249,7 @@ impl ExecOperationDiagnostic {
             stream_overflowed,
             actionable_diagnostic: diagnostic_present,
             evidence_has_proof,
-            agent_domain_oom_kill,
+            classification,
             evidence_malformed,
             host_cancel_requested,
         }) else {
@@ -401,21 +398,21 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
         });
     }
     if context.evidence_has_proof {
-        // The kernel record names which cgroup it killed. A kill confined to a
-        // tool leaf is an informational observation; it does not assert run
-        // success, and Guest Agent/Runner retain semantic failures. The process
-        // exit code says nothing about the kernel's choice, so it takes no part
-        // in this decision.
+        // Only proven tool containment is informational. Missing victim records
+        // or counters cannot demote an agent-domain or uncertain OOM. Semantic
+        // failures remain independent of this domain observation.
+        let contained = context.classification
+            == Some(guest_contracts::oom_evidence::OomClassification::ContainedToolOom);
         return Some(ExecTerminalLogDecision {
-            severity: if context.agent_domain_oom_kill {
-                ExecTerminalLogSeverity::Warn
-            } else {
+            severity: if contained {
                 ExecTerminalLogSeverity::Info
-            },
-            reason: if context.agent_domain_oom_kill {
-                ExecTerminalLogReason::OomEvidence
             } else {
+                ExecTerminalLogSeverity::Warn
+            },
+            reason: if contained {
                 ExecTerminalLogReason::ContainedToolOom
+            } else {
+                ExecTerminalLogReason::OomEvidence
             },
         });
     }
@@ -466,8 +463,12 @@ pub(in crate::exec_operation) fn exec_operation_captured_output_truncated(
     )
 }
 
-pub(crate) fn log_operations_closed(reason: &'static str, snapshot: &ExecOperationCloseSnapshot) {
-    if snapshot.active_count == 0 {
+pub(crate) fn log_operations_closed(
+    close: &crate::ConnectionCloseInfo,
+    poisoned: bool,
+    snapshot: &ExecOperationCloseSnapshot,
+) {
+    if snapshot.active_count == 0 && close.cancelled_owner().is_none() {
         return;
     }
 
@@ -489,8 +490,32 @@ pub(crate) fn log_operations_closed(reason: &'static str, snapshot: &ExecOperati
     let active_omitted = snapshot
         .active_count
         .saturating_sub(snapshot.operations.len());
+    let reason = if poisoned {
+        "connection poisoned"
+    } else {
+        "connection closed"
+    };
+    if let Some(owner) = close.cancelled_owner() {
+        tracing::info!(
+            reason,
+            close_origin = close.reason().as_str(),
+            connection_id = %close.connection_id(),
+            sandbox_id = owner.sandbox_id(),
+            run_id = owner.run_id(),
+            owner_phase = owner.phase(),
+            active_count = snapshot.active_count,
+            active_omitted,
+            active_operations = %active_operations,
+            "closing guest-control connection after owner cancellation"
+        );
+        return;
+    }
     tracing::warn!(
         reason = reason,
+        close_origin = close.reason().as_str(),
+        close_error_kind = ?close.reason().error_kind(),
+        connection_id = %close.connection_id(),
+        sandbox_id = close.sandbox_id(),
         active_count = snapshot.active_count,
         active_omitted,
         active_operations = %active_operations,

@@ -17,6 +17,7 @@ from tests.request_handler_helpers import (
     _single_firewall_sandbox,
     _write_registry,
 )
+from tests.requestheaders_helpers import await_requestheaders_result
 
 _FIELD_LIMIT = 1024
 _NAME_LIMIT = 1024
@@ -386,7 +387,10 @@ async def test_shared_base_request_lifecycle_keeps_normal_auth_when_inspection_e
         fake_firewall_headers(headers={"X-Active-Auth": "synthetic"}),
     ):
         result = mitm_addon.requestheaders(flow)
-        assert result is None
+        if over_limit:
+            await await_requestheaders_result(result)
+        else:
+            assert result is None
         await mitm_addon.request(flow)
 
     assert flow.error is None

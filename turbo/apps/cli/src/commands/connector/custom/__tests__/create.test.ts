@@ -304,7 +304,10 @@ describe("okou connector custom create", () => {
       ]);
 
       expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-        "Unrecognized key",
+        "Invalid configuration input",
+      );
+      expect(mockConsoleError.mock.calls.flat().join("\n")).not.toContain(
+        "plaintext-secret",
       );
       expect(mockExit).toHaveBeenCalledWith(1);
       expect(mockConsoleLog).not.toHaveBeenCalled();
@@ -438,6 +441,6 @@ describe("okou connector custom create", () => {
       customConnectorCommand.commands.map((command) => {
         return command.name();
       }),
-    ).toStrictEqual(["create", "update", "list", "status"]);
+    ).toStrictEqual(["create", "update", "show", "delete", "list", "status"]);
   });
 });

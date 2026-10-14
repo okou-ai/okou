@@ -1,6 +1,5 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -42,7 +41,7 @@ interface SnapshotResource {
   contentType: string;
   kind: "file" | "html";
   previewImageUrl?: string;
-  downloadUrl?: string;
+  downloadUrl: string;
   status?: 403 | 404;
 }
 
@@ -53,6 +52,7 @@ function mockSnapshotResources({
 } = {}) {
   const site: SnapshotResource = {
     url: SITE_URL,
+    downloadUrl: `${SITE_DOWNLOAD_URL}-preview`,
     filename: "lightsite1.html",
     contentType: "text/html",
     kind: "html",
@@ -60,6 +60,7 @@ function mockSnapshotResources({
   };
   const video: SnapshotResource = {
     url: VIDEO_URL,
+    downloadUrl: `${R2_ORIGIN}/snapshots/launch.mp4?X-Amz-Signature=download`,
     filename: "lightvid01.mp4",
     contentType: "video/mp4",
     kind: "file",
@@ -70,12 +71,14 @@ function mockSnapshotResources({
     "lightvid01.mp4": video,
     "siteshot01.webp": {
       url: SITE_COVER_URL,
+      downloadUrl: `${R2_ORIGIN}/snapshots/site.webp?X-Amz-Signature=download`,
       filename: "site.webp",
       contentType: "image/webp",
       kind: "file",
     },
     "vidcover01.jpg": {
       url: VIDEO_COVER_URL,
+      downloadUrl: `${R2_ORIGIN}/snapshots/video.jpg?X-Amz-Signature=download`,
       filename: "video.jpg",
       contentType: "image/jpeg",
       kind: "file",
@@ -104,7 +107,7 @@ function mockSnapshotResources({
         ...(resource.previewImageUrl
           ? { previewImageUrl: resource.previewImageUrl }
           : {}),
-        ...(resource.downloadUrl ? { downloadUrl: resource.downloadUrl } : {}),
+        downloadUrl: resource.downloadUrl,
       });
     },
   );
@@ -178,7 +181,6 @@ test.each([false, true])(
             },
           }
         : {}),
-      featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: false },
     });
 
     const card = await screen.findByTestId("markdown-artifact-preview-html");
@@ -254,13 +256,15 @@ test.each([false, true])(
 test("a signed-in viewer downloads freshly authorized bytes from a normal artifact reference", async () => {
   const browser = context.mocks.browser.blobDownload();
   const previewUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=preview`;
-  const video = { url: previewUrl };
+  const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
+  const video = { downloadUrl: `${downloadUrl}-preview` };
   context.mocks.api(
     artifactReferencesContract.resolve,
     ({ request, respond }) => {
       expect(request.headers.has("authorization")).toBeTruthy();
       return respond(200, {
-        url: video.url,
+        url: previewUrl,
+        downloadUrl: video.downloadUrl,
         filename: "lightvid01.mp4",
         contentType: "video/mp4",
         expiresAt: "2099-01-01T00:00:00Z",
@@ -268,15 +272,6 @@ test("a signed-in viewer downloads freshly authorized bytes from a normal artifa
       });
     },
   );
-  const downloadUrl = `${R2_ORIGIN}/files/launch.mp4?X-Amz-Signature=download`;
-  context.mocks.http.get(`${R2_ORIGIN}/files/launch.mp4`, ({ request }) => {
-    return new URL(request.url).searchParams.get("X-Amz-Signature") ===
-      "download"
-      ? HttpResponse.text("shared video bytes", {
-          headers: { "Content-Type": "video/mp4" },
-        })
-      : new HttpResponse(null, { status: 403 });
-  });
   mockSharedMessage(`![Launch video](${VIDEO})`);
 
   await setupSharedThreadPage(context, {
@@ -301,16 +296,17 @@ test("a signed-in viewer downloads freshly authorized bytes from a normal artifa
       `${previewUrl}#t=2`,
     );
   });
-  video.url = downloadUrl;
+  video.downloadUrl = downloadUrl;
   click(getButtonByName("Download", dialog));
 
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
-  expect(browser.downloads[0]?.filename).toBe("lightvid01.mp4");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-    "shared video bytes",
-  );
+  expect(browser.downloads[0]).toMatchObject({
+    filename: "lightvid01.mp4",
+    url: downloadUrl,
+    blob: null,
+  });
   expect(dialog.querySelector("video")).toHaveAttribute(
     "src",
     `${previewUrl}#t=2`,
@@ -552,6 +548,7 @@ function mockArtifactResource(resource: {
     ({ params, respond }) => {
       expect(params.reference).toBe(resource.reference);
       return respond(200, {
+        downloadUrl: new URL("?download=1", resource.url).href,
         url: resource.url,
         filename: resource.filename,
         contentType: resource.contentType,

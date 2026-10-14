@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-script="${repo_root}/.github/scripts/prune-runner-idle.sh"
+script="${repo_root}/.github/scripts/runner/prune-runner-idle.sh"
 test_dir=$(mktemp -d)
 trap 'rm -rf "$test_dir"' EXIT
 mkdir -p "${test_dir}/bin"

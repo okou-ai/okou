@@ -47,7 +47,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { now, nowDate } from "../../lib/time";
 import { flushAxiom, getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -79,11 +79,11 @@ import {
   encryptPersistentSecretValue,
 } from "./crypto.utils";
 import {
-  activePaidConcurrencySlots,
+  loadActivePaidConcurrencySlots$,
   cappedBaseConcurrencyLimit,
   totalConcurrencyLimit,
 } from "./org-concurrency-entitlements.service";
-import { loadOrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
 import {
   reconcileBrowserUserActions,
   temporaryBrowserFileKeys,
@@ -343,28 +343,33 @@ function browserScreenHeightForAspectRatio(aspectRatio: number): number {
   );
 }
 
-async function loadBrowserScreen(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<BrowserScreen | null> {
-  const [screen] = await db
-    .select({
-      width: browserSessionResizeStates.screenWidth,
-      height: browserSessionResizeStates.screenHeight,
-    })
-    .from(browserSessionResizeStates)
-    .where(eq(browserSessionResizeStates.providerSessionId, providerSessionId))
-    .limit(1);
-  signal.throwIfAborted();
-  return screen?.width === BROWSER_SCREEN_WIDTH
-    ? {
-        width: BROWSER_SCREEN_WIDTH,
-        height: screen.height,
-        resizable: true,
-      }
-    : null;
-}
+const loadBrowserScreen$ = command(
+  async (
+    { get },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserScreen | null> => {
+    const db = get(db$);
+    const [screen] = await db
+      .select({
+        width: browserSessionResizeStates.screenWidth,
+        height: browserSessionResizeStates.screenHeight,
+      })
+      .from(browserSessionResizeStates)
+      .where(
+        eq(browserSessionResizeStates.providerSessionId, providerSessionId),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return screen?.width === BROWSER_SCREEN_WIDTH
+      ? {
+          width: BROWSER_SCREEN_WIDTH,
+          height: screen.height,
+          resizable: true,
+        }
+      : null;
+  },
+);
 
 const loadBrowserScreenshotUrl$ = command(
   async (
@@ -424,106 +429,117 @@ const loadBrowserScreenshotUrl$ = command(
   },
 );
 
-async function loadBrowserScreenHeightForThread(
-  db: Db,
-  chatThreadId: string,
-  signal: AbortSignal,
-): Promise<number> {
-  // Stopped instances retain their applied screen rows, so the latest one
-  // carries the thread's preferred height across provider replacements.
-  const [screen] = await db
-    .select({
-      width: browserSessionResizeStates.screenWidth,
-      height: browserSessionResizeStates.screenHeight,
-    })
-    .from(browserSessionResizeStates)
-    .innerJoin(
-      browserSessionInstances,
-      eq(
-        browserSessionInstances.providerSessionId,
-        browserSessionResizeStates.providerSessionId,
-      ),
-    )
-    .where(eq(browserSessionInstances.chatThreadId, chatThreadId))
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  signal.throwIfAborted();
-  return screen?.width === BROWSER_SCREEN_WIDTH
-    ? screen.height
-    : BROWSER_INITIAL_SCREEN_HEIGHT;
-}
+const loadBrowserScreenHeightForThread$ = command(
+  async (
+    { get },
+    chatThreadId: string,
+    signal: AbortSignal,
+  ): Promise<number> => {
+    const db = get(db$);
+    // Stopped instances retain their applied screen rows, so the latest one
+    // carries the thread's preferred height across provider replacements.
+    const [screen] = await db
+      .select({
+        width: browserSessionResizeStates.screenWidth,
+        height: browserSessionResizeStates.screenHeight,
+      })
+      .from(browserSessionResizeStates)
+      .innerJoin(
+        browserSessionInstances,
+        eq(
+          browserSessionInstances.providerSessionId,
+          browserSessionResizeStates.providerSessionId,
+        ),
+      )
+      .where(eq(browserSessionInstances.chatThreadId, chatThreadId))
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    signal.throwIfAborted();
+    return screen?.width === BROWSER_SCREEN_WIDTH
+      ? screen.height
+      : BROWSER_INITIAL_SCREEN_HEIGHT;
+  },
+);
 
 // Extending the lease is unconditional and fixed-length: every toucher gets the
 // same 10 minutes from now, so leases cannot be stacked into a longer lifetime.
-async function touchInstanceLease(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<BrowserInstanceRow | null> {
-  const [touched] = await db
-    .update(browserSessionInstances)
-    .set({
-      lastTouchedAt: nowDate(),
-      idleExpiresAt: nextIdleDeadline(),
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(browserSessionInstances.providerSessionId, providerSessionId),
-        eq(browserSessionInstances.status, "active"),
-      ),
-    )
-    .returning();
-  signal.throwIfAborted();
-  return touched ?? null;
-}
+const touchInstanceLease$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<BrowserInstanceRow | null> => {
+    const db = set(writeDb$);
+    const [touched] = await db
+      .update(browserSessionInstances)
+      .set({
+        lastTouchedAt: nowDate(),
+        idleExpiresAt: nextIdleDeadline(),
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessionInstances.providerSessionId, providerSessionId),
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .returning();
+    signal.throwIfAborted();
+    return touched ?? null;
+  },
+);
 
-async function persistBrowserScreen(
-  db: Db,
-  providerSessionId: string,
-  screenHeight: number,
-  signal: AbortSignal,
-): Promise<
-  BrowserServiceResult<{
-    readonly instance: BrowserInstanceRow;
-    readonly screen: BrowserScreen;
-  }>
-> {
-  const [updatedScreen] = await db
-    .update(browserSessionResizeStates)
-    .set({
-      screenWidth: BROWSER_SCREEN_WIDTH,
-      screenHeight,
-      updatedAt: nowDate(),
-    })
-    .where(eq(browserSessionResizeStates.providerSessionId, providerSessionId))
-    .returning({ height: browserSessionResizeStates.screenHeight });
-  signal.throwIfAborted();
-  if (!updatedScreen) {
-    return conflict(
-      "This managed browser was started before window resizing was enabled; resume it before resizing it",
-      "BROWSER_RESIZE_UNSUPPORTED",
-    );
-  }
-  const instance = await touchInstanceLease(db, providerSessionId, signal);
-  if (!instance) {
-    return conflict(
-      "This managed browser is no longer live; resume it before resizing it",
-      "BROWSER_NOT_LIVE",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      instance,
-      screen: {
-        width: BROWSER_SCREEN_WIDTH,
-        height: updatedScreen.height,
-        resizable: true,
+const persistBrowserScreen$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    screenHeight: number,
+    signal: AbortSignal,
+  ): Promise<
+    BrowserServiceResult<{
+      readonly instance: BrowserInstanceRow;
+      readonly screen: BrowserScreen;
+    }>
+  > => {
+    const db = set(writeDb$);
+    const [updatedScreen] = await db
+      .update(browserSessionResizeStates)
+      .set({
+        screenWidth: BROWSER_SCREEN_WIDTH,
+        screenHeight,
+        updatedAt: nowDate(),
+      })
+      .where(
+        eq(browserSessionResizeStates.providerSessionId, providerSessionId),
+      )
+      .returning({ height: browserSessionResizeStates.screenHeight });
+    signal.throwIfAborted();
+    if (!updatedScreen) {
+      return conflict(
+        "This managed browser was started before window resizing was enabled; resume it before resizing it",
+        "BROWSER_RESIZE_UNSUPPORTED",
+      );
+    }
+    const instance = await set(touchInstanceLease$, providerSessionId, signal);
+    if (!instance) {
+      return conflict(
+        "This managed browser is no longer live; resume it before resizing it",
+        "BROWSER_NOT_LIVE",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        instance,
+        screen: {
+          width: BROWSER_SCREEN_WIDTH,
+          height: updatedScreen.height,
+          resizable: true,
+        },
       },
-    },
-  };
-}
+    };
+  },
+);
 
 interface ActiveBrowserInstance {
   readonly chatThreadId: string;
@@ -532,95 +548,104 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
-async function saveBrowserTabSnapshot(
-  db: Db,
-  target: ActiveBrowserInstance,
-  signal: AbortSignal,
-): Promise<void> {
-  const snapshotSignal = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
-  ]);
-  const saved = await settle(
-    (async () => {
-      const provider = await getBrowserUseSession(
-        target.providerSessionId,
-        snapshotSignal,
-      );
-      snapshotSignal.throwIfAborted();
-      if (provider.status !== "active" || !provider.cdpUrl) {
-        return;
-      }
-      const urls = await listBrowserUseTabUrls(provider.cdpUrl, snapshotSignal);
-      snapshotSignal.throwIfAborted();
-      const encryptedTabUrls = await encryptPersistentSecretValue(
-        JSON.stringify(urls),
-        { userId: target.userId },
-      );
-      snapshotSignal.throwIfAborted();
-      await db
-        .insert(browserSessionTabSnapshots)
-        .values({
-          chatThreadId: target.chatThreadId,
-          encryptedTabUrls,
-        })
-        .onConflictDoUpdate({
-          target: browserSessionTabSnapshots.chatThreadId,
-          set: {
+const saveBrowserTabSnapshot$ = command(
+  async (
+    { set },
+    target: ActiveBrowserInstance,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    const snapshotSignal = AbortSignal.any([
+      signal,
+      AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
+    ]);
+    const saved = await settle(
+      (async () => {
+        const provider = await getBrowserUseSession(
+          target.providerSessionId,
+          snapshotSignal,
+        );
+        snapshotSignal.throwIfAborted();
+        if (provider.status !== "active" || !provider.cdpUrl) {
+          return;
+        }
+        const urls = await listBrowserUseTabUrls(
+          provider.cdpUrl,
+          snapshotSignal,
+        );
+        snapshotSignal.throwIfAborted();
+        const encryptedTabUrls = await encryptPersistentSecretValue(
+          JSON.stringify(urls),
+          { userId: target.userId },
+        );
+        snapshotSignal.throwIfAborted();
+        await db
+          .insert(browserSessionTabSnapshots)
+          .values({
+            chatThreadId: target.chatThreadId,
             encryptedTabUrls,
-            updatedAt: nowDate(),
-          },
-        });
-      snapshotSignal.throwIfAborted();
-    })(),
-  );
-  signal.throwIfAborted();
-  if (!saved.ok) {
-    L.warn("Managed browser tab snapshot failed", {
-      chatThreadId: target.chatThreadId,
-    });
-  }
-}
+          })
+          .onConflictDoUpdate({
+            target: browserSessionTabSnapshots.chatThreadId,
+            set: {
+              encryptedTabUrls,
+              updatedAt: nowDate(),
+            },
+          });
+        snapshotSignal.throwIfAborted();
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!saved.ok) {
+      L.warn("Managed browser tab snapshot failed", {
+        chatThreadId: target.chatThreadId,
+      });
+    }
+  },
+);
 
-async function restoreBrowserTabSnapshot(
-  db: Db,
-  browser: BrowserSessionRow,
-  cdpUrl: string,
-  signal: AbortSignal,
-): Promise<void> {
-  const restored = await settle(
-    (async () => {
-      const [snapshot] = await db
-        .select({
-          encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
-        })
-        .from(browserSessionTabSnapshots)
-        .where(
-          eq(browserSessionTabSnapshots.chatThreadId, browser.chatThreadId),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!snapshot) {
-        return;
-      }
-      const urls = browserTabSnapshotSchema.parse(
-        JSON.parse(
-          await decryptPersistentSecretValue(snapshot.encryptedTabUrls, {
-            userId: browser.userId,
-          }),
-        ) as unknown,
-      );
-      signal.throwIfAborted();
-      await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
-    })(),
-  );
-  signal.throwIfAborted();
-  if (!restored.ok) {
-    L.warn("Managed browser tab restoration failed", {
-      chatThreadId: browser.chatThreadId,
-    });
-  }
-}
+const restoreBrowserTabSnapshot$ = command(
+  async (
+    { get },
+    browser: BrowserSessionRow,
+    cdpUrl: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = get(db$);
+    const restored = await settle(
+      (async () => {
+        const [snapshot] = await db
+          .select({
+            encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
+          })
+          .from(browserSessionTabSnapshots)
+          .where(
+            eq(browserSessionTabSnapshots.chatThreadId, browser.chatThreadId),
+          )
+          .limit(1);
+        signal.throwIfAborted();
+        if (!snapshot) {
+          return;
+        }
+        const urls = browserTabSnapshotSchema.parse(
+          JSON.parse(
+            await decryptPersistentSecretValue(snapshot.encryptedTabUrls, {
+              userId: browser.userId,
+            }),
+          ) as unknown,
+        );
+        signal.throwIfAborted();
+        await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
+      })(),
+    );
+    signal.throwIfAborted();
+    if (!restored.ok) {
+      L.warn("Managed browser tab restoration failed", {
+        chatThreadId: browser.chatThreadId,
+      });
+    }
+  },
+);
 
 function stopProviderSessionLater(providerSessionId: string): void {
   waitUntil(
@@ -721,10 +746,9 @@ const stopActiveBrowserInstance$ = command(
       | undefined,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const options = suppliedOptions ?? { stopProvider: true };
     if (options.saveTabSnapshot ?? options.stopProvider) {
-      await saveBrowserTabSnapshot(db, target, signal);
+      await set(saveBrowserTabSnapshot$, target, signal);
     }
     const stopped = await set(
       commitBrowserStop$,
@@ -744,60 +768,65 @@ const stopActiveBrowserInstance$ = command(
   },
 );
 
-async function suspendBrowserWithoutActiveInstance(
-  db: Db,
-  browser: BrowserSessionRow,
-  reason: BrowserSuspensionReason,
-  signal: AbortSignal,
-): Promise<BrowserSessionRow | null> {
-  const [suspended] = await db
-    .update(browserSessions)
-    .set({
-      status: "suspended",
-      suspendedAt: nowDate(),
-      suspensionReason: reason,
-      updatedAt: nowDate(),
-    })
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, browser.chatThreadId),
-        eq(browserSessions.status, "active"),
-      ),
-    )
-    .returning(BROWSER_SESSION_SELECTION);
-  signal.throwIfAborted();
-  if (!suspended) {
-    return null;
-  }
-  await publishBrowserSessionChangedSafely(browser.userId, {
-    threadId: browser.chatThreadId,
-  });
-  signal.throwIfAborted();
-  return suspended;
-}
+const suspendBrowserWithoutActiveInstance$ = command(
+  async (
+    { set },
+    browser: BrowserSessionRow,
+    reason: BrowserSuspensionReason,
+    signal: AbortSignal,
+  ): Promise<BrowserSessionRow | null> => {
+    const db = set(writeDb$);
+    const [suspended] = await db
+      .update(browserSessions)
+      .set({
+        status: "suspended",
+        suspendedAt: nowDate(),
+        suspensionReason: reason,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, browser.chatThreadId),
+          eq(browserSessions.status, "active"),
+        ),
+      )
+      .returning(BROWSER_SESSION_SELECTION);
+    signal.throwIfAborted();
+    if (!suspended) {
+      return null;
+    }
+    await publishBrowserSessionChangedSafely(browser.userId, {
+      threadId: browser.chatThreadId,
+    });
+    signal.throwIfAborted();
+    return suspended;
+  },
+);
 
-async function browserConcurrencyLimit(db: Db, orgId: string): Promise<number> {
-  const [capabilities, paidSlots] = await Promise.all([
-    loadOrgPlanCapabilities(db, orgId),
-    activePaidConcurrencySlots(db, orgId),
-  ]);
-  if (!capabilities) {
-    return 0;
-  }
-  return totalConcurrencyLimit({
-    baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
-    paidSlots,
-  });
-}
+const browserConcurrencyLimit$ = command(
+  async ({ set }, orgId: string): Promise<number> => {
+    const [capabilities, paidSlots] = await Promise.all([
+      set(loadOrgPlanCapabilities$, orgId),
+      set(loadActivePaidConcurrencySlots$, orgId),
+    ]);
+    if (!capabilities) {
+      return 0;
+    }
+    return totalConcurrencyLimit({
+      baseLimit: cappedBaseConcurrencyLimit(capabilities.baseConcurrencyLimit),
+      paidSlots,
+    });
+  },
+);
 
 const ensureBrowserCapacity$ = command(
   async (
-    { set },
+    { get, set },
     orgId: string,
     signal: AbortSignal,
   ): Promise<BrowserServiceError | null> => {
-    const db = set(writeDb$);
-    const limit = await browserConcurrencyLimit(db, orgId);
+    const db = get(db$);
+    const limit = await set(browserConcurrencyLimit$, orgId);
     signal.throwIfAborted();
     if (limit === 0) {
       return conflict(
@@ -914,7 +943,7 @@ const captureAndStoreBrowserScreenshot$ = command(
     const [result] = await Promise.allSettled([
       (async () => {
         const db = set(writeDb$);
-        const instance = await loadActiveInstance(db, browser.chatThreadId);
+        const instance = await set(loadActiveInstance$, browser.chatThreadId);
         signal.throwIfAborted();
         if (!instance) {
           return;
@@ -1020,297 +1049,307 @@ const scheduleBrowserScreenshotCapture$ = command(
   },
 );
 
-async function latestThreadRunId(
-  db: Pick<Db, "select">,
-  chatThreadId: string,
-): Promise<string | null> {
-  const [run] = await db
-    .select({ id: agentRuns.id })
-    .from(agentRuns)
-    .where(
-      and(
-        eq(agentRuns.chatThreadId, chatThreadId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .orderBy(desc(agentRuns.createdAt))
-    .limit(1);
-  return run?.id ?? null;
-}
+const latestThreadRunId$ = command(
+  async ({ get }, chatThreadId: string): Promise<string | null> => {
+    const db = get(db$);
+    const [run] = await db
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.chatThreadId, chatThreadId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .orderBy(desc(agentRuns.createdAt))
+      .limit(1);
+    return run?.id ?? null;
+  },
+);
 
-async function resolveRunContext(
-  db: Db,
-  actor: BrowserActor,
-): Promise<BrowserServiceResult<BrowserRunContext>> {
-  if (!actor.runId) {
-    return chatRunRequired("BROWSER_RUN_REQUIRED");
-  }
-  const [run] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      status: agentRuns.status,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.id, actor.runId),
-        eq(agentRuns.orgId, actor.orgId),
-        eq(agentRuns.userId, actor.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run?.chatThreadId) {
-    return chatRunRequired("BROWSER_CHAT_THREAD_REQUIRED");
-  }
-  if (isTerminalRunStatus(run.status)) {
-    return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
-  }
-  if (!run.cloudBrowserEnabled) {
-    return serviceError(
-      403,
-      "BROWSER_AUTHORIZATION_REQUIRED",
-      "Cloud browser is not enabled for this chat thread",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      orgId: actor.orgId,
-      userId: actor.userId,
-      runId: actor.runId,
-      chatThreadId: run.chatThreadId,
-      requireLiveRun: true,
-    },
-  };
-}
-
-async function resolveViewerStartContext(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserServiceResult<BrowserRunContext>> {
-  if (access.runId) {
-    const context = await resolveRunContext(db, access);
-    if (context.kind === "error") {
-      return context;
+const resolveRunContext$ = command(
+  async (
+    { get },
+    actor: BrowserActor,
+  ): Promise<BrowserServiceResult<BrowserRunContext>> => {
+    const db = get(db$);
+    if (!actor.runId) {
+      return chatRunRequired("BROWSER_RUN_REQUIRED");
     }
-    return context.value.chatThreadId === access.chatThreadId
-      ? context
-      : notFound();
-  }
-  const [thread] = await db
-    .select({
-      id: chatThreads.id,
-      browserRunId: browserSessions.runId,
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .leftJoin(browserSessions, eq(browserSessions.chatThreadId, chatThreads.id))
-    .where(
-      and(
-        eq(chatThreads.id, access.chatThreadId),
-        eq(chatThreads.userId, access.userId),
-        eq(agents.orgId, access.orgId),
-      ),
-    )
-    .limit(1);
-  if (!thread) {
-    return notFound();
-  }
-  const latestRunId =
-    (await latestThreadRunId(db, access.chatThreadId)) ?? thread.browserRunId;
-  if (!latestRunId) {
-    return conflict(
-      "This browser's chat thread has no run; send a message first",
-      "BROWSER_RUN_REQUIRED",
-    );
-  }
-  return {
-    kind: "ok",
-    value: {
-      orgId: access.orgId,
-      userId: access.userId,
-      runId: latestRunId,
-      chatThreadId: access.chatThreadId,
-      requireLiveRun: false,
-    },
-  };
-}
+    const [run] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        status: agentRuns.status,
+        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, actor.runId),
+          eq(agentRuns.orgId, actor.orgId),
+          eq(agentRuns.userId, actor.userId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    if (!run?.chatThreadId) {
+      return chatRunRequired("BROWSER_CHAT_THREAD_REQUIRED");
+    }
+    if (isTerminalRunStatus(run.status)) {
+      return conflict("The chat run already ended", "BROWSER_RUN_ENDED");
+    }
+    if (!run.cloudBrowserEnabled) {
+      return serviceError(
+        403,
+        "BROWSER_AUTHORIZATION_REQUIRED",
+        "Cloud browser is not enabled for this chat thread",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        orgId: actor.orgId,
+        userId: actor.userId,
+        runId: actor.runId,
+        chatThreadId: run.chatThreadId,
+        requireLiveRun: true,
+      },
+    };
+  },
+);
 
-async function browserSessionAccessError(
-  db: Db,
-  browser: Pick<BrowserSessionRow, "chatThreadId">,
-  access: BrowserOwnerAccess,
-): Promise<BrowserServiceError | null> {
-  // Session callers are authorized by ownership. Run-scoped callers must also
-  // belong to this thread and retain its agent browser authorization.
-  if (!access.runId) {
+const resolveViewerStartContext$ = command(
+  async (
+    { get, set },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserServiceResult<BrowserRunContext>> => {
+    const db = get(db$);
+    if (access.runId) {
+      const context = await set(resolveRunContext$, access);
+      if (context.kind === "error") {
+        return context;
+      }
+      return context.value.chatThreadId === access.chatThreadId
+        ? context
+        : notFound();
+    }
+    const [thread] = await db
+      .select({
+        id: chatThreads.id,
+        browserRunId: browserSessions.runId,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .leftJoin(
+        browserSessions,
+        eq(browserSessions.chatThreadId, chatThreads.id),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, access.chatThreadId),
+          eq(chatThreads.userId, access.userId),
+          eq(agents.orgId, access.orgId),
+        ),
+      )
+      .limit(1);
+    if (!thread) {
+      return notFound();
+    }
+    const latestRunId =
+      (await set(latestThreadRunId$, access.chatThreadId)) ??
+      thread.browserRunId;
+    if (!latestRunId) {
+      return conflict(
+        "This browser's chat thread has no run; send a message first",
+        "BROWSER_RUN_REQUIRED",
+      );
+    }
+    return {
+      kind: "ok",
+      value: {
+        orgId: access.orgId,
+        userId: access.userId,
+        runId: latestRunId,
+        chatThreadId: access.chatThreadId,
+        requireLiveRun: false,
+      },
+    };
+  },
+);
+
+const browserSessionAccessError$ = command(
+  async (
+    { get },
+    browser: Pick<BrowserSessionRow, "chatThreadId">,
+    access: BrowserOwnerAccess,
+  ): Promise<BrowserServiceError | null> => {
+    const db = get(db$);
+    // Session callers are authorized by ownership. Run-scoped callers must also
+    // belong to this thread and retain its agent browser authorization.
+    if (!access.runId) {
+      return null;
+    }
+    const [run] = await db
+      .select({
+        chatThreadId: agentRuns.chatThreadId,
+        cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+      })
+      .from(agentRuns)
+      .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+      .where(
+        and(
+          eq(agentRuns.id, access.runId),
+          eq(agentRuns.orgId, access.orgId),
+          eq(agentRuns.userId, access.userId),
+          isNotNull(agentRuns.triggerSource),
+        ),
+      )
+      .limit(1);
+    if (!run?.chatThreadId || run.chatThreadId !== browser.chatThreadId) {
+      return notFound();
+    }
+    if (!run.cloudBrowserEnabled) {
+      return serviceError(
+        403,
+        "BROWSER_AUTHORIZATION_REQUIRED",
+        "Cloud browser is not enabled for this chat thread",
+      );
+    }
     return null;
-  }
-  const [run] = await db
-    .select({
-      chatThreadId: agentRuns.chatThreadId,
-      cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-    })
-    .from(agentRuns)
-    .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
-    .where(
-      and(
-        eq(agentRuns.id, access.runId),
-        eq(agentRuns.orgId, access.orgId),
-        eq(agentRuns.userId, access.userId),
-        isNotNull(agentRuns.triggerSource),
-      ),
-    )
-    .limit(1);
-  if (!run?.chatThreadId || run.chatThreadId !== browser.chatThreadId) {
-    return notFound();
-  }
-  if (!run.cloudBrowserEnabled) {
-    return serviceError(
-      403,
-      "BROWSER_AUTHORIZATION_REQUIRED",
-      "Cloud browser is not enabled for this chat thread",
-    );
-  }
-  return null;
-}
+  },
+);
 
-async function loadOwnedBrowserSidebarThread(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserSidebarThread | null> {
-  const [thread] = await db
-    .select({
-      chatThreadId: chatThreads.id,
-      userId: chatThreads.userId,
-    })
-    .from(chatThreads)
-    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
-    .where(
-      and(
-        eq(chatThreads.id, access.chatThreadId),
-        eq(chatThreads.userId, access.userId),
-        eq(agents.orgId, access.orgId),
-      ),
-    )
-    .limit(1);
-  return thread ?? null;
-}
+const loadOwnedBrowserSidebarThread$ = command(
+  async (
+    { get },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserSidebarThread | null> => {
+    const db = get(db$);
+    const [thread] = await db
+      .select({
+        chatThreadId: chatThreads.id,
+        userId: chatThreads.userId,
+      })
+      .from(chatThreads)
+      .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+      .where(
+        and(
+          eq(chatThreads.id, access.chatThreadId),
+          eq(chatThreads.userId, access.userId),
+          eq(agents.orgId, access.orgId),
+        ),
+      )
+      .limit(1);
+    return thread ?? null;
+  },
+);
 
-async function loadOwnedBrowser(
-  db: Db,
-  access: BrowserSessionAccess,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select({ browser: BROWSER_SESSION_SELECTION })
-    .from(browserSessions)
-    .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, access.chatThreadId),
-        eq(browserSessions.orgId, access.orgId),
-        eq(browserSessions.userId, access.userId),
-        eq(chatThreads.userId, access.userId),
-      ),
-    )
-    .limit(1);
-  return row?.browser ?? null;
-}
+const loadOwnedBrowser$ = command(
+  async (
+    { get },
+    access: BrowserSessionAccess,
+  ): Promise<BrowserSessionRow | null> => {
+    const [row] = await get(db$)
+      .select({ browser: BROWSER_SESSION_SELECTION })
+      .from(browserSessions)
+      .innerJoin(chatThreads, eq(chatThreads.id, browserSessions.chatThreadId))
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, access.chatThreadId),
+          eq(browserSessions.orgId, access.orgId),
+          eq(browserSessions.userId, access.userId),
+          eq(chatThreads.userId, access.userId),
+        ),
+      )
+      .limit(1);
+    return row?.browser ?? null;
+  },
+);
 
-async function loadCurrentBrowser(
-  db: Db,
-  context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select(BROWSER_SESSION_SELECTION)
-    .from(browserSessions)
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, context.chatThreadId),
-        eq(browserSessions.orgId, context.orgId),
-        eq(browserSessions.userId, context.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadCurrentBrowser$ = command(
+  async (
+    { get },
+    context: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
+  ): Promise<BrowserSessionRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select(BROWSER_SESSION_SELECTION)
+      .from(browserSessions)
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, context.chatThreadId),
+          eq(browserSessions.orgId, context.orgId),
+          eq(browserSessions.userId, context.userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+);
 
-async function loadOwnedThreadBrowser(
-  db: Db,
-  chatThreadId: string,
-): Promise<BrowserSessionRow | null> {
-  const [row] = await db
-    .select(BROWSER_SESSION_SELECTION)
-    .from(browserSessions)
-    .where(
-      and(
-        eq(browserSessions.chatThreadId, chatThreadId),
-        inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+const loadActiveInstance$ = command(
+  async ({ get }, chatThreadId: string): Promise<BrowserInstanceRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.chatThreadId, chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+        ),
+      )
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    return row ?? null;
+  },
+);
 
-async function loadActiveInstance(
-  db: Db,
-  chatThreadId: string,
-): Promise<BrowserInstanceRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.chatThreadId, chatThreadId),
-        eq(browserSessionInstances.status, "active"),
-      ),
-    )
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  return row ?? null;
-}
+const loadOwnedThreadBrowserProfile$ = command(
+  async (
+    { get },
+    owner: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
+  ): Promise<BrowserThreadProfileRow | null> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserThreadProfiles)
+      .where(
+        and(
+          eq(browserThreadProfiles.chatThreadId, owner.chatThreadId),
+          eq(browserThreadProfiles.orgId, owner.orgId),
+          eq(browserThreadProfiles.userId, owner.userId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  },
+);
 
-async function loadOwnedThreadBrowserProfile(
-  db: Db,
-  owner: Pick<BrowserRunContext, "orgId" | "userId" | "chatThreadId">,
-): Promise<BrowserThreadProfileRow | null> {
-  const [row] = await db
-    .select()
-    .from(browserThreadProfiles)
-    .where(
-      and(
-        eq(browserThreadProfiles.chatThreadId, owner.chatThreadId),
-        eq(browserThreadProfiles.orgId, owner.orgId),
-        eq(browserThreadProfiles.userId, owner.userId),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
-
-async function loadBrowserProfileForBrowser(
-  db: Db,
-  browser: BrowserSessionRow,
-): Promise<BrowserThreadProfileRow> {
-  const [row] = await db
-    .select()
-    .from(browserThreadProfiles)
-    .where(
-      and(
-        eq(browserThreadProfiles.chatThreadId, browser.chatThreadId),
-        eq(browserThreadProfiles.orgId, browser.orgId),
-        eq(browserThreadProfiles.userId, browser.userId),
-      ),
-    )
-    .limit(1);
-  if (!row) {
-    throw new Error("Managed browser thread profile ownership is invalid");
-  }
-  return row;
-}
+const loadBrowserProfileForBrowser$ = command(
+  async (
+    { get },
+    browser: BrowserSessionRow,
+  ): Promise<BrowserThreadProfileRow> => {
+    const db = get(db$);
+    const [row] = await db
+      .select()
+      .from(browserThreadProfiles)
+      .where(
+        and(
+          eq(browserThreadProfiles.chatThreadId, browser.chatThreadId),
+          eq(browserThreadProfiles.orgId, browser.orgId),
+          eq(browserThreadProfiles.userId, browser.userId),
+        ),
+      )
+      .limit(1);
+    if (!row) {
+      throw new Error("Managed browser thread profile ownership is invalid");
+    }
+    return row;
+  },
+);
 
 async function deleteUnusedProfile(profileId: string): Promise<void> {
   await settle(
@@ -1326,32 +1365,35 @@ interface BrowserProfileCleanupTarget {
   readonly providerProfileId: string;
 }
 
-async function latestBrowserProviderSessionId(
-  db: Db,
-  target: BrowserProfileCleanupTarget,
-): Promise<string | null> {
-  const [instance] = await db
-    .select({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessionInstances)
-    .innerJoin(
-      browserThreadProfiles,
-      eq(
-        browserThreadProfiles.chatThreadId,
-        browserSessionInstances.chatThreadId,
-      ),
-    )
-    .where(
-      and(
-        eq(browserSessionInstances.chatThreadId, target.chatThreadId),
-        eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
-      ),
-    )
-    .orderBy(desc(browserSessionInstances.createdAt))
-    .limit(1);
-  return instance?.providerSessionId ?? null;
-}
+const latestBrowserProviderSessionId$ = command(
+  async (
+    { get },
+    target: BrowserProfileCleanupTarget,
+  ): Promise<string | null> => {
+    const db = get(db$);
+    const [instance] = await db
+      .select({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessionInstances)
+      .innerJoin(
+        browserThreadProfiles,
+        eq(
+          browserThreadProfiles.chatThreadId,
+          browserSessionInstances.chatThreadId,
+        ),
+      )
+      .where(
+        and(
+          eq(browserSessionInstances.chatThreadId, target.chatThreadId),
+          eq(browserThreadProfiles.providerProfileId, target.providerProfileId),
+        ),
+      )
+      .orderBy(desc(browserSessionInstances.createdAt))
+      .limit(1);
+    return instance?.providerSessionId ?? null;
+  },
+);
 
 const retireBrowserProfileOwnership$ = command(
   async (
@@ -1449,10 +1491,9 @@ const cleanupBrowserProfile$ = command(
     providerSessionIds: readonly string[] | undefined,
     signal: AbortSignal,
   ): Promise<void> => {
-    const db = set(writeDb$);
     const retryProviderSessionId =
       providerSessionIds === undefined
-        ? await latestBrowserProviderSessionId(db, target)
+        ? await set(latestBrowserProviderSessionId$, target)
         : null;
     signal.throwIfAborted();
     const cleanupProviderSessionIds =
@@ -1497,70 +1538,75 @@ const cleanupBrowserProfileLater$ = command(
   },
 );
 
-async function claimBrowserProfile(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly providerProfileId: string;
+const claimBrowserProfile$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly providerProfileId: string;
+    },
+  ): Promise<{
+    readonly profile: BrowserThreadProfileRow | null;
+    readonly created: boolean;
+  }> => {
+    const db = set(writeDb$);
+    const [created] = await db
+      .insert(browserThreadProfiles)
+      .values(args)
+      .onConflictDoNothing({
+        target: browserThreadProfiles.chatThreadId,
+      })
+      .returning();
+    if (created) {
+      return { profile: created, created: true };
+    }
+    const existing = await set(loadOwnedThreadBrowserProfile$, args);
+    return { profile: existing, created: false };
   },
-): Promise<{
-  readonly profile: BrowserThreadProfileRow | null;
-  readonly created: boolean;
-}> {
-  const [created] = await db
-    .insert(browserThreadProfiles)
-    .values(args)
-    .onConflictDoNothing({
-      target: browserThreadProfiles.chatThreadId,
-    })
-    .returning();
-  if (created) {
-    return { profile: created, created: true };
-  }
-  const existing = await loadOwnedThreadBrowserProfile(db, args);
-  return { profile: existing, created: false };
-}
+);
 
-async function getOrCreateBrowserProfile(
-  db: Db,
-  context: BrowserRunContext,
-): Promise<BrowserServiceResult<BrowserThreadProfileRow>> {
-  const existing = await loadOwnedThreadBrowserProfile(db, context);
-  if (existing) {
-    return { kind: "ok", value: existing };
-  }
+const getOrCreateBrowserProfile$ = command(
+  async (
+    { set },
+    context: BrowserRunContext,
+  ): Promise<BrowserServiceResult<BrowserThreadProfileRow>> => {
+    const existing = await set(loadOwnedThreadBrowserProfile$, context);
+    if (existing) {
+      return { kind: "ok", value: existing };
+    }
 
-  const provider = await providerCall(
-    createBrowserUseProfile(
-      context.chatThreadId,
-      AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
-    ),
-  );
-  if (provider.kind === "error") {
-    return provider;
-  }
+    const provider = await providerCall(
+      createBrowserUseProfile(
+        context.chatThreadId,
+        AbortSignal.timeout(PROVIDER_CLEANUP_TIMEOUT_MS),
+      ),
+    );
+    if (provider.kind === "error") {
+      return provider;
+    }
 
-  const claimed = await settle(
-    claimBrowserProfile(db, {
-      orgId: context.orgId,
-      userId: context.userId,
-      chatThreadId: context.chatThreadId,
-      providerProfileId: provider.value,
-    }),
-  );
-  if (!claimed.ok || !claimed.value.created) {
-    await deleteUnusedProfile(provider.value);
-  }
-  if (!claimed.ok) {
-    throw claimed.error;
-  }
-  // Cleanup can retire the winning claim before the losing request reads it.
-  return claimed.value.profile
-    ? { kind: "ok", value: claimed.value.profile }
-    : browserReclaiming();
-}
+    const claimed = await settle(
+      set(claimBrowserProfile$, {
+        orgId: context.orgId,
+        userId: context.userId,
+        chatThreadId: context.chatThreadId,
+        providerProfileId: provider.value,
+      }),
+    );
+    if (!claimed.ok || !claimed.value.created) {
+      await deleteUnusedProfile(provider.value);
+    }
+    if (!claimed.ok) {
+      throw claimed.error;
+    }
+    // Cleanup can retire the winning claim before the losing request reads it.
+    return claimed.value.profile
+      ? { kind: "ok", value: claimed.value.profile }
+      : browserReclaiming();
+  },
+);
 
 class BrowserPublicationLostError extends Error {}
 
@@ -1788,7 +1834,6 @@ const startProviderInstance$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserStartResult> => {
-    const db = set(writeDb$);
     const capacityError = await set(
       ensureBrowserCapacity$,
       args.context.orgId,
@@ -1798,10 +1843,10 @@ const startProviderInstance$ = command(
     if (capacityError) {
       return capacityError;
     }
-    const profile = await loadBrowserProfileForBrowser(db, args.browser);
+    const profile = await set(loadBrowserProfileForBrowser$, args.browser);
     signal.throwIfAborted();
-    const screenHeight = await loadBrowserScreenHeightForThread(
-      db,
+    const screenHeight = await set(
+      loadBrowserScreenHeightForThread$,
       args.context.chatThreadId,
       signal,
     );
@@ -1828,8 +1873,8 @@ const startProviderInstance$ = command(
       };
     }
 
-    await restoreBrowserTabSnapshot(
-      db,
+    await set(
+      restoreBrowserTabSnapshot$,
       claimed.browser,
       started.cdpUrl,
       signal,
@@ -1936,7 +1981,7 @@ const createBrowserForContext$ = command(
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
     const db = set(writeDb$);
-    const profile = await getOrCreateBrowserProfile(db, args.context);
+    const profile = await set(getOrCreateBrowserProfile$, args.context);
     signal.throwIfAborted();
     if (profile.kind === "error") {
       return profile;
@@ -1994,8 +2039,7 @@ export const createBrowser$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, args.actor);
+    const context = await set(resolveRunContext$, args.actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2029,11 +2073,11 @@ const inspectActiveConnection$ = command(
   > => {
     const { browser } = args;
     const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
-      const suspended = await suspendBrowserWithoutActiveInstance(
-        db,
+      const suspended = await set(
+        suspendBrowserWithoutActiveInstance$,
         browser,
         "provider",
         signal,
@@ -2068,13 +2112,13 @@ const inspectActiveConnection$ = command(
         )
         .returning(BROWSER_SESSION_SELECTION);
       signal.throwIfAborted();
-      const leased = await touchInstanceLease(
-        db,
+      const leased = await set(
+        touchInstanceLease$,
         instance.providerSessionId,
         signal,
       );
-      const screen = await loadBrowserScreen(
-        db,
+      const screen = await set(
+        loadBrowserScreen$,
         instance.providerSessionId,
         signal,
       );
@@ -2240,16 +2284,27 @@ type ReuseLiveBrowser =
 // and the logical browser has to be restarted instead.
 const reuseLiveThreadBrowser$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly context: BrowserRunContext;
       readonly current: BrowserSessionRow;
     },
     signal: AbortSignal,
   ): Promise<ReuseLiveBrowser> => {
-    const db = set(writeDb$);
-    const owned = await loadOwnedThreadBrowser(db, args.context.chatThreadId);
+    const db = get(db$);
+    const chatThreadId = args.context.chatThreadId;
+    const [row] = await db
+      .select(BROWSER_SESSION_SELECTION)
+      .from(browserSessions)
+      .where(
+        and(
+          eq(browserSessions.chatThreadId, chatThreadId),
+          inArray(browserSessions.status, [...OWNED_BROWSER_STATUSES]),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
+    const owned = row ?? null;
     if (!owned) {
       return { kind: "resume", browser: args.current };
     }
@@ -2359,10 +2414,9 @@ const openBrowserForContext$ = command(
     },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
     const { context } = args;
 
-    const current = await loadCurrentBrowser(db, context);
+    const current = await set(loadCurrentBrowser$, context);
     signal.throwIfAborted();
     if (!current) {
       return await set(
@@ -2403,8 +2457,7 @@ export const useBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserConnection>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2425,8 +2478,7 @@ export const openBrowserForThread$ = command(
     args: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserMutation>> => {
-    const db = set(writeDb$);
-    const context = await resolveViewerStartContext(db, args);
+    const context = await set(resolveViewerStartContext$, args);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
@@ -2459,13 +2511,12 @@ export const closeBrowserForThread$ = command(
     args: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<Record<string, never>>> => {
-    const db = set(writeDb$);
-    const thread = await loadOwnedBrowserSidebarThread(db, args);
+    const thread = await set(loadOwnedBrowserSidebarThread$, args);
     signal.throwIfAborted();
     if (!thread) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, thread, args);
+    const accessError = await set(browserSessionAccessError$, thread, args);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2481,11 +2532,10 @@ const leaseInstanceForBrowser$ = command(
     browser: BrowserSessionRow,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     const leased = instance
-      ? await touchInstanceLease(db, instance.providerSessionId, signal)
+      ? await set(touchInstanceLease$, instance.providerSessionId, signal)
       : null;
     if (!leased) {
       return conflict(
@@ -2494,7 +2544,7 @@ const leaseInstanceForBrowser$ = command(
       );
     }
     const [screen, screenshotUrl] = await Promise.all([
-      loadBrowserScreen(db, leased.providerSessionId, signal),
+      set(loadBrowserScreen$, leased.providerSessionId, signal),
       set(loadBrowserScreenshotUrl$, browser.chatThreadId, signal),
     ]);
     signal.throwIfAborted();
@@ -2516,13 +2566,12 @@ export const leaseCurrentBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -2537,13 +2586,12 @@ export const leaseBrowserByThread$ = command(
     access: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, browser, access);
+    const accessError = await set(browserSessionAccessError$, browser, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2558,13 +2606,12 @@ export const resizeBrowserByThread$ = command(
     access: BrowserSessionAccess & { readonly aspectRatio: number },
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const browser = await loadOwnedBrowser(db, access);
+    const browser = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, browser, access);
+    const accessError = await set(browserSessionAccessError$, browser, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2575,7 +2622,7 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_NOT_LIVE",
       );
     }
-    const instance = await loadActiveInstance(db, browser.chatThreadId);
+    const instance = await set(loadActiveInstance$, browser.chatThreadId);
     signal.throwIfAborted();
     if (!instance) {
       return conflict(
@@ -2583,8 +2630,8 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_NOT_LIVE",
       );
     }
-    const screen = await loadBrowserScreen(
-      db,
+    const screen = await set(
+      loadBrowserScreen$,
       instance.providerSessionId,
       signal,
     );
@@ -2594,8 +2641,8 @@ export const resizeBrowserByThread$ = command(
         "BROWSER_RESIZE_UNSUPPORTED",
       );
     }
-    const touched = await touchInstanceLease(
-      db,
+    const touched = await set(
+      touchInstanceLease$,
       instance.providerSessionId,
       signal,
     );
@@ -2631,8 +2678,8 @@ export const resizeBrowserByThread$ = command(
     if (resized.kind === "error") {
       return resized;
     }
-    const persisted = await persistBrowserScreen(
-      db,
+    const persisted = await set(
+      persistBrowserScreen$,
       instance.providerSessionId,
       screenHeight,
       signal,
@@ -2667,13 +2714,12 @@ export const getBrowser$ = command(
     access: BrowserSessionAccess,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const row = await loadOwnedBrowser(db, access);
+    const row = await set(loadOwnedBrowser$, access);
     signal.throwIfAborted();
     if (!row) {
       return notFound();
     }
-    const accessError = await browserSessionAccessError(db, row, access);
+    const accessError = await set(browserSessionAccessError$, row, access);
     signal.throwIfAborted();
     if (accessError) {
       return accessError;
@@ -2687,12 +2733,12 @@ export const getBrowser$ = command(
     let idleExpiresAt: Date | null = null;
     let screen: BrowserScreen | null = null;
     if (row.status === "active") {
-      const instance = await loadActiveInstance(db, row.chatThreadId);
+      const instance = await set(loadActiveInstance$, row.chatThreadId);
       signal.throwIfAborted();
       if (instance) {
         idleExpiresAt = instance.idleExpiresAt;
-        screen = await loadBrowserScreen(
-          db,
+        screen = await set(
+          loadBrowserScreen$,
           instance.providerSessionId,
           signal,
         );
@@ -2725,13 +2771,12 @@ export const getCurrentBrowser$ = command(
     actor: BrowserActor,
     signal: AbortSignal,
   ): Promise<BrowserServiceResult<BrowserSession>> => {
-    const db = set(writeDb$);
-    const context = await resolveRunContext(db, actor);
+    const context = await set(resolveRunContext$, actor);
     signal.throwIfAborted();
     if (context.kind === "error") {
       return context;
     }
-    const browser = await loadCurrentBrowser(db, context.value);
+    const browser = await set(loadCurrentBrowser$, context.value);
     signal.throwIfAborted();
     if (!browser) {
       return notFound();
@@ -3144,28 +3189,31 @@ const claimExpiredInactiveBrowser$ = command(
   },
 );
 
-async function releaseExpiredInactiveBrowserClaim(
-  db: Db,
-  target: ExpiredInactiveBrowserTarget,
-  claimedAt: Date,
-): Promise<void> {
-  await db
-    .update(browserSessions)
-    .set({
-      status: target.status,
-      suspendedAt: target.suspendedAt,
-      suspensionReason: target.suspensionReason,
-      updatedAt: target.updatedAt,
-    })
-    .where(
-      and(
-        eq(browserSessions.id, target.browserId),
-        eq(browserSessions.chatThreadId, target.chatThreadId),
-        eq(browserSessions.status, "stopping"),
-        eq(browserSessions.updatedAt, claimedAt),
-      ),
-    );
-}
+const releaseExpiredInactiveBrowserClaim$ = command(
+  async (
+    { set },
+    target: ExpiredInactiveBrowserTarget,
+    claimedAt: Date,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(browserSessions)
+      .set({
+        status: target.status,
+        suspendedAt: target.suspendedAt,
+        suspensionReason: target.suspensionReason,
+        updatedAt: target.updatedAt,
+      })
+      .where(
+        and(
+          eq(browserSessions.id, target.browserId),
+          eq(browserSessions.chatThreadId, target.chatThreadId),
+          eq(browserSessions.status, "stopping"),
+          eq(browserSessions.updatedAt, claimedAt),
+        ),
+      );
+  },
+);
 
 const retireExpiredInactiveBrowser$ = command(
   async (
@@ -3301,7 +3349,6 @@ const cleanupExpiredInactiveBrowser$ = command(
     cutoff: Date,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const db = set(writeDb$);
     const claimedAt = await set(
       claimExpiredInactiveBrowser$,
       target,
@@ -3336,12 +3383,12 @@ const cleanupExpiredInactiveBrowser$ = command(
     );
     if (signal.aborted) {
       if (!cleanup.ok) {
-        await releaseExpiredInactiveBrowserClaim(db, target, claimedAt);
+        await set(releaseExpiredInactiveBrowserClaim$, target, claimedAt);
       }
       signal.throwIfAborted();
     }
     if (!cleanup.ok) {
-      await releaseExpiredInactiveBrowserClaim(db, target, claimedAt);
+      await set(releaseExpiredInactiveBrowserClaim$, target, claimedAt);
       signal.throwIfAborted();
       throw cleanup.error;
     }
@@ -3452,87 +3499,95 @@ const reconcileExpiredInactiveBrowsers$ = command(
   },
 );
 
-async function purgeExpiredStoppedBrowserInstances(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-): Promise<{ readonly checked: number; readonly cleaned: number }> {
-  const cutoff = new Date(nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS);
-  const rows = await db
-    .select({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    })
-    .from(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.status, "stopped"),
-        lte(browserSessionInstances.finishedAt, cutoff),
-        notExists(
-          db
-            .select({
-              requestTokenHash: browserUserActionRequests.requestTokenHash,
-            })
-            .from(browserUserActionRequests)
-            .where(
-              eq(
-                browserUserActionRequests.providerSessionId,
-                browserSessionInstances.providerSessionId,
+const purgeExpiredStoppedBrowserInstances$ = command(
+  async (
+    { set },
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<{ readonly checked: number; readonly cleaned: number }> => {
+    const db = set(writeDb$);
+    const cutoff = new Date(
+      nowDate().getTime() - INACTIVE_BROWSER_RETENTION_MS,
+    );
+    const rows = await db
+      .select({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      })
+      .from(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.status, "stopped"),
+          lte(browserSessionInstances.finishedAt, cutoff),
+          notExists(
+            db
+              .select({
+                requestTokenHash: browserUserActionRequests.requestTokenHash,
+              })
+              .from(browserUserActionRequests)
+              .where(
+                eq(
+                  browserUserActionRequests.providerSessionId,
+                  browserSessionInstances.providerSessionId,
+                ),
               ),
-            ),
+          ),
         ),
-      ),
-    )
-    .orderBy(browserSessionInstances.finishedAt)
-    .limit(limit);
-  signal.throwIfAborted();
-  if (rows.length === 0) {
-    return { checked: 0, cleaned: 0 };
-  }
-  const deleted = await db
-    .delete(browserSessionInstances)
-    .where(
-      and(
-        eq(browserSessionInstances.status, "stopped"),
-        lte(browserSessionInstances.finishedAt, cutoff),
-        notExists(
-          db
-            .select({
-              requestTokenHash: browserUserActionRequests.requestTokenHash,
-            })
-            .from(browserUserActionRequests)
-            .where(
-              eq(
-                browserUserActionRequests.providerSessionId,
-                browserSessionInstances.providerSessionId,
+      )
+      .orderBy(browserSessionInstances.finishedAt)
+      .limit(limit);
+    signal.throwIfAborted();
+    if (rows.length === 0) {
+      return { checked: 0, cleaned: 0 };
+    }
+    const deleted = await db
+      .delete(browserSessionInstances)
+      .where(
+        and(
+          eq(browserSessionInstances.status, "stopped"),
+          lte(browserSessionInstances.finishedAt, cutoff),
+          notExists(
+            db
+              .select({
+                requestTokenHash: browserUserActionRequests.requestTokenHash,
+              })
+              .from(browserUserActionRequests)
+              .where(
+                eq(
+                  browserUserActionRequests.providerSessionId,
+                  browserSessionInstances.providerSessionId,
+                ),
               ),
-            ),
+          ),
+          inArray(
+            browserSessionInstances.providerSessionId,
+            rows.map((row) => {
+              return row.providerSessionId;
+            }),
+          ),
         ),
-        inArray(
-          browserSessionInstances.providerSessionId,
-          rows.map((row) => {
-            return row.providerSessionId;
-          }),
-        ),
-      ),
-    )
-    .returning({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    });
-  signal.throwIfAborted();
-  return { checked: rows.length, cleaned: deleted.length };
-}
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      });
+    signal.throwIfAborted();
+    return { checked: rows.length, cleaned: deleted.length };
+  },
+);
 
-async function deferBrowserInstanceReconcile(
-  db: Db,
-  providerSessionId: string,
-  signal: AbortSignal,
-): Promise<void> {
-  await db
-    .update(browserSessionInstances)
-    .set({ updatedAt: nowDate() })
-    .where(eq(browserSessionInstances.providerSessionId, providerSessionId));
-  signal.throwIfAborted();
-}
+const deferBrowserInstanceReconcile$ = command(
+  async (
+    { set },
+    providerSessionId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(browserSessionInstances)
+      .set({ updatedAt: nowDate() })
+      .where(eq(browserSessionInstances.providerSessionId, providerSessionId));
+    signal.throwIfAborted();
+  },
+);
 
 interface BrowserReconcileCandidate {
   readonly browser: BrowserSessionRow;
@@ -3594,57 +3649,63 @@ const reconcileOrphanedBrowserProfiles$ = command(
   },
 );
 
-async function reconcileOrphanedBrowserScreenshots(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-): Promise<{
-  readonly checked: number;
-  readonly cleaned: number;
-  readonly errors: number;
-}> {
-  const screenshots = await db
-    .select({
-      chatThreadId: browserSessionScreenshots.chatThreadId,
-      objectKey: browserSessionScreenshots.objectKey,
-    })
-    .from(browserSessionScreenshots)
-    .leftJoin(
-      chatThreads,
-      eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
-    )
-    .where(isNull(chatThreads.id))
-    .orderBy(browserSessionScreenshots.updatedAt)
-    .limit(limit);
-  signal.throwIfAborted();
-
-  let cleaned = 0;
-  let errors = 0;
-  for (const screenshot of screenshots) {
-    const result = await settleIncludingAbort(
-      db
-        .delete(browserSessionScreenshots)
-        .where(
-          and(
-            eq(browserSessionScreenshots.chatThreadId, screenshot.chatThreadId),
-            eq(browserSessionScreenshots.objectKey, screenshot.objectKey),
-          ),
-        ),
-    );
+const reconcileOrphanedBrowserScreenshots$ = command(
+  async (
+    { set },
+    limit: number,
+    signal: AbortSignal,
+  ): Promise<{
+    readonly checked: number;
+    readonly cleaned: number;
+    readonly errors: number;
+  }> => {
+    const db = set(writeDb$);
+    const screenshots = await db
+      .select({
+        chatThreadId: browserSessionScreenshots.chatThreadId,
+        objectKey: browserSessionScreenshots.objectKey,
+      })
+      .from(browserSessionScreenshots)
+      .leftJoin(
+        chatThreads,
+        eq(chatThreads.id, browserSessionScreenshots.chatThreadId),
+      )
+      .where(isNull(chatThreads.id))
+      .orderBy(browserSessionScreenshots.updatedAt)
+      .limit(limit);
     signal.throwIfAborted();
-    if (result.ok) {
-      cleaned += 1;
-    } else {
-      errors += 1;
-      L.warn("Managed browser orphaned screenshot reconciliation failed", {
-        chatThreadId: screenshot.chatThreadId,
-        objectKey: screenshot.objectKey,
-        error: result.error,
-      });
+
+    let cleaned = 0;
+    let errors = 0;
+    for (const screenshot of screenshots) {
+      const result = await settleIncludingAbort(
+        db
+          .delete(browserSessionScreenshots)
+          .where(
+            and(
+              eq(
+                browserSessionScreenshots.chatThreadId,
+                screenshot.chatThreadId,
+              ),
+              eq(browserSessionScreenshots.objectKey, screenshot.objectKey),
+            ),
+          ),
+      );
+      signal.throwIfAborted();
+      if (result.ok) {
+        cleaned += 1;
+      } else {
+        errors += 1;
+        L.warn("Managed browser orphaned screenshot reconciliation failed", {
+          chatThreadId: screenshot.chatThreadId,
+          objectKey: screenshot.objectKey,
+          error: result.error,
+        });
+      }
     }
-  }
-  return { checked: screenshots.length, cleaned, errors };
-}
+    return { checked: screenshots.length, cleaned, errors };
+  },
+);
 
 const reconcileBrowserInstance$ = command(
   async (
@@ -3652,7 +3713,6 @@ const reconcileBrowserInstance$ = command(
     row: BrowserReconcileCandidate,
     signal: AbortSignal,
   ): Promise<BrowserReconcileOutcome> => {
-    const db = set(writeDb$);
     let reason: BrowserSuspensionReason | null = null;
     let stopProvider = true;
     if (row.chatThreadId === null) {
@@ -3669,8 +3729,8 @@ const reconcileBrowserInstance$ = command(
       );
       signal.throwIfAborted();
       if (provider.kind === "error") {
-        await deferBrowserInstanceReconcile(
-          db,
+        await set(
+          deferBrowserInstanceReconcile$,
           row.instance.providerSessionId,
           signal,
         );
@@ -3682,8 +3742,8 @@ const reconcileBrowserInstance$ = command(
       }
     }
     if (!reason) {
-      await deferBrowserInstanceReconcile(
-        db,
+      await set(
+        deferBrowserInstanceReconcile$,
         row.instance.providerSessionId,
         signal,
       );
@@ -3771,8 +3831,8 @@ export const reconcileBrowsers$ = command(
       RECONCILE_BATCH_SIZE,
       signal,
     );
-    const expiredInstanceCleanup = await purgeExpiredStoppedBrowserInstances(
-      db,
+    const expiredInstanceCleanup = await set(
+      purgeExpiredStoppedBrowserInstances$,
       RECONCILE_BATCH_SIZE,
       signal,
     );
@@ -3781,8 +3841,8 @@ export const reconcileBrowsers$ = command(
       RECONCILE_BATCH_SIZE,
       signal,
     );
-    const orphanedScreenshotCleanup = await reconcileOrphanedBrowserScreenshots(
-      db,
+    const orphanedScreenshotCleanup = await set(
+      reconcileOrphanedBrowserScreenshots$,
       RECONCILE_BATCH_SIZE,
       signal,
     );

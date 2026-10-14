@@ -1,7 +1,4 @@
-import { cronRefreshHomeTaskRecommendationsContract } from "@okouai/api-contracts/contracts/cron";
-
 import { ROUTES } from "../signals/route";
-import { cronRefreshHomeTaskRecommendationsRoutes } from "../signals/routes/cron-refresh-home-task-recommendations";
 import { assertUniqueRouteRegistrations } from "../signals/route-entry";
 import { mcpServerRoutes } from "../signals/routes/mcp-server";
 
@@ -20,14 +17,5 @@ describe("API route registrations", () => {
     expect(() => {
       assertUniqueRouteRegistrations(ROUTES);
     }).not.toThrow();
-  });
-
-  it("registers the home-task refresh cron", () => {
-    const [entry, ...extra] = cronRefreshHomeTaskRecommendationsRoutes;
-    expect(extra).toHaveLength(0);
-    expect(entry?.route).toBe(
-      cronRefreshHomeTaskRecommendationsContract.refresh,
-    );
-    expect(ROUTES).toContain(entry);
   });
 });

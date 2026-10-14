@@ -1,5 +1,7 @@
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+import { publicRunOwner } from "./helpers/public-run-owner";
+import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
+import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import {
   mockGoogleText,
   VERTEX_TEXT_URL,
@@ -8,11 +10,12 @@ import {
 
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { teamsConnectContract } from "@okouai/api-contracts/contracts/teams-connect";
+import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { mockEnv, mockOptionalEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -43,6 +46,7 @@ import {
   type TeamsConnectFixture,
 } from "./helpers/teams-connect";
 import { chatThreadRoutes } from "../chat-threads";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 
 const context = testContext();
 const api = createRunsApi(context);
@@ -78,6 +82,11 @@ interface TeamsPostedActivity {
   readonly textFormat?: unknown;
   readonly replyToId?: unknown;
   readonly channelData?: unknown;
+}
+
+interface TeamsPostedRequest {
+  readonly url: string;
+  readonly body: TeamsPostedActivity;
 }
 
 interface TeamsReactionRequest {
@@ -126,10 +135,12 @@ function teamsApiMocks(args: {
 }): {
   readonly tokenRequests: URLSearchParams[];
   readonly postedActivities: TeamsPostedActivity[];
+  readonly postedRequests: TeamsPostedRequest[];
   readonly reactionRequests: TeamsReactionRequest[];
 } {
   const tokenRequests: URLSearchParams[] = [];
   const postedActivities: TeamsPostedActivity[] = [];
+  const postedRequests: TeamsPostedRequest[] = [];
   const reactionRequests: TeamsReactionRequest[] = [];
   const serviceBaseUrl = teamsServiceBaseUrl(args.fixture.serviceUrl);
 
@@ -161,9 +172,9 @@ function teamsApiMocks(args: {
     http.post(
       `${serviceBaseUrl}/v3/conversations/:conversationId/activities`,
       async ({ request }) => {
-        postedActivities.push(
-          teamsPostedActivityFromUnknown(await request.json()),
-        );
+        const body = teamsPostedActivityFromUnknown(await request.json());
+        postedActivities.push(body);
+        postedRequests.push({ url: request.url, body });
         if (args.activityStatus) {
           return new HttpResponse(args.activityError ?? "Teams API failed", {
             status: args.activityStatus,
@@ -180,9 +191,9 @@ function teamsApiMocks(args: {
     http.post(
       `${serviceBaseUrl}/v3/conversations/:conversationId/activities/:activityId`,
       async ({ request }) => {
-        postedActivities.push(
-          teamsPostedActivityFromUnknown(await request.json()),
-        );
+        const body = teamsPostedActivityFromUnknown(await request.json());
+        postedActivities.push(body);
+        postedRequests.push({ url: request.url, body });
         if (args.activityStatus) {
           return new HttpResponse(args.activityError ?? "Teams API failed", {
             status: args.activityStatus,
@@ -290,12 +301,13 @@ function teamsApiMocks(args: {
     }),
   );
 
-  return { tokenRequests, postedActivities, reactionRequests };
+  return { tokenRequests, postedActivities, postedRequests, reactionRequests };
 }
 
 function clearTeamsApiCalls(api: ReturnType<typeof teamsApiMocks>): void {
   api.tokenRequests.splice(0, api.tokenRequests.length);
   api.postedActivities.splice(0, api.postedActivities.length);
+  api.postedRequests.splice(0, api.postedRequests.length);
   api.reactionRequests.splice(0, api.reactionRequests.length);
 }
 
@@ -562,13 +574,7 @@ async function completeSandboxRun(args: {
   const sandboxHeaders = { authorization: `Bearer ${args.sandboxToken}` };
   if (args.exitCode === 0) {
     const cliAgentSessionId = `bdd-teams-cli-${args.runId}`;
-    const cliAgentSessionHistory = `bdd teams history ${args.runId}`;
-    const cliAgentSessionHistoryHash = await prepareRunnerSessionHistory(
-      context,
-      args.runId,
-      sandboxHeaders,
-      cliAgentSessionHistory,
-    );
+
     await webhooksApi.requestAgentComplete(
       {
         runId: args.runId,
@@ -576,7 +582,7 @@ async function completeSandboxRun(args: {
         completion: {
           cliAgentType: "claude-code",
           cliAgentSessionId,
-          cliAgentSessionHistoryHash,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       },
       sandboxHeaders,
@@ -615,6 +621,29 @@ async function claimFollowUpInThread(args: {
   return await runsApi.claimRunnerJob(followUpRunId);
 }
 
+async function setupOwnedTeamsSteering() {
+  const fixtures = createPublicTeamsDispatchFixture(context);
+  const teams = await fixtures.run(() => {
+    return fixtures.create({ withDefaultAgent: true, paidNative: true });
+  });
+  teamsApiMocks({ fixture: teams.installation });
+  const runnerGroup = optionalEnv("RUNNER_DEFAULT_GROUP");
+  if (!runnerGroup) {
+    throw new Error("Expected the Teams fixture's configured runner group");
+  }
+  const restoreEnvironment = captureConnectorExternalState(context, [
+    "MICROSOFT_TEAMS_BOT_APP_ID",
+    "MICROSOFT_TEAMS_APP_TENANT_ID",
+    "MICROSOFT_TEAMS_BOT_APP_PASSWORD",
+    "MICROSOFT_TEAMS_BOT_TOKEN_URL",
+    "GIT_COMMIT_SHA",
+    "CLI_PKG_URL",
+    "GCP_LLM_PROJECT_ID",
+  ]);
+  const owner = publicRunOwner(context, teams.actor, { restoreEnvironment });
+  return { fixtures, teams, owner, runnerGroup };
+}
+
 beforeEach(() => {
   setupTeamsConnectTestEnv(APP_URL);
   mockEnv("MICROSOFT_TEAMS_BOT_APP_PASSWORD", BOT_APP_PASSWORD);
@@ -631,6 +660,138 @@ afterEach(async () => {
 });
 
 describe("Teams chat callbacks", () => {
+  it("steers queued Teams personal input into the claimed Run", async () => {
+    const { teams, owner, runnerGroup } = await setupOwnedTeamsSteering();
+    await owner.run(async () => {
+      const fixture = teams.installation;
+      const firstActivityId = teamsFixtureExternalId(fixture, "steering-first");
+      const queuedActivityId = teamsFixtureExternalId(
+        fixture,
+        "steering-queued",
+      );
+      const firstRunId = await dispatchTeamsPersonalRun({
+        fixture,
+        activityId: firstActivityId,
+        text: "hold the Teams Run for steering",
+      });
+      await runsApi.heartbeatRunner(runnerGroup);
+      const claim = await owner.claim(firstRunId);
+      await expect(
+        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+      ).resolves.toStrictEqual({ input: null });
+
+      const queuedPrompt = `steer Teams input ${fixture.teamsTenantId}`;
+      await postTeamsPersonalMessage({
+        fixture,
+        activityId: queuedActivityId,
+        text: queuedPrompt,
+      });
+      const queuedInput = await findPendingInputEventByText(context, {
+        actor: teams.actor,
+        text: queuedPrompt,
+      });
+      if (!queuedInput) {
+        throw new Error("Expected the queued Teams steering event");
+      }
+      const next = await runsApi.nextSteerableInput(
+        claim.sandboxToken,
+        firstRunId,
+      );
+      if (!next.input) {
+        throw new Error("Expected materialized Teams steering input");
+      }
+      expect(next.input.eventId).toBe(queuedInput.id);
+      for (const text of [
+        queuedPrompt,
+        `Tenant ID: ${fixture.teamsTenantId}`,
+        `Conversation ID: a:personal-${fixture.teamsUserId}`,
+        "Conversation type: personal",
+        `Activity ID: ${queuedActivityId}`,
+        `Thread ID: ${queuedActivityId}`,
+      ]) {
+        expect(next.input.prompt).toContain(text);
+      }
+      expect(next.input.prompt).not.toContain(
+        `Activity ID: ${firstActivityId}`,
+      );
+      expect(next.input.prompt).not.toContain("Team ID:");
+      expect(next.input.prompt).not.toContain("Channel ID:");
+      await expect(
+        runsApi.declareSteeredInput(
+          claim.sandboxToken,
+          firstRunId,
+          queuedInput.id,
+        ),
+      ).resolves.toStrictEqual({ outcome: "steered" });
+      await expect(
+        runsApi.nextSteerableInput(claim.sandboxToken, firstRunId),
+      ).resolves.toStrictEqual({ input: null });
+      await completeSandboxRun({
+        runId: firstRunId,
+        sandboxToken: claim.sandboxToken,
+        exitCode: 0,
+      });
+      const completed = await runsApi.readRun(teams.actor, firstRunId);
+      expect(completed.status).toBe("completed");
+    });
+  });
+
+  it.each(["accepted dispatch", "claimed Run"] as const)(
+    "terminalizes owned Teams %s after a test-body failure",
+    async (phase) => {
+      const { fixtures, teams, owner, runnerGroup } =
+        await setupOwnedTeamsSteering();
+      const fixture = teams.installation;
+      const prompt = `Teams cleanup ${phase} ${fixture.teamsTenantId}`;
+      const failure = new Error(`Controlled failure after ${phase}`);
+      await expect(
+        owner.run(async () => {
+          await postTeamsPersonalMessage({
+            fixture,
+            activityId: teamsFixtureExternalId(fixture, "cleanup-failure"),
+            text: prompt,
+          });
+          if (phase === "claimed Run") {
+            const runId = await runIdForPrompt(teams.actor, prompt);
+            await runsApi.heartbeatRunner(runnerGroup);
+            await owner.claim(runId);
+          }
+          throw failure;
+        }),
+      ).rejects.toBe(failure);
+
+      const before = await runReadsApi.requestListLogs(
+        teams.actor,
+        { limit: 20 },
+        [200],
+      );
+      expect(before.body.data).toHaveLength(1);
+      const [acceptedRun] = before.body.data;
+      if (!acceptedRun) {
+        throw new Error("Expected an accepted Teams Run before cleanup");
+      }
+      expect(acceptedRun.prompt).toBe(prompt);
+      expect(acceptedRun.status).toBe(
+        phase === "claimed Run" ? "running" : "pending",
+      );
+      await owner.cleanup();
+      const after = await runReadsApi.requestListLogs(
+        teams.actor,
+        { limit: 20 },
+        [200],
+      );
+      expect(after.body.data).toHaveLength(1);
+      expect(after.body.data).toStrictEqual([
+        expect.objectContaining({ id: acceptedRun.id, status: "cancelled" }),
+      ]);
+      await expect(fixtures.status(teams)).resolves.toMatchObject({
+        isInstalled: true,
+        isConnected: true,
+        tenantId: fixture.teamsTenantId,
+      });
+    },
+  );
+
   it.each(["stored context", "claimed launch material"] as const)(
     "preserves queued Teams %s",
     async (phase) => {
@@ -765,12 +926,27 @@ describe("Teams chat callbacks", () => {
       teams.subscription,
     ).update("canceled");
     clearTeamsApiCalls(teamsApi);
-    await completeSandboxRun({
-      runId: firstRunId,
-      sandboxToken: firstClaim.sandboxToken,
-      exitCode: 0,
+    const headers = { authorization: `Bearer ${firstClaim.sandboxToken}` };
+    const completionRequest = {
+      headers,
+      body: {
+        runId: firstRunId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "claude-code" as const,
+          cliAgentSessionId: `bdd-teams-cli-${firstRunId}`,
+          cliAgentSessionHistoryDisposition: "native_only" as const,
+        },
+      },
+    };
+    const client = setupApp({ context, routes: webhooksAgentCompleteRoutes })(
+      webhookCompleteContract,
+    );
+    const completed = await accept(client.complete(completionRequest), [200]);
+    expect(completed.body).toStrictEqual({
+      success: true,
+      status: "completed",
     });
-
     await flushWaitUntilForTest();
     expect(
       teamsApi.postedActivities.filter((activity) => {
@@ -785,6 +961,21 @@ describe("Teams chat callbacks", () => {
         text: expect.stringContaining("Add credits"),
       }),
     ]);
+    const admissionRequests = teamsApi.postedRequests.filter((request) => {
+      return (
+        typeof request.body.text === "string" &&
+        request.body.text.includes("Add credits")
+      );
+    });
+    expect(admissionRequests).toStrictEqual([
+      {
+        url: `${teamsServiceBaseUrl(teams.fixture.serviceUrl)}/v3/conversations/${encodeURIComponent(`a:personal-${teams.fixture.teamsUserId}`)}/activities/${encodeURIComponent(queuedActivityId)}`,
+        body: expect.objectContaining({
+          replyToId: queuedActivityId,
+          text: expect.stringContaining("Add credits"),
+        }),
+      },
+    ]);
     const listed = await runReadsApi.requestListLogs(
       teams.actor,
       { limit: 20 },
@@ -792,6 +983,28 @@ describe("Teams chat callbacks", () => {
     );
     expect(
       listed.body.data.filter((run) => {
+        return run.prompt === queuedPrompt;
+      }),
+    ).toHaveLength(0);
+
+    const replayed = await accept(client.complete(completionRequest), [200]);
+    expect(replayed.body).toStrictEqual(completed.body);
+    await flushWaitUntilForTest();
+    expect(
+      teamsApi.postedRequests.filter((request) => {
+        return (
+          typeof request.body.text === "string" &&
+          request.body.text.includes("Add credits")
+        );
+      }),
+    ).toStrictEqual(admissionRequests);
+    const afterReplay = await runReadsApi.requestListLogs(
+      teams.actor,
+      { limit: 20 },
+      [200],
+    );
+    expect(
+      afterReplay.body.data.filter((run) => {
         return run.prompt === queuedPrompt;
       }),
     ).toHaveLength(0);
@@ -911,7 +1124,7 @@ describe("Teams chat callbacks", () => {
           runnerGroup: teams.runnerGroup,
           runId: threadFollowUpRunId,
         });
-        expect(threadFollowUpClaim.resumeSession?.sessionId).toBe(
+        expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
           threadSessionId,
         );
         clearTeamsApiCalls(teamsApi);
@@ -935,7 +1148,9 @@ describe("Teams chat callbacks", () => {
         runnerGroup: teams.runnerGroup,
         runId: returnToMainRunId,
       });
-      expect(returnToMainClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      expect(returnToMainClaim.nativeContinuation?.sessionId).toBe(
+        mainSessionId,
+      );
     },
   );
 
@@ -1244,7 +1459,9 @@ describe("Teams chat callbacks", () => {
           "activity-completed-follow-up",
         ),
       });
-      expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+      expect(followUpClaim.nativeContinuation?.sessionId).toBe(
+        cliAgentSessionId,
+      );
     });
   });
 
@@ -1407,6 +1624,6 @@ describe("Teams chat callbacks", () => {
         "activity-teams-api-error-follow-up",
       ),
     });
-    expect(followUpClaim.resumeSession?.sessionId).toBe(cliAgentSessionId);
+    expect(followUpClaim.nativeContinuation?.sessionId).toBe(cliAgentSessionId);
   });
 });

@@ -48,6 +48,31 @@ async fn negotiate(server: &mut DuplexStream, offered: &[u8]) {
     server.write_all(offered).await.unwrap();
 }
 
+#[allow(clippy::unwrap_used, reason = "synthetic test peer")]
+async fn assert_invalid_dh_public_value(server_public: [u8; KEY_BYTES]) {
+    let (client, mut server) = duplex(2048);
+    let peer = async move {
+        negotiate(&mut server, &[30]).await;
+        assert_eq!(server.read_u8().await.unwrap(), 30);
+        server.write_u16(5).await.unwrap();
+        server.write_u16(KEY_BYTES as u16).await.unwrap();
+        server.write_all(&synthetic_modulus()).await.unwrap();
+        server.write_all(&server_public).await.unwrap();
+        let mut byte = [0; 1];
+        assert_eq!(
+            server.read(&mut byte).await.unwrap(),
+            0,
+            "invalid peer public value must not receive credential bytes"
+        );
+    };
+    let caller = authenticate_apple_dh(client, credentials(), deadline());
+    let ((), result) =
+        tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
+            .await
+            .unwrap();
+    assert!(matches!(result, Err(Error::InvalidAppleDhParameters)));
+}
+
 #[tokio::test]
 async fn type_30_authenticates_and_preserves_owned_raw_stream() {
     let (client, mut server) = duplex(4096);
@@ -209,20 +234,20 @@ async fn oversized_dh_is_rejected_before_peer_material_is_read() {
 
 #[tokio::test]
 async fn invalid_dh_public_value_is_rejected_without_credential_bytes() {
-    let (client, mut server) = duplex(2048);
-    let peer = tokio::spawn(async move {
-        negotiate(&mut server, &[30]).await;
-        assert_eq!(server.read_u8().await.unwrap(), 30);
-        server.write_u16(5).await.unwrap();
-        server.write_u16(KEY_BYTES as u16).await.unwrap();
-        server.write_all(&synthetic_modulus()).await.unwrap();
-        server.write_all(&[0; KEY_BYTES]).await.unwrap();
-        let mut byte = [0; 1];
-        assert_eq!(server.read(&mut byte).await.unwrap(), 0);
-    });
-    let result = authenticate_apple_dh(client, credentials(), deadline()).await;
-    assert!(matches!(result, Err(Error::InvalidAppleDhParameters)));
-    peer.await.unwrap();
+    assert_invalid_dh_public_value([0; KEY_BYTES]).await;
+}
+
+#[tokio::test]
+async fn dh_public_upper_bound_p_minus_one_is_rejected_without_credential_bytes() {
+    let mut server_public = synthetic_modulus();
+    // The synthetic modulus ends in 0xff, so subtracting one needs no borrow.
+    server_public[KEY_BYTES - 1] -= 1;
+    assert_invalid_dh_public_value(server_public).await;
+}
+
+#[tokio::test]
+async fn dh_public_upper_bound_p_is_rejected_without_credential_bytes() {
+    assert_invalid_dh_public_value(synthetic_modulus()).await;
 }
 
 #[tokio::test]

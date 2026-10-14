@@ -81,7 +81,6 @@ import type { AgentRunFullLaunchSnapshot } from "@okouai/db/jsonb-contracts/agen
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { billingRunAttribution } from "@okouai/db/schema/billing-run-attribution";
 import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
@@ -431,7 +430,6 @@ function maintenanceRunRecord(args: {
     : DEFAULT_IMAGE_MODEL;
   return {
     runId: args.runId,
-    sessionId: randomUUID(),
     orgId: args.job.orgId,
     userId: args.job.userId,
     apiStartTime: args.apiStartTime,
@@ -441,7 +439,7 @@ function maintenanceRunRecord(args: {
       RESTRICTED_EXPLICIT_CONTENT_PROMPT,
     ].join("\n\n"),
     launchSnapshot: {
-      schemaVersion: 3,
+      schemaVersion: 5,
       framework: "pi",
       runnerProfile: MAINTENANCE_RUNNER_PROFILE,
     },
@@ -557,7 +555,6 @@ const failMaintenanceLaunch$ = command(
         accountIdentity: null,
         error,
       };
-      await tx.insert(agentSessions).values(maintenanceSessionValues(record));
       await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
       await tx
         .insert(agentRunCallbacks)
@@ -642,7 +639,6 @@ const persistMaintenanceRun$ = command(
       requirePiMemoryPhase2FeatureEnabled(context);
       const createdAt = nowDate();
       const rowInput = maintenancePendingRunInput(args, createdAt);
-      await tx.insert(agentSessions).values(rowInput.session);
       await tx.insert(agentRuns).values(maintenanceRunValues(rowInput));
       await tx.insert(agentRunCallbacks).values(rowInput.callback);
       const capture = maintenanceBillingAttribution(record, rowInput.createdAt);
@@ -1113,6 +1109,11 @@ function buildMaintenanceExecutionContext(
     }),
     vars: null,
     resumeSession: null,
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
     encryptedSecrets: args.encryptedSecrets,
     secretConnectorMap: executionSecrets.secretConnectorMap,
     secretConnectorMetadataMap: executionSecrets.secretConnectorMetadataMap,
@@ -1144,7 +1145,6 @@ function buildMaintenanceExecutionContext(
 /** The maintenance run's identity, prompt and recorded launch facts. */
 interface MaintenanceRunRecord {
   readonly runId: string;
-  readonly sessionId: string;
   readonly orgId: string;
   readonly userId: string;
   readonly apiStartTime: number;
@@ -1197,6 +1197,7 @@ function maintenanceRunValues(args: {
     userId: record.userId,
     orgId: record.orgId,
     status: args.status,
+    agentId: null,
     creditAdmitted: args.creditAdmitted,
     prompt: record.prompt,
     appendSystemPrompt: record.appendSystemPrompt,
@@ -1204,8 +1205,6 @@ function maintenanceRunValues(args: {
     // The model's dynamic secrets use an explicitly empty run namespace.
     secretNames: [],
     storageMounts: args.runStorageMounts ? [...args.runStorageMounts] : null,
-    continuedFromSessionId: null,
-    sessionId: record.sessionId,
     runnerGroup: args.runnerGroup,
     launchSnapshot: record.launchSnapshot,
     officialWorkflowProvenance: null,
@@ -1213,16 +1212,6 @@ function maintenanceRunValues(args: {
     error: args.error,
     modelProviderAccountIdentity: args.accountIdentity,
     ...maintenanceRunMetadata(record),
-  };
-}
-
-function maintenanceSessionValues(record: MaintenanceRunRecord) {
-  return {
-    id: record.sessionId,
-    userId: record.userId,
-    orgId: record.orgId,
-    agentId: null,
-    conversationId: null,
   };
 }
 
@@ -1310,7 +1299,6 @@ function maintenancePendingRunInput(
 ) {
   return {
     record: args.record,
-    session: maintenanceSessionValues(args.record),
     callback: maintenanceCallbackValues(args.record),
     createdAt,
     status: "pending" as const,

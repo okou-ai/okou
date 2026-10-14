@@ -128,7 +128,7 @@ run_case() {
     HEAD_SHA="$build_sha" LOOKUP_SHA="$lookup_sha" JOB_REF=pr-123 METAL_HOSTS=fixture TARGET=aarch64-unknown-linux-musl \
     PROFILE=vm0/default OUTPUT_DIR="$case_dir/output" GITHUB_OUTPUT="$case_dir/outputs" \
     CONSUMER_CANCEL_WAIT_SECONDS=5 TIMEOUT_SECONDS="$wait_seconds" POLL_SECONDS=0 \
-    bash "$root/.github/scripts/wait-runner-image.sh" >"$case_dir/stdout" 2>"$case_dir/stderr"
+    bash "$root/.github/scripts/runner/wait-runner-image.sh" >"$case_dir/stdout" 2>"$case_dir/stderr"
 }
 
 for case in missing-ref changed-ref rate-limited changed-pr closed-pr queued-pr cancel-conflict near-deadline crates-missing-ref crates-changed-pr initial-run-rate-limited final-ref-rate-limited; do

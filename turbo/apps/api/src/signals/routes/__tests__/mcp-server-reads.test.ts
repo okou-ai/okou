@@ -122,8 +122,9 @@ describe("thin MCP Web adapters", () => {
           "cancel_run",
           "get_chat_activity_summary",
           "get_chat_indicators",
+          "get_chat_input_status",
           "get_chat_messages",
-          "get_chat_thread",
+          "get_chat_thread_list",
           "list_agents",
           "list_models",
           "rename_chat_thread",
@@ -317,7 +318,7 @@ describe("thin MCP Web adapters", () => {
         /nextContentCursor|olderCursor|around|waitMs|inputRef|effectiveModel/,
       );
       const listed = await sdk.callTool({
-        name: "get_chat_thread",
+        name: "get_chat_thread_list",
         arguments: {},
       });
       expect(listed.isError).not.toBeTruthy();
@@ -359,7 +360,7 @@ describe("thin MCP Web adapters", () => {
         }),
       );
       const lifecycle = await sdk.callTool({
-        name: "get_chat_thread",
+        name: "get_chat_thread_list",
         arguments: {},
       });
       expect(lifecycle.isError).not.toBeTruthy();
@@ -674,7 +675,7 @@ describe("thin MCP Web adapters", () => {
     const sent = await send(f, "lifecycle aggregate");
     await flushWaitUntilForTest();
     const page = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     const snapshot = await mcp.web(f.token(), "/api/chat-threads/snapshot");
     const events = await mcp.web(f.token(), "/api/chat-threads/events");
@@ -699,7 +700,7 @@ describe("thin MCP Web adapters", () => {
     }
     const next = mcpGetChatThreadOutputSchema.parse(
       body(
-        await mcp.call(f.token(), "get_chat_thread", {
+        await mcp.call(f.token(), "get_chat_thread_list", {
           sinceSeqId: last.seqId,
         }),
       ),
@@ -747,7 +748,7 @@ describe("thin MCP Web adapters", () => {
       ]),
     });
     const lifecycle = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     expect(lifecycle.events).toContainEqual(
       expect.objectContaining({ eventId, kind: "model_selection_updated" }),
@@ -917,7 +918,7 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("NOT_FOUND");
     const list = mcpGetChatThreadOutputSchema.parse(
-      body(await mcp.call(f.token(), "get_chat_thread")),
+      body(await mcp.call(f.token(), "get_chat_thread_list")),
     );
     expect(
       list.events.some((event) => {

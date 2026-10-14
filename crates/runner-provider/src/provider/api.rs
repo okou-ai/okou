@@ -71,6 +71,7 @@ struct ClaimRequestBody<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     runner_hostname: Option<&'a str>,
     capabilities: RunnerClaimCapabilities,
+    native_continuation_supported: bool,
     telemetry: ClaimRequestTelemetry,
     /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
     /// strip the field; a runner without an installed CLI omits it.
@@ -246,7 +247,9 @@ const CLAIM_DETERMINISTIC_COOLDOWN: Duration = POLL_SLOW;
 const POLL_DEGRADED_AFTER: Duration = Duration::from_secs(60);
 /// Runner reuse requires a heartbeat observed within this freshness window.
 const HEARTBEAT_DEGRADED_AFTER: Duration = Duration::from_secs(30);
-const BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT: Duration = Duration::from_secs(10);
+// The full catalog is multi-megabyte. This budget covers connection setup,
+// response headers and the entire body, rather than restarting for each chunk.
+const BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct DegradationEpisode {
     started_at: Instant,
@@ -1035,33 +1038,16 @@ impl JobProvider for ApiProvider {
                     let will_retry = retryable && attempt < MAX_ATTEMPTS;
 
                     if will_retry {
-                        if matches!(
-                            &e,
-                            ProviderError::ApiTransport(error)
-                                if error.failure_kind == ApiFailureKind::Timeout
-                        ) {
-                            info!(
-                                run_id = %run_id,
-                                error = %e,
-                                attempt,
-                                max_attempts = MAX_ATTEMPTS,
-                                will_retry,
-                                status,
-                                failure_kind,
-                                "completion report failed, retrying"
-                            );
-                        } else {
-                            warn!(
-                                run_id = %run_id,
-                                error = %e,
-                                attempt,
-                                max_attempts = MAX_ATTEMPTS,
-                                will_retry,
-                                status,
-                                failure_kind,
-                                "completion report failed, retrying"
-                            );
-                        }
+                        info!(
+                            run_id = %run_id,
+                            error = %e,
+                            attempt,
+                            max_attempts = MAX_ATTEMPTS,
+                            will_retry,
+                            status,
+                            failure_kind,
+                            "completion report failed, retrying"
+                        );
                         tokio::time::sleep(RETRY_DELAY).await;
                         continue;
                     }
@@ -1843,6 +1829,7 @@ fn claim_request_body<'a>(
                 PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION,
             ],
         },
+        native_continuation_supported: true,
         telemetry: ClaimRequestTelemetry {
             discovery_source: candidate.discovery_source().map(JobDiscoverySource::as_str),
             job_discovered_to_claim_request_ms: claim_telemetry_duration_ms(
@@ -6266,7 +6253,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    // A previous API ignores the capability header and still
+                    // A previous API strips the optional root capability and still
                     // validates the unchanged strict claim body.
                     .is_true(|request| {
                         let Ok(mut body) =
@@ -6278,7 +6265,11 @@ mod tests {
                             return false;
                         };
                         let elapsed = telemetry.remove("jobDiscoveredToClaimRequestMs");
+                        let native = body
+                            .as_object_mut()
+                            .and_then(|body| body.remove("nativeContinuationSupported"));
                         elapsed.as_ref().is_some_and(serde_json::Value::is_u64)
+                            && native == Some(serde_json::Value::Bool(true))
                             && body
                                 == serde_json::json!({
                                     "runnerIdentity": {
@@ -6962,6 +6953,27 @@ mod tests {
 
                 completion.await;
                 server.assert_finished().await;
+
+                let events = captured.entries();
+                assert_eq!(
+                    events
+                        .iter()
+                        .filter(|event| {
+                            event.level == Level::INFO
+                                && event.fields.get("message").is_some_and(|message| {
+                                    message == "completion report failed, retrying"
+                                })
+                        })
+                        .count(),
+                    success_attempt - 1,
+                    "{events:#?}"
+                );
+                assert!(
+                    events
+                        .iter()
+                        .all(|event| event.level != Level::WARN && event.level != Level::ERROR),
+                    "successful completion retries should not emit warnings or errors: {events:#?}"
+                );
             }
         }
     }
@@ -7017,6 +7029,27 @@ mod tests {
 
             completion.await;
             server.assert_finished().await;
+
+            let events = captured.entries();
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| {
+                        event.level == Level::INFO
+                            && event.fields.get("message").is_some_and(|message| {
+                                message == "completion report failed, retrying"
+                            })
+                    })
+                    .count(),
+                2,
+                "reset_connection={reset_connection}; events={events:#?}"
+            );
+            assert!(
+                events
+                    .iter()
+                    .all(|event| event.level != Level::WARN && event.level != Level::ERROR),
+                "successful completion retries should not emit warnings or errors: {events:#?}"
+            );
         }
     }
 
@@ -7222,13 +7255,24 @@ mod tests {
             3,
             "three failed requests should produce three provider events: {events:#?}"
         );
-        let retry_event = captured_event(&events, "completion report failed, retrying");
-        assert_eq!(retry_event.level, Level::WARN);
-        assert_eq!(event_field(retry_event, "attempt"), "1");
-        assert_eq!(event_field(retry_event, "max_attempts"), "3");
-        assert_eq!(event_field(retry_event, "will_retry"), "true");
-        assert_eq!(event_field(retry_event, "status"), "500");
-        assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
+        let retry_events: Vec<_> = events
+            .iter()
+            .filter(|event| {
+                event
+                    .fields
+                    .get("message")
+                    .is_some_and(|message| message == "completion report failed, retrying")
+            })
+            .collect();
+        assert_eq!(retry_events.len(), 2);
+        for (index, retry_event) in retry_events.iter().enumerate() {
+            assert_eq!(retry_event.level, Level::INFO);
+            assert_eq!(event_field(retry_event, "attempt"), (index + 1).to_string());
+            assert_eq!(event_field(retry_event, "max_attempts"), "3");
+            assert_eq!(event_field(retry_event, "will_retry"), "true");
+            assert_eq!(event_field(retry_event, "status"), "500");
+            assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
+        }
 
         let final_event = captured_event(&events, "failed to report completion after retry");
         assert_eq!(final_event.level, Level::ERROR);

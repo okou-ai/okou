@@ -1,5 +1,208 @@
 # Changelog
 
+## [0.231.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.11...runner-rs-v0.231.12) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.10...runner-rs-v0.231.11) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.9...runner-rs-v0.231.10) (2026-10-14)
+
+
+### Performance Improvements
+
+* **runner:** bound permitted upload body buffering ([#40023](https://github.com/okou-ai/okou/issues/40023)) ([16bded4](https://github.com/okou-ai/okou/commit/16bded4879ba82f2e4e66730b6f31bcdde370395))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.8...runner-rs-v0.231.9) (2026-10-14)
+
+
+### Performance Improvements
+
+* **python:** avoid caching x request urls ([#40015](https://github.com/okou-ai/okou/issues/40015)) ([c203f7b](https://github.com/okou-ai/okou/commit/c203f7bbf289fb6ce0c1eb69848464b30790f4ee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.7...runner-rs-v0.231.8) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.6...runner-rs-v0.231.7) (2026-10-14)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39966](https://github.com/okou-ai/okou/issues/39966)) ([1d331fc](https://github.com/okou-ai/okou/commit/1d331fcf527832ed096e9016bdb21588542dd642))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.5...runner-rs-v0.231.6) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.4...runner-rs-v0.231.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** avoid retaining aws query request urls ([#39938](https://github.com/okou-ai/okou/issues/39938)) ([5d6acb3](https://github.com/okou-ai/okou/commit/5d6acb3b4e73c442b7d9ef048b6e836c483fdabb))
+* **runner:** preserve cleanup on response inspection cancellation ([#39941](https://github.com/okou-ai/okou/issues/39941)) ([bd2b16f](https://github.com/okou-ai/okou/commit/bd2b16f1a9b72ffecec8d069425c9bb56beb4244))
+
+
+### Performance Improvements
+
+* **python:** bound nested-finally metadata linter replay ([#39942](https://github.com/okou-ai/okou/issues/39942)) ([7662d21](https://github.com/okou-ai/okou/commit/7662d2190c2d312b1d278c7a161e32787c0b6fb1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.3...runner-rs-v0.231.4) (2026-10-14)
+
+
+### Bug Fixes
+
+* isolate vnc invalidation from ssh sessions ([#39843](https://github.com/okou-ai/okou/issues/39843)) ([0ec2680](https://github.com/okou-ai/okou/commit/0ec26807a5073e76d3b3fbbcb48c9452422d25cb))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.2...runner-rs-v0.231.3) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.1...runner-rs-v0.231.2) (2026-10-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.0...runner-rs-v0.231.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39831](https://github.com/okou-ai/okou/issues/39831)) ([5640704](https://github.com/okou-ai/okou/commit/56407049fb5e47ab339bf478e0d7e78a7887b73f))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.5...runner-rs-v0.231.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** guard pressure-aware blank preparation ([#39714](https://github.com/okou-ai/okou/issues/39714)) ([222a737](https://github.com/okou-ai/okou/commit/222a7379600a80b09cdd55de123be6ebc81745e4))
+
+
+### Bug Fixes
+
+* **runner:** protect native home cache restore from gc ([#39810](https://github.com/okou-ai/okou/issues/39810)) ([fcb41bc](https://github.com/okou-ai/okou/commit/fcb41bc6a645dc512e1a2669b23f0da89da0290d))
+
+
+### Refactoring
+
+* **runner:** reuse bounded websocket zlib input traversal ([#39797](https://github.com/okou-ai/okou/issues/39797)) ([87494f4](https://github.com/okou-ai/okou/commit/87494f4bcd90432594f7c99391dda6255412abc9))
+
+## [0.230.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.4...runner-rs-v0.230.5) (2026-10-13)
+
+
+### Bug Fixes
+
+* refresh runner app and api release markers ([#39784](https://github.com/okou-ai/okou/issues/39784)) ([5ac9e98](https://github.com/okou-ai/okou/commit/5ac9e98778dcd2b0e4b3b262ad363b1cfa0c2891))
+
+
+### Refactoring
+
+* **runner:** remove redundant mitmproxy compatibility guards ([#39773](https://github.com/okou-ai/okou/issues/39773)) ([dfb6dec](https://github.com/okou-ai/okou/commit/dfb6decddbf85dd549a8081d781e001fdd1869da))
+* **test:** split containment scenarios and restore guest build ([#39758](https://github.com/okou-ai/okou/issues/39758)) ([5c7c5a5](https://github.com/okou-ai/okou/commit/5c7c5a5cd191dd3b4c6ee6e23e08008baa8b4ec4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.3...runner-rs-v0.230.4) (2026-10-13)
+
+
+### Bug Fixes
+
+* **runner:** honor non-expiring tailscale node keys ([#39732](https://github.com/okou-ai/okou/issues/39732)) ([8756c0e](https://github.com/okou-ai/okou/commit/8756c0e6268d26fde426866366d38a64a5762b02))
+
+
+### Refactoring
+
+* **test:** split runner exec scenario boundaries ([#39749](https://github.com/okou-ai/okou/issues/39749)) ([2b09d27](https://github.com/okou-ai/okou/commit/2b09d2745592acb711a6fd0c87b16ac9ddf454ae))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.2...runner-rs-v0.230.3) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.1...runner-rs-v0.230.2) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** bound websocket usage parse-error diagnostics ([#39711](https://github.com/okou-ai/okou/issues/39711)) ([1156d5d](https://github.com/okou-ai/okou/commit/1156d5ddf0b20ceedaf57ad9b1081fb4b9206300))
+* **runner:** keep home cache checkout responsive under disk pressure ([#39686](https://github.com/okou-ai/okou/issues/39686)) ([fd23875](https://github.com/okou-ai/okou/commit/fd23875657a8480aa01b7bd6af22da60d5d7a26d))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.230.0...runner-rs-v0.230.1) (2026-10-13)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.230.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.229.1...runner-rs-v0.230.0) (2026-10-13)
+
+
+### Features
+
+* **runner:** own pressure-gated snapshot prefetch ([#39624](https://github.com/okou-ai/okou/issues/39624)) ([d4eb35a](https://github.com/okou-ai/okou/commit/d4eb35a53cf3859cc2702cded172449c1fbc3f2c))
+
+
+### Bug Fixes
+
+* **runner:** isolate cached template transfers and report ci timeouts ([#39494](https://github.com/okou-ai/okou/issues/39494)) ([2bef8ac](https://github.com/okou-ai/okou/commit/2bef8ac573e047ab16351df6a1655d7401174f40))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.229.1](https://github.com/okou-ai/okou/compare/runner-rs-v0.229.0...runner-rs-v0.229.1) (2026-10-13)
 
 

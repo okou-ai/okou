@@ -1,5 +1,6 @@
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import type { RunnerCancellationMode } from "@okouai/api-contracts/contracts/runners";
+import type { SandboxStartupPath } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
   uuid,
   varchar,
@@ -14,6 +15,7 @@ import {
 import type { CodexServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
 import type { RunFailureReasonToken } from "@okouai/api-contracts/contracts/run-failure-reasons";
 import { chatThreads } from "../schema/chat-thread";
+import { agents } from "../schema/agent";
 import { workflowAutomations } from "../schema/workflow";
 import type {
   AgentRunLaunchSnapshot,
@@ -25,19 +27,27 @@ import type {
 } from "@okouai/db/jsonb-contracts/agent-run-session-conversation";
 
 /** Shared physical and runtime column builders. */
-export function agentRunColumns(sessionId: () => AnyPgColumn) {
+export function agentRunColumns() {
   return {
     id: uuid("id").defaultRandom().primaryKey(),
     userId: text("user_id").notNull(), // Clerk user ID - owner of this run
-    continuedFromSessionId: uuid("continued_from_session_id"),
-    sessionId: uuid("session_id")
-      .notNull()
-      .references(
-        (): AnyPgColumn => {
-          return sessionId();
-        },
-        { onDelete: "cascade" },
-      ),
+    // Genuine Agent identity captured at Run admission.
+    agentId: uuid("agent_id").references(
+      (): AnyPgColumn => {
+        return agents.id;
+      },
+      {
+        onDelete: "set null",
+      },
+    ),
+    // Actual native identity reported by the Framework, not the model provider.
+    framework: varchar("framework", { length: 64 }),
+    frameworkSessionId: varchar("framework_session_id", { length: 255 }),
+    // Temporary mirror of Conversation's existing blob retain for retirement
+    // cleanup. This neither retains a second reference nor authorizes resume.
+    legacyConversationHistoryHash: varchar("legacy_conversation_history_hash", {
+      length: 64,
+    }),
     status: varchar("status", { length: 20 }).notNull(),
     // Explicit stop intent. NULL preserves ordinary completion and older writers.
     runnerCancellationMode: text(
@@ -65,6 +75,11 @@ export function agentRunColumns(sessionId: () => AnyPgColumn) {
     // Final home reuse outcome; retain the existing physical storage name.
     // Null means the runner did not reach a reliable decision.
     homeReuseResult: varchar("workspace_reuse_result", { length: 50 }),
+    // Actual settled resource reported through the dedicated Run startup API.
+    // Old producers and runs without an accepted report remain unknown.
+    sandboxStartupPath: varchar("sandbox_startup_path", {
+      length: 20,
+    }).$type<SandboxStartupPath>(),
     // Null identifies a historical claim without cancellation recovery.
     // Current claims initialize false; false/true records whether recovery
     // completion has been reported. The barrier is active only while the

@@ -1,8 +1,6 @@
 import { gzipSync } from "node:zlib";
 
 import { GetObjectCommand } from "@aws-sdk/client-s3";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import {
   MAX_PRESENTATION_TEMPLATE_PACKAGE_BYTES,
@@ -192,20 +190,10 @@ describe("presentation template publish", () => {
     ).toBeTruthy();
   });
 
-  it("imports and previews private template files after creation is disabled", async () => {
+  it("imports and previews private template files", async () => {
     const actor = bdd.user();
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    const flagActor = { ...actor, orgId: actor.orgId };
-    await updateFeatureSwitchesForUser(context, flagActor, {
-      [FeatureSwitchKey.PrivateArtifacts]: true,
-    });
     const fixture = installS3Fixture(context);
     const inputs = await uploadInputs(actor, fixture, tarGz(guidance()));
-    await updateFeatureSwitchesForUser(context, flagActor, {
-      [FeatureSwitchKey.PrivateArtifacts]: false,
-    });
     const published = await accept(
       templateClient().publish({
         headers: webHeaders(),

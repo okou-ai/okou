@@ -11,7 +11,7 @@ import sys
 import tempfile
 
 source = Path(sys.argv[1])
-script = source / '.github/scripts/detect-native-only.sh'
+script = source / '.github/scripts/checks/detect-native-only.sh'
 
 def run(args, *, cwd, env=None, check=True):
     return subprocess.run(args, cwd=cwd, env=env, text=True, capture_output=True, check=check)
@@ -76,6 +76,12 @@ with tempfile.TemporaryDirectory() as temp:
     write('ios/App.swift', 'also changed')
     commit('mixed native')
     expect(False, True)
+
+    branch('sandbox-channel-corpus')
+    write('crates/guest-contracts/tests/fixtures/sandbox-channel.json', '{}')
+    commit('shared sandbox channel corpus')
+    expect(False, True)
+    expect(False, True, event='merge_group')
 
     branch('rename-out')
     git('mv', 'ios/App.swift', 'turbo/App.swift')

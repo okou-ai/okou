@@ -3,9 +3,8 @@ import { artifacts } from "@okouai/db/schema/artifact";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
-import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-config";
-import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { connectors } from "@okouai/db/schema/connector";
 import { builtinConnectorExternalCodeSessions } from "@okouai/db/schema/connector-external-code-session";
@@ -27,8 +26,6 @@ import { secrets } from "@okouai/db/schema/secret";
 import { sharedThreads } from "@okouai/db/schema/shared-thread";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { sshConnections } from "@okouai/db/runtime/ssh-connection";
-import { sshCredentials } from "@okouai/db/schema/ssh-credential";
 import { storages } from "@okouai/db/schema/storage";
 import { users } from "@okouai/db/schema/user";
 import { userCache } from "@okouai/db/schema/user-cache";
@@ -41,7 +38,6 @@ import {
   asc,
   count,
   eq,
-  gte,
   inArray,
   isNotNull,
   like,
@@ -93,6 +89,7 @@ import {
 import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 import { eraseVncOwnerData$ } from "./vnc-owner-lifecycle.service";
+import { eraseSshOwnerData$ } from "./ssh-owner-lifecycle.service";
 import { eraseMailNotifications$ } from "./mail-notification.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -748,76 +745,6 @@ const deleteClerkExportReferences$ = command(
   },
 );
 
-// Dependent DELETE CTEs preserve Host -> credential -> configuration ordering
-// and RESTRICT atomicity in one statement. User cleanup is Personal-only;
-// shared configurations and surviving members remain outside its predicates.
-const deleteClerkSshResources$ = command(
-  async ({ set }, scope: ClerkStorageCleanupScope, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    const removedHosts = db.$with("removed_clerk_ssh_hosts").as(
-      db
-        .delete(sshConnections)
-        .where(
-          scope.kind === "organization"
-            ? eq(sshConnections.orgId, scope.orgId)
-            : eq(sshConnections.userId, scope.userId),
-        )
-        .returning({ id: sshConnections.id }),
-    );
-    const removedCredentials = db.$with("removed_clerk_ssh_credentials").as(
-      db
-        .delete(sshCredentials)
-        .where(
-          and(
-            scope.kind === "organization"
-              ? eq(sshCredentials.orgId, scope.orgId)
-              : eq(sshCredentials.userId, scope.userId),
-            gte(db.select({ count: count() }).from(removedHosts), 0),
-          ),
-        )
-        .returning({ id: sshCredentials.id }),
-    );
-    const removedAccess = db.$with("removed_clerk_access_configs").as(
-      db
-        .delete(cloudflareAccessConfigs)
-        .where(
-          and(
-            scope.kind === "organization"
-              ? eq(cloudflareAccessConfigs.orgId, scope.orgId)
-              : and(
-                  eq(cloudflareAccessConfigs.userId, scope.userId),
-                  eq(cloudflareAccessConfigs.scope, "personal"),
-                ),
-            gte(db.select({ count: count() }).from(removedCredentials), 0),
-          ),
-        )
-        .returning({ id: cloudflareAccessConfigs.id }),
-    );
-    const removedTailscale = db.$with("removed_clerk_tailscale_configs").as(
-      db
-        .delete(tailscaleConfigs)
-        .where(
-          and(
-            scope.kind === "organization"
-              ? eq(tailscaleConfigs.orgId, scope.orgId)
-              : and(
-                  eq(tailscaleConfigs.userId, scope.userId),
-                  eq(tailscaleConfigs.scope, "personal"),
-                ),
-            gte(db.select({ count: count() }).from(removedAccess), 0),
-          ),
-        )
-        .returning({ id: tailscaleConfigs.id }),
-    );
-    await db
-      .with(removedHosts, removedCredentials, removedAccess, removedTailscale)
-      .select({ count: count() })
-      .from(removedTailscale);
-    signal.throwIfAborted();
-    return { outcome: "deleted" as const };
-  },
-);
-
 const deleteOrgData$ = command(
   async (
     { set },
@@ -872,6 +799,8 @@ const deleteOrgData$ = command(
       .delete(chatAgentRunContext)
       .where(eq(chatAgentRunContext.sourceOrgId, orgId));
     signal.throwIfAborted();
+    await db.delete(chatRelations).where(eq(chatRelations.orgId, orgId));
+    signal.throwIfAborted();
     await set(
       deleteClerkAgentLifecycleData$,
       { kind: "organization", orgId },
@@ -880,11 +809,7 @@ const deleteOrgData$ = command(
     signal.throwIfAborted();
     // VNC references were removed earlier. Preserve the restrictive FK order
     // inside the owning SSH cleanup command, before organization removal.
-    await set(
-      deleteClerkSshResources$,
-      { kind: "organization", orgId },
-      signal,
-    );
+    await set(eraseSshOwnerData$, { kind: "organization", orgId }, signal);
     signal.throwIfAborted();
     await deleteConnectorOwnerState(
       db,
@@ -989,11 +914,13 @@ const deleteUserData$ = command(
       .delete(chatAgentRunContext)
       .where(eq(chatAgentRunContext.sourceUserId, userId));
     signal.throwIfAborted();
+    await db.delete(chatRelations).where(eq(chatRelations.userId, userId));
+    signal.throwIfAborted();
     await set(deleteClerkAgentLifecycleData$, { kind: "user", userId }, signal);
     // VNC references were removed before user cleanup. Delete only this user's
     // SSH resources and personal Access configurations; organization Access
     // configurations have no user owner and must survive creator deletion.
-    await set(deleteClerkSshResources$, { kind: "user", userId }, signal);
+    await set(eraseSshOwnerData$, { kind: "user", userId }, signal);
     signal.throwIfAborted();
     const cleanupJobIds = await deleteClerkStorageReferences(
       db,

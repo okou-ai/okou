@@ -70,6 +70,11 @@ fn successful_storage_rpc_records_one_resource_snapshot_per_request() {
     finish_guest_connection(handle, host);
     assert_eq!(summaries.len(), 2);
     for (summary, seq) in summaries.iter().zip([501, 502]) {
+        // The unchanged typed resource reader still accepts the additive JSON.
+        let legacy: guest_contracts::storage_resources::StorageResourceUsage =
+            serde_json::from_value(summary.clone()).unwrap();
+        assert!(legacy.matches_request(RUN_ID, seq));
+        assert_eq!(summary["storage_resource_available"], true);
         for (field, expected) in [
             ("run_id", json!(RUN_ID)),
             ("request_seq", json!(seq)),
@@ -106,6 +111,32 @@ fn successful_storage_rpc_records_one_resource_snapshot_per_request() {
                 .get("collection_us")
                 .and_then(Value::as_u64)
                 .is_some()
+        );
+    }
+}
+
+#[test]
+fn storage_resource_file_size_boundary_accepts_limit_and_rejects_oversize() {
+    for (size, expected) in [(16 * 1024, json!(16)), (16 * 1024 + 1, Value::Null)] {
+        let (directory, program) = create_program("cat >/dev/null; printf applied");
+        let mut memory_stat = b"pgscan 16\n".to_vec();
+        memory_stat.resize(size, b' ');
+        assert_eq!(memory_stat.len(), size);
+        fs::write(directory.path().join("memory.stat"), memory_stat).unwrap();
+
+        let (handle, mut host) = start_with_resources(program, directory.path());
+        send_request(&mut host, 506, 1000, RUN_ID, "/run", b"{}");
+        let result = read_result(&mut host, 506);
+        finish_guest_connection(handle, host);
+
+        assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+        assert_eq!(result.stdout, b"applied");
+        assert!(result.diagnostic.is_empty());
+        let summary = resource_summary(&result);
+        assert_eq!(
+            summary.get("memory_pgscan"),
+            Some(&expected),
+            "{size}-byte memory.stat"
         );
     }
 }

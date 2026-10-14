@@ -39,12 +39,11 @@ import {
   VOICE_IO_TRANSCRIBE_MAX_EDITOR_CONTEXT_CHARS,
   type VoiceIoEditorContext,
 } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
+import { createRecentWorkflowIds } from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
 import type { DraftInputSyncTarget, DraftSignals } from "./chat-draft.ts";
 import {
@@ -239,6 +238,7 @@ export interface WorkflowComposerSignals {
   readonly previewSuggestionIndex$: Computed<number | null>;
   readonly previewSuggestion$: Command<void, [number | null]>;
   readonly slashWorkflowsExpanded$: Computed<boolean>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   readonly closeSuggestionMenu$: Command<void, [restoreEditorFocus?: boolean]>;
   readonly setSuggestionMenuRef$: Command<
@@ -282,7 +282,12 @@ export type OpenComposerTemplatePickerIntent =
   | { readonly kind: "edit-legacy"; readonly category: string };
 
 export type ComposerTemplateAttachmentType =
-  "custom" | "presentation" | "illustration" | "workflow" | "website";
+  | "custom"
+  | "document"
+  | "presentation"
+  | "illustration"
+  | "workflow"
+  | "website";
 
 export interface ComposerTemplateAttachment {
   readonly type: ComposerTemplateAttachmentType;
@@ -844,6 +849,7 @@ function templateAttachmentNodeAttributes(
   if (
     (type !== "presentation" &&
       type !== "custom" &&
+      type !== "document" &&
       type !== "illustration" &&
       type !== "workflow" &&
       type !== "website") ||
@@ -930,6 +936,11 @@ function templateAttachmentRemoveLabel(
 function templateAttachmentTypeLabel(
   type: ComposerTemplateAttachmentType,
 ): string {
+  if (type === "document") {
+    return i18n.t(($) => {
+      return $.documentTemplates.title;
+    });
+  }
   if (type === "presentation") {
     return i18n.t(($) => {
       return $.chat.templates.categories.presentation;
@@ -2121,7 +2132,7 @@ interface MountEditorOptions {
   caretIndex$: State<number>;
   editorInteractionActiveState$: State<boolean>;
   suggestionMenu: ReturnType<typeof createSuggestionMenuBoundary>;
-  selectedSuggestionIndexState$: State<number>;
+  selectedSuggestionIndexState$: State<number | null>;
   previewSuggestionIndexState$: State<number | null>;
   feedback: ComposerFeedbackModel;
   compositionGate: CompositionGate;
@@ -2158,32 +2169,6 @@ function createMountedDraftInputSyncTarget({
     setEditorDocument(createEditorDocumentSnapshot(editor.state.doc));
   };
   return {
-    prependInput(value) {
-      const prefix = editor.schema.nodeFromJSON(
-        valueToWorkflowComposerDoc(value),
-      );
-      const firstBlock = editor.state.doc.firstChild;
-      const hasDraft =
-        editor.state.doc.childCount > 1 ||
-        (firstBlock !== null &&
-          (firstBlock.type.name !== "paragraph" ||
-            firstBlock.content.size > 0));
-      const content = hasDraft
-        ? [
-            ...prefix.content.content,
-            editor.schema.node("paragraph"),
-            ...editor.state.doc.content.content,
-          ]
-        : [...prefix.content.content];
-      const changed = setWorkflowComposerDocument(
-        editor,
-        editor.schema.node("doc", undefined, content),
-      );
-      if (changed) {
-        runtime.replaceFeedbackItems(feedbackItemsFromWorkflowComposer(editor));
-        syncEditorDocument();
-      }
-    },
     syncInput(value) {
       if (workflowComposerDocToString(editor) === value) {
         return;
@@ -2243,7 +2228,7 @@ function createMountEditorCommand({
           draft.setEditorDocument$,
           createEditorDocumentSnapshot(updatedEditor.state.doc),
         );
-        set(selectedSuggestionIndexState$, 0);
+        set(selectedSuggestionIndexState$, null);
         set(previewSuggestionIndexState$, null);
         set(caretIndex$, updatedEditor.state.selection.head);
         compositionGate.notifySettled();
@@ -2255,9 +2240,7 @@ function createMountEditorCommand({
         set(caretIndex$, updatedEditor.state.selection.head);
       };
       runtime.focus = (focusedEditor) => {
-        if (get(featureSwitch$)[FeatureSwitchKey.ComposerAnchoredSuggestions]) {
-          set(selectedSuggestionIndexState$, 0);
-        }
+        set(selectedSuggestionIndexState$, null);
         set(previewSuggestionIndexState$, null);
         set(editorInteractionActiveState$, true);
         set(caretIndex$, focusedEditor.state.selection.head);
@@ -2959,6 +2942,21 @@ function createTemplateSignals(
   return { commands, legacy, selection };
 }
 
+function createSelectedSuggestionIndex(
+  selectedIndexState$: State<number | null>,
+  activeSlashRange$: Computed<SlashWorkflowRange | null>,
+) {
+  return computed((get) => {
+    const selectedIndex = get(selectedIndexState$);
+    if (selectedIndex !== null) {
+      return selectedIndex;
+    }
+    // Opening the overview only lists choices. A pointer or arrow key must
+    // choose a row before it becomes active or opens a template preview.
+    return get(activeSlashRange$)?.query === "" ? -1 : 0;
+  });
+}
+
 function createSlashWorkflowExpansionSignals(
   editor: Editor,
   activeSlashRange$: Computed<SlashWorkflowRange | null>,
@@ -2967,13 +2965,15 @@ function createSlashWorkflowExpansionSignals(
   // editing its token produces a new range and restores the compact overview.
   const expandedSlashRange$ = state<SlashWorkflowRange | null>(null);
   return {
+    recentWorkflowIds$: createRecentWorkflowIds(activeSlashRange$),
     slashWorkflowsExpanded$: computed((get) => {
       const range = get(activeSlashRange$);
       return range !== null && range === get(expandedSlashRange$);
     }),
     expandSlashWorkflows$: command(({ get, set }) => {
-      // The ellipsis leaves the DOM after activation. Return focus to the
-      // editor, which owns suggestion keyboard navigation, before removing it.
+      // The show-all control leaves the DOM after activation. Return focus to
+      // the editor, which owns suggestion keyboard navigation, before removing
+      // it.
       editor.view.focus();
       set(expandedSlashRange$, get(activeSlashRange$));
     }),
@@ -2992,7 +2992,7 @@ export function createWorkflowComposerSignals<
   const caretIndex$ = state(-1);
   const editorInteractionActiveState$ = state(false);
   const suggestionMenu = createSuggestionMenuBoundary();
-  const selectedSuggestionIndexState$ = state(0);
+  const selectedSuggestionIndexState$ = state<number | null>(null);
   // A pointer preview is independent of keyboard selection. Null means the
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
@@ -3095,9 +3095,10 @@ export function createWorkflowComposerSignals<
     agentId$,
     workflows$,
     reloadWorkflows$: reloadMountedComposerWorkflows$,
-    selectedSuggestionIndex$: computed((get) => {
-      return get(selectedSuggestionIndexState$);
-    }),
+    selectedSuggestionIndex$: createSelectedSuggestionIndex(
+      selectedSuggestionIndexState$,
+      activeSlashRange$,
+    ),
     setSelectedSuggestionIndex$,
     previewSuggestionIndex$,
     previewSuggestion$,

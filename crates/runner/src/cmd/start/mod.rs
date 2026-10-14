@@ -217,6 +217,7 @@ async fn finish_dns_startup(
     };
 
     memory_prefetch.cancel();
+    memory_prefetch.drain().await;
     if let Some(handle) = dns_handle
         && let Err(error) = handle.stop().await
     {
@@ -238,8 +239,6 @@ async fn finish_dns_startup(
     if let Err(error) = kmsg_handle.stop().await {
         warn!(%error, "failed to clean up network-log helper after startup failure");
     }
-    memory_prefetch.drain().await;
-
     Err(match failure {
         DnsStartupFailure::MissingInterfacePattern(_reservation) => {
             RunnerError::Internal("sandbox runtime did not provide DNS interface pattern".into())
@@ -264,6 +263,7 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
         Ok(handle) => Ok((handle, resources.kmsg_handle, resources.dns_handle)),
         Err(e) => {
             resources.memory_prefetch.cancel();
+            resources.memory_prefetch.drain().await;
             resources.provider.shutdown().await;
             if let Err(error) = resources.dns_handle.stop().await {
                 warn!(%error, "failed to clean up network-log helper after startup failure");
@@ -275,7 +275,6 @@ async fn publish_live_runner_instance_or_shutdown_startup_resources(
             if let Err(error) = resources.kmsg_handle.stop().await {
                 warn!(%error, "failed to clean up network-log helper after startup failure");
             }
-            resources.memory_prefetch.drain().await;
             if let Err(status_error) = resources.status.set_mode(RunnerMode::Stopped).await {
                 warn!(
                     error = %status_error,
@@ -310,23 +309,35 @@ async fn run_start_with_home(
         .map_err(|e| RunnerError::Internal(format!("register signal handlers: {e}")))?;
 
     // Share the startup body across home loaders while retaining lazy evaluation.
-    run_with_host_memory_observer(run_start_observed(
-        args,
-        runtime_provider,
-        Box::new(load_home),
-        signals,
-    ))
-    .await
+    run_start_with_observer(args, runtime_provider, Box::new(load_home), signals).await
 }
 
-async fn run_with_host_memory_observer(
-    work: impl std::future::Future<Output = RunnerResult<()>>,
+async fn run_start_with_observer(
+    args: StartArgs,
+    runtime_provider: &dyn RuntimeProvider,
+    load_home: Box<dyn FnOnce() -> RunnerResult<HomePaths> + Send + '_>,
+    signals: EarlySignals,
 ) -> RunnerResult<()> {
     // This passive owner surrounds every fallible startup/reactor return. It starts
     // before optional warming and never depends on heartbeat, pool or status locks.
     let observer = runner_supervisor::host_memory::HostMemoryObserver::spawn();
-    let result = work.await;
-    if let Err(error) = observer.shutdown().await {
+    // Construct startup inside this boundary to retain a single startup await slot.
+    let result = run_start_observed(args, runtime_provider, load_home, signals).await;
+    finish_host_memory_observation(observer, result).await
+}
+
+async fn finish_host_memory_observation(
+    observer: runner_supervisor::host_memory::HostMemoryObserver,
+    result: RunnerResult<()>,
+) -> RunnerResult<()> {
+    finish_observed_start(result, observer.shutdown().await)
+}
+
+fn finish_observed_start(
+    result: RunnerResult<()>,
+    joined: Result<(), tokio::task::JoinError>,
+) -> RunnerResult<()> {
+    if let Err(error) = joined {
         if result.is_ok() {
             return Err(RunnerError::Internal(format!(
                 "join host memory observer: {error}"
@@ -700,6 +711,13 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
+    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
+        ssh,
+        vnc,
+        usage: Some(crate::run_usage::Runtime::new(
+            crate::MitmUsageHandle::from(&mitm),
+        )),
+    });
     let (provider, group_name, connector_runtime_sync): (
         Arc<dyn JobProvider>,
         String,
@@ -716,9 +734,9 @@ async fn run_start_observed(
             http.clone(),
             server.token,
             ApiProviderConfig {
-                ably_side_message_handler: ssh
-                    .clone()
-                    .map(|runtime| runtime as Arc<dyn runner_provider::AblySideMessageHandler>),
+                ably_side_message_handler: guest_rpc.clone().map(|runtime| {
+                    Arc::new(runtime) as Arc<dyn runner_provider::AblySideMessageHandler>
+                }),
                 runner_identity,
                 runner_hostname: hostname.clone(),
                 group,
@@ -735,13 +753,6 @@ async fn run_start_observed(
         let connector_runtime_sync = provider.connector_runtime_sync_handle();
         (provider, group_name, Some(connector_runtime_sync))
     };
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
-        ssh,
-        vnc,
-        usage: Some(crate::run_usage::Runtime::new(
-            crate::MitmUsageHandle::from(&mitm),
-        )),
-    });
 
     let exec_config = Arc::new(ExecutorConfig {
         api_url: server.url,

@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+import pytest
 from mitmproxy import connection, http
 
 import flow_metadata_keys as metadata_keys
@@ -322,10 +323,11 @@ async def test_cached_api_allow_revalidates_scheme_before_final_bypass_injection
     assert "x-vercel-protection-bypass" not in flow.request.headers
 
 
-async def test_capture_enabled_api_allow_blocks_connected_unbound_edge_upstream(
-    tmp_path, real_flow, mitm_ctx, headers
+@pytest.mark.parametrize("capture_body", [False, True])
+async def test_streamed_api_allow_blocks_connected_unbound_edge_upstream(
+    tmp_path, real_flow, mitm_ctx, headers, capture_body
 ):
-    reg_path = _write_api_registry(tmp_path, capture_network_bodies=True)
+    reg_path = _write_api_registry(tmp_path, capture_network_bodies=capture_body)
     flow = real_flow(
         with_response=False,
         client_ip="10.200.0.5",
@@ -624,9 +626,8 @@ async def test_api_allow_unknown_body_length_retargets_unconnected_upstream(
     with mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"):
         assert mitm_addon.requestheaders(flow) is None
 
-        _assert_no_request_stream(flow)
-        assert metadata_keys.SANDBOX_RUN_ID not in flow.metadata
-        assert metadata_keys.ORIGINAL_URL not in flow.metadata
+        assert callable(flow.request.stream)
+        assert metadata_keys.REQUEST_STREAM_BUFFER not in flow.metadata
         assert flow.server_conn.address == ("api.okou.ai", 443)
 
         await mitm_addon.request(flow)

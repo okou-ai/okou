@@ -59,7 +59,7 @@ jq -e '
     .with.name == $steps[$upload].with.name) and
   .jobs.build.with["head-sha"] == .jobs["prewarm-rust-cache"].env.RUNNER_BINARY_GIT_REVISION and
   any(.architecture.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.PRODUCER_HEAD_SHA == "${{ inputs.producer-head-sha }}"
   )
 ' <<<"$runner_json" >/dev/null || {
@@ -89,7 +89,7 @@ jq -e '
   ($publish < $upload) and
   $steps[$publish].env.ARTIFACT_SHA == "${{ needs.release-please.outputs.release_target }}" and
   $steps[$publish].env.OUTPUT_DIR == "runner-cli-intermediate" and
-  $steps[$publish].run == "bash .github/scripts/publish-okou-cli-versioned-artifact.sh" and
+  $steps[$publish].run == "bash .github/scripts/release/publish-okou-cli-versioned-artifact.sh" and
   $steps[$upload].if == "${{ needs.release-please.outputs.runner_rs_release_created == \u0027true\u0027 }}" and
   ($steps[$upload].with.path | split("\n") | index("runner-cli-intermediate/package.tgz") != null and index("runner-cli-intermediate/manifest.json") != null) and
   $steps[$upload].with.name == "runner-release-cli-${{ github.run_id }}" and

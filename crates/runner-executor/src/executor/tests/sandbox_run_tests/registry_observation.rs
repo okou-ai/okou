@@ -32,7 +32,7 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
         .tempdir()
         .unwrap();
     let listener = UnixListener::bind(control_dir.path().join("control.sock")).unwrap();
-    let mut config = test_executor_config(dir.path()).await;
+    let (mut config, _startup_api) = test_executor_config_with_startup_api(dir.path()).await;
     config
         .registry
         .set_control_target_for_test(control_dir.path().to_path_buf(), "generation-1".into());
@@ -78,9 +78,23 @@ async fn assert_spawn_before_receipt(kind: Option<IdleSandboxKind>) {
                     &context,
                     &config,
                     RunStart {
+                        sandbox_startup_path: match kind {
+                            IdleSandboxKind::Exact => {
+                                runner_types::types::SandboxStartupPath::Sandbox
+                            }
+                            IdleSandboxKind::Blank => {
+                                runner_types::types::SandboxStartupPath::Blank
+                            }
+                        },
                         restore_guest_state: true,
-                        reuse_result: SandboxReuseResult::Reused,
-                        home_reuse_result: HomeReuseResult::SandboxReused,
+                        reuse_result: match kind {
+                            IdleSandboxKind::Exact => SandboxReuseResult::Reused,
+                            IdleSandboxKind::Blank => SandboxReuseResult::PoolMiss,
+                        },
+                        home_reuse_result: match kind {
+                            IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
+                            IdleSandboxKind::Blank => HomeReuseResult::NotConfigured,
+                        },
                         prev_storage: None,
                     },
                     &mut telemetry,

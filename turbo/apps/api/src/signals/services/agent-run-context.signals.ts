@@ -28,7 +28,6 @@ import { waitUntil } from "../context/wait-until";
 import { safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
-  agentStorageCacheSnapshot,
   agentStorageReadPlan,
   captureAgentStorageContext,
   type AgentStorageContext,
@@ -40,7 +39,6 @@ import {
   type ConnectorSourceResult,
   type ConnectorSourceRow,
 } from "./execution-connector-sources.service";
-import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import type { MemberModelRouteContext } from "./effective-model-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
 import {
@@ -53,6 +51,7 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
+import { createOfficialWorkflowCatalog } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { readStorageBaseIndex } from "./storage-index.service";
 import { variables } from "@okouai/db/schema/variable";
@@ -158,13 +157,9 @@ export interface AgentRunContextSignals {
     Promise<readonly ConnectorPermissionGrant[]>
   >;
   readonly workflows$: Computed<Promise<readonly SelectedAgentWorkflow[]>>;
+  /** The accepted global Official Workflow catalog, shared across contexts. */
+  readonly officialCatalog$: ReturnType<typeof createOfficialWorkflowCatalog>;
   readonly storage$: Computed<Promise<AgentStorageContext>>;
-  readonly storageCache$: Computed<
-    Promise<{
-      readonly keys: ReadonlySet<string>;
-      readonly rows: ExecutionStorageCacheRows;
-    }>
-  >;
   readonly featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>;
   readonly disabledPaidTools$: Computed<Promise<readonly string[]>>;
   readonly environment$: Computed<Promise<BootstrapEnvironment>>;
@@ -284,6 +279,10 @@ export function matchAgentRunContextSignals(
     return supplied;
   }
   return createIdentityContext(userId, orgId, agentId, supplied);
+}
+
+function reusedOfficialCatalog(supplied: AgentRunContextSignals | undefined) {
+  return supplied?.officialCatalog$ ?? createOfficialWorkflowCatalog();
 }
 
 function contextAgentSelection() {
@@ -518,9 +517,6 @@ function createIdentityContext(
       await readStorageBaseIndex(get(db$), plan.ownedRequests),
     );
   });
-  const storageCache$ = computed(async (get) => {
-    return agentStorageCacheSnapshot(await get(storage$));
-  });
   const disabledPaidTools$ =
     sharedMember?.disabledPaidTools$ ?? memberContext.disabledPaidTools$;
   const featureSwitchContext$ =
@@ -554,8 +550,8 @@ function createIdentityContext(
       sharedMember?.selectedImageModel$ ??
       createSelectedImageModel(memberMetadata$),
     ...connectorContext.signals,
+    officialCatalog$: reusedOfficialCatalog(supplied),
     storage$,
-    storageCache$,
     featureSwitches$: featureSwitchContext$,
     disabledPaidTools$,
     environment$,
@@ -592,7 +588,6 @@ export const preloadAgentRunContext$ = command(
       signals.connectorSelection$,
       signals.permissionGrants$,
       signals.workflows$,
-      signals.storageCache$,
       signals.featureSwitches$,
       signals.disabledPaidTools$,
       signals.environment$,

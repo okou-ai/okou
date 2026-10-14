@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.24.13](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.12...guest-control-server-v0.24.13) (2026-10-14)
+
+## [0.24.12](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.11...guest-control-server-v0.24.12) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** accept owned task cgroups in oom evidence ([#40033](https://github.com/okou-ai/okou/issues/40033)) ([ab32460](https://github.com/okou-ai/okou/commit/ab3246078499dc5268e12b0ffe3844c81d299a24))
+
+## [0.24.11](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.10...guest-control-server-v0.24.11) (2026-10-14)
+
+## [0.24.10](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.9...guest-control-server-v0.24.10) (2026-10-14)
+
+## [0.24.9](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.8...guest-control-server-v0.24.9) (2026-10-14)
+
+## [0.24.8](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.7...guest-control-server-v0.24.8) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** preserve chat shortcuts with resources open ([#39775](https://github.com/okou-ai/okou/issues/39775)) ([5ccf3a7](https://github.com/okou-ai/okou/commit/5ccf3a714a0fee9a1444f7369d9b1a9304aff31e))
+
+
+### Refactoring
+
+* remove artifact previews feature switch ([#39760](https://github.com/okou-ai/okou/issues/39760)) ([07891eb](https://github.com/okou-ai/okou/commit/07891ebc7aaf9dce2561e1828b0d9b47f678a78d))
+* **test:** split containment scenarios and restore guest build ([#39758](https://github.com/okou-ai/okou/issues/39758)) ([5c7c5a5](https://github.com/okou-ai/okou/commit/5c7c5a5cd191dd3b4c6ee6e23e08008baa8b4ec4))
+
+## [0.24.7](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.6...guest-control-server-v0.24.7) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** split runner exec scenario boundaries ([#39749](https://github.com/okou-ai/okou/issues/39749)) ([2b09d27](https://github.com/okou-ai/okou/commit/2b09d2745592acb711a6fd0c87b16ac9ddf454ae))
+
+## [0.24.6](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.5...guest-control-server-v0.24.6) (2026-10-13)
+
+
+### Refactoring
+
+* **test:** place native tooling with its test owners ([#39722](https://github.com/okou-ai/okou/issues/39722)) ([49d3989](https://github.com/okou-ai/okou/commit/49d3989ab829ec4c68c3665dd5c65ef79239dfc3))
+
+## [0.24.5](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.4...guest-control-server-v0.24.5) (2026-10-13)
+
 ## [0.24.4](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.3...guest-control-server-v0.24.4) (2026-10-12)
 
 ## [0.24.3](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.2...guest-control-server-v0.24.3) (2026-10-12)

@@ -5876,6 +5876,7 @@ export interface AutomationActionInput {
   readonly sourceRunId?: string;
   readonly inheritedAutonomyBudget?: number;
   readonly allowReservedOfficialMaterialization?: boolean;
+  readonly userRequestedEnable?: true;
 }
 export const deleteWorkflowAutomation$ = command(
   async (
@@ -6924,11 +6925,17 @@ const activateInactiveGoogleFormsAutomation$ = command(
         resetAutomationId: args.previousAutomation.id,
         activation: {
           automationSnapshot,
+          ...(args.previousAutomation.officialBlueprintKey === null
+            ? {}
+            : { officialAutomation: args.previousAutomation }),
           automationId: args.previousAutomation.id,
           workflowId: args.previousAutomation.workflowId,
           eventConfig,
           nextRunAt: args.nextRunAt,
-          inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+          inheritedAutonomyBudget:
+            args.previousAutomation.officialBlueprintKey === null
+              ? args.inheritedAutonomyBudget
+              : undefined,
         },
       },
       signal,
@@ -6936,7 +6943,11 @@ const activateInactiveGoogleFormsAutomation$ = command(
     if (prepared.kind !== "ok") {
       return {
         kind: prepared.kind === "superseded" ? "conflict" : "bad-request",
-        message: prepared.message,
+        message:
+          prepared.kind === "superseded" &&
+          args.previousAutomation.officialBlueprintKey !== null
+            ? OFFICIAL_WORKFLOW_RECONFIGURATION_IN_PROGRESS_MESSAGE
+            : prepared.message,
       };
     }
     if (!prepared.enabledAutomation) {
@@ -7110,12 +7121,16 @@ const persistAndReconcileEnabledWorkflowAutomation$ = command(
       readonly nextRunAt: Date | null;
       readonly now: Date;
       readonly inheritedAutonomyBudget?: number;
+      readonly userRequestedEnable: boolean;
     },
     signal: AbortSignal,
   ): Promise<AutomationResult> => {
     if (
       args.automation.eventType === "google-forms-response-submitted" &&
-      args.automation.officialBlueprintKey === null
+      (args.automation.officialBlueprintKey === null ||
+        (args.userRequestedEnable &&
+          !args.automation.enabled &&
+          args.automation.officialIntendedEnabled === false))
     ) {
       if (args.automation.enabled) {
         return await set(
@@ -7369,6 +7384,7 @@ export const enableWorkflowAutomation$ = command(
         nextRunAt,
         now,
         inheritedAutonomyBudget: args.inheritedAutonomyBudget,
+        userRequestedEnable: args.userRequestedEnable === true,
       },
       signal,
     );
@@ -7385,9 +7401,9 @@ const persistDisabledWorkflowAutomation$ = command(
     signal: AbortSignal,
   ): Promise<AutomationRow | undefined> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0340; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [row] = await tx
+    const columns = workflowAutomationColumns();
+    const disabled = db.$with("disabled_workflow_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           enabled: false,
@@ -7398,17 +7414,34 @@ const persistDisabledWorkflowAutomation$ = command(
             : { officialIntendedEnabled: false }),
         })
         .where(officialAutomationLifecycleCondition(args.automation))
-        .returning(workflowAutomationColumns());
-      if (row?.eventType === "google-forms-response-submitted") {
-        // A user stop ends this delivery interval. Re-enable establishes a new
-        // baseline; a reconciliation pause never calls this command.
-        await tx
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    // A user stop ends this delivery interval. Only its actual Forms row
+    // clears the cursor; a reconciliation pause never calls this command.
+    const cleared = db
+      .$with("cleared_disabled_forms_cursor")
+      .as(
+        db
           .delete(googleFormsAutomationCursors)
-          .where(eq(googleFormsAutomationCursors.automationId, row.id));
-      }
-      signal.throwIfAborted();
-      return row;
-    });
+          .where(
+            inArray(
+              googleFormsAutomationCursors.automationId,
+              db
+                .select({ id: disabled.id })
+                .from(disabled)
+                .where(
+                  eq(disabled.eventType, "google-forms-response-submitted"),
+                ),
+            ),
+          ),
+      );
+    const [row] = await db.with(disabled, cleared).select().from(disabled);
+    signal.throwIfAborted();
+    return row;
   },
 );
 

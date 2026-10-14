@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { initClient } from "@okouai/api-contracts/contracts/trpc-contract";
 import {
   sshHostsContract,
@@ -6,10 +6,14 @@ import {
 } from "@okouai/api-contracts/contracts/ssh-access";
 import { z } from "zod";
 
+import { getClientConfig } from "../../lib/api/core/client-factory";
+import { listConfiguredSshHosts } from "../../lib/api/domains/ssh-management";
+import { handleManagementError } from "../../lib/management-input";
 import {
-  getClientConfig,
-  handleError,
-} from "../../lib/api/core/client-factory";
+  addSshHostManagementCommands,
+  createSshCredentialCommand,
+  requireSandboxCapability,
+} from "./management";
 import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { executeSsh } from "./rpc";
@@ -29,35 +33,72 @@ const list = new Command("list")
   .description(
     "List hosts visible to this Run with configuration availability (not a connectivity check)",
   )
+  .addOption(
+    new Option(
+      "--scope <scope>",
+      "Authorized Run hosts or owned configured hosts",
+    )
+      .choices(["authorized", "configured"])
+      .default("authorized"),
+  )
   .option("--json", "Print JSON")
   .action(
-    withErrorHandler(async (options: { readonly json?: boolean }) => {
-      requireCapability("ssh:read");
-      const client = initClient(sshHostsContract, await getClientConfig());
-      const result = await client.list();
-      if (result.status !== 200) handleError(result, "Cannot list SSH hosts");
-      const inventory = sshHostsResponseSchema.safeParse(result.body);
-      if (!inventory.success) {
-        throw new Error("Invalid SSH host inventory response.");
-      }
-      if (options.json) {
-        console.log(JSON.stringify(inventory.data));
-        return;
-      }
-      if (inventory.data.hosts.length === 0)
-        console.log(
-          "No SSH hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
-        );
-      for (const host of inventory.data.hosts) {
-        const availability =
-          host.availability.status === "blocked"
-            ? "blocked: needs_rebind (ask the owner to rebind Cloudflare Access or explicitly choose Direct in Connectors)"
-            : "ready to attempt (connectivity not checked)";
-        console.log(
-          `${host.id}  ${host.displayName}  ${host.username}@${host.host}:${host.port}  ${host.learnedHostKey ? "host key learned" : "host key not learned"}  ${availability}`,
-        );
-      }
-    }),
+    withErrorHandler(
+      async (options: { readonly json?: boolean; readonly scope: string }) => {
+        if (options.scope === "configured") {
+          requireSandboxCapability("connector:read");
+          const inventory = await listConfiguredSshHosts();
+          console.log(
+            JSON.stringify(inventory, null, options.json ? undefined : 2),
+          );
+          if (!options.json && inventory.connections.length === 0) {
+            console.log(
+              "No configured SSH hosts. Use okou ssh host create --help to configure one; this does not grant Run access.",
+            );
+          }
+          return;
+        }
+        requireCapability("ssh:read");
+        const client = initClient(sshHostsContract, await getClientConfig());
+        const result = await client.list();
+        if (result.status !== 200)
+          handleManagementError(result, "Cannot list SSH hosts");
+        const inventory = sshHostsResponseSchema.safeParse(result.body);
+        if (!inventory.success) {
+          throw new Error("Invalid SSH host inventory response.");
+        }
+        if (options.json) {
+          console.log(
+            JSON.stringify({
+              hosts: inventory.data.hosts.map((host) => {
+                return {
+                  id: host.id,
+                  displayName: host.displayName,
+                  host: host.host,
+                  port: host.port,
+                  learnedHostKey: host.learnedHostKey,
+                  availability: host.availability,
+                };
+              }),
+            }),
+          );
+          return;
+        }
+        if (inventory.data.hosts.length === 0)
+          console.log(
+            "No SSH hosts available to this Run. Ask the owner to check host setup and chat access in Connectors.",
+          );
+        for (const host of inventory.data.hosts) {
+          const availability =
+            host.availability.status === "blocked"
+              ? "blocked: needs_rebind (ask the owner to rebind Cloudflare Access or explicitly choose Direct in Connectors)"
+              : "ready to attempt (connectivity not checked)";
+          console.log(
+            `${host.id}  ${host.displayName}  ${host.host}:${host.port}  ${host.learnedHostKey ? "host key learned" : "host key not learned"}  ${availability}`,
+          );
+        }
+      },
+    ),
   );
 
 const exec = new Command("exec")
@@ -129,7 +170,10 @@ export const sshCommand = new Command("ssh")
 Connections use the owner's saved Direct or Cloudflare Access settings; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
 
 Command guide (read the relevant subcommand's --help before use):
-  - Find hosts: okou ssh host list --json
+  - Find authorized execution hosts: okou ssh host list --json
+  - Manage owned configuration: okou ssh host list --scope configured --json; okou ssh host --help
+  - Manage write-only credentials: okou ssh credential --help
+    Management uses connector:read/write, preserves ownership, and never grants this Run SSH access.
   - Run one command: okou ssh exec <connection-id> --command <command> --json
   - Long commands or persistent shells: okou ssh session --help
     Start with okou ssh session start <connection-id> --command <command> --json, or use --shell instead of --command; add --pty when a terminal is needed.
@@ -150,10 +194,15 @@ File transfers (upload/download): ${FILE_LIMIT_HELP}
 `,
   )
   .addCommand(
-    new Command("host")
-      .description("Inspect authorized SSH hosts")
-      .addCommand(list),
+    addSshHostManagementCommands(
+      new Command("host")
+        .description(
+          "Inspect authorized hosts or manage owned SSH configuration",
+        )
+        .addCommand(list),
+    ),
   )
+  .addCommand(createSshCredentialCommand())
   .addCommand(exec)
   .addCommand(
     createFileCommand("upload", () => {

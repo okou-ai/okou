@@ -95,6 +95,12 @@ function providerError(error: unknown): MapsErrorResponse {
     if (error.reason === "invalid_usage") {
       return invalidProviderUsage();
     }
+    if (error.reason === "invalid_citation") {
+      return badGateway(
+        "The Maps response has incomplete or inconsistent source citations and cannot be verified. Retry the search once. If it fails again, tell the user that verified map results are unavailable for this request. Do not invent map facts or sources.",
+        "MAPS_CITATION_INVALID",
+      );
+    }
   }
   if (error instanceof GcpLlmAuthError && error.temporary) {
     return serviceUnavailable(

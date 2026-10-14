@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use guest_contracts::home_mount::HOME_DRIVE_MOUNT_REQUEST_DEADLINE;
 use guest_control_client::{
-    ExecOwnedCapturedOutput, FencedExecError, FrameWriteObserver, GuestControlClient,
-    GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
+    ConnectionClosedAtAdmission, ExecOwnedCapturedOutput, FencedExecError, FrameWriteObserver,
+    GuestControlClient, GuestStateRestoreResult, GuestStorageManifestResult, HomeDriveMountResult,
     NormalOperationFence, NormalOperationFenceRejection, SupervisedExecControl,
     SupervisedExecRequest, SupervisedExecStartTiming,
 };
@@ -1512,20 +1512,27 @@ impl FirecrackerSandbox {
         // Submit the vsock listener before launching Firecracker. The task
         // overlaps backend startup; submission is not a listener-bind barrier.
         let vsock_path = self.sock_paths.vsock().display().to_string();
+        let connection_sandbox_id = self.id.clone();
         let observe_connection = timing.observer.is_some();
         let connection_submitted = Instant::now();
         let mut vsock_task = tokio::spawn(async move {
             if observe_connection {
-                let (result, timing) = GuestControlClient::wait_for_connection_with_timing(
-                    &vsock_path,
-                    VSOCK_CONNECT_TIMEOUT,
-                )
-                .await;
+                let (result, timing) =
+                    GuestControlClient::wait_for_connection_with_timing_for_sandbox(
+                        &vsock_path,
+                        VSOCK_CONNECT_TIMEOUT,
+                        &connection_sandbox_id,
+                    )
+                    .await;
                 (result, Some(timing))
             } else {
                 (
-                    GuestControlClient::wait_for_connection(&vsock_path, VSOCK_CONNECT_TIMEOUT)
-                        .await,
+                    GuestControlClient::wait_for_connection_for_sandbox(
+                        &vsock_path,
+                        VSOCK_CONNECT_TIMEOUT,
+                        &connection_sandbox_id,
+                    )
+                    .await,
                     None,
                 )
             }
@@ -1823,6 +1830,7 @@ impl Drop for FirecrackerSandbox {
         {
             let resources = LeakedResources {
                 sandbox_id: self.id.clone(),
+                create_custody: None,
                 process_exit: self.runtime.process_exit.take(),
                 cow_device: self.cow_device.take(),
                 network: self.network.take_lease(),
@@ -2629,19 +2637,41 @@ impl Sandbox for FirecrackerSandbox {
         if !was_parked && let Some(guest) = guest {
             let started_at = tokio::time::Instant::now();
             if let Err(error) = guest.shutdown(SHUTDOWN_TIMEOUT).await {
-                let failure_kind = match error.kind() {
-                    io::ErrorKind::TimedOut => "timeout",
-                    io::ErrorKind::InvalidData => "unexpected_response",
-                    _ => "request_failure",
-                };
-                warn!(
-                    sandbox_id = %self.id,
-                    timeout_ms = duration_ms(SHUTDOWN_TIMEOUT),
-                    elapsed_ms = duration_ms(started_at.elapsed()),
-                    failure_kind,
-                    error = %error,
-                    "graceful shutdown failed"
-                );
+                let closed = ConnectionClosedAtAdmission::from_error(&error)
+                    .map(ConnectionClosedAtAdmission::close_info);
+                if let Some(close) = closed
+                    && let Some(owner) = close.cancelled_owner()
+                {
+                    info!(
+                        sandbox_id = %self.id,
+                        connection_id = %close.connection_id(),
+                        run_id = owner.run_id(),
+                        owner_phase = owner.phase(),
+                        close_origin = close.reason().as_str(),
+                        outcome = "already_closed_after_owner_cancellation",
+                        "graceful shutdown skipped for cancelled guest connection"
+                    );
+                } else {
+                    let failure_kind = if closed.is_some() {
+                        "already_closed_at_admission"
+                    } else {
+                        match error.kind() {
+                            io::ErrorKind::TimedOut => "timeout",
+                            io::ErrorKind::InvalidData => "unexpected_response",
+                            _ => "request_failure",
+                        }
+                    };
+                    warn!(
+                        sandbox_id = %self.id,
+                        connection_id = %guest.connection_id(),
+                        close_origin = closed.map(|close| close.reason().as_str()),
+                        timeout_ms = duration_ms(SHUTDOWN_TIMEOUT),
+                        elapsed_ms = duration_ms(started_at.elapsed()),
+                        failure_kind,
+                        error = %error,
+                        "graceful shutdown failed"
+                    );
+                }
             }
         }
         release_park_state_for_termination(
@@ -2692,11 +2722,15 @@ impl Sandbox for FirecrackerSandbox {
     // requests balloon inflation to reclaim guest memory. It makes a bounded
     // settle attempt before pausing vCPUs to eliminate idle CPU overhead
     // (timer ticks, kernel scheduling). Settling may finish at the target,
-    // within tolerance, under guest memory pressure, at the deadline (with at
-    // most one bounded progress grace period), or after a non-fatal stats
-    // error. Reusable outcomes then request target zero and wait for physical
-    // deflation before pausing. Severe memory retention is instead reported
-    // as paused but non-reusable for destruction. An exact-successor handoff
+    // within tolerance, under guest memory pressure, at the deadline, or after
+    // a non-fatal stats error. The initial five-second wait may receive repeated
+    // five-second progress extensions when a severe deficit shows recent
+    // progress at the current target with sufficient guest memory reserve,
+    // capped by `BALLOON_SETTLE_MAX_TIMEOUT` (30 seconds). This bounds inflation
+    // settling only, not preparation, deflation, or pause. Reusable outcomes
+    // then request target zero and wait for physical deflation before pausing.
+    // Severe memory retention is instead reported as paused but non-reusable
+    // for destruction. An exact-successor handoff
     // may skip inflation or interrupt settling/deflation: it completes the
     // target-zero request and transfers the still-running, fenced sandbox
     // without pausing. The guest balloon driver needs running vCPUs throughout

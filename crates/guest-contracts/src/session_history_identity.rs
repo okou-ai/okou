@@ -1,8 +1,8 @@
 //! Shared final session-history identity metadata.
 //!
 //! The guest-agent writes this run-private metadata after a successful
-//! checkpoint. Runner consumes it to decide whether a parked idle sandbox can
-//! safely skip session-history restore on a later same-session run.
+//! session-history upload. Runner consumes it to decide whether a parked idle
+//! sandbox can safely skip session-history restore on a later same-session run.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -64,6 +64,8 @@ impl From<crate::env::CliFramework> for SessionHistoryFramework {
 pub enum SessionHistoryRefKind {
     /// Hash-backed blob storage.
     Blob,
+    /// Integrity of disposable native bytes retained only in the local home.
+    LocalHome,
 }
 
 /// Canonical framework-owned source for final session-history bytes.
@@ -246,6 +248,7 @@ impl SessionHistoryRefKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Blob => "blob",
+            Self::LocalHome => "local-home",
         }
     }
 
@@ -253,13 +256,14 @@ impl SessionHistoryRefKind {
     pub fn parse_cli_arg(value: &str) -> Result<Self, SessionHistoryIdentityError> {
         match value {
             "blob" => Ok(Self::Blob),
+            "local-home" => Ok(Self::LocalHome),
             _ => Err(SessionHistoryIdentityError::InvalidHistoryRefKind),
         }
     }
 }
 
 /// Expected final identity fields supplied by runner when verifying a parked
-/// sandbox's checkpointed metadata.
+/// sandbox's saved session-history metadata.
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct SessionHistoryIdentityExpectation {

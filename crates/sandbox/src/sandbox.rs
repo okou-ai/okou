@@ -777,6 +777,9 @@ pub trait Sandbox: Send + Sync + Any {
     /// (vCPUs are paused and cannot process the message) and the
     /// sandbox goes straight to force-kill — no user workload is lost
     /// because a parked sandbox is idle by definition.
+    /// An already-closed control transport also cannot receive the IPC step.
+    /// Providers must still terminate the backing process; transport closure
+    /// alone is not proof that the guest or its backing process exited.
     ///
     /// Idempotent: calling `stop` on an already-stopped (or concurrently
     /// stopping) sandbox returns `Ok(())` without side effects.
@@ -982,7 +985,8 @@ pub trait Sandbox: Send + Sync + Any {
         request: &StorageManifestRequest<'_>,
     ) -> Result<ExecResult>;
 
-    /// Apply storage with optional, fixed Host phase observations.
+    /// Apply storage with fixed Host phases and optional content-free Guest
+    /// timing/resource observations from the terminal result.
     ///
     /// Providers without these observations retain the original operation and
     /// leave the fresh record unavailable. Timing never changes the result,

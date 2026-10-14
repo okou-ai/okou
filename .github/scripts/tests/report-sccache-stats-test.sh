@@ -75,7 +75,7 @@ for name in ["crates", "runner-image", "runner-image-architecture", "release-ple
         assert not forbidden.intersection(report.get("env", {}))
         assert not forbidden.intersection(job.get("env", {}))
         compilers = [i for i, s in enumerate(job["steps"]) if "cargo " in s.get("run", "") or
-                     s.get("run") == ".github/scripts/runner-binary-build/build.sh build"]
+                     s.get("run") == ".github/scripts/runner/runner-binary-build/build.sh build"]
         assert compilers and max(compilers) < job["steps"].index(report)
         consumers.append({"workflow": name, "job": job_id, "if": report["if"], "setupIf": setups[0].get("if")})
 assert {(x["workflow"], x["job"]) for x in consumers} == {

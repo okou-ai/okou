@@ -21,6 +21,7 @@ from tests.request_handler_helpers import (
     _write_github_firewall_registry,
     _write_registry,
 )
+from tests.requestheaders_helpers import await_requestheaders_result
 from tests.upstream_connection_helpers import seed_server_binding
 
 _MAX_CONNECTOR_INTENT_BYTES = 64
@@ -621,7 +622,7 @@ async def test_asterisk_form_policy_allow_still_enforces_public_destination(
     ):
         requestheaders_result = mitm_addon.requestheaders(flow)
         assert requestheaders_result is None
-        assert callable(flow.request.stream)
+        assert flow.request.stream is False
         assert flow.response is None
 
         flow.server_conn.address = ("10.0.0.5", 443)
@@ -1131,7 +1132,7 @@ async def test_non_auth_base_requestheaders_ignores_auth_base_body_contract(
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers() as mock_headers,
     ):
-        mitm_addon.requestheaders(flow)
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
         await mitm_addon.request(flow)
 
     assert flow.response is None

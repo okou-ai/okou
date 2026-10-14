@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { integrationsSlackMessageContract } from "@okouai/api-contracts/contracts/integrations";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -13,6 +13,19 @@ import {
 } from "../services/slack-message-context.service";
 import { buildFooterBlocks } from "../../lib/slack-blocks";
 import type { RouteEntry } from "../route-entry";
+
+const slackInstallationInput$ = computed(
+  (
+    get,
+  ): {
+    readonly orgId: string;
+    readonly userId: string;
+  } => {
+    const auth = get(organizationAuthContext$);
+    return { orgId: auth.orgId, userId: auth.userId };
+  },
+);
+const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -35,9 +48,7 @@ const sendMessageInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const installation = await get(
-    slackOrgInstallation({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  const installation = await get(slackInstallation$);
   signal.throwIfAborted();
   if (!installation) {
     return noInstallation;

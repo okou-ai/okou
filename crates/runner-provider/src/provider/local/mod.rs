@@ -270,6 +270,7 @@ impl JobProvider for LocalProvider {
             storage_manifest: None,
             environment: environment_merge.environment,
             platform_environment: HashMap::new(),
+            native_continuation: None,
             resume_session: req
                 .session_id
                 .as_ref()
@@ -282,6 +283,7 @@ impl JobProvider for LocalProvider {
             cli_agent_type: req.cli_agent_type,
             real_agent_in_preview: None,
             api_start_time: None,
+            is_first_run: None,
             user_timezone: req.user_timezone,
             capture_network_bodies: None,
             firewalls: None,

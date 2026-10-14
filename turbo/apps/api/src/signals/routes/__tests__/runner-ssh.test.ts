@@ -110,6 +110,7 @@ async function setThreadHostOverride(f: Fixture, enabled: boolean | null) {
   }
 }
 interface Fixture extends Owner {
+  readonly connectionCreatedAt: string;
   readonly runId: string;
   readonly agentId: string;
   readonly threadId?: string;
@@ -153,6 +154,7 @@ async function ordinaryFixture(group?: string) {
   return {
     ...runtime,
     connectionId: connection.body.id,
+    connectionCreatedAt: connection.body.createdAt,
     credentialId: connection.body.credentialId,
   };
 }
@@ -235,6 +237,7 @@ function useClaimedFixture() {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          nativeContinuationSupported: true,
         },
       }),
       [200],
@@ -255,6 +258,7 @@ function useClaimedFixture() {
       runnerIdentity,
       sandboxToken,
       connectionId: connection.body.id,
+      connectionCreatedAt: connection.body.createdAt,
       credentialId: connection.body.credentialId,
     };
   }
@@ -519,6 +523,7 @@ function createPublicHostApi() {
     return {
       ...claimed,
       connectionId: connection.body.id,
+      connectionCreatedAt: connection.body.createdAt,
       credentialId: connection.body.credentialId,
     };
   }
@@ -719,6 +724,7 @@ describe("shared credential runtime authority", () => {
           connectionId: shared.body.id,
           runnerIdentity: f.runnerIdentity,
           expectedGeneration: 1,
+          expectedCreatedAt: f.connectionCreatedAt,
           observedAt: nowDate().toISOString(),
           failureReason: "authentication_failed",
         },
@@ -800,6 +806,7 @@ describe("SSH connection observations", () => {
             connectionId: f.connectionId,
             runnerIdentity: f.runnerIdentity,
             expectedGeneration: 1,
+            expectedCreatedAt: f.connectionCreatedAt,
             observedAt: nowDate().toISOString(),
             failureReason: "authentication_failed",
             ...overrides,
@@ -816,6 +823,61 @@ describe("SSH connection observations", () => {
       await accept(config().observations({ headers: sessionHeaders }), [200])
     ).body.observations;
   }
+
+  it("ignores delayed evidence when a deleted SSH ID is recreated", async () => {
+    const f = await claimedFixture();
+    const failedAt = new Date(now() - 1000).toISOString();
+    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
+      outcome: "recorded",
+    });
+    await accept(
+      config().delete({
+        headers: sessionHeaders,
+        params: { connectionId: f.connectionId },
+      }),
+      [204],
+    );
+    const replacement = await accept(
+      config().create({
+        headers: sessionHeaders,
+        body: {
+          id: f.connectionId,
+          displayName: "Replacement SSH host",
+          host: "replacement.example.com",
+          credential: inlineSshKey("deploy", "replacement-private-key"),
+        },
+      }),
+      [201],
+    );
+    expect(replacement.body.generation).toBe(1);
+    expect(replacement.body.createdAt).not.toBe(f.connectionCreatedAt);
+    expect(replacement.body.createdAt).toMatch(/\.\d{6}Z$/u);
+    await enableHostDefault(f, f.connectionId);
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
+      outcome: "ignored",
+    });
+    const recoveredAt = nowDate().toISOString();
+    await expect(
+      observe(f, {
+        expectedCreatedAt: replacement.body.createdAt,
+        observedAt: recoveredAt,
+        failureReason: null,
+      }),
+    ).resolves.toStrictEqual({ outcome: "recorded" });
+    await expect(observe(f, { observedAt: failedAt })).resolves.toStrictEqual({
+      outcome: "ignored",
+    });
+    await expect(observations(f)).resolves.toStrictEqual([
+      {
+        connectionId: f.connectionId,
+        connectionCreatedAt: replacement.body.createdAt,
+        generation: 1,
+        observedAt: recoveredAt,
+        failureReason: null,
+      },
+    ]);
+  });
 
   it.each(["deploy", "ubuntu"])(
     "isolates credentials, trust and observations for a shared endpoint with sibling username %s",
@@ -838,7 +900,11 @@ describe("SSH connection observations", () => {
         [201],
       );
       await enableHostDefault(f, additional.body.id);
-      const sibling = { ...f, connectionId: additional.body.id };
+      const sibling = {
+        ...f,
+        connectionId: additional.body.id,
+        connectionCreatedAt: additional.body.createdAt,
+      };
       expect(sibling.connectionId).not.toBe(f.connectionId);
       const siblingCredential = await resolve(sibling);
       expect(siblingCredential).toMatchObject({
@@ -874,6 +940,7 @@ describe("SSH connection observations", () => {
       const siblingObservations = [
         {
           connectionId: sibling.connectionId,
+          connectionCreatedAt: sibling.connectionCreatedAt,
           generation: 1,
           observedAt,
           failureReason: "authentication_failed",
@@ -943,6 +1010,34 @@ describe("SSH connection observations", () => {
   it("records bounded owner-only failures and recovery without changing configuration or invalidating credentials", async () => {
     const f = await claimedFixture();
     const original = await list(f);
+    const resolved = await accept(
+      client().resolve({
+        params: { runId: f.runId },
+        headers: runnerHeaders,
+        body: {
+          connectionId: f.connectionId,
+          runnerIdentity: f.runnerIdentity,
+        },
+      }),
+      [200],
+    );
+    expect(resolved.headers.get("X-SSH-Connection-Created-At")).toBe(
+      f.connectionCreatedAt,
+    );
+    expect(f.connectionCreatedAt).toMatch(/\.\d{6}Z$/u);
+    const otherInstance = f.connectionCreatedAt.replace(
+      /(\d)Z$/u,
+      (_, digit: string) => {
+        return `${(Number(digit) + 1) % 10}Z`;
+      },
+    );
+    expect(new Date(otherInstance).getTime()).toBe(
+      new Date(f.connectionCreatedAt).getTime(),
+    );
+    await expect(
+      observe(f, { expectedCreatedAt: otherInstance }),
+    ).resolves.toStrictEqual({ outcome: "ignored" });
+    await expect(observations(f)).resolves.toStrictEqual([]);
     const kms = useSecretKmsProbe();
     context.mocks.ably.publish.mockClear();
     const failedAt = new Date(now() - 1000).toISOString();
@@ -952,6 +1047,7 @@ describe("SSH connection observations", () => {
     await expect(observations(f)).resolves.toStrictEqual([
       {
         connectionId: f.connectionId,
+        connectionCreatedAt: f.connectionCreatedAt,
         generation: 1,
         observedAt: failedAt,
         failureReason: "authentication_failed",
@@ -971,6 +1067,7 @@ describe("SSH connection observations", () => {
     await expect(observations(f)).resolves.toStrictEqual([
       {
         connectionId: f.connectionId,
+        connectionCreatedAt: f.connectionCreatedAt,
         generation: 1,
         observedAt: recoveredAt,
         failureReason: null,
@@ -1050,6 +1147,7 @@ describe("SSH connection observations", () => {
       connectionId: f.connectionId,
       runnerIdentity: f.runnerIdentity,
       expectedGeneration: 1,
+      expectedCreatedAt: f.connectionCreatedAt,
       observedAt: nowDate().toISOString(),
       failureReason: null,
     };
@@ -1099,6 +1197,7 @@ describe("SSH connection observations", () => {
       connectionId: f.connectionId,
       runnerIdentity: f.runnerIdentity,
       expectedGeneration: 1,
+      expectedCreatedAt: f.connectionCreatedAt,
       observedAt: nowDate().toISOString(),
       failureReason: null,
     };
@@ -1302,6 +1401,7 @@ describe("official Runner SSH authority", () => {
     const f = {
       ...runtime,
       connectionId: connection.body.id,
+      connectionCreatedAt: connection.body.createdAt,
       credentialId: connection.body.credentialId,
     };
     const kms = useSecretKmsProbe();
@@ -1619,6 +1719,7 @@ test("overlapping winning-Runner observations retain the newest clock without ch
             connectionId: f.connectionId,
             runnerIdentity: f.runnerIdentity,
             expectedGeneration: 1,
+            expectedCreatedAt: f.connectionCreatedAt,
             observedAt,
             failureReason,
           },
@@ -1641,6 +1742,7 @@ test("overlapping winning-Runner observations retain the newest clock without ch
   expect(result.body.observations).toStrictEqual([
     {
       connectionId: f.connectionId,
+      connectionCreatedAt: f.connectionCreatedAt,
       generation: 1,
       observedAt: newer,
       failureReason: null,
@@ -1681,6 +1783,7 @@ test.each(["insert", "replace", "remove"] as const)(
           connectionId: f.connectionId,
           runnerIdentity: f.runnerIdentity,
           expectedGeneration: 1,
+          expectedCreatedAt: f.connectionCreatedAt,
           observedAt: nowDate().toISOString(),
           failureReason: "authentication_failed",
         },

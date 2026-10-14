@@ -1,6 +1,3 @@
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { command } from "ccstate";
 import {
   hostedSiteAssetNameError,
@@ -65,10 +62,6 @@ import {
   hostedSiteAliasConflict,
   storedObject,
 } from "./hosted-site-publication-migration.service";
-import {
-  scheduleArtifactPreviewRender$,
-  type RenderArtifactPreviewArgs,
-} from "./artifact-preview.service";
 import { recordHostedSiteArtifact$ } from "./run-uploaded-files.service";
 import {
   completeHostedPreview$,
@@ -97,6 +90,40 @@ const MAX_HOSTED_SITE_FILE_BYTES = 100 * 1024 * 1024;
 const IMMUTABLE_DEPLOYMENT_HOST_PATTERN =
   /^dpl-([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/u;
 
+function publicationIdentityViolation(
+  owned: {
+    readonly orgId: string;
+    readonly siteOrgId: string;
+    readonly identity: {
+      readonly deploymentId: string;
+      readonly siteId: string;
+      readonly publicSlug: string;
+      readonly access: "owner-private-v1" | null;
+      readonly hasAccess: boolean;
+    };
+  },
+  args: {
+    readonly deploymentId: string;
+    readonly siteId: string;
+    readonly publicSlug: string;
+  },
+): "org_mismatch" | "manifest_identity" | "access_marker" | null {
+  if (owned.orgId !== owned.siteOrgId) {
+    return "org_mismatch";
+  }
+  if (
+    owned.identity.deploymentId !== args.deploymentId ||
+    owned.identity.siteId !== args.siteId ||
+    owned.identity.publicSlug !== args.publicSlug
+  ) {
+    return "manifest_identity";
+  }
+  if (owned.identity.hasAccess && owned.identity.access === null) {
+    return "access_marker";
+  }
+  return null;
+}
+
 /** R2 references do not carry authority over a deployment's current lifecycle. */
 export const authorizeHostedSiteDelivery$ = command(
   async (
@@ -117,9 +144,7 @@ export const authorizeHostedSiteDelivery$ = command(
       .select({
         prefix: hostedDeployments.r2Prefix,
         activeDeploymentId: hostedSites.activeDeploymentId,
-        userId: hostedDeployments.userId,
         orgId: hostedDeployments.orgId,
-        siteUserId: hostedSites.userId,
         siteOrgId: hostedSites.orgId,
         identity: sql`jsonb_build_object(
           'deploymentId', ${hostedDeployments.manifest}->'deploymentId',
@@ -157,15 +182,14 @@ export const authorizeHostedSiteDelivery$ = command(
     if (!owned) {
       return false;
     }
-    if (
-      owned.userId !== owned.siteUserId ||
-      owned.orgId !== owned.siteOrgId ||
-      owned.identity.deploymentId !== args.deploymentId ||
-      owned.identity.siteId !== args.siteId ||
-      owned.identity.publicSlug !== args.publicSlug ||
-      (owned.identity.hasAccess && owned.identity.access === null)
-    ) {
-      throw new Error("Hosted deployment has an invalid publication identity");
+    // Organization-scoped sites (before #23908) let any member publish to a
+    // site another member created, so the deployment publisher need not be
+    // the site creator. Allocation now rejects such redeploys.
+    const violation = publicationIdentityViolation(owned, args);
+    if (violation) {
+      throw new Error(
+        `Hosted deployment has an invalid publication identity: ${violation}`,
+      );
     }
     return (
       !owned.identity.hasAccess &&
@@ -217,7 +241,6 @@ type PrepareDeploymentResult =
           readonly uploadUrl: string;
           readonly sha256: string;
         };
-        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "forbidden" }
@@ -240,7 +263,6 @@ type CompleteDeploymentResult =
         readonly activeDeploymentVersion?: number;
         readonly status: "ready";
         readonly previewImageUrl?: string;
-        readonly previewSkipped?: true;
       };
     }
   | { readonly status: "not_found"; readonly message: string }
@@ -472,26 +494,6 @@ function validateFiles(
   return null;
 }
 
-function artifactPreviewArgs(
-  deployment: HostedDeploymentRow,
-  artifactRow: {
-    readonly id: string;
-    readonly previewImageUrl: string | null;
-  } | null,
-): RenderArtifactPreviewArgs | null {
-  if (!artifactRow || artifactRow.previewImageUrl || !deployment.runId) {
-    return null;
-  }
-  return {
-    id: artifactRow.id,
-    runId: deployment.runId,
-    userId: deployment.userId,
-    orgId: deployment.orgId,
-    url: deployment.artifactUrl ?? deployment.url,
-    deploymentId: deployment.id,
-  };
-}
-
 function hostedSiteArtifactArgs(deployment: HostedDeploymentRow) {
   const artifactKind = deployment.manifest.artifactKind ?? "hosted-site";
   return {
@@ -623,27 +625,15 @@ export const prepareHostedSiteDeployment$ = command(
     if (args.body.requirePrivateArtifact) {
       return { status: "forbidden" };
     }
-    let previewRequest = args.body.preview;
+    const previewRequest = args.body.preview;
     if (previewRequest) {
-      const features = await set(
-        loadUserFeatureSwitchContext$,
-        args.orgId,
-        args.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!isFeatureEnabled(FeatureSwitchKey.ArtifactPreviews, features)) {
-        previewRequest = undefined;
-      } else {
-        // Fail before creating a deployment if private preview storage is absent.
-        privateArtifactsBucket();
-      }
+      // Fail before creating a deployment if private preview storage is absent.
+      privateArtifactsBucket();
     }
-    const siteAndDeployment = await set(
-      createHostedSiteDeployment$,
-      { ...args, body: { ...args.body, preview: previewRequest } },
-      { now: nowDate(), deploymentId: crypto.randomUUID() },
-    );
+    const siteAndDeployment = await set(createHostedSiteDeployment$, args, {
+      now: nowDate(),
+      deploymentId: crypto.randomUUID(),
+    });
     // Allocation commits one SQL unit before request cancellation is observed.
     signal.throwIfAborted();
     if (siteAndDeployment.kind === "content_conflict") {
@@ -699,9 +689,6 @@ export const prepareHostedSiteDeployment$ = command(
         ...deploymentVersionResponseFields(siteAndDeployment.deployment),
         uploads,
         ...(preview ? { preview } : {}),
-        ...(args.body.preview && !previewRequest
-          ? { previewSkipped: true }
-          : {}),
       },
     };
   },
@@ -1041,8 +1028,7 @@ const publishHostedSiteDeploymentPointers$ = command(
 function completedHostedSiteResponse(
   deployment: HostedDeploymentRow,
   promotion: HostedSitePromotion,
-  preview:
-    { readonly status: "ok" | "skipped"; readonly url?: string } | undefined,
+  preview: { readonly status: "ok"; readonly url: string } | undefined,
 ): CompleteDeploymentResult {
   const deploymentVersion = legacyHostedDeploymentVersion(deployment.manifest);
   return {
@@ -1065,7 +1051,6 @@ function completedHostedSiteResponse(
           }),
       status: "ready",
       ...(preview?.url ? { previewImageUrl: preview.url } : {}),
-      ...(preview?.status === "skipped" ? { previewSkipped: true } : {}),
     },
   };
 }
@@ -1188,7 +1173,7 @@ export const completeHostedSiteDeployment$ = command(
     const promotion = promoted.value;
     signal.throwIfAborted();
 
-    const artifactRow = await set(
+    await set(
       recordHostedSiteArtifact$,
       {
         ...hostedSiteArtifactArgs(deployment),
@@ -1197,18 +1182,6 @@ export const completeHostedSiteDeployment$ = command(
       signal,
     );
     signal.throwIfAborted();
-
-    // Render the artifact preview as soon as the deploy is recorded. Detached
-    // via waitUntil so it survives the response; failures leave the preview
-    // empty without blocking the deployment.
-    // Retain the old-client producer until the sandbox rollout drains (PR 3 of #36205).
-    // Disabled previews use ordinary hosting; enabled preview failures remain errors.
-    if (!preview || preview.status === "skipped") {
-      set(
-        scheduleArtifactPreviewRender$,
-        artifactPreviewArgs(deployment, artifactRow),
-      );
-    }
 
     return completedHostedSiteResponse(deployment, promotion, preview);
   },

@@ -391,6 +391,8 @@ async fn guest_apply_telemetry_pairs_guest_server_duration_per_batch() {
     assert_eq!(batches.len(), 3);
     for batch in &batches {
         assert_eq!(batch["storage_batch_host_timing"], "unavailable");
+        assert_eq!(batch["storage_batch_guest_timing"], "unavailable");
+        assert_eq!(batch["storage_batch_resources"], "unavailable");
         assert_ne!(batch["storage_batch_payload_size_bucket"], "none");
         assert!(batch.get("storage_batch_admission_ms").is_none());
         assert!(batch.get("storage_batch_response_wait_ms").is_none());
@@ -1030,6 +1032,7 @@ async fn decoded_batch_failure_prevents_agent_spawn() {
         &context,
         &fixture.config,
         crate::executor::agent_run::RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: runner_types::types::SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,

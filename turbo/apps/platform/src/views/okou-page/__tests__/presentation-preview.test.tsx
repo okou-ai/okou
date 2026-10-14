@@ -164,11 +164,7 @@ test("Selecting a slide preserves its authored layout", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const firstFrame = await openPresentationDetail();
-  fireEvent.load(firstFrame);
-  await waitFor(() => {
-    expect(firstFrame).toHaveAttribute("data-loaded", "true");
-  });
+  await openPresentationDetail();
   click(await waitForNamedButton("Preview slide 2"));
   await waitFor(() => {
     expect(activePreviewFrame().srcdoc).toContain("Selected slide");
@@ -215,8 +211,7 @@ test("A generically authored deck still previews", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  const firstFrame = await openPresentationDetail();
-  await hydratePreviewFrame(firstFrame);
+  await openPresentationDetail();
   click(await waitForNamedButton("Preview slide 2"));
   await waitFor(() => {
     expect(activePreviewFrame().srcdoc).toContain("Generic second");

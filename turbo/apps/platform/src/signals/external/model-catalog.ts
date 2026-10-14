@@ -1,4 +1,8 @@
-import { isAutoSelectedModel } from "@okouai/core/auto-run-model";
+import {
+  AUTO_SELECTED_MODEL,
+  isAutoRunPreset,
+  isAutoSelectedModel,
+} from "@okouai/core/auto-run-model";
 import { command, computed, state } from "ccstate";
 import {
   modelCatalogContract,
@@ -37,7 +41,8 @@ export interface ModelCatalog {
    * The catalog model a recorded identifier names: the model ID itself, or
    * the one model whose route sends it upstream (for example
    * `openai/gpt-6-luna`). Retired models count, so history keeps its own
-   * model; undefined when unknown or ambiguous.
+   * model; Auto aliases and runtime presets normalize to `auto`.
+   * Undefined when unknown or ambiguous.
    */
   modelForIdentifier(identifier: string): string | undefined;
   sortOrder(model: string): number;
@@ -77,33 +82,46 @@ function createIdentifierLookup(
   byModel: ReadonlyMap<string, CatalogModelEntry>,
   routes: readonly CatalogRouteEntry[],
 ): (identifier: string) => string | undefined {
-  const modelsByUpstream = new Map<string, Set<string>>();
+  const modelsByIdentifier = new Map<string, Set<string>>();
+  const addIdentifier = (identifier: string, model: string) => {
+    const models = modelsByIdentifier.get(identifier) ?? new Set();
+    models.add(model);
+    modelsByIdentifier.set(identifier, models);
+  };
   for (const route of routes) {
-    const models = modelsByUpstream.get(route.upstreamModel) ?? new Set();
-    models.add(route.model);
-    modelsByUpstream.set(route.upstreamModel, models);
+    addIdentifier(route.upstreamModel, route.model);
+  }
+  for (const model of byModel.keys()) {
+    addIdentifier(model, model);
+    // Retired Anthropic routes used dotted minor versions upstream. Their
+    // routes may be deleted, but the catalog retains the original model name.
+    if (model.startsWith("claude-")) {
+      addIdentifier(model.replace(/-(\d+)-(\d+)$/u, "-$1.$2"), model);
+    }
   }
   return (identifier) => {
-    if (isAutoSelectedModel(identifier) || byModel.has(identifier)) {
+    // Operator presets can outlive every current route and catalog version.
+    // This is reporting identity only, never selection/admission resolution.
+    const autoIdentity: boolean =
+      isAutoSelectedModel(identifier) || isAutoRunPreset(identifier);
+    if (autoIdentity) {
+      return AUTO_SELECTED_MODEL;
+    }
+    if (byModel.has(identifier)) {
       return identifier;
     }
-    const candidates = modelsByUpstream.get(identifier);
-    if (candidates === undefined) {
-      // Historical billing may keep a vendor-prefixed model ID after the
-      // executable route is physically deleted. This is display-only: do not
-      // use these identifiers for selection, admission, or replacement lookup.
-      const prefix = ["openai/", "anthropic/", "google/", "deepseek/"].find(
-        (value) => {
-          return identifier.startsWith(value);
-        },
-      );
-      const historicalModel = prefix
-        ? identifier.slice(prefix.length)
-        : undefined;
-      return historicalModel && byModel.has(historicalModel)
-        ? historicalModel
-        : undefined;
-    }
+    const prefix = ["openai/", "anthropic/", "google/", "deepseek/"].find(
+      (value) => {
+        return identifier.startsWith(value);
+      },
+    );
+    const historicalIdentifier = prefix
+      ? identifier.slice(prefix.length)
+      : identifier;
+    const candidates = new Set([
+      ...(modelsByIdentifier.get(identifier) ?? []),
+      ...(modelsByIdentifier.get(historicalIdentifier) ?? []),
+    ]);
     if (candidates.size !== 1) {
       return undefined;
     }

@@ -3,7 +3,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { beforeEach, expect, test, vi } from "vitest";
@@ -63,6 +62,7 @@ async function openViewer({
 } = {}) {
   context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
     return respond(200, {
+      downloadUrl: new URL("?download=1", url).href,
       url,
       expiresAt: "2099-01-01T00:00:00Z",
       filename,
@@ -77,7 +77,6 @@ async function openViewer({
     context,
     path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.PrivateArtifacts]: true },
   });
 }
 
@@ -143,14 +142,9 @@ test("Share copies the current app address without changing sharing or copying a
   expect(queryAllByRoleFast("menuitem")).toHaveLength(0);
 });
 
-test("downloads resolve references and save the original filename and bytes", async () => {
+test("downloads resolve attachment URLs and preserve the original filename", async () => {
   const path = `/share/artifacts/${artifactId}?source=shared#detail`;
   const browser = context.mocks.browser.blobDownload();
-  context.mocks.http.get("https://artifacts.example.com/launch.png", () => {
-    return HttpResponse.text("original image bytes", {
-      headers: { "Content-Type": "image/png" },
-    });
-  });
   await openViewer({
     path,
   });
@@ -164,10 +158,11 @@ test("downloads resolve references and save the original filename and bytes", as
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
-  expect(browser.downloads[0]?.filename).toBe("launch.png");
-  await expect(browser.downloads[0]?.blob?.text()).resolves.toBe(
-    "original image bytes",
-  );
+  expect(browser.downloads[0]).toMatchObject({
+    filename: "launch.png",
+    url: "https://artifacts.example.com/launch.png?download=1",
+    blob: null,
+  });
 });
 
 test("HTML stays on its isolated origin and retains the requested slide", async () => {
@@ -204,12 +199,9 @@ test("an external HTML preview receives no app or artifact referrer", async () =
   ).resolves.toHaveAttribute("referrerpolicy", "no-referrer");
 });
 
-test.each([
-  [403, true],
-  [404, false],
-] as const)(
-  "unavailable links offer recovery without disclosing content: status %s, viewer %s",
-  async (status, privateArtifacts) => {
+test.each([403, 404] as const)(
+  "unavailable links offer recovery without disclosing content: status %s",
+  async (status) => {
     context.mocks.browser.matchMedia(true);
     context.mocks.data.userPreferences({ colorTheme: "blue-horizon" });
     context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
@@ -227,9 +219,6 @@ test.each([
           fullName: "Alex Rivera",
           email: "alex@example.test",
         },
-      },
-      featureSwitches: {
-        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
       },
     });
 

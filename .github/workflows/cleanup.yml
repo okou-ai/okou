@@ -76,8 +76,8 @@ jobs:
         run: |
           JOB_REF="pr-${PR_NUMBER}"
           export JOB_REF
-          if ! "$GITHUB_WORKSPACE/.github/scripts/with-runner-lifecycle-lock.sh" \
-            "$GITHUB_WORKSPACE/.github/scripts/cleanup-pr-runner-namespace.sh"; then
+          if ! "$GITHUB_WORKSPACE/.github/scripts/runner/with-runner-lifecycle-lock.sh" \
+            "$GITHUB_WORKSPACE/.github/scripts/runner/cleanup-pr-runner-namespace.sh"; then
             echo "::warning::PR runner cleanup failed for ${JOB_REF} — stale services may remain on metal hosts"
           fi
 

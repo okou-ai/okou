@@ -8,6 +8,7 @@ import { clerk$ } from "../../signals/auth.ts";
 import { brandName$ } from "../../signals/branding.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { searchParams$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import {
   connectTelegramAccount$,
   telegramConnectLinkStatus$,
@@ -18,6 +19,7 @@ import {
 } from "../../signals/okou-page/telegram-connect-params.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
+import { telegramReadinessErrorMessage } from "../../signals/okou-page/telegram-authorization.ts";
 import {
   CenterText,
   ConnectBackLink,
@@ -36,9 +38,9 @@ function BackLink() {
   const { t } = useTranslation();
   return (
     <ConnectBackLink
-      pathname="/settings/telegram"
+      pathname={ROUTES.works}
       label={t(($) => {
-        return $.connectors.providerConnect.telegram.back;
+        return $.connectors.providerSettings.telegram.backToIntegrations;
       })}
     />
   );
@@ -349,16 +351,17 @@ export function TelegramConnectPage(): JSX.Element {
   }
   if (
     !parsed.params.connectSignature &&
-    linkStatus?.installation?.domainConfigured === false
+    linkStatus &&
+    (!linkStatus.installation?.loginBotId ||
+      linkStatus.installation?.domainConfigured === false ||
+      linkStatus.readinessError)
   ) {
     return (
       <InvalidState
         title={t(($) => {
           return $.connectors.providerConnect.common.connectionFailed;
         })}
-        message={t(($) => {
-          return $.connectors.providerConnect.telegram.errorFallback;
-        })}
+        message={telegramReadinessErrorMessage(linkStatus)}
       />
     );
   }

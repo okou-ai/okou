@@ -86,7 +86,6 @@ export interface ThreadContext extends ThreadWorkflowContext {
   /** Generated once per picked event's claim graph. */
   readonly runIds$: Computed<{
     readonly runId: string;
-    readonly newSessionId: string;
   }>;
   /** Connector accounts chosen from thread, source and default selections. */
   readonly connectorSelection$: ConnectedAccounts["connectorSelection$"];
@@ -107,7 +106,7 @@ export function createThreadContext(
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
-  const sessionRead$ = createChatThreadSessionRead(thread$, orgId, userId);
+  const sessionRead$ = createChatThreadSessionRead(pickedEvent$, orgId, userId);
   const session$ = computed(async (get) => {
     return chatThreadSessionIdentity(await get(sessionRead$));
   });
@@ -171,7 +170,6 @@ export function createThreadContext(
     officialWorkflowObservation$: workflowContext.officialWorkflowObservation$,
     workflowSkills$: workflowContext.workflowSkills$,
     storage$: workflowContext.storage$,
-    storageCache$: workflowContext.storageCache$,
     templates$,
     queuedModel$: model.queuedModel$,
     modelSelection$: model.modelSelection$,
@@ -272,7 +270,7 @@ function createThreadHostGrant(
 
 function createRunIds() {
   return computed(() => {
-    return { runId: randomUUID(), newSessionId: randomUUID() };
+    return { runId: randomUUID() };
   });
 }
 

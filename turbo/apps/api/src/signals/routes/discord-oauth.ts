@@ -1,16 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, gt, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
-import { discordOrgInstallations } from "@okouai/db/schema/discord-org-installation";
-import { discordOrgGrants } from "@okouai/db/schema/discord-org-grant";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { getOAuthApiOrigin } from "../../lib/oauth-origin";
 import { now, nowDate } from "../../lib/time";
-import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { request$, requestSignal$, setResHeader$ } from "../context/hono";
@@ -107,7 +104,6 @@ const ownerAuthorized$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly flow: "install" | "connect";
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -132,10 +128,7 @@ const ownerAuthorized$ = command(
     const membership = result.value.data.find((member) => {
       return member.publicUserData?.userId === args.userId;
     });
-    if (
-      !membership ||
-      (args.flow === "install" && membership.role !== "org:admin")
-    ) {
+    if (!membership) {
       return false;
     }
     return await set(
@@ -146,39 +139,6 @@ const ownerAuthorized$ = command(
     );
   },
 );
-
-function installationConsentValues(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly guildId: string | null;
-  readonly createdAt: Date;
-  readonly expiresAt: Date;
-}) {
-  return {
-    orgId: sql`${args.orgId}`.mapWith(discordOrgGrants.orgId).as("org_id"),
-    initiatedByUserId: sql`${args.userId}`
-      .mapWith(discordOrgGrants.initiatedByUserId)
-      .as("initiated_by_user_id"),
-    requestedGuildId: sql`${args.guildId}`
-      .mapWith(discordOrgGrants.requestedGuildId)
-      .as("requested_guild_id"),
-    verifiedGuildId: sql`NULL`
-      .mapWith(nullableDriverValueDecoder(discordOrgGrants.verifiedGuildId))
-      .as("verified_guild_id"),
-    verifiedBotUserId: sql`NULL`
-      .mapWith(nullableDriverValueDecoder(discordOrgGrants.verifiedBotUserId))
-      .as("verified_bot_user_id"),
-    approvedAt: sql`NULL`
-      .mapWith(nullableDriverValueDecoder(discordOrgGrants.approvedAt))
-      .as("approved_at"),
-    createdAt: sql`${sql.param(args.createdAt, discordOrgGrants.createdAt)}`
-      .mapWith(discordOrgGrants.createdAt)
-      .as("created_at"),
-    expiresAt: sql`${sql.param(args.expiresAt, discordOrgGrants.expiresAt)}`
-      .mapWith(discordOrgGrants.expiresAt)
-      .as("expires_at"),
-  };
-}
 
 function discordAuthorizationUrl(args: {
   readonly applicationId: string;
@@ -220,13 +180,11 @@ const startDiscordOauth$ = command(
     if (!body.ok) {
       return body.response;
     }
-    if (
-      !(await set(ownerAuthorized$, { ...auth, flow: body.data.flow }, signal))
-    ) {
+    if (!(await set(ownerAuthorized$, auth, signal))) {
       return apiError(
         403,
         "FORBIDDEN",
-        "Discord requires current workspace membership, an enabled integration, and admin access to install.",
+        "Discord requires current workspace membership and an enabled integration.",
       );
     }
     const config = getDiscordAppConfig();
@@ -238,28 +196,12 @@ const startDiscordOauth$ = command(
       );
     }
     const db = set(writeDb$);
-    const [installation] = await db
-      .select()
-      .from(discordOrgInstallations)
-      .where(eq(discordOrgInstallations.orgId, auth.orgId));
-    signal.throwIfAborted();
-    let guildId = body.data.guildId ?? null;
-    if (body.data.flow === "connect" && !installation) {
-      return apiError(
-        404,
-        "NOT_FOUND",
-        "Install Discord for this workspace first.",
-      );
-    }
-    if (installation) {
-      if (guildId && guildId !== installation.guildId) {
-        return apiError(
-          409,
-          "CONFLICT",
-          "Uninstall the current Discord server before choosing another.",
-        );
-      }
-      guildId = installation.guildId;
+    const guildId = body.data.guildId ?? null;
+    // Connect actions use the server context to choose their default flow.
+    // Explicit installation also supports an invite target for bound users.
+    const flow = body.data.flow ?? (guildId ? "connect" : "install");
+    if (flow === "connect" && !guildId) {
+      return apiError(400, "BAD_REQUEST", "Connecting requires a server ID.");
     }
     const state = secret();
     const completionToken = secret();
@@ -289,7 +231,7 @@ const startDiscordOauth$ = command(
           completionTokenHash: hash(completionToken),
           userId: auth.userId,
           orgId: auth.orgId,
-          flow: body.data.flow,
+          flow,
           guildId,
           redirectUri,
           createdAt,
@@ -302,21 +244,8 @@ const startDiscordOauth$ = command(
     );
     await db
       .with(expiredAttempts, started)
-      .insert(discordOrgGrants)
-      .select(
-        db
-          .select({
-            id: started.id,
-            ...installationConsentValues({
-              ...auth,
-              guildId,
-              createdAt,
-              expiresAt,
-            }),
-          })
-          .from(started)
-          .where(eq(started.flow, "install")),
-      );
+      .select({ id: started.id })
+      .from(started);
     signal.throwIfAborted();
     set(setResHeader$, "Cache-Control", "no-store");
     return {
@@ -326,7 +255,7 @@ const startDiscordOauth$ = command(
           applicationId: config.applicationId,
           redirectUri,
           state,
-          flow: body.data.flow,
+          flow,
           guildId,
         }),
         completionToken,
@@ -419,23 +348,8 @@ const verifyCallback$ = command(
         )
         .returning({ id: discordOauthStates.id }),
     );
-    const verifiedGrant = db.$with("verified_discord_installation_consent").as(
-      db
-        .update(discordOrgGrants)
-        .set({
-          verifiedGuildId: verified.data.guildId,
-          verifiedBotUserId: verified.data.botUserId,
-        })
-        .where(
-          eq(
-            discordOrgGrants.id,
-            db.select({ id: verifiedAttempt.id }).from(verifiedAttempt),
-          ),
-        )
-        .returning({ id: discordOrgGrants.id }),
-    );
     const [saved] = await db
-      .with(verifiedAttempt, verifiedGrant)
+      .with(verifiedAttempt)
       .select({ id: verifiedAttempt.id })
       .from(verifiedAttempt);
     signal.throwIfAborted();
@@ -597,16 +511,13 @@ const completeApproved$ = command(
       return apiError(
         409,
         "CONFLICT",
-        "This Discord server or identity is already bound. Disconnect or uninstall before changing it.",
+        "This Discord identity is already connected to an account. Disconnect it before connecting a different account.",
       );
     }
     return {
       status: 200 as const,
       body: {
-        status:
-          attempt.flow === "install"
-            ? ("installed" as const)
-            : ("connected" as const),
+        status: "connected" as const,
       },
     };
   },

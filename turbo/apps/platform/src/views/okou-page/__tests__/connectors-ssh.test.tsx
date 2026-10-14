@@ -55,18 +55,21 @@ test("Remote control summarizes SSH hosts that need attention and recovers", asy
       observations: [
         {
           connectionId: sshHost(1).id,
+          connectionCreatedAt: sshHost(1).createdAt,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: failed ? "authentication_failed" : null,
         },
         {
           connectionId: sshHost(2).id,
+          connectionCreatedAt: sshHost(2).createdAt,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: failed ? "network_failure" : null,
         },
         {
           connectionId: sshHost(3).id,
+          connectionCreatedAt: sshHost(3).createdAt,
           generation: 1,
           observedAt: "2026-09-10T08:00:00.000Z",
           failureReason: null,
@@ -96,6 +99,43 @@ test("Remote control summarizes SSH hosts that need attention and recovers", asy
   });
   expect(screen.getByText("Host 1")).toBeInTheDocument();
 });
+
+test.each([
+  [1, "2026-08-01T00:00:00Z"],
+  [2, sshHost(1).createdAt],
+] as const)(
+  "SSH warnings use the current connection instance (%s, %s)",
+  async (generation, connectionCreatedAt) => {
+    mockCatalog();
+    mockSshHosts(3);
+    context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: sshHost(1).id,
+            connectionCreatedAt,
+            generation,
+            observedAt: "2026-09-10T08:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+          {
+            connectionId: sshHost(2).id,
+            connectionCreatedAt: sshHost(2).createdAt,
+            generation: sshHost(2).generation,
+            observedAt: "2026-09-10T08:00:00.000Z",
+            failureReason: "network_failure",
+          },
+        ],
+      });
+    });
+    await page("/connectors?scope=remote-control&type=ssh");
+    await screen.findByRole("status", { name: "1 SSH host needs attention" });
+    await screen.findByText(/The last SSH connection failed\./u);
+    expect(screen.queryByText(/SSH authentication failed\./u)).toBeNull();
+    expect(screen.getByText("Host 1")).toBeInTheDocument();
+    expect(screen.getByText("Host 3")).toBeInTheDocument();
+  },
+);
 
 test("Remote control distinguishes unavailable SSH diagnostics from failed hosts", async () => {
   mockCatalog();

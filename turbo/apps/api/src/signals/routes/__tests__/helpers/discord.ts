@@ -311,7 +311,7 @@ export function createPublicDiscordBinding(
     const started = await accept(
       oauth.start({
         headers: { authorization: "Bearer clerk-session" },
-        body: { flow: args.flow, guildId: identity.guildId },
+        body: args.flow === "install" ? {} : { guildId: identity.guildId },
       }),
       [200],
     );
@@ -380,10 +380,7 @@ export function createPublicDiscordBinding(
       }),
       [200],
     );
-    if (
-      completed.body.status !==
-      (args.flow === "install" ? "installed" : "connected")
-    ) {
+    if (completed.body.status !== "connected") {
       throw new Error(
         "Discord OAuth completion returned the wrong flow status",
       );
@@ -423,7 +420,7 @@ export function createPublicDiscordBinding(
   });
 }
 
-/** Disconnect as the actual member; only the installer may uninstall. */
+/** Disconnect only this account as its actual workspace member. */
 export async function removePublicDiscordBinding(
   context: TestContext,
   fixture: DiscordFixture,
@@ -437,14 +434,5 @@ export async function removePublicDiscordBinding(
     integrationsDiscordContract,
   );
   const headers = { authorization: "Bearer clerk-session" };
-  await accept(
-    client.disconnect({ headers, query: { action: "disconnect" } }),
-    [200, 403, 404],
-  );
-  if (fixture.flow === "install") {
-    await accept(
-      client.disconnect({ headers, query: { action: "uninstall" } }),
-      [200, 403, 404],
-    );
-  }
+  await accept(client.disconnect({ headers, query: {} }), [200, 403, 404]);
 }

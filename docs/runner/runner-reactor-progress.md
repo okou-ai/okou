@@ -44,6 +44,29 @@ teardown path and are returned as terminal errors. Ordinary optional GC or statu
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+## Startup-fact delivery
+
+Once preparation and replacement settle the actual resource, Executor starts an
+owned `StartupReport` for `sandbox`, `home`, `blank`, or `cold`. The dedicated
+`PUT /api/runners/runs/:runId/startup` uses the Run token; telemetry does not
+persist this fact. `ExecuteOutcome` transfers the task to Supervisor, which
+performs reuse handoff, completion and resource settlement before joining it
+alongside deferred telemetry. Delivery cannot hold guest startup, execution
+results, successor reuse or capacity release.
+
+The existing job owner drains delivery during normal shutdown. Report-owner
+drop aborts its task, and Run cancellation interrupts requests and backoff.
+There are at most three attempts, each with a two-second request timeout and
+two-second delays between retryable failures. Retrying failures log INFO;
+terminal failure, including a report-task join failure, logs ERROR and leaves
+the Run outcome unchanged. The report task owns only HTTP delivery state, never
+a sandbox or capacity lease.
+
+The nullable persisted field can arrive after Run completion. Missing, failed,
+cancelled or older reports remain unknown; they are not inferred as `cold` from
+legacy reuse diagnostics. Identical late reports are safe to replay, while a
+different accepted path cannot be overwritten.
+
 ## Idle cleanup handoff
 
 After removing or rejecting idle inventory, synchronously register each cleanup
@@ -192,6 +215,31 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
+Publication gives observed capacity contention a bounded asynchronous retry
+before staging, while retaining its entry lock. A capacity owner must never wait
+for an entry lock. This retry has a separate budget from startup's short entry
+wait and immediate-fallback policy. Proven guest exit releases healthy
+reclamation CPU permits before publication, but the entry and applicable logical
+lease remain owned until their cleanup contract completes. Waiting can therefore
+affect same-key checkout, resource-limited blank refill and joined shutdown; its
+contention deadline does not bound filesystem I/O.
+
+Checkout protects and examines the requested entry before considering disk
+pressure, with the existing short entry wait or immediate fallback. It never
+acquires capacity or runs a whole-cache GC on startup. A valid Move seed can be
+consumed by same-filesystem rename even below the reserve; periodic maintenance
+owns reclamation. A pressure miss may therefore fail promptly until maintenance
+frees space.
+
+Runtime home configurations carry the same max(10% capacity, 50 GiB) reserve as
+cache publication. Firecracker queries the actual destination filesystem before
+fresh creation, Copy or EXDEV copy. Sparse seeds need their allocated bytes plus
+metadata headroom, while fresh images conservatively need their logical size.
+Refusal precedes image truncation, copying and source removal. Pristine retries
+retain the reserve policy. This is an observed allocation check, not a reservation
+against other writers or a guarantee about future guest growth. Same-filesystem
+rename still performs ordinary filesystem I/O and can fail.
+
 Successful routine completion emits `entry_count` (the unlocked candidate
 count), `inventory_us`, cumulative `capacity_lock_held_us` (both held phases,
 excluding acquisition waits), `budget_gc` and `freed_bytes`. Deferred final
@@ -202,6 +250,25 @@ production cold-start savings or wall-clock performance guarantees. The ignored
 local measurements without latency thresholds. It uses temporary files and the
 owner tests' injected filesystem budget, so it does not measure production
 `statvfs` latency or pressure collection.
+
+## Optional snapshot IO
+
+Supplied-policy optional consumers share the pressure controller's current
+observation state and global cadence through a restricted capability bound to
+its original physical-memory authority. Notifications carry no cached
+permission. Revalidate an opportunity after outside-lock admission waits;
+Critical/Unknown/stale/wave/stop transitions revoke the original offer even
+after a later recovery. No pressure-state lock survives IO or provider work.
+
+The concrete prefetch owner moves the physical operation and tracking token
+into accepted blocking reads. Dropped receivers/coordinators cannot make its
+drain finish while that producer remains active. Shutdown cancels future
+optional work and joins actual IO before dependent cache/factory teardown.
+Positive phase settlement still requires a fresh fenced observation; producer
+loss retains uncertainty. Cancellation, completed reads and declared file bounds
+are not resident-cache, released-byte or production memory-saving proof.
+
+- [Supplied-envelope prefetch fixture](../../crates/runner/tests/guarded_prefetch_native/README.md)
 
 ## Other retained work
 

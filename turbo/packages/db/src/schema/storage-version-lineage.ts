@@ -1,6 +1,5 @@
 import { pgTable, uuid, varchar, timestamp, index } from "drizzle-orm/pg-core";
 import { storages } from "./storage";
-import { agentRuns } from "./agent-run";
 
 /**
  * Storage version lineage table
@@ -25,14 +24,7 @@ export const storageVersionLineage = pgTable(
       ),
     versionId: varchar("version_id", { length: 64 }).notNull(),
     parentVersionId: varchar("parent_version_id", { length: 64 }).notNull(),
-    runId: uuid("run_id")
-      .notNull()
-      .references(
-        () => {
-          return agentRuns.id;
-        },
-        { onDelete: "cascade" },
-      ),
+    runId: uuid("run_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {

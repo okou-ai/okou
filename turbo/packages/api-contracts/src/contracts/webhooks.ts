@@ -19,6 +19,7 @@ import {
   sessionHistorySizeBucketSchema,
   secretConnectorMetadataMapSchema,
   homeReuseResultSchema,
+  sandboxStartupPathSchema,
 } from "./runners";
 import {
   eventSequenceNumberSchema,
@@ -49,7 +50,7 @@ const sha256HexSchema = z
     "hash must be a lowercase 64-character SHA-256 hex string",
   );
 
-const piMemoryPhase2CheckpointAttestationSchema = z
+const piMemoryPhase2PublicationAttestationSchema = z
   .object({
     schemaVersion: z.literal(2),
     leaseToken: z.uuid(),
@@ -354,7 +355,7 @@ const runCompletionMetadataShape = {
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
   cliAgentSessionHistoryHash: sha256HexSchema.optional(),
   cliAgentSessionHistoryDisposition: z
-    .enum(["discarded_oversized", "unavailable"])
+    .enum(["discarded_oversized", "unavailable", "native_only"])
     .optional(),
   // Versions of the run's authorized writeback mounts after publication.
   artifactSnapshots: artifactSnapshotsSchema.optional(),
@@ -864,10 +865,8 @@ const sandboxOperationDownloadSourceSchema = z
   .optional();
 
 export const runnerStartupPathSchema = z.enum([
-  "sandbox",
+  ...sandboxStartupPathSchema.options,
   "workspace",
-  "home",
-  "cold",
 ]);
 
 export type RunnerStartupPath = z.infer<typeof runnerStartupPathSchema>;
@@ -939,10 +938,95 @@ export type ArchiveConnectionAttempt = z.infer<
   typeof archiveConnectionAttemptSchema
 >;
 
+const sessionHistoryDownloadTimingMsSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
+// Every offset uses the same materializer-local monotonic origin. The UTC
+// calibration permits joins without interpreting legacy recording timestamps
+// or summed attempt durations as true phase intervals. All fields are optional
+// so draining Runners and rollback API versions can coexist.
+const sessionHistoryDownloadAttributionSchema = z.object({
+  session_history_observation_stage: z
+    .enum(["restore", "cancel_drain"])
+    .optional(),
+  session_history_timing_origin_unix_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_download_attempt: z.number().int().min(1).max(3).optional(),
+  session_history_attempt_count: z.number().int().min(0).max(3).optional(),
+  session_history_failed_attempt_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .optional(),
+  session_history_interrupted_attempt_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .optional(),
+  session_history_retry_count: z.number().int().min(0).max(2).optional(),
+  session_history_retry_backoff_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_request_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_request_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_wait_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_wait_max_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_chunk_count: z
+    .number()
+    .int()
+    .min(0)
+    .max(4_294_967_295)
+    .optional(),
+  session_history_body_copy_ms: sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_body_allocation_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_admission_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_admission_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_queue_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_cpu_queue_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_restore_wait_start_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+  session_history_restore_wait_end_offset_ms:
+    sessionHistoryDownloadTimingMsSchema.optional(),
+});
+
+export type SessionHistoryDownloadAttribution = z.infer<
+  typeof sessionHistoryDownloadAttributionSchema
+>;
+
+// The forwarding allowlist is derived only from this explicitly declared
+// schema, never from arbitrary operation keys supplied by the caller.
+export const sessionHistoryDownloadAttributionFields = Object.freeze(
+  sessionHistoryDownloadAttributionSchema.keyof().options,
+);
+
+const storageBatchEvidenceIntegerSchema = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(Number.MAX_SAFE_INTEGER);
+
 /**
  * Sandbox operation schema for internal sandbox operations (init, storage, cli, finalization, cleanup)
  */
 const sandboxOperationSchema = z.object({
+  ...sessionHistoryDownloadAttributionSchema.shape,
   ts: z.string(),
   action_type: z.string(),
   duration_ms: z.number(),
@@ -1028,6 +1112,31 @@ const sandboxOperationSchema = z.object({
   storage_batch_host_timing: z
     .enum(["complete", "partial", "unavailable"])
     .optional(),
+  storage_batch_guest_timing: z
+    .enum(["complete", "partial", "unavailable"])
+    .optional(),
+  storage_batch_resources: z
+    .enum(["complete", "partial", "unavailable"])
+    .optional(),
+  storage_batch_guest_request_ownership_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_guest_worker_wait_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_guest_response_prepare_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_containment_wall_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_resource_collection_us:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_cpu_usage_us: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_cpu_throttled_us: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_peak_bytes: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom: storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom_kill:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_memory_events_oom_group_kill:
+    storageBatchEvidenceIntegerSchema.optional(),
+  storage_batch_pids_events_max: storageBatchEvidenceIntegerSchema.optional(),
   storage_batch_payload_size_bucket: z
     .enum([
       "none",
@@ -1044,6 +1153,9 @@ const sandboxOperationSchema = z.object({
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),
   runner_startup_path: runnerStartupPathSchema.optional(),
+  is_first_run: z.boolean().optional(),
+  reuse_key: z.string().optional(),
+  home_reuse_result: homeReuseResultSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:
     runnerPreSpawnConcurrencyBucketSchema.optional(),
@@ -1181,7 +1293,7 @@ export const webhookStoragesPrepareContract = c.router({
       changes: storageChangesSchema.optional(),
       /** Private proof emitted only after sandbox-local Phase 2 validation. */
       maintenanceAttestation:
-        piMemoryPhase2CheckpointAttestationSchema.optional(),
+        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({
@@ -1228,7 +1340,7 @@ export const webhookStoragesCommitContract = c.router({
       message: z.string().optional(),
       /** Private proof emitted only after sandbox-local Phase 2 validation. */
       maintenanceAttestation:
-        piMemoryPhase2CheckpointAttestationSchema.optional(),
+        piMemoryPhase2PublicationAttestationSchema.optional(),
     }),
     responses: {
       200: z.object({

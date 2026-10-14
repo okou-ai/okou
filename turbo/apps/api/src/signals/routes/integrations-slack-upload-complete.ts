@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   integrationsSlackUploadCompleteContract,
   type SlackUploadCompleteBody,
@@ -18,6 +18,19 @@ import { recordSlackUploadedFile$ } from "../services/run-uploaded-files.service
 import { slackOrgInstallation } from "../services/slack-data.service";
 import { resolveSlackTargetChannel$ } from "../services/slack-message-context.service";
 import type { RouteEntry } from "../route-entry";
+
+const slackInstallationInput$ = computed(
+  (
+    get,
+  ): {
+    readonly orgId: string;
+    readonly userId: string;
+  } => {
+    const auth = get(organizationAuthContext$);
+    return { orgId: auth.orgId, userId: auth.userId };
+  },
+);
+const slackInstallation$ = slackOrgInstallation(slackInstallationInput$);
 
 const noInstallation = Object.freeze({
   status: 404 as const,
@@ -227,9 +240,7 @@ const completeInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const installation = await get(
-    slackOrgInstallation({ orgId: auth.orgId, userId: auth.userId }),
-  );
+  const installation = await get(slackInstallation$);
   signal.throwIfAborted();
   if (!installation) {
     return noInstallation;

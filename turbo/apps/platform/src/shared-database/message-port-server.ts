@@ -1,10 +1,22 @@
 import type { Store } from "ccstate";
+import {
+  recordAuthDiagnostic,
+  type AuthDiagnosticContext,
+} from "../lib/auth-diagnostics.ts";
 
+import {
+  clientTelemetryOutcomeForError,
+  recordClientTelemetry,
+  startClientTelemetryMeasurement,
+  type ClientTelemetryOperation,
+  type ClientTelemetryOutcome,
+} from "../lib/client-telemetry.ts";
 import { captureSentryLogError } from "../lib/sentry-config.ts";
 import { logger } from "../signals/log.ts";
 import {
   createDeferredPromise,
   onDomEventFn,
+  onRejection,
   settle,
 } from "../signals/utils.ts";
 import type {
@@ -22,7 +34,6 @@ import {
 import {
   closeConnection$,
   openConnection$,
-  recordConnectionHeartbeat$,
   recordTabVisibility$,
   registerConnection$,
 } from "./worker-context.ts";
@@ -54,6 +65,7 @@ type RealtimeUnsubscribeMessage = Extract<
 >;
 
 interface PendingTokenRequest {
+  readonly diagnostic: AuthDiagnosticContext;
   readonly reject: (reason: unknown) => void;
   readonly resolve: (token: string | null) => void;
 }
@@ -199,6 +211,7 @@ export class SharedDatabaseMessagePortServer {
   }
 
   private readonly requestToken: SharedDatabaseTokenProvider = (
+    diagnostic,
     callerSignal,
   ) => {
     const registeredSignal = this.registeredSignal;
@@ -213,6 +226,14 @@ export class SharedDatabaseMessagePortServer {
     signal.throwIfAborted();
     const deferred = createDeferredPromise<string | null>(signal);
     const requestId = crypto.randomUUID();
+    if (diagnostic) {
+      diagnostic.tokenAttemptId = requestId;
+    }
+    const attempt: AuthDiagnosticContext = {
+      ...diagnostic,
+      tokenAttemptId: requestId,
+      connectionId: this.connectionId,
+    };
     const abort = () => {
       this.pendingTokenRequests.delete(requestId);
     };
@@ -225,16 +246,57 @@ export class SharedDatabaseMessagePortServer {
       };
     };
     this.pendingTokenRequests.set(requestId, {
+      diagnostic: attempt,
       reject: finish(deferred.reject),
       resolve: finish(deferred.resolve),
     });
     signal.addEventListener("abort", abort, { once: true });
-    this.emit({ type: "get-token", requestId });
-    return deferred.promise;
+    const measurement = startClientTelemetryMeasurement();
+    const operation = {
+      event_name: "shared_database.token_request",
+      request_id: requestId,
+    } satisfies ClientTelemetryOperation;
+    const report = async (outcome: ClientTelemetryOutcome): Promise<void> => {
+      // SDK errors, including AbortError, must not alter the token request.
+      await Promise.allSettled([
+        (async () => {
+          await recordClientTelemetry(measurement, operation, outcome);
+        })(),
+      ]);
+    };
+    return onRejection(
+      async () => {
+        const started = report("started");
+        recordAuthDiagnostic({
+          stage: "tab_token_requested",
+          context: attempt,
+          outcome: "started",
+        });
+        this.emit({ type: "get-token", requestId });
+        await started;
+        const token = await deferred.promise;
+        await report("success");
+        return token;
+      },
+      (error) => {
+        return report(clientTelemetryOutcomeForError(error));
+      },
+    );
   };
 
   private finishTokenRequest(message: TokenResponseMessage): void {
     const pending = this.pendingTokenRequests.get(message.requestId);
+    recordAuthDiagnostic({
+      stage: "worker_token_received",
+      context: pending?.diagnostic ?? {
+        tokenAttemptId: message.requestId,
+        connectionId: this.connectionId,
+      },
+      accepted: pending !== undefined,
+      ...(message.type === "token-result"
+        ? { token: message.token }
+        : { outcome: "error" }),
+    });
     if (!pending) {
       return;
     }
@@ -344,9 +406,7 @@ export class SharedDatabaseMessagePortServer {
         return;
       }
       if (message.type === "heartbeat") {
-        this.store.set(recordConnectionHeartbeat$, this.connectionId);
-        // Token routing only considers tabs that have sent a heartbeat, so the
-        // first heartbeat must be visible before realtime setup requests one.
+        // Start realtime setup after the tab has finished registration.
         this.store.set(startSharedDatabaseWorkerDaemons$);
         return;
       }

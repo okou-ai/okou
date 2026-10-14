@@ -11,6 +11,7 @@ use super::FailureReason;
 
 #[derive(Default)]
 pub(super) struct Attempt {
+    pub(super) created_at: Option<DateTime<Utc>>,
     pub(super) generation: Option<i64>,
     pub(super) connecting: bool,
     pub(super) authenticated_at: Option<DateTime<Utc>>,
@@ -19,6 +20,7 @@ pub(super) struct Attempt {
 }
 
 pub(super) struct Observation {
+    pub(super) created_at: DateTime<Utc>,
     pub(super) generation: i64,
     pub(super) observed_at: DateTime<Utc>,
     pub(super) failure: Option<ObservationRequestFailureReason>,
@@ -27,8 +29,10 @@ pub(super) struct Observation {
 impl Attempt {
     pub(super) fn finish(&self, failure: Option<FailureReason>) -> Option<Observation> {
         let generation = self.generation?;
+        let created_at = self.created_at?;
         if let Some(observed_at) = self.authenticated_at {
             return Some(Observation {
+                created_at,
                 generation,
                 observed_at,
                 failure: None,
@@ -42,6 +46,7 @@ impl Attempt {
                 .map(|_| Reason::AccessProtocolFailure)
         }) {
             return Some(Observation {
+                created_at,
                 generation,
                 observed_at: Utc::now(),
                 failure: Some(reason),
@@ -61,6 +66,7 @@ impl Attempt {
             _ => return None,
         };
         Some(Observation {
+            created_at,
             generation,
             observed_at: Utc::now(),
             failure: Some(failure),

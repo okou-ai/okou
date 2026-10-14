@@ -1,7 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { expectThreadModelCredits } from "./helpers/public-thread-usage";
-import { createHash, randomUUID } from "node:crypto";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { testContext } from "../../../__tests__/test-context";
@@ -24,25 +23,21 @@ import {
   createChatEventsFixture,
   userMessages,
   eventBackedContents,
-  occurrences,
 } from "./helpers/chat-events-fixture";
 
 const context = testContext();
 const {
   api,
   chat,
-  webhooks,
   chatCallbacks,
   configureSubscriptionPiModel,
   sendChatRun,
   claimChatRun,
   waitForThreadMessages,
-  waitForRunStatus,
   completeChatRunOk,
   cancelChatRun,
   mockPiObjectStore,
   completeSandboxFirstPiRun,
-  piSandboxBaseSession,
   mockPiResourceArchiveDownloads,
 } = createChatEventsFixture(context);
 
@@ -215,185 +210,6 @@ async function configureResponsesWithOwnedRuns(args: {
 }
 
 describe("CHAT-02: model-first routing", () => {
-  it("transfers pre-migration OpenRouter Chat JSONL by reference", async () => {
-    const { actor, agentId, runnerGroup } = await publicChatActor(context);
-    const {
-      run: own,
-      model,
-      sendChatRun,
-      claimChatRun,
-      cancelChatRun,
-    } = await configureResponsesWithOwnedRuns({
-      actor,
-      agentId,
-      runnerGroup,
-      selectedModel: "gpt-6-luna",
-    });
-
-    mockPiResourceArchiveDownloads();
-    const historyObjects = mockPiObjectStore();
-    const seedPrompt = "seed the canonical Pi binding";
-    const first = await sendChatRun(actor, {
-      agentId,
-      prompt: seedPrompt,
-      model,
-    });
-    await flushWaitUntilForTest();
-    const firstClaim = await claimChatRun(runnerGroup, first.runId);
-    const legacy = MemoryPiSession.create({
-      cwd: "/home/user/workspace",
-      id: first.threadId,
-    });
-    legacy.appendMessage({
-      role: "user",
-      content: "legacy API user context",
-      timestamp: 1,
-    });
-    legacy.appendMessage({
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "legacy API reasoning context" },
-        { type: "text", text: "legacy API assistant context" },
-        {
-          type: "toolCall",
-          id: "legacy_api_tool_call",
-          name: "read",
-          arguments: { path: "/home/user/workspace/AGENTS.md" },
-        },
-      ],
-      api: "openai-completions",
-      provider: "openrouter",
-      model: "openai/gpt-6-luna",
-      usage: {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 8,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "toolUse",
-      timestamp: 2,
-    });
-    legacy.appendMessage({
-      role: "toolResult",
-      toolCallId: "legacy_api_tool_call",
-      toolName: "read",
-      content: [{ type: "text", text: "legacy API tool output" }],
-      isError: false,
-      timestamp: 3,
-    });
-    legacy.appendMessage({
-      role: "assistant",
-      content: [{ type: "text", text: "legacy API tool conclusion" }],
-      api: "openai-completions",
-      provider: "openrouter",
-      model: "openai/gpt-6-luna",
-      usage: {
-        input: 5,
-        output: 3,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 8,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 4,
-    });
-    const legacyJsonl = legacy.toJsonl();
-    const legacyHash = createHash("sha256").update(legacyJsonl).digest("hex");
-    await own(async () => {
-      return await webhooks.requestAgentSessionHistoryPrepare(
-        {
-          runId: first.runId,
-          hash: legacyHash,
-          rawSize: Buffer.byteLength(legacyJsonl),
-          encodedSize: Buffer.byteLength(legacyJsonl),
-          encoding: "identity",
-        },
-        firstClaim.sandboxHeaders,
-        [200],
-      );
-    });
-    historyObjects.set(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`,
-      Buffer.from(legacyJsonl, "utf8"),
-    );
-    await own(async () => {
-      return await webhooks.requestAgentEvents(
-        {
-          runId: first.runId,
-          events: [
-            {
-              type: "result",
-              sequenceNumber: 1,
-              result: "legacy API tool conclusion",
-            },
-          ],
-        },
-        firstClaim.sandboxHeaders,
-        [200],
-      );
-    });
-    await own(async () => {
-      return await webhooks.requestAgentComplete(
-        {
-          runId: first.runId,
-          exitCode: 0,
-          lastEventSequence: 1,
-          completion: {
-            cliAgentType: "pi",
-            cliAgentSessionId: first.threadId,
-            cliAgentSessionHistoryHash: legacyHash,
-          },
-        },
-        firstClaim.sandboxHeaders,
-        [200],
-        undefined,
-      );
-    });
-    await waitForRunStatus(actor, first.runId, "completed");
-    await flushWaitUntilForTest();
-
-    const prompt = "continue the migrated OpenRouter session";
-    const second = await sendChatRun(actor, {
-      agentId,
-      threadId: first.threadId,
-      prompt,
-      model,
-    });
-    await flushWaitUntilForTest();
-    const claim = await claimChatRun(runnerGroup, second.runId);
-    const resumeSession = claim.claim.resumeSession;
-    if (!resumeSession || !("historyRef" in resumeSession)) {
-      throw new Error("Expected referenced historical Pi session");
-    }
-    expect(resumeSession).toMatchObject({
-      sessionId: first.threadId,
-      historyRef: {
-        kind: "blob",
-        hash: legacyHash,
-        encoding: "identity",
-        rawSize: Buffer.byteLength(legacyJsonl),
-      },
-    });
-    expect(
-      new URL(resumeSession.historyRef.url).searchParams.get("object"),
-    ).toBe(`${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${legacyHash}.blob`);
-    expect(
-      piSandboxBaseSession(claim.claim, historyObjects).toString("utf8"),
-    ).toBe(legacyJsonl);
-    for (const marker of [
-      "legacy API user context",
-      "legacy API reasoning context",
-      "legacy API tool output",
-      "legacy API tool conclusion",
-    ]) {
-      expect(occurrences(legacyJsonl, marker)).toBe(1);
-    }
-    await cancelChatRun(actor, second.runId, claim.sandboxHeaders);
-  }, 90_000);
-
   it("reuses one OpenRouter Responses Pi session across standard, fast, and standard turns for gpt-6-luna", async () => {
     const selectedModel = "gpt-6-luna";
     const { actor, agentId, runnerGroup } = await publicChatActor(context);
@@ -590,10 +406,7 @@ describe("CHAT-02: model-first routing", () => {
     const sessionBlobs = [...historyObjects.entries()].filter(([key]) => {
       return key.includes("/blobs/");
     });
-    expect(sessionBlobs.length).toBeGreaterThan(0);
-    for (const [, bytes] of sessionBlobs) {
-      expect(bytes.toString("utf8")).not.toContain("serviceTier");
-    }
+    expect(sessionBlobs).toStrictEqual([]);
   }, 90_000);
 
   it("promotes queued fast gpt-6-luna to a priority Pi Sandbox run", async () => {

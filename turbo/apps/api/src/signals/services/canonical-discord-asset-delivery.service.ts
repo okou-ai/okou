@@ -28,7 +28,7 @@ import {
 } from "../external/s3";
 import { settle } from "../utils";
 import { materializeCanonicalPublishedAsset$ } from "./canonical-asset.service";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
 import {
   discordUnavailable,
   type DiscordFailureResponse,
@@ -178,16 +178,17 @@ const authorizeDelivery$ = command(
     { set },
     args: DiscordDeliveryIdentity,
     row: DiscordDeliveryRow,
+    createThread: boolean,
     signal: AbortSignal,
   ) => {
     const access = await set(
-      requireDiscordConversationAccess$,
+      requireDiscordOutputAccess$,
       {
         orgId: args.orgId,
         userId: args.userId,
-        guildId: row.destination.guildId,
+        guildId: row.destination.guildId ?? undefined,
         channelId: row.destination.channelId,
-        mode: "write",
+        createThread,
         attachFiles: true,
       },
       signal,
@@ -305,7 +306,7 @@ export const materializeCanonicalDiscordAsset$ = command(
     if (!row) {
       return unavailableDelivery();
     }
-    const authorized = await set(authorizeDelivery$, args, row, signal);
+    const authorized = await set(authorizeDelivery$, args, row, false, signal);
     if (!authorized.ok) {
       return authorized;
     }
@@ -468,7 +469,13 @@ const sendDiscordFile$ = command(
     const db = set(writeDb$);
     const { identity: args, row: attemptRow } = operation;
     // Recheck after storage I/O and the durable claim, immediately before send.
-    const sendAccess = await set(authorizeDelivery$, args, attemptRow, signal);
+    const sendAccess = await set(
+      authorizeDelivery$,
+      args,
+      attemptRow,
+      false,
+      signal,
+    );
     if (!sendAccess.ok) {
       await markFailed(
         db,
@@ -539,7 +546,7 @@ export const completeCanonicalDiscordDelivery$ = command(
     if (!row) {
       return unavailableDelivery();
     }
-    const authorized = await set(authorizeDelivery$, args, row, signal);
+    const authorized = await set(authorizeDelivery$, args, row, false, signal);
     if (!authorized.ok) {
       return authorized;
     }
@@ -552,6 +559,12 @@ export const completeCanonicalDiscordDelivery$ = command(
     const verified = await set(verifiedFileBytes$, row, signal);
     if (!verified.ok) {
       return verified;
+    }
+    // Resolve/create only after the file is ready, but before claiming its
+    // one send. A rejected creation can then be retried without losing it.
+    const destination = await set(authorizeDelivery$, args, row, true, signal);
+    if (!destination.ok) {
+      return destination;
     }
     const attemptRow = await claimDeliveryAttempt(db, row, signal);
     if (!attemptRow) {

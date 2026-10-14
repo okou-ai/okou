@@ -30,13 +30,13 @@ import {
   isPwaAgentComposeRequested,
   setPwaAgentComposeRequested$,
 } from "./pwa-navigation.ts";
-import {
-  enterHomeTaskRecommendations$,
-  subscribeHomeTaskRecommendations$,
-} from "./home-task-recommendations.ts";
 import { parseTemplatePickerEntryCategory } from "./template-picker-entry.ts";
 import { i18n } from "../../i18n/index.ts";
 import { detach, Reason } from "../utils.ts";
+import {
+  enterAgentSuggestions$,
+  subscribeAgentSuggestions$,
+} from "./agent-suggestions.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
@@ -57,7 +57,7 @@ export const setupAgentChatPage$ = command(
     );
     const agentDraft: EnsuredAgentDraft = set(ensureAgentDraft$, agentId);
     set(setAgentComposerContext$, { agentId, agentDraft });
-    set(enterHomeTaskRecommendations$);
+    set(enterAgentSuggestions$);
     set(get(agentChatComposerSignals$).voice.setup$, signal);
     set(setTalkDraft$, agentDraft.draft);
     const firstGreetingVisit = set(startChatGreetingVisit$);
@@ -130,10 +130,7 @@ export const setupAgentChatPage$ = command(
         }),
     );
     set(setupAgentChatKeyboardShortcuts$, signal);
-    // The server refreshes recommendations by cron and announces changes over
-    // Ably. Keep the passive subscription page-owned so it stops with the route
-    // even when the card section currently renders nothing.
-    set(subscribeHomeTaskRecommendations$, signal);
+    set(subscribeAgentSuggestions$, signal);
 
     await set(checkUnifiedSettingsParam$, signal);
 

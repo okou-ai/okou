@@ -1,10 +1,8 @@
-import {
-  captureSessionStorageMocks,
-  prepareSessionHistoryBytes,
-} from "./helpers/prepared-session-history";
+import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
+/* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -1123,7 +1121,7 @@ async function setupSameThreadReuseScenario(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -1299,34 +1297,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("advertises artifact sharing only when private artifacts are enabled", async () => {
+      it("advertises private artifact sharing and downloads", async () => {
         const api = createRunsApi(context);
-        const connectors = createConnectorBddApi(context);
         const { actor, agentId } = await entitledRunActor();
-        for (const enabled of [false, true]) {
-          await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.PrivateArtifacts]: enabled,
-          });
-          const created = await api.createThreadRun(actor, {
-            agentId,
-            prompt: "share the report with my organization",
-          });
-          const run = await api.readRun(actor, created.runId);
-          const prompt = run.appendSystemPrompt ?? "";
-          expect(
-            prompt
-              .split("\n")
-              .includes(
-                "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
-              ),
-          ).toBe(enabled);
-          expect(
-            prompt.includes(
-              "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
-            ),
-          ).toBe(enabled);
-          await api.requestCancelRun(actor, created.runId, [200]);
-        }
+        const created = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "share the report with my organization",
+        });
+        const run = await api.readRun(actor, created.runId);
+        const prompt = run.appendSystemPrompt ?? "";
+        expect(prompt.split("\n")).toContain(
+          "- Private artifact sharing: for `/artifacts/xxx` links, only the owner can change visibility; use `okou artifact --help`.",
+        );
+        expect(prompt).toContain(
+          "- Private artifact downloads: Private files referenced by `/artifacts/xxx` or full artifact URLs may not be directly viewable. Run `okou artifact download -h` for usage, then download the file locally and open it with the appropriate tool.",
+        );
+        await api.requestCancelRun(actor, created.runId, [200]);
       });
 
       it("advertises current Run usage and grants its Run capability", async () => {
@@ -1636,7 +1622,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-overlap-${initialRun.runId}`,
-              cliAgentSessionHistoryDisposition: "discarded_oversized",
+              cliAgentSessionHistoryDisposition: "native_only",
               artifactSnapshots: [
                 {
                   name: initialMemory.name,
@@ -2144,7 +2130,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-storage-cli-${initialRun.runId}`,
-              cliAgentSessionHistoryDisposition: "discarded_oversized",
+              cliAgentSessionHistoryDisposition: "native_only",
               artifactSnapshots: [
                 {
                   name: initialMemory.name,
@@ -2161,8 +2147,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
         const completedInitialRun = await api.readRun(actor, initialRun.runId);
-        const conversationId = completedInitialRun.result?.conversationId;
-        if (!conversationId) {
+        const frameworkSessionId =
+          completedInitialRun.result?.frameworkSessionId;
+        if (!frameworkSessionId) {
           throw new Error("Expected the canonical native history to persist");
         }
 
@@ -2405,7 +2392,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-timing-cli-${first.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${claim.sandboxToken}` },
@@ -2419,13 +2406,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue finalized timing session",
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
-        expect(resumedClaim.resumeSession).toMatchObject({
+        expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: `bdd-timing-cli-${first.runId}`,
-          historyRef: {
-            kind: "blob",
-            hash: historyHash,
-            url: expect.any(String),
-          },
+          generationRunId: expect.any(String),
         });
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
@@ -2434,7 +2417,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       it("creates, dispatches, claims, reports, and completes a run through public APIs", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
-        let restoreAcceptedHistory = () => {};
         let restorePreviousHistory: (() => void) | undefined;
         onTestFinished(() => {
           restorePreviousHistory?.();
@@ -2448,7 +2430,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         } = await publicChatActor(context, {
           restoreEnvironment: () => {
             restorePreviousHistory ??= captureSessionStorageMocks(context);
-            restoreAcceptedHistory();
           },
         });
         await own(async () => {
@@ -2526,18 +2507,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [200],
           );
 
-          const historyBytes = Buffer.from(
-            `Public lifecycle session for ${created.runId}`,
-          );
-          const historyHash = await prepareSessionHistoryBytes(
-            context,
-            created.runId,
-            sandboxHeaders,
-            historyBytes,
-            (restore) => {
-              restoreAcceptedHistory = restore;
-            },
-          );
           await own(() => {
             return webhooks.requestAgentComplete(
               {
@@ -2547,7 +2516,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 completion: {
                   cliAgentType: "claude-code",
                   cliAgentSessionId: `bdd-cli-${created.runId}`,
-                  cliAgentSessionHistoryHash: historyHash,
+                  cliAgentSessionHistoryDisposition: "native_only",
                 },
               },
               sandboxHeaders,
@@ -2558,7 +2527,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const completed = await api.readRun(actor, created.runId);
           expect(completed.status).toBe("completed");
           expect(completed.completedAt).toBeDefined();
-          expect(completed.result?.conversationId).toBeDefined();
+          expect(completed.result?.frameworkSessionId).toBeDefined();
 
           const drained = await api.readRunQueue(actor);
           expect(drained.body.concurrency.active).toBe(0);
@@ -2634,6 +2603,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: winningClaim.candidate.runnerHostname,
           runnerVersion: winningClaim.candidate.runnerVersion,
           runnerId: winningClaim.candidate.runnerIdentity.runnerId,
@@ -2667,7 +2637,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           true,
           run.runId,
           [400],
-          { capabilities: { piModelConfigGenerations: [1, 2, 3] } },
+          {
+            capabilities: { piModelConfigGenerations: [1, 2, 3] },
+            nativeContinuationSupported: true,
+          },
         );
         expectApiError(rejected.body);
         await expect(api.readRun(actor, run.runId)).resolves.toMatchObject({
@@ -2679,6 +2652,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -2705,6 +2679,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             },
             runnerHostname: "x".repeat(256),
             capabilities: { piModelConfigGenerations: [1, 2, 3] },
+            nativeContinuationSupported: true,
           },
         );
         expectApiError(invalidHostname.body);
@@ -2767,6 +2742,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: null,
           homeReuseResult: null,
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: null,
@@ -2913,6 +2889,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               heartbeatGeneration: 1,
             },
             capabilities: { piModelConfigGenerations: [1, 2, 3] },
+            nativeContinuationSupported: true,
             telemetry: {
               pollReason: "future-runner-reason",
               jobDiscoveredToClaimRequestMs: -1,
@@ -2944,6 +2921,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const finalized = async (
           runId: string,
           sandboxToken: string,
+          resumedSessionId?: string,
         ): Promise<{
           readonly cliSessionId: string;
           readonly hash: string;
@@ -2951,7 +2929,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const history = `bdd continued session history ${runId}`;
           const hash = createHash("sha256").update(history).digest("hex");
           mockSessionHistoryBlob(hash, history);
-          const cliSessionId = `bdd-continued-cli-${runId}`;
+          const cliSessionId = resumedSessionId ?? `bdd-continued-cli-${runId}`;
           await webhooks.requestAgentComplete(
             {
               runId,
@@ -2960,7 +2938,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: cliSessionId,
-                cliAgentSessionHistoryHash: hash,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             },
             { authorization: `Bearer ${sandboxToken}` },
@@ -2980,18 +2958,22 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue the session",
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
-        expect(resumedClaim.resumeSession).toMatchObject({
+        expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: firstHistory.cliSessionId,
-          historyRef: { kind: "blob", hash: firstHistory.hash },
+          generationRunId: expect.any(String),
         });
-        await finalized(resumed.runId, resumedClaim.sandboxToken);
+        await finalized(
+          resumed.runId,
+          resumedClaim.sandboxToken,
+          firstHistory.cliSessionId,
+        );
         await flushWaitUntilForTest();
         // Both runs complete in the thread's single Agent session.
         const firstSession = (await api.readRun(actor, first.runId)).result
-          ?.agentSessionId;
+          ?.frameworkSessionId;
         expect(firstSession).toStrictEqual(expect.any(String));
         expect(
-          (await api.readRun(actor, resumed.runId)).result?.agentSessionId,
+          (await api.readRun(actor, resumed.runId)).result?.frameworkSessionId,
         ).toBe(firstSession);
 
         if (!actor.orgId) {
@@ -3097,7 +3079,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: firstClaim.cliAgentType,
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: firstHistoryHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -3116,9 +3098,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           model: selectedModel,
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
-        expect(resumedClaim.resumeSession).toMatchObject({
+        expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
-          historyRef: { kind: "blob", hash: firstHistoryHash },
+          generationRunId: expect.any(String),
         });
         const resumedStorageManifest = expectCanonicalStorageManifest(
           resumedClaim.storageManifest,
@@ -4036,7 +4018,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -4246,7 +4228,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -4414,7 +4396,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -6121,6 +6103,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 capabilities: {
                   piModelConfigGenerations: olderRunnerGenerations,
                 },
+                nativeContinuationSupported: true,
               },
             );
             expectApiError(olderClaim.body);
@@ -6133,6 +6116,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
             const capableClaim = await api.claimRunnerJob(run.runId, {
               capabilities: { piModelConfigGenerations: [2, 3, 5] },
+              nativeContinuationSupported: true,
             });
             ownedRuns.rememberClaim(run.runId, capableClaim.sandboxToken);
             expect(capableClaim).toMatchObject({
@@ -7590,7 +7574,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-mcp-awareness-${first.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -10484,6 +10468,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.any(String),
         );
         expect(expiryByPermission.get("conversations:read")).toBeNull();
+        const firstExpiry = expiryByPermission.get("chat:write");
+        if (typeof firstExpiry !== "string") {
+          throw new Error("Expected the temporary chat:write grant expiry");
+        }
+        const laterExpiry = expiryByPermission.get("files:read");
+        expect(laterExpiry).toStrictEqual(expect.any(String));
 
         // A same-org member's own grant never leaks into the owner's runs.
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -10501,7 +10491,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(
           grantedContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
-        ).toStrictEqual(expect.any(String));
+        ).toBe(firstExpiry);
         expect(grantedContext.claim.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
@@ -10516,11 +10506,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(granted.deny).not.toContain("chat:write");
         expect(granted.deny).toContain("files:write");
 
-        // Two hours later the 1h grant is expired while the 24h grant holds.
-        mockNow(now() + 2 * 3_600_000);
-        const expired = await claimSlackPolicy("after the 1h grant expired");
+        // The 1h grant expires at equality, while longer and permanent grants hold.
+        mockNow(Date.parse(firstExpiry));
+        const expiredContext = await claimSlackContext(
+          "at the 1h grant expiry",
+        );
+        const expired = expiredContext.policy;
         expect(expired.deny).toContain("chat:write");
         expect(expired.allow).toContain("files:read");
+        expect(expired.allow).toContain("search:read");
+        expect(expired.allow).toContain("conversations:read");
+        expect(
+          expiredContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
+        ).toBe(laterExpiry);
 
         // Unknown-permission grants flip only the unknown policy.
         await api.applyUserPermissionGrant(actor, {
@@ -10592,6 +10590,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
           nextSyncAt: expect.any(String),
         });
+        const sameUserSync = sameUserRuntime.body.results[1];
+        if (sameUserSync?.state !== "available") {
+          throw new Error(
+            "Expected the owner's runtime policy to be available",
+          );
+        }
+        expect(sameUserSync.networkPolicy).toStrictEqual(
+          snapshotClaim.networkPolicies?.slack,
+        );
+        expect(sameUserSync.nextSyncAt).toBe(laterExpiry);
         const otherUserRuntime = await api.requestSyncConnectorRuntimeAs(
           `Bearer ${memberRunnerKey.token}`,
           snapshotRun.runId,
@@ -10725,7 +10733,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `terminal-refresh-${run.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           sandboxHeaders,
@@ -10858,7 +10866,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-combined-cli-${first.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${firstClaim.sandboxToken}` },
@@ -10887,17 +10895,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           historyGenerationRunId: first.runId,
         });
         const resumedClaim = await api.claimRunnerJob(resumed.runId);
-        expect(resumedClaim.resumeSession).toMatchObject({
+        expect(resumedClaim.nativeContinuation).toMatchObject({
           sessionId: `bdd-combined-cli-${first.runId}`,
-          historyRef: {
-            kind: "blob",
-            hash: historyHash,
-            url: expect.any(String),
-          },
+          generationRunId: expect.any(String),
         });
-        expect(resumedClaim.resumeSession).not.toHaveProperty(
-          "historyGenerationRunId",
-        );
+        expect(resumedClaim.resumeSession).toBeNull();
         expect(resumedClaim.networkPolicies?.slack).toBeDefined();
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
@@ -11135,7 +11137,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           "For one known public URL when you only need page content, prefer `okou scrape <url> --format markdown`",
           "use Okou Cloud Browser when you need browser state, authentication, JavaScript, screenshots, or interaction",
           "Local dev servers are useful for agent-side verification",
-          "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a hosted URL that users can open; with private artifacts enabled, this is an owner-only artifact reference. For HTML presentations, include `--artifact-kind presentation-html`",
+          "For static web artifacts, Okou provides `okou host <dir> --site <slug> [--spa]` to publish a directory containing `index.html` to a public URL that users can open. For HTML presentations, include `--artifact-kind presentation-html`",
           "For apps or services that require a long-running backend, database, worker, external service, or framework-specific runtime",
           "for HTML presentations, include `--artifact-kind presentation-html`; run `okou host --help`",
           "okou connector status <slug>",
@@ -11598,7 +11600,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
       );
 
       it.each([false, true])(
-        "advertises pptx presentation delivery and Run capabilities only while its feature is enabled (%s)",
+        "selects one presentation format and gates PPTX conversion guidance and capability (%s)",
         async (enabled) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -11622,20 +11624,25 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
+          expect(prompt).toContain("Presentation delivery:");
+          expect(prompt).toContain("first author and check the deck as HTML");
+          expect(prompt).toContain(
+            "choose HTML or PPTX from the user's request, remembered preferences, and intended use",
+          );
+          expect(prompt).toContain(
+            "Deliver one format unless the user requests multiple formats",
+          );
           if (enabled) {
             expect(capabilities).toContain("presentation-convert:write");
-            expect(prompt).toContain("Presentation delivery:");
             expect(prompt).toContain(
-              "deliver both the hosted HTML deck and a pptx of it in one reply",
+              "okou presentation convert --input <deck.html> --out <deck.pptx> --verify",
             );
-            expect(prompt).toContain("name the artifact, not a format");
             expect(prompt).toContain(
-              "okou presentation convert --input <deck.html> --verify",
+              "Only after the agent selects PPTX as the delivery format",
             );
           } else {
             expect(capabilities).not.toContain("presentation-convert:write");
             expect(prompt).not.toContain("okou presentation convert");
-            expect(prompt).not.toContain("Presentation delivery:");
           }
           await api.requestCancelRun(actor, run.runId, [200]);
           await webhooks.requestAgentComplete(
@@ -11916,7 +11923,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         }
       });
 
-      it("returns 500 when claim response construction fails", async () => {
+      it("claims native continuation without reading history object metadata", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId } = await entitledRunActor(
@@ -11929,9 +11936,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "create history for a failed claim response",
         });
         const sourceClaim = await api.claimRunnerJob(source.runId);
-        const historyHash = createHash("sha256")
-          .update(`missing claim history ${source.runId}`)
-          .digest("hex");
+
         await webhooks.requestAgentComplete(
           {
             runId: source.runId,
@@ -11940,7 +11945,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-failed-claim-${source.runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           { authorization: `Bearer ${sourceClaim.sandboxToken}` },
@@ -11950,7 +11955,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const resumed = await api.createThreadRun(actor, {
           agentId,
           threadId: source.threadId,
-          prompt: "fail while constructing the claim response",
+          prompt: "continue without history object metadata",
         });
         context.mocks.s3.send.mockRejectedValueOnce(
           new Error("session history metadata unavailable"),
@@ -11958,9 +11963,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const failedClaim = await api.requestClaimRunnerJob(
           true,
           resumed.runId,
-          [500],
+          [200],
         );
-        expect(failedClaim.status).toBe(500);
+        if (failedClaim.status !== 200) {
+          throw new Error(
+            "Expected the native continuation to remain claimable",
+          );
+        }
+        expect(failedClaim.body.nativeContinuation).toMatchObject({
+          sessionId: `bdd-failed-claim-${source.runId}`,
+          generationRunId: source.runId,
+        });
 
         await api.requestCancelRun(actor, resumed.runId, [200]);
       });
@@ -12465,9 +12478,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 : { missingRootPolicy: memoryArtifact.missingRootPolicy }),
             },
           ];
-          const historyHash = createHash("sha256")
-            .update(`bdd snapshot history ${created.runId}`)
-            .digest("hex");
+
           const completion = await webhooks.requestAgentComplete(
             {
               runId: created.runId,
@@ -12476,7 +12487,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: `bdd-snapshot-cli-${created.runId}`,
-                cliAgentSessionHistoryHash: historyHash,
+                cliAgentSessionHistoryDisposition: "native_only",
                 artifactSnapshots,
                 volumeVersionsSnapshot: {
                   versions: { [cacheVolume]: cachePrepared.versionId },
@@ -12667,7 +12678,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `recovered-${run.runId}`,
-              cliAgentSessionHistoryHash: hash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           } as const;
           const recovered = await webhooks.requestAgentComplete(
@@ -12682,7 +12693,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const persisted = await api.readRun(actor, run.runId);
           expect(persisted.status).toBe(terminalStatus);
           expect(persisted.result).toMatchObject({
-            conversationId: expect.any(String),
+            frameworkSessionId: expect.any(String),
             storageOutputs: expect.any(Array),
           });
           await webhooks.requestAgentComplete(body, headers, [200]);
@@ -12713,10 +12724,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt: "resume recovered native history",
           });
           expect(
-            (await api.claimRunnerJob(next.runId)).resumeSession,
+            (await api.claimRunnerJob(next.runId)).nativeContinuation,
           ).toMatchObject({
             sessionId: body.completion.cliAgentSessionId,
-            historyRef: { kind: "blob", hash },
+            generationRunId: expect.any(String),
           });
           await api.requestCancelRun(actor, next.runId, [200]);
         },
@@ -12757,17 +12768,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
-          await webhooks.requestAgentSessionHistoryPrepare(
-            {
-              runId: run.runId,
-              hash: historyHash,
-              rawSize: Buffer.byteLength(history),
-              encodedSize: Buffer.byteLength(history),
-              encoding: "identity",
-            },
-            sandboxHeaders,
-            [200],
-          );
+
           mockSessionHistoryBlob(historyHash, history);
           const body = {
             runId: run.runId,
@@ -12777,7 +12778,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType,
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           } as const;
 
@@ -12793,8 +12794,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const settled = await api.readRun(actor, run.runId);
           expect(settled.status).toBe("completed");
           expect(settled.result).toMatchObject({
-            agentSessionId: expect.any(String),
-            conversationId: expect.any(String),
+            framework: cliAgentType,
+            frameworkSessionId: expect.any(String),
           });
 
           const repeated = await webhooks.requestAgentComplete(
@@ -12850,26 +12851,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             model,
           });
           const continuedClaim = await api.claimRunnerJob(continued.runId);
-          expect(continuedClaim.resumeSession).toMatchObject({
+          expect(continuedClaim.nativeContinuation).toMatchObject({
             sessionId: cliAgentSessionId,
-            historyRef: { kind: "blob", hash: historyHash },
+            generationRunId: expect.any(String),
           });
           const successorHistory = `bdd successor ${cliAgentType} history ${continued.runId}`;
           const successorHistoryHash = createHash("sha256")
             .update(successorHistory)
             .digest("hex");
           const successorCliAgentSessionId = `bdd-successor-${cliAgentType}-${continued.runId}`;
-          await webhooks.requestAgentSessionHistoryPrepare(
-            {
-              runId: continued.runId,
-              hash: successorHistoryHash,
-              rawSize: Buffer.byteLength(successorHistory),
-              encodedSize: Buffer.byteLength(successorHistory),
-              encoding: "identity",
-            },
-            { authorization: `Bearer ${continuedClaim.sandboxToken}` },
-            [200],
-          );
+
           mockSessionHistoryBlob(successorHistoryHash, successorHistory);
           await webhooks.requestAgentComplete(
             {
@@ -12878,7 +12869,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               completion: {
                 cliAgentType,
                 cliAgentSessionId: successorCliAgentSessionId,
-                cliAgentSessionHistoryHash: successorHistoryHash,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             },
             { authorization: `Bearer ${continuedClaim.sandboxToken}` },
@@ -12887,8 +12878,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
           // The continuation completes in the same Agent session.
           expect(
-            (await api.readRun(actor, continued.runId)).result?.agentSessionId,
-          ).toBe(settled.result?.agentSessionId);
+            (await api.readRun(actor, continued.runId)).result
+              ?.frameworkSessionId,
+          ).toBe(successorCliAgentSessionId);
 
           const repeatedAfterSuccessor = await webhooks.requestAgentComplete(
             body,
@@ -12904,9 +12896,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             model,
           });
           const afterRetryClaim = await api.claimRunnerJob(afterRetry.runId);
-          expect(afterRetryClaim.resumeSession).toMatchObject({
+          expect(afterRetryClaim.nativeContinuation).toMatchObject({
             sessionId: successorCliAgentSessionId,
-            historyRef: { kind: "blob", hash: successorHistoryHash },
+            generationRunId: expect.any(String),
           });
           await api.requestCancelRun(actor, afterRetry.runId, [200]);
         },
@@ -12940,7 +12932,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           sandboxHeaders,
@@ -12960,9 +12952,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "resume cancellation recovery",
         });
         const continuedClaim = await api.claimRunnerJob(continued.runId);
-        expect(continuedClaim.resumeSession).toMatchObject({
+        expect(continuedClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionId,
-          historyRef: { kind: "blob", hash: historyHash },
+          generationRunId: expect.any(String),
         });
         await api.requestCancelRun(actor, continued.runId, [200]);
       });
@@ -13010,6 +13002,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runner.body).toStrictEqual({
           sandboxReuseResult: "poolMiss",
           homeReuseResult: "lockBusy",
+          sandboxStartupPath: null,
           runnerHostname: null,
           runnerVersion: null,
           runnerId: expect.any(String),
@@ -13079,7 +13072,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             runId: source.runId,
             cliAgentType: "claude-code",
             cliAgentSessionId: cliSessionId,
-            cliAgentSessionHistoryHash: historyHash,
+            cliAgentSessionHistoryDisposition: "native_only",
           },
           sandboxHeaders,
           [200],
@@ -13091,13 +13084,9 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           prompt: "continue after the execution deadline",
         });
         const continuedClaim = await api.claimRunnerJob(continued.runId);
-        expect(continuedClaim.resumeSession).toMatchObject({
+        expect(continuedClaim.nativeContinuation).toMatchObject({
           sessionId: cliSessionId,
-          historyRef: {
-            kind: "blob",
-            hash: historyHash,
-            url: expect.any(String),
-          },
+          generationRunId: expect.any(String),
         });
 
         await api.requestCancelRun(actor, continued.runId, [200]);
@@ -13160,6 +13149,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             homeReuseResult: "cacheMiss",
+            sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,
@@ -13219,6 +13209,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(runner.body).toStrictEqual({
             sandboxReuseResult: "poolMiss",
             homeReuseResult: "diskPressure",
+            sandboxStartupPath: null,
             runnerHostname: null,
             runnerVersion: null,
             runnerId: null,
@@ -13266,9 +13257,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const sandboxHeaders = {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
-          const historyHash = createHash("sha256")
-            .update(`bdd cancelled history ${run.runId}`)
-            .digest("hex");
+
           await api.requestCancelRun(actor, run.runId, [200]);
 
           const late = await webhooks.requestAgentComplete(
@@ -13279,7 +13268,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: `bdd-cancelled-cli-${run.runId}`,
-                cliAgentSessionHistoryHash: historyHash,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             },
             sandboxHeaders,
@@ -13315,9 +13304,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             authorization: `Bearer ${claim.sandboxToken}`,
           };
 
-          const historyHash = createHash("sha256")
-            .update(`bdd null vars history ${run.runId}`)
-            .digest("hex");
           await webhooks.requestAgentComplete(
             {
               runId: run.runId,
@@ -13326,7 +13312,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               completion: {
                 cliAgentType: "claude-code",
                 cliAgentSessionId: `bdd-null-vars-cli-${run.runId}`,
-                cliAgentSessionHistoryHash: historyHash,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             },
             sandboxHeaders,
@@ -13334,7 +13320,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           );
           const completed = await api.readRun(actor, run.runId);
           expect(completed.status).toBe("completed");
-          expect(completed.result?.conversationId).toBeDefined();
+          expect(completed.result?.frameworkSessionId).toBeDefined();
         });
       });
     });
@@ -13814,9 +13800,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           [200],
         );
 
-        const historyHash = createHash("sha256")
-          .update(`bdd cleanup-first session history ${runId}`)
-          .digest("hex");
         await webhooks.requestAgentComplete(
           {
             runId,
@@ -13825,7 +13808,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `bdd-cleanup-first-${runId}`,
-              cliAgentSessionHistoryHash: historyHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           sandboxHeaders,

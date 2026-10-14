@@ -4,7 +4,6 @@ Incrementally extracts billing-relevant fields from X JSON and NDJSON
 responses and publishes parser-owned flow metadata for X usage reporting.
 """
 
-import urllib.parse
 from collections.abc import Callable, Iterator
 from typing import TypedDict
 
@@ -12,6 +11,7 @@ from mitmproxy import http
 
 import flow_metadata_keys as metadata_keys
 from body_limits import LARGE_RESPONSE_DECOMPRESS_LIMIT
+from runtime_url_parsing import runtime_url_path
 
 from ...json_selective import (
     JsonExtractionResult,
@@ -390,7 +390,7 @@ def create_response_parser(
     if _HTTP_STATUS_OK_MIN <= status_code < _HTTP_STATUS_REDIRECT_MIN:
         # Use the dispatcher-required original URL so parser registration and
         # final request metadata cannot diverge.
-        stream_path = urllib.parse.urlparse(original_url).path
+        stream_path = runtime_url_path(original_url)
         if is_stream_path(stream_path):
             extractor = _NdjsonExtractor(on_row)
             # Deliberately NOT "model_provider_usage" — that key routes through

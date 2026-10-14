@@ -3,18 +3,14 @@ import { authHeadersSchema, initContract } from "./base";
 import {
   persistedAttachmentSchema,
   userMessageInputDocumentSchema,
+  composerDraftSchema,
 } from "./chat-threads";
 import { requireUserMessageForDraftAttachments } from "./draft-user-message";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
 
-export const agentDraftResponseSchema = z
-  .object({
-    draftUserMessage: userMessageInputDocumentSchema.nullable(),
-    draftAttachments: z.array(persistedAttachmentSchema).nullable(),
-  })
-  .superRefine(requireUserMessageForDraftAttachments);
+export const agentDraftResponseSchema = composerDraftSchema;
 
 export const agentDraftRequestSchema = z
   .object({

@@ -10,6 +10,10 @@ import type {
   InitClientArgs,
   InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
+import type {
+  AuthDiagnosticContext,
+  AuthTokenProvider,
+} from "../lib/auth-diagnostics.ts";
 import { appVersion$ } from "./app-version.ts";
 import { createAuthedContractClient } from "./api-client-base.ts";
 import { apiClientRuntime$ } from "./api-client-runtime.ts";
@@ -39,7 +43,8 @@ export const OAUTH_API_BASE = "oauth" as OAuthApiBase;
 export interface ApiClientOptions {
   readonly apiBase?: "auto" | "api" | OAuthApiBase;
   /** Pin an exchange to its freshly activated session, or make it unauthenticated. */
-  readonly getToken?: (signal?: AbortSignal) => Promise<string | null>;
+  readonly getToken?: AuthTokenProvider;
+  readonly authDiagnosticContext?: AuthDiagnosticContext;
   /** Capture request auth state before a token read and validate it afterwards. */
   readonly getTokenGuard?: () => () => void;
 }
@@ -81,6 +86,10 @@ export const apiClient$ = computed((get) => {
     return createAuthedContractClient(contract, {
       getToken: options?.getToken ?? tokenOptions.getToken,
       getTokenGuard: options?.getTokenGuard,
+      authDiagnosticContext: {
+        ...runtime.authDiagnosticContext,
+        ...options?.authDiagnosticContext,
+      },
       baseUrl: runtime.apiBaseUrl,
       clientVersion,
       resolvePath: (path) => {

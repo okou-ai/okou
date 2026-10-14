@@ -126,17 +126,21 @@ export function createRunTemplates(
       get(mounted$),
       get(features$),
     ]);
-    const guidance = buildGenerationTemplatesPrompt(
-      selection?.templates ?? [],
-      {
-        mountedUserPresentationTemplateIds: presentations,
-        mountedUserTemplates: mounted,
-        artifactPreviewsEnabled: isFeatureEnabled(
-          FeatureSwitchKey.ArtifactPreviews,
-          features,
-        ),
-      },
-    );
+    const templates = selection?.templates ?? [];
+    if (
+      !isFeatureEnabled(FeatureSwitchKey.BuiltinDocumentTemplates, features) &&
+      templates.some((template) => {
+        return template.type === "document";
+      })
+    ) {
+      return {
+        error: { code: "FORBIDDEN", message: "Document templates disabled" },
+      };
+    }
+    const guidance = buildGenerationTemplatesPrompt(templates, {
+      mountedUserPresentationTemplateIds: presentations,
+      mountedUserTemplates: mounted,
+    });
     if (guidance.status === "invalid") {
       return { error: { code: "BAD_REQUEST", message: guidance.message } };
     }

@@ -47,10 +47,10 @@ fixture_git() {
 fixture_git init --quiet
 fixture_git commit --quiet --allow-empty -m baseline
 base_ref=$(fixture_git rev-parse HEAD)
-mkdir -p "${test_root}/.github/scripts"
-cp "${SCRIPT_DIR}/runner-image-context.sh" "${SCRIPT_DIR}/runner-image-target.sh" \
-  "${SCRIPT_DIR}/runner-binary-transport.sh" "${test_root}/.github/scripts/"
-fixture_git add .github/scripts/runner-binary-transport.sh
+mkdir -p "${test_root}/.github/scripts/runner"
+cp "${SCRIPT_DIR}/runner/runner-image-context.sh" "${SCRIPT_DIR}/runner/runner-image-target.sh" \
+  "${SCRIPT_DIR}/runner/runner-binary-transport.sh" "${test_root}/.github/scripts/runner/"
+fixture_git add .github/scripts/runner/runner-binary-transport.sh
 fixture_git commit --quiet -m transport
 image_input_step=$(jq -r '.jobs.prepare.steps[] | select(.id == "image-inputs") | .run' <<<"$workflow_json")
 image_input_step=${image_input_step//"\${{ steps.crates.outputs.runner-changed }}"/false}
@@ -59,8 +59,8 @@ grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
   fail "transport-only changes must be recognized as runner image inputs"
 
 base_ref=$(fixture_git rev-parse HEAD)
-cp "${SCRIPT_DIR}/runner-binary-download.sh" "${test_root}/.github/scripts/"
-fixture_git add .github/scripts/runner-binary-download.sh
+cp "${SCRIPT_DIR}/runner/runner-binary-download.sh" "${test_root}/.github/scripts/runner/"
+fixture_git add .github/scripts/runner/runner-binary-download.sh
 fixture_git commit --quiet -m download
 image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
@@ -160,8 +160,8 @@ check_ci_detectors "$base_ref" "architecture workflow" true
 
 # The shared readiness guard is also an image input, without a crate edit.
 base_ref=$(fixture_git rev-parse HEAD)
-cp "${SCRIPT_DIR}/runner-image-architecture.sh" "${test_root}/.github/scripts/"
-fixture_git add .github/scripts/runner-image-architecture.sh
+cp "${SCRIPT_DIR}/runner/runner-image-architecture.sh" "${test_root}/.github/scripts/runner/"
+fixture_git add .github/scripts/runner/runner-image-architecture.sh
 fixture_git commit --quiet -m architecture-guard
 image_inputs=$(cd "$test_root" && BASE_REF="$base_ref" GITHUB_OUTPUT='' bash -c "$image_input_step")
 grep -qx 'runner-image-inputs-changed=true' <<<"$image_inputs" || \
@@ -175,8 +175,8 @@ jq -e '
     "${{ steps.needed.outputs.playwright-runner-consumer-needed }}" and
   any(.jobs.prepare.steps[];
     .id == "turbo" and
-    (.run | contains(".github/scripts/runner-image-context.sh turbo-consumer")) and
-    (.run | contains(".github/scripts/runner-image-context.sh playwright-consumer"))
+    (.run | contains(".github/scripts/runner/runner-image-context.sh turbo-consumer")) and
+    (.run | contains(".github/scripts/runner/runner-image-context.sh playwright-consumer"))
   ) and
   any(.jobs.prepare.steps[];
     .id == "needed" and
@@ -202,7 +202,7 @@ jq -e '
 
 jq -e '
   [.jobs, .architecture.jobs | to_entries[] | .value.steps[]? |
-    select((.run // "") | startswith(".github/scripts/runner-binary-transport.sh "))
+    select((.run // "") | startswith(".github/scripts/runner/runner-binary-transport.sh "))
   ] as $transports |
   ($transports | length) > 0 and
   all($transports[];
@@ -224,7 +224,7 @@ jq -e '
   .jobs.prepare.outputs["runner-binary-hit-references"] == "${{ steps.binary-plan.outputs.hit-references }}" and
   any(.jobs.prepare.steps[];
     .id == "binary-plan" and
-    .run == ".github/scripts/runner-binary-cache-plan.sh" and
+    .run == ".github/scripts/runner/runner-binary-cache-plan.sh" and
     .env.RUNNER_BINARY_CACHE_FORCE_MISS == "${{ vars.RUNNER_BINARY_CACHE_FORCE_MISS }}"
   )
 ' <<<"$workflow_json" >/dev/null || fail "prepare must publish cache references and the miss-only compile matrix"
@@ -242,9 +242,9 @@ jq -e '
     .with["r2-bucket-name"] == "${{ vars.R2_USER_STORAGES_BUCKET_NAME }}"
   ) and
   any(.architecture.jobs.compile.steps[]; (.uses // "") | startswith("Swatinem/rust-cache@")) and
-  any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner-binary-build/build.sh build") and
+  any(.architecture.jobs.compile.steps[]; .run == ".github/scripts/runner/runner-binary-build/build.sh build") and
   any(.architecture.jobs.compile.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh publish" and
+    .run == ".github/scripts/runner/runner-binary-transport.sh publish" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
     .env.PRODUCER_RUN_ATTEMPT == "${{ github.run_attempt }}" and
     (. | has("continue-on-error") | not)
@@ -267,7 +267,7 @@ jq -e '
   (.architecture.jobs.build.if | contains("always()")) and
   (.architecture.jobs.build.if | contains("!cancelled()")) and
   any(.architecture.jobs.build.steps[];
-    .run == ".github/scripts/runner-image-architecture.sh build-ready" and
+    .run == ".github/scripts/runner/runner-image-architecture.sh build-ready" and
     .env.RUNNER_IMAGE_COMPILE_RESULT == "${{ needs.compile.result }}" and
     .env.RUNNER_IMAGE_CACHE_HIT == "${{ inputs.cache-hit }}"
   ) and
@@ -275,18 +275,18 @@ jq -e '
   .architecture.jobs.build.env.GUEST_CLI_MANIFEST_PATH == "runner-cli-intermediate/manifest.json" and
   any(.architecture.jobs.build.steps[];
     .if == "inputs.cache-hit" and
-    .run == ".github/scripts/runner-binary-cache.sh download-reference" and
+    .run == ".github/scripts/runner/runner-binary-cache.sh download-reference" and
     .env.CACHE_REFERENCE == "${{ inputs.cache-reference }}" and
     .env.RESOLVE_OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
   any(.architecture.jobs.build.steps[];
-    .run == ".github/scripts/runner-binary-transport.sh download" and
+    .run == ".github/scripts/runner/runner-binary-transport.sh download" and
     (.if | contains("!inputs.cache-hit")) and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}" and
     .env.OUTPUT_DIR == "runner-binary-transport/${{ matrix.target }}"
   ) and
   any(.architecture.jobs.build.steps[];
-    .run == ".github/scripts/prepare-runner-image.sh" and
+    .run == ".github/scripts/runner/prepare-runner-image.sh" and
     .env.RUNNER_PATH == "runner-binary-transport/${{ matrix.target }}/runner" and
     .env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.binary-input.outputs.binary-input-digest }}"
   ) and
@@ -315,7 +315,7 @@ jq -e '
     . as $index | ($steps[$index] | has("if") | not) and
     ($steps[$index] | has("continue-on-error") | not)
   ) and
-  ($steps[$fresh].run | contains(".github/scripts/runner-binary-cache.sh fresh-validate")) and
+  ($steps[$fresh].run | contains(".github/scripts/runner/runner-binary-cache.sh fresh-validate")) and
   $steps[$shadow].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
   $steps[$shadow].env.FRESH_METADATA_PATH == "runner-binary-fresh/metadata.json" and
   $steps[$shadow].env.RUNNER_PATH == "runner-binary-fresh/runner" and
@@ -324,7 +324,7 @@ jq -e '
   $steps[$shadow].env.CURRENT_EVENT == "${{ github.event_name }}" and
   $steps[$shadow].env.CURRENT_PR_HEAD_REF == "${{ inputs.pr-head-ref }}" and
   $steps[$shadow].env.CURRENT_PR_NUMBER == "${{ inputs.pr-number }}" and
-  ($steps[$shadow].run | contains(".github/scripts/runner-binary-cache.sh shadow-resolve")) and
+  ($steps[$shadow].run | contains(".github/scripts/runner/runner-binary-cache.sh shadow-resolve")) and
   $steps[$artifact].env.EXPECTED_BINARY_INPUT_DIGEST == "${{ steps.build.outputs.binary-input-digest }}" and
   $steps[$upload]["continue-on-error"] == true and
   ($steps[$upload] | has("if") | not) and
@@ -336,7 +336,7 @@ jq -e '
 ' <<<"$workflow_json" >/dev/null || fail "each compiler must authorize its immutable index after verified publication and shadow auditing"
 
 prepare_consumers=$(jq -r '[.jobs, .architecture.jobs | to_entries[] |
-  select(any(.value.steps[]?; .run == ".github/scripts/prepare-runner-image.sh")) |
+  select(any(.value.steps[]?; .run == ".github/scripts/runner/prepare-runner-image.sh")) |
   .key] | join(",")' <<<"$workflow_json")
 [ "$prepare_consumers" = "build" ] || fail "host preparation must run only in the architecture-owned build job"
 

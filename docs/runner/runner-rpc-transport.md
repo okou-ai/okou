@@ -14,6 +14,17 @@ hold no park reservation.
 SSH consumers require current API authority; the transport itself does not
 grant SSH access.
 
+The admitted duplex application peer lives in
+[`guest-channel-server`](../../crates/guest-channel-server/src/lib.rs), composed by
+`guest-init` in PID 2. Each active stream worker creates its current-thread runtime
+after fork, adopts its descriptor with nonblocking readiness, and keeps response
+reading independent of bounded service tasks and serialized writes. The
+[shared application contracts](../../turbo/packages/core/sandbox-channel.md)
+own schema/category equality, message identities and business fault isolation;
+Runner routing remains opaque. Connection teardown cancels pending calls and
+joins owned tasks before physical stream capacity returns. Application handlers
+must retain any physical work that can outlive cancellation of its observer.
+
 ## Choosing a Guest/Runner transport for new work
 
 The three private Firecracker vsock ports connect the Guest to host CID 2. A
@@ -415,13 +426,17 @@ tracker, plus unrelated external test methods. They require no web server.
 Actual fresh/restored KVM boot and packaged-helper execution have separate
 metal-host CI coverage.
 
-The `guest-rpc-firecracker-test` CI job runs the native `guest_rpc` integration
-test against the matching rootfs and snapshot supplied by `runner-test-prepare`.
-It covers a generic echo result, an unknown-method rejection, response EOF, and park/reassignment in
-both fresh and snapshot-restored guests. Its test-only consumer does not enable
-methods in local/PAT Runners or establish SSH authorization. Unix parser/helper
-and actual Runner dispatcher tests separately protect bounds, corruption handling
-and one execution even when more request frames arrive.
+The `guest-rpc-firecracker-test` CI matrix runs the native `guest_rpc` integration
+test on both amd64 and ARM64. Each consumer selects a matching metal host and
+validates that target's Runner Image manifest for its immutable rootfs and
+snapshot hashes. `runner-test-prepare` remains a prerequisite, but its single
+selected-target outputs do not supply the complete matrix. The suite covers a
+generic echo result, unknown-method rejection, response EOF, the admitted
+application peer and readonly filesystem policy, and park/reassignment in fresh
+and snapshot-restored guests. Its test-only consumer does not enable methods in
+local/PAT Runners or establish SSH authorization. Unix parser/helper and actual
+Runner dispatcher tests separately protect bounds, corruption handling and one
+execution even when more request frames arrive.
 
 Runner and bundled helper remain one artifact; guest binary bytes participate in
 rootfs identity and the snapshot identity includes that rootfs. There is no

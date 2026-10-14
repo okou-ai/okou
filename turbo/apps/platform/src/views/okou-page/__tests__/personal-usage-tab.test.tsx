@@ -21,7 +21,6 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { emptyUsageImg } from "../platform-assets.ts";
 import { billingPlanCapabilities } from "../../../mocks/handlers/api-billing.ts";
 import { pathname } from "../../../signals/location.ts";
 
@@ -348,43 +347,56 @@ test("Review your member-package credit balance and grant rows", async () => {
   ).toBeFalsy();
 });
 
-test("Show an illustrated empty credit balance when a member has no usage pack", async () => {
-  mockPersonalUsageStory(usageRows(), "limited-free-1", false, "member");
+test.each(["admin", "member"] as const)(
+  "Show a zero usage pack balance for a free %s without a package",
+  async (role) => {
+    mockPersonalUsageStory(usageRows(), "limited-free-1", true, role);
 
-  await openUsageSettings();
+    await openUsageSettings();
 
-  const emptyState = await screen.findByTestId("credit-balance-empty");
-  expect(emptyState.querySelector("img")).toHaveAttribute("src", emptyUsageImg);
-  expect(
-    screen.queryByTestId("usage-pack-credit-card"),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByTestId("credit-balance-info")).not.toBeInTheDocument();
-});
-
-test("Hide Usage package controls when the capability is disabled, even with credits", async () => {
-  mockPersonalUsageStory();
-  mockBillingStatus("pro", false);
-  context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
-    return respond(200, {
-      totalCredits: 1000,
-      purchasedCredits: 0,
-      bonusCredits: 1000,
-      creditGrants: [],
-      hasUsagePack: true,
+    const card = await screen.findByTestId("usage-pack-credit-card");
+    await expect(
+      within(card).findByText("Usage pack credits"),
+    ).resolves.toBeInTheDocument();
+    expect(within(card).getByText("0")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryAllByTestId("credit-balance-info")).toHaveLength(
+        role === "admin" ? 1 : 0,
+      );
     });
-  });
+    expect(
+      within(card).queryByText("Configure member packages"),
+    ).not.toBeInTheDocument();
+  },
+);
 
-  await openUsageSettings();
-  await expect(
-    screen.findByTestId("credit-balance-info"),
-  ).resolves.toBeVisible();
-  expect(
-    screen.queryByTestId("usage-pack-credit-card"),
-  ).not.toBeInTheDocument();
-  expect(
-    screen.queryByText("Configure member packages"),
-  ).not.toBeInTheDocument();
-});
+test.each(["limited-free-1", "pro"] as const)(
+  "Show bonus credits and hide package configuration when the capability is disabled for %s",
+  async (tier) => {
+    mockPersonalUsageStory();
+    mockBillingStatus(tier, false);
+    context.mocks.api(billingUsagePackCreditsContract.get, ({ respond }) => {
+      return respond(200, {
+        totalCredits: 1000,
+        purchasedCredits: 0,
+        bonusCredits: 1000,
+        creditGrants: [],
+        hasUsagePack: false,
+      });
+    });
+
+    await openUsageSettings();
+    await expect(
+      screen.findByTestId("credit-balance-info"),
+    ).resolves.toBeInTheDocument();
+    const card = await screen.findByTestId("usage-pack-credit-card");
+    await expect(within(card).findByText("1,000")).resolves.toBeInTheDocument();
+    expect(within(card).getByText("Usage pack credits")).toBeInTheDocument();
+    expect(
+      within(card).queryByText("Configure member packages"),
+    ).not.toBeInTheDocument();
+  },
+);
 
 test("Start package configuration from an empty Atom balance", async () => {
   mockPersonalUsageStory();
@@ -943,4 +955,55 @@ test("Refresh all loaded usage pages after billing changes", async () => {
       screen.queryByText("Initial usage second page"),
     ).not.toBeInTheDocument();
   });
+});
+
+test("Personal billing merges model aliases and historical Auto presets without changing totals", async () => {
+  mockPersonalUsageStory([
+    {
+      threadId: "thread-model-aliases",
+      title: "Model usage history",
+      credits: 60,
+      tokens: 1200,
+      member: null,
+      lastActivityAt: "2026-03-21T10:00:00Z",
+      breakdown: [
+        {
+          kind: "model",
+          credits: 60,
+          providers: [
+            {
+              provider: "gpt-6-luna",
+              credits: 10,
+              usageKinds: [{ kind: "model", credits: 10 }],
+            },
+            {
+              provider: "openai/gpt-6-luna",
+              credits: 20,
+              usageKinds: [{ kind: "model", credits: 20 }],
+            },
+            {
+              provider: "okou-1.0",
+              credits: 5,
+              usageKinds: [{ kind: "model", credits: 5 }],
+            },
+            {
+              provider: "@preset/removed-history",
+              credits: 25,
+              usageKinds: [{ kind: "model", credits: 25 }],
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+  await openUsageSettings("usage-records");
+  await screen.findByText("Model usage history");
+  const user = userEvent.setup();
+  await user.hover(screen.getByTestId("usage-kind-segment-model"));
+  await expect(screen.findByText("Models - 60")).resolves.toBeInTheDocument();
+  expect(screen.getByText("GPT 6 Luna").parentElement).toHaveTextContent(
+    "GPT 6 Luna30",
+  );
+  expect(screen.getByText("Auto").parentElement).toHaveTextContent("Auto30");
+  expect(screen.queryByText(/@preset\//u)).not.toBeInTheDocument();
 });

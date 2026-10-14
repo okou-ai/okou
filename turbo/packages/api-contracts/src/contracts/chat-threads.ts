@@ -247,6 +247,8 @@ const chatThreadArtifactGoogleDriveSyncSchema = z.discriminatedUnion("status", [
     id: z.string(),
     name: z.string(),
     webViewLink: z.string().nullable(),
+    mimeType: z.string().optional(),
+    originalUploaded: z.boolean().optional(),
   }),
   z.object({
     status: z.literal("not_synced"),
@@ -538,6 +540,11 @@ const workflowGenerationTemplateRequestSchema = z.object({
   }),
 });
 
+const documentGenerationTemplateRequestSchema = z.object({
+  type: z.literal("document"),
+  selection: z.object({ documentTemplateId: z.string().min(1) }).strict(),
+});
+
 const websiteGenerationTemplateRequestSchema = z.object({
   type: z.literal("website"),
   selection: z
@@ -573,6 +580,7 @@ const generationTemplateRequestSchema = z.discriminatedUnion("type", [
   illustrationGenerationTemplateRequestSchema,
   workflowGenerationTemplateRequestSchema,
   websiteGenerationTemplateRequestSchema,
+  documentGenerationTemplateRequestSchema,
 ]);
 
 const userMessageTextPartSchema = z
@@ -1047,12 +1055,15 @@ const chatThreadMetadataSchema = z.object({
   cloudBrowserEnabled: z.boolean(),
 });
 
-const chatThreadDraftSchema = z
+export const composerDraftSchema = z
   .object({
     draftUserMessage: userMessageInputDocumentSchema.nullable(),
     draftAttachments: z.array(persistedAttachmentSchema).nullable(),
   })
   .superRefine(requireUserMessageForDraftAttachments);
+
+const chatThreadDraftSchema = composerDraftSchema;
+export type ComposerDraft = z.infer<typeof composerDraftSchema>;
 
 const selectedModelRequestSchema = runModelIdSchema;
 

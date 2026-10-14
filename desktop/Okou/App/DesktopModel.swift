@@ -108,9 +108,7 @@ final class DesktopModel: ObservableObject {
       "OKOU_DESKTOP_SENTRY_RELEASE": "okou-desktop@\(version)",
     ]
     executor = CommandExecutor(
-      helper: NativeProcess(
-        executable: Bundle.main.bundleURL.appendingPathComponent(
-          "Contents/MacOS/computer-use-helper"), environment: telemetry))
+      helper: NativeProcess(executable: Self.helperURL, environment: telemetry))
     api = APIClient(baseURL: configuration.apiURL, version: version)
     let installationId = try preferences.installationId
     host = HostRuntime(
@@ -163,6 +161,10 @@ final class DesktopModel: ObservableObject {
       })
   }
   static var authKeychainService: String { "\(Bundle.main.bundleIdentifier!).native-auth" }
+  // Outside Contents/MacOS, so the helper does not adopt this app's Dock identity.
+  static var helperURL: URL {
+    Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/computer-use-helper")
+  }
   static func configureAuthentication(_ configuration: DesktopConfiguration) {
     // Start a new login after Electron migration. Native releases reuse this
     // namespace; changing it every launch would discard their own sessions.
@@ -361,9 +363,7 @@ final class DesktopModel: ObservableObject {
   }
   func probeBrowser(_ target: String) {
     perform {
-      let helper = NativeProcess(
-        executable: Bundle.main.bundleURL.appendingPathComponent(
-          "Contents/MacOS/computer-use-helper"))
+      let helper = NativeProcess(executable: Self.helperURL)
       defer { Task { await helper.stop() } }
       let response = try await helper.request(
         .object(["kind": .string("permissions.probe_automation"), "target": .string(target)]))

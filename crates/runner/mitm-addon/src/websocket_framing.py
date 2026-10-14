@@ -1,6 +1,6 @@
 """Bound decoded WebSocket messages before mitmproxy's addon hooks.
 
-See the [WebSocket framing contract](../../../../docs/runner/mitm-addon-testing.md)
+See the [WebSocket framing contract](../../../../docs/runner/mitm-addon-contracts.md)
 for the limits, lifecycle invariants, and version-re-audit boundary for this
 private adaptation.
 """
@@ -23,6 +23,7 @@ from wsproto.frame_protocol import CloseReason, FrameDecoder, FrameProtocol, Opc
 import deferred_callbacks
 import flow_metadata
 from logging_utils import log_proxy_entry
+from zlib_input import ZlibInputCursor
 
 MAX_DECODED_MESSAGE_BYTES = 256 * 1024 * 1024
 MAX_AGGREGATE_DECODED_BYTES = 1024 * 1024 * 1024
@@ -264,6 +265,8 @@ class _BoundedPerMessageDeflate(Extension):
         self._outbound = self._negotiated_outbound(source)
         self._budget = budget
         self._decoder = None
+        self._window_bits = zlib.MAX_WBITS
+        self._history = b""
         self._data_frame = False
         self._message_compressed = False
 
@@ -287,6 +290,7 @@ class _BoundedPerMessageDeflate(Extension):
 
     def _discard_inbound_state(self) -> None:
         self._decoder = None
+        self._history = b""
         self._data_frame = False
         self._message_compressed = False
         self._budget.reset()
@@ -301,18 +305,42 @@ class _BoundedPerMessageDeflate(Extension):
         decoder = self._decoder
         if decoder is None:
             raise RuntimeError("compressed WebSocket data arrived without a decompressor")
-        remaining = self._budget.remaining_bytes
-        try:
-            decoded = decoder.decompress(data, remaining + 1)
-        except zlib.error:
-            self._discard_inbound_state()
-            return CloseReason.INVALID_FRAME_PAYLOAD_DATA
+        limit = self._budget.remaining_bytes
+        remaining = limit
+        output: bytes | bytearray = b""
+        input_cursor = ZlibInputCursor(data)
+        # Empty callbacks still let the current inflater process buffered state.
+        while True:
+            try:
+                decoded = decoder.decompress(input_cursor.take(), remaining + 1)
+            except zlib.error:
+                self._discard_inbound_state()
+                return CloseReason.INVALID_FRAME_PAYLOAD_DATA
 
-        if len(decoded) > remaining or decoder.unconsumed_tail:
-            self._budget.reject_bounded_decode_output(remaining + 1)
-            self._discard_inbound_state()
-            return CloseReason.MESSAGE_TOO_BIG
-        return decoded
+            if len(decoded) > remaining or decoder.unconsumed_tail:
+                self._budget.reject_bounded_decode_output(limit + 1)
+                self._discard_inbound_state()
+                return CloseReason.MESSAGE_TOO_BIG
+            if decoded:
+                if output:
+                    if isinstance(output, bytes):
+                        output = bytearray(output)
+                    output.extend(decoded)
+                else:
+                    output = decoded
+                remaining -= len(decoded)
+                window_size = 1 << self._window_bits
+                self._history = (self._history + decoded[-window_size:])[-window_size:]
+            if decoder.eof:
+                # RFC 7692 permits further byte-aligned blocks after BFINAL=1.
+                # Python's EOF inflater cannot resume; seed its replacement with
+                # the negotiated sliding window, including prior streams/messages.
+                input_cursor.carry(decoder.unused_data)
+                decoder = zlib.decompressobj(-self._window_bits, zdict=self._history)
+                self._decoder = decoder
+            if not input_cursor:
+                break
+        return bytes(output)
 
     def frame_inbound_header(
         self,
@@ -329,12 +357,12 @@ class _BoundedPerMessageDeflate(Extension):
         if opcode in (Opcode.TEXT, Opcode.BINARY):
             self._message_compressed = rsv.rsv1
             if self._message_compressed and self._decoder is None:
-                bits = (
+                self._window_bits = (
                     self._outbound.server_max_window_bits
                     if proto.client
                     else self._outbound.client_max_window_bits
                 )
-                self._decoder = zlib.decompressobj(-bits)
+                self._decoder = zlib.decompressobj(-self._window_bits)
 
         return RsvBits(True, False, False)
 
@@ -370,6 +398,7 @@ class _BoundedPerMessageDeflate(Extension):
         )
         if no_context_takeover:
             self._decoder = None
+            self._history = b""
 
         self._message_compressed = False
         return decoded
@@ -431,9 +460,7 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
         return cast(bytes, bytearray(data))
 
     def _ensure_mutable_fragment(self) -> None:
-        if not self.frame_buf:
-            self.frame_buf.append(self._mutable_fragment())
-        elif isinstance(self.frame_buf[-1], bytes):
+        if isinstance(self.frame_buf[-1], bytes):
             self.frame_buf[-1] = self._mutable_fragment(self.frame_buf[-1])
 
     def _clear_partial_state(self) -> None:
@@ -443,18 +470,15 @@ class _BoundedWebsocketConnection(_ORIGINAL_WEBSOCKET_CONNECTION):
             extension.clear()
 
     def events(self) -> Generator[events.Event, None, None]:
-        try:
-            for event in super().events():
-                if isinstance(event, events.CloseConnection):
-                    self._clear_partial_state()
-                try:
-                    yield event
-                finally:
-                    if isinstance(event, events.Message) and event.message_finished:
-                        self._message_limit._budget.finish_message()
-                    self._ensure_mutable_fragment()
-        finally:
-            self._ensure_mutable_fragment()
+        for event in super().events():
+            if isinstance(event, events.CloseConnection):
+                self._clear_partial_state()
+            try:
+                yield event
+            finally:
+                if isinstance(event, events.Message) and event.message_finished:
+                    self._message_limit._budget.finish_message()
+                self._ensure_mutable_fragment()
 
     def send2(self, event: events.Event) -> commands.SendData:
         if isinstance(event, events.CloseConnection):

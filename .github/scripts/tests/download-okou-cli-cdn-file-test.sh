@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-python3 - "${repo_root}/.github/scripts/download-okou-cli-cdn-file.sh" <<'PY'
+python3 - "${repo_root}/.github/scripts/artifacts/download-okou-cli-cdn-file.sh" <<'PY'
 import http.server
 import os
 from pathlib import Path
@@ -85,24 +85,28 @@ class DownloadTests(unittest.TestCase):
             no_proxy="*",
             AWS_ACCESS_KEY_ID="cdn-test-access-key-canary",
             AWS_SECRET_ACCESS_KEY="cdn-test-secret-key-canary",
+            CDN_TEST_REAL_CURL=real_curl,
+            CDN_TEST_SHORT_BUDGET="1" if short_budget else "0",
         )
-        if short_budget:
-            # Keep curl's real network/retry behavior; shorten only the external
-            # retry-start budget so permanent-error tests do not wait two minutes.
-            bin_dir = self.root / "bin"
-            bin_dir.mkdir()
-            wrapper = bin_dir / "curl"
-            wrapper.write_text(
-                "#!/usr/bin/env python3\n"
-                "import os, sys\n"
-                "args = sys.argv[1:]\n"
-                "args[args.index('--retry-max-time') + 1] = '1'\n"
-                "real_curl = os.environ['CDN_TEST_REAL_CURL']\n"
-                "os.execv(real_curl, [real_curl, *args])\n"
-            )
-            wrapper.chmod(0o755)
-            env["PATH"] = f"{bin_dir}:{env['PATH']}"
-            env["CDN_TEST_REAL_CURL"] = real_curl
+        # Keep real HTTP transfers and the production attempt limit. Curl owns
+        # the delay schedule; use a fixed delay instead of waiting through 63s
+        # of exponential backoff. Permanent failures also get a shorter budget.
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        wrapper = bin_dir / "curl"
+        wrapper.write_text(
+            "#!/usr/bin/env python3\n"
+            "import os, sys\n"
+            "args = sys.argv[1:]\n"
+            "separator = args.index('--')\n"
+            "args[separator:separator] = ['--retry-delay', '1']\n"
+            "if os.environ['CDN_TEST_SHORT_BUDGET'] == '1':\n"
+            "    args[args.index('--retry-max-time') + 1] = '1'\n"
+            "real_curl = os.environ['CDN_TEST_REAL_CURL']\n"
+            "os.execv(real_curl, [real_curl, *args])\n"
+        )
+        wrapper.chmod(0o755)
+        env["PATH"] = f"{bin_dir}:{env['PATH']}"
 
         command = ["bash", script, url, str(self.destination)]
         with subprocess.Popen(
@@ -129,7 +133,7 @@ class DownloadTests(unittest.TestCase):
         self.assertNotIn("cdn-test-secret-key-canary", result.stdout + result.stderr)
         self.assertEqual(
             {path.name for path in self.root.iterdir()} - {"package.tgz"},
-            {"bin"} if short_budget else set(),
+            {"bin"},
             "download diagnostics must be cleaned up on success and failure",
         )
         return result
@@ -147,12 +151,8 @@ class DownloadTests(unittest.TestCase):
     def test_transient_http_failure_recovers(self):
         self.assert_downloaded(self.run_download(f"{self.base_url}/recover"))
 
-    def test_recovers_after_the_previous_six_attempt_limit(self):
-        # Exercise the unchanged production retry policy: the old initial
-        # request plus five retries would stop before this endpoint recovers.
-        self.assert_downloaded(
-            self.run_download(f"{self.base_url}/recover-after-six-errors", timeout=80)
-        )
+    def test_recovers_after_repeated_transient_failures(self):
+        self.assert_downloaded(self.run_download(f"{self.base_url}/recover-after-six-errors"))
 
     def test_interrupted_transfer_recovers_without_duplicate_bytes(self):
         self.assert_downloaded(self.run_download(f"{self.base_url}/interrupted"))

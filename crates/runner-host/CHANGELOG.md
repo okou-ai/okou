@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.7.15](https://github.com/okou-ai/okou/compare/runner-host-v0.7.14...runner-host-v0.7.15) (2026-10-14)
+
+## [0.7.14](https://github.com/okou-ai/okou/compare/runner-host-v0.7.13...runner-host-v0.7.14) (2026-10-14)
+
+## [0.7.13](https://github.com/okou-ai/okou/compare/runner-host-v0.7.12...runner-host-v0.7.13) (2026-10-14)
+
+## [0.7.12](https://github.com/okou-ai/okou/compare/runner-host-v0.7.11...runner-host-v0.7.12) (2026-10-14)
+
+## [0.7.11](https://github.com/okou-ai/okou/compare/runner-host-v0.7.10...runner-host-v0.7.11) (2026-10-14)
+
+## [0.7.10](https://github.com/okou-ai/okou/compare/runner-host-v0.7.9...runner-host-v0.7.10) (2026-10-13)
+
+## [0.7.9](https://github.com/okou-ai/okou/compare/runner-host-v0.7.8...runner-host-v0.7.9) (2026-10-13)
+
+## [0.7.8](https://github.com/okou-ai/okou/compare/runner-host-v0.7.7...runner-host-v0.7.8) (2026-10-13)
+
+## [0.7.7](https://github.com/okou-ai/okou/compare/runner-host-v0.7.6...runner-host-v0.7.7) (2026-10-13)
+
+## [0.7.6](https://github.com/okou-ai/okou/compare/runner-host-v0.7.5...runner-host-v0.7.6) (2026-10-13)
+
+
+### Performance Improvements
+
+* **runner:** retry transient home cache publication contention ([#39602](https://github.com/okou-ai/okou/issues/39602)) ([7c35423](https://github.com/okou-ai/okou/commit/7c35423142ce6b0446cf84d1ecd81a503fcbcfaa))
+
 ## [0.7.5](https://github.com/okou-ai/okou/compare/runner-host-v0.7.4...runner-host-v0.7.5) (2026-10-12)
 
 

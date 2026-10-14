@@ -2,16 +2,13 @@ import { command } from "ccstate";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { listAvailableRunModels$ } from "../services/run-models.service";
+import { listAvailableRunModels } from "../services/run-models.service";
 import type { RouteEntry } from "../route-entry";
 
-const listRunModels$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const auth = get(organizationAuthContext$);
-  const body = await set(
-    listAvailableRunModels$,
-    { orgId: auth.orgId, userId: auth.userId },
-    signal,
-  );
+const availableRunModels$ = listAvailableRunModels(organizationAuthContext$);
+
+const listRunModels$ = command(async ({ set }, signal: AbortSignal) => {
+  const body = await set(availableRunModels$, signal);
   return { status: 200 as const, body };
 });
 

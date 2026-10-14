@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Client } from "pg";
+import { Client, DatabaseError, Query } from "pg";
 import postgres from "postgres";
 import { z } from "zod";
 
@@ -66,7 +66,7 @@ async function assertUncontracted() {
   assert.equal(
     (
       await client.query(
-        "SELECT allowance_units FROM usage_event_hourly_rollup WHERE allowance_units > 0",
+        "SELECT allowance_units, short_window_id, weekly_window_id FROM usage_event_hourly_rollup WHERE allowance_units > 0",
       )
     ).rowCount,
     1,
@@ -107,12 +107,94 @@ try {
     await applyPendingMigrations(sql, { beforeMillis: target.when + 1 });
   };
 
-  await blocker.query(
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0431; new non-billing transactions are prohibited.
-    "BEGIN; LOCK TABLE usage_event_hourly_rollup IN ACCESS SHARE MODE",
+  const backend = await blocker.query<{ pid: unknown; id: unknown }>(
+    "SELECT pg_backend_pid() AS pid, id FROM usage_event_hourly_rollup WHERE org_id='org_team'",
   );
-  await assert.rejects(apply(), { code: "55P03" });
-  await blocker.query("ROLLBACK");
+  assert.equal(backend.rowCount, 1);
+  const pid = backend.rows[0]?.pid;
+  const hourlyId = z.string().uuid().parse(backend.rows[0]?.id);
+  assert.ok(typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0);
+
+  class PausedCopy extends Query<Record<string, unknown>, []> {
+    paused = false;
+
+    handleCopyData(message: { chunk: unknown }): void {
+      if (!this.paused) {
+        this.paused = true;
+        blocker.connection.stream.pause();
+        this.emit("firstCopyData", message.chunk);
+      }
+    }
+  }
+
+  // Read the real hourly row while producing at most 8,192 rows / 65.13 MiB.
+  // Only the first CopyData is retained; resumed output is discarded.
+  const resource = new PausedCopy(`COPY (
+    SELECT h.id, h.org_id, h.user_id, h.quantity, h.credits_charged,
+      h.allowance_units, h.short_window_id, h.weekly_window_id,
+      ordinal, repeat('x', 8192)
+    FROM usage_event_hourly_rollup h CROSS JOIN generate_series(1, 8192) AS ordinal
+    WHERE h.org_id = 'org_team'
+  ) TO STDOUT`);
+  let resourceEnded = false;
+  const outcome = new Promise<unknown>((resolve) => {
+    resource.once("error", (error: unknown) => {
+      resourceEnded = true;
+      resolve(error);
+    });
+    resource.once("end", () => {
+      resourceEnded = true;
+      resolve(new Error("COPY completed before cancellation"));
+    });
+  });
+  const firstData = new Promise<unknown>((resolve) => {
+    resource.once("firstCopyData", resolve);
+  });
+  // Own early error/end before submission so neither can become readiness.
+  const ready = Promise.race([
+    firstData,
+    outcome.then((error) => {
+      throw error;
+    }),
+  ]);
+  try {
+    blocker.query(resource);
+    const first = await ready;
+    assert.ok(Buffer.isBuffer(first));
+    assert.equal(
+      first.toString("utf8"),
+      `${hourlyId}\torg_team\tuser_team\t100\t3\t50\t00000000-0000-4000-8000-000000000002\t00000000-0000-4000-8000-000000000003\t1\t${"x".repeat(8192)}\n`,
+    );
+    assert.equal(blocker.connection.stream.isPaused(), true);
+    assert.equal(resourceEnded, false);
+    await assert.rejects(apply(), { code: "55P03" });
+  } finally {
+    let cancellationRequested = false;
+    try {
+      if (!resourceEnded) {
+        cancellationRequested = true;
+        const cancelled = await client.query(
+          "SELECT pg_cancel_backend($1) AS cancelled",
+          [pid],
+        );
+        assert.deepEqual(cancelled.rows, [{ cancelled: true }]);
+      }
+    } finally {
+      blocker.connection.stream.resume();
+      const error = await outcome;
+      // The same client's query waits for ReadyForQuery and proves release.
+      const releaseACK = await blocker.query(
+        "SELECT pg_backend_pid() AS pid, id FROM usage_event_hourly_rollup WHERE org_id='org_team'",
+      );
+      assert.equal(releaseACK.rowCount, 1);
+      assert.deepEqual(releaseACK.rows, [{ pid, id: hourlyId }]);
+      assert.equal(blocker.getTransactionStatus(), "I");
+      if (cancellationRequested) {
+        assert.ok(error instanceof DatabaseError);
+        assert.equal(error.code, "57014");
+      }
+    }
+  }
   await assertUncontracted();
   assert.deepEqual(await retainedState(), before);
 

@@ -50,9 +50,11 @@ describe("Okou CLI program", () => {
 
   it("should register all expected Okou commands", () => {
     const expectedCommands = [
+      "suggestion",
       "model",
       "agent",
       "connector",
+      "remote-control",
       "mcp",
       "ssh",
       "vnc",
@@ -127,8 +129,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 50 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(50);
+  it("should have exactly 52 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(52);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
@@ -162,6 +164,18 @@ describe("Okou CLI lazy command loading", () => {
     vi.unstubAllEnvs();
   });
 
+  it.each([[], ["suggestion:read"], ["suggestion:write"]])(
+    "advertises suggestions only with an authorized capability: %j",
+    (...capabilities) => {
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
+      const cli = new Command("okou");
+      registerCommands(cli);
+      expect(cli.helpInformation().includes("suggestion")).toBe(
+        capabilities.length > 0,
+      );
+    },
+  );
+
   it.each([
     [],
     ["file:write"],
@@ -191,13 +205,16 @@ describe("Okou CLI lazy command loading", () => {
     },
   );
 
-  it.each([[], ["ssh:read"], ["ssh:write"]])(
-    "shows SSH only with an eligible Run capability: %j",
+  it.each([
+    [],
+    ["ssh:read"],
+    ["ssh:write"],
+    ["connector:read"],
+    ["connector:write"],
+  ])(
+    "shows SSH with an execution or management Run capability: %j",
     (...capabilities) => {
-      vi.stubEnv(
-        "OKOU_TOKEN",
-        capabilities.length ? buildOkouToken(capabilities) : "",
-      );
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("ssh")).toBe(
@@ -222,6 +239,12 @@ describe("Okou CLI lazy command loading", () => {
   );
 
   it.each([
+    {
+      label: "suggestion help invocation",
+      argv: ["node", "okou", "suggestion", "--help"],
+      expectedName: "suggestion",
+      expectedHelpCode: "commander.helpDisplayed",
+    },
     {
       label: "artifact sharing help invocation",
       argv: ["node", "okou", "artifact", "--help"],
@@ -252,11 +275,13 @@ describe("Okou CLI lazy command loading", () => {
       vi.stubEnv(
         "OKOU_TOKEN",
         buildOkouToken([
-          expectedName === "lark"
-            ? "lark:write"
-            : expectedName === "artifact"
-              ? "artifact:read"
-              : "social:read",
+          expectedName === "suggestion"
+            ? "suggestion:read"
+            : expectedName === "lark"
+              ? "lark:write"
+              : expectedName === "artifact"
+                ? "artifact:read"
+                : "social:read",
         ]),
       );
       let helpOutput = "";

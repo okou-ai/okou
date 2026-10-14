@@ -27,13 +27,63 @@ const legacy = await readFile(
   "utf8",
 );
 const schema = `oauth_hash_retirement_${randomUUID().replaceAll("-", "")}`;
+assert.match(schema, /^oauth_hash_retirement_[0-9a-f]{32}$/);
 const client = new Client({ connectionString: databaseUrl });
-await client.connect();
+const errors: unknown[] = [];
+let ownsSchema = false;
+let originalSearchPath: string | undefined;
+const searchPathRows = z
+  .array(z.strictObject({ search_path: z.string() }))
+  .length(1);
+const namespaceRows = z
+  .array(z.strictObject({ nspname: z.string() }))
+  .length(0);
+const observeClientError = (error: Error) => {
+  errors.push(error);
+};
+client.on("error", observeClientError);
 try {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0407; new non-billing transactions are prohibited.
-  await client.query("BEGIN");
+  await client.connect();
+  const [originalPath] = searchPathRows.parse(
+    (await client.query("SHOW search_path")).rows,
+  );
+  assert.ok(originalPath);
+  originalSearchPath = originalPath.search_path;
+  // Observe the native session without changing its clocks, codecs or timeouts.
+  for (const setting of [
+    "TimeZone",
+    "DateStyle",
+    "IntervalStyle",
+    "extra_float_digits",
+    "standard_conforming_strings",
+    "client_encoding",
+    "default_transaction_isolation",
+    "default_transaction_read_only",
+    "statement_timeout",
+    "lock_timeout",
+    "idle_in_transaction_session_timeout",
+  ]) {
+    z.array(z.strictObject({ [setting]: z.string() }))
+      .length(1)
+      .parse((await client.query(`SHOW ${setting}`)).rows);
+  }
+  namespaceRows.parse(
+    (
+      await client.query(
+        "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = $1",
+        [schema],
+      )
+    ).rows,
+  );
   await client.query(`CREATE SCHEMA "${schema}"`);
-  await client.query(`SET LOCAL search_path TO "${schema}", public`);
+  ownsSchema = true;
+  await client.query("SELECT set_config('search_path', $1, false)", [
+    `"${schema}"`,
+  ]);
+  assert.deepEqual(
+    searchPathRows.parse((await client.query("SHOW search_path")).rows),
+    [{ search_path: `"${schema}"` }],
+  );
   // CI starts with an empty database. Reconstruct the historical tables in an
   // owned schema instead of requiring or reading any existing business rows.
   await client.query(`
@@ -166,17 +216,6 @@ try {
     beforeAccounts.rows,
     "Do not rewrite accounts or require reconnect",
   );
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0408; new non-billing transactions are prohibited.
-  await client.query("SAVEPOINT invalid_redirect_uri");
-  await assert.rejects(
-    client.query(
-      "UPDATE connector_dcr_registrations SET redirect_uri = ' ' WHERE id = $1",
-      [registrationIds[0]],
-    ),
-    { code: "23514" },
-    "Retain the nonblank redirect URI constraint independently of hash retirement",
-  );
-  await client.query("ROLLBACK TO SAVEPOINT invalid_redirect_uri");
   const transformed = await client.query<{ oauth_context: string | null }>(
     "SELECT oauth_context FROM connector_oauth_states ORDER BY state",
   );
@@ -202,9 +241,69 @@ try {
     transformed.rows,
     "Context retirement is idempotent",
   );
+  await assert.rejects(
+    client.query(
+      "UPDATE connector_dcr_registrations SET redirect_uri = ' ' WHERE id = $1",
+      [registrationIds[0]],
+    ),
+    { code: "23514" },
+    "Retain the nonblank redirect URI constraint independently of hash retirement",
+  );
+} catch (error) {
+  errors.push(error);
 } finally {
-  await client.query("ROLLBACK");
-  await client.end();
+  // Only a returned CREATE acknowledgement owns this namespace. Connection
+  // loss or process death can leave residue for the exclusive job DB to dispose.
+  if (ownsSchema) {
+    try {
+      await client.query(`DROP SCHEMA "${schema}" CASCADE`);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      namespaceRows.parse(
+        (
+          await client.query(
+            "SELECT nspname FROM pg_catalog.pg_namespace WHERE nspname = $1",
+            [schema],
+          )
+        ).rows,
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (originalSearchPath !== undefined) {
+    try {
+      await client.query("SELECT set_config('search_path', $1, false)", [
+        originalSearchPath,
+      ]);
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
+      assert.deepEqual(
+        searchPathRows.parse((await client.query("SHOW search_path")).rows),
+        [{ search_path: originalSearchPath }],
+      );
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await client.end();
+  } catch (error) {
+    errors.push(error);
+  }
+  client.removeListener("error", observeClientError);
+}
+if (errors.length === 1) {
+  throw errors[0];
+}
+if (errors.length > 1) {
+  throw new AggregateError(errors, "OAuth fixture or owned cleanup failed", {
+    cause: errors[0],
+  });
 }
 console.log(
   "OAuth contract hash retirement preserves registrations, accounts, credentials and authorization contexts",

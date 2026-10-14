@@ -25,6 +25,7 @@ mod process_exit;
 mod process_timeout_logging;
 mod process_write;
 mod running_handoff;
+mod shutdown_closed;
 
 struct TestNormalOperationFence;
 
@@ -262,10 +263,15 @@ async fn attach_mock_shutdown_guest(sandbox: &FirecrackerSandbox) -> UnixStream 
         .to_string_lossy()
         .into_owned();
     let wait_vsock_path = vsock_path.clone();
+    let sandbox_id = sandbox.id.clone();
     let host_task = tokio::spawn(async move {
-        GuestControlClient::wait_for_connection(&wait_vsock_path, Duration::from_secs(5))
-            .await
-            .unwrap()
+        GuestControlClient::wait_for_connection_for_sandbox(
+            &wait_vsock_path,
+            Duration::from_secs(5),
+            &sandbox_id,
+        )
+        .await
+        .unwrap()
     });
     let mut guest = connect_mock_guest(&vsock_path).await;
     let mut decoder = Decoder::new();
@@ -2879,6 +2885,12 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
             "cpu_usage_usec": 16000,
             "memory_peak_bytes": 1048576,
             "memory_high_limit_bytes": "max",
+            "storage_resource_available": true,
+            "storage_control_timing": {
+                "request_ownership_us": 0,
+                "worker_wait_us": 71,
+                "response_prepare_us": 93
+            },
             "unknown_peer_field": "must-not-be-logged"
         }))
         .unwrap();
@@ -2920,6 +2932,12 @@ async fn apply_storage_manifest_preserves_terminal_metadata() {
     assert!(timing.request.response_wait.is_some());
     assert!(timing.request.result_decode.is_some());
     assert!(timing.resource_log.is_some());
+    assert_eq!(timing.request.guest.request_ownership_us, Some(0));
+    assert_eq!(timing.request.guest.worker_wait_us, Some(71));
+    assert_eq!(timing.request.guest.response_prepare_us, Some(93));
+    assert_eq!(timing.request.resources.cpu_usage_us, Some(16000));
+    assert_eq!(timing.request.resources.memory_peak_bytes, Some(1048576));
+    assert_eq!(timing.request.resources.cpu_throttled_us, None);
     assert_eq!(result.termination, ExecTermination::WaitFailed);
     assert_eq!(result.guest_duration_ms, Some(19));
     assert_eq!(result.stdout, b"out");

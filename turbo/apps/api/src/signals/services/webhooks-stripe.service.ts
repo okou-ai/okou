@@ -36,7 +36,7 @@ import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
 import { clerk$ } from "../external/clerk";
 import { waitUntil } from "../context/wait-until";
-import { writeDb$, type Db } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   isStripeResourceMissingError,
@@ -78,7 +78,6 @@ import {
 } from "./org-concurrency-entitlements.service";
 import { disableIneligibleWorkflowWebhookAutomationsForOrg$ } from "./workflow-webhook-automation-entitlement.service";
 import {
-  ensureOrgMetadataPlanEntitlement,
   orgPlanEntitlementValues,
   orgPlanEntitlementOrgIdForStripeSubscription,
   upsertOrgPlanEntitlement,
@@ -117,7 +116,6 @@ type BillingDowngradeCheckoutTargetTier = "limited-free-1" | "pro";
 const CANCELED_SUBSCRIPTION_TARGET_TIER = "limited-free-1";
 
 type ClerkClient = ReturnType<typeof clerk$.read>;
-type ClerkClientProvider = () => ClerkClient;
 
 interface CheckoutSessionInput {
   readonly id: string;
@@ -2195,78 +2193,71 @@ const handleBillingSetupCheckoutCompleted$ = command(
   },
 );
 
-async function shouldSkipSubscriptionBinding(
-  db: Db,
-  args: {
-    readonly customerId: string;
-    readonly subscriptionId: string;
-    readonly subscriptionStatus: string;
-    readonly tier: BillingSubscriptionTier;
-  },
-): Promise<boolean> {
-  const [existing] = await db
-    .select({
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-      subscriptionStatus: orgMetadata.subscriptionStatus,
-      tier: orgMetadata.tier,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.stripeCustomerId, args.customerId))
-    .limit(1);
+const shouldSkipSubscriptionBinding$ = command(
+  async (
+    { get },
+    args: {
+      readonly customerId: string;
+      readonly subscriptionId: string;
+      readonly subscriptionStatus: string;
+      readonly tier: BillingSubscriptionTier;
+    },
+  ): Promise<boolean> => {
+    const db = get(db$);
+    const [existing] = await db
+      .select({
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+        subscriptionStatus: orgMetadata.subscriptionStatus,
+        tier: orgMetadata.tier,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.stripeCustomerId, args.customerId))
+      .limit(1);
 
-  if (existing?.stripeSubscriptionId === args.subscriptionId) {
-    L.debug("subscription binding already processed", {
-      subscriptionId: args.subscriptionId,
-    });
-    return true;
-  }
-  if (
-    args.subscriptionStatus === "incomplete" &&
-    (existing?.subscriptionStatus === "active" ||
-      existing?.subscriptionStatus === "trialing")
-  ) {
-    L.debug("provisional subscription cannot replace an active subscription", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-      currentSubscriptionId: existing.stripeSubscriptionId,
-      currentSubscriptionStatus: existing.subscriptionStatus,
-    });
-    return true;
-  }
-  if (
-    checkoutWouldReplaceWithSameOrLowerTier({
-      currentTier: existing?.tier,
-      targetTier: args.tier,
-    })
-  ) {
-    L.warn("subscription binding rejected tier replacement", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-      currentTier: existing?.tier ?? null,
-      targetTier: args.tier,
-      reason: checkoutTierConflictMessage({
+    if (existing?.stripeSubscriptionId === args.subscriptionId) {
+      L.debug("subscription binding already processed", {
+        subscriptionId: args.subscriptionId,
+      });
+      return true;
+    }
+    if (
+      args.subscriptionStatus === "incomplete" &&
+      (existing?.subscriptionStatus === "active" ||
+        existing?.subscriptionStatus === "trialing")
+    ) {
+      L.debug(
+        "provisional subscription cannot replace an active subscription",
+        {
+          customerId: args.customerId,
+          subscriptionId: args.subscriptionId,
+          currentSubscriptionId: existing.stripeSubscriptionId,
+          currentSubscriptionStatus: existing.subscriptionStatus,
+        },
+      );
+      return true;
+    }
+    if (
+      checkoutWouldReplaceWithSameOrLowerTier({
         currentTier: existing?.tier,
         targetTier: args.tier,
-      }),
-    });
-    return true;
-  }
+      })
+    ) {
+      L.warn("subscription binding rejected tier replacement", {
+        customerId: args.customerId,
+        subscriptionId: args.subscriptionId,
+        currentTier: existing?.tier ?? null,
+        targetTier: args.tier,
+        reason: checkoutTierConflictMessage({
+          currentTier: existing?.tier,
+          targetTier: args.tier,
+        }),
+      });
+      return true;
+    }
 
-  return false;
-}
-
-async function orgHasStripeCustomer(
-  db: Db,
-  customerId: string,
-): Promise<boolean> {
-  const [existing] = await db
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.stripeCustomerId, customerId))
-    .limit(1);
-
-  return Boolean(existing);
-}
+    return false;
+  },
+);
 
 function isClerkNotFound(error: unknown): boolean {
   if (typeof error !== "object" || error === null) {
@@ -2295,126 +2286,184 @@ async function clerkOrganizationExists(
   throw result.error;
 }
 
-async function bindStripeCustomerFromMetadata(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  args: {
-    readonly customerId: string;
-    readonly subscriptionId: string;
-  },
-): Promise<boolean> {
-  if (await orgHasStripeCustomer(db, args.customerId)) {
-    return true;
-  }
+function metadataPlanEntitlementRows(orgId: string) {
+  return orgTierSchema.options.map((tier) => {
+    const values = orgPlanEntitlementValues(
+      { orgId, tier, source: "org_metadata_migration" },
+      { stripeSubscriptionId: null, sourceMetadata: {} },
+    );
+    return sql`(${values.planKey}, ${values.planRank}::integer,
+      ${values.source}, ${values.status}, ${values.baseConcurrencyLimit}::integer,
+      ${values.canBuyConcurrency}::boolean, ${values.canBuyCredits}::boolean,
+      ${values.showUsagePack}::boolean, ${values.autoRechargeAllowed}::boolean,
+      ${values.restrictedBuiltInModels}::boolean,
+      ${values.workflowWebhookTriggerAllowed}::boolean,
+      ${values.audioLifetimeLimit}::integer, ${values.audioDailyRateLimit}::integer,
+      ${values.audioDailyDurationSeconds}::integer, ${values.stripeSubscriptionId},
+      ${values.stripePriceId},
+      ${sql.param(values.currentPeriodStart, orgPlanEntitlements.currentPeriodStart)}::timestamp,
+      ${sql.param(values.currentPeriodEnd, orgPlanEntitlements.currentPeriodEnd)}::timestamp,
+      ${sql.param(values.cancelAt, orgPlanEntitlements.cancelAt)}::timestamp,
+      ${sql.param(values.expiresAt, orgPlanEntitlements.expiresAt)}::timestamp,
+      ${sql.param(values.sourceMetadata, orgPlanEntitlements.sourceMetadata)}::jsonb,
+      ${sql.param(values.updatedAt, orgPlanEntitlements.updatedAt)}::timestamp)`;
+  });
+}
 
-  const stripe = getStripeClient();
-  const customer = await stripe.customers.retrieve(args.customerId);
-  if ("deleted" in customer && customer.deleted) {
-    L.warn("stripe customer was deleted before org binding", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-    });
-    return false;
-  }
+const bindStripeCustomerFromMetadata$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly customerId: string;
+      readonly subscriptionId: string;
+    },
+  ): Promise<boolean> => {
+    const readDb = get(db$);
+    const [knownCustomer] = await readDb
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.stripeCustomerId, args.customerId))
+      .limit(1);
+    if (knownCustomer) {
+      return true;
+    }
 
-  const orgId = customer.metadata.orgId;
-  if (!orgId) {
-    L.warn("stripe customer has no org metadata", {
-      customerId: args.customerId,
-      subscriptionId: args.subscriptionId,
-    });
-    return false;
-  }
+    const stripe = getStripeClient();
+    const customer = await stripe.customers.retrieve(args.customerId);
+    if ("deleted" in customer && customer.deleted) {
+      L.warn("stripe customer was deleted before org binding", {
+        customerId: args.customerId,
+        subscriptionId: args.subscriptionId,
+      });
+      return false;
+    }
 
-  const [existingOrg] = await db
-    .select({ orgId: orgMetadata.orgId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-  if (!existingOrg && !(await clerkOrganizationExists(getClerk(), orgId))) {
-    L.warn("stripe customer metadata references missing Clerk org", {
+    const orgId = customer.metadata.orgId;
+    if (!orgId) {
+      L.warn("stripe customer has no org metadata", {
+        customerId: args.customerId,
+        subscriptionId: args.subscriptionId,
+      });
+      return false;
+    }
+
+    const [existingOrg] = await readDb
+      .select({ orgId: orgMetadata.orgId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+    if (!existingOrg && !(await clerkOrganizationExists(get(clerk$), orgId))) {
+      L.warn("stripe customer metadata references missing Clerk org", {
+        customerId: args.customerId,
+        subscriptionId: args.subscriptionId,
+        orgId,
+      });
+      return false;
+    }
+
+    const db = set(writeDb$);
+    // Bootstrap may create the row after the existence check. Let the upsert
+    // decide binding atomically without replacing another customer's ownership.
+    const metadata = db.$with("metadata").as(
+      db
+        .insert(orgMetadataCanonicalWrites)
+        .values({ orgId, stripeCustomerId: args.customerId })
+        .onConflictDoUpdate({
+          target: orgMetadataCanonicalWrites.orgId,
+          set: { stripeCustomerId: args.customerId, updatedAt: nowDate() },
+          setWhere: or(
+            isNull(orgMetadataCanonicalWrites.stripeCustomerId),
+            eq(orgMetadataCanonicalWrites.stripeCustomerId, args.customerId),
+          ),
+        })
+        .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier }),
+    );
+    // Capture the canonical JS stamps before the parent round trip. Unknown
+    // returned tiers have no values row; existing entitlements are never changed.
+    const entitlementRows = metadataPlanEntitlementRows(orgId);
+    const entitlement = db.$with("default_entitlement", {}).as(sql`
+    INSERT INTO ${orgPlanEntitlements} (
+      org_id, plan_key, plan_rank, source, status, base_concurrency_limit,
+      can_buy_concurrency, can_buy_credits, show_usage_pack, auto_recharge_allowed,
+      restricted_built_in_models, workflow_webhook_trigger_allowed,
+      audio_lifetime_limit, audio_daily_rate_limit, audio_daily_duration_seconds,
+      stripe_subscription_id, stripe_price_id, current_period_start,
+      current_period_end, cancel_at, expires_at, source_metadata, updated_at
+    ) SELECT ${metadata.orgId}, entitlement_values.* FROM ${metadata}
+      JOIN (VALUES ${sql.join(entitlementRows, sql`, `)}) AS entitlement_values (
+        plan_key, plan_rank, source, status, base_concurrency_limit,
+        can_buy_concurrency, can_buy_credits, show_usage_pack, auto_recharge_allowed,
+        restricted_built_in_models, workflow_webhook_trigger_allowed,
+        audio_lifetime_limit, audio_daily_rate_limit, audio_daily_duration_seconds,
+        stripe_subscription_id, stripe_price_id, current_period_start,
+        current_period_end, cancel_at, expires_at, source_metadata, updated_at
+      ) ON ${eq(metadata.tier, sql`entitlement_values.plan_key`)}
+    ON CONFLICT (org_id) DO NOTHING
+  `);
+    const rows = await db
+      .with(metadata, entitlement)
+      .select({ orgId: metadata.orgId, tier: metadata.tier })
+      .from(metadata);
+    const bound = rows.length > 0;
+    if (bound) {
+      return true;
+    }
+
+    const [org] = await readDb
+      .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, orgId))
+      .limit(1);
+
+    L.warn("stripe customer metadata could not bind org", {
       customerId: args.customerId,
       subscriptionId: args.subscriptionId,
       orgId,
+      existingStripeCustomerId: org?.stripeCustomerId ?? null,
     });
     return false;
-  }
-
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0326; new non-billing transactions are prohibited.
-  const bound = await db.transaction(async (tx) => {
-    // Bootstrap may create the row after the existence check. Let the upsert
-    // decide binding atomically without replacing another customer's ownership.
-    const rows = await tx
-      .insert(orgMetadataCanonicalWrites)
-      .values({ orgId, stripeCustomerId: args.customerId })
-      .onConflictDoUpdate({
-        target: orgMetadataCanonicalWrites.orgId,
-        set: { stripeCustomerId: args.customerId, updatedAt: nowDate() },
-        setWhere: or(
-          isNull(orgMetadataCanonicalWrites.stripeCustomerId),
-          eq(orgMetadataCanonicalWrites.stripeCustomerId, args.customerId),
-        ),
-      })
-      .returning({ orgId: orgMetadata.orgId, tier: orgMetadata.tier });
-    for (const row of rows) {
-      await ensureOrgMetadataPlanEntitlement(tx, row);
-    }
-    return rows.length > 0;
-  });
-  if (bound) {
-    return true;
-  }
-
-  const [org] = await db
-    .select({ stripeCustomerId: orgMetadata.stripeCustomerId })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.orgId, orgId))
-    .limit(1);
-
-  L.warn("stripe customer metadata could not bind org", {
-    customerId: args.customerId,
-    subscriptionId: args.subscriptionId,
-    orgId,
-    existingStripeCustomerId: org?.stripeCustomerId ?? null,
-  });
-  return false;
-}
-
-async function invoicePaidOrgForCustomer(
-  db: Db,
-  customerId: string,
-): Promise<InvoicePaidOrg | null> {
-  const [org] = await db
-    .select({
-      orgId: orgMetadata.orgId,
-      lastProcessedInvoiceId: orgMetadata.lastProcessedInvoiceId,
-      stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
-      subscriptionStatus: orgMetadata.subscriptionStatus,
-      tier: orgMetadata.tier,
-    })
-    .from(orgMetadata)
-    .where(eq(orgMetadata.stripeCustomerId, customerId))
-    .limit(1);
-
-  return org ?? null;
-}
-
-async function invoicePaidOrgForCustomerOrMetadata(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  args: {
-    readonly customerId: string;
-    readonly subscriptionId: string;
   },
-): Promise<InvoicePaidOrg | null> {
-  const org = await invoicePaidOrgForCustomer(db, args.customerId);
-  if (org) {
-    return org;
-  }
+);
 
-  const bound = await bindStripeCustomerFromMetadata(db, getClerk, args);
-  return bound ? await invoicePaidOrgForCustomer(db, args.customerId) : null;
-}
+const invoicePaidOrgForCustomerOrMetadata$ = command(
+  async (
+    { get, set },
+    args: { readonly customerId: string; readonly subscriptionId: string },
+  ): Promise<InvoicePaidOrg | null> => {
+    const [org] = await get(db$)
+      .select({
+        orgId: orgMetadata.orgId,
+        lastProcessedInvoiceId: orgMetadata.lastProcessedInvoiceId,
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+        subscriptionStatus: orgMetadata.subscriptionStatus,
+        tier: orgMetadata.tier,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.stripeCustomerId, args.customerId))
+      .limit(1);
+
+    if (org) {
+      return org;
+    }
+    const bound = await set(bindStripeCustomerFromMetadata$, args);
+    if (!bound) {
+      return null;
+    }
+    const [boundOrg] = await get(db$)
+      .select({
+        orgId: orgMetadata.orgId,
+        lastProcessedInvoiceId: orgMetadata.lastProcessedInvoiceId,
+        stripeSubscriptionId: orgMetadata.stripeSubscriptionId,
+        subscriptionStatus: orgMetadata.subscriptionStatus,
+        tier: orgMetadata.tier,
+      })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.stripeCustomerId, args.customerId))
+      .limit(1);
+
+    return boundOrg ?? null;
+  },
+);
 
 interface ConcurrencyInvoiceEntitlementValue {
   readonly orgId: string;
@@ -2468,74 +2517,75 @@ function concurrencyInvoiceEntitlementValue(args: {
   };
 }
 
-async function prepareConcurrencyInvoiceEntitlements(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  invoice: InvoiceInput,
-): Promise<
-  | PaidWebhookOutcome
-  | {
-      readonly orgId: string;
-      readonly subscriptionId: string;
-      readonly values: readonly ConcurrencyInvoiceEntitlementValue[];
+const prepareConcurrencyInvoiceEntitlements$ = command(
+  async (
+    { set },
+    invoice: InvoiceInput,
+  ): Promise<
+    | PaidWebhookOutcome
+    | {
+        readonly orgId: string;
+        readonly subscriptionId: string;
+        readonly values: readonly ConcurrencyInvoiceEntitlementValue[];
+      }
+  > => {
+    const lines = concurrencyInvoiceLines(invoice);
+    const hasConcurrencyPurpose = invoiceHasConcurrencyPurpose(invoice);
+    if (lines.length === 0 && !hasConcurrencyPurpose) {
+      return { handled: false, drainOrgId: null };
     }
-> {
-  const lines = concurrencyInvoiceLines(invoice);
-  const hasConcurrencyPurpose = invoiceHasConcurrencyPurpose(invoice);
-  if (lines.length === 0 && !hasConcurrencyPurpose) {
-    return { handled: false, drainOrgId: null };
-  }
 
-  const subscriptionId = subscriptionIdFromInvoice(invoice);
-  if (!subscriptionId) {
-    L.warn("concurrency invoice.paid without subscription; skipping", {
-      invoiceId: invoice.id,
-    });
-    return { handled: true, drainOrgId: null };
-  }
+    const subscriptionId = subscriptionIdFromInvoice(invoice);
+    if (!subscriptionId) {
+      L.warn("concurrency invoice.paid without subscription; skipping", {
+        invoiceId: invoice.id,
+      });
+      return { handled: true, drainOrgId: null };
+    }
 
-  const customerId = customerIdFromInvoice(invoice);
-  if (!customerId) {
-    L.warn("concurrency invoice.paid without customer ID", {
-      invoiceId: invoice.id,
-    });
-    return { handled: true, drainOrgId: null };
-  }
+    const customerId = customerIdFromInvoice(invoice);
+    if (!customerId) {
+      L.warn("concurrency invoice.paid without customer ID", {
+        invoiceId: invoice.id,
+      });
+      return { handled: true, drainOrgId: null };
+    }
 
-  const org = await invoicePaidOrgForCustomerOrMetadata(db, getClerk, {
-    customerId,
-    subscriptionId,
-  });
-  if (!org) {
-    L.warn("concurrency invoice.paid for unknown customer", {
+    const org = await set(invoicePaidOrgForCustomerOrMetadata$, {
       customerId,
-      invoiceId: invoice.id,
       subscriptionId,
     });
-    return { handled: true, drainOrgId: null };
-  }
+    if (!org) {
+      L.warn("concurrency invoice.paid for unknown customer", {
+        customerId,
+        invoiceId: invoice.id,
+        subscriptionId,
+      });
+      return { handled: true, drainOrgId: null };
+    }
 
-  const values = lines.flatMap(({ line, index }) => {
-    const value = concurrencyInvoiceEntitlementValue({
-      invoice,
-      line,
-      index,
-      orgId: org.orgId,
-      subscriptionId,
+    const values = lines.flatMap(({ line, index }) => {
+      const value = concurrencyInvoiceEntitlementValue({
+        invoice,
+        line,
+        index,
+        orgId: org.orgId,
+        subscriptionId,
+      });
+      return value ? [value] : [];
     });
-    return value ? [value] : [];
-  });
 
-  if (values.length === 0) {
-    L.warn("concurrency invoice.paid had no usable entitlement lines", {
-      invoiceId: invoice.id,
-      orgId: org.orgId,
-      subscriptionId,
-    });
-  }
+    if (values.length === 0) {
+      L.warn("concurrency invoice.paid had no usable entitlement lines", {
+        invoiceId: invoice.id,
+        orgId: org.orgId,
+        subscriptionId,
+      });
+    }
 
-  return { orgId: org.orgId, subscriptionId, values };
-}
+    return { orgId: org.orgId, subscriptionId, values };
+  },
+);
 
 interface PreparedConcurrencyInvoice {
   readonly invoiceId: string;
@@ -2686,10 +2736,7 @@ type BindSubscriptionToCustomerOrgArgs = {
   readonly subscription: SubscriptionInput;
 } & (
   | { readonly source: "checkout.session.completed" }
-  | {
-      readonly source: "customer.subscription.created";
-      readonly getClerk: ClerkClientProvider;
-    }
+  | { readonly source: "customer.subscription.created" }
 );
 
 /**
@@ -2738,69 +2785,72 @@ async function refundDuplicateInitialPlanPurchase(
   return true;
 }
 
-async function bindSubscriptionToCustomerOrg(
-  db: Db,
-  args: BindSubscriptionToCustomerOrgArgs,
-): Promise<readonly string[]> {
-  if (!archivedSubscriptionHasSurvivingPlan(args.subscription)) {
-    return [];
-  }
-  if (
-    args.source === "customer.subscription.created" &&
-    !(await bindStripeCustomerFromMetadata(db, args.getClerk, {
-      customerId: args.customerId,
-      subscriptionId: args.subscription.id,
-    }))
-  ) {
-    return [];
-  }
-
-  const planItem = knownBillingPlanPriceItem(args.subscription.items.data);
-  const tier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
-  if (!planItem || !tier) {
-    const firstPriceId = args.subscription.items.data[0]?.price.id;
-    if (firstPriceId && isConcurrencyPriceId(firstPriceId)) {
+const bindSubscriptionToCustomerOrg$ = command(
+  async (
+    { set },
+    args: BindSubscriptionToCustomerOrgArgs,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    if (!archivedSubscriptionHasSurvivingPlan(args.subscription)) {
       return [];
     }
-    L.debug("subscription has no known plan item", {
-      subscriptionId: args.subscription.id,
-      source: args.source,
-    });
-    return [];
-  }
-  if (
-    await shouldSkipSubscriptionBinding(db, {
-      customerId: args.customerId,
-      subscriptionId: args.subscription.id,
-      subscriptionStatus: args.subscription.status,
-      tier,
-    })
-  ) {
-    return [];
-  }
+    if (
+      args.source === "customer.subscription.created" &&
+      !(await set(bindStripeCustomerFromMetadata$, {
+        customerId: args.customerId,
+        subscriptionId: args.subscription.id,
+      }))
+    ) {
+      return [];
+    }
 
-  const rows = await db
-    .update(orgMetadata)
-    .set({
-      stripeSubscriptionId: args.subscription.id,
-      subscriptionStatus: args.subscription.status,
-      cancelAtPeriodEnd: subscriptionWillCancel(args.subscription),
-      updatedAt: nowDate(),
-    })
-    .where(eq(orgMetadata.stripeCustomerId, args.customerId))
-    .returning({ orgId: orgMetadata.orgId });
+    const planItem = knownBillingPlanPriceItem(args.subscription.items.data);
+    const tier = planItem ? tierForKnownPlanPrice(planItem.price) : null;
+    if (!planItem || !tier) {
+      const firstPriceId = args.subscription.items.data[0]?.price.id;
+      if (firstPriceId && isConcurrencyPriceId(firstPriceId)) {
+        return [];
+      }
+      L.debug("subscription has no known plan item", {
+        subscriptionId: args.subscription.id,
+        source: args.source,
+      });
+      return [];
+    }
+    if (
+      await set(shouldSkipSubscriptionBinding$, {
+        customerId: args.customerId,
+        subscriptionId: args.subscription.id,
+        subscriptionStatus: args.subscription.status,
+        tier,
+      })
+    ) {
+      return [];
+    }
 
-  if (rows.length === 0) {
-    L.warn("subscription customer has no matching org", {
-      customerId: args.customerId,
-      subscriptionId: args.subscription.id,
-      source: args.source,
+    const rows = await db
+      .update(orgMetadata)
+      .set({
+        stripeSubscriptionId: args.subscription.id,
+        subscriptionStatus: args.subscription.status,
+        cancelAtPeriodEnd: subscriptionWillCancel(args.subscription),
+        updatedAt: nowDate(),
+      })
+      .where(eq(orgMetadata.stripeCustomerId, args.customerId))
+      .returning({ orgId: orgMetadata.orgId });
+
+    if (rows.length === 0) {
+      L.warn("subscription customer has no matching org", {
+        customerId: args.customerId,
+        subscriptionId: args.subscription.id,
+        source: args.source,
+      });
+    }
+    return rows.map((row) => {
+      return row.orgId;
     });
-  }
-  return rows.map((row) => {
-    return row.orgId;
-  });
-}
+  },
+);
 
 function tierFromSubscription(subscription: StripeSubscription) {
   if (!archivedSubscriptionHasSurvivingPlan(subscription)) {
@@ -3136,7 +3186,6 @@ const handleCheckoutCompleted$ = command(
     if (isArchivedUsageAllowanceMetadata(session.metadata)) {
       return { drainOrgId: null, orgIds: [] };
     }
-    const db = set(writeDb$);
 
     const usagePackInvitation = await set(
       handleUsagePackInvitationCheckoutPaid$,
@@ -3214,7 +3263,7 @@ const handleCheckoutCompleted$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const orgIds = await bindSubscriptionToCustomerOrg(db, {
+    const orgIds = await set(bindSubscriptionToCustomerOrg$, {
       customerId,
       subscription: usagePackOutcome.subscription ?? subscription,
       source: "checkout.session.completed",
@@ -3232,55 +3281,56 @@ const handleCheckoutCompleted$ = command(
   },
 );
 
-async function handleSubscriptionCreatedLegacy(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  subscription: SubscriptionInput,
-): Promise<readonly string[]> {
-  const customerId = customerIdFromSubscription(subscription);
-  if (!customerId) {
-    L.warn("customer.subscription.created without customer ID", {
-      subscriptionId: subscription.id,
+const handleSubscriptionCreatedLegacy$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+  ): Promise<readonly string[]> => {
+    const customerId = customerIdFromSubscription(subscription);
+    if (!customerId) {
+      L.warn("customer.subscription.created without customer ID", {
+        subscriptionId: subscription.id,
+      });
+      return [];
+    }
+
+    return await set(bindSubscriptionToCustomerOrg$, {
+      customerId,
+      subscription,
+      source: "customer.subscription.created",
     });
-    return [];
-  }
+  },
+);
 
-  return await bindSubscriptionToCustomerOrg(db, {
-    customerId,
-    subscription,
-    source: "customer.subscription.created",
-    getClerk,
-  });
-}
-
-async function handleSubscriptionCreated(
-  db: Db,
-  getClerk: ClerkClientProvider,
-  subscription: SubscriptionInput,
-): Promise<readonly string[]> {
-  if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
-    return [];
-  }
-  const usagePackOutcome = await handleUsagePackSubscriptionCreated(
-    db,
-    subscription,
-  );
-  const orgIds = await handleSubscriptionCreatedLegacy(
-    db,
-    getClerk,
-    usagePackOutcome.subscription ?? subscription,
-  );
-  return [
-    ...new Set([
-      ...orgIds,
-      ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
-    ]),
-  ];
-}
+const handleSubscriptionCreated$ = command(
+  async (
+    { set },
+    subscription: SubscriptionInput,
+  ): Promise<readonly string[]> => {
+    const db = set(writeDb$);
+    if (isArchivedUsageAllowanceMetadata(subscription.metadata)) {
+      return [];
+    }
+    const usagePackOutcome = await handleUsagePackSubscriptionCreated(
+      db,
+      subscription,
+    );
+    const orgIds = await set(
+      handleSubscriptionCreatedLegacy$,
+      usagePackOutcome.subscription ?? subscription,
+    );
+    return [
+      ...new Set([
+        ...orgIds,
+        ...(usagePackOutcome.orgId ? [usagePackOutcome.orgId] : []),
+      ]),
+    ];
+  },
+);
 
 const handlePlanSubscriptionInvoicePaid$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly invoice: InvoiceInput;
       readonly concurrencyResult: PaidWebhookOutcome;
@@ -3289,9 +3339,6 @@ const handlePlanSubscriptionInvoicePaid$ = command(
     signal: AbortSignal,
   ): Promise<string | null> => {
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
     const { invoice, concurrencyResult, fallbackDrainOrgId } = args;
     const subscriptionId = subscriptionIdFromInvoice(invoice);
     if (!subscriptionId) {
@@ -3307,7 +3354,7 @@ const handlePlanSubscriptionInvoicePaid$ = command(
       return concurrencyResult.drainOrgId ?? fallbackDrainOrgId;
     }
 
-    const org = await invoicePaidOrgForCustomerOrMetadata(db, getClerk, {
+    const org = await set(invoicePaidOrgForCustomerOrMetadata$, {
       customerId,
       subscriptionId,
     });
@@ -3390,17 +3437,11 @@ const handlePlanSubscriptionInvoicePaid$ = command(
 
 const handleConcurrencyInvoicePaid$ = command(
   async (
-    { get, set },
+    { set },
     invoice: InvoiceInput,
     signal: AbortSignal,
   ): Promise<PaidWebhookOutcome> => {
-    const prepared = await prepareConcurrencyInvoiceEntitlements(
-      set(writeDb$),
-      () => {
-        return get(clerk$);
-      },
-      invoice,
-    );
+    const prepared = await set(prepareConcurrencyInvoiceEntitlements$, invoice);
     signal.throwIfAborted();
     return "handled" in prepared
       ? prepared
@@ -4245,7 +4286,7 @@ async function paidPlanOrgIdForSubscription(
  */
 export const reconcileStripeSubscriptionSnapshot$ = command(
   async (
-    { get, set },
+    { set },
     subscription: StripeSubscription,
     signal: AbortSignal,
   ): Promise<StripeSubscriptionSnapshotReconciliation> => {
@@ -4253,9 +4294,6 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
       return { orgIds: [], downgradedOrgIds: [], paidInvoiceId: null };
     }
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
     const terminal =
       subscription.status === "canceled" ||
       subscription.status === "ended" ||
@@ -4281,9 +4319,8 @@ export const reconcileStripeSubscriptionSnapshot$ = command(
     // no usage-pack items because their removal webhook was missed. Bind any
     // unrecorded main plan first, then let the update projection deactivate or
     // repair the usage-pack component from current Stripe truth.
-    for (const orgId of await handleSubscriptionCreatedLegacy(
-      db,
-      getClerk,
+    for (const orgId of await set(
+      handleSubscriptionCreatedLegacy$,
       subscription,
     )) {
       orgIds.add(orgId);
@@ -4433,14 +4470,11 @@ export const reconcilePaidStripeInvoice$ = command(
 
 export const handleStripeWebhookEvent$ = command(
   async (
-    { get, set },
+    { set },
     event: StripeWebhookEvent,
     signal: AbortSignal,
   ): Promise<void> => {
     const db = set(writeDb$);
-    const getClerk = (): ClerkClient => {
-      return get(clerk$);
-    };
     let drainOrgId: string | null = null;
     const billingChangedOrgIds = new Set<string>();
     L.debug("stripe webhook received", { type: event.type, id: event.id });
@@ -4507,11 +4541,7 @@ export const handleStripeWebhookEvent$ = command(
         break;
       }
       case "customer.subscription.created": {
-        const orgIds = await handleSubscriptionCreated(
-          db,
-          getClerk,
-          event.object,
-        );
+        const orgIds = await set(handleSubscriptionCreated$, event.object);
         signal.throwIfAborted();
         addBillingChangedOrgIds(billingChangedOrgIds, orgIds);
         break;

@@ -14,7 +14,17 @@ import {
 import { workflowUserAutomationThreads } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  not,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
@@ -30,6 +40,7 @@ import {
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
+import { officialAutomationLifecycleCondition } from "./workflow-automation-write-condition";
 
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { connectors } from "@okouai/db/schema/connector";
@@ -549,7 +560,7 @@ const prepareGoogleFormsWatch$ = command(
   ) => {
     const db = get(db$);
     const [existing] = await db
-      .select({ id: googleFormsWatchStates.id })
+      .select({ needsRewatch: googleFormsWatchStates.needsRewatch })
       .from(googleFormsWatchStates)
       .where(
         and(
@@ -561,7 +572,9 @@ const prepareGoogleFormsWatch$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return existing ? null : await createOrAdoptGoogleFormsWatch(args, signal);
+    return existing && !existing.needsRewatch
+      ? null
+      : await createOrAdoptGoogleFormsWatch(args, signal);
   },
 );
 
@@ -595,6 +608,7 @@ function missingGoogleFormsConsumer(
 }
 
 interface GoogleFormsActivation {
+  readonly officialAutomation?: AutomationRow;
   readonly automationSnapshot: WorkflowAutomationSnapshot;
   readonly automationId: string;
   readonly workflowId: string;
@@ -883,6 +897,9 @@ const publishGoogleFormsActivation$ = command(
           enabled: true,
           nextRunAt: activation.nextRunAt,
           consecutiveFailures: 0,
+          ...(activation.officialAutomation === undefined
+            ? {}
+            : { officialIntendedEnabled: true }),
           ...(activation.inheritedAutonomyBudget === undefined
             ? {}
             : { autonomyBudget: activation.inheritedAutonomyBudget }),
@@ -897,7 +914,16 @@ const publishGoogleFormsActivation$ = command(
               workflowAutomations.eventType,
               "google-forms-response-submitted",
             ),
-            isNull(workflowAutomations.officialBlueprintKey),
+            activation.officialAutomation === undefined
+              ? isNull(workflowAutomations.officialBlueprintKey)
+              : and(
+                  officialAutomationLifecycleCondition(
+                    activation.officialAutomation,
+                  ),
+                  isNotNull(workflowAutomations.officialBlueprintKey),
+                  eq(workflowAutomations.officialIntendedEnabled, false),
+                  eq(workflowAutomations.enabled, false),
+                ),
             observedWorkflowAutomationCondition({
               id: activation.automationId,
               ...activation.automationSnapshot,
@@ -972,10 +998,48 @@ const markGoogleFormsWatchForRetry$ = command(
     await db
       .update(googleFormsWatchStates)
       .set({ needsRewatch: true, updatedAt: nowDate() })
-      .where(eq(googleFormsWatchStates.id, state.id));
+      .where(googleFormsWatchResourceCondition(state));
     signal.throwIfAborted();
   },
 );
+
+/** A provider reply owns only the resource and expiration it observed. */
+function googleFormsWatchResourceCondition(state: GoogleFormsWatchStateRow) {
+  return and(
+    eq(googleFormsWatchStates.id, state.id),
+    eq(googleFormsWatchStates.orgId, state.orgId),
+    eq(googleFormsWatchStates.userId, state.userId),
+    eq(googleFormsWatchStates.connectorId, state.connectorId),
+    eq(googleFormsWatchStates.formId, state.formId),
+    eq(googleFormsWatchStates.watchId, state.watchId),
+    eq(googleFormsWatchStates.topicName, state.topicName),
+    eq(googleFormsWatchStates.expireTime, state.expireTime),
+    eq(googleFormsWatchStates.needsRewatch, state.needsRewatch),
+  );
+}
+
+function googleFormsWatchProgressIsReferenced(state: GoogleFormsWatchStateRow) {
+  return exists(sql`(
+    SELECT 1 FROM ${workflowAutomations}
+    WHERE ${workflowAutomations.orgId} = ${state.orgId}
+      AND ${workflowAutomations.ownerUserId} = ${state.userId}
+      AND ${workflowAutomations.kind} = 'event'
+      AND ${workflowAutomations.eventType} = 'google-forms-response-submitted'
+      AND ${workflowAutomations.eventConnectorId} = ${state.connectorId}::uuid
+      AND ${workflowAutomations.eventConfig} ->> 'connectorId' = ${state.connectorId}
+      AND ${workflowAutomations.eventConfig} -> 'form' ->> 'id' = ${state.formId}
+      AND (${workflowAutomations.enabled} OR (
+        ${workflowAutomations.officialBlueprintKey} IS NOT NULL
+        AND ${workflowAutomations.officialIntendedEnabled} = true
+        AND ${workflowAutomations.officialReconciliationStatus} = 'needs_reconfiguration'
+        AND EXISTS (
+          SELECT 1 FROM ${googleFormsAutomationCursors}
+          WHERE ${googleFormsAutomationCursors.automationId} = ${workflowAutomations.id}
+            AND ${googleFormsAutomationCursors.watchStateId} = ${state.id}::uuid
+        )
+      ))
+  )`);
+}
 
 const stopGoogleFormsWatchState$ = command(
   async (
@@ -1001,9 +1065,36 @@ const stopGoogleFormsWatchState$ = command(
       signal.throwIfAborted();
       return { kind: "failed" };
     }
+    // Stopping the provider resource must not cascade away an intended same-source
+    // interval. Manual stop/source replacement already discard their cursors.
+    // A concurrent recovery may have adopted another provider resource; this
+    // reply cannot delete or mark that newer resource by the shared local id.
+    const referenced = googleFormsWatchProgressIsReferenced(args.state);
+    const deletedState = db.$with("deleted_google_forms_watch").as(
+      db
+        .delete(googleFormsWatchStates)
+        .where(
+          and(googleFormsWatchResourceCondition(args.state), not(referenced)),
+        )
+        .returning({ id: googleFormsWatchStates.id }),
+    );
+    // Consume the actual deleted identity: only its surviving exact resource
+    // can be marked for recreation. Both branches retain the statement snapshot.
     await db
-      .delete(googleFormsWatchStates)
-      .where(eq(googleFormsWatchStates.id, args.state.id));
+      .with(deletedState)
+      .update(googleFormsWatchStates)
+      .set({ needsRewatch: true, updatedAt: nowDate() })
+      .where(
+        and(
+          googleFormsWatchResourceCondition(args.state),
+          notExists(
+            db
+              .select({ id: deletedState.id })
+              .from(deletedState)
+              .where(eq(deletedState.id, googleFormsWatchStates.id)),
+          ),
+        ),
+      );
     signal.throwIfAborted();
     return { kind: "stopped" };
   },
@@ -1109,7 +1200,7 @@ export const reconcileGoogleFormsWatchState$ = command(
     }
     const watch = renewed.value;
     const currentTime = nowDate();
-    await db
+    const updated = await db
       .update(googleFormsWatchStates)
       .set({
         watchId: watch.id,
@@ -1118,8 +1209,11 @@ export const reconcileGoogleFormsWatchState$ = command(
         needsRewatch: false,
         updatedAt: currentTime,
       })
-      .where(eq(googleFormsWatchStates.id, state.id));
+      .where(googleFormsWatchResourceCondition(state));
     signal.throwIfAborted();
+    if (updated.rowCount === 0) {
+      return { kind: "unchanged" };
+    }
     return { kind: watch.id === state.watchId ? "renewed" : "created" };
   },
 );

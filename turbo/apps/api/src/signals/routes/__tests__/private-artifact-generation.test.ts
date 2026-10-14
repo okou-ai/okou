@@ -15,7 +15,6 @@ import type { ImageModelId } from "@okouai/api-contracts/contracts/image-models"
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { webhookBuiltInGenerationFalContract } from "@okouai/api-contracts/contracts/webhooks";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -33,32 +32,21 @@ import { webFileUrlRoutes } from "../web-file-url";
 import { webDownloadRoutes } from "../web-download";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
 
-import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
-
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
 
-const billing = createBillingMediaApi(context);
-
 const mocks = createRouteMocks(context);
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const privateBucket = "test-private-artifacts";
-const publicBucket = "test-user-artifacts";
 const imageBytes = Buffer.from("private generated image");
 const sourceUrl = "https://fal.media/private-generation/output.jpg";
 const signedReference =
   "https://private-r2.example/reference?signature=temporary";
 
-async function createFixture(privateArtifacts: boolean) {
+async function createFixture() {
   const actor = await createPublicImageMember(context, {
     credits: 1_000_000,
-    ownsFeatures: true,
-  });
-  await actor.run(() => {
-    return billing.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-    });
   });
   const api = setupApp({
     context,
@@ -257,164 +245,124 @@ describe("managed artifact privacy", () => {
     await flushWaitUntilForTest();
   });
 
-  it.each([
-    { enabled: false, guarded: false },
-    { enabled: true, guarded: false },
-    { enabled: true, guarded: true },
-  ])(
-    "uses the image submission policy after rollback (private=$enabled, guarded=$guarded)",
-    async ({ enabled, guarded }) => {
-      const fixture = await createFixture(enabled);
+  it.each([false, true])(
+    "keeps generated images private through completion (guarded=%s)",
+    async (guarded) => {
+      const fixture = await createFixture();
       await fixture.run(async () => {
         const generationId = await fixture.run(() => {
           return queueImage(fixture, undefined, guarded);
         });
-        await fixture.run(() => {
-          return billing.updateFeatureSwitches(fixture.actor, {
-            [FeatureSwitchKey.PrivateArtifacts]: !enabled,
-          });
-        });
         const result = await fixture.run(() => {
           return completeImage(fixture, generationId);
         });
-        expect(result.privateArtifacts).toBe(enabled);
+        expect(result.privateArtifacts).toBeTruthy();
         const stored = [...objects.values()].find((object) => {
           return (
             object.Body === imageBytes || object.ContentType === "image/jpeg"
           );
         });
-        expect(stored?.Bucket).toBe(enabled ? privateBucket : publicBucket);
-        if (enabled) {
-          expect(result.url).toMatch(
-            /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+        expect(stored?.Bucket).toBe(privateBucket);
+        expect(result.url).toMatch(
+          /^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.jpg$/u,
+        );
+        expect(result.sourceUrl).toBeUndefined();
+        expect(result.embedUrl).toBeUndefined();
+        const serializedEvents = JSON.stringify(
+          context.mocks.ably.publish.mock.calls,
+        );
+        expect(serializedEvents).not.toContain(sourceUrl);
+        expect(serializedEvents).not.toContain("cover_url");
+        expect(serializedEvents).not.toContain("private-artifacts/");
+        expect(serializedEvents).not.toContain(signedReference);
+        const preview = await fixture.run(() => {
+          return accept(
+            fixture
+              .api(webFilesContract)
+              .fileUrl({ headers, query: { file_id: result.id } }),
+            [200],
           );
-          expect(result.sourceUrl).toBeUndefined();
-          expect(result.embedUrl).toBeUndefined();
-          const serializedEvents = JSON.stringify(
-            context.mocks.ably.publish.mock.calls,
+        });
+        expect(preview.body).toStrictEqual({
+          url: signedReference,
+          downloadUrl: signedReference,
+          publicUrl: null,
+          previewImageUrl: null,
+          expiresAt: expect.any(String),
+        });
+        expect(
+          context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[2],
+        ).toMatchObject({ expiresIn: 172_800 });
+        const downloaded = await fixture.run(() => {
+          return accept(
+            fixture
+              .api(webFilesContract)
+              .download({ headers, query: { file_id: result.id } }),
+            [200],
           );
-          expect(serializedEvents).not.toContain(sourceUrl);
-          expect(serializedEvents).not.toContain("cover_url");
-          expect(serializedEvents).not.toContain("private-artifacts/");
-          expect(serializedEvents).not.toContain(signedReference);
-          const preview = await fixture.run(() => {
-            return accept(
-              fixture
-                .api(webFilesContract)
-                .fileUrl({ headers, query: { file_id: result.id } }),
-              [200],
-            );
-          });
-          expect(preview.body).toStrictEqual({
-            url: signedReference,
-            downloadUrl: signedReference,
-            publicUrl: null,
-            previewImageUrl: null,
-            expiresAt: expect.any(String),
-          });
-          expect(
-            context.mocks.s3.getSignedUrl.mock.calls.at(-1)?.[2],
-          ).toMatchObject({ expiresIn: 172_800 });
-          const downloaded = await fixture.run(() => {
-            return accept(
-              fixture
-                .api(webFilesContract)
-                .download({ headers, query: { file_id: result.id } }),
-              [200],
-            );
-          });
-          expect(downloaded.body).toBeInstanceOf(Blob);
-          if (!(downloaded.body instanceof Blob)) {
-            throw new Error("Expected image download");
+        });
+        expect(downloaded.body).toBeInstanceOf(Blob);
+        if (!(downloaded.body instanceof Blob)) {
+          throw new Error("Expected image download");
+        }
+        await fixture.run(() => {
+          return expect(downloaded.body.text()).resolves.toBe(
+            imageBytes.toString(),
+          );
+        });
+        for (const [userId, orgId] of [
+          [`user_${randomUUID()}`, fixture.actor.orgId],
+          [fixture.actor.userId, `org_${randomUUID()}`],
+        ]) {
+          if (!userId || !orgId) {
+            throw new Error("Missing viewer identity");
           }
-          await fixture.run(() => {
-            return expect(downloaded.body.text()).resolves.toBe(
-              imageBytes.toString(),
-            );
-          });
-          for (const [userId, orgId] of [
-            [`user_${randomUUID()}`, fixture.actor.orgId],
-            [fixture.actor.userId, `org_${randomUUID()}`],
-          ]) {
-            if (!userId || !orgId) {
-              throw new Error("Missing viewer identity");
-            }
-            mocks.clerk.session(userId, orgId);
-            await fixture.run(() => {
-              return accept(
-                fixture
-                  .api(builtInGenerationContract)
-                  .get({ headers, params: { generationId } }),
-                [404],
-              );
-            });
-            await fixture.run(() => {
-              return accept(
-                fixture
-                  .api(webFilesContract)
-                  .fileUrl({ headers, query: { file_id: result.id } }),
-                [404],
-              );
-            });
-            await fixture.run(() => {
-              return accept(
-                fixture
-                  .api(webFilesContract)
-                  .download({ headers, query: { file_id: result.id } }),
-                [404],
-              );
-            });
-          }
-          context.mocks.clerk.authenticateRequest.mockResolvedValue({
-            isAuthenticated: false,
-          });
-          await fixture.run(() => {
-            return accept(
-              fixture
-                .api(webFilesContract)
-                .download({ headers: {}, query: { file_id: result.id } }),
-              [401],
-            );
-          });
-        } else {
-          const writes = [...objects.keys()];
-          const contentWrite = writes.findIndex((key) => {
-            return key.startsWith(`${publicBucket}/artifacts/`);
-          });
-          const registrationWrite = writes.findIndex((key) => {
-            return key.startsWith("test-hosted-sites/artifact-delivery/files/");
-          });
-          expect(registrationWrite).toBeGreaterThanOrEqual(0);
-          expect(contentWrite).toBeGreaterThan(registrationWrite);
-          expect(result.url).toMatch(/^https:\/\/a\.okou\.io\//u);
-          expect(result.sourceUrl).toBe(sourceUrl);
-          expect(result.embedUrl).toBe(
-            `${result.url}?thumbnail=1&fit=scale-down&quality=85`,
-          );
-          mocks.clerk.session(`user_${randomUUID()}`, fixture.actor.orgId);
+          mocks.clerk.session(userId, orgId);
           await fixture.run(() => {
             return accept(
               fixture
                 .api(builtInGenerationContract)
                 .get({ headers, params: { generationId } }),
-              [200],
+              [404],
+            );
+          });
+          await fixture.run(() => {
+            return accept(
+              fixture
+                .api(webFilesContract)
+                .fileUrl({ headers, query: { file_id: result.id } }),
+              [404],
+            );
+          });
+          await fixture.run(() => {
+            return accept(
+              fixture
+                .api(webFilesContract)
+                .download({ headers, query: { file_id: result.id } }),
+              [404],
             );
           });
         }
+        context.mocks.clerk.authenticateRequest.mockResolvedValue({
+          isAuthenticated: false,
+        });
+        await fixture.run(() => {
+          return accept(
+            fixture
+              .api(webFilesContract)
+              .download({ headers: {}, query: { file_id: result.id } }),
+            [401],
+          );
+        });
       });
     },
   );
 
-  it("resolves an owned private input after rollback and keeps the stable reference in the next result", async () => {
-    const fixture = await createFixture(true);
+  it("resolves an owned private input and keeps the stable reference in the next result", async () => {
+    const fixture = await createFixture();
     await fixture.run(async () => {
       const image = await fixture.run(async () => {
         return completeImage(fixture, await queueImage(fixture));
-      });
-      await fixture.run(() => {
-        return billing.updateFeatureSwitches(fixture.actor, {
-          [FeatureSwitchKey.PrivateArtifacts]: false,
-        });
       });
       const nextId = await fixture.run(() => {
         return queueImage(fixture, [image.url]);
@@ -439,7 +387,7 @@ describe("managed artifact privacy", () => {
   });
 
   it("does not forward another user's private reference or sign it for a provider", async () => {
-    const fixture = await createFixture(true);
+    const fixture = await createFixture();
     await fixture.run(async () => {
       const image = await fixture.run(async () => {
         return completeImage(fixture, await queueImage(fixture));
@@ -468,7 +416,7 @@ describe("managed artifact privacy", () => {
   });
 
   it("fails private completion without falling back to the public bucket when credentials are missing", async () => {
-    const fixture = await createFixture(true);
+    const fixture = await createFixture();
     await fixture.run(async () => {
       const generationId = await fixture.run(() => {
         return queueImage(fixture);

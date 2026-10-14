@@ -22,7 +22,14 @@ export interface AgentRunLaunchSnapshotV3 {
 export type AgentRunFullLaunchSnapshot =
   | AgentRunLaunchSnapshotV1
   | AgentRunLaunchSnapshotV2
-  | AgentRunLaunchSnapshotV3;
+  | AgentRunLaunchSnapshotV3
+  | AgentRunLaunchSnapshotV5;
+/** Native history stays only in the retained sandbox/home for this producer. */
+export interface AgentRunLaunchSnapshotV5 {
+  schemaVersion: 5;
+  framework: "claude-code" | "codex" | "pi";
+  runnerProfile: string;
+}
 export type AgentRunLaunchSnapshot = AgentRunFullLaunchSnapshot;
 export interface AgentRunOfficialWorkflowDefinitionProvenance {
   readonly name: string;
@@ -41,4 +48,3 @@ export interface AgentRunOfficialWorkflowProvenance {
 }
 export type AgentRunResult = JsonValue;
 export type AgentRunStorageMounts = PersistedStorageMount[];
-export type AgentSessionStorageMounts = PersistedStorageMount[];

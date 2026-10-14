@@ -11,6 +11,7 @@ import {
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
 import { http, HttpResponse } from "msw";
+import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -32,12 +33,14 @@ import {
   mockDiscordApplication,
   mockDiscordMemberships,
   createPublicDiscordBinding,
+  configureDiscordApp,
   uniqueDiscordSnowflake,
 } from "./helpers/discord";
 import {
   discordChatThreads,
   discordMessageForTest,
   DISCORD_TEST_APPLICATION_ID,
+  DISCORD_TEST_GATEWAY_SECRET,
   mockDiscordProvider,
   postDiscordGatewayEnvelope,
   postDiscordMessage,
@@ -148,7 +151,10 @@ async function launchedRun(actor: ConnectedDiscordActor, threadId: string) {
   return await runsApi.readRun(actor.actor, input.runId);
 }
 
-async function discordStatus(actor: ConnectedDiscordActor) {
+async function discordStatus(
+  actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
+) {
+  mockDiscordMemberships(context, [actor]);
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -164,6 +170,94 @@ async function discordStatus(actor: ConnectedDiscordActor) {
 }
 
 describe("canonical Discord ingress", () => {
+  it("sends one unavailable-agent notice before workspace bootstrap without admitting or replaying a chat", async () => {
+    configureDiscordApp();
+    mockEnv("DISCORD_APPLICATION_ID", DISCORD_TEST_APPLICATION_ID);
+    mockEnv("DISCORD_GATEWAY_SECRET", DISCORD_TEST_GATEWAY_SECRET);
+    const identity = {
+      userId: `user_discord_${randomUUID()}`,
+      orgId: `org_discord_${randomUUID()}`,
+      orgRole: "org:admin" as const,
+    };
+    context.mocks.ably.publish.mockResolvedValue(undefined);
+    mockDiscordMemberships(context, [identity]);
+    // Register public cleanup before either setup request can commit.
+    onTestFinished(async () => {
+      mockDiscordMemberships(context, [identity]);
+      createRouteMocks(context).clerk.session(
+        identity.userId,
+        identity.orgId,
+        identity.orgRole,
+      );
+      const client = setupApp({ context, routes: integrationsDiscordRoutes })(
+        integrationsDiscordContract,
+      );
+      await accept(
+        client.disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200, 404],
+      );
+      await deleteFeatureSwitchesForUser(context, identity);
+    });
+    await updateFeatureSwitchesForUser(context, identity, {
+      [FeatureSwitchKey.DiscordIntegration]: true,
+    });
+    // OAuth does not require onboarding or completion of Clerk's bootstrap job.
+    const actor = await createPublicDiscordBinding(context, {
+      ...identity,
+      flow: "install",
+      botUserId: DISCORD_TEST_APPLICATION_ID,
+    });
+    const provider = mockDiscordProvider(actor);
+    const status = await discordStatus(actor);
+    expect(status).toMatchObject({
+      isAvailable: true,
+      isConnected: true,
+      discordUserId: actor.discordUserId,
+      defaultAgentId: null,
+      defaultAgentName: null,
+    });
+    expect(status.dmBindings).toStrictEqual([
+      {
+        connectionId: actor.connectionId,
+        guildId: actor.guildId,
+        guildName: actor.guildName,
+        workspaceName: "Discord test workspace",
+      },
+    ]);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> help before the workspace agent is ready`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toStrictEqual([
+      expect.objectContaining({
+        channel_id: provider.guildChannelId,
+        content:
+          "No accessible workspace default agent is configured. Ask a workspace admin to set one in Okou.",
+        message_reference: {
+          message_id: message.id,
+          fail_if_not_exists: true,
+        },
+      }),
+    ]);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+    const delivered = [...provider.sentMessages];
+    expect(
+      (await postDiscordMessage(context, message, `agent-replay:${message.id}`))
+        .body.outcome,
+    ).toBe("duplicate");
+    await flushWaitUntilForTest();
+    expect(provider.sentMessages).toStrictEqual(delivered);
+    await expect(discordChatThreads(context, actor)).resolves.toStrictEqual([]);
+  });
+
   it.each([true, false])(
     "copies the Chat browser preference (%s) into new threads without changing existing routes",
     async (enabled) => {
@@ -234,7 +328,7 @@ describe("canonical Discord ingress", () => {
     },
   );
 
-  it.each(["unmentioned", "unbound", "disabled"] as const)(
+  it.each(["unmentioned", "disabled"] as const)(
     "ignores %s messages without canonical chat or provider thread side effects",
     async (scenario) => {
       const actor = await connected();
@@ -254,10 +348,6 @@ describe("canonical Discord ingress", () => {
       const ignored = {
         ...message,
         mentions: scenario === "unmentioned" ? [] : message.mentions,
-        author:
-          scenario === "unbound"
-            ? { id: uniqueDiscordSnowflake(), username: "unbound-member" }
-            : message.author,
       };
       expect((await postDiscordMessage(context, ignored)).body.outcome).toBe(
         "ignored",
@@ -269,6 +359,132 @@ describe("canonical Discord ingress", () => {
         provider.dmChannelId,
       ]);
       expect(provider.sentMessages).toHaveLength(0);
+    },
+  );
+
+  it("uses a connected account in another server after the bot leaves its original server", async () => {
+    const actor = await connected();
+    const elsewhere = { ...actor, guildId: uniqueDiscordSnowflake() };
+    const provider = mockDiscordProvider(elsewhere);
+    const message = discordMessageForTest(elsewhere, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> help from another server`,
+    });
+    provider.messages.set(message.id, message);
+    expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected cross-server account routing");
+    }
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await launchedRun(actor, thread.id);
+    // A connection does not grant access after Discord removes the bot.
+    provider.deniedMembers.add(actor.botUserId);
+    const denied = discordMessageForTest(elsewhere, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> bot no longer belongs here`,
+    });
+    provider.messages.set(denied.id, denied);
+    // Gateway acceptance records the event; live authorization happens before chat admission.
+    expect((await postDiscordMessage(context, denied)).body.outcome).toBe(
+      "accepted",
+    );
+    await flushWaitUntilForTest();
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await expect(discordChatThreads(context, actor)).resolves.toHaveLength(1);
+    await expect(discordStatus(actor)).resolves.toMatchObject({
+      isConnected: true,
+    });
+  });
+
+  it("uses the account's bot DM when its original server is no longer shared", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider({
+      ...actor,
+      guildId: uniqueDiscordSnowflake(),
+    });
+    const message = discordMessageForTest(actor, {
+      channelId: provider.dmChannelId,
+      guild: false,
+      content: "continue in my private chat",
+    });
+    provider.messages.set(message.id, message);
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected the verified account's DM to remain usable");
+    }
+    expect(currentInputs(await events(actor, thread.id))).toHaveLength(1);
+    await launchedRun(actor, thread.id);
+  });
+
+  it.each(["installed", "uninstalled"] as const)(
+    "replies to unconnected guild mentions with a setup link (%s)",
+    async (scenario) => {
+      mockEnv("APP_URL", "https://app.okou.ai");
+      const actor = await connected();
+      const provider = mockDiscordProvider(actor);
+      const guildId =
+        scenario === "installed" ? actor.guildId : uniqueDiscordSnowflake();
+      provider.channels.set(provider.guildChannelId, {
+        id: provider.guildChannelId,
+        type: 0,
+        guild_id: guildId,
+      });
+      const stranger = uniqueDiscordSnowflake();
+      const message = {
+        ...discordMessageForTest(actor, {
+          channelId: provider.guildChannelId,
+          content: `<@${actor.botUserId}> hello`,
+        }),
+        guild_id: guildId,
+        author: { id: stranger, username: "new-member" },
+      };
+      expect((await postDiscordMessage(context, message)).body.outcome).toBe(
+        "ignored",
+      );
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(1);
+      expect(provider.sentMessages[0]).toMatchObject({
+        channel_id: message.channel_id,
+        content: `<@${stranger}> Please connect your account to use Okou from Discord.`,
+        components: [
+          {
+            type: 1,
+            components: [
+              {
+                type: 2,
+                style: 5,
+                label: "Connect",
+                url: `https://app.okou.ai/settings/discord?guild_id=${guildId}`,
+              },
+            ],
+          },
+        ],
+        message_reference: { message_id: message.id },
+        allowed_mentions: { parse: [], replied_user: false },
+      });
+      await postDiscordMessage(context, message);
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(1);
+      // One sender's notice must not silence another unconnected member.
+      const other = {
+        ...message,
+        id: uniqueDiscordSnowflake(),
+        author: { id: uniqueDiscordSnowflake(), username: "another-member" },
+      };
+      await postDiscordMessage(context, other);
+      await flushWaitUntilForTest();
+      expect(provider.sentMessages).toHaveLength(2);
+      await expect(discordChatThreads(context, actor)).resolves.toHaveLength(0);
+      expect([...provider.channels.keys()]).toStrictEqual([
+        provider.guildChannelId,
+        provider.dmChannelId,
+      ]);
     },
   );
 
@@ -341,58 +557,52 @@ describe("canonical Discord ingress", () => {
     expect(run.appendSystemPrompt).toContain("MESSAGE_CONTENT is unavailable");
   });
 
-  it.each([false, true])(
-    "tells a Discord run how its final reply and files reach Discord (private artifacts %s)",
-    async (privateArtifacts) => {
-      const actor = await connected();
-      await updateFeatureSwitchesForUser(context, actor, {
-        [FeatureSwitchKey.PrivateArtifacts]: privateArtifacts,
-      });
-      const provider = mockDiscordProvider(actor);
-      const message = discordMessageForTest(actor, {
-        channelId: provider.guildChannelId,
-        content: `<@${actor.botUserId}> make me a report file`,
-      });
-      provider.messages.set(message.id, message);
-      await postDiscordMessage(context, message);
-      await flushWaitUntilForTest();
-      const [thread] = await discordChatThreads(context, actor);
-      if (!thread) {
-        throw new Error("Expected canonical Discord thread");
-      }
-      const [input] = currentInputs(await events(actor, thread.id));
-      if (!input?.runId) {
-        throw new Error("Expected Discord run launch");
-      }
-      await runsApi.heartbeatRunner(actor.runnerGroup);
-      const claim = await runsApi.claimRunnerJob(input.runId);
+  it("tells a Discord run how its final reply and files reach Discord", async () => {
+    const actor = await connected();
+    const provider = mockDiscordProvider(actor);
+    const message = discordMessageForTest(actor, {
+      channelId: provider.guildChannelId,
+      content: `<@${actor.botUserId}> make me a report file`,
+    });
+    provider.messages.set(message.id, message);
+    await postDiscordMessage(context, message);
+    await flushWaitUntilForTest();
+    const [thread] = await discordChatThreads(context, actor);
+    if (!thread) {
+      throw new Error("Expected canonical Discord thread");
+    }
+    const [input] = currentInputs(await events(actor, thread.id));
+    if (!input?.runId) {
+      throw new Error("Expected Discord run launch");
+    }
+    await runsApi.heartbeatRunner(actor.runnerGroup);
+    const claim = await runsApi.claimRunnerJob(input.runId);
 
-      expect(claim.appendSystemPrompt).toContain(
-        "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
-      );
-      expect(claim.appendSystemPrompt).toContain(
-        "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
-      );
-      expect(claim.appendSystemPrompt).not.toContain(
-        "Only your own bot DM is accessible",
-      );
-      const privateArtifactRule =
-        "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
-      if (privateArtifacts) {
-        expect(claim.appendSystemPrompt).toContain(privateArtifactRule);
-        expect(claim.appendSystemPrompt).toContain(
-          "upload it with `okou discord upload-file` so the user has something they can open there",
-        );
-      } else {
-        expect(claim.appendSystemPrompt).not.toContain(
-          "Private artifacts in the final reply",
-        );
-      }
-    },
-  );
+    expect(claim.appendSystemPrompt).toContain(
+      "# Integration Note\n\n- Discord messaging and files: only your final reply is delivered to the Discord channel or thread in the integration context, so do not duplicate it with `okou discord message send`;",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      'okou discord install-link --invite "<invitation-url>" --json',
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "Never claim Okou has joined based only on link generation",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
+    );
+    expect(claim.appendSystemPrompt).not.toContain(
+      "Only your own bot DM is accessible",
+    );
+    const privateArtifactRule =
+      "A private `/artifacts/...` address is not openable from Discord, so a link alone shows the user nothing.";
+    expect(claim.appendSystemPrompt).toContain(privateArtifactRule);
+    expect(claim.appendSystemPrompt).toContain(
+      "upload it with `okou discord upload-file` so the user has something they can open there",
+    );
+  });
 
   it.each(["sender", "bot"] as const)(
     "requires %s public-thread creation permission even when the other party is an administrator",
@@ -728,16 +938,13 @@ describe("canonical Discord ingress", () => {
       "accepted",
     );
     await flushWaitUntilForTest();
-    expect(provider.channels.has(message.id)).toBe(testCase.allowed);
+    expect(provider.channels.has(message.id)).toBeFalsy();
     const inputs = [];
     for (const thread of await discordChatThreads(context, actor)) {
       inputs.push(...currentInputs(await events(actor, thread.id)));
     }
     expect(inputs).toHaveLength(testCase.allowed ? 1 : 0);
     if (testCase.allowed) {
-      expect(provider.channels.get(message.id)?.parent_id).toBe(
-        provider.guildChannelId,
-      );
       const [input] = inputs;
       if (!input?.runId) {
         throw new Error("Expected one run for the permitted Discord input");
@@ -768,6 +975,7 @@ describe("canonical Discord ingress", () => {
       { userId: first.userId, orgId: first.orgId, orgRole: "org:admin" },
       { userId: second.userId, orgId: second.orgId, orgRole: "org:admin" },
     ]);
+    provider.createThread(firstMessage.id);
     const secondMessage = discordMessageForTest(second, {
       channelId: firstMessage.id,
       content: `<@${second.botUserId}> second user's private task`,
@@ -793,7 +1001,7 @@ describe("canonical Discord ingress", () => {
     );
   });
 
-  it("ignores temporary guild unavailability and deduplicates uninstall replay after reinstall", async () => {
+  it("preserves account connections across temporary unavailability, bot removal, and replay", async () => {
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const eventId = `GUILD_DELETE:${actor.guildId}:removed`;
@@ -816,7 +1024,7 @@ describe("canonical Discord ingress", () => {
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const removed = {
       version: 1 as const,
@@ -827,17 +1035,14 @@ describe("canonical Discord ingress", () => {
     };
     expect(
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
-    ).toBe("accepted");
+    ).toBe("ignored");
     await flushWaitUntilForTest();
     expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
-      [`user:${actor.userId}`],
+      [],
     );
-    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
-      "discord:changed",
-      null,
-    );
+    expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: false,
+      isConnected: true,
     });
     const reinstalled = await createPublicDiscordBinding(context, {
       flow: "install",
@@ -849,19 +1054,19 @@ describe("canonical Discord ingress", () => {
       discordUserId: actor.discordUserId,
       guildName: "Discord test guild",
     });
-    expect(reinstalled.connectionId).not.toBe(actor.connectionId);
+    expect(reinstalled.connectionId).toBe(actor.connectionId);
     await flushWaitUntilForTest();
     context.mocks.ably.publish.mockClear();
     context.mocks.ably.channelGet.mockClear();
     expect(
       (await postDiscordGatewayEnvelope(context, removed)).body.outcome,
-    ).toBe("duplicate");
+    ).toBe("ignored");
     await flushWaitUntilForTest();
     expect(channelsPublishedTo(context.mocks, "discord:changed")).toStrictEqual(
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
@@ -971,6 +1176,7 @@ describe("canonical Discord ingress", () => {
       }),
       [200],
     );
+    provider.createThread(first.id);
     const followup = discordMessageForTest(actor, {
       channelId: first.id,
       content: `<@${actor.botUserId}> continue the guild task`,
@@ -1377,6 +1583,7 @@ describe("canonical Discord ingress", () => {
   });
 
   it("tells an unconnected DM sender how to connect about once an hour", async () => {
+    mockEnv("APP_URL", "https://app.okou.ai");
     const actor = await connected();
     const provider = mockDiscordProvider(actor);
     const stranger = uniqueDiscordSnowflake();
@@ -1408,7 +1615,22 @@ describe("canonical Discord ingress", () => {
     );
     await flushWaitUntilForTest();
     expect(noticesTo(dmId)).toHaveLength(1);
-    expect(noticesTo(dmId)[0]?.content).toContain("/connect");
+    expect(noticesTo(dmId)[0]).toMatchObject({
+      content: "Please connect your account to use Okou from Discord.",
+      components: [
+        {
+          type: 1,
+          components: [
+            {
+              type: 2,
+              style: 5,
+              label: "Connect",
+              url: "https://app.okou.ai/settings/discord",
+            },
+          ],
+        },
+      ],
+    });
     // A relay retry of the same event and a follow-up DM send nothing more.
     await postDiscordMessage(context, first);
     await postDiscordMessage(context, strangerDm("are you there?"));
@@ -1502,7 +1724,6 @@ describe("canonical Discord ingress", () => {
     mockDiscordApplication(1 << 19);
     await updateFeatureSwitchesForUser(context, actor, {
       [FeatureSwitchKey.DiscordIntegration]: true,
-      [FeatureSwitchKey.PrivateArtifacts]: true,
     });
     const objects = new Map<
       string,
@@ -1657,7 +1878,7 @@ describe("canonical Discord ingress", () => {
     expect(claim.appendSystemPrompt).toContain("untrusted");
   });
 
-  it("tells the Discord thread when the org is at its concurrent run limit and starts it once a slot frees up", async () => {
+  it("replies to the original message while queued without creating an empty thread", async () => {
     // One active run fills the org, independent of the plan's own limit.
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const actor = await connected();
@@ -1680,7 +1901,7 @@ describe("canonical Discord ingress", () => {
     }
     const activeRun = await launchedRun(actor, activeThread.id);
 
-    // A second top-level mention opens its own thread, held only by the limit.
+    // A second mention waits for capacity without opening an empty native thread.
     const waiting = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,
       content: `<@${actor.botUserId}> wait for an org run slot`,
@@ -1693,11 +1914,16 @@ describe("canonical Discord ingress", () => {
 
     expect(provider.sentMessages).toStrictEqual([
       expect.objectContaining({
-        channel_id: waiting.id,
+        channel_id: provider.guildChannelId,
+        message_reference: {
+          message_id: waiting.id,
+          fail_if_not_exists: true,
+        },
         content:
           "The workspace has reached its concurrent run limit; this will start automatically when a slot frees up.",
       }),
     ]);
+    expect(provider.channels.has(waiting.id)).toBeFalsy();
     const waitingThread = (await discordChatThreads(context, actor)).find(
       (thread) => {
         return thread.id !== activeThread.id;
@@ -1721,7 +1947,7 @@ describe("canonical Discord ingress", () => {
     // The cancelled run may reply in its own thread; the notice is not resent.
     expect(
       provider.sentMessages.filter((message) => {
-        return message.channel_id === waiting.id;
+        return message.content.includes("concurrent run limit");
       }),
     ).toHaveLength(1);
     await runsApi.requestCancelRun(actor.actor, waitingRun.runId, [200]);

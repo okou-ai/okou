@@ -530,6 +530,65 @@ test("An empty catalog leads with the upload entry instead of showing no matches
   expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
 });
 
+test("A custom deck steps through its pages on the stage", async () => {
+  const deck = customTemplate({
+    pageUrls: [
+      "https://example.test/page-1.png",
+      "https://example.test/page-2.png",
+    ],
+  });
+  mockCustomTemplates([deck]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, deck);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  expect(within(preview).getByText("1 / 2")).toBeInTheDocument();
+  expect(within(preview).getByText("2 slides")).toBeInTheDocument();
+
+  click(buttonByName("Preview slide 2", preview)!);
+
+  expect(within(preview).getByAltText("Page 2")).toHaveAttribute(
+    "src",
+    "https://example.test/page-2.png",
+  );
+  expect(within(preview).getByText("2 / 2")).toBeInTheDocument();
+  expect(buttonByName("Preview next slide", preview)).toBeDisabled();
+});
+
+test("A template shared with you opens without the owner's controls", async () => {
+  const shared = customTemplate({
+    canManage: false,
+    visibility: "organization",
+    ownerDisplayName: "Riley Park",
+  });
+  mockCustomTemplates([shared]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, shared);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  expect(within(preview).getByText("Shared by Riley Park")).toBeInTheDocument();
+  expect(
+    within(preview).queryByLabelText("Rename template"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(preview).queryByText("Change template visibility"),
+  ).not.toBeInTheDocument();
+  expect(buttonByName("Delete", preview)).toBeUndefined();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+});
+
 test("Opening a deck shows its pages and management controls", async () => {
   mockCustomTemplates([customTemplate()]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
@@ -700,7 +759,10 @@ test("A PDF template opens in the browser's own viewer", async () => {
   // A PDF needs neither our viewer nor Microsoft's: the browser renders it
   // from the source URL, handed over unchanged.
   const frame = await screen.findByTitle("annual-report.pdf preview");
-  expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
+  expect(frame).toHaveAttribute(
+    "src",
+    `${DOCUMENT_SOURCE_URL}#toolbar=0&navpanes=0&view=FitH`,
+  );
 });
 
 const ILLUSTRATION_SOURCE_URL =
@@ -768,9 +830,7 @@ test("An image template is shown by the examples its style produced, not its sou
   await within(dialog).findByText("Quiet UI mockup");
 
   const hero = () => {
-    return buttonByName("Preview Quiet UI mockup", dialog)?.querySelector(
-      "img",
-    );
+    return within(dialog).getByAltText("Quiet UI mockup illustration preview");
   };
   expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[0]);
   const strip = exampleStrip(dialog);
@@ -787,15 +847,13 @@ test("An image template is shown by the examples its style produced, not its sou
   });
   expect(exampleStrip(dialog)[1]).toHaveAttribute("aria-pressed", "true");
 
-  click(buttonByName("Preview Quiet UI mockup", dialog)!);
-  const pictures = await screen.findAllByTestId(
-    "custom-template-example-preview",
-  );
-  expect(
-    pictures.map((picture) => {
-      return picture.getAttribute("src");
-    }),
-  ).toStrictEqual([...EXAMPLE_URLS]);
+  // Like the built-in Illustration card, the picture steps through the
+  // examples rather than opening a page of its own.
+  click(hero());
+  await waitFor(() => {
+    expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[2]);
+  });
+  expect(exampleStrip(dialog)[2]).toHaveAttribute("aria-pressed", "true");
 });
 
 test("An image template with one example has nothing to choose between", async () => {
@@ -805,10 +863,68 @@ test("An image template with one example has nothing to choose between", async (
   await within(dialog).findByText("Quiet UI mockup");
 
   expect(
-    buttonByName("Preview Quiet UI mockup", dialog)?.querySelector("img"),
+    within(dialog).getByAltText("Quiet UI mockup illustration preview"),
   ).toHaveAttribute("src", EXAMPLE_URLS[0]);
   expect(exampleStrip(dialog)).toStrictEqual([]);
   expect(within(dialog).getByText("Private")).toBeInTheDocument();
+});
+
+test("Rename an image template from its card menu", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate()]);
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Quiet UI mockup");
+
+  click(buttonByName("Actions for Quiet UI mockup", dialog)!);
+  await waitFor(() => {
+    expect(menuItemByName("Rename")).toBeInTheDocument();
+  });
+  click(menuItemByName("Rename"));
+
+  const rename = await screen.findByRole("dialog", { name: "Rename template" });
+  const field = within(rename).getByLabelText("Rename template");
+  expect(field).toHaveValue("Quiet UI mockup");
+  await fill(field, "  Quiet   UI kit  ");
+  click(buttonByName("Save", rename)!);
+
+  // Whitespace is collapsed before it is stored, and the dialog closes once
+  // the name is saved.
+  await expect(
+    within(dialog).findByText("Quiet UI kit"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Rename template" }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("A rename the server refuses keeps the dialog and the typed name", async () => {
+  mockCustomTemplateStore([exampledIllustrationTemplate()], {
+    update: () => {
+      return "fail";
+    },
+  });
+
+  const { dialog } = await openCustomPanel();
+  await within(dialog).findByText("Quiet UI mockup");
+
+  click(buttonByName("Actions for Quiet UI mockup", dialog)!);
+  await waitFor(() => {
+    expect(menuItemByName("Rename")).toBeInTheDocument();
+  });
+  click(menuItemByName("Rename"));
+
+  const rename = await screen.findByRole("dialog", { name: "Rename template" });
+  const field = within(rename).getByLabelText("Rename template");
+  await fill(field, "Quiet UI kit");
+  click(buttonByName("Save", rename)!);
+
+  await expect(
+    within(rename).findByText("Couldn't rename the template."),
+  ).resolves.toBeInTheDocument();
+  expect(field).toHaveValue("Quiet UI kit");
+  expect(within(dialog).getByText("Quiet UI mockup")).toBeInTheDocument();
 });
 
 async function openDetail(
@@ -913,7 +1029,9 @@ function renameField(): HTMLElement {
 }
 
 async function shareWithOrganization(): Promise<void> {
-  click(buttonByName("Change")!);
+  click(
+    (await screen.findByText("Change template visibility")).closest("button")!,
+  );
   const organization = await waitFor(() => {
     const option = queryAllByRoleFast("menuitemradio").find((candidate) => {
       return candidate.textContent?.startsWith("Organization");

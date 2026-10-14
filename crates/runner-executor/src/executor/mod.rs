@@ -37,11 +37,13 @@ mod guest_state;
 mod home_history;
 mod reused_sandbox;
 mod sandbox_run;
+mod session_history_attribution;
 mod session_history_cpu;
 mod session_history_download;
 mod session_history_restore_plan;
 mod session_id;
 mod session_restore;
+mod startup;
 mod storage;
 mod telemetry;
 
@@ -57,6 +59,7 @@ pub use session_history_restore_plan::{
     SessionHistoryRestoreFallback, SessionHistoryRestorePlan, SessionHistoryRestorePlanInput,
     build_session_history_restore_plan,
 };
+pub use startup::StartupReport;
 
 use agent_run::{PreparedRunInputs, ProcessCancelTimeouts, RunControls, RunStart};
 use env::validate_execution_context_before_sandbox;
@@ -169,7 +172,9 @@ use crate::proxy::{MitmJsonlFlushHandle, ProxyRegistryHandle};
 use crate::telemetry::JobTelemetry;
 use runner_host::paths::{HomePaths, LogPaths};
 use runner_provider::http::HttpClient;
-use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::{
+    ExecutionContext, HomeReuseResult, SandboxReuseResult, SandboxStartupPath,
+};
 
 fn guest_runtime_dir(run_id: RunId) -> RunnerResult<String> {
     let run_id = run_id.to_string();
@@ -387,6 +392,8 @@ pub struct ExecuteOutcome {
     pub home_image: Option<HomeImageLease>,
     /// Final home-reuse outcome, when execution reached `RunStart`.
     pub home_reuse_result: Option<HomeReuseResult>,
+    /// Owned startup-fact delivery. Join after finalization and resource release.
+    pub startup_report: Option<StartupReport>,
     /// CLI-generated session ID read from the guest after execution.
     /// Used for late session tracking and finalization when `resume_session`
     /// is absent.
@@ -404,6 +411,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -423,6 +431,7 @@ impl ExecuteOutcome {
             network_log_session: None,
             home_image,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         }
@@ -660,6 +669,7 @@ pub async fn execute_job_with_prepared_notifier(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     record_reuse_result(&mut telemetry, dispatch.reuse_result);
@@ -680,6 +690,7 @@ pub async fn execute_job_with_prepared_notifier(
             network_log_session: None,
             home_image: None,
             home_reuse_result: None,
+            startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
         },
@@ -710,6 +721,7 @@ pub async fn execute_job_with_prepared_notifier(
                 network_log_session: None,
                 home_image: None,
                 home_reuse_result: None,
+                startup_report: None,
                 discovered_cli_agent_session_id: None,
                 restored_session_identity: None,
             },
@@ -782,6 +794,7 @@ pub async fn execute_job_reuse_with_hooks(
         context.sandbox_token.clone(),
         config.runner_hostname.clone(),
     );
+    telemetry.set_first_run(context.is_first_run);
     spawn_timing.record_claim_to_executor_start(&mut telemetry);
 
     let idle_kind = idle_sandbox.kind();
@@ -918,6 +931,10 @@ pub async fn execute_job_reuse_with_hooks(
                     home_reuse_result: match kind {
                         IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
                         IdleSandboxKind::Blank => blank_home_reuse_result(&context, config),
+                    },
+                    sandbox_startup_path: match kind {
+                        IdleSandboxKind::Exact => SandboxStartupPath::Sandbox,
+                        IdleSandboxKind::Blank => SandboxStartupPath::Blank,
                     },
                     prev_storage: (kind == IdleSandboxKind::Exact).then_some(&prev_storage),
                 },

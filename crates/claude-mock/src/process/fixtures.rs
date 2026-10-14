@@ -17,6 +17,8 @@ use std::time::{Duration, Instant};
 
 use super::bash_tool_command;
 
+mod task_oom;
+
 const REAPABLE_HANG_DURATION: Duration = Duration::from_secs(3600);
 const TERMINATION_READY_EVENT: &str = "claude_mock_termination_ready";
 const POST_RESULT_READY_EVENT: &str = "claude_mock_post_result_ready";
@@ -44,9 +46,9 @@ const TOOL_OOM_SURVIVOR_SCRIPT: &str = r#"
 set -eu
 test "$(cat /proc/self/oom_score_adj)" = 1000
 exec python3 -c '
-import pathlib, time
+import os, pathlib, time
 assert pathlib.Path("/proc/self/oom_score_adj").read_text().strip() == "1000"
-memory = bytearray(32 * 1024 * 1024)
+memory = bytearray(int(os.environ["VM0_TEST_OOM_SURVIVOR_BYTES"]))
 memory[::4096] = b"\x01" * (len(memory) // 4096)
 relative = next(line[3:] for line in pathlib.Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
 pathlib.Path("/tmp/vm0-tool-oom-survivor.cgroup").write_text(relative)
@@ -108,11 +110,21 @@ pub(super) enum ToolOomMode {
     WorkloadLimit,
     GuestPressure,
     GuestInjected,
+    TaskWorkloadLimit,
+    TaskGuestPressure,
 }
 
 impl ToolOomMode {
     fn guest_wide(self) -> bool {
-        self != Self::WorkloadLimit
+        !matches!(self, Self::WorkloadLimit | Self::TaskWorkloadLimit)
+    }
+
+    fn guest_pressure(self) -> bool {
+        matches!(self, Self::GuestPressure | Self::TaskGuestPressure)
+    }
+
+    fn managed_tasks(self) -> bool {
+        matches!(self, Self::TaskWorkloadLimit | Self::TaskGuestPressure)
     }
 }
 
@@ -174,7 +186,7 @@ pub(super) fn run_echo_jsonl_mode(payload: &str, hang_after_output: bool) -> Exi
 
 /// Emit the init + result JSONL pair shared by post-result mock test
 /// prefixes, flush stdout so guest-agent sees them, and write the
-/// session history checkpoint file. Caller decides which post-result
+/// native session-history file. Caller decides which post-result
 /// behavior follows (hang / exit / ignore SIGTERM / orphan stdout).
 fn emit_post_result_pair() {
     let _ = emit_result_pair(false, "Done.");
@@ -638,7 +650,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     if read_trimmed(Path::new("/proc/self/oom_score_adj"))? != "0" {
         return Err("runtime OOM score is not the unmodified default".to_string());
     }
-    let runtime_bytes = if mode == ToolOomMode::GuestPressure {
+    let runtime_bytes = if mode.guest_pressure() {
         // Keep every individual tool allocator smaller than the runtime. With
         // four half-sized allocators, total charge still exhausts this Guest.
         let meminfo = std::fs::read_to_string("/proc/meminfo")
@@ -677,6 +689,8 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         TOOL_OOM_SURVIVOR_CGROUP,
         TOOL_OOM_OFFENDER_CGROUP,
         TOOL_OOM_SURVIVOR_RELEASE,
+        task_oom::STARTUP,
+        task_oom::RELEASE,
     ] {
         match std::fs::remove_file(marker) {
             Ok(()) => {}
@@ -686,6 +700,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     }
 
     let mut fixture = ParallelToolOomFixture::new(memory_max_path, original_memory_max);
+    fixture.managed_tasks = mode.managed_tasks();
     // Test-only limit changes, confined to a disposable Guest operation. The
     // guard restores the original value on every returning path.
     write_cgroup_value_as_root(
@@ -697,7 +712,25 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         },
     )?;
 
-    fixture.survivor = Some(spawn_bash_tool(TOOL_OOM_SURVIVOR_SCRIPT)?);
+    fixture.survivor = Some(
+        bash_tool_command()
+            .args(["-c", TOOL_OOM_SURVIVOR_SCRIPT])
+            // Task admission adds small Python runtimes. Keep the unrelated
+            // sibling below each offender process when shared pressure begins.
+            .env(
+                "VM0_TEST_OOM_SURVIVOR_BYTES",
+                if mode.managed_tasks() {
+                    "8388608"
+                } else {
+                    "33554432"
+                },
+            )
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|error| format!("spawn survivor Bash tool: {error}"))?,
+    );
     let survivor_relative = wait_for_tool_marker(
         TOOL_OOM_SURVIVOR_CGROUP,
         fixture
@@ -706,7 +739,9 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
             .ok_or_else(|| "survivor process is missing".to_string())?,
     )?;
 
-    let offender_script = if mode == ToolOomMode::GuestInjected {
+    let offender_script = if mode.managed_tasks() {
+        task_oom::OFFENDER_SCRIPT
+    } else if mode == ToolOomMode::GuestInjected {
         TOOL_OOM_INJECTED_OFFENDER_SCRIPT
     } else {
         TOOL_OOM_OFFENDER_SCRIPT
@@ -716,10 +751,19 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     } else {
         runtime_bytes / 2
     };
+    let mut offender_command = bash_tool_command();
+    offender_command
+        .args(["-c", offender_script])
+        .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string());
+    if mode.managed_tasks() {
+        offender_command
+            .env("VM0_TEST_TASK_SUPPORT", task_oom::LAUNCH_SUPPORT)
+            .env("VM0_TEST_TASK_CONTROLLER", task_oom::CONTROLLER_PROGRAM)
+            .env("VM0_TEST_TASK_RUNTIME", task_oom::RUNTIME_PROGRAM)
+            .env("VM0_TEST_TASK_ALLOCATOR", task_oom::ALLOCATOR_PROGRAM);
+    }
     fixture.offender = Some(
-        bash_tool_command()
-            .args(["-c", offender_script])
-            .env("VM0_TEST_OOM_ALLOCATOR_BYTES", offender_bytes.to_string())
+        offender_command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -735,7 +779,21 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     )?;
 
     validate_tool_cgroup(&survivor_relative, &tools_relative)?;
-    validate_tool_cgroup(&offender_relative, &tools_relative)?;
+    if mode.managed_tasks() {
+        task_oom::validate_runtime(&offender_relative, &tools_relative)?;
+        task_oom::validate_controller(
+            fixture
+                .offender
+                .as_ref()
+                .ok_or("task controller is missing")?
+                .id(),
+            &tools_relative,
+        )?;
+        std::fs::write(task_oom::RELEASE, b"release\n")
+            .map_err(|error| format!("release task pressure: {error}"))?;
+    } else {
+        validate_tool_cgroup(&offender_relative, &tools_relative)?;
+    }
     if survivor_relative == offender_relative {
         return Err("parallel Bash tools entered the same cgroup".to_string());
     }
@@ -745,7 +803,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         // The disposable Guest runs the kernel's global OOM victim selection
         // after both tools have reached their readiness markers.
         write_cgroup_value_as_root(Path::new("/proc/sysrq-trigger"), "f")?;
-    } else if mode == ToolOomMode::GuestPressure {
+    } else if mode.guest_pressure() {
         eprintln!(
             "real Guest-wide OOM pressure started: {}",
             guest_pressure_diagnostics(workload_path, &offender_path)
@@ -761,7 +819,7 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         "offender Bash tool",
     )
     .map_err(|error| {
-        if mode == ToolOomMode::GuestPressure {
+        if mode.guest_pressure() {
             format!(
                 "{error}; {}",
                 guest_pressure_diagnostics(workload_path, &offender_path)
@@ -771,18 +829,46 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
         }
     })?;
     fixture.offender = None;
-    if offender_status.signal() != Some(libc::SIGKILL) {
+    if !(if mode.managed_tasks() {
+        offender_status.success()
+    } else {
+        offender_status.signal() == Some(libc::SIGKILL)
+    }) {
         return Err(format!(
             "offender Bash tool was not killed as a group: {offender_status}"
         ));
     }
     let deadline = Instant::now() + TOOL_COMPLETION_TIMEOUT;
-    while read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0) {
+    while if mode.managed_tasks() {
+        task_oom::root_path(&tools_relative)?
+            .try_exists()
+            .map_err(|error| format!("observe task retirement: {error}"))?
+    } else {
+        read_cgroup_events(&offender_path.join("cgroup.events"))?.get("populated") != Some(&0)
+    } {
         if Instant::now() >= deadline {
             return Err("OOM-killed tool still has live descendants".to_string());
         }
         std::thread::sleep(TOOL_OOM_POLL_INTERVAL);
     }
+
+    let reclaimed_bytes = if mode.managed_tasks() {
+        let peak = read_trimmed(&tools_path.join("memory.peak"))?
+            .parse::<u64>()
+            .map_err(|error| format!("tools peak: {error}"))?;
+        let current = read_trimmed(&tools_path.join("memory.current"))?
+            .parse::<u64>()
+            .map_err(|error| format!("tools current: {error}"))?;
+        let reclaimed = peak.saturating_sub(current);
+        if reclaimed < 64 * 1024 * 1024 {
+            return Err(format!(
+                "task retirement did not reclaim pressure charge: {reclaimed}"
+            ));
+        }
+        reclaimed
+    } else {
+        0
+    };
 
     let survivor = fixture
         .survivor
@@ -829,7 +915,12 @@ fn verify_parallel_shell_tool_oom(mode: ToolOomMode) -> Result<String, String> {
     drop(runtime_memory);
     fixture.restore_memory_max()?;
     Ok(format!(
-        "parallel-shell-tool-oom-survived oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} trigger={} offender={offender_relative} survivor={survivor_relative}",
+        "{} oom_group_kill={oom_group_kills} guest_wide={guest_wide} memcg_ooms={memcg_ooms} trigger={} reclaimed_bytes={reclaimed_bytes} offender={offender_relative} survivor={survivor_relative}",
+        if mode.managed_tasks() {
+            "nested-managed-task-oom-survived"
+        } else {
+            "parallel-shell-tool-oom-survived"
+        },
         if mode == ToolOomMode::GuestInjected {
             "sysrq"
         } else {
@@ -882,6 +973,7 @@ struct ParallelToolOomFixture {
     memory_max_restored: bool,
     survivor: Option<Child>,
     offender: Option<Child>,
+    managed_tasks: bool,
 }
 
 impl ParallelToolOomFixture {
@@ -892,6 +984,7 @@ impl ParallelToolOomFixture {
             memory_max_restored: false,
             survivor: None,
             offender: None,
+            managed_tasks: false,
         }
     }
 
@@ -904,6 +997,9 @@ impl ParallelToolOomFixture {
 
 impl Drop for ParallelToolOomFixture {
     fn drop(&mut self) {
+        if self.managed_tasks {
+            task_oom::stop_family();
+        }
         let tools_relative = unified_cgroup_path(std::process::id())
             .ok()
             .and_then(|runtime| {
@@ -936,16 +1032,6 @@ impl Drop for ParallelToolOomFixture {
             let _ = write_cgroup_value_as_root(&self.memory_max_path, &self.original_memory_max);
         }
     }
-}
-
-fn spawn_bash_tool(script: &str) -> Result<Child, String> {
-    bash_tool_command()
-        .args(["-c", script])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|error| format!("spawn Bash tool: {error}"))
 }
 
 fn wait_for_tool_marker(path: &str, child: &mut Child) -> Result<String, String> {

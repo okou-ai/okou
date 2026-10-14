@@ -6,9 +6,9 @@ import {
   convertV4MiniflareOptions,
   Miniflare,
   Response,
+  WebSocket,
   WebSocketPair,
   type Request,
-  type WebSocket,
 } from "miniflare";
 import { expect, onTestFinished } from "vitest";
 import { z } from "zod";
@@ -72,7 +72,12 @@ export class GatewayConnection {
       const packet = packetSchema.parse(JSON.parse(String(event.data)));
       this.packets.push(packet);
       this.incoming.push(packet);
-      if (packet.op === 1 && this.autoAcknowledge)
+      // A queued heartbeat can reach this listener after either end closes.
+      if (
+        packet.op === 1 &&
+        this.autoAcknowledge &&
+        this.socket.readyState === WebSocket.READY_STATE_OPEN
+      )
         this.send({ op: 11, d: null });
     });
     this.socket.addEventListener("close", (event) => {

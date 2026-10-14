@@ -37,6 +37,11 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
     assert!(calls.run_control_bind_calls().is_empty());
     let blank_sandbox_id = idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id;
 
+    // Keep the refill from mounting another home while checking that the
+    // consumed blank does not remount its already prepared home.
+    let refill_gate = sandbox_mock::MockLifecycleGate::new();
+    calls.set_create_lifecycle_gate(refill_gate.clone());
+
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
     let completion = env
@@ -56,6 +61,18 @@ async fn blank_pool_prepares_and_serves_a_job_without_changing_reuse_attribution
     );
     assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
     assert_eq!(calls.home_drive_mount_calls(), 1);
+
+    refill_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("consuming the blank should prepare a replacement");
+    refill_gate.release_one();
+    wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
+    assert_ne!(
+        idle_pool.lock().await.status_snapshot().blank_sandboxes[0].sandbox_id,
+        blank_sandbox_id
+    );
+    assert_eq!(calls.home_drive_mount_calls(), 2);
 
     shutdown(&env, run_handle).await;
     let status: serde_json::Value = serde_json::from_str(
@@ -575,12 +592,12 @@ async fn foreground_admission_drains_cancelled_blank_park_before_destroy() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn blank_park_and_kill_panics_keep_budget_owned_through_destroy() {
+async fn blank_park_and_stop_panics_keep_budget_owned_through_destroy() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
     let destroy_gate = sandbox_mock::MockLifecycleGate::new();
     overrides.push_park_panic("simulated blank park panic");
-    overrides.push_kill_panic("simulated blank kill panic");
+    overrides.push_stop_panic("simulated blank stop panic");
     overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
     let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
     let budget = Arc::clone(&config.capacity.budget);
@@ -590,6 +607,7 @@ async fn blank_park_and_kill_panics_keep_budget_owned_through_destroy() {
         .wait_entered(1, Duration::from_secs(5))
         .await
         .expect("panicked blank lifecycle should still reach factory destroy");
+    assert_eq!(calls.stop_call_count(), 1);
     assert_eq!(calls.destroy_call_count(), 1);
     assert_eq!(
         budget.allocated().2,

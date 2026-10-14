@@ -56,7 +56,16 @@ pub(super) fn current_source(
     context: &ExecutionContext,
     retained: &SessionHistorySourceRef,
 ) -> Option<SessionHistorySourceRef> {
-    let session_id = &context.resume_session.as_ref()?.cli_agent_session_id;
+    let session_id = context
+        .native_continuation
+        .as_ref()
+        .and_then(|native| native.session_id.as_ref())
+        .or_else(|| {
+            context
+                .resume_session
+                .as_ref()
+                .map(|resume| &resume.cli_agent_session_id)
+        })?;
     match effective_cli_framework(&context.cli_agent_type) {
         EffectiveCliFramework::ClaudeCode => Some(SessionHistorySourceRef::ClaudeCode {
             config_dir: CANONICAL_CLAUDE_CONFIG_DIR.into(),
@@ -98,7 +107,46 @@ pub(super) async fn verify_home_candidate(
     if cancel.is_cancelled() {
         return Err(RunnerError::Cancelled);
     }
-    let Some(expected) = expected_history(context) else {
+    let expected = if let Some(native) = &context.native_continuation {
+        let Some(session_id) = native.session_id.as_deref() else {
+            return Ok(false);
+        };
+        if native.generation_run_id.as_deref() != Some(binding.proof.generation.as_str()) {
+            return Ok(false);
+        }
+        let expected_session_id = if effective_cli_framework(&context.cli_agent_type)
+            == EffectiveCliFramework::Codex
+        {
+            let Some(id) = guest_contracts::codex_thread_id::canonical_codex_thread_id(session_id)
+            else {
+                return Ok(false);
+            };
+            id
+        } else {
+            session_id.to_owned()
+        };
+        let identity = &binding.proof.identity;
+        if identity.framework
+            != SessionHistoryFramework::from(guest_contracts::env::CliFramework::from(
+                effective_cli_framework(&context.cli_agent_type),
+            ))
+            || identity.session_id_hash
+                != hex::encode(Sha256::digest(expected_session_id.as_bytes()))
+        {
+            return Ok(false);
+        }
+        SessionHistoryIdentityExpectation::new(
+            identity.framework,
+            identity.session_id_hash.clone(),
+            identity.history_ref_kind,
+            identity.history_hash.clone(),
+            identity.history_size_bytes,
+        )
+        .ok()
+    } else {
+        expected_history(context)
+    };
+    let Some(expected) = expected else {
         return Ok(false);
     };
     let Some(source) = current_source(context, &binding.proof.identity.history_source) else {

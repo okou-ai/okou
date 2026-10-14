@@ -1,5 +1,6 @@
 import type { RouteEntry } from "./route-entry";
 import { agentDraftRoutes } from "./routes/agent-draft";
+import { suggestionsRoutes } from "./routes/suggestions";
 import { agentInstructionsRoutes } from "./routes/agent-instructions";
 import { agentSetupPromptRoutes } from "./routes/agent-setup-prompts";
 import { agentsRoutes } from "./routes/agents";
@@ -72,7 +73,6 @@ import { cronPruneStoragePresignedUrlsRoutes } from "./routes/cron-prune-storage
 import { cronReconcileArtifactCatalogRoutes } from "./routes/cron-reconcile-artifact-catalog";
 import { cronReconcileBillingEntitlementsRoutes } from "./routes/cron-reconcile-billing-entitlements";
 import { cronReconcileSocialKitDownloadRoutes } from "./routes/cron-reconcile-socialkit-downloads";
-import { cronRefreshHomeTaskRecommendationsRoutes } from "./routes/cron-refresh-home-task-recommendations";
 import { cronRenewGmailWatchesRoutes } from "./routes/cron-renew-gmail-watches";
 import { cronRenewGoogleCalendarWatchesRoutes } from "./routes/cron-renew-google-calendar-watches";
 import { cronRenewGoogleFormsWatchesRoutes } from "./routes/cron-renew-google-forms-watches";
@@ -89,7 +89,7 @@ import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordOauthRoutes } from "./routes/discord-oauth";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
-import { debugMorningBriefEmailRoutes } from "./routes/debug-morning-brief-email";
+import { debugMorningBriefRoutes } from "./routes/debug-morning-brief";
 import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
@@ -101,7 +101,6 @@ import { financeRoutes } from "./routes/finance";
 import { getStartedRoutes } from "./routes/get-started";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
-import { homeTaskRecommendationRoutes } from "./routes/home-task-recommendations";
 import { hostRoutes } from "./routes/host";
 import { imageIoGenerateRoutes } from "./routes/image-io-generate";
 import { integrationsAgentPhoneRoutes } from "./routes/integrations-agentphone";
@@ -146,12 +145,10 @@ import { meModelProvidersResetSubscriptionRoutes } from "./routes/me-model-provi
 import { meModelProvidersUpsertRoutes } from "./routes/me-model-providers-upsert";
 import { modelCatalogRoutes } from "./routes/model-catalog";
 import { morningBriefPreferenceRoutes } from "./routes/morning-brief-preference";
-import { officialWorkflowRoutes } from "./routes/official-workflows";
 import { onboardingCompleteRoutes } from "./routes/onboarding-complete";
 import { onboardingRecommendationRoutes } from "./routes/onboarding-recommendations";
 import { onboardingSourcesRoutes } from "./routes/onboarding-sources";
 import { onboardingStatusRoutes } from "./routes/onboarding-status";
-import { onboardingWorkflowConnectorsRoutes } from "./routes/onboarding-workflow-connectors";
 import { orgDeleteRoutes } from "./routes/org-delete";
 import { orgInviteRoutes } from "./routes/org-invite";
 import { orgLogoRoutes } from "./routes/org-logo";
@@ -218,6 +215,7 @@ import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewal
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
 import { webhooksAgentSessionOutputRoutes } from "./routes/webhooks-agent-session-output";
 import { webhooksAgentStorageRoutes } from "./routes/webhooks-agent-storage";
+import { runnersStartupRoutes } from "./routes/runners-startup";
 import { webhooksBuiltInGenerationRoutes } from "./routes/webhooks-built-in-generations";
 import { webhooksClerkRoutes } from "./routes/webhooks-clerk";
 import { webhooksGithubRoutes } from "./routes/webhooks-github";
@@ -234,6 +232,7 @@ import { workflowAutomationsRoutes } from "./routes/workflow-automations";
 import { workflowsRoutes } from "./routes/workflows";
 
 export const ROUTES: readonly RouteEntry[] = [
+  ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
@@ -276,7 +275,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronOfficialWorkflowCatalogRoutes,
   ...cronConnectorOauthStateCleanupRoutes,
   ...cronDrainEmailOutboxRoutes,
-  ...cronRefreshHomeTaskRecommendationsRoutes,
   ...cronExecuteWorkflowAutomationsRoutes,
   ...cronMonitorChatEventQueueRoutes,
   ...cronRenewGmailWatchesRoutes,
@@ -298,6 +296,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...cronTelegramCleanupRoutes,
   ...emailUnsubscribeRoutes,
   ...agentDraftRoutes,
+  ...suggestionsRoutes,
   ...agentInstructionsRoutes,
   ...agentsRoutes,
   ...connectorAgentAccessRoutes,
@@ -317,7 +316,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...billingUsagePackCreditsRoutes,
   ...bankingRoutes,
   ...chatThreadRoutes,
-  ...homeTaskRecommendationRoutes,
   ...welcomeChatThreadRoutes,
   ...chatEventsRoutes,
   ...sharedThreadRoutes,
@@ -390,7 +388,6 @@ export const ROUTES: readonly RouteEntry[] = [
   ...onboardingRecommendationRoutes,
   ...onboardingStatusRoutes,
   ...onboardingSourcesRoutes,
-  ...onboardingWorkflowConnectorsRoutes,
   ...orgInviteRoutes,
   ...orgDeleteRoutes,
   ...orgLogoRoutes,
@@ -406,9 +403,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
-  ...debugMorningBriefEmailRoutes,
+  ...debugMorningBriefRoutes,
   ...workflowsRoutes,
-  ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,
   ...skillImportRoutes,
   ...integrationsGithubRoutes,

@@ -53,7 +53,7 @@ jq -e '
     ($warm.steps | map(.id // .name) | index("cache-lookup"))) and
   any($warm.steps[];
     .id == "prewarm" and
-    .run == ".github/scripts/runner-binary-build/build.sh build" and
+    .run == ".github/scripts/runner/runner-binary-build/build.sh build" and
     .env.RUNNER_BINARY_METADATA_PATH == "runner-rust-cache-prewarm/metadata.json"
   ) and
   all($warm.steps[];

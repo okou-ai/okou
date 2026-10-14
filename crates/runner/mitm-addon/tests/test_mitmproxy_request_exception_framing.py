@@ -58,6 +58,7 @@ async def test_post_auth_request_exception_fails_closed_after_dispatch(
                 (b":scheme", b"https"),
                 (b":authority", b"api.github.com"),
                 (b":path", b"/repos/okou-ai/okou"),
+                (b"content-length", b"0"),
             ],
             end_stream=True,
         )

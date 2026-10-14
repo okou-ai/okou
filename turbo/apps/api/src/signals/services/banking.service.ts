@@ -16,7 +16,6 @@ import {
   type BankingOperationScope,
 } from "@okouai/db/schema/banking";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { command } from "ccstate";
 import {
   and,
@@ -407,11 +406,11 @@ async function findBankingRun(
   const [run] = await db
     .select({
       runId: agentRuns.id,
-      agentId: agentSessions.agentId,
+      agentId: agentRuns.agentId,
       triggerSource: agentRuns.triggerSource,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
+
     .where(
       and(
         eq(agentRuns.id, auth.runId),

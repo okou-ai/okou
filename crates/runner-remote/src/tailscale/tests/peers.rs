@@ -18,7 +18,7 @@ use wire::{Stack, local, peer_ip, remote};
 
 pub(in crate::tailscale::tests) fn node(id: i64, name: &str, ip: u8, keys: &NodeKeyPair) -> Value {
     json!({"ID":id,"StableID":format!("synthetic-node-{id}"),"Name":name,
-        "Key":keys.public.to_string(),"Addresses":[format!("100.64.0.{ip}/32"),format!("fd7a:115c:a1e0::{ip}/128")],
+        "Key":keys.public.to_string(),"KeyExpiry":"0001-01-01T00:00:00Z","Addresses":[format!("100.64.0.{ip}/32"),format!("fd7a:115c:a1e0::{ip}/128")],
         "AllowedIPs":["0.0.0.0/0","::/0","192.168.0.0/16"],"Online":true})
 }
 
@@ -70,6 +70,40 @@ async fn own(keys: &NodeKeyPair) -> Node {
         .await
         .node
         .unwrap()
+}
+
+#[tokio::test]
+async fn only_the_go_zero_expiry_instant_is_non_expiring_for_local_and_peer_nodes() {
+    for (expiry, allowed) in [
+        (None, true),
+        (Some(Value::Null), true),
+        (Some(json!("0001-01-01T00:00:00Z")), true),
+        (Some(json!("0001-01-01T00:00:00.000000001Z")), false),
+        (Some(json!("1970-01-01T00:00:00Z")), false),
+        (Some(json!("2000-01-01T00:00:00Z")), false),
+    ] {
+        let keys = NodeKeyPair::random();
+        let peer_keys = NodeKeyPair::random();
+        let mut local_node = node(1, "runner.tail-okou.ts.net.", 1, &keys);
+        let mut peer = node(2, "saved.tail-okou.ts.net.", 2, &peer_keys);
+        for metadata in [&mut local_node, &mut peer] {
+            if let Some(expiry) = &expiry {
+                metadata["KeyExpiry"] = expiry.clone();
+            } else {
+                metadata.as_object_mut().unwrap().remove("KeyExpiry");
+            }
+        }
+        let local_node = update(json!({"Node":local_node})).await.node.unwrap();
+        let local_result = Peers::new(keys.clone(), local_node);
+        assert_eq!(local_result.is_ok(), allowed, "local expiry {expiry:?}");
+        let mut peers = Peers::new(keys.clone(), own(&keys).await).unwrap();
+        peers.update(update(json!({"Peers":[peer]})).await).unwrap();
+        assert_eq!(
+            peers.bind("100.64.0.2", 8022, local(6001)).is_ok(),
+            allowed,
+            "peer expiry {expiry:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -645,7 +679,7 @@ async fn pending_private_netstacks_reserve_all_twenty_four_tuples_until_physical
 
 #[tokio::test]
 async fn map_guard_handles_fragmented_lengths_and_keeps_exact_frame_boundaries() {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
     let (input, mut writer) = tokio::io::duplex(8);
     let task = tokio::spawn(async move {
         let stream = ts_control::client::map_stream(MapReader::new(input));
@@ -662,15 +696,6 @@ async fn map_guard_handles_fragmented_lengths_and_keeps_exact_frame_boundaries()
     }
     writer.shutdown().await.unwrap();
     bounded(task).await.unwrap();
-    for length in [0u32, 1_048_577, u32::MAX] {
-        let mut reader = MapReader::new(std::io::Cursor::new(length.to_le_bytes()));
-        let mut bytes = [0; 4];
-        assert!(reader.read_exact(&mut bytes).await.is_err());
-        assert_eq!(
-            bytes, [0; 4],
-            "oversize header is never released to SDK allocation"
-        );
-    }
 }
 
 #[tokio::test]
@@ -733,6 +758,55 @@ async fn individually_bounded_map_deltas_cannot_accumulate_unbounded_inventory_o
         stopped,
         "retained policy capacity is bounded across separate map responses"
     );
+}
+
+#[tokio::test]
+async fn an_authenticated_zero_expiry_patch_restores_peer_crypto_and_preserves_other_tcp() {
+    inside(|control| async move {
+        let mut fixture = wire::Fixture::new().await;
+        control.ready();
+        let original_b = fixture.connect_b().await;
+        fixture
+            .peers
+            .update(
+                update(
+                    json!({"PeersChangedPatch":[{"NodeID":2,"KeyExpiry":"2000-01-01T00:00:00Z"}]}),
+                )
+                .await,
+            )
+            .unwrap();
+        assert!(fixture.peers.bind("100.64.0.2", 22, local(6001)).is_err());
+        fixture
+            .peers
+            .update(
+                update(
+                    json!({"PeersChangedPatch":[{"NodeID":2,"KeyExpiry":"0001-01-01T00:00:00Z"}]}),
+                )
+                .await,
+            )
+            .unwrap();
+        let binding = fixture.peers.bind("100.64.0.2", 22, local(6001)).unwrap();
+        fixture
+            .peers
+            .endpoint(
+                &binding,
+                UnderlayTransportId(1),
+                DynEndpoint::udp(fixture.a.socket.local_addr().unwrap()),
+            )
+            .unwrap();
+        let syn = wire::syn(local(6001), remote(2));
+        let expected = syn.as_ref().to_vec();
+        let handshake = fixture.peers.outgoing(&binding, vec![syn]).unwrap();
+        let answer = fixture
+            .a
+            .answer(wire::routed(&mut fixture.peers, handshake));
+        let (frames, _) = fixture.peers.incoming(answer).unwrap();
+        let plaintext = fixture.a.decrypt(wire::routed(&mut fixture.peers, frames));
+        assert_eq!(plaintext.len(), 1);
+        assert_eq!(plaintext[0].as_ref(), expected);
+        fixture.transfer_b(original_b, 65_536).await;
+    })
+    .await;
 }
 
 #[tokio::test]

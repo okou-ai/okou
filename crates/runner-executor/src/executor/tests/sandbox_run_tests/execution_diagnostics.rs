@@ -84,6 +84,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_process_cancel_send_fails
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -154,6 +155,7 @@ async fn execute_prepared_marks_stdout_incomplete_when_terminal_grace_expires() 
             &ctx,
             &config,
             RunStart {
+                sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
                 restore_guest_state: false,
                 reuse_result: SandboxReuseResult::PoolMiss,
                 home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -313,6 +315,7 @@ async fn execute_inner_preserves_system_stream_log_after_nonzero_exit_guest_copy
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -376,6 +379,7 @@ async fn execute_prepared_sandbox_run_logs_discovered_guest_session_id() {
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -427,6 +431,7 @@ async fn execute_prepared_sandbox_run_discovers_guest_session_id_after_nonzero_e
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -484,6 +489,7 @@ async fn execute_prepared_sandbox_run_canonicalizes_codex_discovered_cli_agent_s
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -535,6 +541,7 @@ async fn execute_prepared_sandbox_run_ignores_non_uuid_codex_discovered_cli_agen
         &ctx,
         &config,
         RunStart {
+            sandbox_startup_path: runner_types::types::SandboxStartupPath::Cold,
             restore_guest_state: false,
             reuse_result: SandboxReuseResult::PoolMiss,
             home_reuse_result: runner_types::types::HomeReuseResult::NotConfigured,
@@ -1177,7 +1184,7 @@ async fn execute_inner_nonzero_with_stderr_and_guest_error_skips_bootstrap_diagn
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.push_wait_process_exit(ProcessExit::new(1, 7, Vec::new(), b"guest stderr".to_vec()));
     overrides.push_read_file_result(Ok(None));
-    overrides.push_read_file_result(Ok(Some(b"guest checkpoint error".to_vec())));
+    overrides.push_read_file_result(Ok(Some(b"guest transcript error".to_vec())));
     let factory = sandbox_mock::MockSandboxFactory::with_overrides(Arc::clone(&overrides));
 
     let (result, events) = capture_async_events(run_new_sandbox_status(
@@ -1637,7 +1644,7 @@ async fn execute_inner_retains_trusted_oom_evidence_and_attributes_agent_domain_
 #[tokio::test]
 async fn execute_inner_keeps_tool_domain_oom_out_of_agent_terminal_attribution() {
     let evidence =
-        include_str!("../../../../../guest-contracts/tests/fixtures/oom-evidence-v1.json");
+        include_str!("../../../../../guest-contracts/tests/fixtures/contained-tool-oom.json");
     let mut parsed: guest_contracts::oom_evidence::OomEvidence =
         serde_json::from_str(evidence).unwrap();
     let workload = parsed.groups[0].cgroup.clone();
@@ -1675,4 +1682,90 @@ async fn execute_inner_keeps_tool_domain_oom_out_of_agent_terminal_attribution()
         outcome.sandbox_reuse_disposition,
         SandboxReuseDisposition::Eligible(SandboxReuseTerminal::NonzeroExit)
     );
+}
+
+#[tokio::test]
+async fn execute_inner_attributes_runtime_counter_oom_with_truncated_tool_records() {
+    use guest_contracts::oom_evidence::{EVIDENCE_PREFIX, OomEvidence};
+    let fixture: OomEvidence = serde_json::from_str(include_str!(
+        "../../../../../guest-contracts/tests/fixtures/runtime-counter-oom.json"
+    ))
+    .unwrap();
+    for (known_counter, termination) in [
+        (
+            true,
+            ExecTermination::Exited {
+                exit_code: EXIT_SIGKILL,
+            },
+        ),
+        (
+            false,
+            ExecTermination::Exited {
+                exit_code: EXIT_SIGKILL,
+            },
+        ),
+        (true, ExecTermination::Exited { exit_code: 0 }),
+        (true, ExecTermination::Exited { exit_code: 1 }),
+        (true, ExecTermination::TimedOut),
+        (true, ExecTermination::Cancelled),
+    ] {
+        let mut evidence = fixture.clone();
+        if !known_counter {
+            evidence.groups[1].local_baseline.oom_kill = None;
+            for incident in &mut evidence.incidents {
+                incident.groups[1].local_baseline.oom_kill = None;
+            }
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let config = test_executor_config(dir.path()).await;
+        let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+        let mut exit = ProcessExit::new(1, 0, Vec::new(), Vec::new());
+        exit.termination = termination;
+        exit.diagnostic = format!(
+            "{EVIDENCE_PREFIX}{}",
+            serde_json::to_string(&evidence).unwrap()
+        );
+        overrides.push_wait_process_exit(exit);
+        let factory = sandbox_mock::MockSandboxFactory::with_overrides(overrides);
+        let outcome =
+            run_new_sandbox_outcome(&factory, &minimal_context(), &config, &default_params())
+                .await
+                .unwrap();
+        if termination == (ExecTermination::Exited { exit_code: 0 }) {
+            assert!(outcome.failure.is_none());
+            continue;
+        }
+        let failure = outcome.failure.as_ref().unwrap();
+        let is_oom = failure
+            .resource_diagnostics
+            .and_then(|diagnostics| diagnostics.failure_kind)
+            == Some(ResourceFailureKind::GuestMemoryOomKilled);
+        assert_eq!(
+            is_oom,
+            known_counter
+                && termination
+                    == (ExecTermination::Exited {
+                        exit_code: EXIT_SIGKILL
+                    }),
+            "known_counter={known_counter}, termination={termination:?}"
+        );
+        if is_oom {
+            assert_eq!(
+                outcome.sandbox_reuse_disposition,
+                SandboxReuseDisposition::Ineligible(SandboxReuseRejection::ResourceFailure)
+            );
+        } else if termination
+            == (ExecTermination::Exited {
+                exit_code: EXIT_SIGKILL,
+            })
+        {
+            assert_eq!(failure.error, "Agent exited with code 137");
+        }
+        if termination == ExecTermination::TimedOut {
+            assert!(matches!(
+                failure.kind,
+                ExecutionFailureKind::RunnerJobTimeout { .. }
+            ));
+        }
+    }
 }

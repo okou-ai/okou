@@ -34,7 +34,6 @@ import { imageIoGenerateRoutes } from "../image-io-generate";
 import { usageRecordRoutes } from "../usage-record";
 import { userModelPreferenceRoutes } from "../user-model-preference";
 import { webhooksBuiltInGenerationRoutes } from "../webhooks-built-in-generations";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRouteMocks } from "./helpers/route-test";
@@ -1172,13 +1171,304 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
-  it("generates image files on the Okou CDN for Okou run-scoped agent tokens", async () => {
+  it("admits only one concurrent image request into the last run slot", async () => {
+    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    await fixture.run(async () => {
+      const requestUrls: string[] = [];
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          requestUrls.push(request.url);
+          return HttpResponse.json(
+            falQueueHandle(`last-slot-${requestUrls.length}`),
+          );
+        }),
+      );
+      const app = createImageIoTestApp();
+      const path = "/api/image-io/generate";
+      const request = {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({ prompt: "a pending run image" }),
+      };
+      const generationIds: string[] = [];
+      for (let submission = 0; submission < 2; submission++) {
+        const response = await fixture.request(app, path, request);
+        expect(response.status).toBe(202);
+        generationIds.push(
+          readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          ),
+        );
+      }
+      expect(new Set(generationIds).size).toBe(2);
+      expect(requestUrls).toHaveLength(2);
+
+      // Both public requests belong to the fixture before either is awaited.
+      const firstContender = fixture.request(app, path, request);
+      const secondContender = fixture.request(app, path, request);
+      const responses = await Promise.all([firstContender, secondContender]);
+      expect(
+        responses.map((response) => {
+          return response.status;
+        }),
+      ).toStrictEqual(expect.arrayContaining([202, 429]));
+      for (const response of responses) {
+        if (response.status === 202) {
+          const generationId = readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          );
+          expect(generationIds).not.toContain(generationId);
+        } else {
+          expect(response.status).toBe(429);
+          await expect(response.json()).resolves.toMatchObject({
+            error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+          });
+        }
+      }
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+
+      const limited = await fixture.request(app, path, request);
+      expect(limited.status).toBe(429);
+      await expect(limited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+    });
+  });
+
+  it("reuses one completed run image slot without releasing another on callback replay", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);
     await fixture.run(async () => {
-      await updateFeatureSwitchesForUser(context, fixture, {
-        privateArtifacts: false,
+      const requestUrls: string[] = [];
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          requestUrls.push(request.url);
+          return HttpResponse.json(
+            falQueueHandle(`slot-reuse-${requestUrls.length}`),
+          );
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/webp" },
+          });
+        }),
+      );
+      const app = createImageIoTestApp();
+      const path = "/api/image-io/generate";
+      const request = {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({
+          prompt: "a small robot painting a sunflower",
+          size: "1024x1024",
+          quality: "auto",
+          background: "opaque",
+          outputFormat: "webp",
+        }),
+      };
+      const generationIds: string[] = [];
+      for (let submission = 0; submission < 3; submission++) {
+        const response = await fixture.request(app, path, request);
+        expect(response.status).toBe(202);
+        generationIds.push(
+          readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          ),
+        );
+      }
+      expect(requestUrls).toHaveLength(3);
+      const limited = await fixture.request(app, path, request);
+      expect(limited.status).toBe(429);
+      await expect(limited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
       });
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+
+      const [generationId] = generationIds;
+      if (!generationId) {
+        throw new Error("Expected the first accepted generation");
+      }
+      const firstRequestUrl = requestUrls[0] ?? null;
+      const completionPayload = {
+        images: [
+          {
+            url: FAL_GPT_MEDIA_URL,
+            width: 1024,
+            height: 1024,
+            content_type: "image/webp",
+          },
+        ],
+        prompt: "A small robot paints a sunflower.",
+      };
+      await postFalWebhook(app, firstRequestUrl, completionPayload);
+      await flushWaitUntilForTest();
+      const completed = await fixture.request(
+        app,
+        `/api/built-in-generations/${generationId}`,
+        { headers: request.headers },
+      );
+      expect(completed.status).toBe(200);
+      const statusBody: unknown = await completed.json();
+      expect(statusBody).toMatchObject({ generationId, status: "completed" });
+      expect(readGenerationResult(statusBody)).toMatchObject({
+        creditsCharged: 50,
+      });
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 50,
+      );
+
+      const replacement = await fixture.request(app, path, request);
+      expect(replacement.status).toBe(202);
+      expect(
+        readAcceptedGenerationId(
+          await replacement.json(),
+          "image",
+          fixture.userId,
+        ),
+      ).not.toBe(generationId);
+      expect(requestUrls).toHaveLength(4);
+      await postFalWebhook(app, firstRequestUrl, completionPayload);
+      await flushWaitUntilForTest();
+
+      const replayLimited = await fixture.request(app, path, request);
+      expect(replayLimited.status).toBe(429);
+      await expect(replayLimited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(4);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 50,
+      );
+    });
+  });
+
+  it("keeps the run lifetime limit after fifty successful image generations", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
+    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    await fixture.run(async () => {
+      const requestUrls: string[] = [];
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          requestUrls.push(request.url);
+          return HttpResponse.json(
+            falQueueHandle(`lifetime-${requestUrls.length}`),
+          );
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/webp" },
+          });
+        }),
+      );
+      const app = createImageIoTestApp();
+      const path = "/api/image-io/generate";
+      const request = {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({
+          prompt: "a small robot painting a sunflower",
+          size: "1024x1024",
+          quality: "auto",
+          background: "opaque",
+          outputFormat: "webp",
+        }),
+      };
+      const completionPayload = {
+        images: [
+          {
+            url: FAL_GPT_MEDIA_URL,
+            width: 1024,
+            height: 1024,
+            content_type: "image/webp",
+          },
+        ],
+        prompt: "A small robot paints a sunflower.",
+      };
+      await expect(orgCredits(fixture)).resolves.toBe(30_000);
+      const generationIds = new Set<string>();
+      for (let start = 0; start < 50; start += 3) {
+        const group: { generationId: string; requestUrl: string | null }[] = [];
+        for (
+          let submission = start;
+          submission < Math.min(start + 3, 50);
+          submission++
+        ) {
+          const response = await fixture.request(app, path, request);
+          expect(response.status).toBe(202);
+          const generationId = readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          );
+          expect(generationIds.has(generationId)).toBeFalsy();
+          generationIds.add(generationId);
+          expect(requestUrls).toHaveLength(submission + 1);
+          group.push({
+            generationId,
+            requestUrl: requestUrls[submission] ?? null,
+          });
+        }
+        await Promise.all(
+          group.map(({ requestUrl }) => {
+            return fixture.run(() => {
+              return postFalWebhook(app, requestUrl, completionPayload);
+            });
+          }),
+        );
+        await flushWaitUntilForTest();
+        await Promise.all(
+          group.map(({ generationId }) => {
+            return fixture.run(async () => {
+              const completed = await fixture.request(
+                app,
+                `/api/built-in-generations/${generationId}`,
+                { headers: request.headers },
+              );
+              expect(completed.status).toBe(200);
+              const statusBody: unknown = await completed.json();
+              expect(statusBody).toMatchObject({
+                generationId,
+                status: "completed",
+              });
+              expect(readGenerationResult(statusBody)).toMatchObject({
+                creditsCharged: 50,
+              });
+            });
+          }),
+        );
+      }
+      expect(generationIds.size).toBe(50);
+      expect(requestUrls).toHaveLength(50);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 2500,
+      );
+
+      const limited = await fixture.request(app, path, request);
+      expect(limited.status).toBe(429);
+      await expect(limited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_USAGE_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(50);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 2500,
+      );
+    });
+  });
+
+  it("generates private image files for Okou run-scoped agent tokens", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
+    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    await fixture.run(async () => {
       const creditsCharged = 50;
       let falCalls = 0;
       let observedAuthorization: string | null = null;
@@ -1249,7 +1539,7 @@ describe("POST /api/image-io/generate", () => {
         context.mocks.s3.send.mock.calls.filter(([command]) => {
           return (
             command instanceof PutObjectCommand &&
-            command.input.Key?.startsWith("artifacts/")
+            command.input.Key?.startsWith("private-artifacts/")
           );
         }),
       ).toHaveLength(1);
@@ -1292,8 +1582,10 @@ describe("POST /api/image-io/generate", () => {
         outputFormat: "webp",
         moderation: "auto",
         revisedPrompt: "A small robot paints a sunflower.",
-        sourceUrl: FAL_GPT_MEDIA_URL,
+        privateArtifacts: true,
       });
+      expect(body).not.toHaveProperty("sourceUrl");
+      expect(body).not.toHaveProperty("embedUrl");
       expect(body).not.toHaveProperty("usage");
       expect(falCalls).toBe(1);
       expect(observedAuthorization).toBe("Key test-fal-key");
@@ -1322,21 +1614,10 @@ describe("POST /api/image-io/generate", () => {
       expect(filename).toBe(`image-${fileId.slice(0, 8)}.webp`);
 
       const putInput = putObjectInput();
-      expect(putInput.Bucket).toBe(TEST_BUCKET);
-      expect(putInput.Key).toMatch(/^artifacts\/[0-9a-z]{10}\.webp$/u);
-      const publicPath = String(putInput.Key).replace(/^artifacts\//u, "");
-      expect(url).toBe(`https://a.okou.io/${publicPath}`);
-      // Short file URLs use the policy-aware Worker thumbnail endpoint, which
-      // also resolves historical generated files in the shared namespace.
-      expect(body).toMatchObject({
-        embedUrl: `https://a.okou.io/${publicPath}?thumbnail=1&fit=scale-down&quality=85`,
-      });
-      expect(putInput.Metadata).toStrictEqual({
-        "artifact-id": fileId,
-        filename: encodeURIComponent(filename),
-        "public-brand": "okou",
-        "user-id": encodeURIComponent(fixture.userId),
-      });
+      expect(putInput.Bucket).toBe("test-private-artifacts");
+      expect(putInput.Key).toBe(`private-artifacts/${fileId}/${filename}`);
+      expect(url).toMatch(/^https?:\/\/[^/]+\/artifacts\/[a-z0-9]{10}\.webp$/u);
+      expect(putInput.Metadata).toStrictEqual({ "artifact-id": fileId });
       expect(putInput.ContentType).toBe("image/webp");
       const putBody = putInput.Body;
       expect(Buffer.isBuffer(putBody)).toBeTruthy();

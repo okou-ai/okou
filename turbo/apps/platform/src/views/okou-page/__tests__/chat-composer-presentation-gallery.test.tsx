@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -146,4 +146,104 @@ test("Navigate every slide in a presentation template", async () => {
     "true",
   );
   expect(screen.getByLabelText("Preview slide 3")).toBeVisible();
+});
+
+async function openThreeSlidePreview() {
+  mockTemplateChat();
+  const template = builtInTemplate();
+  mockPresentationHtml(template.embedUrl, ["One", "Two", "Three"]);
+  const user = userEvent.setup();
+
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+
+  await openTemplatePicker(user, "Presentation");
+  click(screen.getByLabelText(`Preview ${template.title} at current slide`));
+  const preview = await waitFor(() => {
+    return detailGroup(template.title);
+  });
+  await expect(
+    within(preview).findByText("1 / 3"),
+  ).resolves.toBeInTheDocument();
+  return { preview, user };
+}
+
+test("Count slides and pick a theme by name in a presentation template preview", async () => {
+  const { preview } = await openThreeSlidePreview();
+
+  click(screen.getByLabelText("Preview next slide"));
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Candy party")).toBeInTheDocument();
+  click(within(dialog).getByText("Deep dive"));
+  expect(screen.getByLabelText("Select style Deep dive")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+test("Step back through a presentation template from its filmstrip", async () => {
+  const { preview, user } = await openThreeSlidePreview();
+
+  const lastSlide = screen.getByLabelText("Preview slide 3");
+  click(lastSlide);
+  expect(within(preview).getByText("3 / 3")).toBeInTheDocument();
+
+  lastSlide.focus();
+  await user.keyboard("{ArrowLeft}");
+  expect(screen.getByLabelText("Preview slide 2")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+function stagePreviewFrame(title: string): HTMLIFrameElement {
+  const frame = screen.getByTitle(`${title} HTML preview`);
+  if (!(frame instanceof HTMLIFrameElement)) {
+    throw new Error("The stage preview is not a frame");
+  }
+  return frame;
+}
+
+function loadPreviewFrame(frame: HTMLIFrameElement): void {
+  const frameDocument = frame.contentDocument;
+  if (frameDocument === null) {
+    throw new Error("Presentation preview frame has no document");
+  }
+  frameDocument.open();
+  frameDocument.write(frame.srcdoc);
+  frameDocument.close();
+  fireEvent.load(frame);
+}
+
+/** The accent the slide on the stage is painted with right now. */
+function stageAccent(title: string): string {
+  const frameDocument = stagePreviewFrame(title).contentDocument;
+  const frameWindow = frameDocument?.defaultView;
+  if (!frameDocument || !frameWindow) {
+    throw new Error("The stage preview has no rendered document");
+  }
+  return frameWindow
+    .getComputedStyle(frameDocument.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
+}
+
+test("A slide already on the stage takes a new theme as soon as it is picked", async () => {
+  await openThreeSlidePreview();
+  const template = builtInTemplate();
+  loadPreviewFrame(stagePreviewFrame(template.title));
+  expect(stageAccent(template.title)).toBe("#7257E6");
+
+  click(
+    within(screen.getByRole("dialog")).getByLabelText("Select style Deep dive"),
+  );
+
+  expect(stageAccent(template.title)).toBe("#38C7B4");
 });

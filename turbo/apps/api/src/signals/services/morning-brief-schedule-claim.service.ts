@@ -1,6 +1,6 @@
 import {
   MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
-  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -13,7 +13,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, desc, eq, exists, gt, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, exists, gt, type SQL } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 
 import type { Tx } from "../../lib/db-types";
@@ -82,10 +82,9 @@ export const isCanonicalMorningBriefAutomation$ = command(
           eq(workflows.orgId, owner.orgId),
           eq(workflows.ownerUserId, owner.userId),
           eq(workflows.visibility, "private"),
-          eq(
-            workflows.officialDefinitionName,
-            MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
-          ),
+          inArray(workflows.officialDefinitionName, [
+            ...MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
+          ]),
         ),
       )
       .orderBy(asc(workflows.createdAt), asc(workflows.id));

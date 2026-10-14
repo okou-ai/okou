@@ -546,7 +546,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 Some(&error.to_string()),
             );
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -574,7 +574,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 Some(&error.to_string()),
             );
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -596,7 +596,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
         if controls.cancel.is_cancelled() {
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(RunnerError::Cancelled);
         }
@@ -652,7 +652,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -708,7 +708,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -722,7 +722,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             );
             cancel_prepared_storage(&mut controls, telemetry).await;
             std::mem::take(&mut controls.session_history_restore_plan)
-                .cancel_and_drain()
+                .cancel_and_drain(telemetry)
                 .await;
             return Err(error);
         }
@@ -797,7 +797,7 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                         Some(&error.to_string()),
                     );
                     std::mem::take(&mut controls.session_history_restore_plan)
-                        .cancel_and_drain()
+                        .cancel_and_drain(telemetry)
                         .await;
                     return Err(error);
                 }
@@ -825,6 +825,11 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             restore_guest_state: params.restore_guest_state,
             reuse_result,
             home_reuse_result,
+            sandbox_startup_path: if home_reuse_result == HomeReuseResult::Reused {
+                runner_types::types::SandboxStartupPath::Home
+            } else {
+                runner_types::types::SandboxStartupPath::Cold
+            },
             prev_storage: home_image
                 .as_ref()
                 .and_then(HomeImageLease::previous_storage),
@@ -1132,6 +1137,7 @@ async fn create_started_sandbox(
                 Some(sandbox::HomeDriveConfig {
                     size_mb: params.home_disk_mb,
                     seed_image: None,
+                    space_reserve: runner_lifecycle::home_image_cache::HOME_IMAGE_SPACE_RESERVE,
                 })
             },
             HomeImageLease::home_drive_config,
@@ -1565,9 +1571,20 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
             .register(context.run_id, sandbox.as_ref(), &cleanup_cancel);
     let reuse_result = start.reuse_result;
     let home_reuse_result = start.home_reuse_result;
+    let sandbox_startup_path = start.sandbox_startup_path;
+    telemetry.set_sandbox_startup_path(sandbox_startup_path);
 
     let mut inputs = inputs;
     inputs.controls.prepared_guest_runtime = prepared_guest_runtime;
+    // The actual resource has settled. Transfer this bounded task to the caller
+    // without holding execution, successor handoff, or resource release on HTTP.
+    let startup_report = super::StartupReport::spawn(
+        config.http.clone(),
+        context.run_id,
+        context.sandbox_token.clone(),
+        sandbox_startup_path,
+        cleanup_cancel.clone(),
+    );
     let result = run_in_sandbox_with_process_cancel_timeouts(
         sandbox.as_ref(),
         context,
@@ -1671,6 +1688,7 @@ pub(super) async fn execute_prepared_sandbox_run_with_process_cancel_timeouts(
         network_log_session: Some(network_log_session),
         home_image: None,
         home_reuse_result: Some(home_reuse_result),
+        startup_report: Some(startup_report),
         discovered_cli_agent_session_id,
         restored_session_identity,
     }
