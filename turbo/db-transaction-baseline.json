@@ -917,11 +917,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0401",
-      "file": "turbo/packages/db/scripts/test-migration-runner-timeouts.ts",
-      "owner": "validateMigrationRunnerTimeouts"
-    },
-    {
       "id": "TX-0403",
       "file": "turbo/packages/db/scripts/test-model-catalog-permanent.ts",
       "owner": "validatePermanentModelCatalogConstraints"
