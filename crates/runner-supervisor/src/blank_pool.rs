@@ -179,8 +179,7 @@ impl BlankPoolDiagnostics {
 pub struct BlankPoolReplenisher {
     plan: Option<BlankPoolPlan>,
     diagnostics: BlankPoolDiagnostics,
-    task: Option<JoinHandle<BlankPrepareResult>>,
-    task_cancel: Option<CancellationToken>,
+    preparation: Option<BlankPreparation>,
     attempt_requested: bool,
     optional: Option<OptionalBlankResult>,
     budget: std::sync::Weak<ResourceBudget>,
@@ -243,6 +242,40 @@ pub struct BlankPrepareFailure {
     error: Option<String>,
 }
 
+struct BlankPreparation {
+    task: JoinHandle<BlankPrepareResult>,
+    cancel: CancellationToken,
+}
+
+impl BlankPreparation {
+    fn start(input: BlankPrepareInput, cancel: CancellationToken) -> Self {
+        let task = tokio::spawn(prepare_blank_sandbox(input, cancel.clone()));
+        Self { task, cancel }
+    }
+
+    fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    /// Borrow the handle so losing a reactor select retains accepted work.
+    async fn observe(&mut self) -> BlankPrepareResult {
+        match (&mut self.task).await {
+            Ok(result) => result,
+            Err(error) => BlankPrepareResult::Failed(BlankPrepareFailure {
+                stage: "task",
+                error: Some(error.to_string()),
+            }),
+        }
+    }
+
+    async fn shutdown(mut self, idle_destroy_tracker: &IdleDestroyTracker) {
+        self.cancel();
+        if let BlankPrepareResult::Ready { candidate, .. } = self.observe().await {
+            destroy_candidate(*candidate, idle_destroy_tracker, "blank_pool_shutdown").await;
+        }
+    }
+}
+
 impl BlankPoolReplenisher {
     pub fn new(
         profiles: &BTreeMap<String, BlankProfile>,
@@ -268,8 +301,7 @@ impl BlankPoolReplenisher {
         Self {
             plan,
             diagnostics,
-            task: None,
-            task_cancel: None,
+            preparation: None,
             attempt_requested: true,
             optional: None,
             budget: Arc::downgrade(budget),
@@ -285,11 +317,15 @@ impl BlankPoolReplenisher {
     }
 
     pub fn cancel_if_inactive(&self, mode: RunnerMode) {
-        if mode != RunnerMode::Running
-            && let Some(cancel) = self.task_cancel.as_ref()
-        {
+        if mode == RunnerMode::Running {
+            return;
+        }
+        if let Some(preparation) = self.preparation.as_ref() {
             self.diagnostics.unknown();
-            cancel.cancel();
+            preparation.cancel();
+        } else if let Some(optional) = self.optional.as_ref() {
+            self.diagnostics.unknown();
+            optional.cancel();
         }
     }
 
@@ -303,7 +339,7 @@ impl BlankPoolReplenisher {
         idle_destroy_tracker: &IdleDestroyTracker,
     ) {
         if !self.attempt_requested
-            || self.task.is_some()
+            || self.preparation.is_some()
             || self.optional.is_some()
             || mode != RunnerMode::Running
         {
@@ -469,13 +505,12 @@ impl BlankPoolReplenisher {
             retired_exact,
             "preparing blank sandbox"
         );
-        self.task_cancel = Some(task_cancel.clone());
         self.diagnostics.preparing(task_cancel.clone());
-        self.task = Some(tokio::spawn(prepare_blank_sandbox(input, task_cancel)));
+        self.preparation = Some(BlankPreparation::start(input, task_cancel));
     }
 
     pub fn is_preparing(&self) -> bool {
-        self.task.is_some()
+        self.preparation.is_some()
             || self
                 .optional
                 .as_ref()
@@ -483,17 +518,12 @@ impl BlankPoolReplenisher {
     }
 
     pub async fn wait_for_preparation(&mut self) -> Option<BlankPrepareResult> {
-        let task = self.task.as_mut()?;
-        let result = task.await;
-        self.task = None;
-        self.task_cancel = None;
-        Some(match result {
-            Ok(result) => result,
-            Err(error) => BlankPrepareResult::Failed(BlankPrepareFailure {
-                stage: "task",
-                error: Some(error.to_string()),
-            }),
-        })
+        let preparation = self.preparation.as_mut()?;
+        let result = preparation.observe().await;
+        self.preparation = None;
+        // Diagnostics retains its token until finish_preparation classifies
+        // the selected result, including completed foreground cancellation.
+        Some(result)
     }
 
     pub async fn finish_preparation(
@@ -612,13 +642,8 @@ impl BlankPoolReplenisher {
             }
             return;
         }
-        if let Some(cancel) = self.task_cancel.as_ref() {
-            cancel.cancel();
-        }
-        if let Some(result) = self.wait_for_preparation().await
-            && let BlankPrepareResult::Ready { candidate, .. } = result
-        {
-            destroy_candidate(*candidate, idle_destroy_tracker, "blank_pool_shutdown").await;
+        if let Some(preparation) = self.preparation.take() {
+            preparation.shutdown(idle_destroy_tracker).await;
         }
     }
 }
@@ -1614,6 +1639,17 @@ mod tests {
                 error: None,
             })
         ));
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+        );
+        replenisher
+            .finish_preparation(result, &idle_pool, &status, &idle_destroy_tracker)
+            .await;
+        assert_eq!(
+            observed_empty_selection(&replenisher, &idle_pool, &budget).await,
+            BlankPoolSelection::Miss(BlankPoolSelectionReason::ForegroundPreempted)
+        );
         drop(foreground);
         assert_eq!(budget.allocated(), (0, 0, 0));
         assert_eq!(idle_pool.lock().await.len(), 0);
