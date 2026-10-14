@@ -3762,3 +3762,204 @@ async fn duplicate_discovery_deduplicated() {
     shutdown(&env, run_handle).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
 }
+
+#[tokio::test]
+async fn pending_candidate_wakeup_survives_full_claim_slots() {
+    pending_wakeup_with_full_claim_slots(true).await;
+}
+
+#[tokio::test]
+async fn full_claim_slot_wakeup_survives_until_pending_candidate_arrives() {
+    pending_wakeup_with_full_claim_slots(false).await;
+}
+
+async fn drive_pending_wakeup_reactor<T>(
+    reactor: &mut (impl std::future::Future<Output = RunnerResult<()>> + Unpin),
+    observation: impl std::future::Future<Output = T>,
+) -> T {
+    // Poll the actual reactor first, through every ready turn, so a provider
+    // observation cannot leave a buffered reuse notification for the next step.
+    tokio::select! {
+        biased;
+        result = reactor => panic!("reactor exited before pending wakeup observation: {result:?}"),
+        value = observation => value,
+    }
+}
+
+async fn pending_wakeup_with_full_claim_slots(candidate_before_wakeup: bool) {
+    let process_gate = sandbox_mock::MockLifecycleGate::new();
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    overrides.set_wait_process_lifecycle_gate(process_gate.clone());
+    let (mut config, env) = mock_run_config_with_overrides(test_profiles(), 2, 4096, 1, overrides);
+    // One profile-sized budget disables blank preparation. Finalizing claims
+    // against the active source still fill all four remote admission slots.
+    let (_heartbeat_trigger, heartbeat_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_rx);
+    let budget = Arc::clone(&config.capacity.budget);
+    let source_run = RunId::new_v4();
+    let source_key = "thread:pending-retry-notification-source";
+    let mut reactor = Box::pin(run(config));
+    push_job(
+        &env,
+        source_run,
+        "vm0/default",
+        Some(context_with_reuse_key(source_run, source_key)),
+    );
+    drive_pending_wakeup_reactor(
+        &mut reactor,
+        process_gate.wait_entered(1, Duration::from_secs(5)),
+    )
+    .await
+    .expect("notification source must enter the real executor before filling claim slots");
+
+    let pending_run = RunId::new_v4();
+    let pending_key = "thread:pending-retry-missing-proof";
+    let deadline = std::time::Instant::now() + FINALIZING_TEST_PREFERENCE_LIFETIME;
+    let pending = finalizing_candidate_until(
+        pending_run,
+        pending_key,
+        RunId::new_v4(),
+        TEST_RUNNER_ID,
+        TEST_HEARTBEAT_GENERATION,
+        deadline,
+    );
+    env.provider.set_claim_result(
+        pending_run,
+        Some(context_with_reuse_key(pending_run, pending_key)),
+    );
+    if candidate_before_wakeup {
+        env.handle.discover_tx.send(pending.clone()).unwrap();
+        assert!(
+            drive_pending_wakeup_reactor(
+                &mut reactor,
+                env.handle
+                    .wait_deferred_poll_count(1, Duration::from_secs(5)),
+            )
+            .await,
+            "missing predecessor proof should retain the candidate before remote claims fill"
+        );
+    }
+    let blockers: Vec<_> = (0..crate::reactor::claim_tasks::MAX_IN_FLIGHT_CLAIMS)
+        .map(|_| RunId::new_v4())
+        .collect();
+    for &run_id in &blockers {
+        env.handle.block_claim(run_id);
+        env.provider.set_claim_result(run_id, None);
+        env.handle
+            .discover_tx
+            .send(finalizing_candidate_until(
+                run_id,
+                source_key,
+                source_run,
+                TEST_RUNNER_ID,
+                TEST_HEARTBEAT_GENERATION,
+                deadline,
+            ))
+            .unwrap();
+    }
+    assert!(
+        drive_pending_wakeup_reactor(
+            &mut reactor,
+            env.handle
+                .wait_claim_in_flight(blockers.len(), Duration::from_secs(5)),
+        )
+        .await,
+        "all bounded admission slots must be occupied at the provider boundary"
+    );
+    let deferred_before_wakeup = env.handle.deferred_poll_deadlines().len();
+    process_gate.release_one();
+    let completion = drive_pending_wakeup_reactor(
+        &mut reactor,
+        env.handle
+            .wait_completion(source_run, Duration::from_secs(5)),
+    )
+    .await
+    .expect("the actual source job should complete while every claim remains blocked");
+    assert_eq!(completion.exit_code, 0);
+    assert!(completion.error.is_none());
+
+    // The heartbeat exposes both committed parking and retired active-run
+    // ownership. It can only be requested by reuse changes in this fixture.
+    drive_pending_wakeup_reactor(
+        &mut reactor,
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let (cursor, published) = {
+                    let heartbeats = env.handle.heartbeats.lock().unwrap();
+                    (
+                        heartbeats.len(),
+                        heartbeats.iter().any(|state| {
+                            state.active_reuse_producers.is_empty()
+                                && state
+                                    .held_sandbox_states
+                                    .iter()
+                                    .any(|held| held.reuse_key == source_key)
+                        }),
+                    )
+                };
+                if published {
+                    break;
+                }
+                assert!(
+                    env.handle
+                        .wait_heartbeat_past(cursor, Duration::from_secs(5))
+                        .await
+                );
+            }
+        }),
+    )
+    .await
+    .expect("reactor should consume the parking wakeup while admission slots are full");
+    assert_eq!(
+        env.handle.deferred_poll_deadlines().len(),
+        deferred_before_wakeup,
+        "a full admission set cannot consume the pending retry"
+    );
+
+    // Losing an unowned finalizing claim releases its cancellation registration
+    // without a second reuse event. The retained wakeup supplies the retry.
+    env.handle.unblock_claim(*blockers.first().unwrap());
+    if !candidate_before_wakeup {
+        env.handle.discover_tx.send(pending).unwrap();
+    }
+    let expected_deferrals = deferred_before_wakeup + if candidate_before_wakeup { 1 } else { 2 };
+    assert!(
+        drive_pending_wakeup_reactor(
+            &mut reactor,
+            env.handle
+                .wait_deferred_poll_count(expected_deferrals, Duration::from_secs(5)),
+        )
+        .await,
+        "retained wakeup should recheck the original candidate before its deadline"
+    );
+    assert!(
+        env.handle
+            .deferred_poll_deadlines()
+            .iter()
+            .all(|observed| *observed == deadline),
+        "retry must preserve the original preference deadline"
+    );
+    assert!(
+        env.handle
+            .claim_candidates()
+            .iter()
+            .all(|candidate| candidate.run_id() != pending_run),
+        "a recheck without predecessor proof must remain unclaimed"
+    );
+
+    env.drain();
+    for &run_id in &blockers {
+        env.handle.unblock_claim(run_id);
+    }
+    env.cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(10), reactor)
+        .await
+        .expect("reactor should join all claims and shutdown")
+        .expect("reactor should shutdown successfully");
+    wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
+    for run_id in blockers.into_iter().chain([source_run, pending_run]) {
+        wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
+    }
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 1);
+    assert!(!env.handle.shutdown_with_claim_in_flight());
+}

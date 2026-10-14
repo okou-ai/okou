@@ -82,6 +82,7 @@ mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
 mod maintenance;
+mod pending_candidate;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
@@ -98,13 +99,13 @@ use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool}
 #[cfg(test)]
 use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
-use crate::pre_claim_admission::PendingFinalizingCandidate;
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
 use job_spawn::{SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
+use pending_candidate::PendingCandidate;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
@@ -1264,8 +1265,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut maintenance = MaintenanceTasks::new();
     let mut soft_drain = soft_drain::SoftDrain::new();
-    let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
-    let mut pending_finalizing_retry = false;
+    let mut pending_candidate = PendingCandidate::new();
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
@@ -1295,10 +1295,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 break;
             }
         }
-        if mode != RunnerMode::Running {
-            pending_finalizing_candidate.clear();
-            pending_finalizing_retry = false;
-        }
+        pending_candidate.clear_if_inactive(mode);
         blank_pool.cancel_if_inactive(mode);
         match mode {
             RunnerMode::Starting => {}
@@ -1363,12 +1360,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
-        if pending_finalizing_retry
-            && mode == RunnerMode::Running
-            && claim_tasks.has_capacity()
-            && let Some(candidate) = pending_finalizing_candidate.take()
-        {
-            pending_finalizing_retry = false;
+        if let Some(candidate) = pending_candidate.take_retry(mode, claim_tasks.has_capacity()) {
             claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
         }
         let can_discover = if matches!(mode, RunnerMode::Running) {
@@ -1389,7 +1381,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
-        let pending_finalizing_deadline = pending_finalizing_candidate.deadline();
+        let pending_finalizing_deadline =
+            pending_candidate.expiry_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
             result = soft_drain.join(), if soft_drain.is_in_flight() => {
                 if let Err(error) = soft_drain.complete(result, &lifecycle) {
@@ -1465,7 +1458,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = pending_finalizing_candidate.for_admission(candidate);
+                let candidate = pending_candidate.for_admission(candidate);
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
             }
@@ -1474,7 +1467,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             {
                 if let Some(candidate) = candidate {
                     ready_direct_candidates_left -= 1;
-                    let candidate = pending_finalizing_candidate.for_admission(candidate);
+                    let candidate = pending_candidate.for_admission(candidate);
                     claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
                 } else {
                     ready_direct_candidates_left = 0;
@@ -1519,10 +1512,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                if let Some(candidate) = result.pending_candidate
-                    && *mode_rx.borrow() == RunnerMode::Running
-                {
-                    pending_finalizing_candidate.retain(candidate);
+                if let Some(candidate) = result.pending_candidate {
+                    pending_candidate.retain(candidate, *mode_rx.borrow());
                 }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
@@ -1706,11 +1697,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     .test_observer
                     .notify_routine_heartbeat_requested(live_mode);
             }
-            _ = sleep_until_optional_instant(pending_finalizing_deadline),
-                if pending_finalizing_candidate.is_some() && mode == RunnerMode::Running
-                    && claim_tasks.has_capacity() =>
+            _ = sleep_until_optional_instant(pending_finalizing_deadline) =>
             {
-                let Some(candidate) = pending_finalizing_candidate.take_expired() else {
+                let Some(candidate) = pending_candidate.take_expired() else {
                     continue;
                 };
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
@@ -1719,11 +1708,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // up-to-10s blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                if live_mode == RunnerMode::Running {
-                    // A wakeup observed while all claim slots are occupied must
-                    // survive until a completion opens a slot.
-                    pending_finalizing_retry = true;
-                }
+                pending_candidate.request_retry(live_mode);
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
                     RunnerMode::Running => "budget_exhausted",
