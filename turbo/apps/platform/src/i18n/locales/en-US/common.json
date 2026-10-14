@@ -1770,7 +1770,6 @@
       "threadSuggestions": "Chat threads",
       "useForFutureChats": "Use this for future chats",
       "workflows": {
-        "empty": "No matching workflows",
         "loading": "Loading workflows...",
         "showAll": "Show all workflows",
         "title": "Workflows"

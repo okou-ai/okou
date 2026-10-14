@@ -340,7 +340,7 @@ test("The panel emphasizes the typed query inside a workflow name", async () => 
   );
 });
 
-test("A query that matches no workflow says so in the workflow list", async () => {
+test("The workflow section is hidden when no workflows match", async () => {
   await openSlashMenu("axi");
   await waitFor(() => {
     return slashButton(`/${WORKFLOW_NAME}`);
@@ -349,10 +349,21 @@ test("A query that matches no workflow says so in the workflow list", async () =
   await fill(await findComposerEditor(), "Draft /zzz");
 
   const menu = screen.getByTestId("slash-workflow-menu");
-  await expect(
-    within(menu).findByText("No matching workflows"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(within(menu).queryByText("Workflows")).not.toBeInTheDocument();
+  });
+  expect(
+    within(menu).queryByText("No matching workflows"),
+  ).not.toBeInTheDocument();
   expect(querySlashButton(`/${WORKFLOW_NAME}`)).toBeNull();
+  expect(slashButton("Browse all templates")).toBeInTheDocument();
+
+  await fill(await findComposerEditor(), "Draft /axi");
+  const matchingMenu = await screen.findByTestId("slash-workflow-menu");
+  await expect(
+    within(matchingMenu).findByText("Workflows"),
+  ).resolves.toBeInTheDocument();
+  expect(slashButton(`/${WORKFLOW_NAME}`)).toBeInTheDocument();
 });
 
 test("Choosing a cover in the pane attaches that template without opening the picker", async () => {

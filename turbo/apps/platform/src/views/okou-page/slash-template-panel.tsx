@@ -387,15 +387,6 @@ function SlashPanelWorkflowList({
       </div>
     );
   }
-  if (workflows.length === 0) {
-    return (
-      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.workflows.empty;
-        })}
-      </div>
-    );
-  }
   return (
     <div className="px-1">
       {(reversed ? [...workflows].reverse() : workflows).map(
@@ -462,6 +453,9 @@ function SlashPanelWorkflowSection({
 }: ComponentProps<typeof SlashPanelWorkflowList> &
   Pick<SlashTemplatePanelProps, "collapseWorkflows" | "onExpandWorkflows">) {
   const { t } = useTranslation();
+  if (!listProps.loading && workflows.length === 0) {
+    return null;
+  }
   const hasCollapsedWorkflows =
     collapseWorkflows &&
     workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;

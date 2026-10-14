@@ -1800,7 +1800,6 @@
       "threadSuggestions": "Thread di chat",
       "useForFutureChats": "Usa questo modello per le chat future",
       "workflows": {
-        "empty": "Nessun flusso di lavoro corrispondente",
         "loading": "Caricamento flussi di lavoro...",
         "showAll": "Mostra tutti i flussi di lavoro",
         "title": "Flussi di lavoro"
