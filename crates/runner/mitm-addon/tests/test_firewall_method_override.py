@@ -93,7 +93,7 @@ async def test_override_cannot_delete_an_audience_with_only_member_write_permiss
         fake_forwarder_upstream() as upstream,
     ):
         result = mitm_addon.requestheaders(flow)
-        if capture_bodies and ("headers" in auth_config or "query" in auth_config):
+        if "headers" in auth_config or "query" in auth_config:
             await await_requestheaders_result(result)
         else:
             assert result is None

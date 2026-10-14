@@ -52,6 +52,7 @@ def _registry_sandbox(
     allow_unrelated_orgs: bool = False,
     auth_base: bool = False,
     enforce_public_destination: bool = False,
+    capture_body: bool = True,
 ) -> dict[str, object]:
     allowed_permissions = ["repos-write"] if allow_repos else []
     denied_permissions = [] if allow_repos else ["repos-write"]
@@ -93,7 +94,7 @@ def _registry_sandbox(
             "unknownPolicy": "deny",
         },
         billable_firewalls=[_FIREWALL_NAME],
-        sandbox_fields={"captureNetworkBodies": True, "modelUsageProvider": "test"},
+        sandbox_fields={"captureNetworkBodies": capture_body, "modelUsageProvider": "test"},
     )
 
 
@@ -344,6 +345,7 @@ def _assert_auth_base_forward_rejected(
 
 
 @pytest.mark.parametrize("hook_phase", ["request", "requestheaders"])
+@pytest.mark.parametrize("capture_body", [False, True])
 @pytest.mark.parametrize("apply_via_control", [False, True])
 @pytest.mark.parametrize(
     "registry_mutation",
@@ -358,11 +360,12 @@ async def test_registry_change_during_auth_blocks_old_authorization(
     hook_phase: HookPhase,
     registry_mutation: RegistryMutation,
     apply_via_control: bool,
+    capture_body: bool,
 ):
     registry_path = _write_registry(
         tmp_path,
         client_ip=_CLIENT_IP,
-        sandbox_info=_registry_sandbox(tmp_path),
+        sandbox_info=_registry_sandbox(tmp_path, capture_body=capture_body),
     )
     flow, tls_data = _firewall_flow(real_flow, make_tls_data)
     flow.metadata["preexisting"] = "keep"

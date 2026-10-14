@@ -595,6 +595,42 @@ record already embedded in a malformed line or serialize independently
 interleaved short-write sequences. The existing Runner uploader continues to
 skip malformed physical lines and upload independently parseable records.
 
+## Allowed upload streaming and deferred body admission
+
+Large and unknown-length ordinary, platform API, browser and policy-only requests
+stream after their header-phase authorization, independently of
+`captureNetworkBodies`. Non-public-destination connector requests use the same
+streaming path only after stream-safe credential resolution and current
+registry, connector ownership and TLS/destination checks succeed. The shared
+request stream counts every forwarded byte. Diagnostic capture retains at most
+64 KiB and remains optional. Response/error consumers read the full
+byte count before terminal cleanup releases the stream state. Billable connector
+endpoints requiring request-body pricing inspection retain a prefix through the
+same 64 KiB stream buffer even with capture off. Only complete,
+untruncated bodies refine pricing; inspection never enables persisted body fields.
+Other uncaptured requests retain only byte counters. Small declared
+bodies up to 64 KiB retain their existing buffered path and billing inspection.
+
+Body-dependent auth.base and AWS SigV4 retain their separate bounded admissions.
+Both credential and policy-only `publicDestination` requests stay buffered for
+request-phase destination revalidation. Large bodies outside the specialized
+auth admissions reserve an independent budget: at most 32 MiB per request,
+16 admitted requests and 128 MiB aggregate. A valid bounded Content-Length is
+required, except when mitmproxy proves the request ends at headers. Chunked,
+unknown/conflicting/invalid-length, oversized and saturated requests terminate
+at headers before body consumption, credential resolution or upstream forwarding.
+Small declared bodies keep their bounded path. The reservation remains held
+through buffered request forwarding and response/error processing; request
+failure or cancellation also releases it. An asterisk-form policy allow never
+uses its API entry's auth.base/SigV4 owner, so it uses this destination budget.
+
+No registry, API or network-log schema changes are required. Old Runners retain
+their embedded-addon behavior until replaced. Native dependency coverage in
+`test_mitmproxy_allowed_upload_streaming.py` and
+`test_public_destination_body_admission.py` verifies forwarding, retained bytes,
+byte accounting, capture privacy, admission and terminal release; cryptographic
+TLS verification remains covered by the native auth-wait suites.
+
 ## Header-phase credential-resolution failures
 
 If credential resolution fails while preparing a request for authenticated
@@ -609,7 +645,10 @@ diagnostic remain available; the error hook records a connection failure with
 status `0` and releases terminal resources. The unsent local error response is
 discarded so it cannot appear as a captured response. Auth failures first
 resolved in the normal buffered request hook keep their structured responses.
-Successful authenticated streaming retains its bounded capture behavior.
+Successful authenticated streaming retains its bounded capture behavior when
+capture is enabled; capture off retains byte counters and only billing-required
+inspection bytes as described above. The same
+early credential-failure termination applies with either capture setting.
 
 This changes only the addon lifecycle. Runner/API and network-log schemas stay
 unchanged, and old Runner instances keep their previous behavior until replaced.

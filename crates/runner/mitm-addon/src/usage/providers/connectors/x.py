@@ -602,6 +602,19 @@ def _compute_billable_counts(
     return counts
 
 
+def needs_request_body_inspection(flow: http.HTTPFlow) -> bool:
+    """Retain bounded request bytes only for X endpoint body-based pricing."""
+    permission = flow_metadata.firewall_permission(flow.metadata)
+    if not permission:
+        return False
+    method = flow.request.method.upper()
+    request_path = _strip_request_target_query(flow.request.path)
+    endpoint_bucket = classify_bucket(permission, method, request_path)
+    return endpoint_bucket is not None and bucket_needs_body_refinement(
+        endpoint_bucket, method, request_path
+    )
+
+
 def _response_usage_context(flow: http.HTTPFlow) -> _ResponseUsageContext | None:
     if not flow.response or not (
         _HTTP_STATUS_OK_MIN <= flow.response.status_code < _HTTP_STATUS_REDIRECT_MIN

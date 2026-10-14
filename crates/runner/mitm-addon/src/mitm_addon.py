@@ -64,8 +64,10 @@ import matching
 import mitmproxy_compat
 import model_websocket_usage
 import platform_api
+import public_destination_body_admission
 import registry
 import registry_control
+import request_body_admission
 import request_classification
 import request_streaming
 import response_encoding_negotiation
@@ -899,6 +901,28 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         return None
 
     _prebind_requestheaders_upstream_destination(flow, classification)
+    if isinstance(
+        classification,
+        request_classification.FirewallAllow | request_classification.FirewallPolicyAllow,
+    ) and (
+        request_classification.firewall_allow_uses_public_destination(classification.firewall_allow)
+        and (
+            classification.kind == "firewall_policy_allow"
+            or (
+                not _firewall_allow_auth_base(classification.firewall_allow)
+                and not _firewall_allow_uses_aws_sigv4(classification.firewall_allow)
+            )
+        )
+    ):
+        _admit_buffered_public_destination_request(
+            flow,
+            classification=classification,
+            request_end_stream=request_end_stream,
+        )
+        if flow.error is None:
+            _restore_request_headers_probe_metadata(flow, metadata_snapshot)
+        return None
+
     if classification.kind == "firewall_allow":
         allow = classification.firewall_allow
         sandbox_info = classification.sandbox_info
@@ -999,19 +1023,72 @@ def requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
 
     if (
         classification.kind == "firewall_allow"
-        and request_classification.should_try_firewall_stream_capture_request(classification)
+        and request_classification.should_try_firewall_stream_request(classification)
     ):
         return _try_firewall_request_stream_from_headers(
             flow,
             classification=classification,
             metadata_snapshot=metadata_snapshot,
             request_end_stream=request_end_stream,
-            capture_body=True,
+            capture_body=bool(classification.sandbox_info.get("captureNetworkBodies", False)),
             aws_sigv4_buffered_fallback=None,
         )
 
     _restore_request_headers_probe_metadata(flow, metadata_snapshot)
     return None
+
+
+def _admit_buffered_public_destination_request(
+    flow: http.HTTPFlow,
+    *,
+    classification: request_classification.FirewallAllow
+    | request_classification.FirewallPolicyAllow,
+    request_end_stream: bool | None,
+) -> None:
+    body_check = _buffered_auth_body_header_check(
+        flow,
+        request_end_stream=request_end_stream,
+        max_body_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
+        method_allows_missing_content_length=True,
+    )
+    if body_check.kind == "ok":
+        try:
+            admission = public_destination_body_admission.reserve(body_check.observed_size)
+        except (
+            request_body_admission.RequestBodyAdmissionCountSaturatedError,
+            request_body_admission.RequestBodyAdmissionByteSaturatedError,
+        ):
+            error = "public_destination_request_body_admission_saturated"
+        else:
+            try:
+                public_destination_body_admission.attach_to_flow(flow, admission)
+            except BaseException:
+                public_destination_body_admission.release(admission)
+                raise
+            return
+    elif body_check.kind == "too_large":
+        error = "public_destination_request_body_too_large"
+    else:
+        error = "public_destination_request_body_length_required"
+
+    _start_request_timing(flow)
+    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
+    flow_metadata.set_firewall_decision(flow.metadata, "ALLOW", error=error)
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        "publicDestination request-body admission rejected",
+        type="firewall",
+        firewall_base=flow.metadata[metadata_keys.FIREWALL_BASE],
+        error=error,
+        framing_error=body_check.reason,
+        observed_size=body_check.observed_size,
+        request_body_limit_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
+    )
+    request_classification.pop_cached_classification(flow)
+    flow.metadata[_REQUEST_HEADERS_TERMINATED] = True
+    flow.kill()
 
 
 def _admit_buffered_aws_sigv4_request(
@@ -1165,7 +1242,11 @@ async def _try_firewall_request_stream_from_headers(
             request_end_stream=request_end_stream is True,
         )
         if flow.response is None:
-            request_streaming.configure_request_stream(flow, capture_body=capture_body)
+            request_streaming.configure_request_stream(
+                flow,
+                capture_body=capture_body,
+                inspect_body=usage.needs_connector_request_body_inspection(flow),
+            )
     except (asyncio.CancelledError, Exception):
         _release_terminal_flow_state(flow, release_tracking=True)
         restore_request_state()
@@ -1422,6 +1503,7 @@ async def request(flow: http.HTTPFlow) -> None:
     if flow.metadata.get(_REQUEST_HEADERS_TERMINATED):
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
+        public_destination_body_admission.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
         return
@@ -1432,6 +1514,7 @@ async def request(flow: http.HTTPFlow) -> None:
     if flow.response is not None or flow.error is not None:
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
+        public_destination_body_admission.release_from_flow(flow)
         release_aws_sigv4_request_inspection(flow)
         request_classification.pop_cached_classification(flow)
         return
@@ -1580,6 +1663,7 @@ async def request(flow: http.HTTPFlow) -> None:
         flow.metadata.pop(metadata_keys.HTTP_REQUEST_START_MONOTONIC, None)
         auth_base_forwarder.release_forward_request_admission_from_flow(flow)
         aws_sigv4_body_admission.release_from_flow(flow)
+        public_destination_body_admission.release_from_flow(flow)
         terminal_usage.release_tracked_flow(flow)
         raise
     finally:
@@ -1763,6 +1847,7 @@ def _release_terminal_flow_state(
     codex_model_catalog_cache.release_flow_state(flow)
     response_streaming.release_response_stream_state(flow)
     auth_base_forwarder.release_forward_request_admission_from_flow(flow)
+    public_destination_body_admission.release_from_flow(flow)
     if release_aws_sigv4_body_admission:
         aws_sigv4_body_admission.release_from_flow(flow)
     if release_tracking:

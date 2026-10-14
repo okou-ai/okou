@@ -17,6 +17,7 @@ from tests.request_handler_helpers import (
     _single_firewall_sandbox,
     _write_registry,
 )
+from tests.requestheaders_helpers import await_requestheaders_result
 from tests.upstream_connection_helpers import (
     bind_flow_upstream,
     mark_connected_tls_upstream,
@@ -547,7 +548,7 @@ async def test_platform_api_wrong_port_uses_normal_connector_auth(
         mitm_ctx(registry_path=str(reg_path), api_url="https://api.okou.ai"),
         fake_firewall_headers(headers={"Authorization": "Bearer resolved-api-token"}) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
         binding = upstream_destination_binding.binding_snapshot_for_tests()[flow.server_conn.id]
         assert binding.host == "api.okou.ai"
         assert binding.port == 8443
@@ -785,7 +786,7 @@ async def test_platform_mcp_connector_auth_injects_runner_preview_bypass(
             headers={"Authorization": "Bearer resolved-platform-mcp-token"}
         ) as auth_fetch,
     ):
-        assert mitm_addon.requestheaders(flow) is None
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
         assert flow.request.headers["x-vercel-protection-bypass"] == "preview-secret"
         await mitm_addon.request(flow)
 
