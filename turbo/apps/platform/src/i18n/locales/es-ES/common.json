@@ -2095,6 +2095,7 @@
       "on": "Activado",
       "requiresSsh": "También requiere acceso al host SSH {{name}}.",
       "retry": "Reintentar",
+      "sshDisabled": "El acceso SSH a {{name}} está desactivado. Actívalo para usar VNC.",
       "title": "Acceso remoto",
       "unavailableSsh": "host SSH no disponible"
     },

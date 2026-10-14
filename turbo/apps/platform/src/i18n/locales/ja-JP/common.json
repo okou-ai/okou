@@ -2046,6 +2046,7 @@
       "on": "オン",
       "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
       "retry": "再試行",
+      "sshDisabled": "{{name}} への SSH アクセスがオフです。VNC を使用するにはオンにしてください。",
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト"
     },

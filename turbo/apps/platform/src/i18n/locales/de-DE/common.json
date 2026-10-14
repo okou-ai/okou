@@ -2054,6 +2054,7 @@
       "on": "Ein",
       "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
       "retry": "Erneut versuchen",
+      "sshDisabled": "Der SSH-Zugriff auf {{name}} ist deaktiviert. Aktiviere ihn, um VNC zu nutzen.",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },

@@ -2054,6 +2054,7 @@
       "on": "On",
       "requiresSsh": "Requires SSH access to {{name}}.",
       "retry": "Retry",
+      "sshDisabled": "SSH access to {{name}} is off. Enable it to use VNC.",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
     },
