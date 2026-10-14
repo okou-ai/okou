@@ -1,3 +1,4 @@
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -730,6 +731,8 @@ function existingClientThreadCondition(args: {
 }
 
 interface CreateChatThreadArgs {
+  /** Only supplied from the authenticated agent token. */
+  readonly sourceRunId?: string;
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
@@ -912,6 +915,32 @@ export const createChatThread$ = command(
           }
         }
         return { kind: "client_thread_conflict" as const };
+      }
+      if (args.sourceRunId !== undefined) {
+        const [source] = await tx
+          .select({ threadId: chatThreads.id })
+          .from(agentRuns)
+          .innerJoin(chatThreads, eq(chatThreads.id, agentRuns.chatThreadId))
+          .where(
+            and(
+              eq(agentRuns.id, args.sourceRunId),
+              eq(agentRuns.userId, args.userId),
+              eq(agentRuns.orgId, args.orgId),
+              eq(chatThreads.userId, args.userId),
+            ),
+          )
+          .limit(1);
+        if (source && source.threadId !== createdThread.id) {
+          await tx.insert(chatRelations).values({
+            orgId: args.orgId,
+            userId: args.userId,
+            type: "created",
+            sourceChatThreadId: source.threadId,
+            targetChatThreadId: createdThread.id,
+            sourceRunId: args.sourceRunId,
+            createdAt: nowDate(),
+          });
+        }
       }
       const initialWrites = initialThreadWritePlan(
         args,

@@ -3,6 +3,7 @@ import { artifacts } from "@okouai/db/schema/artifact";
 import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { browserUserActionRequests } from "@okouai/db/schema/browser-session";
 import { chatAgentRunContext } from "@okouai/db/schema/chat-agent-run-context";
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { cliTokens } from "@okouai/db/schema/cli-tokens";
 import { composeJobs } from "@okouai/db/schema/compose-job";
 import { connectors } from "@okouai/db/schema/connector";
@@ -798,6 +799,8 @@ const deleteOrgData$ = command(
       .delete(chatAgentRunContext)
       .where(eq(chatAgentRunContext.sourceOrgId, orgId));
     signal.throwIfAborted();
+    await db.delete(chatRelations).where(eq(chatRelations.orgId, orgId));
+    signal.throwIfAborted();
     await set(
       deleteClerkAgentLifecycleData$,
       { kind: "organization", orgId },
@@ -910,6 +913,8 @@ const deleteUserData$ = command(
     await db
       .delete(chatAgentRunContext)
       .where(eq(chatAgentRunContext.sourceUserId, userId));
+    signal.throwIfAborted();
+    await db.delete(chatRelations).where(eq(chatRelations.userId, userId));
     signal.throwIfAborted();
     await set(deleteClerkAgentLifecycleData$, { kind: "user", userId }, signal);
     // VNC references were removed before user cleanup. Delete only this user's

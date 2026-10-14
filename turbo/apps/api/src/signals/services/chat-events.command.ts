@@ -1,3 +1,4 @@
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import {
   AUTO_SELECTED_MODEL,
   isAutoSelectedModel,
@@ -1318,6 +1319,7 @@ const createdSendThreadSelection = Object.freeze({
 });
 
 interface NormalSendInput {
+  readonly agentRunSource: ChatAgentRunSourceAnnotation | null;
   readonly thread: SendThread;
   readonly event: ReturnType<typeof normalSendEvent>;
   readonly attachFileMetadata: readonly ChatEventAttachFileMetadata[];
@@ -1334,6 +1336,8 @@ function normalSendInputPlan(args: NormalSendArgs, input: NormalSendInput) {
   return {
     thread,
     event,
+    relationSource:
+      args.auth.tokenType === "agent" ? input.agentRunSource : null,
     queueInput: { chatThreadId: thread.threadId, orgId: args.orgId },
     existingPlan: existing && {
       ...existing,
@@ -1445,6 +1449,27 @@ const appendNormalSendInput$ = command(
         return null;
       }
       const contextInsert = chatEventContextInsertSql(event);
+      const source = input.relationSource;
+      if (source && source.threadId !== thread.threadId) {
+        const relation = {
+          orgId: args.orgId,
+          userId: args.userId,
+          sourceChatThreadId: source.threadId,
+          targetChatThreadId: thread.threadId,
+          sourceRunId: source.runId,
+          createdAt: inserted.createdAt,
+        };
+        if (thread.kind === "new") {
+          await tx
+            .insert(chatRelations)
+            .values({ ...relation, type: "created" });
+        }
+        await tx.insert(chatRelations).values({
+          ...relation,
+          type: "message",
+          messageEventId: inserted.id,
+        });
+      }
       if (contextInsert) {
         await tx.execute(contextInsert);
       }
@@ -1927,7 +1952,12 @@ export const sendNormalEvent$ = command(
         const committed = await set(
           appendNormalSendInput$,
           args,
-          normalSendInputPlan(args, { thread, event, attachFileMetadata }),
+          normalSendInputPlan(args, {
+            thread,
+            event,
+            attachFileMetadata,
+            agentRunSource,
+          }),
           signal,
         );
         if (committed === null) {

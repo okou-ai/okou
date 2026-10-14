@@ -62,6 +62,24 @@ export function appendCanonicalChatEventsSql(
       };
     }),
   );
+  // Attribute only winning input replacements, both at admission and active delivery.
+  const consumesInput = values.some((value) => {
+    return (
+      value.eventType === "input.prompt" &&
+      typeof value.runId === "string" &&
+      typeof value.revokesEventId === "string"
+    );
+  });
+  const relationAttribution = consumesInput
+    ? sql`, attributed_relations AS (
+    UPDATE chat_relations AS relation SET target_run_id = input."runId"
+    FROM input JOIN inserted ON inserted.id = input.id
+    WHERE relation.message_event_id = input."revokesEventId"
+      AND relation.target_chat_thread_id = input."chatThreadId"
+      AND relation.type = 'message' AND relation.target_run_id IS NULL
+      AND input."eventType" = 'input.prompt' AND input."runId" IS NOT NULL
+  )`
+    : sql.empty();
   return sql`
     WITH input AS MATERIALIZED (
       SELECT * FROM jsonb_to_recordset(${input}::jsonb) AS event(
@@ -102,6 +120,7 @@ export function appendCanonicalChatEventsSql(
       ${conflictClause(conflict)}
       RETURNING id, created_at, seq_id, run_event_sequence_number
     )
+    ${relationAttribution}
     SELECT inserted.id, inserted.created_at::text AS "createdAt",
       inserted.seq_id AS "seqId", inserted.run_event_sequence_number AS "sequenceNumber"
     FROM inserted
