@@ -155,7 +155,7 @@ test("An unlinked member finds the subscriptions in the composer's model slot", 
   ).toBeInTheDocument();
 });
 
-test("Codex opens its authorization from the composer, which then runs on the plan until the member goes back to Auto", async () => {
+test("Codex opens its authorization from the composer and the slot becomes the model picker after confirmation", async () => {
   const user = userEvent.setup();
   const approval = context.mocks.deferred<void>();
   context.mocks.api(codexDeviceAuthContract.start, ({ respond }) => {
@@ -199,12 +199,9 @@ test("Codex opens its authorization from the composer, which then runs on the pl
       screen.queryByRole("dialog", { name: "Connect Codex" }),
     ).not.toBeInTheDocument();
   });
-  await screen.findByText("ChatGPT connected. New chats run on your plan.");
-  await composerModelTrigger("GPT 6 Astra");
+  await composerModelTrigger("Auto");
   expect(findAction("Use more models")).toBeUndefined();
   expect(editor).toHaveTextContent("Keep this draft");
-  click(action("Use Auto"));
-  await composerModelTrigger("Auto");
   const accountMenu = await openAccountMenu();
   expect(accountMenu).not.toHaveTextContent("Use more models");
 });

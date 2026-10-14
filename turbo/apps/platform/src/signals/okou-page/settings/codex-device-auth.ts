@@ -18,10 +18,7 @@ import {
   tapError,
   waitLoopUntil,
 } from "../../utils.ts";
-import {
-  PERSONAL_SUBSCRIPTION_CONNECTED_TOAST_ID,
-  reloadPersonalModelProvider$,
-} from "../model-first-personal-oauth.ts";
+import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type CodexDeviceAuthDialogMode = "connect" | "reconnect";
 
@@ -255,7 +252,6 @@ function createCodexPollFlow$(ctx: CodexDeviceAuthSignalContext) {
               i18n.t(($) => {
                 return $.settings.models.deviceAuth.codex.connectedToast;
               }),
-              { id: PERSONAL_SUBSCRIPTION_CONNECTED_TOAST_ID },
             );
             set(ctx.internalDialogState$, createInitialDialogState());
             set(ctx.internalFlowState$, createIdleFlowState());

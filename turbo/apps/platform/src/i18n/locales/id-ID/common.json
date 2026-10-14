@@ -4681,11 +4681,9 @@
         "autoCredits": "Memakai kredit Okou",
         "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
-        "claudeConnectedOnPlan": "Claude terhubung. Chat baru memakai paket Anda.",
         "claudeGroup": "Paket Claude Anda",
         "claudePlans": "Pro atau Max",
         "claudeTitle": "Claude",
-        "codexConnectedOnPlan": "ChatGPT terhubung. Chat baru memakai paket Anda.",
         "codexGroup": "Paket ChatGPT Anda",
         "codexPlans": "Plus, Pro, atau Business",
         "codexTitle": "ChatGPT (Codex)",
@@ -4709,8 +4707,7 @@
           "stale": "Perhatian",
           "week": "Minggu"
         },
-        "useAccount": "Gunakan",
-        "useAuto": "Pakai Auto"
+        "useAccount": "Gunakan"
       },
       "picker": {
         "auto": "Auto",

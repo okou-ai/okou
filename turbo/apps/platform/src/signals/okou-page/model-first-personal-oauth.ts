@@ -35,13 +35,6 @@ type PersonalModelProviderStatusByModel = Readonly<
   Record<string, PersonalModelProviderStatus>
 >;
 
-/**
- * One toast per completed connect: a composer that then switches to the new
- * plan replaces the connected toast instead of stacking a second one.
- */
-export const PERSONAL_SUBSCRIPTION_CONNECTED_TOAST_ID =
-  "personal-subscription-connected";
-
 const internalReloadPersonalModelProvider$ = state(0);
 
 export const reloadPersonalModelProvider$ = command(({ set }) => {

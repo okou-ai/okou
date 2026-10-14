@@ -11,10 +11,7 @@ import { accept } from "../../../lib/accept.ts";
 import { now } from "../../../lib/time.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { bestEffort, resetSignal, tapError } from "../../utils.ts";
-import {
-  PERSONAL_SUBSCRIPTION_CONNECTED_TOAST_ID,
-  reloadPersonalModelProvider$,
-} from "../model-first-personal-oauth.ts";
+import { reloadPersonalModelProvider$ } from "../model-first-personal-oauth.ts";
 
 type ClaudeCodeDeviceAuthDialogMode = "connect" | "reconnect";
 
@@ -328,7 +325,6 @@ function createClaudeCodeSubmit$(ctx: ClaudeCodeDeviceAuthSignalContext) {
         i18n.t(($) => {
           return $.settings.models.deviceAuth.claude.connectedToast;
         }),
-        { id: PERSONAL_SUBSCRIPTION_CONNECTED_TOAST_ID },
       );
       set(ctx.internalDialogState$, createInitialDialogState());
       set(ctx.internalFlowState$, createIdleFlowState());

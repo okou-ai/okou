@@ -4681,11 +4681,9 @@
         "autoCredits": "消耗 Okou 點數",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
-        "claudeConnectedOnPlan": "Claude 已連接，新對話將使用你的方案。",
         "claudeGroup": "你的 Claude 方案",
         "claudePlans": "Pro 或 Max",
         "claudeTitle": "Claude",
-        "codexConnectedOnPlan": "ChatGPT 已連接，新對話將使用你的方案。",
         "codexGroup": "你的 ChatGPT 方案",
         "codexPlans": "Plus、Pro 或 Business",
         "codexTitle": "ChatGPT (Codex)",
@@ -4709,8 +4707,7 @@
           "stale": "需處理",
           "week": "本週"
         },
-        "useAccount": "使用",
-        "useAuto": "改用 Auto"
+        "useAccount": "使用"
       },
       "picker": {
         "auto": "Auto",

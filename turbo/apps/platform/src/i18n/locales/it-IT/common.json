@@ -4768,11 +4768,9 @@
         "autoCredits": "Usa i crediti Okou",
         "autoDescription": "Collega il tuo account Claude o ChatGPT per usare più modelli.",
         "autoTitle": "Usa più modelli",
-        "claudeConnectedOnPlan": "Claude collegato. Le nuove chat usano il tuo piano.",
         "claudeGroup": "Il tuo piano Claude",
         "claudePlans": "Pro o Max",
         "claudeTitle": "Claude",
-        "codexConnectedOnPlan": "ChatGPT collegato. Le nuove chat usano il tuo piano.",
         "codexGroup": "Il tuo piano ChatGPT",
         "codexPlans": "Plus, Pro o Business",
         "codexTitle": "ChatGPT (Codex)",
@@ -4796,8 +4794,7 @@
           "stale": "Attenzione",
           "week": "Settimana"
         },
-        "useAccount": "Usa",
-        "useAuto": "Usa Auto"
+        "useAccount": "Usa"
       },
       "picker": {
         "auto": "Auto",

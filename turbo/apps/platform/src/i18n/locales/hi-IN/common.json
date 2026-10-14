@@ -4702,11 +4702,9 @@
         "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
-        "claudeConnectedOnPlan": "Claude कनेक्ट हो गया। नई चैट आपके प्लान से चलेंगी।",
         "claudeGroup": "आपका Claude प्लान",
         "claudePlans": "Pro या Max",
         "claudeTitle": "Claude",
-        "codexConnectedOnPlan": "ChatGPT कनेक्ट हो गया। नई चैट आपके प्लान से चलेंगी।",
         "codexGroup": "आपका ChatGPT प्लान",
         "codexPlans": "Plus, Pro या Business",
         "codexTitle": "ChatGPT (Codex)",
@@ -4730,8 +4728,7 @@
           "stale": "ध्यान",
           "week": "सप्ताह"
         },
-        "useAccount": "उपयोग करें",
-        "useAuto": "Auto इस्तेमाल करें"
+        "useAccount": "उपयोग करें"
       },
       "picker": {
         "auto": "Auto",

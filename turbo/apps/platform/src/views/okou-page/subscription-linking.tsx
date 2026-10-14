@@ -25,7 +25,6 @@ import {
   SUBSCRIPTION_PROVIDERS,
   subscriptionLinkingUnlinked$,
   trackSubscriptionLinkingOpened$,
-  type SubscriptionLinkingModelSelect,
   type SubscriptionLinkingSource,
 } from "../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -39,10 +38,7 @@ export function useSubscriptionLinkingAvailable(): boolean {
   return useLastResolved(subscriptionLinkingUnlinked$) === true;
 }
 
-export function useConnectProvider(
-  source: SubscriptionLinkingSource,
-  select$: SubscriptionLinkingModelSelect | null = null,
-) {
+export function useConnectProvider(source: SubscriptionLinkingSource) {
   const { t } = useTranslation();
   const connect = useSet(connectSubscriptionLinkingProvider$);
   const pageSignal = useGet(pageSignal$);
@@ -67,7 +63,7 @@ export function useConnectProvider(
           });
     },
     connect: (type: PersonalSubscriptionProviderType) => {
-      detach(connect(source, type, select$, pageSignal), Reason.DomCallback);
+      detach(connect(source, type, pageSignal), Reason.DomCallback);
     },
   };
 }
@@ -116,17 +112,10 @@ function SubscriptionProviderMarks() {
  * Auto on Okou credits, then the subscriptions that run on the member's own
  * plan. Once one is linked, the same slot becomes the model picker.
  */
-export function SubscriptionLinkingComposerMenu({
-  select$,
-}: {
-  select$: SubscriptionLinkingModelSelect;
-}) {
+export function SubscriptionLinkingComposerMenu() {
   const { t } = useTranslation();
   const trackOpened = useSet(trackSubscriptionLinkingOpened$);
-  const { title, plans, connect } = useConnectProvider(
-    "composer_model_slot",
-    select$,
-  );
+  const { title, plans, connect } = useConnectProvider("composer_model_slot");
   const label = t(($) => {
     return $.settings.models.personal.autoTitle;
   });

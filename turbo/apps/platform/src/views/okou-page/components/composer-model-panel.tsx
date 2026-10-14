@@ -31,7 +31,6 @@ import { isRunModelFastModeAvailable } from "../../../signals/okou-page/model-de
 import {
   openSubscriptionLinkingSettings$,
   subscriptionPlanStatuses$,
-  type SubscriptionLinkingModelSelect,
   type SubscriptionPlanStatus,
 } from "../../../signals/okou-page/subscription-linking.ts";
 import { pageSignal$ } from "../../../signals/page-signal.ts";
@@ -63,8 +62,6 @@ import { ProviderIcon } from "./settings/provider-icons.tsx";
 interface ComposerModelPanelProps {
   value: ModelProviderSelection;
   onChange: (selection: ModelProviderSelection | null) => void;
-  /** The composer's own setter, so a plan connected from here takes over. */
-  selectModel$: SubscriptionLinkingModelSelect;
   placeholder: string;
   triggerClassName: string;
   open: boolean;
@@ -83,9 +80,8 @@ interface ComposerModelPanelProps {
 function ComposerModelPanelBody({
   value,
   onChange,
-  selectModel$,
   onClose,
-}: Pick<ComposerModelPanelProps, "value" | "onChange" | "selectModel$"> & {
+}: Pick<ComposerModelPanelProps, "value" | "onChange"> & {
   onClose: () => void;
 }) {
   const { t } = useTranslation();
@@ -176,7 +172,6 @@ function ComposerModelPanelBody({
             {planStatuses !== null && (
               <ComposerModelPlanActions
                 planStatuses={planStatuses}
-                selectModel$={selectModel$}
                 onClose={onClose}
               />
             )}
@@ -385,18 +380,13 @@ const PLAN_ACTION_ROW_CLASS = cn(
  */
 function ComposerModelPlanActions({
   planStatuses,
-  selectModel$,
   onClose,
 }: {
   planStatuses: readonly SubscriptionPlanStatus[];
-  selectModel$: SubscriptionLinkingModelSelect;
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const { title, plans, connect } = useConnectProvider(
-    "composer_model_panel",
-    selectModel$,
-  );
+  const { title, plans, connect } = useConnectProvider("composer_model_panel");
   const openSettings = useSet(openSubscriptionLinkingSettings$);
   const pageSignal = useGet(pageSignal$);
   return (
@@ -528,7 +518,6 @@ function ComposerModelPanelTriggerLabel({
 export function ComposerModelPanel({
   value,
   onChange,
-  selectModel$,
   placeholder,
   triggerClassName,
   open,
@@ -596,7 +585,6 @@ export function ComposerModelPanel({
         <ComposerModelPanelBody
           value={value}
           onChange={onChange}
-          selectModel$={selectModel$}
           onClose={() => {
             onOpenChange(false);
           }}
