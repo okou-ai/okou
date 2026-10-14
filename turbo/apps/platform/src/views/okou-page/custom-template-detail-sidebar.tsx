@@ -268,7 +268,7 @@ function CustomTemplateTitleInput({
         aria-label={t(($) => {
           return $.templates.actions.rename;
         })}
-        className="h-auto min-h-10 rounded-lg border-transparent px-1 py-[5px] text-xl font-semibold leading-7 hover:border-[hsl(var(--gray-400))]"
+        className="h-auto min-h-10 text-ellipsis rounded-lg border-transparent px-1 py-[5px] text-xl font-semibold leading-7 hover:border-[hsl(var(--gray-400))]"
         onBlur={(event) => {
           rename(event.target.value);
         }}
