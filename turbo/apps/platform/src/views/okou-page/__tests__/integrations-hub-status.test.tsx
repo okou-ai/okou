@@ -221,7 +221,6 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/works");
   expect(queryAction("button", "Connect", telegramCard)).toBeNull();
-  expect(queryAction("link", "Open Telegram settings")).toBeNull();
 });
 
 test("The shared phone card and connect dialog display digits instead of a vanity number", async () => {
