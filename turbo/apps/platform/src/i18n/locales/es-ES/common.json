@@ -2093,9 +2093,9 @@
       "loading": "Cargando acceso remoto…",
       "off": "Desactivado",
       "on": "Activado",
-      "requiresSsh": "También requiere acceso al host SSH {{name}}.",
+      "requiresSsh": "Requiere SSH: {{name}}",
       "retry": "Reintentar",
-      "sshDisabled": "El acceso SSH a {{name}} está desactivado. Actívalo para usar VNC.",
+      "sshDisabled": "Activa SSH: {{name}}",
       "title": "Acceso remoto",
       "unavailableSsh": "host SSH no disponible"
     },

@@ -2052,9 +2052,9 @@
       "loading": "Loading remote access…",
       "off": "Off",
       "on": "On",
-      "requiresSsh": "Requires SSH access to {{name}}.",
+      "requiresSsh": "Requires SSH: {{name}}",
       "retry": "Retry",
-      "sshDisabled": "SSH access to {{name}} is off. Enable it to use VNC.",
+      "sshDisabled": "Enable SSH: {{name}}",
       "title": "Remote access",
       "unavailableSsh": "unavailable SSH host"
     },

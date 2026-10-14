@@ -2044,9 +2044,9 @@
       "loading": "원격 액세스 로드 중…",
       "off": "끄기",
       "on": "켜기",
-      "requiresSsh": "SSH 호스트 {{name}}에 대한 액세스도 필요합니다.",
+      "requiresSsh": "SSH 필요: {{name}}",
       "retry": "다시 시도",
-      "sshDisabled": "{{name}}의 SSH 액세스가 꺼져 있습니다. VNC를 사용하려면 켜세요.",
+      "sshDisabled": "SSH 켜기: {{name}}",
       "title": "원격 액세스",
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
     },

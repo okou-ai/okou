@@ -2044,9 +2044,9 @@
       "loading": "Memuat akses jarak jauh…",
       "off": "Nonaktif",
       "on": "Aktif",
-      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "requiresSsh": "Memerlukan SSH: {{name}}",
       "retry": "Coba lagi",
-      "sshDisabled": "Akses SSH ke {{name}} dinonaktifkan. Aktifkan untuk menggunakan VNC.",
+      "sshDisabled": "Aktifkan SSH: {{name}}",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
     },

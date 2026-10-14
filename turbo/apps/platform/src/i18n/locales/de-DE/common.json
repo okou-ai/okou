@@ -2052,9 +2052,9 @@
       "loading": "Fernzugriff wird geladen…",
       "off": "Aus",
       "on": "Ein",
-      "requiresSsh": "Benötigt auch Zugriff auf den SSH-Host {{name}}.",
+      "requiresSsh": "Benötigt SSH: {{name}}",
       "retry": "Erneut versuchen",
-      "sshDisabled": "Der SSH-Zugriff auf {{name}} ist deaktiviert. Aktiviere ihn, um VNC zu nutzen.",
+      "sshDisabled": "SSH aktivieren: {{name}}",
       "title": "Fernzugriff",
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },

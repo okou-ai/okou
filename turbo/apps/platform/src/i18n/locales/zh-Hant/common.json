@@ -2044,9 +2044,9 @@
       "loading": "正在載入遠端存取…",
       "off": "關閉",
       "on": "開啟",
-      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重試",
-      "sshDisabled": "SSH 主機 {{name}} 尚未開啟，請先開啟才能使用 VNC。",
+      "sshDisabled": "需開啟 SSH：{{name}}",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
     },

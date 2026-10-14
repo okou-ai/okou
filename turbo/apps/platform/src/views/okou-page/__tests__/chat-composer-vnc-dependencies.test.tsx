@@ -26,10 +26,9 @@ const SSH_ID = "b0000000-0000-4000-8000-000000000031";
 const OTHER_SSH_ID = "b0000000-0000-4000-8000-000000000032";
 const KDC_SSH_ID = "b0000000-0000-4000-8000-000000000033";
 const VNC_ID = "b0000000-0000-4000-8000-000000000034";
-const SSH_WARNING = "SSH access to MacinCloud is off. Enable it to use VNC.";
-const KDC_WARNING =
-  "SSH access to Directory tunnel is off. Enable it to use VNC.";
-const SSH_NOTE = "Requires SSH access to MacinCloud.";
+const SSH_WARNING = "Enable SSH: MacinCloud";
+const KDC_WARNING = "Enable SSH: Directory tunnel";
+const SSH_NOTE = "Requires SSH: MacinCloud";
 
 function installDependencyFixture({
   newChat = false,
@@ -297,7 +296,7 @@ test("VNC reports its transport and KDC SSH dependencies independently", async (
   expect(within(menu).getByText(KDC_WARNING)).toBeInTheDocument();
   await chooseHost("SSH Directory tunnel", "On");
   await expect(
-    within(menu).findByText("Requires SSH access to Directory tunnel."),
+    within(menu).findByText("Requires SSH: Directory tunnel"),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
 });
@@ -311,7 +310,7 @@ test("Direct VNC transport still explains an SSH-backed KDC dependency", async (
   expect(within(menu).queryByText(SSH_WARNING)).toBeNull();
   await chooseHost("SSH Directory tunnel", "On");
   await expect(
-    within(menu).findByText("Requires SSH access to Directory tunnel."),
+    within(menu).findByText("Requires SSH: Directory tunnel"),
   ).resolves.toBeInTheDocument();
   expect(within(menu).queryByText(KDC_WARNING)).toBeNull();
 });

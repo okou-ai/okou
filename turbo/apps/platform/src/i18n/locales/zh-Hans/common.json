@@ -2044,9 +2044,9 @@
       "loading": "正在加载远程访问…",
       "off": "关闭",
       "on": "开启",
-      "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
+      "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重试",
-      "sshDisabled": "SSH 主机 {{name}} 未开启，请先开启才能使用 VNC。",
+      "sshDisabled": "需开启 SSH：{{name}}",
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
     },
