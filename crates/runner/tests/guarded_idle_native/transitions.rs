@@ -200,12 +200,14 @@ async fn prepare_incoming(
             })
             .await?;
         let prepared: TestResult<()> = async {
+            // Fresh coverage is retained across startup. Firecracker publishes
+            // the backing capability only after its process has started.
+            sandbox.start().await?;
             operation.bind_backing(
                 sandbox
                     .backing_process()
                     .ok_or_else(|| io::Error::other("native incoming backing unavailable"))?,
             )?;
-            sandbox.start().await?;
             if sandbox.park_for_blank_pool().await? != SandboxParkOutcome::Reusable {
                 return Err(io::Error::other("native incoming could not physically park").into());
             }
