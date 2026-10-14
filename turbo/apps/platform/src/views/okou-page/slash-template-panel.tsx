@@ -38,6 +38,12 @@ const SLASH_TEMPLATE_CATEGORY_ICONS = {
 export const SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT = 4;
 export const SLASH_PANEL_EXPAND_WORKFLOWS_ID = "expand-workflows";
 
+// The row the pointer or the keyboard has marked. Pointing at Browse all takes
+// the mark off it, so the only fill in the index is the one under the pointer,
+// while the preview keeps showing the type it last opened.
+const SLASH_ROW_MARKED =
+  "bg-state-selected hover:bg-state-selected-hover group-has-[[data-slot=slash-browse-all]:hover]/slash-panel:bg-transparent";
+
 // A workflow description is written for the agent and often runs a paragraph,
 // so a row shows only its first clause: up to the first comma, colon,
 // semicolon, dash, parenthesis or sentence end, in Latin or CJK punctuation.
@@ -423,7 +429,7 @@ function SlashPanelWorkflowList({
               className={cn(
                 "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors",
                 markedIndex === index
-                  ? "bg-state-selected hover:bg-state-selected-hover"
+                  ? SLASH_ROW_MARKED
                   : "hover:bg-state-hover",
               )}
               onMouseMove={() => {
@@ -501,7 +507,7 @@ function SlashPanelWorkflowSection({
             id={listProps.workflowOptionId(SLASH_PANEL_EXPAND_WORKFLOWS_ID)}
             className={cn(
               "w-full justify-start rounded-lg px-2",
-              expandMarked && "bg-state-selected hover:bg-state-selected-hover",
+              expandMarked && SLASH_ROW_MARKED,
             )}
             data-active={expandMarked ? "true" : undefined}
             aria-label={t(($) => {
@@ -574,7 +580,7 @@ function SlashPanelCategoryList({
                 className={cn(
                   "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-foreground transition-colors",
                   markedIndex === index
-                    ? "bg-state-selected hover:bg-state-selected-hover"
+                    ? SLASH_ROW_MARKED
                     : "hover:bg-state-hover",
                 )}
                 onMouseMove={() => {
@@ -610,13 +616,18 @@ function SlashPanelBrowseAll({
         anchored ? "p-1 pt-1.5" : "shrink-0 border-t border-border/60 p-1"
       }
     >
+      {/*
+        Full width like the rows above it, so its hover fill has the same shape
+        as theirs instead of a pill around the label.
+      */}
       <button
         type="button"
+        data-slot="slash-browse-all"
         className={cn(
-          "flex h-8 max-w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
+          "flex h-8 w-full items-center rounded-lg px-2 transition-colors hover:bg-state-hover",
           anchored
             ? "gap-2 text-[13px] text-muted-foreground hover:text-foreground"
-            : "w-full justify-between text-sm text-foreground",
+            : "justify-between text-sm text-foreground",
         )}
         onClick={onBrowseAll}
       >
@@ -708,7 +719,7 @@ export function SlashTemplatePanel({
   return (
     <div
       className={cn(
-        "flex min-h-0 w-full overflow-hidden",
+        "group/slash-panel flex min-h-0 w-full overflow-hidden",
         anchored ? "flex-row" : "h-full flex-col",
       )}
       data-slot="slash-panel"
