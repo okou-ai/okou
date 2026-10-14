@@ -373,6 +373,7 @@ describe("GET /api/integrations/telegram/link", () => {
         loginBotId: "9876543210",
         domainConfigured: false,
       },
+      readinessError: "domain_not_verified",
     });
   });
 

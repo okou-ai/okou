@@ -45,6 +45,13 @@ const telegramLinkStatusResponseSchema = z.discriminatedUnion("linked", [
   }),
   z.object({
     linked: z.literal(false),
+    readinessError: z
+      .enum([
+        "bot_not_configured",
+        "domain_not_verified",
+        "domain_check_failed",
+      ])
+      .optional(),
     installation: z
       .object({
         id: z.string(),
@@ -126,6 +133,7 @@ export const integrationsTelegramContract = c.router({
     query: z.object({
       botId: z.string().optional(),
       origin: z.string().optional(),
+      source: z.enum(["onboarding", "works", "connect_page"]).optional(),
     }),
     responses: {
       200: telegramLinkStatusResponseSchema,
