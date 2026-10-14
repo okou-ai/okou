@@ -6,6 +6,10 @@ use crate::executor::tests::support::RUN_IN_SANDBOX_TEST_TIMEOUT;
 use crate::executor::{SessionHistoryRestoreFallback, SessionHistoryRestorePlan};
 use crate::home_image_cache::{HomeImagePrepareLockPolicy, HomeImagePrepareLockTestGate};
 use crate::telemetry::{JobTelemetry, RunnerStartupPath};
+use runner_host::home_observation::{
+    HomeObservation, HomeObservationKind as HomeKind, HomeObservationOutcome as HomeOutcome,
+};
+use runner_host::test_fixtures::home_observation::RecordedHomeObservations;
 use runner_types::types::{
     HomeReuseResult, ResumeSessionHistory, ResumeSessionHistoryEncoding, ResumeSessionHistoryRef,
     ResumeSessionHistoryRefKind,
@@ -13,6 +17,27 @@ use runner_types::types::{
 
 fn enable_api_start_telemetry(context: &mut runner_types::types::ExecutionContext) {
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis().max(0) as u64);
+}
+
+fn consumption_facts(recorded: &RecordedHomeObservations) -> Vec<HomeObservation> {
+    recorded
+        .events()
+        .into_iter()
+        .filter(|fact| fact.kind == HomeKind::Consumption)
+        .collect()
+}
+
+fn assert_home_fallback(recorded: &RecordedHomeObservations, run_id: RunId, reason: &str) {
+    let facts = consumption_facts(recorded);
+    assert_eq!(facts.len(), 2, "{facts:#?}");
+    assert_eq!(facts[0].outcome, HomeOutcome::Failed);
+    assert_eq!(facts[0].reason.as_deref(), Some("sandbox_prepare_failed"));
+    assert_eq!(facts[1].outcome, HomeOutcome::Fallback);
+    assert_eq!(facts[1].reason.as_deref(), Some(reason));
+    assert_eq!(facts[0].run_id, Some(run_id));
+    assert_eq!(facts[1].run_id, Some(run_id));
+    assert!(facts[0].image_generation.is_some());
+    assert_eq!(facts[0].image_generation, facts[1].image_generation);
 }
 
 fn assert_api_to_spawn_path(
@@ -160,7 +185,8 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
     ] {
         let dir = tempfile::tempdir().unwrap();
         let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-        let cache = HomeImageCache::new(runner_paths.clone());
+        let recorded = RecordedHomeObservations::default();
+        let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
         let mut config = test_executor_config(dir.path()).await;
         config.home_cache = Some(cache.clone());
         let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -238,12 +264,7 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
             true,
             None,
         );
-        assert_telemetry_action(
-            &telemetry,
-            "runner_fresh_sandbox_retry_without_home_image",
-            true,
-            None,
-        );
+        assert_home_fallback(&recorded, context.run_id, "codex_prefetch_replacement");
         assert_proxy_registry_empty(dir.path()).await;
     }
 }
@@ -252,7 +273,8 @@ async fn post_write_prefetch_failure_replaces_consumed_cache_hit_with_fresh_home
 async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded = RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -351,12 +373,7 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
 
     assert_telemetry_action(&telemetry, "runner_fresh_home_image_prepare", true, None);
     assert_telemetry_action(&telemetry, "home_image_cache_hit", true, None);
-    assert_telemetry_action(
-        &telemetry,
-        "runner_fresh_sandbox_retry_without_home_image",
-        true,
-        None,
-    );
+    assert_home_fallback(&recorded, ctx.run_id, "home_preparation_failed");
     let factory_create_outcomes =
         telemetry_action_outcomes(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_eq!(
@@ -387,7 +404,8 @@ async fn execute_inner_retries_fresh_after_home_cache_hit_create_failure() {
 async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded = RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -448,12 +466,7 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
         true,
         None,
     );
-    assert_telemetry_action(
-        &telemetry,
-        "runner_fresh_sandbox_retry_without_home_image",
-        true,
-        None,
-    );
+    assert_home_fallback(&recorded, ctx.run_id, "guest_dns_replacement");
     let completion = captured_events_named(&events, "guest DNS readiness replacement completed");
     assert_eq!(completion.len(), 1, "events={events:#?}");
     assert_captured_field(completion[0], "success", "true");
@@ -464,7 +477,8 @@ async fn execute_inner_dns_readiness_retry_replaces_consumed_home_cache_hit() {
 async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
     let dir = tempfile::tempdir().unwrap();
     let runner_paths = RunnerPaths::new(dir.path().join("runner"));
-    let cache = HomeImageCache::new(runner_paths.clone());
+    let recorded = RecordedHomeObservations::default();
+    let cache = HomeImageCache::new(runner_paths.clone()).with_observations(recorded.handle());
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -520,7 +534,14 @@ async fn process_timeout_invalidates_consumed_home_cache_without_fallback() {
     assert!(overrides.start_agent_process_calls().is_empty());
     assert!(!expected_seed.exists());
     assert_no_telemetry_action(&telemetry, "runner_fresh_sandbox_dns_readiness_retry");
-    assert_no_telemetry_action(&telemetry, "runner_fresh_sandbox_retry_without_home_image");
+    let consumption = consumption_facts(&recorded);
+    assert_eq!(consumption.len(), 1);
+    assert_eq!(consumption[0].outcome, HomeOutcome::Failed);
+    assert_eq!(consumption[0].run_id, Some(ctx.run_id));
+    assert_eq!(
+        consumption[0].reason.as_deref(),
+        Some("sandbox_prepare_failed")
+    );
 
     let checkout = cache
         .prepare(HomeImagePrepareRequest {
@@ -681,12 +702,7 @@ async fn execute_inner_cache_hit_retry_requires_completed_cleanup() {
     );
     assert_eq!(consumption[0].run_id, Some(ctx.run_id));
     assert!(consumption[0].image_generation.is_some());
-    assert_telemetry_action(
-        &telemetry,
-        "runner_fresh_sandbox_retry_without_home_image",
-        false,
-        Some("cleanup_uncertain"),
-    );
+    assert_eq!(consumption[0].reason.as_deref(), Some("cleanup_uncertain"));
 }
 
 #[tokio::test]
@@ -1153,7 +1169,6 @@ async fn execute_inner_does_not_retry_home_cache_hit_after_proxy_register_failur
         false,
         Some("sandbox_proxy_register_failed"),
     );
-    assert_no_telemetry_action(&telemetry, "runner_fresh_sandbox_retry_without_home_image");
 }
 
 #[tokio::test]

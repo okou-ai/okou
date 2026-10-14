@@ -783,6 +783,8 @@ mod tests {
     use runner_lifecycle::active_runs::ActiveRuns;
     use runner_provider::RunCancellationRegistry;
     use runner_types::ids::RunId;
+    use tracing_subscriber::prelude::*;
+    use tracing_test_support::CapturedEvents;
 
     fn test_http_client() -> HttpClient {
         HttpClient::new(HttpClientConfig {
@@ -1249,14 +1251,12 @@ mod tests {
             runner_host::test_fixtures::home_observation::RecordedHomeObservations::default();
         let mut outcome = executor_phase_outcome(run_id, "direct-handoff", None);
         outcome.telemetry = outcome.telemetry.with_home_observations(recorded.handle());
+        let local = CapturedEvents::default();
+        let guard =
+            tracing::subscriber::set_default(tracing_subscriber::registry().with(local.clone()));
         let finalized = finalization.finalize(outcome).await;
+        drop(guard);
 
-        assert_telemetry_action(&finalized.telemetry, "runner_host_exact_sandbox_handoff");
-        assert_telemetry_outcome(
-            &finalized.telemetry,
-            "runner_host_exact_sandbox_handoff",
-            Some("after_full_park"),
-        );
         assert_no_telemetry_action(&finalized.telemetry, "runner_host_idle_publication");
         assert_eq!(
             cleanup_state.disposition(),
@@ -1277,7 +1277,20 @@ mod tests {
         assert_eq!(facts[0].run_id, Some(run_id));
         assert_eq!(facts[0].reuse_key.as_deref(), Some(reuse_key));
         assert_eq!(facts[0].reason.as_deref(), Some("exact_handoff"));
+        assert_eq!(facts[0].handoff_path.as_deref(), Some("after_full_park"));
         assert!(facts[0].image_generation.is_none());
+        let local_facts: Vec<_> = local
+            .entries()
+            .into_iter()
+            .filter(|event| {
+                event.fields.get("event_type").map(String::as_str)
+                    == Some("runner_home_preservation")
+            })
+            .collect();
+        assert_eq!(local_facts.len(), 1);
+        assert_eq!(local_facts[0].fields["run_id"], run_id.to_string());
+        assert_eq!(local_facts[0].fields["outcome"], "retained");
+        assert_eq!(local_facts[0].fields["handoff_path"], "after_full_park");
         let candidate = handoff
             .receive()
             .await

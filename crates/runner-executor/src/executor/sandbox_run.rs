@@ -134,8 +134,6 @@ const RUNNER_FRESH_SANDBOX_START_GUEST_DNS_READINESS: &str =
     "runner_fresh_sandbox_start_guest_dns_readiness";
 const RUNNER_FRESH_SANDBOX_START_RUNTIME_FINALIZE: &str =
     "runner_fresh_sandbox_start_runtime_finalize";
-const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE: &str =
-    "runner_fresh_sandbox_retry_without_home_image";
 const RUNNER_FRESH_SANDBOX_DNS_READINESS_RETRY: &str = "runner_fresh_sandbox_dns_readiness_retry";
 const RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_CODEX_PREFETCH: &str =
     "runner_fresh_sandbox_retry_without_codex_prefetch";
@@ -634,7 +632,14 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
             image.observe_consumption(
                 Some(context.run_id),
                 runner_host::home_observation::HomeObservationOutcome::Failed,
-                "sandbox_prepare_failed",
+                if !used_retry
+                    && !failure.cleanup_completed
+                    && failure.retry == SandboxPrepareRetry::WithoutHomeImage
+                {
+                    SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN
+                } else {
+                    "sandbox_prepare_failed"
+                },
             );
         }
         if failure.invalidate_consumed_home_cache && cache_hit {
@@ -682,12 +687,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                     "guest DNS readiness replacement suppressed after uncertain cleanup"
                 );
             } else if retry_without_home_image {
-                telemetry.record(
-                    RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
-                    Duration::ZERO,
-                    false,
-                    Some(SANDBOX_PREPARE_RETRY_CLEANUP_UNCERTAIN),
-                );
                 warn!(
                     run_id = %context.run_id,
                     sandbox_id = %sandbox_id,
@@ -796,12 +795,6 @@ pub(super) async fn execute_new_sandbox_with_prepared_notifier(
                 sandbox_id = %sandbox_id,
                 error = %failure.error,
                 "home image cache hit failed during sandbox preparation; retrying with fresh home image"
-            );
-            telemetry.record(
-                RUNNER_FRESH_SANDBOX_RETRY_WITHOUT_HOME_IMAGE,
-                Duration::ZERO,
-                true,
-                None,
             );
             home_image = None;
             match prepare_storage(context, None, config, &controls.cancel, telemetry).await {

@@ -9,7 +9,9 @@ use tokio::fs;
 use tracing::{info, warn};
 
 use crate::error::{LifecycleError, LifecycleResult};
-use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
+use runner_host::home_observation::{
+    HomeObservation, HomeObservationKind, HomeObservationLocalDetails, HomeObservationOutcome,
+};
 use runner_types::types::MAX_HELD_HOME_STATES;
 
 use super::HomeImageCache;
@@ -99,6 +101,21 @@ pub(super) fn gc_budget_satisfied(
                 >= budget.min_free_bytes)
 }
 
+fn removal_observation(
+    key: &str,
+    generation: Option<&str>,
+    allocated: u64,
+    outcome: HomeObservationOutcome,
+    reason: &str,
+) -> HomeObservation {
+    let mut observation = HomeObservation::new(HomeObservationKind::Removal, outcome);
+    observation.cache_key = Some(key.to_owned());
+    observation.image_generation = generation.map(str::to_owned);
+    observation.allocated_bytes = Some(allocated);
+    observation.reason = Some(reason.to_owned());
+    observation
+}
+
 impl HomeImageCache {
     fn observe_removal(
         &self,
@@ -108,12 +125,9 @@ impl HomeImageCache {
         outcome: HomeObservationOutcome,
         reason: &str,
     ) {
-        let mut observation = HomeObservation::new(HomeObservationKind::Removal, outcome);
-        observation.cache_key = Some(key.to_owned());
-        observation.image_generation = generation.map(str::to_owned);
-        observation.allocated_bytes = Some(allocated);
-        observation.reason = Some(reason.to_owned());
-        self.observations.observe(observation);
+        self.observations.observe(removal_observation(
+            key, generation, allocated, outcome, reason,
+        ));
     }
 
     pub(super) async fn total_cache_allocated_bytes(&self) -> LifecycleResult<u64> {
@@ -294,11 +308,6 @@ impl HomeImageCache {
                 drop(lock);
                 continue;
             } else {
-                info!(
-                    cache_key = candidate.cache_key,
-                    allocated_bytes = refreshed.allocated_bytes,
-                    "deleted home image cache entry"
-                );
                 self.observe_removal(
                     &refreshed.cache_key,
                     Some(&refreshed.image_generation),
@@ -463,29 +472,25 @@ impl HomeImageCache {
 
         match fs::remove_dir_all(entry.paths.entry_dir()).await {
             Ok(()) => {
-                self.observe_removal(
-                    &entry.cache_key,
-                    image_generation,
-                    allocated,
-                    HomeObservationOutcome::Deleted,
-                    match &reason {
-                        GcWholeEntryReason::Stale => "stale_entry",
-                        GcWholeEntryReason::Unusable(_) => "unusable_entry",
+                self.observations.observe_with_local_details(
+                    removal_observation(
+                        &entry.cache_key,
+                        image_generation,
+                        allocated,
+                        HomeObservationOutcome::Deleted,
+                        match &reason {
+                            GcWholeEntryReason::Stale => "stale_entry",
+                            GcWholeEntryReason::Unusable(_) => "unusable_entry",
+                        },
+                    ),
+                    HomeObservationLocalDetails {
+                        detail: match &reason {
+                            GcWholeEntryReason::Stale => None,
+                            GcWholeEntryReason::Unusable(reason) => Some(reason),
+                        },
+                        path: None,
                     },
                 );
-                match &reason {
-                    GcWholeEntryReason::Stale => info!(
-                        cache_key = entry.cache_key,
-                        allocated_bytes = allocated,
-                        "deleted stale home image cache entry"
-                    ),
-                    GcWholeEntryReason::Unusable(reason) => info!(
-                        cache_key = entry.cache_key,
-                        reason,
-                        allocated_bytes = allocated,
-                        "deleted unusable home image cache entry"
-                    ),
-                }
                 return Ok(GcEntryInventory {
                     pre_cleanup_freed_bytes: allocated,
                     candidate: None,
@@ -636,16 +641,21 @@ impl HomeImageCache {
             } else {
                 match remove_home_cache_path_if_exists(&path).await {
                     Ok(true) => {
-                        info!(cache_key = entry.cache_key, path = %path.display(), allocated_bytes = allocated, "deleted temporary home image cache path");
-                        self.observe_removal(
-                            &entry.cache_key,
-                            super::entry::image_generation(file_name),
-                            allocated,
-                            HomeObservationOutcome::Deleted,
-                            if orphan {
-                                "orphan_generation"
-                            } else {
-                                "temporary_path"
+                        self.observations.observe_with_local_details(
+                            removal_observation(
+                                &entry.cache_key,
+                                super::entry::image_generation(file_name),
+                                allocated,
+                                HomeObservationOutcome::Deleted,
+                                if orphan {
+                                    "orphan_generation"
+                                } else {
+                                    "temporary_path"
+                                },
+                            ),
+                            HomeObservationLocalDetails {
+                                detail: None,
+                                path: Some(&path),
                             },
                         );
                     }

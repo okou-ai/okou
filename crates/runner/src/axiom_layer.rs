@@ -287,6 +287,7 @@ impl HomeObservationSink for AxiomHomeObservationSink {
             &mut observation.profile_name,
             &mut observation.image_generation,
             &mut observation.reason,
+            &mut observation.handoff_path,
         ]
         .into_iter()
         .flatten()

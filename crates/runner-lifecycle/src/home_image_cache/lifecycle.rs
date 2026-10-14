@@ -767,11 +767,6 @@ impl HomeImageCache {
                             HomeObservationOutcome::Deleted,
                             "invalid_metadata",
                         );
-                        info!(
-                            run_id = %common.run_id,
-                            cache_key,
-                            "removed invalid home image cache entry before fresh checkout"
-                        );
                         return home_drive(
                             HomeCacheCheckoutResult::Miss,
                             None,
@@ -1181,12 +1176,6 @@ impl HomeImageCache {
                         cache_key,
                         HomeObservationOutcome::Deleted,
                         reason,
-                    );
-                    info!(
-                        run_id = %run_id,
-                        cache_key,
-                        reason,
-                        "home image cache entry invalidated"
                     );
                 }
                 Ok(removed)

@@ -110,25 +110,26 @@ impl<'a> FinalizationTelemetry<'a> {
         }
     }
 
-    fn record_handoff(
-        &mut self,
-        success: bool,
-        error: Option<&'static str>,
-        outcome: &'static str,
-    ) {
+    fn record_handoff_delivered(&mut self, handoff_path: &'static str) {
         if let Some(telemetry) = self.telemetry.as_deref_mut() {
+            let mut observation = self.home_identity.clone();
+            observation.reason = Some("exact_handoff".into());
+            observation.handoff_path = Some(handoff_path.into());
+            telemetry.observe_home(observation);
+        }
+    }
+
+    fn record_handoff_failed(&mut self, error: &'static str, outcome: &'static str) {
+        if let Some(telemetry) = self.telemetry.as_deref_mut() {
+            // A refused/cancelled attempt can still fall back to idle or image
+            // preservation. Keep its diagnostic separate from retained-home facts.
             telemetry.record_with_outcome(
                 "runner_host_exact_sandbox_handoff",
                 Duration::ZERO,
-                success,
-                error,
+                false,
+                Some(error),
                 Some(outcome),
             );
-            if success {
-                let mut observation = self.home_identity.clone();
-                observation.reason = Some("exact_handoff".into());
-                telemetry.observe_home(observation);
-            }
         }
     }
 }
@@ -943,7 +944,7 @@ async fn finalize_sandbox_for_completion_inner(
                 if cancel.is_hard_cancelled() {
                     drop(transfer_guard);
                     telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
-                    telemetry.record_handoff(false, Some("cancelled"), "cancelled");
+                    telemetry.record_handoff_failed("cancelled", "cancelled");
                     let (payload, budget_lease) = candidate.into_active_destroy_parts();
                     let destroy_result = destroy_active_owned_idle_payload(
                         payload,
@@ -980,14 +981,7 @@ async fn finalize_sandbox_for_completion_inner(
                             }
                             None => "after_full_park",
                         };
-                        telemetry.record_handoff(true, None, handoff_path);
-                        info!(
-                            run_id = %run_id,
-                            reuse_key_fingerprint = %reuse_key_fingerprint,
-                            reuse_key_kind = reuse_kind,
-                            handoff_path,
-                            "sandbox delivered directly to claimed exact successor"
-                        );
+                        telemetry.record_handoff_delivered(handoff_path);
                         return FinalizationReady::new(BudgetOwnership::handoff_owned());
                     }
                     ExactHandoffAttempt::ContinueIdle(candidate) => {
@@ -1018,7 +1012,7 @@ async fn finalize_sandbox_for_completion_inner(
                     } else {
                         "request_unavailable_destroyed"
                     };
-                    telemetry.record_handoff(false, Some(error), handoff_outcome);
+                    telemetry.record_handoff_failed(error, handoff_outcome);
                     warn!(
                         run_id = %run_id,
                         reuse_key_fingerprint = %reuse_key_fingerprint,

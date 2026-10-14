@@ -22,12 +22,13 @@ use httpmock::MockServer;
 use httpmock::{HttpMockRequest, HttpMockResponse, Mock};
 use runner_host::home_observation::{
     HomeObservation, HomeObservationHandle, HomeObservationKind as HomeKind,
-    HomeObservationOutcome as HomeOutcome,
+    HomeObservationLocalDetails, HomeObservationOutcome as HomeOutcome,
 };
 use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+use tracing_test_support::CapturedEvents;
 
 #[tokio::test]
 async fn typed_home_success_uses_existing_dispatcher_without_forwarding_generic_info() {
@@ -41,7 +42,15 @@ async fn typed_home_success_uses_existing_dispatcher_without_forwarding_generic_
     )
     .unwrap();
     let observations = layer.home_observations();
-    let subscriber = tracing_subscriber::registry().with(with_ingest_filter(layer));
+    let local_log = tempfile::NamedTempFile::new().unwrap();
+    let writer = local_log.reopen().unwrap();
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(false)
+        .with_writer(move || writer.try_clone().unwrap())
+        .with_filter(crate::RUNNER_FMT_MAX_LEVEL);
+    let subscriber = tracing_subscriber::registry()
+        .with(fmt_layer)
+        .with(with_ingest_filter(layer));
     tracing::subscriber::with_default(subscriber, || {
         tracing::info!("ordinary info remains local");
         tracing::warn!("ordinary warning is retained");
@@ -50,11 +59,21 @@ async fn typed_home_success_uses_existing_dispatcher_without_forwarding_generic_
         observation.image_generation = Some(uuid::Uuid::nil().to_string());
         observation.reuse_key = Some("thread:tracked".into());
         observation.allocated_bytes = Some(4096);
-        observations.observe(observation);
+        observations.observe_with_local_details(
+            observation,
+            HomeObservationLocalDetails {
+                detail: Some("local-only diagnostic"),
+                path: Some(std::path::Path::new("local-only/generation.img")),
+            },
+        );
+        let mut handoff = HomeObservation::new(HomeKind::Preservation, HomeOutcome::Retained);
+        handoff.reason = Some("exact_handoff".into());
+        handoff.handoff_path = Some("during_deflation".into());
+        observations.observe(handoff);
     });
     guard.shutdown().await;
     let events = captured.events();
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 3);
     assert!(!has_event_with_message(
         &events,
         "ordinary info remains local"
@@ -76,10 +95,34 @@ async fn typed_home_success_uses_existing_dispatcher_without_forwarding_generic_
     assert_eq!(fact["run_id"], uuid::Uuid::nil().to_string());
     assert!(fact.get("reason").is_none());
     assert!(fact.get("_time").is_some());
+    let handoff = events
+        .iter()
+        .find(|event| event["event_type"] == "runner_home_preservation")
+        .unwrap();
+    assert_eq!(handoff["outcome"], "retained");
+    assert_eq!(handoff["handoff_path"], "during_deflation");
+    let remote = serde_json::to_string(&events).unwrap();
+    for forbidden in ["local-only", "local_detail", "local_path"] {
+        assert!(!remote.contains(forbidden), "{forbidden} reached Axiom");
+    }
+    let local = std::fs::read_to_string(local_log.path()).unwrap();
+    let resource_lines: Vec<_> = local
+        .lines()
+        .filter(|line| line.contains("home resource observation"))
+        .collect();
+    assert_eq!(resource_lines.len(), 2, "{local}");
+    assert!(resource_lines[0].contains("event_type=runner_home_image_publication"));
+    assert!(resource_lines[0].contains("outcome=published"));
+    assert!(resource_lines[0].contains("local-only diagnostic"));
+    assert!(resource_lines[0].contains("local-only/generation.img"));
+    assert!(resource_lines[1].contains("handoff_path=\"during_deflation\""));
 }
 
 #[test]
 fn typed_home_sink_is_nonblocking_when_disabled_full_or_closed() {
+    let local = CapturedEvents::default();
+    let _guard =
+        tracing::subscriber::set_default(tracing_subscriber::registry().with(local.clone()));
     HomeObservationHandle::default().observe(HomeObservation::new(
         HomeKind::Publication,
         HomeOutcome::Published,
@@ -106,6 +149,24 @@ fn typed_home_sink_is_nonblocking_when_disabled_full_or_closed() {
     ));
     assert_eq!(dropped.load(Ordering::Relaxed), 2);
     assert!(rx.try_recv().is_err());
+    let facts: Vec<_> = local
+        .entries()
+        .into_iter()
+        .filter(|event| event.fields.contains_key("event_type"))
+        .collect();
+    assert_eq!(
+        facts.len(),
+        3,
+        "local resource evidence must survive all three states"
+    );
+    assert_eq!(facts[0].fields["outcome"], "published");
+    assert_eq!(facts[1].fields["outcome"], "published");
+    assert_eq!(facts[2].fields["outcome"], "deleted");
+    assert!(
+        facts
+            .iter()
+            .all(|event| !event.fields.contains_key("run_id"))
+    );
 }
 
 #[tokio::test]
@@ -119,12 +180,17 @@ async fn typed_home_sink_does_not_retry_failed_ingest_or_change_the_observation(
         })
         .await;
     let (layer, guard) = init_with_base_url(&server.base_url(), "synthetic-token", "test").unwrap();
-    layer.home_observations().observe(HomeObservation::new(
-        HomeKind::Removal,
-        HomeOutcome::Deleted,
-    ));
+    let local = CapturedEvents::default();
+    tracing::subscriber::with_default(tracing_subscriber::registry().with(local.clone()), || {
+        layer.home_observations().observe(HomeObservation::new(
+            HomeKind::Removal,
+            HomeOutcome::Deleted,
+        ));
+    });
     guard.shutdown().await;
     mock.assert_calls_async(1).await;
+    assert_eq!(local.entries().len(), 1);
+    assert_eq!(local.entries()[0].fields["outcome"], "deleted");
 }
 
 #[tokio::test]
