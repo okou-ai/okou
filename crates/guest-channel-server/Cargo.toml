@@ -16,7 +16,7 @@ tokio-util = { workspace = true, features = ["rt"] }
 uuid = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread"] }
 base64 = { workspace = true, features = ["std"] }
 
 [lints]

@@ -744,6 +744,7 @@ fn event_message(
             Ok(Err(_)) => Error::Unavailable,
             Err(_) => Error::TimedOut,
         };
+        drop(_guard);
         peer.event_error(category, event, error);
     });
 }

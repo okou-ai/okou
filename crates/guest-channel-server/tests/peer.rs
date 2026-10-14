@@ -443,6 +443,93 @@ mod tests {
         f.close().await;
     }
 
+    struct ObservedFailure {
+        observations: tokio::sync::mpsc::UnboundedSender<EventError>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+    }
+    impl Service for ObservedFailure {
+        fn categories(&self) -> Categories {
+            Diagnostics.categories()
+        }
+        fn request(
+            &self,
+            operation: Operation,
+            params: Params,
+            peer: Peer,
+        ) -> ServiceFuture<Value> {
+            Diagnostics.request(operation, params, peer)
+        }
+        fn notice(&self, _notice: Notice, peer: Peer) -> ServiceFuture<()> {
+            Box::pin(async move {
+                peer.echo(guest_channel_server::Echo {
+                    payload: String::new(),
+                })
+                .await?;
+                Err(Error::Unavailable)
+            })
+        }
+        fn event_error(&self, error: EventError) {
+            self.observations.send(error).unwrap();
+            // Keep the external observation open while another runtime worker
+            // handles a new request. This forces the capacity-release ordering.
+            self.release.lock().unwrap().recv().unwrap();
+        }
+    }
+    struct ObserverRelease(std::sync::mpsc::Sender<()>);
+    impl Drop for ObserverRelease {
+        fn drop(&mut self) {
+            // Release the controlled observer even if a protocol assertion fails.
+            let _ = self.0.send(());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failed_event_releases_capacity_before_error_observation() {
+        let (observations, mut observed) = tokio::sync::mpsc::unbounded_channel();
+        let (release, receiver) = std::sync::mpsc::channel();
+        let release = ObserverRelease(release);
+        let mut f = Fixture::new(Arc::new(ObservedFailure {
+            observations,
+            release: Mutex::new(receiver),
+        }))
+        .await;
+        for n in 2..10 {
+            f.send(notice(n, "hold")).await;
+        }
+        let mut reverse = Vec::new();
+        for _ in 0..8 {
+            let message = f.recv().await;
+            assert_eq!(message["type"], "request");
+            reverse.push(message);
+        }
+        let completed = &reverse[0];
+        f.reply(
+            100,
+            completed["id"].as_str().unwrap(),
+            completed["params"].clone(),
+        )
+        .await;
+        let error = timeout(WAIT, observed.recv()).await.unwrap().unwrap();
+        f.send(request(11, "echo", "")).await;
+        let response = f.recv().await;
+        drop(release);
+        assert_eq!(
+            error,
+            EventError {
+                category: "diagnostics".into(),
+                event: "notice".into(),
+                error: Error::Unavailable
+            }
+        );
+        assert_eq!(response["requestId"], id(11));
+        assert!(
+            response.get("error").is_none(),
+            "failed event retained incoming capacity: {response}"
+        );
+        assert_eq!(response["result"], json!({"payload":""}));
+        f.close().await;
+    }
+
     #[tokio::test]
     async fn an_active_inbound_id_collision_closes_and_cancels_nested_work() {
         let mut f = Fixture::new(Arc::new(Diagnostics)).await;
