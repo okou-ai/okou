@@ -1171,6 +1171,116 @@ describe("POST /api/image-io/generate", () => {
     });
   });
 
+  it("reuses one completed run image slot without releasing another on callback replay", async () => {
+    mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
+    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    await fixture.run(async () => {
+      const requestUrls: string[] = [];
+      server.use(
+        http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
+          requestUrls.push(request.url);
+          return HttpResponse.json(
+            falQueueHandle(`slot-reuse-${requestUrls.length}`),
+          );
+        }),
+        http.get(FAL_GPT_MEDIA_URL, () => {
+          return new HttpResponse(IMAGE_BYTES, {
+            headers: { "Content-Type": "image/webp" },
+          });
+        }),
+      );
+      const app = createImageIoTestApp();
+      const path = "/api/image-io/generate";
+      const request = {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.token}` },
+        body: JSON.stringify({
+          prompt: "a small robot painting a sunflower",
+          size: "1024x1024",
+          quality: "auto",
+          background: "opaque",
+          outputFormat: "webp",
+        }),
+      };
+      const generationIds: string[] = [];
+      for (let submission = 0; submission < 3; submission++) {
+        const response = await fixture.request(app, path, request);
+        expect(response.status).toBe(202);
+        generationIds.push(
+          readAcceptedGenerationId(
+            await response.json(),
+            "image",
+            fixture.userId,
+          ),
+        );
+      }
+      expect(requestUrls).toHaveLength(3);
+      const limited = await fixture.request(app, path, request);
+      expect(limited.status).toBe(429);
+      await expect(limited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(3);
+      await expect(orgCredits(fixture)).resolves.toBe(fixture.initialCredits);
+
+      const [generationId] = generationIds;
+      if (!generationId) {
+        throw new Error("Expected the first accepted generation");
+      }
+      const firstRequestUrl = requestUrls[0] ?? null;
+      const completionPayload = {
+        images: [
+          {
+            url: FAL_GPT_MEDIA_URL,
+            width: 1024,
+            height: 1024,
+            content_type: "image/webp",
+          },
+        ],
+        prompt: "A small robot paints a sunflower.",
+      };
+      await postFalWebhook(app, firstRequestUrl, completionPayload);
+      await flushWaitUntilForTest();
+      const completed = await fixture.request(
+        app,
+        `/api/built-in-generations/${generationId}`,
+        { headers: request.headers },
+      );
+      expect(completed.status).toBe(200);
+      const statusBody: unknown = await completed.json();
+      expect(statusBody).toMatchObject({ generationId, status: "completed" });
+      expect(readGenerationResult(statusBody)).toMatchObject({
+        creditsCharged: 50,
+      });
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 50,
+      );
+
+      const replacement = await fixture.request(app, path, request);
+      expect(replacement.status).toBe(202);
+      expect(
+        readAcceptedGenerationId(
+          await replacement.json(),
+          "image",
+          fixture.userId,
+        ),
+      ).not.toBe(generationId);
+      expect(requestUrls).toHaveLength(4);
+      await postFalWebhook(app, firstRequestUrl, completionPayload);
+      await flushWaitUntilForTest();
+
+      const replayLimited = await fixture.request(app, path, request);
+      expect(replayLimited.status).toBe(429);
+      await expect(replayLimited.json()).resolves.toMatchObject({
+        error: { code: "BUILT_IN_RUN_CONCURRENCY_LIMIT" },
+      });
+      expect(requestUrls).toHaveLength(4);
+      await expect(orgCredits(fixture)).resolves.toBe(
+        fixture.initialCredits - 50,
+      );
+    });
+  });
+
   it("generates private image files for Okou run-scoped agent tokens", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);
