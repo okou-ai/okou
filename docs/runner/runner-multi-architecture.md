@@ -417,7 +417,10 @@ seven-day lifecycle policy for the `runner-binaries/` prefix.
 Before contacting metal, the consumer validates the source SHA, repository,
 workflow run, producer attempt, test identity, target, and binary hash. A
 consumer-only rerun uses the earlier successful producer's attempt, even when its
-own attempt has advanced. Missing, expired, or invalid artifacts fail the job;
+own attempt has advanced. Matrix producers publish distinct architecture-named
+attempt outputs, and each consumer selects its matching output. A partial producer
+rerun can leave the two architectures on different attempts; a shared matrix
+output would lose that provenance. Missing, expired, or invalid artifacts fail the job;
 rerun the producer to publish a fresh artifact after expiration. There is no
 fallback to another run or target.
 

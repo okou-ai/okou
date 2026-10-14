@@ -1448,7 +1448,8 @@ jobs:
       run:
         shell: bash
     outputs:
-      producer-attempt: ${{ steps.build.outputs.producer-attempt }}
+      producer-attempt-arm64: ${{ steps.producer.outputs.producer-attempt-arm64 }}
+      producer-attempt-x86_64: ${{ steps.producer.outputs.producer-attempt-x86_64 }}
     env:
       KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       TARGET_TRIPLE: ${{ matrix.target }}
@@ -1496,6 +1497,14 @@ jobs:
           R2_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
         run: bash .github/scripts/runner/runner-native-test-artifact.sh publish
 
+      # Matrix outputs must have distinct names: a partial rerun can leave the
+      # two architecture producers on different attempts.
+      - name: Record architecture producer attempt
+        id: producer
+        env:
+          NATIVE_ARCH: ${{ matrix.id }}
+        run: echo "producer-attempt-${NATIVE_ARCH}=${PRODUCER_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
       - name: Save pinned Kerberos dependencies
         if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -1533,7 +1542,7 @@ jobs:
       TARGET_TRIPLE: ${{ matrix.target }}
       TEST_NAME: guest_rpc
       ARTIFACT_DIR: native-test-artifact
-      PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs.producer-attempt }}
+      PRODUCER_ATTEMPT: ${{ needs.guest-rpc-firecracker-build.outputs[format('producer-attempt-{0}', matrix.id)] }}
       METAL_USER: ${{ vars.AWS_METAL_RUNNER_USER }}
       JOB_REF: ${{ needs.detect.outputs.metal-job-ref }}
     steps:
