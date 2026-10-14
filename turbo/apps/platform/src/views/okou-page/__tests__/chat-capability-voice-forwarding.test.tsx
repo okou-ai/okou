@@ -96,7 +96,7 @@ async function uploadedAudio(request: Request) {
   return await file.arrayBuffer();
 }
 
-test("keeps forward suggestions above the composer with selectable previews", async () => {
+async function prepareForwardSuggestions() {
   installVoiceBoundaries();
   // A desktop window also matches the start page's centred breakpoint, which
   // the forward dialog's composer must not follow.
@@ -123,11 +123,17 @@ test("keeps forward suggestions above the composer with selectable previews", as
   expect(first).toHaveTextContent("Website");
   expect(menu).toHaveAttribute("data-side", "top");
   const presentation = queryButton("Presentation", menu);
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   expect(presentation).not.toHaveAttribute("data-active");
   expect(
     within(menu).queryAllByRole("region", { name: "Presentation" }),
   ).toHaveLength(0);
+  return { originalComposer, dialog, editor, menu, presentation, user };
+}
+
+test("Keep forwarding suggestions isolated during preview navigation", async () => {
+  const { originalComposer, dialog, editor, menu, presentation, user } =
+    await prepareForwardSuggestions();
   await user.keyboard("{ArrowUp}");
   expect(presentation).toHaveAttribute("data-active", "true");
   expect(
@@ -139,6 +145,15 @@ test("keeps forward suggestions above the composer with selectable previews", as
     "data-active",
     "true",
   );
+  expect(dialog).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveFocus();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
+
+test("Keep forwarding suggestions isolated during IME composition", async () => {
+  const { originalComposer, dialog, editor, menu } =
+    await prepareForwardSuggestions();
   fireEvent.compositionStart(editor, { data: "中文" });
   fireEvent.keyDown(editor, {
     key: "Enter",
@@ -148,6 +163,15 @@ test("keeps forward suggestions above the composer with selectable previews", as
   expect(menu).toBeInTheDocument();
   expect(editor).toHaveTextContent("Forward draft /");
   fireEvent.compositionEnd(editor, { data: "中文" });
+  expect(dialog).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveFocus();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
+
+test("Keep forwarding suggestions isolated during dismissal", async () => {
+  const { originalComposer, dialog, editor, user } =
+    await prepareForwardSuggestions();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();

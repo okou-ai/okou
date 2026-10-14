@@ -3,7 +3,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getConnectorAction,
@@ -184,29 +184,52 @@ async function enterRename(
   return input;
 }
 
-test.each(["keyboard", "pointer"] as const)(
-  "Type immediately after %s rename, navigate the form, and cancel back to the same account",
-  async (activation) => {
-    const fixture = mockRenameAccounts();
-    const user = userEvent.setup({ delay: null });
-    await setupPage({ context, path: "/connectors?keywords=github" });
-    const manager = await openManager(user);
-    const input = await enterRename(user, manager, activation);
+async function openRenameForm(activation: "keyboard" | "pointer") {
+  const fixture = mockRenameAccounts();
+  const user = userEvent.setup({ delay: null });
+  await setupPage({ context, path: "/connectors?keywords=github" });
+  const manager = await openManager(user);
+  const input = await enterRename(user, manager, activation);
+  await user.keyboard("{End}x");
+  expect(input).toHaveValue("Work 1x");
+  expect(input).toHaveFocus();
+  await user.tab();
+  expect(getConnectorAction("button", "Cancel", manager)).toHaveFocus();
+  return { user, manager, input, fixture };
+}
 
-    await user.keyboard("{End}x");
-    expect(input).toHaveValue("Work 1x");
-    expect(input).toHaveFocus();
-    await user.tab();
-    expect(getConnectorAction("button", "Cancel", manager)).toHaveFocus();
+test.each(["keyboard", "pointer"] as const)(
+  "Keep input navigation focus after %s account rename",
+  async (activation) => {
+    const { user, manager, input } = await openRenameForm(activation);
     await user.tab({ shift: true });
     expect(input).toHaveFocus();
     await user.tab({ shift: true });
     expect(manager.contains(document.activeElement)).toBeTruthy();
     await user.tab();
     expect(input).toHaveFocus();
-    await user.tab();
-    await user.keyboard("{Enter}");
+    return;
+  },
+);
 
+test.each(["keyboard", "pointer"] as const)(
+  "Keep cancel focus after %s account rename",
+  async (activation) => {
+    const { fixture, user, manager } = await openRenameForm(activation);
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(accountActions(manager, "Work 1")).toHaveFocus();
+    });
+    expect(fixture.submittedRename()).toBeNull();
+    expect(manager).toBeInTheDocument();
+  },
+);
+
+test.each(["keyboard", "pointer"] as const)(
+  "Keep account menu focus after %s account rename",
+  async (activation) => {
+    const { fixture, user, manager } = await openRenameForm(activation);
+    await user.keyboard("{Enter}");
     await waitFor(() => {
       expect(accountActions(manager, "Work 1")).toHaveFocus();
     });
@@ -219,6 +242,26 @@ test.each(["keyboard", "pointer"] as const)(
       expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     });
     expect(manager).toBeInTheDocument();
+  },
+);
+
+test.each(["keyboard", "pointer"] as const)(
+  "Keep dismiss manager focus after %s account rename",
+  async (activation) => {
+    const { fixture, user, manager } = await openRenameForm(activation);
+    await user.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(accountActions(manager, "Work 1")).toHaveFocus();
+    });
+    expect(fixture.submittedRename()).toBeNull();
+    expect(manager).toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(accountActions(manager, "Work 1")).toHaveFocus();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
     await user.tab();
     await user.keyboard("{Escape}");
     await waitFor(() => {
@@ -507,7 +550,7 @@ test("Finish a saved rename after an intermediate account search is superseded",
     await fixture.refreshReturned;
   });
   expect(getConnectorAction("button", "Save", manager)).toBeDisabled();
-  await user.keyboard(" matching account");
+  await fill(search, "No matching account");
   expect(search).toHaveValue("No matching account");
 
   await within(manager).findByText("No accounts found");
@@ -517,7 +560,7 @@ test("Finish a saved rename after an intermediate account search is superseded",
     ).not.toBeInTheDocument();
     expect(search).toHaveFocus();
   });
-  await user.keyboard("{Control>}a{/Control}Research");
+  await fill(search, "Research");
   await within(manager).findByRole("group", { name: "Research" });
   expect(search).toHaveFocus();
   await user.keyboard("{End}x");

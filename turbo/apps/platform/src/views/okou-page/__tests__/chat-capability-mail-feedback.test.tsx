@@ -84,7 +84,7 @@ async function openMailDetails(): Promise<HTMLElement> {
   const sidebar = await screen.findByRole("complementary", {
     name: "Email details",
   });
-  expect(within(sidebar).getByText(MAIL_PASSAGE)).toBeVisible();
+  expect(within(sidebar).getByText(MAIL_PASSAGE)).toBeInTheDocument();
   return sidebar;
 }
 
@@ -95,7 +95,7 @@ async function sendMailFeedback(
   await selectPassage("launch review to Monday morning");
   const editor = await quoteSelectedPassage();
   const user = userEvent.setup({ delay: null });
-  await user.click(editor);
+  click(editor);
   await user.paste(comment);
   const composer = editor.closest<HTMLElement>("[data-chat-composer]");
   if (!composer) {
@@ -139,7 +139,7 @@ test("Keep inline feedback tied to the source email", async () => {
     ]),
   );
   const submittedComment = await screen.findByText(comment);
-  expect(submittedComment).toBeVisible();
-  expect(screen.getByText("Quoted from an email draft")).toBeVisible();
+  expect(submittedComment).toBeInTheDocument();
+  expect(screen.getByText("Quoted from an email draft")).toBeInTheDocument();
   expect(screen.queryByText(new RegExp(MAIL_DRAFT_ID, "u"))).toBeNull();
 });

@@ -41,10 +41,10 @@ async function setupComposer() {
 async function selectCreation() {
   const user = userEvent.setup({ delay: null });
   const editor = await screen.findByRole("textbox", { name: "Message" });
-  await user.click(editor);
+  click(editor);
   await user.paste("/");
   const menu = await screen.findByTestId("slash-workflow-menu");
-  await userEvent.setup({ delay: null }).click(button("Illustration", menu));
+  click(button("Illustration", menu));
   const dialog = await screen.findByRole("dialog");
   click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {

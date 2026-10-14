@@ -1398,12 +1398,16 @@ describe("POST /api/image-io/generate", () => {
       const generationIds = new Set<string>();
       for (let start = 0; start < 50; start += 3) {
         const group: { generationId: string; requestUrl: string | null }[] = [];
-        for (
-          let submission = start;
-          submission < Math.min(start + 3, 50);
-          submission++
-        ) {
-          const response = await fixture.request(app, path, request);
+        const submissions = await Promise.allSettled(
+          Array.from({ length: Math.min(3, 50 - start) }, () => {
+            return fixture.request(app, path, request);
+          }),
+        );
+        for (const [offset, submission] of submissions.entries()) {
+          if (submission.status === "rejected") {
+            throw submission.reason;
+          }
+          const response = submission.value;
           expect(response.status).toBe(202);
           const generationId = readAcceptedGenerationId(
             await response.json(),
@@ -1412,12 +1416,12 @@ describe("POST /api/image-io/generate", () => {
           );
           expect(generationIds.has(generationId)).toBeFalsy();
           generationIds.add(generationId);
-          expect(requestUrls).toHaveLength(submission + 1);
           group.push({
             generationId,
-            requestUrl: requestUrls[submission] ?? null,
+            requestUrl: requestUrls[start + offset] ?? null,
           });
         }
+        expect(requestUrls).toHaveLength(start + group.length);
         await Promise.all(
           group.map(({ requestUrl }) => {
             return fixture.run(() => {

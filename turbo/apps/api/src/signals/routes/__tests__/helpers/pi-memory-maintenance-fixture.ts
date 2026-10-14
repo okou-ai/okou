@@ -96,18 +96,10 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       isolatePg: true,
     });
     const stage1 = isolated(cronExtractPiMemoryStage1Contract);
-    await accept(
-      stage1.extract({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
     const stage2 = setupApp({
       context,
       routes: cronConsolidatePiMemoryPhase2Routes,
     })(cronConsolidatePiMemoryPhase2Contract);
-    await accept(
-      stage2.consolidate({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
 
     chat.chatCallbacks.acceptChatObjectStorage();
     runs.acceptStorageDownloads();

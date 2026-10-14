@@ -97,15 +97,15 @@ async function setupLoadedModelsSettings() {
   );
   await setupPage({
     context,
-    path: NEW_CHAT_PATH,
+    path: `${NEW_CHAT_PATH}?settings=model`,
   });
-  await screen.findByRole("textbox", { name: "Message" });
-  const menu = await openAccountMenu();
-  responses.holdPoliciesAndBilling = true;
-  const settings = await openModelsSettings(menu);
+  const settings = await screen.findByRole("dialog", { name: "Settings" });
+  await within(settings).findByRole("heading", { name: "Use more models" });
+  await within(settings).findAllByText("No accounts connected.");
   await expect(
     findEnabledButton("Connect account", settings),
   ).resolves.toBeEnabled();
+  responses.holdPoliciesAndBilling = true;
   responses.holdSubscriptions = true;
   return { settings, responses, release };
 }

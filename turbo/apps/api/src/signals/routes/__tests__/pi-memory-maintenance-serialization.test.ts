@@ -82,15 +82,33 @@ describe("Serial private Pi maintenance", () => {
     },
   );
 
-  it.each(["published", "no-diff"])(
-    "replays a %s result across finalization without losing queued updates",
-    async (outcome) => {
+  it.each(
+    ["published", "no-diff"].flatMap((outcome) => {
+      return ["active replay", "finalized replay", "expired authority"].map(
+        (phase) => {
+          return { outcome, phase };
+        },
+      );
+    }),
+  )(
+    "keeps the $outcome result consistent during $phase",
+    async ({ outcome, phase }) => {
       const run = await prepareMaintenance();
       const first = await publish(
         run,
         outcome === "published" ? "First serial memory.\n" : undefined,
       );
       expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
+      if (phase === "expired authority") {
+        const completed = await completeMaintenance(
+          run,
+          run.maintenance.claimedBaseVersionId,
+          true,
+        );
+        mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
+        await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
+        return;
+      }
       await publishOrdinaryMemory(run, "First queued owned update.\n", 1);
       const ordinary = await publishOrdinaryMemory(
         run,
@@ -98,24 +116,27 @@ describe("Serial private Pi maintenance", () => {
         1,
       );
       await expectBlocked(run);
-      const prepared = await webhooks.requestAgentStoragePrepare(
-        first,
-        run.headers,
-        [200],
-      );
-      expect(prepared.body).toMatchObject({
-        versionId: first.versionId,
-        existing: true,
-      });
-      const activeReplay = await webhooks.requestAgentStorageCommit(
-        first,
-        run.headers,
-        [200],
-      );
-      expect(activeReplay.body).toMatchObject({
-        versionId: first.versionId,
-        deduplicated: true,
-      });
+      if (phase === "active replay") {
+        const prepared = await webhooks.requestAgentStoragePrepare(
+          first,
+          run.headers,
+          [200],
+        );
+        expect(prepared.body).toMatchObject({
+          versionId: first.versionId,
+          existing: true,
+        });
+        const activeReplay = await webhooks.requestAgentStorageCommit(
+          first,
+          run.headers,
+          [200],
+        );
+        expect(activeReplay.body).toMatchObject({
+          versionId: first.versionId,
+          deduplicated: true,
+        });
+        return;
+      }
       const completed = await completeMaintenance(
         run,
         run.maintenance.claimedBaseVersionId,
@@ -149,8 +170,6 @@ describe("Serial private Pi maintenance", () => {
         (await observeMemory(run, "Later serial maintenance memory.\n")).memory
           .versionId,
       ).toBe(later.versionId);
-      mockNow(now() + 3 * 60 * 60 * 1000 + 1000);
-      await webhooks.requestAgentComplete(completed.body, run.headers, [401]);
     },
   );
 });

@@ -1278,11 +1278,11 @@ describe("connector account lifecycle routes", () => {
 
     const createdAccountIds: string[] = [];
     const connectorsApi = connectorClient();
-    // Four owned streams keep independent requests moving without unbounded
+    // Eight owned streams keep independent requests moving without unbounded
     // fan-out. Wait for every stream before fixture cleanup after a failure.
     const created = await Promise.allSettled(
-      Array.from({ length: 4 }, async (_, stream) => {
-        for (let index = stream; index < 101; index += 4) {
+      Array.from({ length: 8 }, async (_, stream) => {
+        for (let index = stream; index < 101; index += 8) {
           const label = `Bulk ${index.toString().padStart(3, "0")}`;
           const response = await accept(
             connectorsApi.connect({

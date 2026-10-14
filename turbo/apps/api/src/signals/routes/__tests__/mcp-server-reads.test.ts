@@ -390,6 +390,8 @@ describe("thin MCP Web adapters", () => {
 
   it("keeps OAuth signing-key outages distinct from invalid credentials on the Web entry", async () => {
     const f = await fixture();
+    // Keep all real Clerk retries; make only their external SDK jitter deterministic.
+    onTestFinished(context.mocks.clerkRetryJitter(0));
     server.use(
       http.get("https://api.clerk.com/v1/jwks", () => {
         return HttpResponse.json(

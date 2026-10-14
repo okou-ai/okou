@@ -100,49 +100,52 @@ function observeTemplateSubscriptions() {
   };
 }
 
-test("Uploaded templates wait for both subscriptions", async () => {
-  mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
-  mockTemplateChat();
-  const uploaded = createUploadedTemplate({
-    id: UPLOADED_TEMPLATE_ID,
-    title: "Both subscriptions are ready",
-  });
-  mockPresentationTemplateLibrary([uploaded]);
-  const gates = {
-    user: context.mocks.ably.deferSubscribeOnChannel(
-      "user:test-user-123",
-      "presentationTemplatesChanged",
-    ),
-    org: context.mocks.ably.deferSubscribeOnChannel(
-      "org:org_default",
-      "presentationTemplatesChanged",
-    ),
-  };
-  const observed = observeTemplateSubscriptions();
-  const user = userEvent.setup();
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    host: "app.okou.ai",
-    sharedWorkerTestTransport: "message-port",
-  });
-  await Promise.all([gates.user.started, gates.org.started]);
-  const picker = await openTemplatePicker(user, "Presentation");
+test.each(["user", "org"] as const)(
+  "Uploaded templates wait when the %s subscription attaches first",
+  async (scope) => {
+    mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);
+    mockTemplateChat();
+    const uploaded = createUploadedTemplate({
+      id: UPLOADED_TEMPLATE_ID,
+      title: "Both subscriptions are ready",
+    });
+    mockPresentationTemplateLibrary([uploaded]);
+    const gates = {
+      user: context.mocks.ably.deferSubscribeOnChannel(
+        "user:test-user-123",
+        "presentationTemplatesChanged",
+      ),
+      org: context.mocks.ably.deferSubscribeOnChannel(
+        "org:org_default",
+        "presentationTemplatesChanged",
+      ),
+    };
+    const observed = observeTemplateSubscriptions();
+    const user = userEvent.setup();
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      host: "app.okou.ai",
+      sharedWorkerTestTransport: "message-port",
+    });
+    await Promise.all([gates.user.started, gates.org.started]);
+    const picker = await openTemplatePicker(user, "Presentation");
 
-  gates.user.attach();
-  await observed.waitForSubscribed("user");
-  expect(
-    within(picker).queryByLabelText(`Select template ${uploaded.title}`),
-  ).not.toBeInTheDocument();
-  expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
-  expect(
-    within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
-  ).toBeEnabled();
-  gates.org.attach();
-  await expect(
-    within(picker).findByLabelText(`Select template ${uploaded.title}`),
-  ).resolves.toBeInTheDocument();
-});
+    gates[scope].attach();
+    await observed.waitForSubscribed(scope);
+    expect(
+      within(picker).queryByLabelText(`Select template ${uploaded.title}`),
+    ).not.toBeInTheDocument();
+    expect(within(picker).queryByRole("status")).not.toBeInTheDocument();
+    expect(
+      within(picker).getByLabelText(`Select template ${firstBuiltInTitle()}`),
+    ).toBeEnabled();
+    gates[scope === "user" ? "org" : "user"].attach();
+    await expect(
+      within(picker).findByLabelText(`Select template ${uploaded.title}`),
+    ).resolves.toBeInTheDocument();
+  },
+);
 
 test("A template subscription failure releases both scopes and leaves built-ins usable", async () => {
   mockNow(UPLOADED_TEMPLATE_NOW_MS, context.signal);

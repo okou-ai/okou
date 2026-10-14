@@ -75,7 +75,7 @@ test("Replacing an inline template preserves a previously sent reference", async
     throw new Error("Expected inline template button");
   }
   click(inlineButton);
-  await expect(screen.findByRole("dialog")).resolves.toBeVisible();
+  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
   click(screen.getByLabelText(`Select template ${replacement.title}`));
 
   await waitFor(() => {

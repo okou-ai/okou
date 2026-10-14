@@ -6,6 +6,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, describe, beforeEach, it } from "vitest";
 
 import {
+  click,
+  fill,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -180,29 +182,35 @@ describe("connecting a custom connector for the active agent", () => {
     await openConnectors(user);
   });
 
-  it("connects a custom connector for only the active agent", async () => {
-    let catalog = await openCustomConnectors(user);
+  async function prepareCustomConnection() {
+    const catalog = await openCustomConnectors(user);
     expect(
       within(catalog).getByText("https://api.example.test/"),
     ).toBeVisible();
-    await user.click(
-      await findFastControl("button", "Connect Acme Search", catalog),
-    );
-    let secret = await screen.findByLabelText("Secret");
+    click(await findFastControl("button", "Connect Acme Search", catalog));
+    const secret = await screen.findByLabelText("Secret");
     expect(secret).toHaveValue("");
-    await user.type(secret, "discarded-secret");
-    await user.click(await findFastControl("button", "Cancel"));
+    return { catalog, secret };
+  }
 
+  it("cancel a custom connector for only the active agent", async () => {
+    let { catalog, secret } = await prepareCustomConnection();
+    await fill(secret, "discarded-secret");
+    click(await findFastControl("button", "Cancel"));
     await ensureConnectorsOpen(user);
     catalog = await openCustomConnectors(user);
-    await user.click(
-      await findFastControl("button", "Connect Acme Search", catalog),
-    );
+    click(await findFastControl("button", "Connect Acme Search", catalog));
     secret = await screen.findByLabelText("Secret");
     expect(secret).toHaveValue("");
-    await user.type(secret, "scout-secret");
-    await user.click(await findFastControl("button", "Save"));
+    expect(fixture.customValueRequests).toStrictEqual([]);
+    expect(fixture.customAuthorizationUpdates).toStrictEqual([]);
+    return;
+  });
 
+  it("connect a custom connector for only the active agent", async () => {
+    const { secret } = await prepareCustomConnection();
+    await fill(secret, "scout-secret");
+    click(await findFastControl("button", "Save"));
     await waitFor(() => {
       expect(fixture.customValueRequests).toStrictEqual([
         {

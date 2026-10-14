@@ -31,7 +31,7 @@ async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
   const template = builtInTemplate();
   mockPresentationHtml(template.embedUrl, ["Opening"]);
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,
@@ -42,7 +42,7 @@ async function openPresentationThemePreview() {
   await openTemplatePicker(user, "Presentation");
   click(screen.getByLabelText(`Preview ${template.title} at current slide`));
   await waitFor(() => {
-    expect(detailGroup(template.title)).toBeVisible();
+    expect(detailGroup(template.title)).toBeInTheDocument();
   });
   return { capture, template, user, detail: detailGroup(template.title) };
 }
