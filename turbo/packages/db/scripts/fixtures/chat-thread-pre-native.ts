@@ -1,7 +1,7 @@
 // Outgoing Thread projection from ce63f63c8b4f8eb81b014a89eb35a43044c9b9bf.
 // Historical transition validators cannot select columns introduced later.
-import { pgTable } from "drizzle-orm/pg-core";
 import {
+  pgTable,
   uuid,
   text,
   timestamp,

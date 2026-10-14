@@ -4,7 +4,6 @@ import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reas
 import { v5 as uuidv5 } from "uuid";
 import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
 
-import type { ChatEventType } from "@okouai/api-contracts/contracts/chat-events";
 import {
   serializeChatFollowupsContent,
   type ChatRecommendedFollowup,
@@ -17,10 +16,7 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
-import {
-  chatEvents,
-  type ChatEventUserMessage,
-} from "@okouai/db/schema/chat-event";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { runOutputMaterializations } from "@okouai/db/schema/run-output-materialization";
 import { command } from "ccstate";
 import { and, asc, desc, eq, isNotNull, lte, max, not, sql } from "drizzle-orm";

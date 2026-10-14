@@ -6,9 +6,7 @@ use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use crate::session_history as history;
-use crate::session_history_identity::{
-    SessionHistoryIdentityBuildError, build_final_session_history_identity,
-};
+use crate::session_history_identity::SessionHistoryIdentityBuildError;
 use api_contracts::generated::constants::runners::{
     RESUME_SESSION_HISTORY_MAX_BYTES, SESSION_HISTORY_ENCODING_GZIP,
     SESSION_HISTORY_ENCODING_IDENTITY, SESSION_HISTORY_ENCODING_ZSTD,
@@ -16,8 +14,8 @@ use api_contracts::generated::constants::runners::{
 };
 use api_contracts::generated::types::webhooks::agent::session_history::prepare as prepare_history;
 use bytes::Bytes;
-use guest_contracts::session_history_identity::SessionHistoryRefKind;
 use guest_contracts::session_history_identity::SessionHistorySourceRef;
+use guest_contracts::session_history_identity::{SessionHistoryIdentity, SessionHistoryRefKind};
 use guest_telemetry::telemetry::{
     SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
 };
@@ -1315,24 +1313,14 @@ pub(super) fn reconcile_live_history_after_finalization(live_history: PreparedLi
 
 pub(super) fn write_final_session_history_identity(
     mode: FinalizationMode,
-    cli_agent_session_id: &str,
-    history_hash: &str,
-    history_size: u64,
-    history_source: &SessionHistorySourceRef,
-    framework: env::Framework,
+    identity: Result<SessionHistoryIdentity, SessionHistoryIdentityBuildError>,
     final_session_history_identity_file: &str,
     ref_kind: SessionHistoryRefKind,
 ) {
     if ref_kind != SessionHistoryRefKind::LocalHome && !matches!(mode, FinalizationMode::Success) {
         return;
     }
-    let mut identity = match build_final_session_history_identity(
-        framework,
-        cli_agent_session_id,
-        history_hash,
-        history_size,
-        history_source,
-    ) {
+    let mut identity = match identity {
         Ok(identity) => identity,
         Err(error) => {
             match error {

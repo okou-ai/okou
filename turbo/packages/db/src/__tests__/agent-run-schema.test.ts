@@ -27,7 +27,7 @@ describe("agentRuns circular foreign keys", () => {
     );
 
     const { schema } = await import("../index");
-    const { agentRuns, agentSessions, conversations } =
+    const { agentRuns, agentSessions } =
       await import("../schema/agent-run-session-conversation");
     const { chatThreads } = await import("../schema/chat-thread");
     const { orgMembersMetadata } =

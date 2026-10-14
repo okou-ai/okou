@@ -1110,10 +1110,7 @@ pub async fn execute_cli_with_controls_for_config_started_at(
             AgentError::Execution(format!("native continuation preparation failed: {error}"))
         })??;
         let resumed = retained.is_some();
-        runtime.resume_session_id = Cow::Owned(match retained {
-            Some(id) => id,
-            None => String::new(),
-        });
+        runtime.resume_session_id = Cow::Owned(retained.unwrap_or_default());
         if !resumed {
             if framework == env::Framework::Pi {
                 crate::native_continuation::prepare_fresh_pi_session(

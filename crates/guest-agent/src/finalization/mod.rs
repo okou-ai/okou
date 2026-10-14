@@ -7,6 +7,7 @@ use crate::env;
 use crate::error::AgentError;
 use crate::http::HttpClient;
 use crate::run_context::GuestRuntime;
+use crate::session_history_identity::build_final_session_history_identity;
 use crate::session_metadata::CapturedSessionMetadata;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use api_contracts::generated::types::webhooks::agent::complete;
@@ -100,11 +101,13 @@ impl PreparedFinalization {
         {
             session_history::write_final_session_history_identity(
                 self.mode,
-                &uploaded_history.cli_agent_session_id,
-                &uploaded_history.history_hash,
-                uploaded_history.history_size,
-                &uploaded_history.history_source,
-                self.framework,
+                build_final_session_history_identity(
+                    self.framework,
+                    &uploaded_history.cli_agent_session_id,
+                    &uploaded_history.history_hash,
+                    uploaded_history.history_size,
+                    &uploaded_history.history_source,
+                ),
                 &self.final_session_history_identity_file,
                 uploaded_history.ref_kind,
             );

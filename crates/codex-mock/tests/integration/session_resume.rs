@@ -143,6 +143,16 @@ fn concurrent_app_server_resume_writes_preserve_all_inputs() -> std::io::Result<
         prompts,
         BTreeSet::from(["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"])
     );
-    assert_eq!(events.len(), 6);
+    let messages = events
+        .iter()
+        .filter(|event| event["type"] == "response_item")
+        .filter_map(|event| {
+            event
+                .pointer("/payload/content/0/text")
+                .and_then(Value::as_str)
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(messages, prompts);
+    assert_eq!(events.len(), 11);
     Ok(())
 }

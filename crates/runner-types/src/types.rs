@@ -1665,7 +1665,8 @@ impl ExecutionContext {
 
     /// Extract the framework-native session id.
     ///
-    /// Prefers `pi_session_id`, otherwise returns the resume-session id.
+    /// Prefers native continuation identity, then `pi_session_id`, then the
+    /// captured legacy resume-session id.
     /// Pi session ids are preassigned, including on first runs without a
     /// `resume_session`, so `Some` does not imply a continued session.
     ///
@@ -1676,7 +1677,7 @@ impl ExecutionContext {
         self.native_continuation
             .as_ref()
             .and_then(|native| native.session_id.as_deref())
-            .or_else(|| self.pi_session_id.as_deref())
+            .or(self.pi_session_id.as_deref())
             .or_else(|| {
                 self.resume_session
                     .as_ref()

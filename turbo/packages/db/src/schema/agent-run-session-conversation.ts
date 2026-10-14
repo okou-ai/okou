@@ -27,7 +27,9 @@ export const agentRuns = pgTable(
     /** Retained physical storage only; runtime identity belongs to Run/Thread. */
     continuedFromSessionId: uuid("continued_from_session_id"),
     sessionId: uuid("session_id").references(
-      (): AnyPgColumn => agentSessions.id,
+      (): AnyPgColumn => {
+        return agentSessions.id;
+      },
       { onDelete: "set null" },
     ),
   },

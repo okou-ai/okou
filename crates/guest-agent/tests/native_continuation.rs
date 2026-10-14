@@ -179,6 +179,79 @@ async fn claude_resumes_only_matching_history_and_recovers_later_misses() -> Tes
 }
 
 #[tokio::test]
+async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResult {
+    common::ensure_canonical_workspace_for_test()?;
+    let mock = common::build_and_locate_mock_codex()?;
+    let server = common::RecordingServer::start(200, Duration::ZERO).await?;
+    let home = tempfile::tempdir()?;
+    let capture = home.path().join("rpc");
+    let binary = home.path().join("codex");
+    executable(
+        &binary,
+        &format!(
+            "#!/bin/sh\nset -eu\ntee {} | {} \"$@\"\n",
+            quote_shell_arg(&capture.to_string_lossy()),
+            quote_shell_arg(&mock.to_string_lossy()),
+        ),
+    )?;
+    let user_env = HashMap::from([(
+        "MOCK_CODEX_SESSION_TIMESTAMP".to_owned(),
+        "2026-10-14T00:00:00Z".to_owned(),
+    )]);
+    let first = runtime(
+        home.path(),
+        &server,
+        "codex",
+        &binary,
+        native(None, false),
+        "",
+        user_env.clone(),
+    )?;
+    execute(&first).await?;
+    let sessions = home.path().join(".codex/sessions/2026/10/14");
+    let history_path = std::fs::read_dir(sessions)?
+        .next()
+        .ok_or("native history absent")??
+        .path();
+    let text = std::fs::read_to_string(history_path)?;
+    let header: Value = serde_json::from_str(text.lines().next().ok_or("native header absent")?)?;
+    let id = header["payload"]["id"]
+        .as_str()
+        .ok_or("native identity absent")?;
+    let second = runtime(
+        home.path(),
+        &server,
+        "codex",
+        &binary,
+        native(Some(id), true),
+        "",
+        user_env,
+    )?;
+    execute(&second).await?;
+    let messages = std::fs::read_to_string(capture)?
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<Result<Vec<_>, _>>()?;
+    let resumed = messages
+        .iter()
+        .find(|message| message["method"] == "thread/resume")
+        .ok_or("second turn did not resume native history")?;
+    assert_eq!(resumed["params"]["threadId"], id);
+    assert!(
+        !resumed["params"]["developerInstructions"]
+            .as_str()
+            .ok_or("developer instructions absent")?
+            .contains(RECOVERY)
+    );
+    assert!(
+        !messages
+            .iter()
+            .any(|message| message["method"] == "thread/start")
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history() -> TestResult {
     common::ensure_canonical_workspace_for_test()?;
     let mock = common::build_and_locate_mock_codex()?;

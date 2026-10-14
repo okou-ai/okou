@@ -6253,7 +6253,7 @@ mod tests {
             .mock_async(|when, then| {
                 when.method(POST)
                     .path(claim_path.as_str())
-                    // A previous API ignores the capability header and still
+                    // A previous API strips the optional root capability and still
                     // validates the unchanged strict claim body.
                     .is_true(|request| {
                         let Ok(mut body) =
@@ -6265,7 +6265,11 @@ mod tests {
                             return false;
                         };
                         let elapsed = telemetry.remove("jobDiscoveredToClaimRequestMs");
+                        let native = body
+                            .as_object_mut()
+                            .and_then(|body| body.remove("nativeContinuationSupported"));
                         elapsed.as_ref().is_some_and(serde_json::Value::is_u64)
+                            && native == Some(serde_json::Value::Bool(true))
                             && body
                                 == serde_json::json!({
                                     "runnerIdentity": {

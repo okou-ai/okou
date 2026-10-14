@@ -48,14 +48,24 @@ function readyOperation(path: SandboxStartupPath) {
   };
 }
 
-function completionBody(runId: string) {
+function completionBody(
+  run: { readonly runId: string; readonly threadId: string },
+  cliAgentType: string | undefined,
+) {
+  if (
+    cliAgentType !== "claude-code" &&
+    cliAgentType !== "codex" &&
+    cliAgentType !== "pi"
+  ) {
+    throw new Error("Expected the claimed Framework identity");
+  }
   return {
-    runId,
+    runId: run.runId,
     exitCode: 0,
     completion: {
-      cliAgentType: "claude-code" as const,
-      cliAgentSessionId: randomUUID(),
-      cliAgentSessionHistoryDisposition: "unavailable" as const,
+      cliAgentType,
+      cliAgentSessionId: cliAgentType === "pi" ? run.threadId : randomUUID(),
+      cliAgentSessionHistoryDisposition: "native_only" as const,
     },
   };
 }
@@ -70,7 +80,7 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
         prompt: "Persist actual startup resource",
       });
       await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
-      const { sandboxHeaders } = await owned.claimChatRun(
+      const { sandboxHeaders, claim } = await owned.claimChatRun(
         owned.runnerGroup,
         run.runId,
       );
@@ -85,7 +95,11 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
             ? "reused"
             : "cacheMiss";
       await callbacks.requestAgentComplete(
-        { ...completionBody(run.runId), sandboxReuseResult, homeReuseResult },
+        {
+          ...completionBody(run, claim.cliAgentType),
+          sandboxReuseResult,
+          homeReuseResult,
+        },
         sandboxHeaders,
         [200],
       );
@@ -100,14 +114,14 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
   },
 );
 
-test("telemetry and old completion writers cannot manufacture a startup path", async () => {
+test("telemetry and completion reuse diagnostics cannot manufacture a startup path", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "Keep unreported startup unknown",
     });
-    const { sandboxHeaders } = await owned.claimChatRun(
+    const { sandboxHeaders, claim } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,
     );
@@ -126,7 +140,7 @@ test("telemetry and old completion writers cannot manufacture a startup path", a
     await expect(readStartupPath(owned.actor, run.runId)).resolves.toBeNull();
     await callbacks.requestAgentComplete(
       {
-        ...completionBody(run.runId),
+        ...completionBody(run, claim.cliAgentType),
         sandboxReuseResult: "poolMiss",
         homeReuseResult: "cacheMiss",
       },
@@ -191,7 +205,7 @@ test("same-value retries succeed and conflicting or telemetry reports cannot ove
       agentId: owned.agentId,
       prompt: "Replay startup receipt",
     });
-    const { sandboxHeaders } = await owned.claimChatRun(
+    const { sandboxHeaders, claim } = await owned.claimChatRun(
       owned.runnerGroup,
       run.runId,
     );
@@ -199,7 +213,7 @@ test("same-value retries succeed and conflicting or telemetry reports cannot ove
     await writeStartupPath(run.runId, "blank", sandboxHeaders);
     await writeStartupPath(run.runId, "cold", sandboxHeaders, [409]);
     await callbacks.requestAgentComplete(
-      completionBody(run.runId),
+      completionBody(run, claim.cliAgentType),
       sandboxHeaders,
       [200],
     );
