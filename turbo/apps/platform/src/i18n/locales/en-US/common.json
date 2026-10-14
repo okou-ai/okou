@@ -2064,6 +2064,7 @@
       "links": "Links",
       "loadFailed": "Could not load resources",
       "retry": "Try again",
+      "showLess": "Show fewer",
       "title": "Resources",
       "viewAll": "View all"
     },

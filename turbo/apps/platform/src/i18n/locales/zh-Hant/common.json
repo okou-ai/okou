@@ -2055,6 +2055,7 @@
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
       "retry": "重試",
+      "showLess": "收合",
       "title": "聊天資源",
       "viewAll": "查看全部"
     },

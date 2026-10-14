@@ -214,7 +214,7 @@ test("Show all six resources without an overflow control at the limit", async ()
 });
 
 test.each(["Artifacts", "Links"] as const)(
-  "Expand the complete %s list in place from its ellipsis",
+  "Expand and collapse the %s list independently in place",
   async (name) => {
     const panel = await setupOverflowResources(7);
     expect(
@@ -245,7 +245,10 @@ test.each(["Artifacts", "Links"] as const)(
     expect(
       screen.queryByTestId("thread-sidebar-artifacts"),
     ).not.toBeInTheDocument();
-    expect(more).not.toBeInTheDocument();
+    expect(buttonNamed("Show fewer", section)).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
     const other = within(panel).getByRole("region", {
       name: name === "Artifacts" ? "Links" : "Artifacts",
     });
@@ -275,6 +278,27 @@ test.each(["Artifacts", "Links"] as const)(
         };
       }),
     );
+
+    buttonNamed("Show fewer", section).focus();
+    await userEvent.keyboard("{Enter}");
+    expect(within(section).getAllByRole("listitem")).toHaveLength(6);
+    expect(
+      within(section).queryByText(
+        name === "Artifacts" ? "report-7.pdf" : "Reference 7",
+      ),
+    ).not.toBeInTheDocument();
+    expect(buttonNamed("View all", section)).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(within(other).getAllByRole("listitem")).toHaveLength(7);
+
+    click(buttonNamed("Show fewer", other));
+    expect(within(other).getAllByRole("listitem")).toHaveLength(6);
+    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(
+      screen.queryByTestId("thread-sidebar-artifacts"),
+    ).not.toBeInTheDocument();
   },
 );
 

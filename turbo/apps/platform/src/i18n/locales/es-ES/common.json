@@ -2106,6 +2106,7 @@
       "links": "Enlaces",
       "loadFailed": "No se pudieron cargar los recursos",
       "retry": "Reintentar",
+      "showLess": "Mostrar menos",
       "title": "Recursos del chat",
       "viewAll": "Ver todo"
     },

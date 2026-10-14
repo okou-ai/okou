@@ -2064,6 +2064,7 @@
       "links": "Links",
       "loadFailed": "Ressourcen konnten nicht geladen werden",
       "retry": "Erneut versuchen",
+      "showLess": "Weniger anzeigen",
       "title": "Chat-Ressourcen",
       "viewAll": "Alle anzeigen"
     },

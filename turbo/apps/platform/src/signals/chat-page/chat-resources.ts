@@ -357,9 +357,9 @@ export function createChatResourceSignals(
     expandedSections$: computed((get) => {
       return get(expandedSections$);
     }),
-    expandSection$: command(({ set }, section: "artifacts" | "links") => {
+    toggleSection$: command(({ set }, section: "artifacts" | "links") => {
       set(expandedSections$, (expanded) => {
-        return { ...expanded, [section]: true };
+        return { ...expanded, [section]: !expanded[section] };
       });
     }),
     ...createChatResourceContentSignals(

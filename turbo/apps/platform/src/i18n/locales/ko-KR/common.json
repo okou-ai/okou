@@ -2055,6 +2055,7 @@
       "links": "링크",
       "loadFailed": "리소스를 불러오지 못했습니다",
       "retry": "다시 시도",
+      "showLess": "접기",
       "title": "채팅 리소스",
       "viewAll": "모두 보기"
     },

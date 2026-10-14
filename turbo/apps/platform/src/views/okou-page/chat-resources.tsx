@@ -6,7 +6,7 @@ import {
   type Loadable,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Ellipsis, Package } from "lucide-react";
+import { Package } from "lucide-react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
@@ -26,7 +26,11 @@ import { openArtifactSidebar$ } from "../../signals/chat-page/thread-sidebar-coo
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatResourceLinks, CopyResourceLink } from "./chat-resource-links.tsx";
+import {
+  ChatResourceLinks,
+  ChatResourcePreviewToggle,
+  CopyResourceLink,
+} from "./chat-resource-links.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
 import { useOpenThreadArtifacts } from "./thread-sidebar.tsx";
 
@@ -217,7 +221,7 @@ function ChatResourcesBody({
   const retry = useSet(thread.reloadArtifacts$);
   const openAll = useOpenThreadArtifacts(thread);
   const expanded = useGet(thread.resources.expandedSections$);
-  const expandSection = useSet(thread.resources.expandSection$);
+  const toggleSection = useSet(thread.resources.toggleSection$);
   const setOpen = useSet(thread.resources.setOpen$);
   const data = content.state === "hasData" ? content.data : null;
   return (
@@ -265,36 +269,25 @@ function ChatResourcesBody({
                       );
                     })}
                 </ul>
-                {!expanded.artifacts &&
-                  data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
-                    <Button
-                      variant="quiet"
-                      iconSize="lg"
-                      className="h-7 w-full justify-start rounded-lg px-2"
-                      aria-label={t(($) => {
-                        return $.chat.resources.viewAll;
-                      })}
-                      onClick={() => {
-                        expandSection("artifacts");
-                      }}
-                    >
-                      <Ellipsis size={20} />
-                    </Button>
-                  )}
+                {data.artifacts.length > RESOURCE_PREVIEW_LIMIT && (
+                  <ChatResourcePreviewToggle
+                    expanded={expanded.artifacts}
+                    onToggle={() => {
+                      toggleSection("artifacts");
+                    }}
+                  />
+                )}
               </section>
             )}
             <ChatResourceLinks
               thread={thread}
-              preview={
-                expanded.links
-                  ? undefined
-                  : {
-                      limit: RESOURCE_PREVIEW_LIMIT,
-                      onViewAll: () => {
-                        expandSection("links");
-                      },
-                    }
-              }
+              preview={{
+                limit: RESOURCE_PREVIEW_LIMIT,
+                expanded: expanded.links,
+                onToggle: () => {
+                  toggleSection("links");
+                },
+              }}
             />
             {data.artifacts.length === 0 && data.links.length === 0 && (
               <p className="px-2 py-4 text-sm text-muted-foreground">
