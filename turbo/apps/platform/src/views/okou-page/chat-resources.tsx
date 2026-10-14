@@ -70,7 +70,9 @@ function ChatResourcesButtonInner({
   const content = useLastLoadable(resources.content$);
   const ready =
     content.state === "hasError" ||
-    (content.state === "hasData" && content.data !== null);
+    (content.state === "hasData" &&
+      content.data !== null &&
+      (content.data.artifacts.length > 0 || content.data.links.length > 0));
   const open = requestedOpen && ready;
   const wide = useGet(resources.wide$);
   const saving = useGet(resources.saving$);
@@ -81,6 +83,10 @@ function ChatResourcesButtonInner({
   const setOpen = useSet(resources.setOpen$);
   const changePreference = useSet(resources.changePreference$);
   const rootSignal = useGet(rootSignal$);
+
+  if (!ready) {
+    return null;
+  }
 
   return (
     <Popover

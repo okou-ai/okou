@@ -696,7 +696,12 @@ test("Share the saved preference with another chat and discard temporary state o
         payload: {
           userMessage: {
             version: 1,
-            parts: [{ type: "text", text: thread.title ?? "Resources" }],
+            parts: [
+              {
+                type: "text",
+                text: `[${thread.title ?? "Resources"}](https://example.test/${index})`,
+              },
+            ],
           },
         },
       });
@@ -840,6 +845,21 @@ async function setupResourceNavigation() {
   const workspace = installContinuityWorkspace(context, {
     caseId: 95,
     threads: [current, newer],
+    chatEventRows: [current, newer].map((thread, index) => {
+      return continuityEventRow(95, index + 1, thread.id, "input.prompt", {
+        payload: {
+          userMessage: {
+            version: 1,
+            parts: [
+              {
+                type: "text",
+                text: `[Reference](https://example.test/${index})`,
+              },
+            ],
+          },
+        },
+      });
+    }),
   });
   await setupPage({
     context,
