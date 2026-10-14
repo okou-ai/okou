@@ -2036,7 +2036,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.106.16"
+version = "0.106.17"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.11"
+version = "0.24.12"
 dependencies = [
  "chrono",
  "guest-contracts",
@@ -2149,7 +2149,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.69"
+version = "0.12.70"
 dependencies = [
  "crc32fast",
  "guest-contracts",
@@ -2181,7 +2181,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.19.1"
+version = "0.19.2"
 dependencies = [
  "guest-channel-server",
  "guest-contracts",
@@ -4112,7 +4112,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.231.10"
+version = "0.231.11"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4498,7 +4498,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.13.8"
+version = "0.13.9"
 dependencies = [
  "api-contracts",
  "async-trait",
