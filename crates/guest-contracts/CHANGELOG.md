@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.3...guest-contracts-v0.23.0) (2026-10-14)
+
+
+### Features
+
+* add shared sandbox channel protocol and peer ([#39789](https://github.com/okou-ai/okou/issues/39789)) ([e50944d](https://github.com/okou-ai/okou/commit/e50944da2ecbf4eb66b6518f4cbad7598fd72833))
+
 ## [0.22.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.22.2...guest-contracts-v0.22.3) (2026-10-13)
 
 
