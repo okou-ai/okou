@@ -5,7 +5,6 @@ import type { FormEvent, ReactNode } from "react";
 import { Field } from "@base-ui/react/field";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import type { OfficialWorkflowInstallationDefinition } from "@okouai/api-contracts/contracts/official-workflows";
 import type {
   ChatRunFinishedEventConfig,
   ChatRunFinishedRunStatus,
@@ -34,7 +33,6 @@ import type {
 } from "@okouai/api-contracts/contracts/workflows";
 import {
   AlertTriangle,
-  BadgeCheck,
   CalendarClock,
   CircleCheck,
   ChevronDown,
@@ -205,19 +203,11 @@ import {
   workflowMetadataPatch$,
   targetedWorkflowAutomationId$,
 } from "../../signals/workflows-page/workflows-signals.ts";
-import {
-  currentOfficialWorkflowInstallation$,
-  officialWorkflowConfigurationForm$,
-  reconfigureOfficialWorkflow$,
-  setOfficialWorkflowConfigurationForm$,
-  type OfficialWorkflowConfigurationForm,
-  uninstallOfficialWorkflow$,
-} from "../../signals/workflows-page/official-workflows-signals.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { detach, Reason, settle } from "../../signals/utils.ts";
+import { detach, Reason } from "../../signals/utils.ts";
 import { writeToClipboard } from "../../signals/okou-page/clipboard.ts";
 import { orgPlanCapabilities$ } from "../../signals/okou-page/org-plan-capabilities.ts";
 import {
@@ -272,12 +262,6 @@ import {
   GoogleCalendarRecoveryDialogs,
   GoogleCalendarReconnectAction,
 } from "./google-calendar-recovery.tsx";
-import {
-  createOfficialWorkflowConfigurationForm,
-  OfficialWorkflowConfigurationFields,
-  officialWorkflowConfigurationComplete,
-  officialWorkflowHasConfigurableParameters,
-} from "./official-workflow-configuration.tsx";
 
 const AUTOMATION_FIELD_CLASS = "h-8 px-2 text-xs";
 const WORKFLOW_EDIT_TEXTAREA_CLASS = "min-h-24 resize-y";
@@ -1148,13 +1132,11 @@ function DetailHeader({
                 </p>
               </div>
             </div>
-            {detail.official ? null : <WorkflowChatButton detail={detail} />}
+            <WorkflowChatButton detail={detail} />
           </div>
           <div className="mt-4 flex items-center gap-2 sm:mt-6">
             <WorkflowTabNav activeTab={activeTab} onTabChange={onTabChange} />
-            {activeTab === "automations" && !detail.official ? (
-              <AutomationCreateAction />
-            ) : null}
+            {activeTab === "automations" ? <AutomationCreateAction /> : null}
             {activeTab === "instructions" ? (
               <WorkflowFilePicker detail={detail} />
             ) : null}
@@ -1355,62 +1337,8 @@ function WorkflowTabContent({
   return (
     <>
       <ShadowWarning detail={detail} />
-      <OfficialWorkflowLifecycleBanner detail={detail} />
       {content}
     </>
-  );
-}
-
-function OfficialWorkflowLifecycleBanner({
-  detail,
-}: {
-  readonly detail: WorkflowDetailResponse;
-}) {
-  if (!detail.official) {
-    return null;
-  }
-  const lifecycle = detail.official.definitionLifecycle;
-  const copy = (() => {
-    if (lifecycle === "retired") {
-      return {
-        title: i18n.t(($) => {
-          return $.workflows.official.retiredInstallationTitle;
-        }),
-        description: i18n.t(($) => {
-          return $.workflows.official.retiredInstallationDescription;
-        }),
-      };
-    }
-    if (lifecycle === "unavailable") {
-      return {
-        title: i18n.t(($) => {
-          return $.workflows.official.unavailableInstallationTitle;
-        }),
-        description: i18n.t(($) => {
-          return $.workflows.official.unavailableInstallationDescription;
-        }),
-      };
-    }
-    return {
-      title: i18n.t(($) => {
-        return $.workflows.official.activeInstallationTitle;
-      }),
-      description: i18n.t(($) => {
-        return $.workflows.official.activeInstallationDescription;
-      }),
-    };
-  })();
-  return (
-    <Alert
-      className={cn(
-        "mx-auto mb-4 max-w-[900px]",
-        lifecycle === "retired" && "border-amber-300 bg-amber-50",
-      )}
-    >
-      <BadgeCheck size={16} />
-      <AlertTitle>{copy.title}</AlertTitle>
-      <AlertDescription>{copy.description}</AlertDescription>
-    </Alert>
   );
 }
 
@@ -1452,10 +1380,7 @@ function WorkflowInfoTab({
           </InlineSettingsRow>
         </div>
       </div>
-      {detail.official ? (
-        <OfficialWorkflowInstallationSettings detail={detail} />
-      ) : null}
-      {detail.canManage && !detail.official ? (
+      {detail.canManage ? (
         <div className={surfaceVariants({ className: "overflow-hidden" })}>
           <div className="p-4 sm:p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
@@ -1498,320 +1423,14 @@ function WorkflowInfoTab({
           setActionDialog(open ? "copy" : null);
         }}
       />
-      {!detail.official ? (
-        <WorkflowDeleteDialog
-          detail={detail}
-          open={actionDialog === "delete"}
-          onOpenChange={(open) => {
-            setActionDialog(open ? "delete" : null);
-          }}
-        />
-      ) : null}
-      {detail.official ? (
-        <OfficialWorkflowUninstallDialog
-          detail={detail}
-          open={actionDialog === "delete"}
-          onOpenChange={(open) => {
-            setActionDialog(open ? "delete" : null);
-          }}
-        />
-      ) : null}
+      <WorkflowDeleteDialog
+        detail={detail}
+        open={actionDialog === "delete"}
+        onOpenChange={(open) => {
+          setActionDialog(open ? "delete" : null);
+        }}
+      />
     </div>
-  );
-}
-
-function OfficialWorkflowInstallationSettings({
-  detail,
-}: {
-  readonly detail: WorkflowDetailResponse;
-}) {
-  const form = useGet(officialWorkflowConfigurationForm$);
-  const installationLoadable = useLoadable(
-    currentOfficialWorkflowInstallation$,
-  );
-  const installation =
-    installationLoadable.state === "hasData" ? installationLoadable.data : null;
-  const definition = installation?.definition;
-  const canReconfigure =
-    definition === undefined ||
-    officialWorkflowHasConfigurableParameters(definition.blueprints);
-  return (
-    <>
-      {canReconfigure ? (
-        <OfficialWorkflowReconfigureCard
-          detail={detail}
-          definition={definition}
-          loading={installationLoadable.state === "loading"}
-        />
-      ) : null}
-      <OfficialWorkflowUninstallCard />
-      {definition &&
-      canReconfigure &&
-      form?.target.operation === "reconfigure" &&
-      form.target.workflowId === detail.id &&
-      form.definitionName === definition.name ? (
-        <OfficialWorkflowReconfigureDialog
-          key={detail.id}
-          detail={detail}
-          definition={definition}
-          form={form}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function OfficialWorkflowReconfigureCard({
-  detail,
-  definition,
-  loading,
-}: {
-  readonly detail: WorkflowDetailResponse;
-  readonly definition: OfficialWorkflowInstallationDefinition | undefined;
-  readonly loading: boolean;
-}) {
-  const setForm = useSet(setOfficialWorkflowConfigurationForm$);
-  const description = definition
-    ? i18n.t(($) => {
-        return $.workflows.official.reconfigureDescription;
-      })
-    : i18n.t(($) => {
-        return $.workflows.official.reconfigureUnavailable;
-      });
-  return (
-    <div className={surfaceVariants({ className: "overflow-hidden" })}>
-      <div className="p-4 sm:p-5">
-        <InlineSettingsRow
-          label={i18n.t(($) => {
-            return $.workflows.official.reconfigureTitle;
-          })}
-          description={description}
-          alignControls="center"
-        >
-          <Button
-            type="button"
-            variant="neutral"
-            size="sm"
-            className="h-9 rounded-lg"
-            disabled={!definition || loading}
-            onClick={() => {
-              if (!definition) {
-                return;
-              }
-              setForm(
-                createOfficialWorkflowConfigurationForm({
-                  target: {
-                    operation: "reconfigure",
-                    workflowId: detail.id,
-                  },
-                  definitionName: definition.name,
-                  agentId: detail.agentId,
-                  blueprints: definition.blueprints,
-                  automations: detail.automations,
-                }),
-              );
-            }}
-          >
-            {i18n.t(($) => {
-              return $.workflows.official.reconfigure;
-            })}
-          </Button>
-        </InlineSettingsRow>
-      </div>
-    </div>
-  );
-}
-
-function OfficialWorkflowUninstallCard() {
-  const setActionDialog = useSet(setWorkflowActionDialog$);
-  return (
-    <div className={surfaceVariants({ className: "overflow-hidden" })}>
-      <div className="p-4 sm:p-5">
-        <InlineSettingsRow
-          label={i18n.t(($) => {
-            return $.workflows.official.uninstallTitle;
-          })}
-          description={i18n.t(($) => {
-            return $.workflows.official.uninstallDescription;
-          })}
-          alignControls="center"
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 gap-2 rounded-lg border-destructive/40 px-4 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => {
-              setActionDialog("delete");
-            }}
-          >
-            <Trash size={14} />
-            {i18n.t(($) => {
-              return $.workflows.official.uninstall;
-            })}
-          </Button>
-        </InlineSettingsRow>
-      </div>
-    </div>
-  );
-}
-
-function OfficialWorkflowReconfigureDialog({
-  detail,
-  definition,
-  form,
-}: {
-  readonly detail: WorkflowDetailResponse;
-  readonly definition: OfficialWorkflowInstallationDefinition;
-  readonly form: OfficialWorkflowConfigurationForm;
-}) {
-  const setForm = useSet(setOfficialWorkflowConfigurationForm$);
-  const pageSignal = useGet(pageSignal$);
-  const [reconfigureLoadable, reconfigure] = useLoadableSet(
-    reconfigureOfficialWorkflow$,
-  );
-  const reconfiguring = reconfigureLoadable.state === "loading";
-  const complete = officialWorkflowConfigurationComplete(
-    form,
-    definition.blueprints,
-  );
-  const submit = () => {
-    detach(
-      (async () => {
-        await reconfigure(
-          { workflowId: detail.id, blueprints: form.blueprints },
-          pageSignal,
-        );
-        setForm(null);
-        toast.success(
-          i18n.t(($) => {
-            return $.workflows.official.reconfigured;
-          }),
-        );
-      })(),
-      Reason.DomCallback,
-      "reconfigure Official Workflow",
-    );
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) {
-          setForm(null);
-        }
-      }}
-    >
-      <DialogContent smMaxWidth={680} contentClassName="overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {i18n.t(($) => {
-              return $.workflows.official.reconfigureTitle;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {i18n.t(($) => {
-              return $.workflows.official.reconfigureDialogDescription;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <OfficialWorkflowConfigurationFields
-          form={form}
-          blueprints={definition.blueprints}
-          agents={[]}
-          agentsLoaded
-          showAgent={false}
-          disabled={reconfiguring}
-        />
-        {reconfigureLoadable.state === "hasError" ? (
-          <Alert variant="destructive">
-            <AlertTitle>
-              {i18n.t(($) => {
-                return $.workflows.official.reconfigureErrorTitle;
-              })}
-            </AlertTitle>
-            <AlertDescription>
-              {i18n.t(($) => {
-                return $.workflows.official.reconfigureErrorDescription;
-              })}
-            </AlertDescription>
-          </Alert>
-        ) : null}
-        <WorkflowDialogFooter
-          busy={reconfiguring}
-          disabled={!complete || reconfiguring}
-          cancelLabel={i18n.t(($) => {
-            return $.workflows.common.cancel;
-          })}
-          label={i18n.t(($) => {
-            return $.workflows.official.reconfigure;
-          })}
-          onCancel={() => {
-            setForm(null);
-          }}
-          onConfirm={submit}
-        />
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function OfficialWorkflowUninstallDialog({
-  detail,
-  open,
-  onOpenChange,
-}: {
-  readonly detail: WorkflowDetailResponse;
-  readonly open: boolean;
-  readonly onOpenChange: (open: boolean) => void;
-}) {
-  const pageSignal = useGet(pageSignal$);
-  const navigate = useSet(detachedNavigateTo$);
-  const [uninstallLoadable, uninstall] = useLoadableSet(
-    uninstallOfficialWorkflow$,
-  );
-  const uninstalling = uninstallLoadable.state === "loading";
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>
-            {i18n.t(($) => {
-              return $.workflows.official.uninstallTitle;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {i18n.t(($) => {
-              return $.workflows.official.uninstallConfirm;
-            })}
-          </DialogDescription>
-        </DialogHeader>
-        <WorkflowDialogFooter
-          busy={uninstalling}
-          variant="destructive"
-          cancelLabel={i18n.t(($) => {
-            return $.workflows.common.cancel;
-          })}
-          label={i18n.t(($) => {
-            return $.workflows.official.uninstall;
-          })}
-          onCancel={() => {
-            onOpenChange(false);
-          }}
-          onConfirm={() => {
-            detach(
-              (async () => {
-                await uninstall(detail.id, pageSignal);
-                onOpenChange(false);
-                navigate(ROUTES.workflows);
-              })(),
-              Reason.DomCallback,
-              "uninstall Official Workflow",
-            );
-          }}
-        />
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -1959,7 +1578,7 @@ function WorkflowMetadataForm({
   const resetForm = useSet(resetWorkflowMetadataForm$);
   const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
   const saving = saveLoadable.state === "loading";
-  const canEdit = detail.canManage && !detail.official;
+  const canEdit = detail.canManage;
   const disabled = !canEdit || saving;
   const defaults = workflowMetadataDefaults(detail);
   const values =
@@ -2053,7 +1672,7 @@ function ShadowWarning({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
-  if (detail.official || !detail.shadowedBy) {
+  if (!detail.shadowedBy) {
     return null;
   }
 
@@ -2090,20 +1709,15 @@ function WorkflowPublicToggle({
   const isPublic = detail.visibility === "public";
   const statusLabel = isPublic ? copy.public : copy.private;
   const publishBlocked =
-    !detail.official &&
-    detail.visibility === "private" &&
-    detail.canManage &&
-    !detail.canPublish;
+    detail.visibility === "private" && detail.canManage && !detail.canPublish;
   const toggleAction: Parameters<typeof changeVisibility>[0]["action"] | null =
-    detail.official
-      ? null
-      : isPublic
-        ? detail.canManage
-          ? "demote"
-          : null
-        : detail.canPublish
-          ? "publish"
-          : null;
+    isPublic
+      ? detail.canManage
+        ? "demote"
+        : null
+      : detail.canPublish
+        ? "publish"
+        : null;
   const submitVisibilityAction = (
     action: Parameters<typeof changeVisibility>[0]["action"],
   ) => {
@@ -2482,14 +2096,10 @@ function useWorkflowCopySubmission({
     pauseWorkflowAutomations$,
   );
   const [deleteLoadable, deleteWorkflow] = useLoadableSet(deleteWorkflow$);
-  const [uninstallLoadable, uninstallOfficialWorkflow] = useLoadableSet(
-    uninstallOfficialWorkflow$,
-  );
   const submitting =
     copyLoadable.state === "loading" ||
     pauseLoadable.state === "loading" ||
-    deleteLoadable.state === "loading" ||
-    uninstallLoadable.state === "loading";
+    deleteLoadable.state === "loading";
   const navigateToCopy = (workflowId: string) => {
     navigate(ROUTES.workflowDetailAutomations, {
       pathParams: { workflowId },
@@ -2507,15 +2117,7 @@ function useWorkflowCopySubmission({
           pageSignal,
         );
         let removedOriginal = false;
-        let officialUninstallFailed = false;
-        if (form.removeOriginal && detail.official) {
-          const removal = await settle(
-            uninstallOfficialWorkflow(detail.id, pageSignal),
-            pageSignal,
-          );
-          removedOriginal = removal.ok;
-          officialUninstallFailed = !removal.ok;
-        } else if (form.removeOriginal) {
+        if (form.removeOriginal) {
           if (enabledSourceAutomationIds.length > 0) {
             await pauseWorkflowAutomations(
               [...enabledSourceAutomationIds],
@@ -2537,13 +2139,6 @@ function useWorkflowCopySubmission({
             navigateToCopy(copied.id);
           },
         });
-        if (officialUninstallFailed) {
-          toast.error(
-            i18n.t(($) => {
-              return $.workflows.official.copySucceededUninstallFailed;
-            }),
-          );
-        }
       })(),
       Reason.DomCallback,
     );
@@ -2630,7 +2225,7 @@ function WorkflowFilePicker({
   const pageSignal = useGet(pageSignal$);
   const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
   const saving = saveLoadable.state === "loading";
-  const canManageFiles = detail.canManage && !detail.official;
+  const canManageFiles = detail.canManage;
   const selectedLabel =
     selectedFilePath ??
     i18n.t(($) => {
@@ -2931,7 +2526,7 @@ function WorkflowSelectedFileEditor({
   const pageSignal = useGet(pageSignal$);
   const [saveLoadable, updateWorkflow] = useLoadableSet(updateWorkflow$);
   const saving = saveLoadable.state === "loading";
-  const canEdit = detail.canManage && !detail.official;
+  const canEdit = detail.canManage;
   const draftMatches =
     draftState?.workflowId === detail.id &&
     draftState.filePath === selectedFilePath &&
@@ -5058,9 +4653,7 @@ function AutomationsSection({
                   key={automation.id}
                   automation={automation}
                   canOperate={automation.ownerUserId === currentUserId}
-                  canEditStructure={
-                    automation.ownerUserId === currentUserId && !detail.official
-                  }
+                  canEditStructure={automation.ownerUserId === currentUserId}
                   displayTimezone={displayTimezone}
                   showDivider={index < automations.length - 1}
                 />
@@ -8789,45 +8382,6 @@ function GoogleCalendarAutomationWarning({
   );
 }
 
-function officialReconciliationStatusLabel(
-  status: NonNullable<
-    WorkflowAutomationSummary["official"]
-  >["reconciliationStatus"],
-): string {
-  switch (status) {
-    case "reconciling": {
-      return i18n.t(($) => {
-        return $.workflows.official.statusReconciling;
-      });
-    }
-    case "needs_reconfiguration": {
-      return i18n.t(($) => {
-        return $.workflows.official.statusNeedsReconfiguration;
-      });
-    }
-    case "failed": {
-      return i18n.t(($) => {
-        return $.workflows.official.statusFailed;
-      });
-    }
-    case "current": {
-      return i18n.t(($) => {
-        return $.workflows.official.statusCurrent;
-      });
-    }
-  }
-}
-
-function officialIntendedStateLabel(enabled: boolean): string {
-  return enabled
-    ? i18n.t(($) => {
-        return $.workflows.official.intendedOn;
-      })
-    : i18n.t(($) => {
-        return $.workflows.official.intendedOff;
-      });
-}
-
 interface AutomationRowProps {
   readonly automation: WorkflowAutomationSummary;
   readonly canOperate: boolean;
@@ -8862,23 +8416,6 @@ function AutomationRowHeading({
           >
             {subtitle}
           </div>
-        ) : null}
-        {automation.official ? (
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {i18n.t(
-              ($) => {
-                return $.workflows.official.reconciliationState;
-              },
-              {
-                state: officialReconciliationStatusLabel(
-                  automation.official.reconciliationStatus,
-                ),
-                intended: officialIntendedStateLabel(
-                  automation.official.intendedEnabled,
-                ),
-              },
-            )}
-          </p>
         ) : null}
       </div>
     </div>
@@ -9192,46 +8729,41 @@ function AutomationControls({
     <div className="flex min-w-0 items-center justify-end pr-1.5">
       <TooltipProvider delay={200}>
         <div className="flex items-center justify-end gap-1 opacity-100 pointer-events-auto [@media(hover:hover)]:pointer-events-none [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:pointer-events-auto [@media(hover:hover)]:group-focus-within:opacity-100">
-          {!automation.official ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    disabled={busy}
-                    aria-label={copy.runNow}
-                    className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
-                    onClick={() => {
-                      detach(
-                        (async () => {
-                          const result = await runNow(
-                            automation.id,
-                            pageSignal,
-                          );
-                          navigate(ROUTES.chat, {
-                            pathParams: { threadId: result.chatThreadId },
-                          });
-                        })(),
-                        Reason.DomCallback,
-                        "run workflow automation now",
-                      );
-                    }}
-                  >
-                    {busy ? (
-                      <Loader2 size={14} className="animate-spin" />
-                    ) : (
-                      <Play size={14} />
-                    )}
-                  </Button>
-                }
-              />
-              <TooltipContent>
-                <p className="text-xs">{copy.runNow}</p>
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={busy}
+                  aria-label={copy.runNow}
+                  className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-state-selected-hover hover:text-foreground"
+                  onClick={() => {
+                    detach(
+                      (async () => {
+                        const result = await runNow(automation.id, pageSignal);
+                        navigate(ROUTES.chat, {
+                          pathParams: { threadId: result.chatThreadId },
+                        });
+                      })(),
+                      Reason.DomCallback,
+                      "run workflow automation now",
+                    );
+                  }}
+                >
+                  {busy ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Play size={14} />
+                  )}
+                </Button>
+              }
+            />
+            <TooltipContent>
+              <p className="text-xs">{copy.runNow}</p>
+            </TooltipContent>
+          </Tooltip>
           {canEdit ? (
             <AutomationEditButton
               automation={automation}
