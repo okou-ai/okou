@@ -99,6 +99,70 @@ fn native_continuation_report_consumer_validates_complete_session_receipts() {
     );
 }
 
+#[tokio::test]
+async fn native_continuation_peer_keeps_complete_history_across_both_listeners() -> TestResult<()> {
+    let api = continuation_api::Api::bind(std::net::Ipv4Addr::new(127, 0, 0, 2)).await?;
+    let client_config = |url| runner_provider::http::HttpClientConfig {
+        api_url: url,
+        vercel_bypass: None,
+        client_session_id: "continuation-peer-regression".into(),
+        runner_version: env!("CARGO_PKG_VERSION"),
+    };
+    runner_provider::http::HttpClient::new(client_config(api.host_url.clone()))?;
+    assert!(
+        runner_provider::http::HttpClient::new(client_config("http://10.0.0.1:1234".into()))
+            .is_err()
+    );
+    let http = reqwest::Client::new();
+    let url = api.history_url(continuation::SEED)?;
+    let original = http
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    assert_eq!(original.as_ref(), continuation::SEED);
+    let mut complete = original.to_vec();
+    complete.extend_from_slice(b"\ncomplete original native fixture boundary\n");
+    let hash = continuation::digest(&complete);
+    let run = RunId::new_v4().to_string();
+    let prepared: serde_json::Value = http
+        .post(format!(
+            "{}/api/webhooks/agent/session-history/prepare",
+            api.host_url
+        ))
+        .bearer_auth(continuation_api::TOKEN)
+        .json(&serde_json::json!({
+            "runId":run,"hash":hash,"rawSize":complete.len(),
+            "encodedSize":complete.len(),"encoding":"identity"
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let upload = prepared
+        .get("presignedUrl")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| io::Error::other("native fixture upload preparation missing"))?;
+    http.put(upload)
+        .body(complete.clone())
+        .send()
+        .await?
+        .error_for_status()?;
+    http.post(format!("{}/api/webhooks/agent/complete", api.host_url))
+        .bearer_auth(continuation_api::TOKEN)
+        .json(&serde_json::json!({"runId":run,"exitCode":0,"completion":{
+            "cliAgentSessionId":continuation::THREAD,"cliAgentSessionHistoryHash":hash
+        }}))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(api.finalized_history(&run, continuation::THREAD)?, complete);
+    api.finish().await
+}
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),

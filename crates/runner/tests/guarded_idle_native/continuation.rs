@@ -124,7 +124,7 @@ impl Fixture {
             runner_hostname: None,
             registry: ProxyRegistryHandle::new(registry, root.join("continuation-registry.lock")),
             http: HttpClient::new(HttpClientConfig {
-                api_url: api.url.clone(),
+                api_url: api.host_url.clone(),
                 vercel_bypass: None,
                 client_session_id: "native-continuation".into(),
                 runner_version: env!("CARGO_PKG_VERSION"),

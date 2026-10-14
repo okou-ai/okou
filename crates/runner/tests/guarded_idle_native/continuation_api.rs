@@ -44,6 +44,7 @@ enum Reply {
 
 pub struct Api {
     pub url: String,
+    pub host_url: String,
     ledger: Arc<Mutex<Ledger>>,
     cancel: CancellationToken,
     connections: TaskTracker,
@@ -58,8 +59,14 @@ impl Api {
                 io::Error::other("native API requires the supplied private host address").into(),
             );
         }
+        Self::bind(address).await
+    }
+
+    pub async fn bind(address: Ipv4Addr) -> TestResult<Self> {
         let socket = TcpListener::bind((address, 0)).await?;
         let url = format!("http://{}", socket.local_addr()?);
+        let local = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await?;
+        let host_url = format!("http://{}", local.local_addr()?);
         let ledger = Arc::new(Mutex::new(Ledger::default()));
         let cancel = CancellationToken::new();
         let connections = TaskTracker::new();
@@ -72,6 +79,7 @@ impl Api {
                 let (stream, _) = tokio::select! {
                     () = stop.cancelled() => return Ok(()),
                     stream = socket.accept() => stream?,
+                    stream = local.accept() => stream?,
                 };
                 let state = state.clone();
                 let base = base.clone();
@@ -92,6 +100,7 @@ impl Api {
         });
         Ok(Self {
             url,
+            host_url,
             ledger,
             cancel,
             connections,
