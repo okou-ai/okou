@@ -452,6 +452,59 @@ mod tests {
         f.fatal().await;
     }
 
+    struct BurstEvents(tokio::sync::mpsc::UnboundedSender<EventError>);
+    impl Service for BurstEvents {
+        fn categories(&self) -> Categories {
+            Diagnostics.categories()
+        }
+        fn request(
+            &self,
+            operation: Operation,
+            params: Params,
+            peer: Peer,
+        ) -> ServiceFuture<Value> {
+            Diagnostics.request(operation, params, peer)
+        }
+        fn notice(&self, _notice: Notice, peer: Peer) -> ServiceFuture<()> {
+            Box::pin(async move {
+                // A single service poll can produce a finite burst before IO
+                // runs. The ninth producer must fail immediately, not wait.
+                for _ in 0..9 {
+                    peer.notice(Notice {
+                        message: "n".repeat(256),
+                    })?;
+                }
+                Ok(())
+            })
+        }
+        fn event_error(&self, error: EventError) {
+            self.0.send(error).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn writer_frame_pressure_is_local_and_recovers_after_physical_drain() {
+        let (observations, mut observed) = tokio::sync::mpsc::unbounded_channel();
+        let mut f = Fixture::start(Arc::new(BurstEvents(observations)), 256).await;
+        f.hello().await;
+        f.send(notice(2, "burst")).await;
+        assert_eq!(
+            timeout(WAIT, observed.recv()).await.unwrap().unwrap(),
+            EventError {
+                category: "diagnostics".into(),
+                event: "notice".into(),
+                error: Error::Busy
+            }
+        );
+        for _ in 0..8 {
+            let frame = f.recv().await;
+            assert_eq!(frame["type"], "event");
+            assert_eq!(frame["data"]["message"], "n".repeat(256));
+        }
+        f.healthy(3).await;
+        f.close().await;
+    }
+
     #[tokio::test]
     async fn partial_header_and_payload_remain_one_frame() {
         let mut f = Fixture::new(Arc::new(Diagnostics)).await;
