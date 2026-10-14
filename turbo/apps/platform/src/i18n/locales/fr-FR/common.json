@@ -706,7 +706,6 @@
       "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
       "visibility": {
-        "change": "Modifier",
         "changeLabel": "Modifier la visibilité du modèle",
         "privateState": "Vous seul pouvez le voir et l'utiliser",
         "workspaceState": "Tout le monde dans cet espace de travail peut l'utiliser"

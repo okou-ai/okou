@@ -686,7 +686,6 @@
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
-        "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
         "privateState": "自分だけが表示・使用できます",
         "workspaceState": "このワークスペースの全員が使用できます"

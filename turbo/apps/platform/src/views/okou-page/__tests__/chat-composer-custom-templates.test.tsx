@@ -530,6 +530,65 @@ test("An empty catalog leads with the upload entry instead of showing no matches
   expect(within(dialog).queryByText("No matches")).not.toBeInTheDocument();
 });
 
+test("A custom deck steps through its pages on the stage", async () => {
+  const deck = customTemplate({
+    pageUrls: [
+      "https://example.test/page-1.png",
+      "https://example.test/page-2.png",
+    ],
+  });
+  mockCustomTemplates([deck]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, deck);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  expect(within(preview).getByText("1 / 2")).toBeInTheDocument();
+  expect(within(preview).getByText("2 slides")).toBeInTheDocument();
+
+  click(buttonByName("Preview slide 2", preview)!);
+
+  expect(within(preview).getByAltText("Page 2")).toHaveAttribute(
+    "src",
+    "https://example.test/page-2.png",
+  );
+  expect(within(preview).getByText("2 / 2")).toBeInTheDocument();
+  expect(buttonByName("Preview next slide", preview)).toBeDisabled();
+});
+
+test("A template shared with you opens without the owner's controls", async () => {
+  const shared = customTemplate({
+    canManage: false,
+    visibility: "organization",
+    ownerDisplayName: "Riley Park",
+  });
+  mockCustomTemplates([shared]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, shared);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  expect(within(preview).getByText("Shared by Riley Park")).toBeInTheDocument();
+  expect(
+    within(preview).queryByLabelText("Rename template"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(preview).queryByText("Change template visibility"),
+  ).not.toBeInTheDocument();
+  expect(buttonByName("Delete", preview)).toBeUndefined();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+});
+
 test("Opening a deck shows its pages and management controls", async () => {
   mockCustomTemplates([customTemplate()]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
@@ -700,7 +759,10 @@ test("A PDF template opens in the browser's own viewer", async () => {
   // A PDF needs neither our viewer nor Microsoft's: the browser renders it
   // from the source URL, handed over unchanged.
   const frame = await screen.findByTitle("annual-report.pdf preview");
-  expect(frame).toHaveAttribute("src", `${DOCUMENT_SOURCE_URL}#navpanes=0`);
+  expect(frame).toHaveAttribute(
+    "src",
+    `${DOCUMENT_SOURCE_URL}#toolbar=0&navpanes=0&view=FitH`,
+  );
 });
 
 const ILLUSTRATION_SOURCE_URL =
@@ -913,7 +975,9 @@ function renameField(): HTMLElement {
 }
 
 async function shareWithOrganization(): Promise<void> {
-  click(buttonByName("Change")!);
+  click(
+    (await screen.findByText("Change template visibility")).closest("button")!,
+  );
   const organization = await waitFor(() => {
     const option = queryAllByRoleFast("menuitemradio").find((candidate) => {
       return candidate.textContent?.startsWith("Organization");

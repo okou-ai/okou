@@ -687,7 +687,6 @@
       "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
       "visibility": {
-        "change": "Ändern",
         "changeLabel": "Sichtbarkeit der Vorlage ändern",
         "privateState": "Nur du kannst sie sehen und verwenden",
         "workspaceState": "Alle in diesem Arbeitsbereich können sie verwenden"

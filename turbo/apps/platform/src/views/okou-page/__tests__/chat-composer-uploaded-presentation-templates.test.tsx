@@ -621,7 +621,11 @@ test("Imported visibility saves once and closes even on the current value", asyn
       return buttonNamed(`Preview ${uploaded.title} at current slide`);
     }),
   );
-  const trigger = await screen.findByLabelText("Change template visibility");
+  // The trigger is named by the level it shows; the action is spelled out in
+  // text a screen reader reads after it.
+  const trigger = (
+    await screen.findByText("Change template visibility")
+  ).closest("button")!;
   trigger.focus();
   await user.keyboard("{Enter}");
   const menu = await screen.findByRole("menu");
@@ -650,4 +654,37 @@ test("Imported visibility saves once and closes even on the current value", asyn
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
   expect(library.requests.updates).toHaveLength(1);
+});
+
+test("Delete an uploaded template from its preview", async () => {
+  mockTemplateChat();
+  const uploaded = createUploadedTemplate({
+    id: UPLOADED_TEMPLATE_ID,
+    title: "Retired board deck",
+    canManage: true,
+  });
+  mockPresentationTemplateLibrary([uploaded]);
+  const user = userEvent.setup();
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
+  await openTemplatePicker(user, "Presentation");
+  click(
+    await waitFor(() => {
+      return buttonNamed(`Preview ${uploaded.title} at current slide`);
+    }),
+  );
+  await screen.findByRole("group", { name: `${uploaded.title} slide preview` });
+
+  click(buttonNamed("Delete"));
+
+  // Deleting from the detail leaves it, and the template leaves the gallery.
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("group", { name: `${uploaded.title} slide preview` }),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.queryByText(uploaded.title)).not.toBeInTheDocument();
 });
