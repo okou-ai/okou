@@ -19,8 +19,9 @@ describe("Genuine Pi maintenance publication results", () => {
     const body = await publish(run);
     await webhooks.requestAgentStorageCommit(body, run.headers, [200]);
     await completeMaintenance(run, body.versionId);
-    expect((await observeMemory(run)).memory.versionId).toBe(body.versionId);
     const newer = await publishOrdinaryMemory(run, "Newer ordinary memory.\n");
+    // This publisher's real claim already observes the old HEAD before writing.
+    expect(newer.parentVersionId).toBe(body.versionId);
     const replay = await webhooks.requestAgentStorageCommit(
       body,
       run.headers,

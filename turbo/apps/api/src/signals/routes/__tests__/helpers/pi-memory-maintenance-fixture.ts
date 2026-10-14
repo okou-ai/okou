@@ -490,8 +490,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       expect(repeated.body).toStrictEqual(completed.body);
     }
     await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(body, run.headers, [200]);
-    await flushWaitUntilForTest();
     return { body, response: completed };
   }
 

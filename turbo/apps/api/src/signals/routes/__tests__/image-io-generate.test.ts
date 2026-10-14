@@ -1357,9 +1357,18 @@ describe("POST /api/image-io/generate", () => {
     const fixture = await createFundedImageRun("gpt-image-1", 10_000);
     await fixture.run(async () => {
       const requestUrls: string[] = [];
+      const requestUrlsByGenerationId = new Map<string, string>();
       server.use(
         http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
           requestUrls.push(request.url);
+          const callback = new URL(readWebhookUrl(request.url));
+          const generationId = callback.pathname.split("/").at(-1);
+          if (!generationId) {
+            throw new Error(
+              "Expected the provider's genuine generation callback URL",
+            );
+          }
+          requestUrlsByGenerationId.set(generationId, request.url);
           return HttpResponse.json(
             falQueueHandle(`lifetime-${requestUrls.length}`),
           );
@@ -1394,62 +1403,49 @@ describe("POST /api/image-io/generate", () => {
         ],
         prompt: "A small robot paints a sunflower.",
       };
-      await expect(orgCredits(fixture)).resolves.toBe(30_000);
+      // The funded fixture already verifies its 30,000-credit starting balance.
       const generationIds = new Set<string>();
-      for (let start = 0; start < 50; start += 3) {
-        const group: { generationId: string; requestUrl: string | null }[] = [];
-        const submissions = await Promise.allSettled(
-          Array.from({ length: Math.min(3, 50 - start) }, () => {
-            return fixture.request(app, path, request);
-          }),
-        );
-        for (const [offset, submission] of submissions.entries()) {
-          if (submission.status === "rejected") {
-            throw submission.reason;
+      // Three owned streams respect the real concurrency limit. Each accepted
+      // ID is matched to the callback URL the provider actually received, and a
+      // stream finishes its generation before submitting another identical prompt.
+      const results = await Promise.allSettled(
+        Array.from({ length: 3 }, async (_, stream) => {
+          for (let index = stream; index < 50; index += 3) {
+            const response = await app.request(path, request);
+            expect(response.status).toBe(202);
+            const generationId = readAcceptedGenerationId(
+              await response.json(),
+              "image",
+              fixture.userId,
+            );
+            expect(generationIds.has(generationId)).toBeFalsy();
+            generationIds.add(generationId);
+            await postFalWebhook(
+              app,
+              requestUrlsByGenerationId.get(generationId) ?? null,
+              completionPayload,
+            );
+            await flushWaitUntilForTest();
+            const completed = await app.request(
+              `/api/built-in-generations/${generationId}`,
+              { headers: request.headers },
+            );
+            expect(completed.status).toBe(200);
+            const statusBody: unknown = await completed.json();
+            expect(statusBody).toMatchObject({
+              generationId,
+              status: "completed",
+            });
+            expect(readGenerationResult(statusBody)).toMatchObject({
+              creditsCharged: 50,
+            });
           }
-          const response = submission.value;
-          expect(response.status).toBe(202);
-          const generationId = readAcceptedGenerationId(
-            await response.json(),
-            "image",
-            fixture.userId,
-          );
-          expect(generationIds.has(generationId)).toBeFalsy();
-          generationIds.add(generationId);
-          group.push({
-            generationId,
-            requestUrl: requestUrls[start + offset] ?? null,
-          });
+        }),
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
         }
-        expect(requestUrls).toHaveLength(start + group.length);
-        await Promise.all(
-          group.map(({ requestUrl }) => {
-            return fixture.run(() => {
-              return postFalWebhook(app, requestUrl, completionPayload);
-            });
-          }),
-        );
-        await flushWaitUntilForTest();
-        await Promise.all(
-          group.map(({ generationId }) => {
-            return fixture.run(async () => {
-              const completed = await fixture.request(
-                app,
-                `/api/built-in-generations/${generationId}`,
-                { headers: request.headers },
-              );
-              expect(completed.status).toBe(200);
-              const statusBody: unknown = await completed.json();
-              expect(statusBody).toMatchObject({
-                generationId,
-                status: "completed",
-              });
-              expect(readGenerationResult(statusBody)).toMatchObject({
-                creditsCharged: 50,
-              });
-            });
-          }),
-        );
       }
       expect(generationIds.size).toBe(50);
       expect(requestUrls).toHaveLength(50);

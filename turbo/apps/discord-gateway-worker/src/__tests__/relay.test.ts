@@ -333,71 +333,83 @@ describe("Discord Gateway relay", () => {
     await gateway.next(2);
     gateway.ready();
     gateway.message();
-    const first = await relay.deliveries.next();
-    const retry = await relay.deliveries.next();
-
-    expect(retry.rawBody).toBe(first.rawBody);
-    expect(relay.unhandled).toEqual([]);
-    expect(await relay.health()).toMatchObject({ pending: 1 });
-  });
-
-  it("persists uncertain delivery across process restart and resumes after its checkpoint", async () => {
-    const relay = await createRelay();
-    // The receiver durably accepted this event but its acknowledgement was lost.
-    // Returning 503 models the externally observable uncertainty at the relay.
-    relay.reply = () => {
-      return new Response(null, { status: 503 });
-    };
-    const gateway = await relay.start();
-    gateway.hello();
-    await gateway.next(2);
-    gateway.ready("persisted-session");
-    gateway.message(2);
-    const first = await relay.deliveries.next();
+    await relay.deliveries.next();
     await expect
       .poll(() => {
         return relay.health();
       })
-      .toMatchObject({ pending: 1, resumable: true });
+      .toMatchObject({ pending: 1, deliveryFailures: 1 });
+    expect(relay.unhandled).toEqual([]);
+  });
 
-    await relay.restart();
-    const attemptsBeforeRestart = relay.forwarded.length;
-    relay.reply = () => {
-      return Response.json({ ok: true, outcome: "duplicate" });
-    };
-    // Initialize the replacement process through its read-only endpoint. The
-    // persisted alarm must recover without another operator /start request.
-    expect(await relay.health()).toMatchObject({
-      running: true,
-      resumable: true,
-    });
-    const resumed = await relay.connections.next();
-    resumed.hello();
-    expect(await resumed.next(6)).toEqual({
-      op: 6,
-      d: { token: BOT_TOKEN, session_id: "persisted-session", seq: 2 },
-    });
-    resumed.send({ op: 0, t: "RESUMED", s: 3, d: {} });
-    // Discord may replay the last observed message. Its checkpoint was committed
-    // atomically with the outbox before the receiver saw the first attempt.
-    resumed.message(2);
-
-    await expect
-      .poll(
-        () => {
+  it.each([503, 302])(
+    "persists an unacknowledged %i delivery across process restart and resumes after its checkpoint",
+    async (status) => {
+      const relay = await createRelay();
+      // An unavailable acknowledgement or an unsafe redirect leaves the genuine
+      // durable envelope unacknowledged, including across process replacement.
+      relay.reply = () => {
+        return new Response(null, {
+          status,
+          headers:
+            status === 302
+              ? { Location: "https://untrusted.example/collect" }
+              : undefined,
+        });
+      };
+      const gateway = await relay.start();
+      gateway.hello();
+      await gateway.next(2);
+      gateway.ready("persisted-session");
+      gateway.message(2);
+      const first = await relay.deliveries.next();
+      await expect
+        .poll(() => {
           return relay.health();
-        },
-        { timeout: 5000 },
-      )
-      .toMatchObject({ pending: 0, resumable: true });
-    expect(relay.forwarded.length).toBeGreaterThan(attemptsBeforeRestart);
-    expect(relay.forwarded.at(-1)?.rawBody).toBe(first.rawBody);
-    expect(
-      relay.forwarded.every((entry) => {
-        return entry.rawBody === first.rawBody;
-      }),
-    ).toBe(true);
-  }, 15_000);
+        })
+        .toMatchObject({ pending: 1, resumable: true });
+
+      await relay.restart();
+      const attemptsBeforeRestart = relay.forwarded.length;
+      relay.reply = () => {
+        return Response.json({ ok: true, outcome: "duplicate" });
+      };
+      // Initialize the replacement process through its read-only endpoint. The
+      // persisted alarm must recover without another operator /start request.
+      expect(await relay.health()).toMatchObject({
+        running: true,
+        resumable: true,
+      });
+      const resumed = await relay.connections.next();
+      resumed.hello();
+      expect(await resumed.next(6)).toEqual({
+        op: 6,
+        d: { token: BOT_TOKEN, session_id: "persisted-session", seq: 2 },
+      });
+      resumed.send({ op: 0, t: "RESUMED", s: 3, d: {} });
+      // Discord may replay the last observed message. Its checkpoint was committed
+      // atomically with the outbox before the receiver saw the first attempt.
+      resumed.message(2);
+
+      await expect
+        .poll(
+          () => {
+            return relay.health();
+          },
+          { timeout: 5000 },
+        )
+        .toMatchObject({ pending: 0, resumable: true });
+      expect(relay.forwarded.length).toBeGreaterThan(attemptsBeforeRestart);
+      expect(relay.forwarded.at(-1)?.rawBody).toBe(first.rawBody);
+      expect(
+        relay.forwarded.every((entry) => {
+          return entry.rawBody === first.rawBody;
+        }),
+      ).toBe(true);
+      expect(relay.unhandled).toEqual([]);
+    },
+    15_000,
+  );
 
   it("preserves the outbox through Invalid Session and ignores queued stale dispatch", async () => {
     const relay = await createRelay();

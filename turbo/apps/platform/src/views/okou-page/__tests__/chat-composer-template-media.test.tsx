@@ -37,7 +37,7 @@ test("Preview a website template and return to its picker", async () => {
   if (!template) {
     throw new Error("Website template fixture not found");
   }
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
@@ -63,16 +63,14 @@ test("Preview a website template and return to its picker", async () => {
   click(buttonNamed("Website", previewDialog));
   expect(previewDialog).toBeVisible();
   finishCloseTransition();
-  const returnedPicker = await waitFor(() => {
-    const currentPicker = screen.getByRole("dialog");
-    expect(
-      within(currentPicker).getByLabelText(
-        `Preview website template ${template.title}`,
-      ),
-    ).toBeVisible();
-    return currentPicker;
+  await waitFor(() => {
+    expect(previewDialog).not.toBeInTheDocument();
   });
-  expect(returnedPicker).not.toHaveAttribute("data-nested-dialog-open");
+  expect(picker).toBeVisible();
+  expect(
+    within(picker).getByLabelText(`Preview website template ${template.title}`),
+  ).toBeInTheDocument();
+  expect(picker).not.toHaveAttribute("data-nested-dialog-open");
 });
 
 test("Select and send a website template", async () => {
@@ -81,7 +79,7 @@ test("Select and send a website template", async () => {
   if (!template) {
     throw new Error("Website template fixture not found");
   }
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,

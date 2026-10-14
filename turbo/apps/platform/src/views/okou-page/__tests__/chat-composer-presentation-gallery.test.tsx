@@ -2,8 +2,17 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import {
+  agentDraftContract,
+  type AgentDraftRequest,
+} from "@okouai/api-contracts/contracts/agent-draft";
+import { composerInlineTemplates } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   context,
@@ -30,6 +39,7 @@ function detailGroup(title: string): HTMLElement {
 async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
   const template = builtInTemplate();
+  const drafts = mockSavedThemeDraft(template.colorSystemId);
   mockPresentationHtml(template.embedUrl, ["Opening"]);
   const user = userEvent.setup({ delay: null });
 
@@ -39,22 +49,101 @@ async function openPresentationThemePreview() {
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
+  await expectInlineTemplate(template.title);
+  const inline = composerInlineTemplates()[0];
+  const edit = inline && queryAllByRoleFast("button", inline)[0];
+  if (!edit) {
+    throw new Error("The saved presentation template has no edit control");
+  }
+  click(edit);
+  await screen.findByRole("dialog");
   click(screen.getByLabelText(`Preview ${template.title} at current slide`));
   await waitFor(() => {
     expect(detailGroup(template.title)).toBeInTheDocument();
   });
-  return { capture, template, user, detail: detailGroup(template.title) };
+  return {
+    capture,
+    template,
+    user,
+    drafts,
+    detail: detailGroup(template.title),
+  };
 }
 
-test("Send the selected presentation theme from its preview", async () => {
-  const { capture, template, user } = await openPresentationThemePreview();
+test("Select a presentation theme from its preview", async () => {
+  const { capture, template, drafts } = await openPresentationThemePreview();
   click(screen.getByLabelText("Select style Deep dive"));
   click(
     within(screen.getByRole("dialog")).getByLabelText(
       `Select template ${template.title}`,
     ),
   );
+  await expectInlineTemplate(template.title);
+  await waitFor(() => {
+    expect(drafts).toContainEqual(
+      expect.objectContaining({
+        draftUserMessage: {
+          version: 1,
+          parts: expect.arrayContaining([
+            expect.objectContaining({
+              type: "template",
+              template: expect.objectContaining({
+                type: "presentation",
+                selection: expect.objectContaining({
+                  templateId: template.templateId,
+                  colorSystemId: "color-system:ocean-deep",
+                }),
+              }),
+            }),
+          ]),
+        },
+      }),
+    );
+  });
+  expect(capture.sentMessages).toStrictEqual([]);
+});
+
+function mockSavedThemeDraft(colorSystemId: string) {
+  const template = builtInTemplate();
+  const drafts: AgentDraftRequest[] = [];
+  context.mocks.api(agentDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftUserMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "template",
+            titleSnapshot: template.title,
+            template: {
+              type: "presentation",
+              selection: {
+                templateId: template.templateId,
+                colorSystemId,
+              },
+            },
+          },
+        ],
+      },
+      draftAttachments: null,
+    });
+  });
+  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
+    drafts.push(body);
+    return respond(204);
+  });
+  return drafts;
+}
+
+test("Send a presentation theme restored from a saved draft", async () => {
+  const capture = mockTemplateChat();
+  const template = builtInTemplate();
+  const user = userEvent.setup({ delay: null });
+  mockSavedThemeDraft("color-system:ocean-deep");
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    host: "app.okou.ai",
+  });
   await expectInlineTemplate(template.title);
   await sendComposerMessage(user, "Create the quarterly presentation");
   await waitFor(() => {
