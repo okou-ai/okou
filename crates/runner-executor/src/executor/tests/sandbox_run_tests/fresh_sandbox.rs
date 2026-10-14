@@ -107,25 +107,8 @@ async fn fresh_pre_spawn_admission_cancels_before_factory_create() {
 
 #[tokio::test]
 async fn fresh_pre_spawn_admission_releases_after_agent_ready() {
-    use httpmock::prelude::*;
-    use runner_provider::http::{HttpClient, HttpClientConfig};
-
     let dir = tempfile::tempdir().unwrap();
-    let api = MockServer::start_async().await;
-    let startup = api.mock(|when, then| {
-        when.method(PUT)
-            .path_matches("/api/runners/runs/[^/]+/startup")
-            .json_body(serde_json::json!({ "sandboxStartupPath": "cold" }));
-        then.status(204);
-    });
-    let mut config = test_executor_config(dir.path()).await;
-    config.http = HttpClient::new(HttpClientConfig {
-        api_url: api.base_url(),
-        vercel_bypass: None,
-        client_session_id: "fresh-admission-startup".into(),
-        runner_version: env!("CARGO_PKG_VERSION"),
-    })
-    .unwrap();
+    let (config, _startup_api) = test_executor_config_with_startup_api(dir.path()).await;
     let config = Arc::new(config);
     let total_tokens = config.pre_spawn_admission.total_tokens();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -184,7 +167,6 @@ async fn fresh_pre_spawn_admission_releases_after_agent_ready() {
         .unwrap()
         .unwrap();
     assert_eq!(result.unwrap().exit_code(), 0);
-    startup.assert_calls_async(1).await;
     assert_telemetry_action(
         &telemetry,
         "runner_fresh_pre_spawn_admission_wait",

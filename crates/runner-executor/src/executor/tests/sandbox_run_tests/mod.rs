@@ -41,7 +41,7 @@ use super::support::{
     make_reusable_idle_sandbox, minimal_context, run_new_sandbox_outcome, run_new_sandbox_status,
     sandbox_create_error, sandbox_exec_error, sandbox_write_file_error, seed_home_image_cache,
     seed_home_image_cache_with_fingerprints, test_budget_lease, test_device_rate_limits,
-    test_executor_config, test_telemetry,
+    test_executor_config, test_executor_config_with_startup_api, test_telemetry,
 };
 use crate::home_image_cache::{
     HomeCacheCheckoutResult, HomeCacheTerminalStatus, HomeImageCache, HomeImageLeaseIdentity,
