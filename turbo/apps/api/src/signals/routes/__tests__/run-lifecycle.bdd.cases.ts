@@ -10468,6 +10468,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect.any(String),
         );
         expect(expiryByPermission.get("conversations:read")).toBeNull();
+        const firstExpiry = expiryByPermission.get("chat:write");
+        if (typeof firstExpiry !== "string") {
+          throw new Error("Expected the temporary chat:write grant expiry");
+        }
+        const laterExpiry = expiryByPermission.get("files:read");
+        expect(laterExpiry).toStrictEqual(expect.any(String));
 
         // A same-org member's own grant never leaks into the owner's runs.
         const member = bdd.user({ orgId: actor.orgId, orgRole: "org:member" });
@@ -10485,7 +10491,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(
           grantedContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
-        ).toStrictEqual(expect.any(String));
+        ).toBe(firstExpiry);
         expect(grantedContext.claim.environment).toMatchObject({
           CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
         });
@@ -10500,11 +10506,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(granted.deny).not.toContain("chat:write");
         expect(granted.deny).toContain("files:write");
 
-        // Two hours later the 1h grant is expired while the 24h grant holds.
-        mockNow(now() + 2 * 3_600_000);
-        const expired = await claimSlackPolicy("after the 1h grant expired");
+        // The 1h grant expires at equality, while longer and permanent grants hold.
+        mockNow(Date.parse(firstExpiry));
+        const expiredContext = await claimSlackContext(
+          "at the 1h grant expiry",
+        );
+        const expired = expiredContext.policy;
         expect(expired.deny).toContain("chat:write");
         expect(expired.allow).toContain("files:read");
+        expect(expired.allow).toContain("search:read");
+        expect(expired.allow).toContain("conversations:read");
+        expect(
+          expiredContext.claim.networkPolicyRefreshes?.slack?.nextRefreshAt,
+        ).toBe(laterExpiry);
 
         // Unknown-permission grants flip only the unknown policy.
         await api.applyUserPermissionGrant(actor, {
@@ -10576,6 +10590,16 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
           nextSyncAt: expect.any(String),
         });
+        const sameUserSync = sameUserRuntime.body.results[1];
+        if (sameUserSync?.state !== "available") {
+          throw new Error(
+            "Expected the owner's runtime policy to be available",
+          );
+        }
+        expect(sameUserSync.networkPolicy).toStrictEqual(
+          snapshotClaim.networkPolicies?.slack,
+        );
+        expect(sameUserSync.nextSyncAt).toBe(laterExpiry);
         const otherUserRuntime = await api.requestSyncConnectorRuntimeAs(
           `Bearer ${memberRunnerKey.token}`,
           snapshotRun.runId,
