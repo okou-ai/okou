@@ -75,9 +75,9 @@ pub(in crate::exec_operation) struct ExecTerminalLogContext<'a> {
     /// The transported evidence proves an OOM decision rather than recording an
     /// inspected-and-empty capture candidate.
     pub(in crate::exec_operation) evidence_has_proof: bool,
-    /// Retained kernel records name a victim in the agent's own containment
-    /// domain rather than in a separately contained tool leaf.
-    pub(in crate::exec_operation) agent_domain_oom_kill: bool,
+    /// Shared domain attribution; positive evidence may still be unproven.
+    pub(in crate::exec_operation) classification:
+        Option<guest_contracts::oom_evidence::OomClassification>,
     /// A line claimed the evidence prefix but broke its bounds or encoding.
     pub(in crate::exec_operation) evidence_malformed: bool,
     pub(in crate::exec_operation) host_cancel_requested: bool,
@@ -207,19 +207,16 @@ impl ExecOperationDiagnostic {
         let evidence_has_proof = split.has_proof();
         let evidence_malformed = split.malformed_lines > 0;
         let oom_evidence = split.evidence.is_some();
-        let agent_domain_oom_kill = split
+        let classification = split
             .evidence
             .as_ref()
-            .is_some_and(guest_contracts::oom_evidence::OomEvidence::agent_domain_oom_kill);
-        // The classification names which cgroup the kernel killed, so only a
-        // record whose evidence proves an OOM decision carries one. A plain
+            .and_then(guest_contracts::oom_evidence::OomEvidence::classification);
+        // Classification uses independent domain counters when kernel records
+        // are incomplete; uncertainty must not imply tool containment. A plain
         // string keeps the field groupable; `?` formatting would emit
         // `Some(...)` and break equality matching in the log backend.
-        let oom_classification = match (evidence_has_proof, agent_domain_oom_kill) {
-            (false, _) => "",
-            (true, true) => "agent_oom_kill",
-            (true, false) => "contained_tool_oom",
-        };
+        let oom_classification =
+            classification.map_or("", guest_contracts::oom_evidence::OomClassification::as_str);
         // Parse identity before logging so malformed payload text never becomes
         // an unbounded log field. The owning Runner supplies run_id separately.
         let operation_id = split
@@ -252,7 +249,7 @@ impl ExecOperationDiagnostic {
             stream_overflowed,
             actionable_diagnostic: diagnostic_present,
             evidence_has_proof,
-            agent_domain_oom_kill,
+            classification,
             evidence_malformed,
             host_cancel_requested,
         }) else {
@@ -401,21 +398,21 @@ pub(in crate::exec_operation) fn exec_terminal_log_decision(
         });
     }
     if context.evidence_has_proof {
-        // The kernel record names which cgroup it killed. A kill confined to a
-        // tool leaf is an informational observation; it does not assert run
-        // success, and Guest Agent/Runner retain semantic failures. The process
-        // exit code says nothing about the kernel's choice, so it takes no part
-        // in this decision.
+        // Only proven tool containment is informational. Missing victim records
+        // or counters cannot demote an agent-domain or uncertain OOM. Semantic
+        // failures remain independent of this domain observation.
+        let contained = context.classification
+            == Some(guest_contracts::oom_evidence::OomClassification::ContainedToolOom);
         return Some(ExecTerminalLogDecision {
-            severity: if context.agent_domain_oom_kill {
-                ExecTerminalLogSeverity::Warn
-            } else {
+            severity: if contained {
                 ExecTerminalLogSeverity::Info
-            },
-            reason: if context.agent_domain_oom_kill {
-                ExecTerminalLogReason::OomEvidence
             } else {
+                ExecTerminalLogSeverity::Warn
+            },
+            reason: if contained {
                 ExecTerminalLogReason::ContainedToolOom
+            } else {
+                ExecTerminalLogReason::OomEvidence
             },
         });
     }

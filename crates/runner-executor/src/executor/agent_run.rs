@@ -1106,7 +1106,8 @@ const GUEST_MEMORY_OOM_KILLED_ERROR: &str =
 /// Whether this failed run was terminated by a guest out-of-memory kill of the
 /// agent process itself.
 ///
-/// The kernel record supplies the attribution. The terminal exit code only
+/// Kernel victims or reliable local counters supply the domain attribution.
+/// The terminal exit code only
 /// corroborates that the process the guest waited on was killed: depending on
 /// the launcher, that arrives either as an observed signal or as a shell's
 /// `137` exit translation, so a signal field is not required here.
@@ -3289,7 +3290,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         {
             info!(run_id = %context.run_id, operation_id = %evidence.operation_id,
                 evidence_kind = ResourceFailureKind::GuestMemoryOomKilled.as_str(),
-                oom_classification = if agent_domain_oom_kill { "agent_oom_kill" } else { "contained_tool_oom" },
+                oom_classification = evidence.classification().map_or("", guest_contracts::oom_evidence::OomClassification::as_str),
                 "preserved operation-scoped guest kernel oom evidence");
         }
         let path = config.log_paths.oom_evidence_log(context.run_id);
