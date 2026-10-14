@@ -767,9 +767,9 @@ impl MockSandboxOverrides {
     /// Return recorded write-file calls across all sandboxes built from this
     /// override set.
     ///
-    /// The returned vector is a cloned snapshot in recorded order. Shared
-    /// overrides observe these calls but do not provide a shared write-file
-    /// result queue.
+    /// The returned vector is a cloned snapshot in recorded order. Use
+    /// [`Self::push_write_file_result`] to configure ordinary-write results shared
+    /// by these sandboxes.
     pub fn write_file_calls(&self) -> Vec<WriteFileCall> {
         self.file.write_file_calls.lock_ignoring_poison().clone()
     }
