@@ -55,10 +55,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  deleteChatThread$,
-  renameChatThread$,
-} from "../../signals/chat-page/chat-event.ts";
+import { deleteChatThread$ } from "../../signals/chat-page/chat-event.ts";
+import { renameChatThreadFromInput$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import {
   createNewChatThread$,
   newChatThreadDisabled$,
@@ -70,10 +68,7 @@ import {
   type SidebarChatThreadScrollSignals,
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
-import {
-  sidebarThreadRenameInputRef$,
-  type SidebarChatThreadItemSignals,
-} from "../../signals/chat-page/sidebar-chat-thread-item.ts";
+import type { SidebarChatThreadItemSignals } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { sidebarThreadTitleOverflowRef$ } from "../../signals/chat-page/sidebar-thread-title.ts";
 import {
   currentChatAgentScope$,
@@ -673,8 +668,11 @@ function ChatThreadItemRenameForm({
   const isUnread = useLastResolved(signals.unread$) ?? false;
   const commitInlineRename = useSet(signals.commitInlineRename$);
   const cancelInlineRename = useSet(signals.cancelInlineRename$);
-  const focusRenameInput = useSet(sidebarThreadRenameInputRef$);
-  const pageSignal = useGet(pageSignal$);
+  const inlineRenameInputRef = useSet(signals.inlineRenameInputRef$);
+  // The blur that commits is often the press of a click that opens another
+  // chat, and that navigation aborts the page signal before the request can
+  // be sent.
+  const rootSignal = useGet(rootSignal$);
 
   // Enter and Escape both hand focus back to the row, so leaving the field is
   // the one place an edit is committed; Escape clears the edit first.
@@ -716,7 +714,7 @@ function ChatThreadItemRenameForm({
     >
       <ChatThreadListPaneIcon signals={signals} />
       <input
-        ref={focusRenameInput}
+        ref={inlineRenameInputRef}
         name="title"
         type="text"
         aria-label={t(($) => {
@@ -730,7 +728,7 @@ function ChatThreadItemRenameForm({
         className="min-w-0 flex-1 bg-transparent p-0 leading-5 text-[color:var(--nav-copy,inherit)] outline-none placeholder:text-muted-foreground"
         onBlur={(event) => {
           detach(
-            commitInlineRename(event.currentTarget.value, pageSignal),
+            commitInlineRename(event.currentTarget.value, rootSignal),
             Reason.DomCallback,
           );
         }}
@@ -778,7 +776,7 @@ function ChatThreadRenameDialog() {
   const renameDialogInput = useGet(renameDialogInput$);
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
-  const renameChatThread = useSet(renameChatThread$);
+  const renameChatThreadFromInput = useSet(renameChatThreadFromInput$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -789,13 +787,15 @@ function ChatThreadRenameDialog() {
     if (!renameDialogThreadId || !renameDialogInput.trim()) {
       return;
     }
-    const threadId = renameDialogThreadId;
-    const agentId = renameDialogAgentId;
-    const title = renameDialogInput.trim();
     detach(
-      (async () => {
-        await renameChatThread({ threadId, title, agentId }, pageSignal);
-      })(),
+      renameChatThreadFromInput(
+        {
+          threadId: renameDialogThreadId,
+          input: renameDialogInput,
+          agentId: renameDialogAgentId,
+        },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
     closeRenameDialog();
