@@ -186,7 +186,7 @@ export function createAuthedContractClient<T extends AppRouter>(
           };
           const token = await observeAuthTokenRead(
             () => {
-              return options.getToken(signal, diagnostic);
+              return options.getToken(diagnostic, signal);
             },
             diagnostic,
             { method: args.route.method, route: args.route.path },

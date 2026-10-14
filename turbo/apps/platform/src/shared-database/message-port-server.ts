@@ -211,8 +211,8 @@ export class SharedDatabaseMessagePortServer {
   }
 
   private readonly requestToken: SharedDatabaseTokenProvider = (
-    callerSignal,
     diagnostic,
+    callerSignal,
   ) => {
     const registeredSignal = this.registeredSignal;
     if (!registeredSignal) {

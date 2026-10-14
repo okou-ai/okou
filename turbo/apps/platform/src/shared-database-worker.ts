@@ -42,7 +42,7 @@ function main(): void {
   const store = createStore();
   store.set(
     bootstrapWorker$,
-    (signal, diagnostic) => {
+    (diagnostic, signal) => {
       return store.set(requestTokenFromTabs$, diagnostic, signal);
     },
     workerSignal,

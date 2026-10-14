@@ -296,7 +296,7 @@ function requestConnectionToken(
     () => {
       providerSignal.throwIfAborted();
       return waitForOperation(
-        getToken(providerSignal, diagnostic),
+        getToken(diagnostic, providerSignal),
         providerSignal,
       );
     },

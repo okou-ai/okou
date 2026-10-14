@@ -213,8 +213,8 @@ const prepareSharedDatabaseBridge$ = command(
     };
     const bridgeHost = get(sharedDatabaseBridgeHostState$);
     const getToken: SharedDatabaseTokenProvider = (
-      requestSignal,
       diagnostic,
+      requestSignal,
     ) => {
       return readClerkToken(clerk, requestSignal, { diagnostic });
     };

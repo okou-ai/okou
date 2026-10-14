@@ -71,7 +71,7 @@ beforeEach(() => {
   context.store.set(setApiClientRuntime$, {
     apiBaseUrl: location.origin,
     oauthApiBaseUrl: location.origin,
-    getToken: async (signal, diagnostic) => {
+    getToken: async (diagnostic, signal) => {
       const resolvedClerk = await clerk;
       signal?.throwIfAborted();
       return await readClerkToken(resolvedClerk, signal, { diagnostic });
@@ -106,7 +106,7 @@ test.each([false, true])(
     await context.store.set(setupRealtime$, context.signal);
     const callsBeforeRenewal = mockedClerk.sessionGetToken.mock.calls.length;
     context.mocks.ably.triggerConnectionState("suspended", {
-      code: 80003,
+      code: 80_003,
       statusCode: 408,
       retryIn: 30_000,
     });
@@ -116,7 +116,7 @@ test.each([false, true])(
       callsBeforeRenewal + 1,
     );
     for (const [options] of mockedClerk.sessionGetToken.mock.calls) {
-      expect(options?.skipCache).not.toBe(true);
+      expect(options?.skipCache).toBeFalsy();
     }
     const events = axiomTelemetry.ingest.mock.calls
       .flatMap(([, entries]) => {
@@ -131,7 +131,7 @@ test.each([false, true])(
           "okou.auth.stage": "ably_connection",
           "okou.auth.state": "suspended",
           "okou.auth.retry_in_ms": 30_000,
-          "okou.auth.reason_code": 80003,
+          "okou.auth.reason_code": 80_003,
           "okou.auth.reason_status_code": 408,
         }),
       }),

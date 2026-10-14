@@ -415,7 +415,7 @@ export const setupSharedWorkerTestBootstrap$ = command(
           appVersion: options.appVersion,
           identity: options.identity,
           apiBaseUrl: resolveApiBaseForTarget("api"),
-          getToken: (requestSignal, diagnostic) => {
+          getToken: (diagnostic, requestSignal) => {
             return options.workerStore.set(
               requestTokenFromTabs$,
               diagnostic,

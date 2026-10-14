@@ -21,6 +21,7 @@ import {
   createAuthDiagnosticId,
   type AuthDiagnosticContext,
 } from "../lib/auth-diagnostics.ts";
+import { apiClientRuntime$ } from "./api-client-runtime.ts";
 import { apiClient$ } from "./api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { createAblyAuthCallback } from "../lib/ably-auth.ts";
@@ -858,6 +859,7 @@ const connectRealtimeClient$ = command(
     signal.throwIfAborted();
     const createClient = get(apiClient$);
     const diagnostic: AuthDiagnosticContext = {
+      ...get(apiClientRuntime$).authDiagnosticContext,
       realtimeInstanceId: createAuthDiagnosticId(),
     };
     const ably = createAblyRealtime(

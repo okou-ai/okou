@@ -86,7 +86,10 @@ export const apiClient$ = computed((get) => {
     return createAuthedContractClient(contract, {
       getToken: options?.getToken ?? tokenOptions.getToken,
       getTokenGuard: options?.getTokenGuard,
-      authDiagnosticContext: options?.authDiagnosticContext,
+      authDiagnosticContext: {
+        ...runtime.authDiagnosticContext,
+        ...options?.authDiagnosticContext,
+      },
       baseUrl: runtime.apiBaseUrl,
       clientVersion,
       resolvePath: (path) => {

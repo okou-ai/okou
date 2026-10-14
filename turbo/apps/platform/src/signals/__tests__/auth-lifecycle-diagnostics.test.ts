@@ -5,10 +5,10 @@ import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-t
 import { AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT } from "@okouai/core/temporary-auth-diagnostics";
 import { beforeEach, expect, test, vi } from "vitest";
 
-import type { AuthTokenProvider } from "../../lib/auth-diagnostics.ts";
+import { mockedClerk } from "../../__tests__/mock-auth.ts";
+import { setupPage } from "../../__tests__/page-helper.ts";
 import { mockNow } from "../../lib/time.ts";
-import { createAuthedContractClient } from "../api-client-base.ts";
-import { readClerkToken } from "../clerk-token.ts";
+import { apiClient$ } from "../api-client.ts";
 import { resetSignal } from "../utils.ts";
 import { testContext } from "./test-helpers.ts";
 
@@ -68,30 +68,26 @@ function token(expiresAt = NOW / 1000 + 60): string {
   return `header.${btoa(JSON.stringify(claims)).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "")}.private-signature`;
 }
 
-function client(
+async function client(
   sdkGetToken: (options?: {
     readonly skipCache?: boolean;
   }) => Promise<string | null>,
 ) {
-  const clerk = {
-    session: { getToken: sdkGetToken },
-    addListener: () => {
-      return () => {
-        return undefined;
-      };
-    },
-  };
-  const getToken: AuthTokenProvider = (signal, diagnostic) => {
-    return readClerkToken(clerk, signal, { diagnostic });
-  };
-  return createAuthedContractClient(chatThreadEventsContract, {
-    baseUrl: "https://api.okou.ai",
-    clientVersion: "0.984.1",
-    getToken,
-    getVercelProtectionBypass: () => {
-      return undefined;
-    },
+  // There is no page-visible surface for the external telemetry contract.
+  // Enter real Platform bootstrap on a route with no authenticated page data.
+  // The Clerk SDK mock belongs to context.mocks, not a fabricated token source.
+  context.mocks.clerk();
+  await setupPage({
+    context,
+    path: "/auth-diagnostics-no-page",
+    host: "app.okou.ai",
+    appVersion: "0.984.1",
   });
+  mockedClerk.sessionGetToken.mockImplementation(sdkGetToken);
+  // Startup itself reads tokens and emits telemetry. Observe only subsequent
+  // caller-owned requests, after finite production startup has completed.
+  axiom.ingest.mockClear();
+  return context.store.get(apiClient$)(chatThreadEventsContract);
 }
 
 function request(threadId = crypto.randomUUID(), signal = context.signal) {
@@ -135,8 +131,10 @@ test("An SDK completion after a clock jump reports completion-time TTL and sends
   const sdkStarted = context.mocks.deferred<void>();
   const sdkResult = context.mocks.deferred<string | null>();
   const credential = token(NOW / 1000 + 5);
-  const sdkGetToken = vi.fn((options?: { readonly skipCache?: boolean }) => {
-    expect(options?.skipCache).not.toBe(true);
+  const sdkGetToken = vi.fn<
+    (options?: { readonly skipCache?: boolean }) => Promise<string | null>
+  >((options) => {
+    expect(options?.skipCache).toBeFalsy();
     sdkStarted.resolve();
     return sdkResult.promise;
   });
@@ -145,7 +143,8 @@ test("An SDK completion after a clock jump reports completion-time TTL and sends
     observed.push(request.headers);
     return respond(401, denied);
   });
-  const response = client(sdkGetToken).rows(request());
+  const api = await client(sdkGetToken);
+  const response = api.rows(request());
   await sdkStarted.promise;
   const started = stage("clerk_sdk_started");
   expect(started._time).toBe(new Date(NOW).toISOString());
@@ -161,9 +160,9 @@ test("An SDK completion after a clock jump reports completion-time TTL and sends
   const operationId = attributes(stage("token_read_started"))[
     "okou.auth.operation_id"
   ];
-  expect(operationId).toEqual(expect.any(String));
+  expect(operationId).toStrictEqual(expect.any(String));
   const requestId = observed[0]?.get(CLIENT_REQUEST_ID_HEADER);
-  expect(requestId).toEqual(expect.any(String));
+  expect(requestId).toStrictEqual(expect.any(String));
   for (const event of lifecycle()) {
     expect(attributes(event)["okou.auth.operation_id"]).toBe(operationId);
   }
@@ -229,7 +228,7 @@ test("Concurrent calls keep separate operation IDs correlated with their actual 
       return firstToken.promise;
     })
     .mockResolvedValueOnce(token());
-  const api = client(sdkGetToken);
+  const api = await client(sdkGetToken);
   const first = api.rows(request(firstThread));
   await firstStarted.promise;
   const firstOperation = attributes(stage("token_read_started"))[
@@ -279,7 +278,8 @@ test.each([null, "malformed.private-credential"])(
     const sdkGetToken = vi
       .fn<() => Promise<string | null>>()
       .mockResolvedValue(credential);
-    await expect(client(sdkGetToken).rows(request())).resolves.toMatchObject({
+    const api = await client(sdkGetToken);
+    await expect(api.rows(request())).resolves.toMatchObject({
       status: 401,
       body: denied,
     });
@@ -316,7 +316,8 @@ test.each([
     const sdkGetToken = vi
       .fn<() => Promise<string | null>>()
       .mockRejectedValue(error);
-    await expect(client(sdkGetToken).rows(request())).rejects.toBe(error);
+    const api = await client(sdkGetToken);
+    await expect(api.rows(request())).rejects.toBe(error);
     expect(observed).toHaveLength(0);
     expect(sdkGetToken).toHaveBeenCalledOnce();
     for (const name of ["clerk_sdk_finished", "token_read_finished"]) {
@@ -328,7 +329,7 @@ test.each([
       lifecycle().some((event) => {
         return attributes(event)["okou.auth.stage"] === "http_send_invoked";
       }),
-    ).toBe(false);
+    ).toBeFalsy();
     expect(JSON.stringify(axiom.ingest.mock.calls)).not.toContain(
       error.message,
     );
@@ -347,6 +348,10 @@ test.each([
       observed.push(request.headers);
       return respond(200, emptyRows);
     });
+    const sdkGetToken = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValue(credential);
+    const api = await client(sdkGetToken);
     axiom.ingest.mockImplementation((_, events) => {
       if (
         events.some((event) => {
@@ -356,10 +361,7 @@ test.each([
         throw error;
       }
     });
-    const sdkGetToken = vi
-      .fn<() => Promise<string | null>>()
-      .mockResolvedValue(credential);
-    await expect(client(sdkGetToken).rows(request())).resolves.toMatchObject({
+    await expect(api.rows(request())).resolves.toMatchObject({
       status: 200,
       body: emptyRows,
     });
@@ -380,6 +382,10 @@ test.each(["uuid", "clock", "window-context"] as const)(
       observed.push(request.headers);
       return respond(200, emptyRows);
     });
+    const sdkGetToken = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValue(credential);
+    const api = await client(sdkGetToken);
     if (fault === "uuid") {
       vi.spyOn(crypto, "randomUUID").mockImplementationOnce(() => {
         throw new Error("Optional diagnostic UUID unavailable");
@@ -398,10 +404,7 @@ test.each(["uuid", "clock", "window-context"] as const)(
         throw new Error("Optional browser context unavailable");
       });
     }
-    const sdkGetToken = vi
-      .fn<() => Promise<string | null>>()
-      .mockResolvedValue(credential);
-    await expect(client(sdkGetToken).rows(input)).resolves.toMatchObject({
+    await expect(api.rows(input)).resolves.toMatchObject({
       status: 200,
       body: emptyRows,
     });
@@ -420,7 +423,7 @@ test("The expiry cutoff stops new lifecycle records while token reads and HTTP c
   const sdkGetToken = vi
     .fn<() => Promise<string | null>>()
     .mockResolvedValue(token());
-  const api = client(sdkGetToken);
+  const api = await client(sdkGetToken);
   mockNow(AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT - 1, context.signal);
   await expect(api.rows(request())).resolves.toMatchObject({
     status: 200,
@@ -440,12 +443,14 @@ test("The expiry cutoff stops new lifecycle records while token reads and HTTP c
     axiom.ingest.mock.calls.flatMap(([, events]) => {
       return events;
     }),
-  ).toMatchObject([
-    {
-      name: "GET /api/chat-threads/:threadId/event-rows",
-      "attributes.http.response.status_code": 200,
-    },
-  ]);
+  ).toStrictEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        name: "GET /api/chat-threads/:threadId/event-rows",
+        "attributes.http.response.status_code": 200,
+      }),
+    ]),
+  );
 });
 
 test("A late SDK settlement records an aborted owner at completion time without sending HTTP", async () => {
@@ -459,6 +464,11 @@ test("A late SDK settlement records an aborted owner at completion time without 
     observed.push(request.headers);
     return respond(200, emptyRows);
   });
+  const sdkGetToken = vi.fn<() => Promise<string | null>>(() => {
+    sdkStarted.resolve();
+    return sdkResult.promise;
+  });
+  const api = await client(sdkGetToken);
   axiom.ingest.mockImplementation((_, events) => {
     if (
       events.some((event) => {
@@ -471,14 +481,12 @@ test("A late SDK settlement records an aborted owner at completion time without 
       sdkFinishedRecord.resolve();
     }
   });
-  const sdkGetToken = vi.fn(() => {
-    sdkStarted.resolve();
-    return sdkResult.promise;
-  });
-  const pending = client(sdkGetToken).rows(request(crypto.randomUUID(), owner));
-  const rejected = expect(pending).rejects.toMatchObject({
-    name: "AbortError",
-  });
+  const pending = api.rows(request(crypto.randomUUID(), owner));
+  // Attach the rejection observer before cancellation; await that observer
+  // below after the SDK has started and the request owner has been aborted.
+  const rejected = (async () => {
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  })();
   await sdkStarted.promise;
   context.store.set(resetOwner$, context.signal);
   await rejected;
@@ -506,5 +514,5 @@ test("A late SDK settlement records an aborted owner at completion time without 
     lifecycle().some((event) => {
       return attributes(event)["okou.auth.stage"] === "http_send_invoked";
     }),
-  ).toBe(false);
+  ).toBeFalsy();
 });

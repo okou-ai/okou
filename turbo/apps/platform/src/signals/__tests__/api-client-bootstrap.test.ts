@@ -3,6 +3,7 @@ import { expect, test, vi } from "vitest";
 
 import { createAuthedContractClient } from "../api-client-base";
 import { testContext } from "./test-helpers";
+import type { AuthTokenProvider } from "../../lib/auth-diagnostics.ts";
 
 const context = testContext();
 
@@ -29,7 +30,7 @@ test("uses a matching bootstrap response once before falling back to the network
     networkRequestCount += 1;
     return Response.json(networkBody);
   });
-  const getToken = vi.fn<(signal?: AbortSignal) => Promise<string>>(() => {
+  const getToken = vi.fn<AuthTokenProvider>(() => {
     return Promise.resolve("network-token");
   });
   const client = createAuthedContractClient(featureSwitchesContract, {
@@ -50,8 +51,8 @@ test("uses a matching bootstrap response once before falling back to the network
   const second = await client.get({ headers: {} });
   expect(second).toMatchObject({ status: 200, body: networkBody });
   expect(getToken).toHaveBeenCalledExactlyOnceWith(
-    undefined,
     expect.any(Object),
+    undefined,
   );
   expect(networkRequestCount).toBe(1);
 
@@ -62,8 +63,8 @@ test("uses a matching bootstrap response once before falling back to the network
   expect(third).toMatchObject({ status: 200, body: networkBody });
   expect(getToken).toHaveBeenNthCalledWith(
     2,
-    context.signal,
     expect.any(Object),
+    context.signal,
   );
   expect(networkRequestCount).toBe(2);
 });

@@ -15,6 +15,11 @@ import { now } from "./time.ts";
 /** Invocation-local metadata only; never store a token or SDK identity here. */
 export interface AuthDiagnosticContext {
   readonly operationId?: string;
+  readonly readBrowserContext?: () => {
+    readonly visibility: "visible" | "hidden";
+    readonly iosLike: boolean;
+    readonly displayMode: "standalone" | "browser";
+  };
   readonly realtimeInstanceId?: string;
   readonly ablyAuthId?: string;
   readonly connectionId?: string;
@@ -25,8 +30,8 @@ export interface AuthDiagnosticContext {
 }
 
 export type AuthTokenProvider = (
-  signal?: AbortSignal,
   diagnostic?: AuthDiagnosticContext,
+  signal?: AbortSignal,
 ) => Promise<string | null>;
 
 interface AuthDiagnosticMeasurement {
@@ -90,20 +95,17 @@ export function createAuthDiagnosticId(): string | undefined {
   });
 }
 
-function windowContext(): Readonly<Record<string, string | number>> {
-  if (typeof window === "undefined" || typeof document === "undefined") {
+function browserContext(
+  context: AuthDiagnosticContext | undefined,
+): Readonly<Record<string, string | number>> {
+  const browser = context?.readBrowserContext?.();
+  if (!browser) {
     return {};
   }
-  const iosLike =
-    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-  const standalone =
-    Reflect.get(navigator, "standalone") === true ||
-    window.matchMedia("(display-mode: standalone)").matches;
   return {
-    "okou.auth.visibility": document.visibilityState,
-    "okou.auth.ios_like": iosLike ? 1 : 0,
-    "okou.auth.display_mode": standalone ? "standalone" : "browser",
+    "okou.auth.visibility": browser.visibility,
+    "okou.auth.ios_like": browser.iosLike ? 1 : 0,
+    "okou.auth.display_mode": browser.displayMode,
   };
 }
 
@@ -131,7 +133,7 @@ export function recordAuthDiagnostic(event: AuthDiagnosticEvent): void {
       "okou.auth.stage": event.stage,
       "okou.auth.event_at_ms": timestamp,
       "okou.auth.client_session_id": getClientSessionId(),
-      ...windowContext(),
+      ...browserContext(event.context),
       ...credentialAttributes,
     };
     const context = event.context;

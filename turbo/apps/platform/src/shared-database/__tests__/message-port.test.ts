@@ -181,7 +181,7 @@ function initializeWorker(
       appVersion: WORKER_APP_VERSION,
       identity: workerIdentity,
       apiBaseUrl: location.origin,
-      getToken: (signal, diagnostic) => {
+      getToken: (diagnostic, signal) => {
         return workerStore.set(requestTokenFromTabs$, diagnostic, signal);
       },
       oauthApiBaseUrl: location.origin,

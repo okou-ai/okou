@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
 import { recordAuthDiagnostic } from "../lib/auth-diagnostics.ts";
+import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { NEVER_RESOLVED_PROMISE } from "./utils.ts";
@@ -35,7 +36,11 @@ export const installedSharedDatabaseBridge$ = computed(
 
 const reportTabVisibility$ = command(
   ({ get }, source: "initial" | "visibilitychange" | "pageshow"): void => {
-    recordAuthDiagnostic({ stage: "page_visibility", source });
+    recordAuthDiagnostic({
+      stage: "page_visibility",
+      source,
+      context: createBrowserAuthDiagnosticContext(),
+    });
     get(installedSharedDatabaseBridge$).setTabVisibility(
       document.visibilityState,
     );
@@ -43,7 +48,11 @@ const reportTabVisibility$ = command(
 );
 
 const reportTabHidden$ = command(({ get }): void => {
-  recordAuthDiagnostic({ stage: "page_visibility", source: "pagehide" });
+  recordAuthDiagnostic({
+    stage: "page_visibility",
+    source: "pagehide",
+    context: createBrowserAuthDiagnosticContext(),
+  });
   get(installedSharedDatabaseBridge$).setTabVisibility("hidden");
 });
 

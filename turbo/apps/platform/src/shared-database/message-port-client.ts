@@ -29,8 +29,8 @@ import { logger } from "../signals/log.ts";
 import {
   recordAuthDiagnostic,
   startAuthDiagnosticMeasurement,
-  type AuthDiagnosticContext,
 } from "../lib/auth-diagnostics.ts";
+import { createBrowserAuthDiagnosticContext } from "../lib/auth-diagnostics-browser.ts";
 import {
   createDeferredPromise,
   onDomEventFn,
@@ -317,9 +317,9 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       { readonly type: "get-token" }
     >,
   ): Promise<void> {
-    const diagnostic: AuthDiagnosticContext = {
+    const diagnostic = createBrowserAuthDiagnosticContext({
       tokenAttemptId: message.requestId,
-    };
+    });
     const measurement = startAuthDiagnosticMeasurement();
     recordAuthDiagnostic({
       stage: "tab_token_received",
@@ -327,7 +327,7 @@ export class MessagePortSharedDatabaseBridge implements SharedDatabaseBridge {
       outcome: "started",
     });
     const result = await settle(
-      this.getToken(this.bridgeSignal, diagnostic),
+      this.getToken(diagnostic, this.bridgeSignal),
       this.bridgeSignal,
     );
     recordAuthDiagnostic({
