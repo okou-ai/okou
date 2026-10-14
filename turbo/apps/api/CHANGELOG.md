@@ -9,6 +9,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.733.2](https://github.com/okou-ai/okou/compare/api-v1.733.1...api-v1.733.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** prepare run-owned deletion for session retirement ([#39931](https://github.com/okou-ai/okou/issues/39931)) ([fbeb04c](https://github.com/okou-ai/okou/commit/fbeb04cd067359c20138eabd9010edbbb2ca1374))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.753.0
+    * @okouai/db bumped to 1.336.2
+    * @okouai/pi-agent-runtime bumped to 1.49.30
+
 ## [1.733.1](https://github.com/okou-ai/okou/compare/api-v1.733.0...api-v1.733.1) (2026-10-14)
 
 

@@ -12,6 +12,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1022.0](https://github.com/okou-ai/okou/compare/app-v0.1021.1...app-v0.1022.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive token and realtime auth diagnostics ([#39916](https://github.com/okou-ai/okou/issues/39916)) ([ba5b45a](https://github.com/okou-ai/okou/commit/ba5b45a6d899ac1c387c94babeeca1cd080b1a8a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.753.0
+
 ## [0.1021.1](https://github.com/okou-ai/okou/compare/app-v0.1021.0...app-v0.1021.1) (2026-10-14)
 
 
