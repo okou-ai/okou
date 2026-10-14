@@ -21,10 +21,7 @@ const journal = z
 const migration = journal.entries.find((entry) => {
   return entry.tag.endsWith("_discord_account_connections");
 });
-assert.ok(
-  migration,
-  "Retain this validator until outgoing Discord guild writers have drained",
-);
+assert.ok(migration, "Account connection migration must be present");
 const databaseName = `discord_accounts_${randomUUID().replaceAll("-", "")}`;
 const admin = new Client({ connectionString: databaseUrl });
 await admin.connect();
@@ -118,7 +115,7 @@ try {
     [{ id: route }],
   );
 
-  // An outgoing API may still write guild-scoped rows after the backfill.
+  // New account connections require canonical organization ownership.
   const peerGrant = randomUUID();
   const peer = `peer-${user}`;
   const peerSender = "700000000000000014";
@@ -132,9 +129,8 @@ try {
   );
   await client.query(
     `INSERT INTO discord_org_connections
-    (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)
-    ON CONFLICT (guild_id, discord_user_id) DO UPDATE SET oauth_grant_id = EXCLUDED.oauth_grant_id`,
-    [guild, peerSender, peer, peerGrant],
+    (org_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
+    [org, peerSender, peer, peerGrant],
   );
   assert.deepEqual(
     (
@@ -152,7 +148,7 @@ try {
     (discord_user_id, user_id, oauth_grant_id) VALUES ('unowned', 'unowned', $1)`,
       [randomUUID()],
     ),
-    { code: "23514", constraint: "chk_discord_connection_grant_scope" },
+    { code: "23502", column: "org_id" },
   );
   await client.query(
     "DELETE FROM discord_org_installations WHERE guild_id = $1",
@@ -196,7 +192,7 @@ try {
     1,
   );
   console.log(
-    "Discord account backfill, preserved routes/preferences, outgoing SQL and scoped revocation passed",
+    "Discord account backfill, preserved routes/preferences, required org ownership and scoped revocation passed",
   );
 } finally {
   await client.end();

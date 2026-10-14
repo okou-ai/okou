@@ -853,7 +853,7 @@ describe("Discord native authorization and reads", () => {
         integrationsDiscordContract,
       ).disconnect({
         headers: { authorization: "Bearer clerk-session" },
-        query: { action: "disconnect" },
+        query: {},
       }),
       [200],
     );
@@ -1101,7 +1101,7 @@ describe("Discord native sends and transport failures", () => {
                   integrationsDiscordContract,
                 ).disconnect({
                   headers: { authorization: "Bearer clerk-session" },
-                  query: { action: "disconnect" },
+                  query: {},
                 }),
                 [200],
               );

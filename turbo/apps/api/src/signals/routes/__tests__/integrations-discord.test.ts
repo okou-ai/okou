@@ -195,7 +195,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: false,
       isConnected: false,
       guildId: null,
       discordUserId: null,
@@ -221,7 +220,7 @@ describe("verified Discord integration settings", () => {
     });
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: false,
+      isConnected: false,
     });
     await accept(
       client().setDmSelection({
@@ -240,33 +239,17 @@ describe("verified Discord integration settings", () => {
       client().disconnect({ headers: authenticate(owner), query: {} }),
       [404],
     );
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [403],
-    );
     await expectDiscordChanges([owner.userId]);
 
     await enable(owner);
     await enable(peer);
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: true,
-      isInstalled: false,
       isConnected: false,
     });
     await expect(status(peer)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
     });
-    await accept(
-      client().disconnect({
-        headers: authenticate(owner),
-        query: { action: "uninstall" },
-      }),
-      [403],
-    );
   });
 
   it("reports existing bindings and unavailable context when app configuration is missing", async () => {
@@ -277,7 +260,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toMatchObject({
       isAvailable: false,
-      isInstalled: true,
       isConnected: true,
       guildId: installed.guildId,
       contextMode: "unavailable",
@@ -293,7 +275,6 @@ describe("verified Discord integration settings", () => {
 
     await expect(status(owner)).resolves.toStrictEqual({
       isAvailable: true,
-      isInstalled: true,
       isConnected: true,
       isAdmin: true,
       guildId: installed.guildId,
@@ -414,14 +395,12 @@ describe("verified Discord integration settings", () => {
 
     const disconnected = await status(owner);
     expect(disconnected).toMatchObject({
-      isInstalled: false,
       isConnected: false,
       discordUserId: null,
     });
     expect(disconnected.dmBindings).toStrictEqual([]);
     expect(disconnected.dmSelectionConnectionId).toBeNull();
     await expect(status(peer)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       discordUserId: second.discordUserId,
     });
@@ -430,28 +409,6 @@ describe("verified Discord integration settings", () => {
       [404],
     );
     await expectDiscordChanges([owner.userId]);
-  });
-
-  it("rejects legacy server uninstall for both members and admins", async () => {
-    const { actor, restore } = createActors();
-    const owner = actor();
-    await fixture(owner);
-    const peer = actor({ orgId: owner.orgId });
-    await fixture(peer);
-    for (const role of ["org:member", "org:admin"] as const) {
-      mockDiscordMemberships(context, [{ ...owner, orgRole: role }, peer]);
-      await accept(
-        client().disconnect({
-          headers: authenticate(owner),
-          query: { action: "uninstall" },
-        }),
-        [403],
-      );
-      await expect(status(owner)).resolves.toMatchObject({ isConnected: true });
-      await expect(status(peer)).resolves.toMatchObject({ isConnected: true });
-    }
-    restore();
-    await expectDiscordChanges([]);
   });
 
   it("notifies only the disconnecting user and preserves peers and cached admins", async () => {
@@ -477,7 +434,6 @@ describe("verified Discord integration settings", () => {
     }
     await enable(unconnectedAdmin);
     await expect(status(unconnectedAdmin)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     await expectDiscordChanges([]);
@@ -492,11 +448,9 @@ describe("verified Discord integration settings", () => {
     const recipients = [owner.userId];
     await expectDiscordChanges(recipients);
     await expect(status(connected)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
     });
     await expect(status(otherOwner)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: otherInstalled.guildId,
     });
@@ -518,7 +472,6 @@ describe("verified Discord integration settings", () => {
     mockDiscordMemberships(context, []);
 
     await expect(status(owner)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
       dmBindings: [],
     });

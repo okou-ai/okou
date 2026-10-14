@@ -1,6 +1,4 @@
-import { sql } from "drizzle-orm";
 import {
-  check,
   foreignKey,
   index,
   pgTable,
@@ -18,10 +16,9 @@ export const discordOrgConnections = pgTable(
   "discord_org_connections",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    // Nullable legacy columns/keys keep outgoing API statements legal during
-    // promotion. New connections write orgId and leave guildId null.
+    // Historical consent context; account ownership is always the organization.
     guildId: varchar("guild_id", { length: 255 }),
-    orgId: text("org_id"),
+    orgId: text("org_id").notNull(),
     discordUserId: varchar("discord_user_id", { length: 255 }).notNull(),
     userId: text("user_id").notNull(),
     // Every binding references its genuine completed personal authorization.
@@ -30,10 +27,6 @@ export const discordOrgConnections = pgTable(
   },
   (table) => {
     return [
-      check(
-        "chk_discord_connection_grant_scope",
-        sql`${table.orgId} IS NOT NULL OR ${table.guildId} IS NOT NULL`,
-      ),
       foreignKey({
         name: "fk_discord_connection_account_grant",
         columns: [

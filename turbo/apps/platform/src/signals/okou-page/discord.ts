@@ -90,8 +90,7 @@ export const startDiscordAuthorization$ = command(
         const client = get(apiClient$)(discordOauthContract);
         const result = await accept(
           client.start({
-            // Keep the legacy discriminator for independently deployed older APIs.
-            body: guildId ? { flow: "connect", guildId } : { flow: "install" },
+            body: guildId ? { guildId } : {},
             fetchOptions: { signal: flowSignal, credentials: "include" },
           }),
           [200],

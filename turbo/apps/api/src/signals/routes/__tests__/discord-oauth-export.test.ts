@@ -48,7 +48,7 @@ async function startAttempt(user: DiscordActor, guildId: string) {
       discordOauthContract,
     ).start({
       headers: authenticate(user),
-      body: { flow: "connect", guildId },
+      body: { guildId },
     }),
     [200],
   );

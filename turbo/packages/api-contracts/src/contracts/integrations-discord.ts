@@ -12,7 +12,6 @@ export const discordContextModeSchema = z.enum([
 
 export const discordOrgStatusSchema = z.object({
   isAvailable: z.boolean(),
-  isInstalled: z.boolean(),
   isConnected: z.boolean(),
   isAdmin: z.boolean(),
   guildId: z.string().nullable(),
@@ -29,7 +28,7 @@ export const discordOrgStatusSchema = z.object({
       connectionId: z.uuid(),
       guildId: z.string(),
       guildName: z.string().nullable(),
-      workspaceName: z.string().optional(),
+      workspaceName: z.string(),
     }),
   ),
 });
@@ -52,9 +51,7 @@ export const integrationsDiscordContract = c.router({
     path: "/api/integrations/discord",
     headers: authHeadersSchema,
     body: c.noBody(),
-    query: z.object({
-      action: z.enum(["disconnect", "uninstall"]).optional(),
-    }),
+    query: z.strictObject({}),
     responses: {
       200: z.object({ ok: z.literal(true) }),
       401: apiErrorSchema,

@@ -21,7 +21,6 @@ const path = `/settings/discord?guild_id=${guildId}`;
 function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   return {
     isAvailable: true,
-    isInstalled: true,
     isConnected: false,
     isAdmin: true,
     guildId,
@@ -41,7 +40,6 @@ test.each(["install", "connect"] as const)(
   "The Discord bot link offers %s directly and retains the target server",
   async (flow) => {
     let current = status({
-      isInstalled: flow === "connect",
       guildId: flow === "connect" ? guildId : null,
       guildName: flow === "connect" ? "Design team" : null,
     });
@@ -87,7 +85,7 @@ test.each(["install", "connect"] as const)(
       "Complete authorization in the Discord window",
     );
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
-    expect(requestBody).toStrictEqual({ flow: "connect", guildId });
+    expect(requestBody).toStrictEqual({ guildId });
     expect(completionBody).toBeUndefined();
     popup.close();
     await waitFor(() => {

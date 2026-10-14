@@ -539,7 +539,6 @@ export function discordOrgStatus(
     const config = getDiscordAppConfig();
     const status: DiscordOrgStatus = {
       isAvailable: enabled && config !== null,
-      isInstalled: false,
       isConnected: false,
       isAdmin: args.orgRole === "admin",
       guildId: null,
@@ -607,8 +606,6 @@ export function discordOrgStatus(
     return {
       ...currentStatus,
       isAdmin: role === "admin",
-      // Compatibility field for already-open App clients. New UI shows only connection status.
-      isInstalled: true,
       isConnected: true,
       guildId: connection.guildId,
       guildName: connection.guildName,

@@ -23,7 +23,7 @@ describe("okou discord connect", () => {
     vi.stubEnv("OKOU_TOKEN", "private-run-token");
     vi.stubEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     vi.stubEnv("OKOU_APP_URL", "https://app.okou.ai");
-    for (const option of ["install", "guildId", "json"]) {
+    for (const option of ["guildId", "json"]) {
       connectCommand.setOptionValue(option, undefined);
     }
   });
@@ -56,13 +56,13 @@ describe("okou discord connect", () => {
     expect(attempts).toStrictEqual([]);
   });
 
-  it("returns configured App origin with install and exact guild guidance, without owner or credential query parameters", async () => {
+  it("returns configured App origin with exact guild guidance, without owner or credential query parameters", async () => {
     const guildId = "18446744073709551615";
     vi.stubEnv(
       "OKOU_APP_URL",
       "https://app.custom.test/ignored?state=do-not-transfer",
     );
-    await run(["--install", "--guild-id", guildId, "--json"]);
+    await run(["--guild-id", guildId, "--json"]);
     expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual({
       url: `https://app.custom.test/settings/discord?guild_id=${guildId}`,
       flow: "connect",

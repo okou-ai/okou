@@ -135,7 +135,6 @@ test("erases a non-installer across surviving guilds, preserves other bindings, 
   ].entries()) {
     const status = await accept(client(user).getStatus({ headers }), [200]);
     expect(status.body).toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: installations[index]!.guildId,
       discordUserId: installations[index]!.discordUserId,
@@ -253,7 +252,6 @@ test("account erasure during provider context import revokes ingress and keeps t
   }
   const status = await accept(client(peer).getStatus({ headers }), [200]);
   expect(status.body).toMatchObject({
-    isInstalled: true,
     isConnected: true,
     guildId: removed.guildId,
     discordUserId: peerBinding.discordUserId,

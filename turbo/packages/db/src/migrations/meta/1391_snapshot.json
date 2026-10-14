@@ -1,5 +1,5 @@
 {
-  "id": "46ab8d58-e50b-41c0-afac-e00b82bea804",
+  "id": "0df81351-4de5-468a-8e4e-e78a49680991",
   "prevId": "87832660-d247-4bbb-b64b-89bf82168d21",
   "version": "7",
   "dialect": "postgresql",
@@ -12529,7 +12529,7 @@
           "name": "org_id",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "discord_user_id": {
           "name": "discord_user_id",

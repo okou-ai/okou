@@ -154,6 +154,7 @@ async function launchedRun(actor: ConnectedDiscordActor, threadId: string) {
 async function discordStatus(
   actor: Pick<ConnectedDiscordActor, "userId" | "orgId">,
 ) {
+  mockDiscordMemberships(context, [actor]);
   createRouteMocks(context).clerk.session(
     actor.userId,
     actor.orgId,
@@ -191,15 +192,13 @@ describe("canonical Discord ingress", () => {
       const client = setupApp({ context, routes: integrationsDiscordRoutes })(
         integrationsDiscordContract,
       );
-      for (const action of ["disconnect", "uninstall"] as const) {
-        await accept(
-          client.disconnect({
-            headers: { authorization: "Bearer clerk-session" },
-            query: { action },
-          }),
-          [200, 403, 404],
-        );
-      }
+      await accept(
+        client.disconnect({
+          headers: { authorization: "Bearer clerk-session" },
+          query: {},
+        }),
+        [200, 404],
+      );
       await deleteFeatureSwitchesForUser(context, identity);
     });
     await updateFeatureSwitchesForUser(context, identity, {
@@ -215,7 +214,6 @@ describe("canonical Discord ingress", () => {
     const status = await discordStatus(actor);
     expect(status).toMatchObject({
       isAvailable: true,
-      isInstalled: true,
       isConnected: true,
       discordUserId: actor.discordUserId,
       defaultAgentId: null,
@@ -1020,7 +1018,7 @@ describe("canonical Discord ingress", () => {
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const removed = {
       version: 1 as const,
@@ -1038,7 +1036,7 @@ describe("canonical Discord ingress", () => {
     );
     expect(context.mocks.ably.publish).not.toHaveBeenCalled();
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const reinstalled = await createPublicDiscordBinding(context, {
       flow: "install",
@@ -1062,7 +1060,7 @@ describe("canonical Discord ingress", () => {
       [],
     );
     await expect(discordStatus(actor)).resolves.toMatchObject({
-      isInstalled: true,
+      isConnected: true,
     });
     const message = discordMessageForTest(actor, {
       channelId: provider.guildChannelId,

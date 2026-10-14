@@ -421,7 +421,7 @@ async function disconnect(owner: Actor): Promise<void> {
       integrationsDiscordContract,
     ).disconnect({
       headers: accountApi.authenticate(owner),
-      query: { action: "disconnect" },
+      query: {},
     }),
     [200],
   );

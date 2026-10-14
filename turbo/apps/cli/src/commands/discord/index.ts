@@ -20,7 +20,7 @@ export const discordCommand = new Command()
     `
 Examples:
   Connect account:  okou discord connect
-  Connect account:  okou discord connect
+  Connect in server: okou discord connect --guild-id <id>
   List channels:    okou discord channel list --json
   Read history:     okou discord message history --channel-id <id> --json
   Read a thread:    okou discord message replies --channel-id <parent-channel-id> --message-id <root-message-id> --json
@@ -30,7 +30,7 @@ Examples:
 
 Notes:
   - Use okou discord connect to open App Works, sign in, and start official Discord consent in your browser.
-  - Read, send, and file commands require a verified binding resolved from the current organization. Their optional --guild-id must match that binding's guild.
+  - Read, send, and file commands require a verified binding resolved from the current organization. Their optional --guild-id selects a server where you and the bot have access.
   - Attachment URLs are not returned; use download-file with the attachment ID.
   - All Discord IDs are decimal strings. Copy IDs from Discord with Developer Mode enabled.`,
   );

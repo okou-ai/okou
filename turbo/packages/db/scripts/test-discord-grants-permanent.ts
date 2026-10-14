@@ -53,23 +53,26 @@ export async function validatePermanentDiscordGrants(
       VALUES ($1, $2, $3, $4, $5, $6) RETURNING org_grant_id
     ), approved AS (
       UPDATE discord_org_grants SET approved_at = $6 WHERE id IN (SELECT org_grant_id FROM installed) RETURNING id
-    ) INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id)
-      SELECT $1, $7, $4, id FROM approved`,
+    ) INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id)
+      SELECT $1, $7, $4, id, $2 FROM approved`,
       [guild, org, bot, actor, id, createdAt, sender],
     );
     await assert.rejects(
       client.query(
-        `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id) VALUES ($1, $2, $3)`,
-        [guild, peerSender, peer],
+        `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, org_id) VALUES ($1, $2, $3, $4)`,
+        [guild, peerSender, peer, org],
       ),
       { code: "23502", column: "oauth_grant_id" },
     );
     await assert.rejects(
       client.query(
-        `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id) VALUES ($1, $2, $3, $4)`,
-        [guild, peerSender, peer, id],
+        `INSERT INTO discord_org_connections (guild_id, discord_user_id, user_id, oauth_grant_id, org_id) VALUES ($1, $2, $3, $4, $5)`,
+        [guild, peerSender, peer, id, org],
       ),
-      { code: "23503", constraint: "fk_discord_connection_oauth_grant" },
+      {
+        code: "23503",
+        constraint: /^fk_discord_connection_(?:oauth|account)_grant$/u,
+      },
     );
     await client.query(
       `INSERT INTO discord_oauth_states (id, state_hash, completion_token_hash, phase, user_id, org_id, flow, redirect_uri, verified_guild_id, verified_guild_name, verified_discord_user_id, verified_bot_user_id, expires_at) VALUES ($1::uuid, $1::text, NULL, 'approved', $2, $3, 'connect', 'https://example.test/callback', $4, 'guild', $5, $6, now() + interval '10 minutes')`,

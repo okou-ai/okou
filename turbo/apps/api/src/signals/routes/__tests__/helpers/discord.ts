@@ -434,8 +434,5 @@ export async function removePublicDiscordBinding(
     integrationsDiscordContract,
   );
   const headers = { authorization: "Bearer clerk-session" };
-  await accept(
-    client.disconnect({ headers, query: { action: "disconnect" } }),
-    [200, 403, 404],
-  );
+  await accept(client.disconnect({ headers, query: {} }), [200, 403, 404]);
 }

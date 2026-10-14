@@ -499,13 +499,11 @@ describe("Discord product OAuth", () => {
     const f = await fixture();
     const admin = await f.actor();
     await expect(status(admin)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
       onboarding: "oauth",
     });
     await installed(f, admin);
     await expect(status(admin)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: f.guildId,
       discordUserId: f.discordUserId,
@@ -554,7 +552,6 @@ describe("Discord product OAuth", () => {
       }),
     ).resolves.toMatchObject({ status: "connected", httpStatus: 200 });
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       guildId: f.guildId,
       discordUserId: f.discordUserId,
@@ -621,7 +618,6 @@ describe("Discord product OAuth", () => {
       (await finish(f, started, { discordUserId: memberDiscordId })).status,
     ).toBe("connected");
     await expect(status(member)).resolves.toMatchObject({
-      isInstalled: true,
       isConnected: true,
       isAdmin: false,
       discordUserId: memberDiscordId,
@@ -635,7 +631,7 @@ describe("Discord product OAuth", () => {
     await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
       [200],
     );
@@ -645,7 +641,6 @@ describe("Discord product OAuth", () => {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
         body: JSON.stringify({
-          flow: "connect",
           userId: "arbitrary",
           orgId: "arbitrary",
         }),
@@ -656,7 +651,7 @@ describe("Discord product OAuth", () => {
       raw("/api/integrations/discord/oauth/start", {
         method: "POST",
         headers: { ...headers, "content-type": "application/json" },
-        body: JSON.stringify({ flow: "install", guildId: "not-a-snowflake" }),
+        body: JSON.stringify({ guildId: "not-a-snowflake" }),
       }),
       [400],
     );
@@ -669,11 +664,11 @@ describe("Discord product OAuth", () => {
     await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
       [401],
     );
-    expect((await status(member)).isInstalled).toBeFalsy();
+    expect((await status(member)).isConnected).toBeFalsy();
   });
   it("allows account consent after an Okou admin becomes an ordinary workspace member", async () => {
     const f = fixture();
@@ -700,7 +695,7 @@ describe("Discord product OAuth", () => {
     const response = await accept(
       clients()(discordOauthContract).start({
         headers,
-        body: { flow: "install" },
+        body: {},
       }),
       [503],
     );
@@ -719,7 +714,7 @@ describe("Discord product OAuth", () => {
         })
       ).searchParams.get("discord_error"),
     ).toBe("invalid_state");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect((await finish(f, started)).status).toBe("connected");
   });
   it.each([
@@ -770,7 +765,7 @@ describe("Discord product OAuth", () => {
         "discord_error",
       ),
     ).toBe("invalid_state");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
     const good = await start(actor, "install", f.guildId);
     await finish(f, good);
@@ -836,7 +831,7 @@ describe("Discord product OAuth", () => {
     const result = await finish(f, started, options);
     expect(result.status).toBe("error");
     expect(JSON.stringify(result)).not.toContain("secret-provider-detail");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("rejects a callback guild hint that disagrees with verified token guild evidence", async () => {
@@ -854,7 +849,7 @@ describe("Discord product OAuth", () => {
         await callback(started, { code, guild_id: snowflake() })
       ).searchParams.get("discord_error"),
     ).toBe("guild_unverified");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
   });
   it.each(["revoked-member", "switch-off"])(
     "revalidates %s while authorization is open",
@@ -872,7 +867,7 @@ describe("Discord product OAuth", () => {
       }
       const result = await finish(f, started);
       expect(result.status).toBe("error");
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -890,7 +885,7 @@ describe("Discord product OAuth", () => {
       }),
     );
     expect((await finish(f, started)).error).toBe("forbidden");
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("paginates past 200 eligible guilds rather than silently truncating membership", async () => {
@@ -948,7 +943,7 @@ describe("Discord product OAuth", () => {
         })
       ).error,
     ).toBe("conflict");
-    expect((await status(otherOrg)).isInstalled).toBeFalsy();
+    expect((await status(otherOrg)).isConnected).toBeFalsy();
     expect((await status(owner)).discordUserId).toBe(f.discordUserId);
     expect(f.messages).toHaveLength(1);
   });
@@ -1050,11 +1045,6 @@ describe("Discord product OAuth", () => {
         return result.isConnected;
       }),
     ).toHaveLength(2);
-    expect(
-      statuses.filter((result) => {
-        return result.isInstalled;
-      }),
-    ).toHaveLength(2);
     expect(f.messages).toHaveLength(2);
   });
   it("keeps one account connection when the same owner connects from two servers concurrently", async () => {
@@ -1096,11 +1086,6 @@ describe("Discord product OAuth", () => {
     expect(
       statuses.filter((result) => {
         return result.isConnected;
-      }),
-    ).toHaveLength(1);
-    expect(
-      statuses.filter((result) => {
-        return result.isInstalled;
       }),
     ).toHaveLength(1);
     expect(f.messages).toHaveLength(1);
@@ -1202,7 +1187,6 @@ describe("Discord product OAuth", () => {
     );
     expect((await finish(f, started)).error).toBe("invalid_state");
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toHaveLength(1);
@@ -1244,7 +1228,7 @@ describe("Discord product OAuth", () => {
     release.resolve();
     const result = await settled;
     expect(result.ok).toBeFalsy();
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it("authorizes the exact DM recipient independently before a welcome, without undoing connection", async () => {
@@ -1274,14 +1258,12 @@ describe("Discord product OAuth", () => {
     const landing = await verified(f, started);
     expect(landing.searchParams.get("discord")).toBe("pending");
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toStrictEqual([]);
     expect((await complete(started)).status).toBe(409);
     expect((await approve(started, landing)).status).toBe(200);
     await expect(status(actor)).resolves.toMatchObject({
-      isInstalled: false,
       isConnected: false,
     });
     expect(f.messages).toStrictEqual([]);
@@ -1338,7 +1320,7 @@ describe("Discord product OAuth", () => {
       ? await complete(started)
       : await approve(started, landing);
     expect(result.status).toBe(403);
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it.each(["bot-gone", "sender-gone", "bot-replaced", "guild-admin-revoked"])(
@@ -1379,7 +1361,7 @@ describe("Discord product OAuth", () => {
         );
       }
       expect((await complete(started)).status).toBe(503);
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -1403,7 +1385,7 @@ describe("Discord product OAuth", () => {
       }),
     );
     expect((await complete(started)).status).toBe(403);
-    expect((await status(actor)).isInstalled).toBeFalsy();
+    expect((await status(actor)).isConnected).toBeFalsy();
     expect(f.messages).toStrictEqual([]);
   });
   it.each(["verified", "approved"])(
@@ -1421,7 +1403,7 @@ describe("Discord product OAuth", () => {
       mockNow(initial + 600_001);
       expect((await approve(started, landing)).status).toBe(400);
       expect((await complete(started)).status).toBe(400);
-      expect((await status(actor)).isInstalled).toBeFalsy();
+      expect((await status(actor)).isConnected).toBeFalsy();
       expect(f.messages).toStrictEqual([]);
     },
   );
@@ -1497,7 +1479,7 @@ describe("Discord product OAuth", () => {
     await accept(
       clients()(discordOauthContract).start({
         headers: actorHeaders(actor),
-        body: { flow: "install", guildId: "18446744073709551616" },
+        body: { guildId: "18446744073709551616" },
       }),
       [400],
     );

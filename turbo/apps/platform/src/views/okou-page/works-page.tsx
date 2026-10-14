@@ -468,7 +468,7 @@ function DiscordDmSelection({
   const items = data.dmBindings.map((binding) => {
     return {
       value: binding.connectionId,
-      label: binding.workspaceName ?? binding.guildName ?? binding.guildId,
+      label: binding.workspaceName,
     };
   });
   return (

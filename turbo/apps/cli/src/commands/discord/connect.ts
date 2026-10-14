@@ -1,4 +1,4 @@
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -6,7 +6,6 @@ import { withErrorHandler } from "../../lib/command/with-error-handler";
 export const connectCommand = new Command()
   .name("connect")
   .description("Connect your Discord account in the App")
-  .addOption(new Option("--install").hideHelp())
   .option(
     "--guild-id <id>",
     "Connect from a server that already has the Okou bot",

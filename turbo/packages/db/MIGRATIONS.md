@@ -62,9 +62,8 @@ expired transition validator must be deleted.
 
 - `scripts/test-discord-account-connections.ts` protects the account-connection
   migration: existing IDs, routes, preferences, and consent survive the ownership
-  backfill; outgoing guild-scoped SQL remains legal; bot removal does not revoke
-  accounts. Keep it until the migration ships and outgoing guild writers and
-  rollback artifacts have drained. `test-discord-grants-permanent.ts` retains
+  backfill; every account requires organization ownership; bot removal does not
+  revoke accounts. Keep it until the migration ships. `test-discord-grants-permanent.ts` retains
   account-consent ownership and scoped revocation checks on the current schema.
 
 ### Retired invitation transition validators

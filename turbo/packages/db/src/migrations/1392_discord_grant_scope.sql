@@ -1,1 +1,0 @@
-ALTER TABLE "discord_org_connections" ADD CONSTRAINT "chk_discord_connection_grant_scope" CHECK ("discord_org_connections"."org_id" IS NOT NULL OR "discord_org_connections"."guild_id" IS NOT NULL);

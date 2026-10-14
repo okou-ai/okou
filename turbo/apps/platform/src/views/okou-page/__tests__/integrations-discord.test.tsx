@@ -26,7 +26,6 @@ const context = testContext();
 function status(overrides: Partial<DiscordOrgStatus> = {}): DiscordOrgStatus {
   return {
     isAvailable: true,
-    isInstalled: true,
     isConnected: true,
     isAdmin: false,
     guildId: "123456789012345678",
@@ -86,7 +85,6 @@ test.each([
   {
     name: "member without a verified connection",
     data: {
-      isInstalled: true,
       guildId: "123456789012345678",
       guildName: "Design team",
     },
@@ -98,7 +96,6 @@ test.each([
     return respond(
       200,
       status({
-        isInstalled: false,
         isConnected: false,
         guildId: null,
         guildName: null,
@@ -158,7 +155,6 @@ test.each(["install", "connect"] as const)(
   async (flow) => {
     let current = status({
       isAdmin: flow === "install",
-      isInstalled: flow === "connect",
       isConnected: false,
       discordUserId: null,
       ...(flow === "install" ? { guildId: null, guildName: null } : {}),
@@ -192,7 +188,6 @@ test.each(["install", "connect"] as const)(
         completeCredentials = request.credentials;
         current = {
           ...current,
-          isInstalled: true,
           guildId: "123456789012345678",
           guildName: "Verified team",
           isConnected: true,
@@ -215,7 +210,7 @@ test.each(["install", "connect"] as const)(
       expect(popup.location.href).toBe(authorizationUrl);
     });
     expect(opened.calls[0]?.url).toBe("about:blank");
-    expect(requestBody).toStrictEqual({ flow: "install" });
+    expect(requestBody).toStrictEqual({});
     expect(authorization).toMatch(/^Bearer /u);
     expect(query).toBe("");
     expect(credentials).toBe("include");
@@ -844,7 +839,6 @@ test("Discord status converges after a connection change from another surface", 
   current = {
     ...current,
     isConnected: false,
-    isInstalled: false,
     guildId: null,
     guildName: null,
     discordUserId: null,
@@ -1035,6 +1029,7 @@ test("Direct messages require an explicit workspace choice and a failed save kee
         connectionId: first,
         guildId: "123456789012345678",
         guildName: "Design team",
+        workspaceName: "Design team",
       },
       {
         connectionId: second,
@@ -1124,6 +1119,7 @@ test.each([
           connectionId: first,
           guildId: "123456789012345678",
           guildName: "Design team",
+          workspaceName: "Design team",
         },
         {
           connectionId: second,
@@ -1281,6 +1277,7 @@ test("Saving a Discord workspace stays pending until the refreshed choice arrive
         connectionId: first,
         guildId: "123456789012345678",
         guildName: "Design team",
+        workspaceName: "Design team",
       },
       {
         connectionId: second,

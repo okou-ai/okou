@@ -1,16 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  exists,
-  gt,
-  inArray,
-  isNull,
-  notExists,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { discordOauthStates } from "@okouai/db/schema/discord-oauth-state";
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { nowDate } from "../../lib/time";
@@ -127,63 +117,13 @@ const commitDiscordOauthBinding$ = command(
           id: discordOauthStates.id,
         }),
     );
-    const legacy = db.$with("legacy_discord_connection").as(
-      db
-        .select({ id: discordOrgConnections.id })
-        .from(discordOrgConnections)
-        .innerJoin(
-          discordOauthStates,
-          eq(discordOauthStates.id, discordOrgConnections.oauthGrantId),
-        )
-        .where(
-          and(
-            isNull(discordOrgConnections.orgId),
-            eq(discordOauthStates.orgId, attempt.orgId),
-            or(
-              eq(discordOrgConnections.userId, attempt.userId),
-              eq(
-                discordOrgConnections.discordUserId,
-                args.evidence.discordUserId,
-              ),
-            ),
-          ),
-        ),
-    );
-    // Adopt connections written by an outgoing API after the migration backfill.
-    // Preserve their IDs so queued conversations and preferences retain ownership.
-    const adopted = db.$with("adopted_discord_connection").as(
-      db
-        .update(discordOrgConnections)
-        .set({ orgId: attempt.orgId, guildId: null, oauthGrantId: attempt.id })
-        .where(
-          and(
-            isNull(discordOrgConnections.orgId),
-            eq(discordOrgConnections.userId, attempt.userId),
-            eq(
-              discordOrgConnections.discordUserId,
-              args.evidence.discordUserId,
-            ),
-            inArray(
-              discordOrgConnections.id,
-              db.select({ id: legacy.id }).from(legacy),
-            ),
-            exists(db.select({ id: claimed.id }).from(claimed)),
-          ),
-        )
-        .returning({ id: discordOrgConnections.id }),
-    );
     const connection = db.$with("committed_discord_connection").as(
       db
         .insert(discordOrgConnections)
         // The global exclusion constraint arbitrates active ownership, including
         // rows committed after this statement's snapshot. The grant FK ties the
         // child to the exact consent evidence and makes revocation cascade atomic.
-        .select(
-          db
-            .select(connectionValues(args, createdAt))
-            .from(claimed)
-            .where(notExists(db.select({ id: legacy.id }).from(legacy))),
-        )
+        .select(db.select(connectionValues(args, createdAt)).from(claimed))
         .onConflictDoUpdate({
           target: [
             discordOrgConnections.orgId,
@@ -198,15 +138,12 @@ const commitDiscordOauthBinding$ = command(
     // replacement. Reconnecting the same owner preserves existing conversations.
     return await settle(
       db
-        .with(claimed, legacy, adopted, connection)
+        .with(claimed, connection)
         .select({
           attemptId: claimed.id,
-          connectionId: sql`coalesce(${adopted.id}, ${connection.id})`.mapWith(
-            nullableDriverValueDecoder(discordOrgConnections.id),
-          ),
+          connectionId: connection.id,
         })
         .from(claimed)
-        .leftJoin(adopted, sql`true`)
         .leftJoin(connection, sql`true`),
     );
   },

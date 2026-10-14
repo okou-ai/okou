@@ -4,7 +4,7 @@ import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/int
 import { discordOrgConnections } from "@okouai/db/schema/discord-org-connection";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, queryOf } from "../context/request";
+import { bodyResultOf } from "../context/request";
 import { writeDb$ } from "../external/db";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -37,7 +37,6 @@ const getDiscordStatus$ = computed(async (get) => {
 const deleteDiscordIntegration$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const query = get(queryOf(integrationsDiscordContract.disconnect));
     // Data removal stays available while the feature is rolled back.
     const role = await get(discordMemberRole(auth));
     signal.throwIfAborted();
@@ -45,18 +44,6 @@ const deleteDiscordIntegration$ = command(
       return unavailable();
     }
     const db = set(writeDb$);
-    if (query.action === "uninstall") {
-      return {
-        status: 403 as const,
-        body: {
-          error: {
-            code: "FORBIDDEN",
-            message:
-              "Manage the bot in Discord. To unlink your account, use Disconnect Discord.",
-          },
-        },
-      };
-    }
     const [connection] = await db
       .select({
         id: discordOrgConnections.id,
