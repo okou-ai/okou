@@ -44,8 +44,8 @@ export function ChatResourcePreviewToggle({
     <Button
       variant="quiet"
       size="xs"
-      iconSize="lg"
-      className="w-full justify-start rounded-lg px-2 font-normal"
+      iconSize="sm"
+      className="w-full justify-start gap-1 rounded-lg px-2 text-xs font-normal text-muted-foreground/70 hover:text-muted-foreground"
       aria-label={label}
       aria-expanded={expanded}
       onClick={onToggle}
