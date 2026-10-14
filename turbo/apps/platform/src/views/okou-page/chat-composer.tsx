@@ -3213,7 +3213,7 @@ function IllustrationTemplateCard({
   return (
     <div
       className={cn(
-        "isolate mb-4 break-inside-avoid",
+        "isolate mb-4 break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
         TEMPLATE_TILE_SELECTION_FRAME,
         selected && TEMPLATE_TILE_SELECTED,
       )}
@@ -3603,11 +3603,10 @@ function IllustrationTemplateGrid({
   onSelect: (item: IllustrationTemplateItem) => void;
   onVariantChange: (slug: string, index: number) => void;
 }) {
-  // CSS multi-column masonry mirrors www.okou.ai/illustration: each tile renders
-  // the full illustration at its native aspect ratio (no cropping, letterbox,
-  // or fixed height), and the column count adapts to the dialog width.
+  // Grid Lanes keeps native-aspect cards out of multi-column fragmentation in
+  // Safari 26.4+. Other browsers retain the existing multi-column layout.
   return (
-    <div className="columns-[244px] gap-4">
+    <div className="columns-[244px] gap-4 supports-[display:grid-lanes]:shrink-0 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-[repeat(auto-fill,minmax(min(244px,100%),1fr))] supports-[display:grid-lanes]:[display:grid-lanes]">
       {items.map((item, index) => {
         return (
           <IllustrationTemplateCard

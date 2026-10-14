@@ -129,7 +129,8 @@ function SlashTemplateCover({
       data-slot="slash-template-cover"
       className={cn(
         "group min-w-0 text-left",
-        aspect && "mb-2.5 block w-full break-inside-avoid",
+        aspect &&
+          "mb-2.5 block w-full break-inside-avoid supports-[display:grid-lanes]:mb-0 supports-[display:grid-lanes]:break-inside-auto",
       )}
       aria-label={t(
         ($) => {
@@ -233,15 +234,13 @@ function SlashTemplateDetailPane({
           className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px"
         >
           {/*
-            Illustration keeps each cover's own proportion, so its covers go in
-            a CSS multi-column masonry — the same shape the picker dialog uses.
-            Every other category's cover really is 16:9, so those stay a grid
-            with level rows.
+            Illustration uses native Grid Lanes when available, with multi-column
+            masonry as a fallback. Other categories keep their 16:9 grid rows.
           */}
           <div
             className={cn(
               nativeAspect
-                ? "columns-2 gap-2.5 pb-4"
+                ? "columns-2 gap-2.5 pb-4 supports-[display:grid-lanes]:columns-auto supports-[display:grid-lanes]:grid-cols-2 supports-[display:grid-lanes]:[display:grid-lanes]"
                 : "grid grid-cols-2 gap-2.5 pb-4",
             )}
           >
