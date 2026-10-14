@@ -207,10 +207,7 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
   expect(within(menu).getByText("Archived mention context")).toBeVisible();
 });
 
-async function openAgentMentionWorkspace(
-  composerAnchored = false,
-  newChat = false,
-) {
+async function openAgentMentionWorkspace(newChat = false) {
   const current = withAgent(
     continuityThread(62, 1, "Scout planning"),
     AGENT_ID,
@@ -253,52 +250,16 @@ async function openAgentMentionWorkspace(
     context,
     path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
-    },
   });
   return { current, savedMentionThread, workspace };
 }
-
-test("Suggest other agents before matching chats", async () => {
-  await openAgentMentionWorkspace();
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  const user = userEvent.setup({ delay: null });
-  await user.click(composer);
-  await user.keyboard("@");
-  const menu = await screen.findByTestId("chat-thread-suggestion-menu");
-  const agentsHeading = within(menu).getByText("Agents");
-  const threadsHeading = within(menu).getByText("Chat threads");
-  expect(
-    agentsHeading.compareDocumentPosition(threadsHeading) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  const initialAgentNames = queryAllByRoleFast("button", menu)
-    .filter((button) => {
-      return Boolean(
-        button.compareDocumentPosition(threadsHeading) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-      );
-    })
-    .map((button) => {
-      return button.textContent?.trim();
-    });
-  expect(initialAgentNames).toStrictEqual([
-    "Reviewer",
-    "Private Ops",
-    "Zeta Agent",
-  ]);
-  expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
-  expect(within(menu).queryByText("Scout")).toBeNull();
-  expect(within(menu).getByText("Zeta launch notes")).toBeVisible();
-});
 
 test.each([false, true])(
   "Composer-anchored mentions reverse groups and select the bottom candidate by default (new chat: %s)",
   async (newChat) => {
     // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
-    await openAgentMentionWorkspace(true, newChat);
+    await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     await user.click(composer);
@@ -317,6 +278,8 @@ test.each([false, true])(
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
+    expect(within(menu).queryByText("Scout")).toBeNull();
+    expect(within(menu).getByText("Zeta launch notes")).toBeInTheDocument();
     expect(composer).toHaveFocus();
     await user.keyboard("{ArrowDown}");
     expect(menuButton("Reviewer")).toHaveAttribute("data-active", "true");
@@ -335,7 +298,7 @@ test("Composer-anchored mentions open below the centred start page composer in r
   context.mocks.browser.matchMedia((query) => {
     return query === START_PAGE_CENTRED_MEDIA_QUERY;
   });
-  await openAgentMentionWorkspace(true, true);
+  await openAgentMentionWorkspace(true);
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(composer);
@@ -357,7 +320,7 @@ test("Composer-anchored mentions open below the centred start page composer in r
 });
 
 test("Composer-anchored mentions navigate upward across groups and insert the visual target", async () => {
-  await openAgentMentionWorkspace(true);
+  await openAgentMentionWorkspace();
   const composer = await screen.findByRole("textbox", { name: "Message" });
   const user = userEvent.setup({ delay: null });
   await user.click(composer);
@@ -385,7 +348,7 @@ test.each([false, true])(
   async (newChat) => {
     // Below `sm` the start page docks its composer to the floor like a thread.
     context.mocks.browser.matchMedia(false);
-    await openAgentMentionWorkspace(true, newChat);
+    await openAgentMentionWorkspace(newChat);
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const user = userEvent.setup({ delay: null });
     await user.click(composer);

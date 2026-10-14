@@ -388,13 +388,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ComposerAnchoredSuggestions]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Anchor slash and mention suggestions above the full composer, without a template preview flyout on mobile.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.DeliveryFormatGuidance]: {
     maintainer: "bingjie@okou.ai",
     description:

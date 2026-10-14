@@ -2776,9 +2776,7 @@ test("Run a workflow automation now and promote it in the next composer overview
     ]);
   });
 
-  await setupWorkflowDetailPage(workflowDetailPath("automations"), {
-    [FeatureSwitchKey.ComposerAnchoredSuggestions]: true,
-  });
+  await setupWorkflowDetailPage(workflowDetailPath("automations"));
 
   await waitFor(() => {
     expect(buttonByText("Run now")).toBeInTheDocument();

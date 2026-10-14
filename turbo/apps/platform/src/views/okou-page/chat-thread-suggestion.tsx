@@ -55,7 +55,6 @@ export function ComposerMentionSuggestionMenu({
   menuRef,
   anchor,
   side,
-  composerAnchored,
   reversed,
   agents,
   chatThreads,
@@ -66,7 +65,6 @@ export function ComposerMentionSuggestionMenu({
   readonly menuRef: Ref<HTMLDivElement>;
   readonly anchor?: ComponentProps<typeof PopoverContent>["anchor"];
   readonly side: "top" | "bottom";
-  readonly composerAnchored: boolean;
   /** The menu opens above the composer, so its most relevant row is last. */
   readonly reversed: boolean;
   readonly agents: readonly ComposerAgentSuggestion[];
@@ -140,15 +138,10 @@ export function ComposerMentionSuggestionMenu({
       side={side}
       align="start"
       sideOffset={8}
-      collisionAvoidance={composerAnchored ? { side: "none" } : undefined}
+      collisionAvoidance={{ side: "none" }}
       initialFocus={false}
       finalFocus={false}
-      className={cn(
-        "flex flex-col overflow-hidden p-0",
-        composerAnchored
-          ? "max-h-[min(16rem,var(--available-height))] w-(--anchor-width) md:max-h-[min(20rem,var(--available-height))]"
-          : "h-[min(16rem,var(--available-height))] w-[260px] max-w-[calc(100vw-1.5rem)] md:h-[min(20rem,var(--available-height))]",
-      )}
+      className="flex max-h-[min(16rem,var(--available-height))] w-(--anchor-width) flex-col overflow-hidden p-0 md:max-h-[min(20rem,var(--available-height))]"
       data-testid="chat-thread-suggestion-menu"
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
