@@ -15,7 +15,7 @@ use sandbox::{
     EXEC_OUTPUT_LIMIT_64_KIB, ExecRequest, ExecTermination, ResourceLimits, Sandbox, SandboxConfig,
     SandboxId,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use shell_quote::quote_shell_arg;
 
@@ -37,7 +37,7 @@ fn home_payload(run_id: RunId) -> Vec<u8> {
 }
 
 /// Required current measurements for this test host; no production selector/default.
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Inputs {
     host_total_bytes: u64,

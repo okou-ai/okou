@@ -53,6 +53,12 @@ def window(samples, start, end):
 
 
 def validate(directory):
+    result, _, _ = _validate_cases(directory, CASES, PHASES)
+    return {"format": "native-terminal-phase-report-v1",
+            "native_terminal_corpus_complete": True, **result}
+
+
+def _validate_cases(directory, cases, phases):
     directory = pathlib.Path(directory)
     collector = json.loads((directory / "report.json").read_text())
     if (collector.get("format") != "runner-memory-calibration-v1"
@@ -112,12 +118,12 @@ def validate(directory):
                 value = process[key]
                 if value is not None and (type(value) is not int or value < 0):
                     raise ValueError("invalid residency observation")
-    receipts = {case: [] for case in CASES}
+    receipts = {case: [] for case in cases}
     for line in (directory / "stdout.log").read_text().splitlines():
         if not line.startswith(PREFIX):
             continue
         event = json.loads(line[len(PREFIX):])
-        if type(event.get("version")) is not int or event["version"] != 1 or event.get("case") not in CASES:
+        if type(event.get("version")) is not int or event["version"] != 1 or event.get("case") not in cases:
             raise ValueError("unexpected native corpus or receipt version")
         if not positive_integer(event.get("monotonic_ns")) or not positive_integer(event.get("unix_ns")):
             raise ValueError("native phase is missing real clocks")
@@ -125,11 +131,12 @@ def validate(directory):
     results = {}
     sandbox_ids, backing_generations = set(), set()
     for case, events in sorted(receipts.items()):
-        if tuple(e["phase"] for e in events) != PHASES:
+        if tuple(e["phase"] for e in events) != phases:
             raise ValueError(f"missing, duplicate or unordered native phases: {case}")
         if events[0]["evidence"].get("artifacts") != expected:
             raise ValueError("native source/artifact/input identity mismatch")
         times = [e["monotonic_ns"] for e in events]
+        by_phase = {e["phase"]: e for e in events}
         if any(a >= b for a, b in zip(times, times[1:])):
             raise ValueError("native phase clocks do not positively order the work")
         identity = (events[1]["sandbox_id"], events[1]["backing_generation"])
@@ -141,14 +148,16 @@ def validate(directory):
             raise ValueError("native backing was reused or changed across phases")
         sandbox_ids.add(identity[0])
         backing_generations.add(identity[1])
-        if events[2]["evidence"].get("positive_owned_wait") is not True:
+        if by_phase["backing_exit_confirmed"]["evidence"].get("positive_owned_wait") is not True:
             raise ValueError("generic completion cannot substitute for native backing wait")
-        if events[3]["evidence"] != {
-                "bytes": 64 * 1024 * 1024, "full_logical_lease": [2, 4096, 1]}:
+        tail = by_phase["required_tail_started"]["evidence"]
+        if tail != {
+                "bytes": 64 * 1024 * 1024, "full_logical_lease": [2, 4096, 1]} or any(
+                    type(value) is not int for value in tail.get("full_logical_lease", [])):
             raise ValueError("required physical tail did not retain its complete lease")
-        if events[4]["evidence"].get("written_and_verified_bytes") != 64 * 1024 * 1024:
+        if by_phase["required_tail_completed"]["evidence"].get("written_and_verified_bytes") != 64 * 1024 * 1024:
             raise ValueError("required post-exit IO is incomplete")
-        complete = events[5]["evidence"]
+        complete = by_phase["case_completed"]["evidence"]
         if any(complete.get(k) is not True for k in (
                 "original_home_restored", "private_runtime_removed",
                 "required_cleanup_joined", "full_lease_released_after_cleanup")) \
@@ -156,12 +165,14 @@ def validate(directory):
             raise ValueError("native original data/cleanup/lease proof is incomplete")
         results[case] = {
             "sandbox_id": identity[0], "backing_generation": identity[1],
-            "live_saving": window(samples, times[1], times[2]),
-            "required_post_exit_io": window(samples, times[2], times[4]),
-            "fixture_post_exit_io": window(samples, times[3], times[4]),
+            "live_saving": window(samples, by_phase["terminal_started"]["monotonic_ns"],
+                                  by_phase["backing_exit_confirmed"]["monotonic_ns"]),
+            "required_post_exit_io": window(samples, by_phase["backing_exit_confirmed"]["monotonic_ns"],
+                                            by_phase["required_tail_completed"]["monotonic_ns"]),
+            "fixture_post_exit_io": window(samples, by_phase["required_tail_started"]["monotonic_ns"],
+                                           by_phase["required_tail_completed"]["monotonic_ns"]),
         }
-    return {
-        "format": "native-terminal-phase-report-v1", "native_terminal_corpus_complete": True,
+    result = {
         "artifacts": expected, "cases": results,
         "residency_complete": all(w["residency_complete"] for c in results.values()
                                   for w in (c["live_saving"], c["required_post_exit_io"])),
@@ -169,6 +180,7 @@ def validate(directory):
         "measurement_scope": "owned sampled residency lower bounds and host availability; unknown samples retained",
         "remaining_parent_gate": "complete native pressure/foreground/session-history/optional/race corpus in P3d2",
     }
+    return result, collector, receipts
 
 
 if __name__ == "__main__":

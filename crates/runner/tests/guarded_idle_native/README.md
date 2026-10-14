@@ -247,3 +247,53 @@ with controlled external park errors, an unexpected parked return and an
 unexpected running handoff point. It verifies the original file bytes and cache
 lock remain owned, the complete logical lease stays allocated and no destruction
 occurs until explicit disposal of the ordinary mock fixture.
+
+## Separately measured pressure paths
+
+`native_policy_pressure_records_saving_and_free_logical_capacity` selects the
+job-free independent pressure owner in fresh and snapshot modes. It requires an
+actual fresh Proc/P2 observation at or below the supplied Critical watermark,
+while its original full lease remains allocated and another complete profile
+fits the logical budget. Its resolved one-entry wave and sampling/controller
+shutdown have separate original-identity witnesses.
+
+`native_logical_pressure_records_replacement_and_required_saving` selects logical
+substitution in both modes. It requires exhausted logical capacity and actual
+availability above the recovery watermark and the full profile/preparation plus
+protected bounds. A different Guest must complete accepted preparation through
+the same authority before original retirement joins are requested. This ordering
+does not assert that old physical exit remains pending or impose an exit barrier.
+
+Use the same exact-source binary, immutable artifact manifest, matched snapshot
+creation identity, disposable base and P1 driver requirements above. Each path
+uses a separate supplied policy and new P1 output directory; do not manufacture
+MemAvailable, induce host-wide pressure or alter existing business resources.
+P1 metadata additionally requires `native_pressure_kind` (`physical` or `logical`)
+and `native_pressure_policy_json` containing the exact UTF-8 policy file contents.
+Its SHA-256 must equal `native_terminal_artifacts.policy_sha256`. Scenario receipts
+must agree with those exact parsed bounds and contain valid actual read/age and
+budget observations. Missing, stale or mismatched conditions fail acceptance.
+
+```sh
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_policy_pressure_records_saving_and_free_logical_capacity \
+  --ignored --exact --nocapture --test-threads=1
+
+"$OWNED_NATIVE_TEST_BINARY" \
+  native_logical_pressure_records_replacement_and_required_saving \
+  --ignored --exact --nocapture --test-threads=1
+
+python3 crates/runner/tests/guarded_idle_native/pressure_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Each report requires its complete two-mode corpus, original data/backing/full
+lease/required IO and actual P1 windows, plus pressure or different-Guest/join
+witnesses. The original twelve-case terminal report remains separate and strict.
+Ordinary Cargo/default Crates CI runs the pressure report's real-file and CLI
+regressions through its ordinary Rust wrapper; the native entries remain opt-in.
+
+The physical label means observed policy classification under supplied disposable
+test limits. It does not prove calibrated real-host shortage, RAM relief, a
+production envelope or OOM protection. Residency unknowns remain lower bounds;
+rootfs producer provenance, complete continuation, optional/foreground/recovery,
+native races and parent numerical/aggregate acceptance remain separate gates.
