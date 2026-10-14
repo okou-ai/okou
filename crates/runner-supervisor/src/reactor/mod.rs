@@ -38,14 +38,16 @@ use std::time::{Duration, Instant};
 use futures_util::future::BoxFuture;
 use sandbox::SandboxRuntime;
 use tokio::sync::mpsc;
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info, warn};
+use tracing::{error, info, warn};
 
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
-use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher, HomeImageCache};
+#[cfg(test)]
+use crate::home_image_cache::HomeImageCache;
+use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -79,6 +81,7 @@ mod heartbeat;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
+mod maintenance;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
@@ -101,6 +104,7 @@ use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
 use job_spawn::{SpawnContext, handle_job_result};
+use maintenance::{MaintenanceCompletion, MaintenanceTasks};
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
@@ -182,44 +186,6 @@ async fn next_home_cache_change(
 ) {
     match future {
         Some(future) => future.await,
-        None => std::future::pending().await,
-    }
-}
-
-// Maintenance tasks are joined during teardown, not aborted: filesystem work
-// may continue after its async future is dropped. If the reactor itself is
-// cancelled, these tasks retain their locks until their work completes.
-fn home_cache_gc_task(cache: HomeImageCache) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            match cache.try_routine_gc(HOME_CACHE_GC_PERIOD).await {
-                Ok(Some(freed_bytes)) if freed_bytes > 0 => {
-                    info!(freed_bytes, "periodic home image cache GC completed");
-                }
-                Ok(Some(_) | None) => {}
-                Err(error) => warn!(%error, "periodic home image cache GC failed"),
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-fn status_retry_task(status: Arc<StatusTracker>) -> JoinHandle<()> {
-    tokio::spawn(
-        async move {
-            if let Err(error) = status.retry_unpublished_snapshot().await {
-                warn!(%error, "failed to retry unpublished runner status");
-            }
-        }
-        .in_current_span(),
-    )
-}
-
-async fn next_maintenance_task(task: &mut Option<JoinHandle<()>>, name: &str) -> RunnerResult<()> {
-    match task {
-        Some(task) => task
-            .await
-            .map_err(|error| RunnerError::Internal(format!("{name} task failed: {error}"))),
         None => std::future::pending().await,
     }
 }
@@ -1296,8 +1262,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         HOME_CACHE_RECONCILIATION_PERIOD,
     );
     home_cache_reconciliation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut home_cache_gc_handle = None;
-    let mut status_retry_handle = None;
+    let mut maintenance = MaintenanceTasks::new();
     let mut soft_drain = soft_drain::SoftDrain::new();
     let mut pending_finalizing_candidate = PendingFinalizingCandidate::new();
     let mut pending_finalizing_retry = false;
@@ -1614,25 +1579,19 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     )?;
                 }
             }
-            result = next_maintenance_task(&mut home_cache_gc_handle, "home cache GC") => {
-                home_cache_gc_handle = None;
-                home_cache_gc_tick.reset();
+            completion = maintenance.wait() => {
+                let (result, stopping_reason) = match completion {
+                    MaintenanceCompletion::HomeCacheGc(result) => {
+                        home_cache_gc_tick.reset();
+                        (result, "home cache GC task failure")
+                    }
+                    MaintenanceCompletion::StatusRetry(result) => {
+                        (result, "status retry task failure")
+                    }
+                };
                 if let Err(error) = result {
                     handle_stopping_signal(
-                        "home cache GC task failure",
-                        &provider_state.cancel,
-                        &provider_state.cancel_tokens,
-                        &lifecycle,
-                    ).await;
-                    terminal_error = Some(error);
-                    break;
-                }
-            }
-            result = next_maintenance_task(&mut status_retry_handle, "status retry") => {
-                status_retry_handle = None;
-                if let Err(error) = result {
-                    handle_stopping_signal(
-                        "status retry task failure",
+                        stopping_reason,
                         &provider_state.cancel,
                         &provider_state.cancel_tokens,
                         &lifecycle,
@@ -1642,11 +1601,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 }
             }
             _ = home_cache_gc_tick.tick() => {
-                if home_cache_gc_handle.is_none()
-                    && let Some(cache) = exec_config.home_cache.clone()
-                {
-                    home_cache_gc_handle = Some(home_cache_gc_task(cache));
-                }
+                maintenance.request_home_cache_gc(exec_config.home_cache.as_ref());
             }
             // Mode changes (signals)
             _ = mode_rx.changed() => {}
@@ -1745,9 +1700,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
                 heartbeat.request(live_mode)?;
-                if status_retry_handle.is_none() {
-                    status_retry_handle = Some(status_retry_task(Arc::clone(&shared.status)));
-                }
+                maintenance.request_status_retry(&shared.status);
                 #[cfg(test)]
                 test_hooks
                     .test_observer
@@ -1888,17 +1841,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     test_hooks
         .test_observer
         .record(StartLoopEvent::MaintenanceDrainEntered);
-    for (name, task) in [
-        ("status retry", &mut status_retry_handle),
-        ("home cache GC", &mut home_cache_gc_handle),
-    ] {
-        if task.is_some()
-            && let Err(error) = next_maintenance_task(task, name).await
-        {
-            error!(%error, "failed to drain maintenance task");
-            terminal_error.get_or_insert(error);
-        }
-        *task = None;
+    if let Err(error) = maintenance.drain().await {
+        terminal_error.get_or_insert(error);
     }
     teardown.phase_complete("maintenance_drain", phase);
 
