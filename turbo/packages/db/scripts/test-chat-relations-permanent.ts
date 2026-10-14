@@ -27,34 +27,28 @@ export async function validateChatRelations(databaseUrl: string) {
       db.insert(chatRelations).values({ ...action, type: "message" }),
     );
     await assert.rejects(
-      db
-        .insert(chatRelations)
-        .values({
-          ...action,
-          type: "message",
-          messageEventId: randomUUID(),
-          targetChatThreadId: action.sourceChatThreadId,
-        }),
+      db.insert(chatRelations).values({
+        ...action,
+        type: "message",
+        messageEventId: randomUUID(),
+        targetChatThreadId: action.sourceChatThreadId,
+      }),
     );
     await assert.rejects(
-      db
-        .insert(chatRelations)
-        .values({
-          ...action,
-          type: "created",
-          targetChatThreadId: randomUUID(),
-          targetRunId: randomUUID(),
-        }),
+      db.insert(chatRelations).values({
+        ...action,
+        type: "created",
+        targetChatThreadId: randomUUID(),
+        targetRunId: randomUUID(),
+      }),
     );
     await assert.rejects(
-      db
-        .insert(chatRelations)
-        .values({
-          ...action,
-          type: "created",
-          targetChatThreadId: randomUUID(),
-          messageEventId: randomUUID(),
-        }),
+      db.insert(chatRelations).values({
+        ...action,
+        type: "created",
+        targetChatThreadId: randomUUID(),
+        messageEventId: randomUUID(),
+      }),
     );
     const messageEventId = randomUUID();
     await db
