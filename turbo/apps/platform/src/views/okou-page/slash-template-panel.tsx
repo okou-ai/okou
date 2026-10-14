@@ -183,10 +183,10 @@ function SlashTemplateDetailPane({
   return (
     <div
       className={cn(
-        "h-full overflow-hidden",
+        "overflow-hidden",
         embedded
-          ? "w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
-          : "w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
+          ? "relative w-[400px] max-w-1/2 shrink-0 border-l border-border/60"
+          : "h-full w-[320px] rounded-[12px] border border-[hsl(var(--gray-400))] bg-card shadow-lg",
       )}
       role={embedded ? "region" : undefined}
       aria-label={embedded ? slashTemplateCategoryLabel(category) : undefined}
@@ -198,7 +198,14 @@ function SlashTemplateDetailPane({
         edge, so a half-visible row reads as more content rather than sitting
         above a white gutter. The trailing space lives inside the scroller.
       */}
-      <div className="flex h-full flex-col px-4 pt-4">
+      <div
+        className={cn(
+          "flex flex-col px-4 pt-4",
+          // The rows set the menu height; previews scroll within that height
+          // without moving the menu when the pointer switches between rows.
+          embedded ? "absolute inset-0" : "h-full",
+        )}
+      >
         {/*
           The scroller reaches the pane's right edge and pads its content back,
           so the overlay scrollbar — which draws inward from the viewport edge —
@@ -391,15 +398,6 @@ function SlashPanelWorkflowList({
       </div>
     );
   }
-  if (workflows.length === 0) {
-    return (
-      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-        {t(($) => {
-          return $.chat.composer.workflows.empty;
-        })}
-      </div>
-    );
-  }
   return (
     <div className="px-1">
       {(reversed ? [...workflows].reverse() : workflows).map(
@@ -471,6 +469,9 @@ function SlashPanelWorkflowSection({
 }: ComponentProps<typeof SlashPanelWorkflowList> &
   Pick<SlashTemplatePanelProps, "collapseWorkflows" | "onExpandWorkflows">) {
   const { t } = useTranslation();
+  if (!listProps.loading && workflows.length === 0) {
+    return null;
+  }
   const hasCollapsedWorkflows =
     collapseWorkflows &&
     workflows.length > SLASH_PANEL_COLLAPSED_WORKFLOW_COUNT;
@@ -709,13 +710,6 @@ export function SlashTemplatePanel({
       className={cn(
         "flex min-h-0 w-full overflow-hidden",
         anchored ? "flex-row" : "h-full flex-col",
-        // Reserve preview space while categories are available so hovering a
-        // workflow cannot move the menu under the pointer. Filtered workflow
-        // results and mobile menus only claim the height their rows need.
-        anchored &&
-          isDesktop &&
-          categories.length > 0 &&
-          "h-[min(380px,var(--available-height))]",
       )}
       data-slot="slash-panel"
       onMouseLeave={(event) => {

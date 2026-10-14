@@ -1800,7 +1800,6 @@
       "threadSuggestions": "Conversations",
       "useForFutureChats": "Utiliser ce modèle pour les prochaines discussions",
       "workflows": {
-        "empty": "Aucun workflow correspondant",
         "loading": "Chargement des workflows...",
         "showAll": "Afficher tous les workflows",
         "title": "Workflows"

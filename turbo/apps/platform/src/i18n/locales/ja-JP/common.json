@@ -1766,7 +1766,6 @@
       "threadSuggestions": "チャットスレッド",
       "useForFutureChats": "今後のチャットでも使用",
       "workflows": {
-        "empty": "一致するワークフローがありません",
         "loading": "ワークフローを読み込んでいます...",
         "showAll": "すべてのワークフローを表示",
         "title": "ワークフロー"

@@ -1766,7 +1766,6 @@
       "threadSuggestions": "Thread chat",
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
       "workflows": {
-        "empty": "Tidak ada alur kerja yang cocok",
         "loading": "Memuat alur kerja...",
         "showAll": "Tampilkan semua alur kerja",
         "title": "Alur kerja"
