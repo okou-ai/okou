@@ -12,6 +12,48 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1024.0](https://github.com/okou-ai/okou/compare/app-v0.1023.0...app-v0.1024.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Bug Fixes
+
+* report billing models from captured usage providers ([#40036](https://github.com/okou-ai/okou/issues/40036)) ([72071ff](https://github.com/okou-ai/okou/commit/72071ff711d0f9452a1e44cf52302696f29bf31b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+    * @okouai/core bumped to 8.756.0
+
+## [0.1023.0](https://github.com/okou-ai/okou/compare/app-v0.1022.3...app-v0.1023.0) (2026-10-14)
+
+
+### Features
+
+* **discord:** add server installation links ([#40009](https://github.com/okou-ai/okou/issues/40009)) ([6102c18](https://github.com/okou-ai/okou/commit/6102c18ebee5885a15cad8cc0a48b48371223249))
+* show vnc failures and fence ssh and vnc diagnostics ([#39851](https://github.com/okou-ai/okou/issues/39851)) ([928d548](https://github.com/okou-ai/okou/commit/928d5485ce17f1fae3727a6dfb6b6432c2f5e46d))
+
+
+### Bug Fixes
+
+* **app:** expand and collapse chat resource lists in place ([#40005](https://github.com/okou-ai/okou/issues/40005)) ([d585c36](https://github.com/okou-ai/okou/commit/d585c3600fb04ef0939f3531eaa4f13964168a2f))
+* **app:** hide empty chat resources ([#40024](https://github.com/okou-ai/okou/issues/40024)) ([04e25ed](https://github.com/okou-ai/okou/commit/04e25ed1adc089c9e2a3ff6e503c46eebd5da5b4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.0
+    * @okouai/core bumped to 8.755.0
+
 ## [0.1022.3](https://github.com/okou-ai/okou/compare/app-v0.1022.2...app-v0.1022.3) (2026-10-14)
 
 

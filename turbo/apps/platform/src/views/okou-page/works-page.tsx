@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -74,6 +75,7 @@ import {
 } from "../../signals/okou-page/discord.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
+import { connectDiscordFromWorks$ } from "../../signals/okou-page/discord-connect-signals.ts";
 
 const slackIconImg = settingsIconAssetUrl("slack");
 const teamsIconImg = settingsIconAssetUrl("teams");
@@ -112,6 +114,8 @@ function ConnectedIndicator({
 }
 
 function ProviderCardMenu({
+  children,
+  disabled = false,
   moreOptionsLabel,
   disconnectLabel,
   uninstallLabel,
@@ -119,6 +123,8 @@ function ProviderCardMenu({
   onUninstall,
   disconnecting,
 }: {
+  children?: ReactNode;
+  disabled?: boolean;
   moreOptionsLabel: string;
   disconnectLabel: string;
   uninstallLabel?: string;
@@ -144,11 +150,12 @@ function ProviderCardMenu({
         }
       />
       <PopoverContent align="end" className="flex flex-col gap-0.5 w-40 p-2">
+        {children}
         {onDisconnect && (
           <button
             type="button"
             aria-label={disconnectLabel}
-            disabled={disconnecting}
+            disabled={disabled || disconnecting}
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
             onClick={onDisconnect}
           >
@@ -562,6 +569,7 @@ function DiscordCard() {
   });
   const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
+  const [installation, install] = useLoadableSet(connectDiscordFromWorks$);
   const [selectionState, selectBinding] = useLoadableSet(
     selectDiscordDmBinding$,
   );
@@ -598,10 +606,32 @@ function DiscordCard() {
                   return $.works.discord.disconnect;
                 })}
                 disconnecting={disconnectState.state === "loading"}
+                disabled={installation.state === "loading"}
                 onDisconnect={() => {
                   detach(disconnect(pageSignal), Reason.DomCallback);
                 }}
-              />
+              >
+                {data.isAvailable ? (
+                  <button
+                    type="button"
+                    disabled={
+                      disconnectState.state === "loading" ||
+                      installation.state === "loading"
+                    }
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                    onClick={() => {
+                      detach(
+                        install({ flow: "install" }, pageSignal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    {t(($) => {
+                      return $.works.discord.addNewServer;
+                    })}
+                  </button>
+                ) : null}
+              </ProviderCardMenu>
             </>
           ) : null}
         </div>

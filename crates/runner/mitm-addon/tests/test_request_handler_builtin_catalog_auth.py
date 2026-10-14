@@ -218,7 +218,12 @@ async def test_builtin_catalog_auth_uses_current_catalog_destination(
                 await await_requestheaders_result(result)
         await mitm_addon.request(flow)
 
-    assert flow.response is not None
+    if requestheaders_first:
+        assert flow.response is None
+        assert flow.error is not None
+        assert flow.metadata[metadata_keys.FIREWALL_ERROR] == "connector_not_configured"
+    else:
+        assert flow.response is not None
     assert "Authorization" not in flow.request.headers
     assert endpoint.request_count == 1
     matched = endpoint.requests[0].json_body()["matchedFirewall"]

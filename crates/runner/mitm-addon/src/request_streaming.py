@@ -1,8 +1,8 @@
 """Shared request streaming state for size, capture logging, and X billing.
 
 When this module installs its pass-through callback, the callback counts every
-chunk. Capture-enabled callers also retain a capped prefix consumed by network
-capture and X connector billing refinement.
+chunk. Callers requesting diagnostic capture or billing inspection also retain a
+capped prefix. Inspection alone does not enable persisted network body capture.
 
 Configuration preserves any existing callable stream without composing with it.
 When setup first finds an externally owned callback, it creates no addon
@@ -25,8 +25,9 @@ def configure_request_stream(
     flow: http.HTTPFlow,
     *,
     capture_body: bool = True,
+    inspect_body: bool = False,
 ) -> None:
-    """Install addon request-size observation and optional capped body capture.
+    """Install size observation and an optional capped capture/inspection prefix.
 
     If the request stream is already callable, preserve it without composition
     and do not create or reset addon request-stream metadata. An external callback
@@ -40,10 +41,11 @@ def configure_request_stream(
     buf = bytearray()
     state = {"truncated": False, "total_bytes": 0}
     buf_limit = STREAM_BUFFER_LIMIT
+    retain_body = capture_body or inspect_body
 
     def stream_and_buffer(chunk: bytes) -> bytes:
         state["total_bytes"] += len(chunk)
-        if capture_body and not state["truncated"]:
+        if retain_body and not state["truncated"]:
             remaining = buf_limit - len(buf)
             if len(chunk) <= remaining:
                 buf.extend(chunk)
@@ -53,7 +55,7 @@ def configure_request_stream(
         return chunk
 
     flow.request.stream = stream_and_buffer
-    if capture_body:
+    if retain_body:
         flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER] = buf
     flow.metadata[metadata_keys.REQUEST_STREAM_BUFFER_STATE] = state
     flow.metadata[_REQUEST_STREAM_CALLBACK] = stream_and_buffer

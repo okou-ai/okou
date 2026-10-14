@@ -706,7 +706,6 @@
       "use": "Usar",
       "useThisTemplate": "Usar este modelo",
       "visibility": {
-        "change": "Alterar",
         "changeLabel": "Alterar a visibilidade do modelo",
         "privateState": "Somente você pode vê-lo e usá-lo",
         "workspaceState": "Qualquer pessoa neste espaço de trabalho pode usá-lo"
@@ -1544,14 +1543,13 @@
       "viewAgentProfile": "Ver perfil do agente"
     },
     "agentSuggestions": {
-      "existingThread": "Conversa existente",
+      "continueChat": "Continuar conversa",
+      "dismiss": "Dispensar",
       "label": "Sugestões",
-      "newThread": "Nova conversa com Okou",
-      "origin": "Do seu resumo matinal",
-      "showAll_one": "Ver todas ({{count}})",
-      "showAll_many": "Ver todas ({{count}})",
-      "showAll_other": "Ver todas ({{count}})",
-      "showLess": "Mostrar menos"
+      "newChat": "Nova conversa",
+      "next": "Próxima sugestão",
+      "position": "{{current}} de {{total}}",
+      "previous": "Sugestão anterior"
     },
     "attachments": {
       "attach": "Anexar",
@@ -4765,10 +4763,16 @@
       "personal": {
         "accountFallback": "Conta {{number}}",
         "activeAccount": "Ativa",
+        "autoCredits": "Usa créditos Okou",
         "autoDescription": "Conecte sua conta Claude ou ChatGPT para usar mais modelos.",
         "autoTitle": "Use mais modelos",
+        "claudeGroup": "Seu plano do Claude",
+        "claudePlans": "Pro ou Max",
         "claudeTitle": "Claude",
+        "codexGroup": "Seu plano do ChatGPT",
+        "codexPlans": "Plus, Pro ou Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "Conectar",
         "connectAccount": "Conectar conta",
         "disconnectAccount": "Desconectar conta",
         "disconnectDescription": "Isso remove a conta do Okou. Sua assinatura com o provedor não será cancelada.",
@@ -4776,7 +4780,9 @@
         "disconnectTitle": "Desconectar {{account}}?",
         "loadError": "Não foi possível carregar suas contas.",
         "loadingAccounts": "Carregando contas…",
+        "managePlans": "Gerenciar planos",
         "noAccounts": "Nenhuma conta conectada.",
+        "ownPlan": "Usar seu próprio plano",
         "reconnectAccount": "Reconectar",
         "retry": "Tentar novamente",
         "status": {
@@ -6524,6 +6530,7 @@
     "connected": "Conectado",
     "connectedWithDetail": "Conectado ({{detail}})",
     "discord": {
+      "addNewServer": "Adicionar novo servidor",
       "approvalFailed": "A confirmação falhou. Entre com a conta e organização originais do Okou ou reinicie a autorização.",
       "authorizationError": "Não foi possível concluir a autorização do Discord. Tente novamente.",
       "chooseWorkspace": "Escolha um espaço de trabalho",
@@ -6533,6 +6540,8 @@
       "defaultWorkspace": "Espaço de trabalho padrão para o Discord",
       "description": "Mencione o Okou em um servidor ou envie uma mensagem direta ao bot.",
       "disconnect": "Desconectar Discord",
+      "installDescription": "Autorize o Okou no Discord com uma conta que possa gerenciar o servidor.",
+      "installTitle": "Adicionar Okou a um servidor",
       "invalidLink": "Este link de conexão do Discord é inválido. Abra um novo link no Discord.",
       "open": "Abrir Discord",
       "openInBrowser": "Abrir no navegador",

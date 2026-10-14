@@ -264,20 +264,31 @@ export function ModelFirstRunModelRowContent({
   runModel,
   selected = false,
   showSelectedIndicator = false,
+  detail,
 }: {
   runModel: AvailableRunModel;
   selected?: boolean;
   showSelectedIndicator?: boolean;
+  /** A muted second line, such as what the model is paid with. */
+  detail?: string;
 }) {
   const catalog = useLastResolved(modelCatalog$);
   const iconType = getModelFirstIconType(runModel.model, catalog);
   const restricted = !memberRunModelAllowedForPlan(runModel);
+  const name = selectedModelDisplayName(catalog, runModel.model);
   return (
     <span className="flex w-full min-w-0 items-center gap-2">
       {iconType && <ProviderIcon type={iconType} size={16} />}
-      <span className="min-w-0 flex-1 truncate">
-        {selectedModelDisplayName(catalog, runModel.model)}
-      </span>
+      {detail === undefined ? (
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+      ) : (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate">{name}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {detail}
+          </span>
+        </span>
+      )}
       {restricted && <ProBadge />}
       {showSelectedIndicator && (
         <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center text-foreground">

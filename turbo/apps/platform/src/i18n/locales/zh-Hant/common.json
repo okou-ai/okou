@@ -686,7 +686,6 @@
       "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
-        "change": "修改",
         "changeLabel": "修改模板可見範圍",
         "privateState": "只有你能看到和使用",
         "workspaceState": "這個工作區裡的所有人都能使用"
@@ -1519,12 +1518,13 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "existingThread": "現有對話",
+      "continueChat": "繼續聊天",
+      "dismiss": "忽略",
       "label": "建議",
-      "newThread": "與 Okou 開始新對話",
-      "origin": "來自你的晨間簡報",
-      "showAll_other": "查看全部 {{count}} 則",
-      "showLess": "收合"
+      "newChat": "新建聊天",
+      "next": "下一則建議",
+      "position": "{{current}} / {{total}}",
+      "previous": "上一則建議"
     },
     "attachments": {
       "attach": "新增附件",
@@ -4678,10 +4678,16 @@
       "personal": {
         "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "消耗 Okou 點數",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
+        "claudeGroup": "你的 Claude 方案",
+        "claudePlans": "Pro 或 Max",
         "claudeTitle": "Claude",
+        "codexGroup": "你的 ChatGPT 方案",
+        "codexPlans": "Plus、Pro 或 Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "連接",
         "connectAccount": "連接帳號",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從 Okou 中移除，但不會取消你在該服務商處的訂閱。",
@@ -4689,7 +4695,9 @@
         "disconnectTitle": "斷開{{account}}？",
         "loadError": "無法載入你的帳號。",
         "loadingAccounts": "正在載入帳號…",
+        "managePlans": "管理方案",
         "noAccounts": "還沒有連線任何帳號。",
+        "ownPlan": "使用你自己的方案",
         "reconnectAccount": "重新連線",
         "retry": "重試",
         "status": {
@@ -6410,6 +6418,7 @@
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
+      "addNewServer": "新增伺服器",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
       "authorizationError": "無法完成 Discord 授權，請重試。",
       "chooseWorkspace": "選擇工作區",
@@ -6419,6 +6428,8 @@
       "defaultWorkspace": "Discord 預設工作區",
       "description": "在伺服器中提及 Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷 Discord 連線",
+      "installDescription": "使用具有伺服器管理權限的帳號，在 Discord 中授權 Okou。",
+      "installTitle": "將 Okou 新增至伺服器",
       "invalidLink": "此 Discord 連接連結無效，請從 Discord 取得新連結。",
       "open": "開啟 Discord",
       "openInBrowser": "在瀏覽器中開啟",

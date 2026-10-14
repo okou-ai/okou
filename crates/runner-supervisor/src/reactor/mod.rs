@@ -6,8 +6,8 @@
 //! Runtime entry still publishes initial status, binds prune control, awaits
 //! provider readiness and creates factories before announcing readiness.
 //!
-//! Local siblings own factory lifecycle, claim/discovery, job dispatch, terminal
-//! logging, prune admission and signal consumption. Adjacent Supervisor modules
+//! Local siblings own startup/rollback, factory lifecycle, claim/discovery, job
+//! dispatch, terminal logging, prune admission and signal consumption. Adjacent Supervisor modules
 //! retain their admission/finalization/heartbeat/orphan policies; Network owns
 //! MITM recovery. No executable types, upward dependencies, caller futures,
 //! copied provider fixtures or normal-feature test hooks are required.
@@ -82,6 +82,7 @@ mod job_terminal_log;
 mod prune_idle;
 mod runner_wss;
 pub(crate) mod signals;
+mod startup;
 
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
@@ -95,7 +96,7 @@ use crate::orphan_reap::OrphanReapProcessDiscovery;
 use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use crate::pre_claim_admission::PendingFinalizingCandidate;
 use claim_tasks::ClaimTasks;
-use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime, start_factories};
+use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
 use job_discovery::{AdmissionContext, DiscoveredJob, DiscoveredJobContext};
 use job_spawn::{SpawnContext, handle_job_result};
@@ -276,40 +277,6 @@ impl TeardownTimer {
             elapsed_ms = self.elapsed_ms(),
             "teardown phase event"
         );
-    }
-}
-
-struct StartupFailureResources<'a> {
-    provider: &'a dyn JobProvider,
-    runtime: Option<&'a mut dyn SandboxRuntime>,
-    mitm: &'a mut proxy::MitmProxy,
-    kmsg_handle: kmsg_log::KmsgHandle,
-    dns_handle: dns::DnsProxy,
-    memory_prefetch: &'a mut prefetch::MemoryPrefetchTasks,
-    status: &'a StatusTracker,
-}
-
-async fn shutdown_startup_resources_after_startup_failure(
-    resources: StartupFailureResources<'_>,
-    context: &'static str,
-) {
-    resources.memory_prefetch.cancel();
-    resources.memory_prefetch.drain().await;
-    resources.provider.shutdown().await;
-    if let Err(error) = resources.dns_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    if let Some(runtime) = resources.runtime {
-        runtime.shutdown().await;
-    }
-    if let Err(e) = resources.mitm.kill_now().await {
-        warn!(error = %e, context, "failed to kill proxy after startup failed");
-    }
-    if let Err(error) = resources.kmsg_handle.stop().await {
-        warn!(%error, "failed to clean up network-log helper after startup failure");
-    }
-    if let Err(error) = resources.status.set_mode(RunnerMode::Stopped).await {
-        warn!(%error, context, "failed to persist stopped status after startup failure");
     }
 }
 
@@ -1065,313 +1032,55 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         #[cfg(test)]
         mut test_hooks,
     } = config;
-    let SandboxRuntimeConfig { mut runtime } = sandbox_runtime;
-    let ProxyState {
-        mut mitm,
-        mut mitm_crash_rx,
-    } = proxy;
-    let ShutdownHandles {
-        mut kmsg_handle,
-        mut dns_handle,
-        mut memory_prefetch,
-    } = shutdown;
-
-    // -----------------------------------------------------------------------
-    // Signal handling / mode channel
-    // -----------------------------------------------------------------------
-    let signal = match signals.signal_source {
-        SignalSource::Real(signals) => SignalController::spawn(
-            provider_state.cancel.clone(),
-            provider_state.cancel_tokens.clone(),
-            signals,
-            shared.parking_gate.clone(),
-        ),
-        #[cfg(test)]
-        SignalSource::Override(controller) => controller,
-    };
-    let mut mode_rx = signal.mode_rx;
-    let lifecycle = signal.lifecycle;
-    let mut signal_handler_task = signal.handler_task;
-
-    // Both failures precede WSS and own the same startup resources.
-    let prune_listener = match shared
-        .status
-        .write_initial()
-        .await
-        .map_err(|error| {
-            (
-                RunnerError::Internal(format!("persist initial runner status: {error}")),
-                "initial_status_persistence_failure",
-            )
-        })
-        .and_then(|()| {
-            crate::idle_prune_control::PruneIdleListener::bind(
-                &paths.home,
-                &paths.base_dir,
-                runner.identity,
-            )
-            .map_err(|error| (RunnerError::from(error), "prune_control_startup_failure"))
-        }) {
-        Ok(listener) => listener,
-        Err((error, context)) => {
-            shutdown_startup_resources_after_startup_failure(
-                StartupFailureResources {
-                    provider: provider_state.provider.as_ref(),
-                    runtime: Some(runtime.as_mut()),
-                    mitm: &mut mitm,
-                    kmsg_handle,
-                    dns_handle,
-                    memory_prefetch: &mut memory_prefetch,
-                    status: shared.status.as_ref(),
-                },
-                context,
-            )
-            .await;
-            if let Some(handler_task) = signal_handler_task.take() {
-                abort_signal_handler_task(handler_task, context).await;
-            }
-            return Err(error);
-        }
-    };
-    let prune_admission = Arc::new(tokio::sync::Semaphore::new(1));
-    // Required binding and bounded admission precede readiness, factories,
-    // healthy status and claims. The reactor owns stop/join through teardown.
-    let (mut wss_task, wss_failed, wss_started) = match wss {
-        Some(config) => match runner_wss::start(
-            config,
-            runner.identity.runner_id(),
-            exec_config.guest_duplex.clone(),
-            &shared,
-            &provider_state,
-            &lifecycle,
-        ) {
-            Ok(listener) => (
-                Some(listener.task),
-                Some(listener.failed),
-                Some(listener.started),
-            ),
-            Err(error) => {
-                shutdown_startup_resources_after_startup_failure(
-                    StartupFailureResources {
-                        provider: provider_state.provider.as_ref(),
-                        runtime: Some(runtime.as_mut()),
-                        mitm: &mut mitm,
-                        kmsg_handle,
-                        dns_handle,
-                        memory_prefetch: &mut memory_prefetch,
-                        status: shared.status.as_ref(),
-                    },
-                    "wss_socket_startup_failure",
-                )
-                .await;
-                if let Some(task) = signal_handler_task.take() {
-                    abort_signal_handler_task(task, "wss_socket_startup_failure").await;
-                }
-                return Err(RunnerError::Internal(format!(
-                    "bind required Runner WSS listener: {error}"
-                )));
-            }
+    let Some(started) = startup::start(
+        startup::StartupResources {
+            sandbox_runtime,
+            proxy,
+            shutdown,
         },
-        None => (None, None, None),
+        startup::StartupContext {
+            runner: &runner,
+            paths: &paths,
+            shared: &shared,
+            provider: &provider_state,
+            exec_config: &exec_config,
+        },
+        signals,
+        wss,
+    )
+    .await?
+    else {
+        return Ok(());
     };
-    if let Some(started) = wss_started
-        && started.await.is_err()
-    {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
+    let startup::StartedRunner {
+        resources:
+            startup::StartupResources {
+                sandbox_runtime: SandboxRuntimeConfig { mut runtime },
+                proxy:
+                    ProxyState {
+                        mut mitm,
+                        mut mitm_crash_rx,
+                    },
+                shutdown:
+                    ShutdownHandles {
+                        mut kmsg_handle,
+                        mut dns_handle,
+                        mut memory_prefetch,
+                    },
             },
-            "wss_accept_startup_failure",
-        )
-        .await;
-        if let Some(task) = signal_handler_task.take() {
-            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
-        }
-        return Err(RunnerError::Internal(
-            "required Runner WSS accept loop failed to start".into(),
-        ));
-    }
-
-    let readiness: RunnerResult<()> = if let Some(task) = wss_task.as_mut() {
-        tokio::select! {
-            result = provider_state.provider.prepare_startup_readiness() => result.map_err(Into::into),
-            result = task.wait() => Err(RunnerError::Internal(format!("required Runner WSS accept loop stopped during startup: {result:?}"))),
-        }
-    } else {
-        provider_state
-            .provider
-            .prepare_startup_readiness()
-            .await
-            .map_err(Into::into)
-    };
-    if let Err(e) = readiness {
-        let listener_failed = wss_failed
-            .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
-            || wss_task
-                .as_ref()
-                .is_some_and(runner_wss::AcceptTask::is_finished);
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        let startup_readiness_cancelled = provider_state.cancel.is_cancelled();
-        let cleanup_reason = if startup_readiness_cancelled {
-            "provider_startup_readiness_cancelled"
-        } else {
-            "provider_startup_readiness_failure"
-        };
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
+        signal:
+            SignalController {
+                mut mode_rx,
+                lifecycle,
+                handler_task: mut signal_handler_task,
             },
-            cleanup_reason,
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, cleanup_reason).await;
-        }
-        if startup_readiness_cancelled && !listener_failed {
-            return Ok(());
-        }
-        return Err(e);
-    }
-
-    let (factory_result, startup_listener_error) = if let Some(task) = wss_task.as_mut() {
-        let startup = start_factories(&runner.profiles, runtime.as_mut());
-        tokio::pin!(startup);
-        tokio::select! {
-            result = &mut startup => (result, None),
-            result = task.wait() => {
-                let error = RunnerError::Internal(format!(
-                    "required Runner WSS accept loop stopped during factory startup: {result:?}"
-                ));
-                // Listener failure already closes admission and changes lifecycle.
-                // Keep the external factory work owned until it returns: dropping
-                // it would bypass partial-factory shutdown and detach physical IO
-                // over shared runtime resources. The failed-ready path below then
-                // joins every completed factory before runtime teardown.
-                (startup.await, Some(error))
-            }
-        }
-    } else {
-        (
-            start_factories(&runner.profiles, runtime.as_mut()).await,
-            None,
-        )
-    };
-    let mut factories = match factory_result {
-        Ok(factories) => factories,
-        Err(e) => {
-            if let Some(task) = wss_task.take() {
-                task.stop().await;
-            }
-            shutdown_startup_resources_after_startup_failure(
-                StartupFailureResources {
-                    provider: provider_state.provider.as_ref(),
-                    runtime: Some(runtime.as_mut()),
-                    mitm: &mut mitm,
-                    kmsg_handle,
-                    dns_handle,
-                    memory_prefetch: &mut memory_prefetch,
-                    status: shared.status.as_ref(),
-                },
-                "factory_startup_failure",
-            )
-            .await;
-            if let Some(handler_task) = signal_handler_task.take() {
-                abort_signal_handler_task(handler_task, "factory_startup_failure").await;
-            }
-            return Err(e);
-        }
-    };
-    // A dead listener cannot be followed by healthy status, heartbeat or claims.
-    if startup_listener_error.is_some()
-        || wss_failed
-            .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
-        || wss_task
-            .as_ref()
-            .is_some_and(runner_wss::AcceptTask::is_finished)
-    {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        if let Err(error) = shutdown_factory_instances(&mut factories, None).await {
-            warn!(%error, "failed to shut down factories after WSS startup failure");
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "wss_accept_startup_failure",
-        )
-        .await;
-        if let Some(task) = signal_handler_task.take() {
-            abort_signal_handler_task(task, "wss_accept_startup_failure").await;
-        }
-        return Err(startup_listener_error.unwrap_or_else(|| {
-            RunnerError::Internal("required Runner WSS accept loop exited during startup".into())
-        }));
-    }
-    let startup_mode = lifecycle.mark_startup_ready();
-    if let Err(error) = shared.status.set_mode(startup_mode).await {
-        if let Some(task) = wss_task.take() {
-            task.stop().await;
-        }
-        handle_stopping_signal(
-            "startup status persistence failure",
-            &provider_state.cancel,
-            &provider_state.cancel_tokens,
-            &lifecycle,
-        )
-        .await;
-        if let Err(factory_error) = shutdown_factory_instances(&mut factories, None).await {
-            warn!(
-                error = %factory_error,
-                "failed to shut down factories after startup status persistence failure"
-            );
-        }
-        shutdown_startup_resources_after_startup_failure(
-            StartupFailureResources {
-                provider: provider_state.provider.as_ref(),
-                runtime: Some(runtime.as_mut()),
-                mitm: &mut mitm,
-                kmsg_handle,
-                dns_handle,
-                memory_prefetch: &mut memory_prefetch,
-                status: shared.status.as_ref(),
-            },
-            "startup_status_persistence_failure",
-        )
-        .await;
-        if let Some(handler_task) = signal_handler_task.take() {
-            abort_signal_handler_task(handler_task, "startup_status_persistence_failure").await;
-        }
-        return Err(RunnerError::Internal(format!(
-            "persist ready runner status: {error}"
-        )));
-    }
+        mut wss_task,
+        wss_failed,
+        mut factories,
+        prune_listener,
+        prune_admission,
+        startup_mode,
+    } = started;
 
     let mut jobs: JoinSet<RunCancellationRegistration> = JoinSet::new();
 

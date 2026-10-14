@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.12](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.11...guest-control-server-v0.24.12) (2026-10-14)
+
+
+### Bug Fixes
+
+* **api:** accept owned task cgroups in oom evidence ([#40033](https://github.com/okou-ai/okou/issues/40033)) ([ab32460](https://github.com/okou-ai/okou/commit/ab3246078499dc5268e12b0ffe3844c81d299a24))
+
+## [0.24.11](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.10...guest-control-server-v0.24.11) (2026-10-14)
+
 ## [0.24.10](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.9...guest-control-server-v0.24.10) (2026-10-14)
 
 ## [0.24.9](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.8...guest-control-server-v0.24.9) (2026-10-14)

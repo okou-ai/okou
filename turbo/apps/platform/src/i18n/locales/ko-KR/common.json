@@ -686,7 +686,6 @@
       "use": "사용",
       "useThisTemplate": "이 템플릿 사용",
       "visibility": {
-        "change": "변경",
         "changeLabel": "템플릿 공개 범위 변경",
         "privateState": "나만 보고 사용할 수 있습니다",
         "workspaceState": "이 워크스페이스의 모든 사람이 사용할 수 있습니다"
@@ -1519,12 +1518,13 @@
       "viewAgentProfile": "에이전트 프로필 보기"
     },
     "agentSuggestions": {
-      "existingThread": "기존 대화",
+      "continueChat": "채팅 계속하기",
+      "dismiss": "무시",
       "label": "제안",
-      "newThread": "Okou와 새 대화",
-      "origin": "모닝 브리프에서",
-      "showAll_other": "전체 {{count}}개 보기",
-      "showLess": "접기"
+      "newChat": "새 채팅",
+      "next": "다음 제안",
+      "position": "{{current}} / {{total}}",
+      "previous": "이전 제안"
     },
     "attachments": {
       "attach": "첨부",
@@ -4678,10 +4678,16 @@
       "personal": {
         "accountFallback": "계정 {{number}}",
         "activeAccount": "활성",
+        "autoCredits": "Okou 크레딧 사용",
         "autoDescription": "Claude 또는 ChatGPT 계정을 연결하여 더 많은 모델을 사용하세요.",
         "autoTitle": "더 많은 모델 사용하기",
+        "claudeGroup": "내 Claude 요금제",
+        "claudePlans": "Pro 또는 Max",
         "claudeTitle": "Claude",
+        "codexGroup": "내 ChatGPT 요금제",
+        "codexPlans": "Plus, Pro 또는 Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "연결",
         "connectAccount": "계정 연결",
         "disconnectAccount": "계정 연결 해제",
         "disconnectDescription": "Okou에서 계정을 제거합니다. 공급자 구독은 취소되지 않습니다.",
@@ -4689,7 +4695,9 @@
         "disconnectTitle": "{{account}}의 연결을 해제할까요?",
         "loadError": "계정을 불러오지 못했습니다.",
         "loadingAccounts": "계정 불러오는 중…",
+        "managePlans": "요금제 관리",
         "noAccounts": "연결된 계정이 없습니다.",
+        "ownPlan": "내 요금제로 실행",
         "reconnectAccount": "다시 연결",
         "retry": "다시 시도",
         "status": {
@@ -6410,6 +6418,7 @@
     "connected": "연결됨",
     "connectedWithDetail": "연결됨 ({{detail}})",
     "discord": {
+      "addNewServer": "새 서버 추가",
       "approvalFailed": "확인에 실패했습니다. 원래 Okou 계정과 조직으로 로그인하거나 인증을 다시 시작하세요.",
       "authorizationError": "Discord 인증을 완료하지 못했습니다. 다시 시도하세요.",
       "chooseWorkspace": "워크스페이스 선택",
@@ -6419,6 +6428,8 @@
       "defaultWorkspace": "Discord 기본 워크스페이스",
       "description": "서버에서 Okou를 멘션하거나 봇에게 다이렉트 메시지를 보내세요.",
       "disconnect": "Discord 연결 해제",
+      "installDescription": "서버 관리 권한이 있는 계정으로 Discord에서 Okou를 승인하세요.",
+      "installTitle": "서버에 Okou 추가",
       "invalidLink": "이 Discord 연결 링크는 유효하지 않습니다. Discord에서 새 링크를 여세요.",
       "open": "Discord 열기",
       "openInBrowser": "브라우저에서 열기",

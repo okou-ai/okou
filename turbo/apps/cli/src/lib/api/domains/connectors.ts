@@ -52,6 +52,12 @@ import {
   mcpConnectorsContract,
   type McpConnector,
 } from "@okouai/api-contracts/contracts/mcp-connectors";
+import { builtinConnectorResponseSchema } from "@okouai/api-contracts/contracts/connector-schemas";
+import { handleManagementError } from "../../management-input";
+import {
+  getConnectorManagementConfig,
+  parseConnectorManagementResponse,
+} from "./connector-management";
 import type {
   BuiltinConnectorListResponse as ApiBuiltinConnectorListResponse,
   BuiltinConnectorResponse,
@@ -312,7 +318,7 @@ export async function diagnoseConnectorCheck(
 export async function getBuiltinConnector(
   connectorSlug: ConnectorSlug,
 ): Promise<BuiltinConnector | null> {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(builtinConnectorsBySlugContract, config);
 
   const result = await client.get({
@@ -320,14 +326,17 @@ export async function getBuiltinConnector(
   });
 
   if (result.status === 200) {
-    return result.body;
+    return parseConnectorManagementResponse(
+      builtinConnectorResponseSchema,
+      result.body,
+    );
   }
 
   if (result.status === 404) {
     return null;
   }
 
-  handleError(result, `Failed to get connector "${connectorSlug}"`);
+  handleManagementError(result, "Failed to get connector account");
 }
 
 export async function connectBuiltinConnectorManualGrant(
@@ -336,7 +345,7 @@ export async function connectBuiltinConnectorManualGrant(
   account: BuiltinConnectorManualGrantAccountMutation,
   values: Record<string, string>,
 ): Promise<BuiltinConnector> {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(builtinConnectorManualGrantContract, config);
 
   const result = await client.connect({
@@ -349,24 +358,30 @@ export async function connectBuiltinConnectorManualGrant(
   });
 
   if (result.status === 200) {
-    return result.body;
+    return parseConnectorManagementResponse(
+      builtinConnectorResponseSchema,
+      result.body,
+    );
   }
 
-  handleError(result, `Failed to connect connector "${connectorSlug}"`);
+  handleManagementError(result, "Failed to connect connector account");
 }
 
 export async function listCustomConnectors(): Promise<
   CustomConnectorResponse[]
 > {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(customConnectorsContract, config);
 
   const result = await client.list({ headers: {} });
   if (result.status === 200) {
-    return customConnectorListResponseSchema.parse(result.body).connectors;
+    return parseConnectorManagementResponse(
+      customConnectorListResponseSchema,
+      result.body,
+    ).connectors;
   }
 
-  handleError(result, "Failed to list custom connectors");
+  handleManagementError(result, "Failed to list custom connectors");
 }
 
 export async function listRunMcpConnectors(): Promise<McpConnector[]> {
@@ -402,47 +417,73 @@ export async function reauthorizeRunMcpConnectorOAuth(
 export async function createCustomConnector(
   body: CreateCustomConnectorBody,
 ): Promise<CustomConnectorResponse> {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(customConnectorsContract, config);
 
   const result = await client.create({ body, headers: {} });
   if (result.status === 201) {
-    return customConnectorResponseSchema.parse(result.body);
+    return parseConnectorManagementResponse(
+      customConnectorResponseSchema,
+      result.body,
+    );
   }
 
-  handleError(result, "Failed to create custom connector");
+  handleManagementError(result, "Failed to create custom connector");
 }
 
 export async function getCustomConnector(
   id: string,
 ): Promise<CustomConnectorResponse | null> {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(customConnectorByIdContract, config);
 
   const result = await client.get({ params: { id }, headers: {} });
   if (result.status === 200) {
-    return customConnectorResponseSchema.parse(result.body);
+    const connector = parseConnectorManagementResponse(
+      customConnectorResponseSchema,
+      result.body,
+    );
+    if (connector.id !== id)
+      throw new Error("Custom connector response identity mismatch.");
+    return connector;
   }
   if (result.status === 404) {
     return null;
   }
 
-  handleError(result, `Failed to get custom connector "${id}"`);
+  handleManagementError(result, "Failed to get custom connector");
 }
 
 export async function updateCustomConnector(
   id: string,
   body: UpdateCustomConnectorBody,
 ): Promise<CustomConnectorResponse> {
-  const config = await getClientConfig();
+  const config = await getConnectorManagementConfig();
   const client = initClient(customConnectorByIdContract, config);
 
   const result = await client.update({ params: { id }, body, headers: {} });
   if (result.status === 200) {
-    return customConnectorResponseSchema.parse(result.body);
+    const connector = parseConnectorManagementResponse(
+      customConnectorResponseSchema,
+      result.body,
+    );
+    if (connector.id !== id)
+      throw new Error("Custom connector response identity mismatch.");
+    return connector;
   }
 
-  handleError(result, `Failed to update custom connector "${id}"`);
+  handleManagementError(result, "Failed to update custom connector");
+}
+
+export async function deleteCustomConnector(id: string): Promise<void> {
+  const client = initClient(
+    customConnectorByIdContract,
+    await getConnectorManagementConfig(),
+  );
+  const result = await client.delete({ params: { id }, headers: {} });
+  if (result.status !== 204) {
+    handleManagementError(result, "Failed to delete custom connector");
+  }
 }
 
 export async function getCustomConnectorPermissionBundle(

@@ -4,6 +4,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -14,11 +17,12 @@ import {
   TooltipTrigger,
 } from "@okouai/ui";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
-import { ChevronRight, Cpu } from "lucide-react";
+import { Check, ChevronRight, Cpu } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   connectSubscriptionLinkingProvider$,
   openSubscriptionLinkingSettings$,
+  SUBSCRIPTION_PROVIDERS,
   subscriptionLinkingUnlinked$,
   trackSubscriptionLinkingOpened$,
   type SubscriptionLinkingSource,
@@ -29,17 +33,12 @@ import { PersonalClaudeCodeDeviceAuthDialog } from "./components/settings/claude
 import { PersonalCodexDeviceAuthDialog } from "./components/settings/codex-device-auth-dialog.tsx";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 
-const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] = [
-  "codex-oauth-token",
-  "claude-code-oauth-token",
-];
-
 /** True once the member is known to have no personal subscription. */
 export function useSubscriptionLinkingAvailable(): boolean {
   return useLastResolved(subscriptionLinkingUnlinked$) === true;
 }
 
-function useConnectProvider(source: SubscriptionLinkingSource) {
+export function useConnectProvider(source: SubscriptionLinkingSource) {
   const { t } = useTranslation();
   const connect = useSet(connectSubscriptionLinkingProvider$);
   const pageSignal = useGet(pageSignal$);
@@ -53,10 +52,40 @@ function useConnectProvider(source: SubscriptionLinkingSource) {
             return $.settings.models.personal.claudeTitle;
           });
     },
+    /** The plans that include the subscription, so members know before signing in. */
+    plans: (type: PersonalSubscriptionProviderType) => {
+      return type === "codex-oauth-token"
+        ? t(($) => {
+            return $.settings.models.personal.codexPlans;
+          })
+        : t(($) => {
+            return $.settings.models.personal.claudePlans;
+          });
+    },
     connect: (type: PersonalSubscriptionProviderType) => {
       detach(connect(source, type, pageSignal), Reason.DomCallback);
     },
   };
+}
+
+/** A provider row's name over the plans that include it. */
+export function SubscriptionPlanRowText({
+  title,
+  detail,
+  detailId,
+}: {
+  title: string;
+  detail: string;
+  detailId?: string;
+}) {
+  return (
+    <span className="flex min-w-0 flex-1 flex-col">
+      <span className="truncate">{title}</span>
+      <span id={detailId} className="truncate text-xs text-muted-foreground">
+        {detail}
+      </span>
+    </span>
+  );
 }
 
 /**
@@ -79,15 +108,19 @@ function SubscriptionProviderMarks() {
 
 /**
  * Members without a personal subscription have only Auto, so the composer
- * shows no model picker. Its slot offers the subscriptions that add models;
- * once one is linked, the same slot becomes the model picker.
+ * shows no model picker. Its slot opens the same list the picker will show:
+ * Auto on Okou credits, then the subscriptions that run on the member's own
+ * plan. Once one is linked, the same slot becomes the model picker.
  */
 export function SubscriptionLinkingComposerMenu() {
   const { t } = useTranslation();
   const trackOpened = useSet(trackSubscriptionLinkingOpened$);
-  const { title, connect } = useConnectProvider("composer_model_slot");
+  const { title, plans, connect } = useConnectProvider("composer_model_slot");
   const label = t(($) => {
     return $.settings.models.personal.autoTitle;
+  });
+  const autoLabel = t(($) => {
+    return $.settings.models.picker.auto;
   });
   return (
     <DropdownMenu
@@ -126,21 +159,66 @@ export function SubscriptionLinkingComposerMenu() {
         align="end"
         sideOffset={8}
         aria-label={label}
-        className="w-56"
+        className="w-[304px] max-w-[calc(100vw-16px)]"
       >
-        <p className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">
-          {label}
+        <DropdownMenuRadioGroup
+          value="auto"
+          aria-label={t(($) => {
+            return $.settings.models.picker.chatModels;
+          })}
+        >
+          <DropdownMenuRadioItem
+            value="auto"
+            label={autoLabel}
+            aria-label={autoLabel}
+            aria-describedby="subscription-linking-auto-detail"
+            closeOnClick
+            className="pr-2"
+          >
+            <ProviderIcon type="built-in" size={16} />
+            <SubscriptionPlanRowText
+              title={autoLabel}
+              detail={t(($) => {
+                return $.settings.models.personal.autoCredits;
+              })}
+              detailId="subscription-linking-auto-detail"
+            />
+            <span className="flex w-4 shrink-0 justify-center">
+              <DropdownMenuRadioItemIndicator>
+                <Check size={15} aria-hidden="true" />
+              </DropdownMenuRadioItemIndicator>
+            </span>
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+        <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">
+          {t(($) => {
+            return $.settings.models.personal.ownPlan;
+          })}
         </p>
         {SUBSCRIPTION_PROVIDERS.map((type) => {
+          const detailId = `subscription-linking-${type}-plans`;
           return (
             <DropdownMenuItem
               key={type}
+              label={title(type)}
+              aria-label={title(type)}
+              aria-describedby={detailId}
+              className="pr-2"
               onClick={() => {
                 connect(type);
               }}
             >
               <ProviderIcon type={type} size={16} />
-              <span className="min-w-0 truncate">{title(type)}</span>
+              <SubscriptionPlanRowText
+                title={title(type)}
+                detail={plans(type)}
+                detailId={detailId}
+              />
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {t(($) => {
+                  return $.settings.models.personal.connect;
+                })}
+              </span>
             </DropdownMenuItem>
           );
         })}
@@ -204,7 +282,7 @@ export function useSubscriptionLinkingEntry() {
       return $.settings.models.personal.autoTitle;
     }),
     onClick: () => {
-      detach(open(pageSignal), Reason.DomCallback);
+      detach(open("me_page", pageSignal), Reason.DomCallback);
     },
   };
 }

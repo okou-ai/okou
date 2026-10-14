@@ -10,6 +10,7 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -29,6 +30,7 @@ function setupUsageChat(
   threadId: string,
   runId: string,
   usage: ChatEventUsagePayload,
+  locale: "en-US" | "zh-Hans" = "en-US",
 ): Promise<void> {
   mockChatLifecycle(context, {
     threadId,
@@ -60,7 +62,7 @@ function setupUsageChat(
   return setupPage({
     context,
     path: `/chats/${threadId}`,
-    locale: "en-US",
+    locale,
   });
 }
 
@@ -308,4 +310,171 @@ test("Credit usage names each model row from the server catalog, keeping retired
     within(details).queryByText("Claude Sonnet 5.5"),
   ).not.toBeInTheDocument();
   expect(within(details).queryByText("GPT 6 Luna")).not.toBeInTheDocument();
+});
+
+test.each(["en-US", "zh-Hans"] as const)(
+  "Credit usage merges catalog aliases and every Auto preset in %s",
+  async (locale) => {
+    const providers = [
+      ["auto", 1],
+      ["okou-1.0", 2],
+      ["@preset/okou-1-0", 3],
+      ["@preset/okou-opus", 4],
+      ["@preset/removed-operator-preset", 5],
+      ["gpt-6-luna", 6],
+      ["openai/gpt-6-luna", 7],
+      ["claude-sonnet-4-6", 8],
+      ["claude-sonnet-4.6", 9],
+      ["anthropic/claude-sonnet-4.6", 10],
+      ["okou-1.0-pro", 11],
+      ["okou-1.0-max", 12],
+    ] as const;
+    await setupUsageChat(
+      "b0000000-0000-4000-a000-000000000808",
+      "a0000000-0000-4000-a000-000000000808",
+      {
+        version: 1,
+        totalCredits: 78,
+        settledAt: "2026-08-14T12:00:02.000Z",
+        breakdown: [
+          {
+            kind: "model",
+            credits: 78,
+            providers: providers.map(([provider, credits]) => {
+              return {
+                provider,
+                credits,
+              };
+            }),
+          },
+        ],
+      },
+      locale,
+    );
+    await openUsage("78");
+    const details = screen.getByRole("dialog");
+    for (const [label, credits] of [
+      ["Auto", "15"],
+      ["GPT 6 Luna", "13"],
+      ["Claude Sonnet 4.6", "27"],
+      ["Okou 1.0 Pro", "11"],
+      ["Okou 1.0 Max", "12"],
+    ]) {
+      expect(within(details).getByText(label).parentElement).toHaveTextContent(
+        `${label}${credits}`,
+      );
+    }
+    expect(document.documentElement.lang).toBe(locale);
+    expect(within(details).getByText("78")).toBeInTheDocument();
+    expect(within(details).queryByText(/@preset\//u)).not.toBeInTheDocument();
+  },
+);
+
+test("Credit usage preserves ambiguous upstream identifiers and uncataloged historical models", async () => {
+  const catalog = createMockModelCatalog();
+  const route = catalog.routes[1];
+  if (!route) {
+    throw new Error("Expected a catalog route fixture");
+  }
+  context.mocks.api(modelCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      ...catalog,
+      routes: [
+        ...catalog.routes,
+        {
+          ...route,
+          model: "gpt-6-luna",
+          upstreamModel: "openai/shared-history",
+          enabled: false,
+        },
+        {
+          ...route,
+          model: "gpt-6-sol",
+          upstreamModel: "openai/shared-history",
+        },
+        {
+          ...route,
+          model: "claude-opus-4-8",
+          upstreamModel: "anthropic/disabled-opus",
+          enabled: false,
+        },
+      ],
+    });
+  });
+  await setupUsageChat(
+    "b0000000-0000-4000-a000-000000000809",
+    "a0000000-0000-4000-a000-000000000809",
+    {
+      version: 1,
+      totalCredits: 10,
+      settledAt: "2026-08-14T12:00:02.000Z",
+      breakdown: [
+        {
+          kind: "model",
+          credits: 10,
+          providers: [
+            { provider: "openai/shared-history", credits: 1 },
+            { provider: "claude-haiku-4-5-20251001", credits: 2 },
+            { provider: "anthropic/disabled-opus", credits: 3 },
+            { provider: "anthropic/claude-opus-4-8", credits: 4 },
+          ],
+        },
+      ],
+    },
+  );
+  await openUsage("10");
+  const details = screen.getByRole("dialog");
+  expect(
+    within(details).getByText("openai/shared-history").parentElement,
+  ).toHaveTextContent("1");
+  expect(
+    within(details).getByText("claude-haiku-4-5-20251001").parentElement,
+  ).toHaveTextContent("2");
+  expect(
+    within(details).getByText("Claude Opus 4.8").parentElement,
+  ).toHaveTextContent("7");
+  expect(
+    within(details).queryByText("Claude Opus 5.5"),
+  ).not.toBeInTheDocument();
+});
+
+test("Credit usage keeps internal model IDs hidden while the catalog loads", async () => {
+  const catalogReady = createDeferredPromise<void>(context.signal);
+  context.mocks.api(modelCatalogContract.get, async ({ respond }) => {
+    await catalogReady.promise;
+    return respond(200, createMockModelCatalog());
+  });
+  await setupUsageChat(
+    "b0000000-0000-4000-a000-000000000810",
+    "a0000000-0000-4000-a000-000000000810",
+    {
+      version: 1,
+      totalCredits: 8,
+      settledAt: "2026-08-14T12:00:02.000Z",
+      breakdown: [
+        {
+          kind: "model",
+          credits: 8,
+          providers: [
+            { provider: "openai/gpt-6-luna", credits: 3 },
+            { provider: "@preset/removed-operator-preset", credits: 5 },
+          ],
+        },
+      ],
+    },
+  );
+  await openUsage("8");
+  const details = screen.getByRole("dialog");
+  expect(within(details).getAllByText("Models")).toHaveLength(2);
+  expect(
+    within(details).queryByText("openai/gpt-6-luna"),
+  ).not.toBeInTheDocument();
+  expect(within(details).queryByText(/@preset\//u)).not.toBeInTheDocument();
+  catalogReady.resolve();
+  await expect(
+    within(details).findByText("GPT 6 Luna"),
+  ).resolves.toBeInTheDocument();
+  expect(within(details).getByText("Auto").parentElement).toHaveTextContent(
+    "5",
+  );
 });

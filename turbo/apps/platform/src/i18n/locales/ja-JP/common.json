@@ -686,7 +686,6 @@
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
-        "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
         "privateState": "自分だけが表示・使用できます",
         "workspaceState": "このワークスペースの全員が使用できます"
@@ -1519,12 +1518,13 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "existingThread": "既存の会話",
+      "continueChat": "チャットを続ける",
+      "dismiss": "非表示にする",
       "label": "提案",
-      "newThread": "Okou と新しい会話",
-      "origin": "モーニングブリーフから",
-      "showAll_other": "全 {{count}} 件を表示",
-      "showLess": "表示を減らす"
+      "newChat": "新しいチャット",
+      "next": "次の提案",
+      "position": "{{current}} / {{total}}",
+      "previous": "前の提案"
     },
     "attachments": {
       "attach": "添付する",
@@ -4678,10 +4678,16 @@
       "personal": {
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "Okouクレジットを使用",
         "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
+        "claudeGroup": "Claudeのプラン",
+        "claudePlans": "Pro、Max",
         "claudeTitle": "Claude",
+        "codexGroup": "ChatGPTのプラン",
+        "codexPlans": "Plus、Pro、Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "接続",
         "connectAccount": "アカウントを接続",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
@@ -4689,7 +4695,9 @@
         "disconnectTitle": "{{account}}の接続を解除しますか？",
         "loadError": "アカウントを読み込めませんでした。",
         "loadingAccounts": "アカウントを読み込み中…",
+        "managePlans": "プランを管理",
         "noAccounts": "接続済みのアカウントはありません。",
+        "ownPlan": "自分のプランで実行",
         "reconnectAccount": "再接続",
         "retry": "再試行",
         "status": {
@@ -6410,6 +6418,7 @@
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
+      "addNewServer": "新しいサーバーを追加",
       "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
       "authorizationError": "Discord の認証を完了できませんでした。もう一度お試しください。",
       "chooseWorkspace": "ワークスペースを選択",
@@ -6419,6 +6428,8 @@
       "defaultWorkspace": "Discord の既定のワークスペース",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
+      "installDescription": "サーバーを管理できるアカウントで Discord にログインし、Okou を承認してください。",
+      "installTitle": "Okou をサーバーに追加",
       "invalidLink": "この Discord 接続リンクは無効です。Discord から新しいリンクを開いてください。",
       "open": "Discord を開く",
       "openInBrowser": "ブラウザーで開く",

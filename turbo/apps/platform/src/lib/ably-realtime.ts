@@ -8,6 +8,10 @@ import {
   type AuthDiagnosticContext,
 } from "./auth-diagnostics.ts";
 import {
+  observeAblyFetchRequest,
+  type AblyAuthDiagnosticScope,
+} from "./ably-auth-diagnostics.ts";
+import {
   BaseRealtime,
   FetchRequest,
   RealtimePresence,
@@ -24,13 +28,14 @@ export type AblyRealtime = BaseRealtime;
 
 export function createAblyRealtime(
   options: AblyRealtimeOptions,
-  diagnostic: AuthDiagnosticContext,
+  scope: AblyAuthDiagnosticScope,
   signal: AbortSignal,
 ): AblyRealtime {
+  const diagnostic = scope.context;
   const ably = new BaseRealtime({
     ...options,
     plugins: {
-      FetchRequest,
+      FetchRequest: observeAblyFetchRequest(FetchRequest, scope, signal),
       RealtimePresence,
       WebSocketTransport,
       XHRPolling,
@@ -43,8 +48,7 @@ export function createAblyRealtime(
       previousState: change.previous,
       state: change.current,
       retryInMs: change.retryIn,
-      reasonCode: change.reason?.code,
-      reasonStatusCode: change.reason?.statusCode,
+      reason: change.reason,
     });
   };
   ably.connection.on(handleState);
@@ -77,8 +81,7 @@ export function observeAblyChannel(
       previousState: change.previous,
       state: change.current,
       resumed: change.resumed,
-      reasonCode: change.reason?.code,
-      reasonStatusCode: change.reason?.statusCode,
+      reason: change.reason,
     });
   };
   const cleanup = (): void => {

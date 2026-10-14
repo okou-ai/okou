@@ -199,18 +199,21 @@ const connectionInner$ = computed(async (get) => {
     : notFound("Connector account not found");
 });
 
-const scopeDiffInner$ = computed(async (get) => {
+const scopeDiffScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.scopeDiff));
   const query = get(queryOf(connectorAccountsContract.scopeDiff));
-  const diff = await get(
-    builtinConnectorScopeDiff({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: query.connectorSlug,
-      selection: { kind: "exact", connectorId: params.connectionId },
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: query.connectorSlug,
+    selection: { kind: "exact" as const, connectorId: params.connectionId },
+  };
+});
+const scopeDiff$ = builtinConnectorScopeDiff(scopeDiffScope$);
+
+const scopeDiffInner$ = computed(async (get) => {
+  const diff = await get(scopeDiff$);
   return diff
     ? { status: 200 as const, body: diff }
     : notFound("Connector account not found");

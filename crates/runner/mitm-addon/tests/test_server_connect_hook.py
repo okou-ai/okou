@@ -15,6 +15,7 @@ from tests.request_handler_helpers import (
     _write_github_firewall_registry,
     _write_registry,
 )
+from tests.requestheaders_helpers import await_requestheaders_result
 from tests.upstream_connection_helpers import mark_connected_tls_upstream
 
 
@@ -452,7 +453,7 @@ async def test_server_connect_waits_for_tls_before_binding_connector_on_shared_i
             server_address=shared_address,
             peername=shared_address,
         )
-        mitm_addon.requestheaders(flow)
+        await await_requestheaders_result(mitm_addon.requestheaders(flow))
         await mitm_addon.request(flow)
 
     auth_fetch.assert_awaited_once()

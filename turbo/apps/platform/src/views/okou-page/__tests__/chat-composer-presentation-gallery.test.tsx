@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -201,4 +201,49 @@ test("Step back through a presentation template from its filmstrip", async () =>
     "true",
   );
   expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
+});
+
+function stagePreviewFrame(title: string): HTMLIFrameElement {
+  const frame = screen.getByTitle(`${title} HTML preview`);
+  if (!(frame instanceof HTMLIFrameElement)) {
+    throw new Error("The stage preview is not a frame");
+  }
+  return frame;
+}
+
+function loadPreviewFrame(frame: HTMLIFrameElement): void {
+  const frameDocument = frame.contentDocument;
+  if (frameDocument === null) {
+    throw new Error("Presentation preview frame has no document");
+  }
+  frameDocument.open();
+  frameDocument.write(frame.srcdoc);
+  frameDocument.close();
+  fireEvent.load(frame);
+}
+
+/** The accent the slide on the stage is painted with right now. */
+function stageAccent(title: string): string {
+  const frameDocument = stagePreviewFrame(title).contentDocument;
+  const frameWindow = frameDocument?.defaultView;
+  if (!frameDocument || !frameWindow) {
+    throw new Error("The stage preview has no rendered document");
+  }
+  return frameWindow
+    .getComputedStyle(frameDocument.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
+}
+
+test("A slide already on the stage takes a new theme as soon as it is picked", async () => {
+  await openThreeSlidePreview();
+  const template = builtInTemplate();
+  loadPreviewFrame(stagePreviewFrame(template.title));
+  expect(stageAccent(template.title)).toBe("#7257E6");
+
+  click(
+    within(screen.getByRole("dialog")).getByLabelText("Select style Deep dive"),
+  );
+
+  expect(stageAccent(template.title)).toBe("#38C7B4");
 });

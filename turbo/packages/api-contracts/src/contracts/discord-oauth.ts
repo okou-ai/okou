@@ -18,6 +18,8 @@ export const discordOauthContract = c.router({
     headers: authHeadersSchema,
     body: z.strictObject({
       guildId: discordSnowflakeSchema.optional(),
+      // Current Connect actions omit this: a guild ID means connect, otherwise install.
+      flow: z.enum(["install", "connect"]).optional(),
     }),
     responses: {
       200: z.object({
@@ -31,8 +33,7 @@ export const discordOauthContract = c.router({
       409: apiErrorSchema,
       503: apiErrorSchema,
     },
-    summary:
-      "Connect Discord, choosing a server only when no server context is supplied",
+    summary: "Connect Discord or install Okou into a selected server",
   },
   approve: {
     method: "POST",

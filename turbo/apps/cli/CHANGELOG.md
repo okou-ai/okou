@@ -1,5 +1,37 @@
 # Changelog
 
+## [9.392.0](https://github.com/okou-ai/okou/compare/cli-v9.391.0...cli-v9.392.0) (2026-10-14)
+
+
+### Features
+
+* add write-only connector and remote control cli management ([#40008](https://github.com/okou-ai/okou/issues/40008)) ([80c57de](https://github.com/okou-ai/okou/commit/80c57de957fa0f4b38fdd064181b54f0a0caa24f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.560.1
+    * @okouai/core bumped to 8.756.0
+    * @okouai/pi-agent-runtime bumped to 1.49.35
+
+## [9.391.0](https://github.com/okou-ai/okou/compare/cli-v9.390.0...cli-v9.391.0) (2026-10-14)
+
+
+### Features
+
+* **discord:** add server installation links ([#40009](https://github.com/okou-ai/okou/issues/40009)) ([6102c18](https://github.com/okou-ai/okou/commit/6102c18ebee5885a15cad8cc0a48b48371223249))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.560.0
+    * @okouai/core bumped to 8.755.0
+    * @okouai/pi-agent-runtime bumped to 1.49.34
+
 ## [9.390.0](https://github.com/okou-ai/okou/compare/cli-v9.389.4...cli-v9.390.0) (2026-10-14)
 
 

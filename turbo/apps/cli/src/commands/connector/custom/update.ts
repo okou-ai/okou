@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readManagementInput } from "../../../lib/management-input";
+import { customConnectorMetadata } from "../management";
 
 import chalk from "chalk";
 import { Command } from "commander";
@@ -30,7 +31,10 @@ export const updateCustomConnectorCommand = new Command()
     "<selector>",
     "Custom connector slug, UUID, or unique display name (custom: prefix accepted)",
   )
-  .requiredOption("-f, --file <path>", "JSON connector definition file")
+  .requiredOption(
+    "-f, --file <path|->",
+    "JSON connector definition file, or '-' for stdin",
+  )
   .option("--json", "Print the updated connector as JSON")
   .addHelpText(
     "after",
@@ -51,13 +55,16 @@ Examples:
   .action(
     withErrorHandler(async (selector: string, options: UpdateOptions) => {
       requireCustomConnectorWriteCapability();
-      const raw = await readFile(options.file, "utf8");
-      const input: unknown = JSON.parse(raw);
-      const definition = updateCustomConnectorDefinitionFileSchema.parse(input);
+      const definition = await readManagementInput(
+        options.file,
+        updateCustomConnectorDefinitionFileSchema,
+      );
       const connectorId = await resolveCustomConnectorId(selector);
       const connector = await updateCustomConnector(connectorId, definition);
       if (options.json) {
-        console.log(JSON.stringify(connector, null, 2));
+        console.log(
+          JSON.stringify(customConnectorMetadata(connector), null, 2),
+        );
         return;
       }
       console.log(

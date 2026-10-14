@@ -381,6 +381,7 @@ jobs:
         include: ${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}
     env:
       TARGET_TRIPLE: ${{ matrix.target }}
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
       RUNNER_BINARY_GIT_REVISION: ${{ needs.prepare.outputs.head-sha }}
       GUEST_CLI_PATH: runner-cli-intermediate/package.tgz
@@ -430,6 +431,18 @@ jobs:
         with:
           name: runner-cli-${{ github.run_id }}
           path: runner-cli-intermediate
+
+      - name: Configure pinned Kerberos cache
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        if: steps.cache-lookup.outputs.cache-hit != 'true' && steps.cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-runner-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
 
       - name: Build runner dependency cache
         id: prewarm

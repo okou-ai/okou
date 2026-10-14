@@ -42,7 +42,11 @@ export const customConnectorsDeleteRoutes: readonly RouteEntry[] = [
   {
     route: customConnectorByIdContract.delete,
     handler: authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "connector:write",
+      },
       deleteInner$,
     ),
   },

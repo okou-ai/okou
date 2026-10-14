@@ -1,7 +1,10 @@
 import { Loader2 } from "lucide-react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadErrorRow } from "@okouai/ui";
+import { cn } from "@okouai/ui/lib/utils";
+import { Button } from "@okouai/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -13,15 +16,30 @@ import type {
   UserTemplateDetail,
 } from "@okouai/api-contracts/contracts/user-templates";
 
-import { CustomTemplateDetailSidebar } from "./custom-template-detail-sidebar.tsx";
+import {
+  CustomTemplateDeleteButton,
+  CustomTemplateDetailSidebar,
+  CustomTemplateTitleInput,
+} from "./custom-template-detail-sidebar.tsx";
+import {
+  TEMPLATE_DETAIL_BODY,
+  TEMPLATE_DETAIL_FOOTER,
+  TEMPLATE_DETAIL_GRID,
+  TEMPLATE_DETAIL_STAGE,
+  TemplateDetailFilmstrip,
+  TemplateDetailSideColumn,
+  TemplateDetailStageControls,
+} from "./template-detail-layout.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
 import { isOfficeFilePreview } from "./office-file-preview.ts";
 import {
   closeCustomTemplate$,
   openCustomTemplateDetail$,
   openCustomTemplateKind$,
+  openCustomTemplatePageIndex$,
   projectCustomTemplate$,
   reloadCustomTemplates$,
+  selectCustomTemplatePage$,
 } from "../../signals/okou-page/custom-template-library.ts";
 
 /**
@@ -51,38 +69,95 @@ export function CustomTemplatesLoadError() {
 }
 
 /**
- * A deck, as the pages the reverse run rendered from it.
+ * A deck's pages, or an image style's examples, read the way every other deck
+ * detail reads: one picture on the stage, the rest in a filmstrip.
  *
- * Its own images rather than its source file through a viewer: the pages are
- * already rendered, already ours to serve, and are the same slides a viewer
- * would draw — without sending the file anywhere or waiting for someone else
- * to convert it.
+ * A deck shows its own rendered pages rather than its source file through a
+ * viewer: they are already ours to serve, and are the same slides a viewer
+ * would draw. An image style shows the examples its reverse run made and the
+ * member approved, contained rather than cropped, because a picture is judged
+ * by its whole frame.
  */
-function CustomTemplatePages({
-  detail,
+function CustomTemplateGallery({
+  title,
+  pictures,
+  fit,
+  pictureLabel,
+  thumbnailTestId,
 }: {
-  readonly detail: UserTemplateDetail;
+  readonly title: string;
+  readonly pictures: readonly string[];
+  readonly fit: "cover" | "contain";
+  readonly pictureLabel: (index: number) => string;
+  readonly thumbnailTestId?: string;
 }) {
   const { t } = useTranslation();
+  const requestedIndex = useGet(openCustomTemplatePageIndex$);
+  const selectPage = useSet(selectCustomTemplatePage$);
+  const pageCount = pictures.length;
+  const activeIndex = Math.max(0, Math.min(requestedIndex, pageCount - 1));
+  const changePage = (index: number) => {
+    selectPage(Math.max(0, Math.min(pageCount - 1, index)));
+  };
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.defaultPrevented) {
+      return;
+    }
+    if (event.key === "ArrowLeft" && activeIndex > 0) {
+      event.preventDefault();
+      changePage(activeIndex - 1);
+    }
+    if (event.key === "ArrowRight" && activeIndex < pageCount - 1) {
+      event.preventDefault();
+      changePage(activeIndex + 1);
+    }
+  };
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-3 lg:overflow-y-auto">
-      {detail.pageUrls.map((pageUrl, index) => {
-        return (
-          <img
-            key={pageUrl}
-            src={pageUrl}
-            alt={t(
-              ($) => {
-                return $.templates.detail.page;
-              },
-              { number: index + 1 },
-            )}
-            loading={index === 0 ? "eager" : "lazy"}
-            className="w-full rounded-xl border border-border bg-muted object-cover"
-          />
-        );
-      })}
-    </div>
+    <>
+      <div
+        role="group"
+        aria-label={t(
+          ($) => {
+            return $.artifacts.templates.slidePreview;
+          },
+          { title },
+        )}
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        className={TEMPLATE_DETAIL_STAGE}
+      >
+        <img
+          src={pictures[activeIndex]}
+          alt={pictureLabel(activeIndex)}
+          className={cn(
+            "pointer-events-none absolute inset-0 h-full w-full",
+            fit === "cover" ? "object-cover" : "object-contain",
+          )}
+        />
+        <TemplateDetailStageControls
+          activeSlideIndex={activeIndex}
+          slideCount={pageCount}
+          onChange={changePage}
+        />
+      </div>
+      <TemplateDetailFilmstrip
+        slideCount={pageCount}
+        activeSlideIndex={activeIndex}
+        onChange={changePage}
+        onKeyDown={handleKeyDown}
+        renderThumbnail={(index) => {
+          return (
+            <img
+              src={pictures[index]}
+              alt=""
+              loading="lazy"
+              data-testid={thumbnailTestId}
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            />
+          );
+        }}
+      />
+    </>
   );
 }
 
@@ -108,7 +183,7 @@ function CustomTemplateSourcePreview({
     { filename: detail.sourceFilename },
   );
   return (
-    <div className="relative min-h-80 flex-1 overflow-hidden rounded-lg border border-border bg-background">
+    <div className="relative min-h-80 min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-background">
       {isOfficeFilePreview(detail.sourceFilename) ? (
         <OfficeDocumentPreview
           resourceUrl={detail.sourceUrl}
@@ -122,56 +197,15 @@ function CustomTemplateSourcePreview({
           title={title}
           // PDF Open Parameters: #navpanes=0 hides Chromium's built-in left
           // rail, so the embedded preview opens on the page rather than on a
-          // thumbnail list of it.
-          src={`${detail.sourceUrl}#navpanes=0`}
+          // thumbnail list of it; #toolbar=0 drops the viewer's own dark
+          // toolbar, which otherwise sits inside our frame as a second header;
+          // #view=FitH fits a page to the frame's width.
+          src={`${detail.sourceUrl}#toolbar=0&navpanes=0&view=FitH`}
           scrolling="yes"
           className="block h-full w-full border-0 bg-background"
           data-testid="custom-template-source-preview"
         />
       )}
-    </div>
-  );
-}
-
-/**
- * An illustration, as the pictures its style draws.
- *
- * These are the template's preview assets: the examples the reverse run made
- * from the extracted style and the member approved. A style is judged by what
- * it produces, so the source a member uploaded is not what is shown. The branch is chosen by the row's kind rather
- * than by a filename, because the kind is what decided at publish what these
- * pictures are.
- */
-function CustomTemplateIllustration({
-  detail,
-}: {
-  readonly detail: UserTemplateDetail;
-}) {
-  const { t } = useTranslation();
-  const label = t(
-    ($) => {
-      return $.artifacts.preview.dialogLabel;
-    },
-    { filename: detail.title },
-  );
-  return (
-    // `contain` rather than `cover`: a picture is judged by its whole frame —
-    // how much of the sheet the art covers, where it sits, how wide the margin
-    // is — and cropping to fill the dialog would take exactly those away. The
-    // muted ground behind each is what gives a picture on white paper, or one
-    // with a transparent corner, an edge to be seen against.
-    <div className="flex min-h-80 flex-1 flex-col items-center gap-4 overflow-auto rounded-lg border border-border bg-muted p-6">
-      {detail.previewAssets.map((asset) => {
-        return (
-          <img
-            key={asset.previewAssetId}
-            src={asset.url}
-            alt={label}
-            className="max-w-full object-contain"
-            data-testid="custom-template-example-preview"
-          />
-        );
-      })}
     </div>
   );
 }
@@ -189,15 +223,47 @@ function CustomTemplatePreviewBody({
 }: {
   readonly detail: UserTemplateDetail;
 }) {
+  const { t } = useTranslation();
   switch (detail.kind) {
     case "presentation": {
-      return <CustomTemplatePages detail={detail} />;
+      return (
+        <CustomTemplateGallery
+          title={detail.title}
+          pictures={detail.pageUrls}
+          fit="contain"
+          pictureLabel={(index) => {
+            return t(
+              ($) => {
+                return $.templates.detail.page;
+              },
+              { number: index + 1 },
+            );
+          }}
+        />
+      );
     }
     case "document": {
       return <CustomTemplateSourcePreview detail={detail} />;
     }
     case "illustration": {
-      return <CustomTemplateIllustration detail={detail} />;
+      return (
+        <CustomTemplateGallery
+          title={detail.title}
+          pictures={detail.previewAssets.map((asset) => {
+            return asset.url;
+          })}
+          fit="contain"
+          pictureLabel={() => {
+            return t(
+              ($) => {
+                return $.artifacts.preview.dialogLabel;
+              },
+              { filename: detail.title },
+            );
+          }}
+          thumbnailTestId="custom-template-example-preview"
+        />
+      );
     }
   }
 }
@@ -242,7 +308,7 @@ export function CustomTemplatePreviewDialog({
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
         })}
-        maxWidth={1120}
+        maxWidth="6xl"
         height={760}
         contentClassName="flex flex-col gap-0 overflow-hidden p-0"
       >
@@ -253,46 +319,89 @@ export function CustomTemplatePreviewDialog({
             imported-deck preview header already carries for the same reason.
             Padding alone left the title 10px above the button and the button
             itself hanging past the border below it. */}
-        <DialogHeader className="h-[68px] shrink-0 justify-center border-b border-border px-5 pr-14 text-left sm:pr-16">
-          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-            <button
-              type="button"
-              className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                close();
-              }}
+        <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
+          <div className="flex min-w-0 max-w-full items-center gap-1.5">
+            <DialogTitle
+              className={cn(
+                "flex items-center justify-start gap-1.5 text-left text-base leading-none",
+                // Beside an editor the title holds only the way back, which
+                // must never be squeezed; alone, it is what truncates.
+                detail?.canManage ? "shrink-0" : "min-w-0",
+              )}
             >
-              {t(($) => {
-                return $.templates.detail.back;
-              })}
-            </button>
-            <span className="shrink-0 text-muted-foreground">/</span>
-            <span className="block min-w-0 truncate leading-none">
-              {detail?.title ?? ""}
-            </span>
-          </DialogTitle>
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  close();
+                }}
+              >
+                {t(($) => {
+                  return $.templates.detail.back;
+                })}
+              </button>
+              <span className="shrink-0 text-muted-foreground">/</span>
+              {/* The heading that names the dialog stays text: where the name
+                is editable, the editor sits beside the title, not inside it. */}
+              <span
+                className={
+                  detail?.canManage
+                    ? "sr-only"
+                    : "block min-w-0 truncate leading-none"
+                }
+              >
+                {detail?.title ?? ""}
+              </span>
+            </DialogTitle>
+            {detail?.canManage ? (
+              // Keyed by the template, not by anything that changes while one
+              // is open: a save re-renders this subtree, and only arriving at a
+              // different template may hand the editor a fresh field.
+              <CustomTemplateTitleInput key={detail.id} detail={detail} />
+            ) : null}
+          </div>
         </DialogHeader>
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-muted/20 p-3 sm:p-5 lg:flex-row lg:overflow-hidden">
+        <div className={TEMPLATE_DETAIL_BODY}>
           {detailLoadable.state === "hasError" ? (
             <CustomTemplatesLoadError />
           ) : detail === null ? (
-            <div className="flex flex-1 items-center justify-center text-muted-foreground">
+            <div className="flex h-full items-center justify-center text-muted-foreground">
               <Loader2 size={20} className="animate-spin" />
             </div>
-          ) : (
-            <>
+          ) : detail.kind !== "document" ? (
+            <div className={TEMPLATE_DETAIL_GRID}>
               <CustomTemplatePreviewBody detail={detail} />
-              {/* Keyed by the template, not by anything that changes while one
-                  is open: a save re-renders this subtree, and only arriving at
-                  a different template may hand the editor a fresh field. */}
-              <CustomTemplateDetailSidebar
-                key={detail.id}
-                detail={detail}
-                onSelect={onSelect}
-              />
-            </>
+              <TemplateDetailSideColumn>
+                <CustomTemplateDetailSidebar detail={detail} />
+              </TemplateDetailSideColumn>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-6 lg:h-full lg:flex-row">
+              <CustomTemplatePreviewBody detail={detail} />
+              <div className="lg:w-[220px] lg:shrink-0">
+                <CustomTemplateDetailSidebar detail={detail} />
+              </div>
+            </div>
           )}
         </div>
+        {detail === null ? null : (
+          <div className={TEMPLATE_DETAIL_FOOTER}>
+            {detail.canManage ? (
+              <CustomTemplateDeleteButton detail={detail} />
+            ) : null}
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => {
+                onSelect(detail);
+              }}
+            >
+              {t(($) => {
+                return $.artifacts.templates.useThisTemplate;
+              })}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

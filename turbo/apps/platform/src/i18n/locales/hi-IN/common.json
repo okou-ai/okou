@@ -687,7 +687,6 @@
       "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
-        "change": "बदलें",
         "changeLabel": "टेम्पलेट की दृश्यता बदलें",
         "privateState": "केवल आप इसे देख और उपयोग कर सकते हैं",
         "workspaceState": "इस वर्कस्पेस में कोई भी इसका उपयोग कर सकता है"
@@ -1520,13 +1519,13 @@
       "viewAgentProfile": "एजेंट प्रोफ़ाइल देखें"
     },
     "agentSuggestions": {
-      "existingThread": "मौजूदा बातचीत",
+      "continueChat": "चैट जारी रखें",
+      "dismiss": "खारिज करें",
       "label": "सुझाव",
-      "newThread": "Okou के साथ नई बातचीत",
-      "origin": "आपकी सुबह की ब्रीफ़िंग से",
-      "showAll_one": "सभी {{count}} देखें",
-      "showAll_other": "सभी {{count}} देखें",
-      "showLess": "कम दिखाएँ"
+      "newChat": "नई चैट",
+      "next": "अगला सुझाव",
+      "position": "{{total}} में से {{current}}",
+      "previous": "पिछला सुझाव"
     },
     "attachments": {
       "attach": "अटैच करें",
@@ -4699,10 +4698,16 @@
       "personal": {
         "accountFallback": "खाता {{number}}",
         "activeAccount": "सक्रिय",
+        "autoCredits": "Okou क्रेडिट इस्तेमाल करता है",
         "autoDescription": "और मॉडल इस्तेमाल करने के लिए अपना Claude या ChatGPT खाता कनेक्ट करें।",
         "autoTitle": "और मॉडल इस्तेमाल करें",
+        "claudeGroup": "आपका Claude प्लान",
+        "claudePlans": "Pro या Max",
         "claudeTitle": "Claude",
+        "codexGroup": "आपका ChatGPT प्लान",
+        "codexPlans": "Plus, Pro या Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "कनेक्ट करें",
         "connectAccount": "खाता कनेक्ट करें",
         "disconnectAccount": "खाता डिस्कनेक्ट करें",
         "disconnectDescription": "इससे खाता Okou से हट जाएगा। इससे प्रदाता की आपकी सदस्यता रद्द नहीं होगी।",
@@ -4710,7 +4715,9 @@
         "disconnectTitle": "{{account}} को डिस्कनेक्ट करें?",
         "loadError": "आपके खाते लोड नहीं हो सके।",
         "loadingAccounts": "खाते लोड हो रहे हैं…",
+        "managePlans": "प्लान मैनेज करें",
         "noAccounts": "कोई खाता कनेक्ट नहीं है।",
+        "ownPlan": "अपने प्लान से चलाएं",
         "reconnectAccount": "फिर से कनेक्ट करें",
         "retry": "फिर से कोशिश करें",
         "status": {
@@ -6438,6 +6445,7 @@
     "connected": "जुड़े हुए",
     "connectedWithDetail": "कनेक्टेड ({{detail}})",
     "discord": {
+      "addNewServer": "नया सर्वर जोड़ें",
       "approvalFailed": "पुष्टि नहीं हो सकी। मूल Okou खाते और संगठन से लॉग इन करें या अनुमति फिर शुरू करें।",
       "authorizationError": "Discord प्राधिकरण पूरा नहीं हो सका। फिर से प्रयास करें।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
@@ -6447,6 +6455,8 @@
       "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
       "description": "सर्वर में Okou को मेंशन करें या बॉट को सीधा संदेश भेजें।",
       "disconnect": "Discord को डिस्कनेक्ट करें",
+      "installDescription": "सर्वर प्रबंधित करने की अनुमति वाले खाते से Discord में Okou को अधिकृत करें।",
+      "installTitle": "Okou को सर्वर में जोड़ें",
       "invalidLink": "यह Discord कनेक्शन लिंक अमान्य है। Discord से एक नया लिंक खोलें।",
       "open": "Discord खोलें",
       "openInBrowser": "ब्राउज़र में खोलें",

@@ -43,6 +43,7 @@ export const ROUTES = {
   settings: "/settings",
   settingsSlack: "/settings/slack",
   settingsDiscord: "/settings/discord",
+  settingsDiscordInstall: "/settings/discord/install",
   settingsTeams: "/settings/teams",
   settingsFeishu: "/settings/feishu",
   settingsLark: "/settings/lark",

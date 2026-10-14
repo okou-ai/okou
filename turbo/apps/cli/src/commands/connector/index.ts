@@ -7,6 +7,7 @@ import { statusCommand } from "./status";
 import { customConnectorCommand } from "./custom";
 import { permissionRequestCommand } from "./permission-request";
 import { connectorAccountCommand } from "./account";
+import { connectorOAuthCommand } from "./oauth";
 
 export const connectorCommand = new Command()
   .name("connector")
@@ -15,6 +16,7 @@ export const connectorCommand = new Command()
   .addCommand(checkConnectorCommand)
   .addCommand(customConnectorCommand)
   .addCommand(connectCommand)
+  .addCommand(connectorOAuthCommand)
   .addCommand(listCommand)
   .addCommand(searchCommand)
   .addCommand(statusCommand)
@@ -26,8 +28,9 @@ Choose a command:
   list/status   Inspect the current run's admitted accounts. Outside a run,
                 list includes builtin and custom connectors; status is builtin-only.
   search        Discover builtin and custom HTTP/MCP connectors and connection guidance.
-  custom        Create/update definitions and inspect org custom connector metadata.
-  connect       Connect builtin connectors using manual grant values.
+  custom        Create/update/show/delete org custom connector definitions.
+  connect       Connect builtin manual grants or custom manual/no-auth accounts.
+  oauth start   Start existing OAuth/OpenID/automatic account authorization.
   check         Diagnose a failed URL or a builtin environment name.
   permission-request
                 Request a diagnosed builtin permission; custom permissions use settings.
@@ -36,8 +39,8 @@ Connection and access:
   A definition describes the service and its authentication setup. Members then
   connect their own accounts, grant Agent access, and select any fine-grained
   permissions. Creating a custom definition alone does not complete these steps.
-  OAuth and custom account connections use the web connection flow; search and
-  custom create provide guidance for the next action.
+  Use connect for member credentials and oauth start for existing authorization
+  flows. Neither command changes Agent grants or fine-grained permissions.
 
 Run context:
   Inside a run, omit --agent to use the current Agent (OKOU_AGENT_ID).

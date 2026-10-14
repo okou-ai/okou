@@ -1,5 +1,34 @@
 # Changelog
 
+## [8.756.0](https://github.com/okou-ai/okou/compare/core-v8.755.0...core-v8.756.0) (2026-10-14)
+
+
+### Features
+
+* add write-only connector and remote control cli management ([#40008](https://github.com/okou-ai/okou/issues/40008)) ([80c57de](https://github.com/okou-ai/okou/commit/80c57de957fa0f4b38fdd064181b54f0a0caa24f))
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+
+## [8.755.0](https://github.com/okou-ai/okou/compare/core-v8.754.0...core-v8.755.0) (2026-10-14)
+
+
+### Features
+
+* **core:** enable agent suggestions for staff organizations ([#40020](https://github.com/okou-ai/okou/issues/40020)) ([8f9c3da](https://github.com/okou-ai/okou/commit/8f9c3da31b7745ebf99d2285963bed426220edae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.0
+
 ## [8.754.0](https://github.com/okou-ai/okou/compare/core-v8.753.2...core-v8.754.0) (2026-10-14)
 
 

@@ -1,5 +1,5 @@
 {
-  "id": "a3c89c0c-33f9-494f-9c73-501d74930029",
+  "id": "3e44c2d7-0e42-4eee-a79b-bf11779eb58a",
   "prevId": "4c3fc062-7ca5-485f-bc14-0e41d860eaf7",
   "version": "7",
   "dialect": "postgresql",
@@ -526,6 +526,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "continued_from_session_id": {
+          "name": "continued_from_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "status": {
           "name": "status",
           "type": "varchar(20)",
@@ -822,18 +834,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "continued_from_session_id": {
-          "name": "continued_from_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -992,6 +992,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
+        "agent_runs_session_id_agent_sessions_id_fk": {
+          "name": "agent_runs_session_id_agent_sessions_id_fk",
+          "tableFrom": "agent_runs",
+          "tableTo": "agent_sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "agent_runs_workflow_automation_id_workflow_automations_id_fk": {
           "name": "agent_runs_workflow_automation_id_workflow_automations_id_fk",
           "tableFrom": "agent_runs",
@@ -1011,19 +1024,6 @@
           "tableTo": "chat_threads",
           "columnsFrom": [
             "chat_thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "agent_runs_session_id_agent_sessions_id_fk": {
-          "name": "agent_runs_session_id_agent_sessions_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_sessions",
-          "columnsFrom": [
-            "session_id"
           ],
           "columnsTo": [
             "id"
@@ -1078,7 +1078,7 @@
         },
         "agent_runs_launch_snapshot_check": {
           "name": "agent_runs_launch_snapshot_check",
-          "value": "(\n          \"agent_runs\".\"launch_snapshot\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\") = 'object' AND\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\" -> 'framework') = 'string' AND\n            \"agent_runs\".\"launch_snapshot\" ->> 'framework' = ANY (\n              ARRAY['claude-code', 'codex', 'pi']\n            ) AND\n            ((\n              jsonb_typeof(\n              \"agent_runs\".\"launch_snapshot\" -> 'runnerProfile'\n            ) = 'string' AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') >= 1 AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') <= 255 AND\n            (\n              (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '1'::jsonb\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile',\n                  'piMemoryGenerationEnabled'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile' -\n                  'piMemoryGenerationEnabled'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '2'::jsonb AND\n                jsonb_typeof(\n                  \"agent_runs\".\"launch_snapshot\" -> 'piMemoryGenerationEnabled'\n                ) = 'boolean'\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' IN ('3'::jsonb, '5'::jsonb)\n              )\n            )\n            ) OR (\n              \"agent_runs\".\"launch_snapshot\" ?& ARRAY['schemaVersion', 'framework', 'executionMode', 'inferenceContractVersion'] AND\n              (\"agent_runs\".\"launch_snapshot\" - 'schemaVersion' - 'framework' - 'executionMode' - 'inferenceContractVersion') = '{}'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'schemaVersion' = '4'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->>'framework' = 'pi' AND\n              \"agent_runs\".\"launch_snapshot\"->'executionMode' = '\"api-inference\"'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'inferenceContractVersion' = '1'::jsonb\n            ))\n          )\n        )"
+          "value": "(\n          \"agent_runs\".\"launch_snapshot\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\") = 'object' AND\n            jsonb_typeof(\"agent_runs\".\"launch_snapshot\" -> 'framework') = 'string' AND\n            \"agent_runs\".\"launch_snapshot\" ->> 'framework' = ANY (\n              ARRAY['claude-code', 'codex', 'pi']\n            ) AND\n            ((\n              jsonb_typeof(\n              \"agent_runs\".\"launch_snapshot\" -> 'runnerProfile'\n            ) = 'string' AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') >= 1 AND\n            char_length(\"agent_runs\".\"launch_snapshot\" ->> 'runnerProfile') <= 255 AND\n            (\n              (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '1'::jsonb\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile',\n                  'piMemoryGenerationEnabled'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile' -\n                  'piMemoryGenerationEnabled'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '2'::jsonb AND\n                jsonb_typeof(\n                  \"agent_runs\".\"launch_snapshot\" -> 'piMemoryGenerationEnabled'\n                ) = 'boolean'\n              ) OR (\n                \"agent_runs\".\"launch_snapshot\" ?& ARRAY[\n                  'schemaVersion',\n                  'framework',\n                  'runnerProfile'\n                ] AND\n                (\n                  \"agent_runs\".\"launch_snapshot\" -\n                  'schemaVersion' -\n                  'framework' -\n                  'runnerProfile'\n                ) = '{}'::jsonb AND\n                \"agent_runs\".\"launch_snapshot\" -> 'schemaVersion' = '3'::jsonb\n              )\n            )\n            ) OR (\n              \"agent_runs\".\"launch_snapshot\" ?& ARRAY['schemaVersion', 'framework', 'executionMode', 'inferenceContractVersion'] AND\n              (\"agent_runs\".\"launch_snapshot\" - 'schemaVersion' - 'framework' - 'executionMode' - 'inferenceContractVersion') = '{}'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'schemaVersion' = '4'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->>'framework' = 'pi' AND\n              \"agent_runs\".\"launch_snapshot\"->'executionMode' = '\"api-inference\"'::jsonb AND\n              \"agent_runs\".\"launch_snapshot\"->'inferenceContractVersion' = '1'::jsonb\n            ))\n          )\n        )"
         },
         "agent_runs_official_workflow_provenance_check": {
           "name": "agent_runs_official_workflow_provenance_check",
@@ -8854,20 +8854,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "framework": {
-          "name": "framework",
-          "type": "varchar(64)",
+        "agent_session_id": {
+          "name": "agent_session_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
-        "framework_session_id": {
-          "name": "framework_session_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "framework_session_run_id": {
-          "name": "framework_session_run_id",
+        "agent_session_run_id": {
+          "name": "agent_session_run_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -8963,18 +8957,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "agent_session_id": {
-          "name": "agent_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_session_run_id": {
-          "name": "agent_session_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -22839,19 +22821,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_format": {
-          "name": "source_format",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pi-jsonl'"
-        },
-        "source_chat_event_seq_id": {
-          "name": "source_chat_event_seq_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source_history_hash": {
           "name": "source_history_hash",
           "type": "varchar(64)",
@@ -23078,10 +23047,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "pi_memory_stage1_candidates_source_format_check": {
-          "name": "pi_memory_stage1_candidates_source_format_check",
-          "value": "(\"pi_memory_stage1_candidates\".\"source_format\" = 'pi-jsonl' AND \"pi_memory_stage1_candidates\".\"source_chat_event_seq_id\" IS NULL) OR (\"pi_memory_stage1_candidates\".\"source_format\" = 'chat-events-v1' AND \"pi_memory_stage1_candidates\".\"source_chat_event_seq_id\" IS NOT NULL AND \"pi_memory_stage1_candidates\".\"source_chat_event_seq_id\" > 0)"
-        },
         "pi_memory_stage1_candidates_status_check": {
           "name": "pi_memory_stage1_candidates_status_check",
           "value": "\"pi_memory_stage1_candidates\".\"status\" IN (\n          'pending',\n          'leased',\n          'succeeded',\n          'succeeded_no_output',\n          'retryable_failure',\n          'terminal_failure'\n        )"
@@ -23226,19 +23191,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "source_format": {
-          "name": "source_format",
-          "type": "varchar(32)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pi-jsonl'"
-        },
-        "source_chat_event_seq_id": {
-          "name": "source_chat_event_seq_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "source_history_hash": {
           "name": "source_history_hash",
@@ -27533,19 +27485,6 @@
           "tableTo": "storages",
           "columnsFrom": [
             "storage_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "storage_version_lineage_run_id_agent_runs_id_fk": {
-          "name": "storage_version_lineage_run_id_agent_runs_id_fk",
-          "tableFrom": "storage_version_lineage",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
           ],
           "columnsTo": [
             "id"

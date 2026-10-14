@@ -1156,12 +1156,13 @@ async def test_public_destination_revalidates_connected_peer_after_requestheader
     )
 
 
+@pytest.mark.parametrize("capture_body", [False, True])
 async def test_public_destination_requestheaders_defers_unresolved_hostname_until_connected(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, capture_body
 ):
     reg_path = _write_public_destination_firewall_registry(
         tmp_path,
-        sandbox_fields={"captureNetworkBodies": True},
+        sandbox_fields={"captureNetworkBodies": capture_body},
     )
     flow = _public_destination_flow(
         real_flow,
@@ -1178,6 +1179,8 @@ async def test_public_destination_requestheaders_defers_unresolved_hostname_unti
         assert mitm_addon.requestheaders(flow) is None
         assert flow.response is None
         assert flow.error is None
+        assert flow.request.stream is False
+        auth_fetch.assert_not_awaited()
         assert flow.server_conn.address == ("service.example.com", 443)
 
         mark_connected_tls_upstream(
@@ -1195,12 +1198,13 @@ async def test_public_destination_requestheaders_defers_unresolved_hostname_unti
     assert flow.request.headers["Authorization"] == "Bearer x"
 
 
+@pytest.mark.parametrize("capture_body", [False, True])
 async def test_public_destination_requestheaders_deferred_hostname_still_blocks_private_peer(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, capture_body
 ):
     reg_path = _write_public_destination_firewall_registry(
         tmp_path,
-        sandbox_fields={"captureNetworkBodies": True},
+        sandbox_fields={"captureNetworkBodies": capture_body},
     )
     flow = _public_destination_flow(
         real_flow,
@@ -1217,6 +1221,8 @@ async def test_public_destination_requestheaders_deferred_hostname_still_blocks_
         assert mitm_addon.requestheaders(flow) is None
         assert flow.response is None
         assert flow.error is None
+        assert flow.request.stream is False
+        auth_fetch.assert_not_awaited()
 
         mark_connected_tls_upstream(
             flow,
@@ -1335,7 +1341,7 @@ async def test_public_destination_reclassifies_buffered_auth_base_hostname_reque
     assert auth_base_forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
 
-async def test_public_destination_revalidates_cached_policy_allow_classification(
+async def test_public_destination_revalidates_buffered_policy_allow_classification(
     tmp_path,
     real_flow,
     mitm_ctx,
@@ -1364,7 +1370,8 @@ async def test_public_destination_revalidates_cached_policy_allow_classification
     ):
         assert mitm_addon.requestheaders(flow) is None
         assert classified_hosts == ["93.184.216.34"]
-        assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY in flow.metadata
+        assert request_classification.REQUEST_CLASSIFICATION_METADATA_KEY not in flow.metadata
+        assert flow.request.stream is False
 
         mark_connected_tls_upstream(
             flow,
