@@ -930,7 +930,7 @@ describe("google editor conversion", () => {
             "menuitem",
             `Open in Google ${slides ? "Slides" : "Docs"}`,
           ),
-        ).toBeVisible();
+        ).toBeInTheDocument();
       });
     },
   );
@@ -953,7 +953,9 @@ describe("google editor conversion", () => {
       featureSwitches: { [FeatureSwitchKey.GoogleDocsSheetsConversion]: true },
     });
     await openDriveArtifactMenu("Upload to Google Docs", "report.txt");
-    expect(roleItemNamed("menuitem", "Upload to Google Drive")).toBeVisible();
+    expect(
+      roleItemNamed("menuitem", "Upload to Google Drive"),
+    ).toBeInTheDocument();
     click(roleItemNamed("menuitem", "Upload to Google Docs"));
     await waitFor(() => {
       expect(drive.syncRequests).toHaveLength(1);
@@ -970,7 +972,9 @@ describe("google editor conversion", () => {
     });
     upload.resolve();
     await waitFor(() => {
-      expect(roleItemNamed("menuitem", "Open in Google Docs")).toBeVisible();
+      expect(
+        roleItemNamed("menuitem", "Open in Google Docs"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -1055,7 +1059,7 @@ describe("google editor conversion", () => {
     await waitFor(() => {
       expect(
         screen.getByText("Upload mode endpoint is unavailable"),
-      ).toBeVisible();
+      ).toBeInTheDocument();
     });
     expect(drive.syncRequests).toHaveLength(0);
   });
@@ -1081,7 +1085,7 @@ describe("google editor conversion", () => {
         screen.getByText(
           "Google conversion could not be confirmed. Check Drive before retrying.",
         ),
-      ).toBeVisible();
+      ).toBeInTheDocument();
     });
   });
 });

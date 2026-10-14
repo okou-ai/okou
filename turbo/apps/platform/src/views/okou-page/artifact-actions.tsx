@@ -523,12 +523,7 @@ function googleDriveCompletedAction(
       ? { kind: "open", target, url: syncTarget.webViewLink }
       : null;
   }
-  const originalUploaded =
-    syncTarget.originalUploaded ??
-    !Object.values(GOOGLE_WORKSPACE_MIME_TYPES).some((mime) => {
-      return mime === syncTarget.mimeType;
-    });
-  return originalUploaded ? { kind: "synced" } : null;
+  return syncTarget.originalUploaded === true ? { kind: "synced" } : null;
 }
 
 function GoogleDriveCompletedMenuItem({
