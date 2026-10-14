@@ -1,7 +1,7 @@
 import {
-  debugMorningBriefEmailContract,
-  type DebugMorningBriefEmailResponse,
-} from "@okouai/api-contracts/contracts/debug-morning-brief-email";
+  debugMorningBriefContract,
+  type DebugMorningBriefResponse,
+} from "@okouai/api-contracts/contracts/debug-morning-brief";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { command, computed, state } from "ccstate";
@@ -9,14 +9,14 @@ import { accept } from "../../../lib/accept.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { authenticatedIdentity$ } from "../../auth.ts";
 
-interface TestEmail {
+interface BriefRequest {
   readonly userId: string;
   readonly orgId: string;
   readonly requestId: string;
-  readonly response: DebugMorningBriefEmailResponse | null;
+  readonly response: DebugMorningBriefResponse | null;
 }
-const request$ = state<TestEmail | null>(null);
-export const debugMorningBriefEmailEnabled$ = computed(async (get) => {
+const request$ = state<BriefRequest | null>(null);
+export const debugMorningBriefEnabled$ = computed(async (get) => {
   const features = await get(featureSwitch$);
   return features[FeatureSwitchKey.OkouDebug];
 });
@@ -27,11 +27,11 @@ const currentRequest$ = computed(async (get) => {
     ? request
     : null;
 });
-export const debugMorningBriefEmailResponse$ = computed(async (get) => {
+export const debugMorningBriefResponse$ = computed(async (get) => {
   return (await get(currentRequest$))?.response ?? null;
 });
 
-export const sendDebugMorningBriefEmail$ = command(
+export const runDebugMorningBrief$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = await get(authenticatedIdentity$);
     signal.throwIfAborted();
@@ -39,11 +39,13 @@ export const sendDebugMorningBriefEmail$ = command(
     const owned =
       existing?.userId === owner.userId && existing.orgId === owner.orgId;
     // A lost HTTP response retries the same intent. A terminal receipt permits
-    // the next deliberate click to request a new sample.
+    // the next deliberate click to request a new run.
     const request =
       existing &&
       owned &&
-      (!existing.response || existing.response.status === "queued")
+      (!existing.response ||
+        existing.response.status === "queued" ||
+        existing.response.status === "running")
         ? existing
         : {
             userId: owner.userId,
@@ -53,7 +55,7 @@ export const sendDebugMorningBriefEmail$ = command(
           };
     set(request$, request);
     const result = await accept(
-      get(apiClient$)(debugMorningBriefEmailContract).send({
+      get(apiClient$)(debugMorningBriefContract).run({
         body: { requestId: request.requestId },
         fetchOptions: { signal },
       }),
@@ -64,7 +66,7 @@ export const sendDebugMorningBriefEmail$ = command(
   },
 );
 
-export const refreshDebugMorningBriefEmail$ = command(
+export const refreshDebugMorningBrief$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const request = await get(currentRequest$);
     signal.throwIfAborted();
@@ -72,7 +74,7 @@ export const refreshDebugMorningBriefEmail$ = command(
       return;
     }
     const result = await accept(
-      get(apiClient$)(debugMorningBriefEmailContract).get({
+      get(apiClient$)(debugMorningBriefContract).get({
         params: { id: request.requestId },
         fetchOptions: { signal },
       }),

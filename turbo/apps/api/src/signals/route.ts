@@ -89,7 +89,7 @@ import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordOauthRoutes } from "./routes/discord-oauth";
 import { emailInboundRoutes } from "./routes/email-inbound";
 import { emailSubscriptionRoutes } from "./routes/email-subscription";
-import { debugMorningBriefEmailRoutes } from "./routes/debug-morning-brief-email";
+import { debugMorningBriefRoutes } from "./routes/debug-morning-brief";
 import { notificationsRoutes } from "./routes/notifications";
 import { emailUnsubscribeRoutes } from "./routes/email-unsubscribe";
 import { featureSwitchesRoutes } from "./routes/feature-switches";
@@ -402,7 +402,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...morningBriefPreferenceRoutes,
   ...emailSubscriptionRoutes,
   ...notificationsRoutes,
-  ...debugMorningBriefEmailRoutes,
+  ...debugMorningBriefRoutes,
   ...workflowsRoutes,
   ...officialWorkflowRoutes,
   ...workflowAutomationsRoutes,
