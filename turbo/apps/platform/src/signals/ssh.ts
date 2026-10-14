@@ -14,9 +14,9 @@ import { CLOUDFLARE_ACCESS_ERROR_CODES } from "@okouai/api-contracts/contracts/c
 import { TAILSCALE_ERROR_CODES } from "@okouai/api-contracts/contracts/tailscale-errors";
 import { sshChangedPayloadSchema } from "@okouai/api-contracts/contracts/ssh-access";
 import { setAblyPayloadLoop$ } from "./realtime.ts";
-import { invalidateVncObservationConfiguration$ } from "./vnc.ts";
 import {
   invalidateRemoteAccess$,
+  invalidateVncObservationConfiguration$,
   remoteHostDefaultsReload$,
 } from "./remote-access-refresh.ts";
 import {

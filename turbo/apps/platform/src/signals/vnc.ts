@@ -52,7 +52,11 @@ import {
 import { runtimeAuthenticatedIdentity$ } from "./auth-context.ts";
 import { apiClient$ } from "./api-client.ts";
 import { featureSwitch$ } from "./external/feature-switch.ts";
-import { invalidateRemoteAccess$ } from "./remote-access-refresh.ts";
+import {
+  invalidateRemoteAccess$,
+  invalidateVncObservationConfiguration$,
+  vncObservationConfigurationRevision$,
+} from "./remote-access-refresh.ts";
 import { invalidateSsh$ } from "./ssh.ts";
 import {
   onRef,
@@ -106,18 +110,6 @@ export const vncClients$ = computed(async (get) => {
 
 const reload$ = state(0);
 const observationsReload$ = state(0);
-// SSH carrier rotations do not change the VNC generation. Fence retained
-// diagnostics whenever either protocol's configuration is refreshed.
-const observationConfigurationRevision$ = state(0);
-export const vncObservationConfigurationRevision$ = computed((get) => {
-  return get(observationConfigurationRevision$);
-});
-export const invalidateVncObservationConfiguration$ = command(({ set }) => {
-  set(observationConfigurationRevision$, (value) => {
-    return value + 1;
-  });
-  return false;
-});
 export const invalidateVnc$ = command(({ set }) => {
   set(reload$, (value) => {
     return value + 1;

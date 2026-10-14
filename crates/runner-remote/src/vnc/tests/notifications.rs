@@ -157,6 +157,12 @@ async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_
             actions.push(RawHttpAction::Respond(resolved));
         }
         actions.push(RawHttpAction::WaitForDisconnect);
+        if during_check {
+            actions.push(RawHttpAction::Respond(json_response(
+                "200 OK",
+                &json!({"outcome":"unavailable"}).to_string(),
+            )));
+        }
         actions.push(RawHttpAction::Respond(json_response(
             "200 OK",
             &json!({"outcome":"unavailable"}).to_string(),
@@ -186,6 +192,17 @@ async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_
         );
         if during_check {
             closed(&h).await;
+            let report = server.next_request("completed connection evidence").await;
+            assert!(report.starts_with(&format!(
+                "POST /api/runners/runs/{}/vnc/observations ",
+                h.run.id
+            )));
+            let (_, body) = report.split_once("\r\n\r\n").unwrap();
+            let evidence: Value = serde_json::from_str(body).unwrap();
+            assert_eq!(evidence["connectionId"], CONNECTION);
+            assert_eq!(evidence["expectedGeneration"], 7);
+            assert_eq!(evidence["expectedTransport"], json!({"type":"direct"}));
+            assert!(evidence["failureReason"].is_null());
         }
         assert!(!h.run.cancel.is_cancelled());
         assert_eq!(

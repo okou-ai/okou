@@ -3,11 +3,8 @@ import { AlertTriangle } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { VncConnectionObservation } from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import { currentLocale } from "../../i18n/index.ts";
-import {
-  vncIdentity$,
-  vncObservationConfigurationRevision$,
-  vncObservationsSnapshot$,
-} from "../../signals/vnc.ts";
+import { vncIdentity$, vncObservationsSnapshot$ } from "../../signals/vnc.ts";
+import { vncObservationConfigurationRevision$ } from "../../signals/remote-access-refresh.ts";
 
 function useVncObservations():
   | {
