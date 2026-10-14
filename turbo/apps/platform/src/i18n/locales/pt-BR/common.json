@@ -2023,6 +2023,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "Abrir conversa",
       "openChatIn": "Abrir conversa no {{integration}}",
       "openDiscordMessage": "Abrir mensagem original no Discord",

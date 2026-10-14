@@ -1980,6 +1980,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "오픈 채팅",
       "openChatIn": "{{integration}}에서 채팅 열기",
       "openDiscordMessage": "Discord에서 원본 메시지 열기",

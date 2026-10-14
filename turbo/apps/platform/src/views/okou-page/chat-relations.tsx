@@ -138,7 +138,10 @@ function Origin({ signals }: { readonly signals: ChatRelationSignals }) {
   if (part.kind === "mcp") {
     return (
       <p className="px-2 text-xs text-muted-foreground">
-        {part.clientName ?? "MCP"}
+        {part.clientName ??
+          t(($) => {
+            return $.chat.origins.mcp;
+          })}
       </p>
     );
   }

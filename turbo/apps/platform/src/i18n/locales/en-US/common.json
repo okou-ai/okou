@@ -1987,6 +1987,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "Open chat",
       "openChatIn": "Open chat in {{integration}}",
       "openDiscordMessage": "Open original message in Discord",

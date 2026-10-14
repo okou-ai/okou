@@ -1980,6 +1980,7 @@
       "feishu": "飛書",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "開啟聊天",
       "openChatIn": "在{{integration}}中開啟聊天",
       "openDiscordMessage": "在 Discord 中開啟原始訊息",
