@@ -113,6 +113,28 @@ function MobileArtifactsMenuItem({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
+function MobileFilesMenuItem({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const openFiles = useSet(openThreadFiles$);
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      onClick={() => {
+        openFiles(thread);
+      }}
+    >
+      <Folder size={16} />
+      {t(($) => {
+        return $.chat.files.title;
+      })}
+    </DropdownMenuItem>
+  );
+}
+
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -138,7 +160,6 @@ export function MobileChatThreadMoreMenu({
   const openAutomations = useSet(openThreadAutomations$);
   const filesEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
-  const openFiles = useSet(openThreadFiles$);
 
   return (
     <DropdownMenu>
@@ -233,19 +254,7 @@ export function MobileChatThreadMoreMenu({
           </DropdownMenuItem>
         )}
         {!resourcesEnabled && <MobileArtifactsMenuItem thread={thread} />}
-        {filesEnabled && (
-          <DropdownMenuItem
-            className="min-h-11"
-            onClick={() => {
-              openFiles(thread);
-            }}
-          >
-            <Folder size={16} />
-            {t(($) => {
-              return $.chat.files.title;
-            })}
-          </DropdownMenuItem>
-        )}
+        {filesEnabled && <MobileFilesMenuItem thread={thread} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );

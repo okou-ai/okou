@@ -679,7 +679,9 @@ function FilesMenuButton({ thread }: { thread: ChatPanelSignals }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
   const target = useGet(thread.sidebar.target$);
   const open = useSet(openThreadFiles$);
-  if (!enabled) return null;
+  if (!enabled) {
+    return null;
+  }
   return (
     <ChatThreadHeaderIconButton
       icon={<Folder size={18} />}

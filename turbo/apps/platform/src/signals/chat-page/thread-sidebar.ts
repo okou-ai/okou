@@ -236,42 +236,47 @@ export interface ThreadSidebarSignals {
   readonly selectedArtifactMarkdownTree$: MarkdownPreviewTreeComputed;
 }
 
+function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
+  const sessionKey$ = state<string | null>(null);
+  const resetSidebarSessionSignal$ = resetSignal();
+  const startSession$ = command(
+    ({ get, set }, signal: AbortSignal): AbortSignal => {
+      signal.throwIfAborted();
+      set(sessionKey$, get(authenticatedSessionKey$));
+      set(dispose$);
+      const sessionSignal = set(resetSidebarSessionSignal$, signal);
+      sessionSignal.addEventListener(
+        "abort",
+        () => {
+          set(dispose$);
+        },
+        { once: true },
+      );
+      return sessionSignal;
+    },
+  );
+  return { sessionKey$, resetSidebarSessionSignal$, startSession$ };
+}
+
 export function createThreadSidebarSignals(
   threadId: string,
   chatEvents$: Computed<ChatEvent[]>,
 ): ThreadSidebarSignals {
   const internalTarget$ = state<ThreadSidebarTarget | null>(null);
-  const sessionKey$ = state<string | null>(null);
   const internalEntryAnimationsEnabled$ = state(false);
   const internalAnimateEntry$ = state(false);
   const internalFullscreen$ = state(false);
   const internalEditingAutomationId$ = state<string | null>(null);
-  const resetSidebarSessionSignal$ = resetSignal();
   const imageCanvas = createZoomableImageCanvasSignals();
   const diagram = createArtifactDiagramPreviewSignals();
+  const { sessionKey$, resetSidebarSessionSignal$, startSession$ } =
+    createThreadSidebarSessionSignals(diagram.dispose$);
   const artifactCatalog = createArtifactCatalogSignals({
     chatThreadId: threadId,
   });
   const preview = createCatalogArtifactPreviewSignals(
     artifactCatalog,
     diagram.open$,
-  );
-
-  const startSession$ = command(
-    ({ get, set }, signal: AbortSignal): AbortSignal => {
-      signal.throwIfAborted();
-      set(sessionKey$, get(authenticatedSessionKey$));
-      set(diagram.dispose$);
-      const sessionSignal = set(resetSidebarSessionSignal$, signal);
-      sessionSignal.addEventListener(
-        "abort",
-        () => {
-          set(diagram.dispose$);
-        },
-        { once: true },
-      );
-      return sessionSignal;
-    },
   );
 
   const publishTarget$ = command(
@@ -346,8 +351,9 @@ export function createThreadSidebarSignals(
         target?.type === "files" &&
         (!get(sessionKey$) ||
           get(sessionKey$) !== get(authenticatedSessionKey$))
-      )
+      ) {
         return null;
+      }
       return target;
     }),
     open$,

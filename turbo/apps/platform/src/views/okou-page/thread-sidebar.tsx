@@ -490,7 +490,9 @@ function ThreadFilesPanel({ thread }: { readonly thread: ChatPanelSignals }) {
   const close = useSet(thread.sidebar.close$);
   const fullscreen = useGet(thread.sidebar.fullscreen$);
   const toggleFullscreen = useSet(thread.sidebar.toggleFullscreen$);
-  if (!enabled) return null;
+  if (!enabled) {
+    return null;
+  }
   return (
     <section
       ref={mount}
