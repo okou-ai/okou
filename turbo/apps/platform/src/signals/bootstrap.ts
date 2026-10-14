@@ -612,10 +612,12 @@ export const bootstrap$ = command(
       getCapturedPreviewBypassForTarget(apiBaseUrl);
     const clerk = get(clerk$);
     set(setApiClientRuntime$, {
-      getToken: async (requestSignal) => {
+      getToken: async (requestSignal, diagnostic) => {
         const resolvedClerk = await clerk;
         requestSignal?.throwIfAborted();
-        return await readClerkToken(resolvedClerk, requestSignal);
+        return await readClerkToken(resolvedClerk, requestSignal, {
+          diagnostic,
+        });
       },
       apiBaseUrl,
       oauthApiBaseUrl: resolveOAuthApiBase(),

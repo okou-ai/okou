@@ -7,6 +7,10 @@ import {
 } from "@okouai/api-contracts/contracts/client-headers";
 const clientSessionId = crypto.randomUUID();
 
+export function getClientSessionId(): string {
+  return clientSessionId;
+}
+
 function createClientHeaders(clientVersion: string): Record<string, string> {
   return {
     [CLIENT_VERSION_HEADER]: clientVersion,

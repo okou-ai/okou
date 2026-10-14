@@ -212,8 +212,11 @@ const prepareSharedDatabaseBridge$ = command(
       orgId: clerk.organization.id,
     };
     const bridgeHost = get(sharedDatabaseBridgeHostState$);
-    const getToken: SharedDatabaseTokenProvider = (requestSignal) => {
-      return readClerkToken(clerk, requestSignal);
+    const getToken: SharedDatabaseTokenProvider = (
+      requestSignal,
+      diagnostic,
+    ) => {
+      return readClerkToken(clerk, requestSignal, { diagnostic });
     };
     const bridge = new SingleConnectionSharedDatabaseBridge({
       createBridge: (events, connectionSignal) => {

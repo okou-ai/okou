@@ -6,6 +6,12 @@ import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import { detach, Reason, throwIfAbort } from "../signals/utils.ts";
 import { accept } from "./accept.ts";
+import {
+  createAuthDiagnosticId,
+  recordAuthDiagnostic,
+  startAuthDiagnosticMeasurement,
+  type AuthDiagnosticContext,
+} from "./auth-diagnostics.ts";
 
 type RealtimeTokenClient = InitClientReturn<
   typeof platformRealtimeTokenContract,
@@ -41,24 +47,61 @@ type AuthCallback = NonNullable<AuthOptions["authCallback"]>;
  * in-flight POST during teardown is negligible (single-shot, fast endpoint).
  */
 export function createAblyAuthCallback(
-  client: RealtimeTokenClient,
+  createClient: (diagnostic: AuthDiagnosticContext) => RealtimeTokenClient,
+  diagnostic: AuthDiagnosticContext,
   signal: AbortSignal,
 ): AuthCallback {
   return (_params, callback) => {
+    const invocation: AuthDiagnosticContext = {
+      ...diagnostic,
+      ablyAuthId: createAuthDiagnosticId(),
+    };
+    const measurement = startAuthDiagnosticMeasurement();
+    recordAuthDiagnostic({
+      stage: "ably_auth_started",
+      context: invocation,
+      outcome: "started",
+    });
     detach(
       (async () => {
         // eslint-disable-next-line no-restricted-syntax -- bridging Ably's node-style auth callback into our promise-based `accept()` helper; justified per eslint.config.js "If genuinely needed (JSON.parse, clipboard, polling), add an inline eslint-disable with justification"
         try {
+          const client = createClient(invocation);
           const res = await accept(client.create({ body: {} }), [200]);
+          recordAuthDiagnostic({
+            stage: "ably_auth_api_finished",
+            context: invocation,
+            measurement,
+            status: res.status,
+            ownerAborted: signal.aborted,
+          });
           // The fetch above does not accept our signal, so check it
           // explicitly per ccstate skill ("AbortSignal Lifecycle"): aborts
           // surface as an AbortError that the catch re-throws to detach.
+          if (signal.aborted) {
+            recordAuthDiagnostic({
+              stage: "ably_auth_callback",
+              context: invocation,
+              ownerAborted: true,
+              outcome: "aborted",
+            });
+          }
           signal.throwIfAborted();
+          recordAuthDiagnostic({
+            stage: "ably_auth_callback",
+            context: invocation,
+          });
           callback(null, res.body);
         } catch (error) {
-          // Re-throw aborts so detach silences them at the boundary —
-          // Ably's callback must not be invoked after `ably.close()`.
+          // Preserve Ably's existing callback-after-close suppression.
           throwIfAbort(error);
+          recordAuthDiagnostic({
+            stage: "ably_auth_callback",
+            context: invocation,
+            measurement,
+            ownerAborted: signal.aborted,
+            outcome: signal.aborted ? "aborted" : "error",
+          });
           callback(
             error instanceof Error ? error.message : String(error),
             null,

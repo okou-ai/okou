@@ -8,7 +8,15 @@ import {
   type InitClientReturn,
 } from "@okouai/api-contracts/contracts/trpc-contract";
 
+import { CLIENT_REQUEST_ID_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { IN_VITEST } from "../env.ts";
+import {
+  createAuthDiagnosticId,
+  observeAuthHttpRequest,
+  observeAuthTokenRead,
+  type AuthDiagnosticContext,
+  type AuthTokenProvider,
+} from "../lib/auth-diagnostics.ts";
 import {
   clientTelemetryOutcomeForError,
   type ClientTelemetryOperation,
@@ -24,7 +32,8 @@ import { onRejection } from "./utils.ts";
 interface AuthedClientOptions {
   readonly baseUrl: string;
   readonly clientVersion: string;
-  readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
+  readonly getToken: AuthTokenProvider;
+  readonly authDiagnosticContext?: AuthDiagnosticContext;
   readonly getTokenGuard?: () => () => void;
   readonly getVercelProtectionBypass: () => string | undefined;
   readonly onForceUpgrade?: () => void;
@@ -116,6 +125,7 @@ export function createAuthedContractClient<T extends AppRouter>(
 
       const requestWithToken = async (
         token: string | null,
+        diagnostic: AuthDiagnosticContext,
         requestSignal?: AbortSignal,
       ) => {
         const headers = new Headers(args.headers);
@@ -128,16 +138,28 @@ export function createAuthedContractClient<T extends AppRouter>(
           headers.set("X-Vercel-Protection-Bypass", vercelProtectionBypass);
         }
         const startedAt = now();
-        const response = await trpcRestFetchApi({
-          ...args,
-          fetchOptions: {
-            ...args.fetchOptions,
-            credentials: "include",
-            ...(requestSignal ? { signal: requestSignal } : {}),
+        const requestId = headers.get(CLIENT_REQUEST_ID_HEADER) ?? undefined;
+        const response = await observeAuthHttpRequest(
+          () => {
+            return trpcRestFetchApi({
+              ...args,
+              fetchOptions: {
+                ...args.fetchOptions,
+                credentials: "include",
+                ...(requestSignal ? { signal: requestSignal } : {}),
+              },
+              headers,
+              path,
+            });
           },
-          headers,
-          path,
-        });
+          diagnostic,
+          {
+            requestId,
+            method: args.route.method,
+            route: args.route.path,
+            token,
+          },
+        );
         if (response.status === 401) {
           recordClientAuthFailure({
             headers,
@@ -158,7 +180,18 @@ export function createAuthedContractClient<T extends AppRouter>(
         bootstrapResponse ??
         (await (async () => {
           const validateToken = options.getTokenGuard?.();
-          const token = await options.getToken(signal);
+          const diagnostic: AuthDiagnosticContext = {
+            ...options.authDiagnosticContext,
+            operationId: createAuthDiagnosticId(),
+          };
+          const token = await observeAuthTokenRead(
+            () => {
+              return options.getToken(signal, diagnostic);
+            },
+            diagnostic,
+            { method: args.route.method, route: args.route.path },
+            signal,
+          );
           signal?.throwIfAborted();
           validateToken?.();
           const measurement = startClientTelemetryMeasurement();
@@ -168,7 +201,7 @@ export function createAuthedContractClient<T extends AppRouter>(
             route: args.route.path,
           } satisfies ClientTelemetryOperation;
           const networkResponse = await onRejection(
-            requestWithToken(token, signal),
+            requestWithToken(token, diagnostic, signal),
             (error) => {
               recordClientTelemetry(
                 measurement,

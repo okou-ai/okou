@@ -1,4 +1,5 @@
 import { command, computed, state } from "ccstate";
+import { recordAuthDiagnostic } from "../lib/auth-diagnostics.ts";
 
 import type { SharedDatabaseBridge } from "../shared-database/bridge.ts";
 import { NEVER_RESOLVED_PROMISE } from "./utils.ts";
@@ -32,13 +33,17 @@ export const installedSharedDatabaseBridge$ = computed(
   },
 );
 
-const reportTabVisibility$ = command(({ get }): void => {
-  get(installedSharedDatabaseBridge$).setTabVisibility(
-    document.visibilityState,
-  );
-});
+const reportTabVisibility$ = command(
+  ({ get }, source: "initial" | "visibilitychange" | "pageshow"): void => {
+    recordAuthDiagnostic({ stage: "page_visibility", source });
+    get(installedSharedDatabaseBridge$).setTabVisibility(
+      document.visibilityState,
+    );
+  },
+);
 
 const reportTabHidden$ = command(({ get }): void => {
+  recordAuthDiagnostic({ stage: "page_visibility", source: "pagehide" });
   get(installedSharedDatabaseBridge$).setTabVisibility("hidden");
 });
 
@@ -48,14 +53,14 @@ export const setupTabVisibilityReport$ = command(
     document.addEventListener(
       "visibilitychange",
       () => {
-        set(reportTabVisibility$);
+        set(reportTabVisibility$, "visibilitychange");
       },
       { signal },
     );
     window.addEventListener(
       "pageshow",
       () => {
-        set(reportTabVisibility$);
+        set(reportTabVisibility$, "pageshow");
       },
       { signal },
     );
@@ -66,7 +71,7 @@ export const setupTabVisibilityReport$ = command(
       },
       { signal },
     );
-    set(reportTabVisibility$);
+    set(reportTabVisibility$, "initial");
   },
 );
 

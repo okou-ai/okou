@@ -49,7 +49,10 @@ test("uses a matching bootstrap response once before falling back to the network
 
   const second = await client.get({ headers: {} });
   expect(second).toMatchObject({ status: 200, body: networkBody });
-  expect(getToken).toHaveBeenCalledExactlyOnceWith(undefined);
+  expect(getToken).toHaveBeenCalledExactlyOnceWith(
+    undefined,
+    expect.any(Object),
+  );
   expect(networkRequestCount).toBe(1);
 
   const third = await client.get({
@@ -57,6 +60,10 @@ test("uses a matching bootstrap response once before falling back to the network
     fetchOptions: { signal: context.signal },
   });
   expect(third).toMatchObject({ status: 200, body: networkBody });
-  expect(getToken).toHaveBeenNthCalledWith(2, context.signal);
+  expect(getToken).toHaveBeenNthCalledWith(
+    2,
+    context.signal,
+    expect.any(Object),
+  );
   expect(networkRequestCount).toBe(2);
 });

@@ -4,6 +4,23 @@ export const AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT = Date.parse(
   "2026-10-29T02:30:00Z",
 );
 
+/** Includes diagnostic clock/context collection in the best-effort boundary. */
+export function collectTemporaryAuthDiagnostic<T>(
+  readTimestamp: () => number,
+  collect: (timestamp: number) => T,
+): T | undefined {
+  try {
+    const timestamp = readTimestamp();
+    if (timestamp >= AUTH_FAILURE_DIAGNOSTICS_EXPIRES_AT) {
+      return;
+    }
+    return collect(timestamp);
+  } catch {
+    // Optional observations must not replace the operation's original result.
+    return;
+  }
+}
+
 /** Owns expiry and best-effort delivery for these temporary Axiom records. */
 export function recordTemporaryAuthFailure(
   timestamp: number,

@@ -1,3 +1,5 @@
+// @vitest-environment-options {"url":"https://app.okou.ai/"}
+
 import { command } from "ccstate";
 import { waitFor } from "@testing-library/react";
 import { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
@@ -13,9 +15,13 @@ import {
   setSharedWorkerRealtimeBridge$,
 } from "../realtime.ts";
 import { clerk$, setupClerk$ } from "../auth.ts";
-import { installMockedClerkBootstrap } from "../../__tests__/mock-auth.ts";
+import {
+  installMockedClerkBootstrap,
+  mockedClerk,
+} from "../../__tests__/mock-auth.ts";
 import { initializeAppVersion$ } from "../app-version.ts";
 import { readClerkToken } from "../clerk-token.ts";
+import { mockNow } from "../../lib/time.ts";
 import { setRootSignal$ } from "../root-signal.ts";
 import { setApiClientRuntime$ } from "../api-client-runtime.ts";
 import { setAuthenticatedIdentity$ } from "../auth-context.ts";
@@ -38,6 +44,22 @@ import type {
   SharedDatabaseRealtimeScope,
 } from "../../shared-database/protocol.ts";
 
+const axiomTelemetry = vi.hoisted(() => {
+  return {
+    ingest:
+      vi.fn<(dataset: string, events: Record<string, unknown>[]) => void>(),
+  };
+});
+vi.mock("@axiomhq/js", () => {
+  return {
+    Axiom: class {
+      ingest(dataset: string, events: Record<string, unknown>[]): void {
+        axiomTelemetry.ingest(dataset, events);
+      }
+    },
+  };
+});
+
 const context = testContext();
 
 beforeEach(() => {
@@ -49,13 +71,115 @@ beforeEach(() => {
   context.store.set(setApiClientRuntime$, {
     apiBaseUrl: location.origin,
     oauthApiBaseUrl: location.origin,
-    getToken: async (signal) => {
+    getToken: async (signal, diagnostic) => {
       const resolvedClerk = await clerk;
       signal?.throwIfAborted();
-      return await readClerkToken(resolvedClerk, signal);
+      return await readClerkToken(resolvedClerk, signal, { diagnostic });
     },
   });
 });
+
+test.each([false, true])(
+  "Observe Ably auth and retry state without changing SDK work (telemetry fails: %s)",
+  async (telemetryFails) => {
+    mockSignedInUser();
+    mockNow(new Date("2026-10-14T02:00:00Z"), context.signal);
+    vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "test-auth-telemetry");
+    context.signal.addEventListener(
+      "abort",
+      () => {
+        vi.unstubAllEnvs();
+      },
+      { once: true },
+    );
+    axiomTelemetry.ingest.mockReset();
+    axiomTelemetry.ingest.mockImplementation((_dataset, events) => {
+      if (
+        telemetryFails &&
+        events.some((event) => {
+          return event.name === "auth.lifecycle";
+        })
+      ) {
+        throw new Error("telemetry unavailable");
+      }
+    });
+    await context.store.set(setupRealtime$, context.signal);
+    const callsBeforeRenewal = mockedClerk.sessionGetToken.mock.calls.length;
+    context.mocks.ably.triggerConnectionState("suspended", {
+      code: 80003,
+      statusCode: 408,
+      retryIn: 30_000,
+    });
+    context.mocks.ably.triggerConnectionState("connected");
+    await context.mocks.ably.triggerReauth();
+    expect(mockedClerk.sessionGetToken.mock.calls).toHaveLength(
+      callsBeforeRenewal + 1,
+    );
+    for (const [options] of mockedClerk.sessionGetToken.mock.calls) {
+      expect(options?.skipCache).not.toBe(true);
+    }
+    const events = axiomTelemetry.ingest.mock.calls
+      .flatMap(([, entries]) => {
+        return entries;
+      })
+      .filter((event) => {
+        return event.name === "auth.lifecycle";
+      });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        "attributes.custom": expect.objectContaining({
+          "okou.auth.stage": "ably_connection",
+          "okou.auth.state": "suspended",
+          "okou.auth.retry_in_ms": 30_000,
+          "okou.auth.reason_code": 80003,
+          "okou.auth.reason_status_code": 408,
+        }),
+      }),
+    );
+    const invocations = events.filter((event) => {
+      const attrs = event["attributes.custom"];
+      return (
+        typeof attrs === "object" &&
+        attrs !== null &&
+        "okou.auth.stage" in attrs &&
+        attrs["okou.auth.stage"] === "ably_auth_started"
+      );
+    });
+    expect(invocations).toHaveLength(2);
+    const ids = invocations.map((event) => {
+      const attrs = event["attributes.custom"];
+      return typeof attrs === "object" &&
+        attrs !== null &&
+        "okou.auth.ably_auth_id" in attrs
+        ? attrs["okou.auth.ably_auth_id"]
+        : undefined;
+    });
+    expect(new Set(ids).size).toBe(2);
+    for (const id of ids) {
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          "attributes.custom": expect.objectContaining({
+            "okou.auth.stage": "http_send_invoked",
+            "okou.auth.ably_auth_id": id,
+            "okou.auth.http_request_id": expect.any(String),
+            "okou.auth.operation_id": expect.any(String),
+          }),
+        }),
+      );
+    }
+    const payload = JSON.stringify(events);
+    for (const secret of [
+      "test-token",
+      "test-user-123",
+      "test-org-123",
+      "test@example.com",
+      "user:test-user-123",
+      "org:test-org-123",
+    ]) {
+      expect(payload).not.toContain(secret);
+    }
+  },
+);
 
 const finishLoop$ = command((_ctx, _signal: AbortSignal) => {
   return true;
