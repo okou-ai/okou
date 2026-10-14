@@ -1783,7 +1783,7 @@
       "useForFutureChats": "Utiliser ce modèle pour les prochaines discussions",
       "workflows": {
         "loading": "Chargement des workflows...",
-        "showAll": "Afficher tous les workflows",
+        "showAllCount": "Afficher les {{total}}",
         "title": "Workflows"
       }
     },

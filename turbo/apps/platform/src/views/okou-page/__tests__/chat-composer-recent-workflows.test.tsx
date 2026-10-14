@@ -121,7 +121,7 @@ test("The overview fills from the alphabet and expanding preserves the visible w
   const overview = ["/alpha", "/beta", "/charlie", "/delta"];
   expect(workflowNames()).toStrictEqual(overview);
 
-  click(button("Show all workflows"));
+  click(button("Show all 6"));
 
   expect(workflowNames()).toStrictEqual([...overview, "/echo", "/zulu"]);
 });
@@ -132,7 +132,7 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
     mockWorkflows();
     mockChatLifecycle(context, { threadId: THREAD_ID });
     let editor = await openComposer(path);
-    click(button("Show all workflows"));
+    click(button("Show all 6"));
     click(button("/echo"));
     await fill(editor, "Draft /");
     await waitFor(() => {
@@ -174,7 +174,7 @@ test.each([`/chats/${THREAD_ID}`, `/agents/${AGENT_ID}/chat`])(
     await waitFor(() => {
       expect(workflowNames()).toStrictEqual(expected);
     });
-    click(button("Show all workflows"));
+    click(button("Show all 6"));
     expect(workflowNames().slice(0, 4)).toStrictEqual(expected);
   },
 );
@@ -205,7 +205,7 @@ test("An open menu keeps its order when an earlier send finishes, then refreshes
   await waitFor(() => {
     expect(button("Send")).toBeEnabled();
   });
-  click(button("Show all workflows"));
+  click(button("Show all 6"));
   expect(workflowNames()).toStrictEqual([
     "/alpha",
     "/beta",

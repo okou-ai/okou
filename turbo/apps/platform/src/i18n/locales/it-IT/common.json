@@ -1783,7 +1783,7 @@
       "useForFutureChats": "Usa questo modello per le chat future",
       "workflows": {
         "loading": "Caricamento flussi di lavoro...",
-        "showAll": "Mostra tutti i flussi di lavoro",
+        "showAllCount": "Mostra tutti e {{total}}",
         "title": "Flussi di lavoro"
       }
     },
