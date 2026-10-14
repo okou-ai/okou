@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
 import {
@@ -43,6 +43,10 @@ import {
   revokeLinkToken,
   type LinkSpend,
 } from "./link-wallet-provider.service";
+import {
+  recordWalletConnectionUsage,
+  recordWalletSpendUsage,
+} from "./link-wallet-usage";
 
 export interface WalletOwner {
   readonly orgId: string;
@@ -189,7 +193,9 @@ export const startWalletOAuth$ = command(
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
     signal.throwIfAborted();
     const db = set(writeDb$);
+    const authorizationId = randomUUID();
     await db.insert(linkWalletOAuthAttempts).values({
+      id: authorizationId,
       ...owner,
       stateHash: hash(state),
       encryptedVerifier,
@@ -209,6 +215,7 @@ export const startWalletOAuth$ = command(
     })) {
       url.searchParams.set(key, value);
     }
+    recordWalletConnectionUsage(owner, authorizationId, "connection_started");
     return { url: url.toString(), expiresAt: expiresAt.toISOString() };
   },
 );
@@ -301,6 +308,7 @@ const failWalletOAuth$ = command(
       )
       .returning({ id: linkWalletOAuthAttempts.id });
     if (failed) {
+      recordWalletConnectionUsage(attempt, attempt.id, "connection_failed");
       await publishWalletChanged(attempt);
     }
   },
@@ -359,6 +367,7 @@ const publishWalletOAuth$ = command(
         "Wallet authorization was canceled or expired; connect again",
       );
     }
+    recordWalletConnectionUsage(attempt, attempt.id, "connection_completed");
     await publishWalletChanged(attempt);
     return { status: "success" as const, username: null };
   },
@@ -577,6 +586,11 @@ export const disconnectWallet$ = command(
         encryptedCredentials: connection.encryptedCredentials,
       });
       signal.throwIfAborted();
+      recordWalletConnectionUsage(
+        owner,
+        connection.authorizationId,
+        "connection_revoked",
+      );
     }
     return { disconnected: true as const };
   },
@@ -660,6 +674,7 @@ const saveProviderSpend$ = command(
         "Spend request not found",
       );
     }
+    recordWalletSpendUsage(saved, "spend_status_observed", remote.status);
     return saved;
   },
 );
@@ -693,6 +708,9 @@ export const createWalletSpend$ = command(
       })
       .returning();
     signal.throwIfAborted();
+    if (created) {
+      recordWalletSpendUsage(created, "spend_requested", "creating");
+    }
     const [existing] = created
       ? [created]
       : await db
@@ -894,10 +912,16 @@ export const getWalletSpendCredentials$ = command(
         "Wallet authorization changed while retrieving credentials; check wallet status before continuing",
       );
     }
-    return walletSpendCredentialsSchema.parse({
+    const credentials = walletSpendCredentialsSchema.parse({
       spend: publicSpend(saved, result.spend),
       card: result.card,
     });
+    recordWalletSpendUsage(
+      saved,
+      "credentials_retrieved",
+      credentials.spend.status,
+    );
+    return credentials;
   },
 );
 

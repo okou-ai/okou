@@ -50,7 +50,7 @@ beforeEach(() => {
 });
 
 async function carrier(
-  enabled = true,
+  enabled: boolean | null = null,
   existingActor?: ApiTestUser,
   unattended = false,
 ) {
@@ -71,11 +71,13 @@ async function carrier(
     displayName: "Wallet agent",
     visibility: "private",
   });
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId },
-    { [FeatureSwitchKey.LinkWallet]: enabled },
-  );
+  if (enabled !== null) {
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId },
+      { [FeatureSwitchKey.LinkWallet]: enabled },
+    );
+  }
   const run = unattended
     ? await createWorkflowsBddApi(context).startEventAutomationRun(
         actor,
