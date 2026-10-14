@@ -14,6 +14,12 @@ import { API_DATABASE_SEED_FILES } from "./database-seeds";
 import { singleton } from "../lib/singleton";
 import { settleIncludingAbort } from "../signals/utils";
 
+// The API's ES-only TypeScript library declares WebAssembly types through the
+// SDK, but does not declare Node's runtime global value.
+declare const WebAssembly: {
+  compile(bytes: Uint8Array): Promise<WebAssembly.Module>;
+};
+
 /** Cleanup always finishes; preserve both failures rather than masking work. */
 async function releaseAfter<T>(
   work: Promise<T>,

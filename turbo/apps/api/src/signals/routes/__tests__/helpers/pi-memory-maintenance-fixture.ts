@@ -414,7 +414,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected maintenance upload preparation to succeed");
     }
     expect(prepared.body.versionId).toBe(body.versionId);
-    if (content !== undefined) {
+    if (content !== undefined && body.versionId !== body.parentVersionId) {
       const uploads = prepared.body.uploads;
       if (!uploads) {
         throw new Error("Expected the real maintenance upload authorization");

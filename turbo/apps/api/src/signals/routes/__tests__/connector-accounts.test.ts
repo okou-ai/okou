@@ -1317,7 +1317,7 @@ describe("connector account lifecycle routes", () => {
       createdAccountIds = await createBulkAccounts();
     });
 
-    it("paginates more than one hundred accounts", async () => {
+    it("keeps the default account outside the first page of one hundred accounts", async () => {
       const firstTwo = await accept(
         accountClient().connections({
           headers: authHeaders(),
@@ -1367,6 +1367,9 @@ describe("connector account lifecycle routes", () => {
         isDefault: true,
       });
       expect(firstPage.body.nextCursor).not.toBeNull();
+    });
+
+    it("paginates more than one hundred accounts", async () => {
       const ids = new Set<string>();
       let cursor: string | undefined;
       do {
@@ -1388,6 +1391,7 @@ describe("connector account lifecycle routes", () => {
         cursor = page.body.nextCursor ?? undefined;
       } while (cursor);
       expect(ids.size).toBe(101);
+      expect(ids).toStrictEqual(new Set(createdAccountIds));
     });
 
     it("summarizes more than one hundred accounts", async () => {

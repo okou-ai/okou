@@ -47,7 +47,7 @@ describe("Genuine Pi maintenance publication results", () => {
       // for the six-hour successful-maintenance cooldown.
       const ordinary = await publishOrdinaryMemory(
         run,
-        "Ordinary changed memory.\n",
+        "Later maintenance memory.\n",
       );
       const dispatched = await accept(
         run.stage2.consolidate({ headers: cronHeaders() }),
@@ -80,16 +80,22 @@ describe("Genuine Pi maintenance publication results", () => {
       expect(replay.body).toStrictEqual(completed.response.body);
       await flushWaitUntilForTest();
       await webhooks.requestAgentComplete(completed.body, next.headers, [401]);
-      await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
-        firstResult,
-      );
-      await expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
-        latestResult,
-      );
-      expect(
-        (await observeMemory(run, "Later maintenance memory.\n")).memory
-          .versionId,
-      ).toBe(latest.versionId);
+      const observations = await Promise.allSettled([
+        expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+          firstResult,
+        ),
+        expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
+          latestResult,
+        ),
+        observeMemory(run, "Later maintenance memory.\n").then(({ memory }) => {
+          expect(memory.versionId).toBe(latest.versionId);
+        }),
+      ]);
+      for (const observation of observations) {
+        if (observation.status === "rejected") {
+          throw observation.reason;
+        }
+      }
       const settled = await accept(
         run.stage2.consolidate({ headers: cronHeaders() }),
         [200],

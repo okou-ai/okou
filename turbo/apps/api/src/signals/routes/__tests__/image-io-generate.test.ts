@@ -1414,12 +1414,11 @@ describe("POST /api/image-io/generate", () => {
       };
       // The funded fixture already verifies its 30,000-credit starting balance.
       const generationIds = new Set<string>();
-      // Three owned streams respect the real concurrency limit. Each accepted
-      // ID is matched to the callback URL the provider actually received, and a
-      // stream finishes its generation before submitting another identical prompt.
-      const results = await Promise.allSettled(
-        Array.from({ length: 3 }, async (_, stream) => {
-          for (let index = stream; index < 50; index += 3) {
+      // Finish each three-request wave before the next, respecting the genuine
+      // concurrency limit. Drain callback work once for the whole owned wave.
+      for (let offset = 0; offset < 50; offset += 3) {
+        const results = await Promise.allSettled(
+          Array.from({ length: Math.min(3, 50 - offset) }, async () => {
             const response = await app.request(path, request);
             expect(response.status).toBe(202);
             const generationId = readAcceptedGenerationId(
@@ -1434,24 +1433,33 @@ describe("POST /api/image-io/generate", () => {
               requestUrlsByGenerationId.get(generationId) ?? null,
               completionPayload,
             );
-            await flushWaitUntilForTest();
-            const completed = await app.request(
-              `/api/built-in-generations/${generationId}`,
-              { headers: request.headers },
-            );
-            expect(completed.status).toBe(200);
-            const statusBody: unknown = await completed.json();
-            expect(statusBody).toMatchObject({
-              generationId,
-              status: "completed",
-            });
-            expect(readGenerationResult(statusBody)).toMatchObject({
-              creditsCharged: 50,
-            });
+          }),
+        );
+        for (const result of results) {
+          if (result.status === "rejected") {
+            throw result.reason;
           }
+        }
+        await flushWaitUntilForTest();
+      }
+      const completions = await Promise.allSettled(
+        [...generationIds].map(async (generationId) => {
+          const completed = await app.request(
+            `/api/built-in-generations/${generationId}`,
+            { headers: request.headers },
+          );
+          expect(completed.status).toBe(200);
+          const statusBody: unknown = await completed.json();
+          expect(statusBody).toMatchObject({
+            generationId,
+            status: "completed",
+          });
+          expect(readGenerationResult(statusBody)).toMatchObject({
+            creditsCharged: 50,
+          });
         }),
       );
-      for (const result of results) {
+      for (const result of completions) {
         if (result.status === "rejected") {
           throw result.reason;
         }

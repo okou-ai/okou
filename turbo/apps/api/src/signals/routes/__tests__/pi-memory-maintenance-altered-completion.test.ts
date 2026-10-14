@@ -25,7 +25,7 @@ describe("Genuine Pi maintenance publication results", () => {
       status: "completed",
       result: { storageOutputs: [{ version: first.versionId }] },
     });
-    await publishOrdinaryMemory(run, "Queue a later maintenance.\n");
+    await publishOrdinaryMemory(run, "Later maintenance memory.\n");
     const dispatched = await accept(
       run.stage2.consolidate({ headers: cronHeaders() }),
       [200],
@@ -39,7 +39,7 @@ describe("Genuine Pi maintenance publication results", () => {
       status: "completed",
       result: { storageOutputs: [{ version: latest.versionId }] },
     });
-    await Promise.all(
+    const rejectedCompletions = await Promise.allSettled(
       [
         { ...completed.body.completion, cliAgentSessionId: next.runId },
         { ...completed.body.completion, cliAgentType: "claude-code" },
@@ -73,15 +73,26 @@ describe("Genuine Pi maintenance publication results", () => {
         );
       }),
     );
-    await expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
-      firstResult,
-    );
-    await expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
-      latestResult,
-    );
-    expect(
-      (await observeMemory(run, "Later maintenance memory.\n")).memory
-        .versionId,
-    ).toBe(latest.versionId);
+    for (const completion of rejectedCompletions) {
+      if (completion.status === "rejected") {
+        throw completion.reason;
+      }
+    }
+    const observations = await Promise.allSettled([
+      expect(runs.readRun(run.actor, run.runId)).resolves.toStrictEqual(
+        firstResult,
+      ),
+      expect(runs.readRun(run.actor, next.runId)).resolves.toStrictEqual(
+        latestResult,
+      ),
+      observeMemory(run, "Later maintenance memory.\n").then(({ memory }) => {
+        expect(memory.versionId).toBe(latest.versionId);
+      }),
+    ]);
+    for (const observation of observations) {
+      if (observation.status === "rejected") {
+        throw observation.reason;
+      }
+    }
   });
 });
