@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.752.2](https://github.com/okou-ai/okou/compare/core-v8.752.1...core-v8.752.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* align wallet authorization cards and resume chat after consent ([#39918](https://github.com/okou-ai/okou/issues/39918)) ([b8f5ba9](https://github.com/okou-ai/okou/commit/b8f5ba9616117089475b8aef8854808195ec09f4))
+
+
+### Refactoring
+
+* remove abandoned home task recommendations ([#39928](https://github.com/okou-ai/okou/issues/39928)) ([334940b](https://github.com/okou-ai/okou/commit/334940bb4da2cf321bf65b6a376c4dc1ae12daa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.1
+
 ## [8.752.1](https://github.com/okou-ai/okou/compare/core-v8.752.0...core-v8.752.1) (2026-10-14)
 
 

@@ -12,6 +12,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1021.1](https://github.com/okou-ai/okou/compare/app-v0.1021.0...app-v0.1021.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* align wallet authorization cards and resume chat after consent ([#39918](https://github.com/okou-ai/okou/issues/39918)) ([b8f5ba9](https://github.com/okou-ai/okou/commit/b8f5ba9616117089475b8aef8854808195ec09f4))
+* **app:** give image previews one layout and zoom owner ([#39947](https://github.com/okou-ai/okou/issues/39947)) ([2432df1](https://github.com/okou-ai/okou/commit/2432df195cee1b744f9699aea9f3b71b261c7ea9))
+* **app:** shorten and lighten slash workflow descriptions ([#39936](https://github.com/okou-ai/okou/issues/39936)) ([c1d3bcd](https://github.com/okou-ai/okou/commit/c1d3bcd30e448b3fea70c6a0f59c64341706df9c))
+
+
+### Refactoring
+
+* remove abandoned home task recommendations ([#39928](https://github.com/okou-ai/okou/issues/39928)) ([334940b](https://github.com/okou-ai/okou/commit/334940bb4da2cf321bf65b6a376c4dc1ae12daa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.1
+    * @okouai/core bumped to 8.752.2
+    * @okouai/ui bumped to 1.15.3
+
 ## [0.1021.0](https://github.com/okou-ai/okou/compare/app-v0.1020.0...app-v0.1021.0) (2026-10-14)
 
 
