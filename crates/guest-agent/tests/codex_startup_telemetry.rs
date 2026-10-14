@@ -151,10 +151,6 @@ async fn run_guest_agent(args: GuestAgentInvocation<'_>) -> Result<Output, std::
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
         )
-        .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
         .env("OKOU_TEST_CODEX_HOME_DIR", args.home.join(".codex"))
         .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,

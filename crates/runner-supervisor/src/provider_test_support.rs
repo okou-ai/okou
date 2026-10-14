@@ -31,9 +31,7 @@ use runner_provider::{
     JobProvider, ProviderError, ProviderResult,
 };
 use runner_types::ids::RunId;
-use runner_types::types::{
-    CompleteRequest, ExecutionContext, HeartbeatState, HomeReuseResult, SandboxReuseResult,
-};
+use runner_types::types::{CompleteRequest, ExecutionContext, HeartbeatState};
 use sandbox::SandboxId;
 
 /// Recorded completion from [`JobProvider::complete`].
@@ -43,8 +41,6 @@ pub struct Completion {
     pub exit_code: i32,
     pub error: Option<String>,
     pub sandbox_id: Option<SandboxId>,
-    pub reuse_result: Option<SandboxReuseResult>,
-    pub home_reuse_result: Option<HomeReuseResult>,
 }
 
 struct MockClaim {
@@ -760,8 +756,6 @@ impl JobProvider for MockJobProvider {
                         exit_code: request.exit_code,
                         error: request.error,
                         sandbox_id: request.sandbox_id,
-                        reuse_result: request.sandbox_reuse_result,
-                        home_reuse_result: request.home_reuse_result,
                     });
                 // Wake all pending `wait_completion` waiters — they re-scan the vec
                 // and return if their run_id is now present.
@@ -824,8 +818,6 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         }
     }
 

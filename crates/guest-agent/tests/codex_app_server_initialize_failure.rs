@@ -187,7 +187,6 @@ fn backend_runtime(root: &Path, binary: &Path) -> TestResult<GuestRuntime> {
         run_id: "initialize-failure".to_string(),
         api_url: "http://127.0.0.1:1".to_string(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
-        sandbox_reuse_result: "reused".to_string(),
         cli_agent_type: "codex".to_string(),
         use_mock_codex: "true".to_string(),
         mock_codex_path: Some(binary.to_string_lossy().into_owned()),

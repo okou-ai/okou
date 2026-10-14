@@ -8,7 +8,6 @@ use guest_contracts::diagnostics::{
     AgentFramework, CliTerminationDiagnostic, CliTerminationReason, FailureClass,
     FailureDiagnostic, PromptMetadata,
 };
-use runner_types::types::SandboxReuseResult;
 
 #[tokio::test(start_paused = true)]
 async fn active_destroy_panic_still_reports_completion_and_releases_budget() {
@@ -94,7 +93,6 @@ async fn nonzero_job_parks_and_successor_reuses_sandbox() {
         .await
         .expect("successor should complete");
     assert_eq!(successor.exit_code, 0);
-    assert_eq!(successor.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(successor.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
     assert_eq!(budget.allocated().2, 1);
@@ -216,7 +214,6 @@ async fn confirmed_execution_timeout_parks_and_successor_reuses_sandbox() {
         .await
         .expect("successor should complete");
     assert_eq!(successor.exit_code, 0);
-    assert_eq!(successor.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(successor.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
     assert_eq!(budget.allocated().2, 1);
@@ -294,7 +291,6 @@ async fn cooperative_cancellation_parks_and_successor_reuses_sandbox() {
         .await
         .expect("successor should complete");
     assert_eq!(successor.exit_code, 0);
-    assert_eq!(successor.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(successor.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
     assert_eq!(budget.allocated().2, 1);

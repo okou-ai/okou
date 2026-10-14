@@ -274,7 +274,6 @@ fn build_runtime(
         run_id,
         api_url: "http://127.0.0.1:1".to_string(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
-        sandbox_reuse_result: "reused".to_string(),
         use_mock_claude: is_claude.to_string(),
         mock_claude_path: is_claude.then(|| wrapper_path.to_string_lossy().into_owned()),
         cli_agent_type: framework.to_string(),

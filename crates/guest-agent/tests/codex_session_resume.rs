@@ -75,7 +75,6 @@ impl CodexResumeFixture {
                 api_url: api_url.to_string(),
                 api_token: api_token.to_string(),
                 sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
-                sandbox_reuse_result: "reused".to_string(),
                 cli_agent_type: "codex".to_string(),
                 home: Some(self.home.path().to_string_lossy().into_owned()),
                 run_payload_file: run_payload_file.to_string_lossy().into_owned(),

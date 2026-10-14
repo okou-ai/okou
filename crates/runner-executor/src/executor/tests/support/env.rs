@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use sandbox::SandboxId;
 
-use super::super::super::env::{HostEnv, build_env_json_with_host_env_for_run};
+use super::super::super::env::{HostEnv, build_env_json_with_host_env};
 use crate::error::RunnerResult;
-use runner_types::types::{ExecutionContext, HomeReuseResult, SandboxReuseResult};
+use runner_types::types::ExecutionContext;
 
 pub(in crate::executor::tests) fn build_env_for_test(
     ctx: &ExecutionContext,
@@ -34,12 +34,5 @@ pub(in crate::executor::tests) fn build_env_for_test_with_host_env_result(
     host_env: &HostEnv,
 ) -> RunnerResult<HashMap<String, String>> {
     let sid = SandboxId::new_v4().to_string();
-    build_env_json_with_host_env_for_run(
-        ctx,
-        api_url,
-        &sid,
-        SandboxReuseResult::Reused,
-        HomeReuseResult::SandboxReused,
-        host_env,
-    )
+    build_env_json_with_host_env(ctx, api_url, &sid, host_env)
 }

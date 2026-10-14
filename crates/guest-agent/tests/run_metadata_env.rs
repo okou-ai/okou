@@ -13,18 +13,10 @@ struct RunMetadataEnvSpec {
     value: fn(&GuestConfigRaw) -> &str,
 }
 
-const RUN_METADATA_ENV_SPECS: [RunMetadataEnvSpec; 5] = [
+const RUN_METADATA_ENV_SPECS: [RunMetadataEnvSpec; 3] = [
     RunMetadataEnvSpec {
         canonical: guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
         value: |raw| &raw.sandbox_id,
-    },
-    RunMetadataEnvSpec {
-        canonical: guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-        value: |raw| &raw.sandbox_reuse_result,
-    },
-    RunMetadataEnvSpec {
-        canonical: guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
-        value: |raw| &raw.home_reuse_result,
     },
     RunMetadataEnvSpec {
         canonical: guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
@@ -98,13 +90,7 @@ fn assert_guest_config_uses_canonical_values(tmp: &Path) -> TestResult {
         serde_json::to_vec(&guest_contracts::env::RunPayload::default())?,
     )?;
 
-    let values = [
-        "shared-sandbox-id",
-        "reused",
-        "sandboxReused",
-        "resume-session-id",
-        "1700000000000",
-    ];
+    let values = ["shared-sandbox-id", "resume-session-id", "1700000000000"];
     set_test_env(guest_contracts::env::RUN_ID_ENV, "canonical-config-run");
     set_test_env("HOME", tmp.join("home"));
     set_test_env(
@@ -124,10 +110,8 @@ fn assert_guest_config_uses_canonical_values(tmp: &Path) -> TestResult {
     let config = guest_agent::env::GuestConfig::from_raw(raw).map_err(std::io::Error::other)?;
 
     assert_eq!(config.sandbox_id, values[0]);
-    assert_eq!(config.sandbox_reuse_result, values[1]);
-    assert_eq!(config.home_reuse_result, values[2]);
-    assert_eq!(config.resume_session_id, values[3]);
-    assert_eq!(config.api_start_time, values[4]);
+    assert_eq!(config.resume_session_id, values[1]);
+    assert_eq!(config.api_start_time, values[2]);
 
     clear_run_metadata_env();
     Ok(())

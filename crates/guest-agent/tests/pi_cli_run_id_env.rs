@@ -134,10 +134,6 @@ fi
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
         );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        );
         std::env::set_var("HOME", tmp.path());
         let mut paths = vec![bin_dir.clone()];
         paths.extend(std::env::split_paths(

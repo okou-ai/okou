@@ -6,8 +6,6 @@ use super::super::support::{
     wait_status_idle_empty_with_active_run,
 };
 
-use runner_types::types::SandboxReuseResult;
-
 // -----------------------------------------------------------------------
 // Test 12: Park notification triggers immediate heartbeat
 // -----------------------------------------------------------------------
@@ -58,7 +56,7 @@ async fn reuse_take_clears_idle_status_while_job_is_active() {
     let status = Arc::clone(&config.shared.status);
     let status_path = env._temp_dir.path().join("status.json");
 
-    let _seeded_sandbox_id = seed_idle_pool_with_overrides(
+    let seeded_sandbox_id = seed_idle_pool_with_overrides(
         &idle_pool,
         &budget,
         &overrides,
@@ -118,10 +116,7 @@ async fn reuse_take_clears_idle_status_while_job_is_active() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await;
     assert!(completion.is_some(), "reused job should complete");
-    assert_eq!(
-        completion.unwrap().reuse_result,
-        Some(SandboxReuseResult::Reused),
-    );
+    assert_eq!(completion.unwrap().sandbox_id, Some(seeded_sandbox_id));
 
     shutdown(&env, run_handle).await;
 }
@@ -167,15 +162,10 @@ async fn profile_mismatch_status_switches_from_idle_to_active_while_job_runs() {
     wait_status_idle_empty_with_active_run(&status_path, run_id, Duration::from_secs(5)).await;
 
     gate.notify_one();
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fresh-create job should still complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::ProfileMismatch),
-    );
 
     shutdown(&env, run_handle).await;
 }

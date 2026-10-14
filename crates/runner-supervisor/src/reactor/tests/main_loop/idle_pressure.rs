@@ -141,10 +141,6 @@ async fn job_free_pressure_and_held_cleanup_leave_real_reactor_heartbeat_and_fit
         .await
         .unwrap();
     assert_eq!(completed.sandbox_id, Some(reused), "{completed:?}");
-    assert_eq!(
-        completed.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::Reused)
-    );
     assert_eq!(env.handle.claim_candidates().len(), 1);
     let joined = pressure.shutdown();
     tokio::pin!(joined);

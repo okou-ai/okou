@@ -1077,8 +1077,6 @@ pub unsafe fn clear_guest_agent_bootstrap_env_for_test() {
         guest_contracts::env::RUN_ID_ENV,
         guest_contracts::env::CANONICAL_API_TOKEN_ENV,
         guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
-        guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-        guest_contracts::env::CANONICAL_HOME_REUSE_RESULT_ENV,
         guest_contracts::env::VERCEL_PROTECTION_BYPASS_ENV,
         guest_contracts::env::CANONICAL_RESUME_SESSION_ID_ENV,
         guest_contracts::env::CANONICAL_API_START_TIME_ENV,
@@ -1192,10 +1190,6 @@ pub unsafe fn setup_codex_app_server_env(
         std::env::set_var(
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
         );
         std::env::set_var("HOME", home);
         std::env::set_var("OKOU_TEST_CODEX_HOME_DIR", home.join("codex-home"));
@@ -1371,10 +1365,6 @@ pub unsafe fn setup_env(
         std::env::set_var(
             guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
             "00000000-0000-4000-8000-000000000abc",
-        );
-        std::env::set_var(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
         );
         // Redirect HOME so the mock's session-history write
         // (`$CLAUDE_CONFIG_DIR/projects/.../<session>.jsonl`) stays inside
