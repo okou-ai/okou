@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
@@ -11,7 +11,7 @@ import {
   MessageCircle,
   RefreshCw,
 } from "lucide-react";
-import { Button, cn, Skeleton } from "@okouai/ui";
+import { Button, cn, LazySpinner } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type {
   ChatRelationMessage,
@@ -27,6 +27,7 @@ import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signal
 import type {
   ChatRelationList,
   ChatRelationSignals,
+  RelationPage,
 } from "../../signals/chat-page/chat-relations.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -36,23 +37,42 @@ import { messageDocumentToDisplayText } from "../../signals/okou-page/user-messa
 import { Link } from "../router/link.tsx";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 
+function RelationsLoading() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.chat.relations.loading;
+      })}
+      className="flex h-12 items-center justify-center text-muted-foreground"
+    >
+      <LazySpinner size={16} aria-hidden="true" />
+    </div>
+  );
+}
+
 function RelationList<T>({
   list,
+  data,
   renderItem,
   reload,
   title,
 }: {
   readonly list: ChatRelationList<T>;
+  readonly data: Loadable<RelationPage<T>>;
   readonly renderItem: (item: T) => ReactNode;
   readonly reload: () => void;
   readonly title?: string;
 }) {
   const { t } = useTranslation();
-  const data = useLastLoadable(list.data$);
   const [loadingMore, more] = useLoadableSet(list.more$);
   const signal = useGet(pageSignal$);
   if (data.state === "hasData" && data.data.items.length === 0) {
     return null;
+  }
+  if (data.state === "loading") {
+    return <RelationsLoading />;
   }
   return (
     <section aria-label={title} className="space-y-1">
@@ -72,17 +92,6 @@ function RelationList<T>({
               return $.chat.resources.retry;
             })}
           </Button>
-        </div>
-      ) : data.state !== "hasData" ? (
-        <div
-          role="status"
-          aria-label={t(($) => {
-            return $.chat.relations.loading;
-          })}
-          className="space-y-3 px-2 py-3"
-        >
-          <Skeleton className="h-3 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
         </div>
       ) : (
         <>
@@ -339,8 +348,10 @@ function CommunicationSummary({ chat }: { readonly chat: ChatCommunication }) {
 
 function Communications({
   signals,
+  data,
 }: {
   readonly signals: ChatRelationSignals;
+  readonly data: Loadable<RelationPage<ChatCommunication>>;
 }) {
   const { t } = useTranslation();
   const reload = useSet(signals.reload$);
@@ -353,6 +364,7 @@ function Communications({
         return $.chat.relations.communications;
       })}
       list={signals.communications}
+      data={data}
       reload={reload}
       renderItem={(chat) => {
         const expanded = selectedPeer === chat.threadId;
@@ -394,22 +406,42 @@ function Communications({
             {!expanded && <CommunicationSummary chat={chat} />}
             {expanded && messages && (
               <div className="ml-6 pb-1">
-                <RelationList
+                <Messages
                   list={messages}
                   reload={reload}
-                  renderItem={(message) => {
-                    return (
-                      <MessageRow
-                        key={message.id}
-                        message={message}
-                        unavailable={chat.status === "unavailable"}
-                      />
-                    );
-                  }}
+                  unavailable={chat.status === "unavailable"}
                 />
               </div>
             )}
           </li>
+        );
+      }}
+    />
+  );
+}
+
+function Messages({
+  list,
+  reload,
+  unavailable,
+}: {
+  readonly list: ChatRelationList<ChatRelationMessage>;
+  readonly reload: () => void;
+  readonly unavailable: boolean;
+}) {
+  const data = useLastLoadable(list.data$);
+  return (
+    <RelationList
+      list={list}
+      data={data}
+      reload={reload}
+      renderItem={(message) => {
+        return (
+          <MessageRow
+            key={message.id}
+            message={message}
+            unavailable={unavailable}
+          />
         );
       }}
     />
@@ -423,6 +455,10 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
   const children = useLastLoadable(signals.children.data$);
   const communications = useLastLoadable(signals.communications.data$);
   const origin = useGet(signals.origin$);
+  const loading =
+    origin === null ||
+    children.state === "loading" ||
+    communications.state === "loading";
   const empty =
     origin !== null &&
     !(origin.kind === "source" && origin.part.kind === "agent") &&
@@ -446,6 +482,7 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
         <Button
           variant="quiet"
           size="icon-sm"
+          disabled={loading}
           aria-label={t(($) => {
             return $.chat.relations.refresh;
           })}
@@ -454,31 +491,38 @@ function RelationshipsInner({ thread }: { readonly thread: ChatPanelSignals }) {
           <RefreshCw size={14} />
         </Button>
       </div>
-      <Origin signals={signals} />
-      <RelationList
-        title={t(($) => {
-          return $.chat.relations.created;
-        })}
-        list={signals.children}
-        reload={reload}
-        renderItem={(chat) => {
-          return (
-            <li
-              key={chat.id}
-              className="relative pl-5 before:absolute before:inset-y-0 before:left-2 before:border-l before:border-border after:absolute after:left-2 after:top-1/2 after:w-3 after:border-t after:border-border last:before:bottom-1/2"
-            >
-              <RelatedChatLink chat={chat} />
-            </li>
-          );
-        }}
-      />
-      <Communications signals={signals} />
-      {empty && (
-        <p className="px-2 pb-2 text-sm leading-relaxed text-muted-foreground">
-          {t(($) => {
-            return $.chat.relations.parallelHint;
-          })}
-        </p>
+      {loading ? (
+        <RelationsLoading />
+      ) : (
+        <>
+          <Origin signals={signals} />
+          <RelationList
+            title={t(($) => {
+              return $.chat.relations.created;
+            })}
+            list={signals.children}
+            data={children}
+            reload={reload}
+            renderItem={(chat) => {
+              return (
+                <li
+                  key={chat.id}
+                  className="relative pl-5 before:absolute before:inset-y-0 before:left-2 before:border-l before:border-border after:absolute after:left-2 after:top-1/2 after:w-3 after:border-t after:border-border last:before:bottom-1/2"
+                >
+                  <RelatedChatLink chat={chat} />
+                </li>
+              );
+            }}
+          />
+          <Communications signals={signals} data={communications} />
+          {empty && (
+            <p className="px-2 pb-2 text-sm leading-relaxed text-muted-foreground">
+              {t(($) => {
+                return $.chat.relations.parallelHint;
+              })}
+            </p>
+          )}
+        </>
       )}
     </section>
   );

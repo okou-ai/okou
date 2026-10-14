@@ -2038,24 +2038,24 @@
       "skipAutomationEvent": "跳過自動化事件"
     },
     "relations": {
-      "communications": "訊息往來",
+      "communications": "訊息",
       "created": "由此建立",
       "idle": "閒置",
-      "loadFailed": "無法載入關聯記錄",
+      "loadFailed": "載入失敗",
       "loading": "載入中…",
-      "messageUnavailable": "原訊息暫時無法取得",
-      "more": "顯示更多",
+      "messageUnavailable": "訊息無法取得",
+      "more": "更多",
       "origin": "發起自",
-      "parallelHint": "把不同任務交給多個對話同時推進，減少等待。",
+      "parallelHint": "試試多個對話並行，少些等待。",
       "queued": "排隊中",
       "received": "收到",
-      "refresh": "重新整理關聯記錄",
+      "refresh": "重新整理",
       "running": "執行中",
       "sent": "傳送",
       "title": "關聯對話",
       "toggleMessages": "與 {{title}} 的訊息往來",
-      "unavailable": "無法存取對話",
-      "untitled": "未命名對話"
+      "unavailable": "無法存取",
+      "untitled": "未命名"
     },
     "remoteAccess": {
       "default": "預設",

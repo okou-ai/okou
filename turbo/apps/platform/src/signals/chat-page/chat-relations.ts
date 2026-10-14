@@ -11,7 +11,7 @@ import { withCleanup } from "../utils.ts";
 import type { ChatEvent } from "./chat-event-types.ts";
 import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 
-interface RelationPage<T> {
+export interface RelationPage<T> {
   readonly items: readonly T[];
   readonly nextCursor: ChatRelationCursor | null;
 }

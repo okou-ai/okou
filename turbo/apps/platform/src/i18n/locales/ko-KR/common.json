@@ -2038,24 +2038,24 @@
       "skipAutomationEvent": "자동화 이벤트 건너뛰기"
     },
     "relations": {
-      "communications": "메시지 교환",
-      "created": "이 채팅에서 생성",
+      "communications": "메시지",
+      "created": "생성한 채팅",
       "idle": "유휴",
-      "loadFailed": "관련 기록을 불러오지 못했습니다",
+      "loadFailed": "불러오기 실패",
       "loading": "불러오는 중…",
-      "messageUnavailable": "원본 메시지를 사용할 수 없습니다",
+      "messageUnavailable": "메시지를 볼 수 없음",
       "more": "더 보기",
       "origin": "시작한 곳",
-      "parallelHint": "여러 채팅에 서로 다른 작업을 맡겨 동시에 진행하고 대기 시간을 줄여 보세요.",
+      "parallelHint": "여러 채팅을 동시에, 기다림은 짧게.",
       "queued": "대기 중",
       "received": "받음",
-      "refresh": "관련 기록 새로 고침",
+      "refresh": "새로고침",
       "running": "실행 중",
       "sent": "보냄",
       "title": "관련 채팅",
       "toggleMessages": "{{title}}과의 메시지",
-      "unavailable": "채팅을 사용할 수 없습니다",
-      "untitled": "제목 없는 채팅"
+      "unavailable": "접근 불가",
+      "untitled": "제목 없음"
     },
     "remoteAccess": {
       "default": "기본값",
