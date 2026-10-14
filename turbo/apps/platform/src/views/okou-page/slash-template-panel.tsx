@@ -422,10 +422,20 @@ function SlashPanelWorkflowList({
                 className="shrink-0 text-muted-foreground"
                 aria-hidden
               />
-              <SlashWorkflowName
-                workflow={workflow}
-                className="min-w-0 flex-1 text-[13px]"
-              />
+              {/*
+                One line that truncates as a whole: the name comes first, so the
+                description is what the ellipsis eats. The space keeps the two
+                apart in the row's accessible name.
+              */}
+              <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">
+                <SlashWorkflowName workflow={workflow} />
+                {workflow.description && (
+                  <>
+                    {" "}
+                    <span className="ml-1">{workflow.description}</span>
+                  </>
+                )}
+              </span>
             </button>
           );
         },

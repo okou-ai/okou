@@ -91,6 +91,16 @@ function flyout(): HTMLElement | null {
   return document.querySelector('[data-slot="slash-template-flyout"]');
 }
 
+/**
+ * A workflow row is named by its token; the description after it is not part
+ * of what identifies the row.
+ */
+function slashRowLabel(button: HTMLElement): string | undefined {
+  const label =
+    button.querySelector('[data-slot="slash-workflow-name"]') ?? button;
+  return label.textContent?.replace(/\s+/gu, " ").trim();
+}
+
 function querySlashButton(name: string): HTMLElement | null {
   const surfaces = [screen.getByTestId("slash-workflow-menu"), flyout()];
   for (const surface of surfaces) {
@@ -100,7 +110,7 @@ function querySlashButton(name: string): HTMLElement | null {
     const match = queryAllByRoleFast("button", surface).find((candidate) => {
       return (
         candidate.getAttribute("aria-label") === name ||
-        candidate.textContent?.replace(/\s+/gu, " ").trim() === name
+        slashRowLabel(candidate) === name
       );
     });
     if (match) {
@@ -379,9 +389,7 @@ function slashMenuButtonNames(): (string | undefined)[] {
     .filter((button) => {
       return !button.closest('[data-slot="slash-template-detail"]');
     })
-    .map((button) => {
-      return button.textContent?.trim();
-    });
+    .map(slashRowLabel);
 }
 
 test.each(COMPOSER_PATHS)(
