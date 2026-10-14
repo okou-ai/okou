@@ -947,11 +947,6 @@
       "owner": "<module>"
     },
     {
-      "id": "TX-0431",
-      "file": "turbo/packages/db/scripts/test-usage-allowance-retirement.ts",
-      "owner": "<module>"
-    },
-    {
       "id": "TX-0432",
       "file": "turbo/packages/db/scripts/test-usage-pack-overdraft-transfer.ts",
       "owner": "<module>"
