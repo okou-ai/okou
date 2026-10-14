@@ -1008,6 +1008,18 @@ function CustomTemplateRenameDialog({
             aria-label={t(($) => {
               return $.templates.actions.rename;
             })}
+            onKeyDown={(event) => {
+              // Confirming an input method's candidate must not submit the
+              // half-composed name. Safari ends composition before that Enter
+              // and reports it with keyCode 229, so both are checked.
+              if (
+                event.key === "Enter" &&
+                (event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229)
+              ) {
+                event.preventDefault();
+              }
+            }}
           />
           {renameLoadable.state === "hasError" ? (
             <p role="alert" className="text-sm text-destructive">

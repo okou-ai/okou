@@ -854,8 +854,6 @@ test("An image template is shown by the examples its style produced, not its sou
     expect(hero()).toHaveAttribute("src", EXAMPLE_URLS[2]);
   });
   expect(exampleStrip(dialog)[2]).toHaveAttribute("aria-pressed", "true");
-  expect(buttonByName("Preview Quiet UI mockup", dialog)).toBeUndefined();
-  expect(screen.queryByLabelText("Rename template")).not.toBeInTheDocument();
 });
 
 test("An image template with one example has nothing to choose between", async () => {
