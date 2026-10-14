@@ -69,7 +69,7 @@
     "lucide-react": "1.49.0",
     "marked": "17.0.5",
     "micromark-util-sanitize-uri": "^2.0.1",
-    "onnxruntime-web": "1.23.2",
+    "onnxruntime-web": "1.30.0",
     "path-to-regexp": "^8.4.0",
     "posthog-js": "^1.422.5",
     "qrcode.react": "4.2.0",
