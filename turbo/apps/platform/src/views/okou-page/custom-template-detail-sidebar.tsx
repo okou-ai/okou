@@ -169,10 +169,9 @@ function VisibilityOptionList({
 }
 
 /**
- * Visibility stated as its consequence rather than as a setting, the way the
- * imported deck panel states it: the two words that name the levels carry less
- * than the sentence that says what they do, so the sentence stays on screen and
- * the picker moves behind `Change`.
+ * Visibility the way the imported deck panel states it: the level, and under
+ * it the sentence that says what the level does. The whole block opens the
+ * picker.
  */
 function CustomTemplateVisibilityControl({
   detail,
@@ -275,10 +274,9 @@ export function CustomTemplateTitleInput({
           })}
           className={TEMPLATE_DETAIL_TITLE_TEXTAREA}
           onChange={(event) => {
-            const mirror = event.currentTarget.parentElement;
-            if (mirror) {
-              mirror.dataset.value = event.currentTarget.value;
-            }
+            // The field always renders inside the mirror that sizes it.
+            const mirror = event.currentTarget.parentElement!;
+            mirror.dataset.value = event.currentTarget.value;
           }}
           onBlur={(event) => {
             rename(event.target.value);
@@ -313,7 +311,7 @@ export function CustomTemplateDetailSidebar({
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex min-h-0 flex-col gap-5 lg:overflow-y-auto">
+    <div className="-mx-2 flex min-h-0 flex-col gap-5 px-2 lg:overflow-y-auto">
       {detail.kind === "presentation" ? (
         <p className="text-sm text-muted-foreground">
           {t(

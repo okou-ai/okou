@@ -101,6 +101,10 @@ test("A shared imported template cannot be renamed and can still be applied", as
   expect(
     within(picker).queryByRole("textbox", { name: "Rename template" }),
   ).not.toBeInTheDocument();
+  expect(
+    within(picker).queryByText("Change template visibility"),
+  ).not.toBeInTheDocument();
+  expect(within(picker).queryByText("Delete")).not.toBeInTheDocument();
   expect(composerInlineTemplates()).toHaveLength(0);
 
   await user.click(buttonContainingText("Template", picker));

@@ -4363,26 +4363,20 @@ function ImportedPresentationTemplateSidebar({
   summary,
   detail,
   slideCount,
-  signals,
+  updating,
+  onUpdate,
 }: {
   summary: PresentationTemplateSummary;
   detail: PresentationTemplateDetail | null;
   slideCount: number;
-  signals: ComposerSignals;
+  updating: boolean;
+  onUpdate: (body: { visibility: "private" | "public" }) => void;
 }) {
   const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [updateLoadable, updateTemplate] = useLoadableSet(
-    signals.template.updateImportedPresentationTemplate$,
-  );
   const activeTemplate = detail === null ? summary : detail;
-  const updating = updateLoadable.state === "loading";
-  const update = (body: { visibility: "private" | "public" }) => {
-    detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
-  };
   return (
     <TemplateDetailSideColumn>
-      <div className="flex min-h-0 flex-col lg:overflow-y-auto">
+      <div className="-mx-2 flex min-h-0 flex-col px-2 lg:overflow-y-auto">
         <p className="text-sm text-muted-foreground">
           {t(
             ($) => {
@@ -4398,7 +4392,7 @@ function ImportedPresentationTemplateSidebar({
               visibility={activeTemplate.visibility}
               updating={updating}
               onChange={(nextVisibility) => {
-                update({ visibility: nextVisibility });
+                onUpdate({ visibility: nextVisibility });
               }}
             />
           </div>
@@ -4408,64 +4402,47 @@ function ImportedPresentationTemplateSidebar({
   );
 }
 
-function ImportedPresentationTemplateHeaderTitle({
-  summary,
-  title,
-  canManage,
-  signals,
-}: {
-  summary: PresentationTemplateSummary;
-  title: string;
-  canManage: boolean;
-  signals: ComposerSignals;
-}) {
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  const [updateLoadable, updateTemplate] = useLoadableSet(
-    signals.template.updateImportedPresentationTemplate$,
-  );
-  return (
-    <TemplateDetailTitle
-      key={title}
-      title={title}
-      label={t(($) => {
-        return $.artifacts.templates.renameImportedTemplate;
-      })}
-      canEdit={canManage}
-      updating={updateLoadable.state === "loading"}
-      onRename={(nextTitle) => {
-        detach(
-          updateTemplate(summary.id, { title: nextTitle }, pageSignal),
-          Reason.DomCallback,
-        );
-      }}
-    />
-  );
-}
-
+/**
+ * The detail's header: the way back, then the name. Where the member can
+ * rename the template, the editor sits beside the dialog's title rather than
+ * inside it, so the heading that names the dialog stays plain text.
+ */
 function ImportedPresentationTemplatePreviewHeader({
-  titleSlot,
+  title,
+  editor,
   onBack,
 }: {
-  titleSlot: ReactNode;
+  title: string;
+  editor: ReactNode;
   onBack: () => void;
 }) {
   const { t } = useTranslation();
   return (
     <DialogHeader className="flex h-[68px] shrink-0 justify-center px-6 pr-14 text-left duration-200 motion-reduce:animate-none">
-      <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-        <button
-          type="button"
-          className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={onBack}
-        >
-          {t(($) => {
-            return $.artifacts.templates.template;
-          })}
-        </button>
-        <span className="shrink-0 text-muted-foreground">/</span>
-        {titleSlot}
-      </DialogTitle>
+      <div className="flex min-w-0 max-w-full items-center gap-1.5">
+        <DialogTitle className="flex min-w-0 items-center justify-start gap-1.5 text-left text-base leading-none">
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={onBack}
+          >
+            {t(($) => {
+              return $.artifacts.templates.template;
+            })}
+          </button>
+          <span className="shrink-0 text-muted-foreground">/</span>
+          <span
+            className={
+              editor === null
+                ? "block min-w-0 truncate leading-none"
+                : "sr-only"
+            }
+          >
+            {title}
+          </span>
+        </DialogTitle>
+        {editor}
+      </div>
     </DialogHeader>
   );
 }
@@ -4594,7 +4571,20 @@ function ImportedPresentationTemplatePreviewPage({
   onSelect: (template: PresentationTemplateSummary) => void;
   signals: ComposerSignals;
 }) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
   const focusPreview = useSet(signals.template.focusTemplatePreviewRef$);
+  // One loadable for the name and the visibility: each save writes back the
+  // whole summary, so the two run one at a time rather than racing.
+  const [updateLoadable, updateTemplate] = useLoadableSet(
+    signals.template.updateImportedPresentationTemplate$,
+  );
+  const updating = updateLoadable.state === "loading";
+  const update = (
+    body: { title: string } | { visibility: "private" | "public" },
+  ) => {
+    detach(updateTemplate(summary.id, body, pageSignal), Reason.DomCallback);
+  };
   const detailLoadable = useLoadable(
     signals.template.importedPresentationTemplateDetail$,
   );
@@ -4651,13 +4641,22 @@ function ImportedPresentationTemplatePreviewPage({
   return (
     <>
       <ImportedPresentationTemplatePreviewHeader
-        titleSlot={
-          <ImportedPresentationTemplateHeaderTitle
-            summary={summary}
-            title={title}
-            canManage={activeTemplate.canManage}
-            signals={signals}
-          />
+        title={title}
+        editor={
+          activeTemplate.canManage ? (
+            <TemplateDetailTitle
+              key={title}
+              title={title}
+              label={t(($) => {
+                return $.artifacts.templates.renameImportedTemplate;
+              })}
+              canEdit
+              updating={updating}
+              onRename={(nextTitle) => {
+                update({ title: nextTitle });
+              }}
+            />
+          ) : null
         }
         onBack={onBack}
       />
@@ -4684,7 +4683,8 @@ function ImportedPresentationTemplatePreviewPage({
             summary={summary}
             detail={detail}
             slideCount={slideCount}
-            signals={signals}
+            updating={updating}
+            onUpdate={update}
           />
         </div>
       </div>
@@ -5274,9 +5274,9 @@ function TemplatePickerDialog({
         height={760}
         contentClassName={dialogContentClassName}
         // Website and Custom open a template in a dialog of their own rather
-        // than in this frame, and it is narrower than the gallery. The gallery
-        // steps back while one is open, so a template is read against the page
-        // like every other preview instead of against the grid it came from.
+        // than in this frame, at this frame's size. The gallery steps back
+        // while one is open, so the detail reads as the same surface the
+        // built-in and imported decks open into, not as a panel over the grid.
         hideWhenNestedOpen
         aria-describedby={undefined}
       >

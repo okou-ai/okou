@@ -230,7 +230,7 @@ function CustomTemplatePreviewBody({
         <CustomTemplateGallery
           title={detail.title}
           pictures={detail.pageUrls}
-          fit="cover"
+          fit="contain"
           pictureLabel={(index) => {
             return t(
               ($) => {
@@ -320,30 +320,39 @@ export function CustomTemplatePreviewDialog({
             Padding alone left the title 10px above the button and the button
             itself hanging past the border below it. */}
         <DialogHeader className="h-[68px] shrink-0 justify-center px-6 pr-14 text-left">
-          <DialogTitle className="flex min-w-0 max-w-full items-center justify-start gap-1.5 text-left text-base leading-none">
-            <button
-              type="button"
-              className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => {
-                close();
-              }}
-            >
-              {t(($) => {
-                return $.templates.detail.back;
-              })}
-            </button>
-            <span className="shrink-0 text-muted-foreground">/</span>
-            {detail?.canManage ? (
-              // Keyed by the template, not by anything that changes while one
-              // is open: a save re-renders this subtree, and only arriving at
-              // a different template may hand the editor a fresh field.
-              <CustomTemplateTitleInput key={detail.id} detail={detail} />
-            ) : (
-              <span className="block min-w-0 truncate leading-none">
+          <div className="flex min-w-0 max-w-full items-center gap-1.5">
+            <DialogTitle className="flex min-w-0 items-center justify-start gap-1.5 text-left text-base leading-none">
+              <button
+                type="button"
+                className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                onClick={() => {
+                  close();
+                }}
+              >
+                {t(($) => {
+                  return $.templates.detail.back;
+                })}
+              </button>
+              <span className="shrink-0 text-muted-foreground">/</span>
+              {/* The heading that names the dialog stays text: where the name
+                is editable, the editor sits beside the title, not inside it. */}
+              <span
+                className={
+                  detail?.canManage
+                    ? "sr-only"
+                    : "block min-w-0 truncate leading-none"
+                }
+              >
                 {detail?.title ?? ""}
               </span>
-            )}
-          </DialogTitle>
+            </DialogTitle>
+            {detail?.canManage ? (
+              // Keyed by the template, not by anything that changes while one
+              // is open: a save re-renders this subtree, and only arriving at a
+              // different template may hand the editor a fresh field.
+              <CustomTemplateTitleInput key={detail.id} detail={detail} />
+            ) : null}
+          </div>
         </DialogHeader>
         <div className={TEMPLATE_DETAIL_BODY}>
           {detailLoadable.state === "hasError" ? (

@@ -561,6 +561,34 @@ test("A custom deck steps through its pages on the stage", async () => {
   expect(buttonByName("Preview next slide", preview)).toBeDisabled();
 });
 
+test("A template shared with you opens without the owner's controls", async () => {
+  const shared = customTemplate({
+    canManage: false,
+    visibility: "organization",
+    ownerDisplayName: "Riley Park",
+  });
+  mockCustomTemplates([shared]);
+  context.mocks.api(userTemplatesContract.get, ({ respond }) => {
+    return respond(200, shared);
+  });
+
+  const { dialog } = await openCustomPanel();
+  click(tabByText("Custom"));
+  await within(dialog).findByText("Q3 board review");
+  click(buttonByName("Preview Q3 board review", dialog)!);
+
+  const preview = previewDialogAround(await screen.findByAltText("Page 1"));
+  expect(within(preview).getByText("Shared by Riley Park")).toBeInTheDocument();
+  expect(
+    within(preview).queryByLabelText("Rename template"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(preview).queryByText("Change template visibility"),
+  ).not.toBeInTheDocument();
+  expect(buttonByName("Delete", preview)).toBeUndefined();
+  expect(buttonByName("Use this template", preview)).toBeTruthy();
+});
+
 test("Opening a deck shows its pages and management controls", async () => {
   mockCustomTemplates([customTemplate()]);
   context.mocks.api(userTemplatesContract.get, ({ respond }) => {
@@ -947,7 +975,9 @@ function renameField(): HTMLElement {
 }
 
 async function shareWithOrganization(): Promise<void> {
-  click(buttonByName("Change template visibility")!);
+  click(
+    (await screen.findByText("Change template visibility")).closest("button")!,
+  );
   const organization = await waitFor(() => {
     const option = queryAllByRoleFast("menuitemradio").find((candidate) => {
       return candidate.textContent?.startsWith("Organization");

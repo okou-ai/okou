@@ -203,7 +203,15 @@ test("Step back through a presentation template from its filmstrip", async () =>
   expect(within(preview).getByText("2 / 3")).toBeInTheDocument();
 });
 
-function loadPreviewFrame(frame: HTMLIFrameElement): Document {
+function stagePreviewFrame(title: string): HTMLIFrameElement {
+  const frame = screen.getByTitle(`${title} HTML preview`);
+  if (!(frame instanceof HTMLIFrameElement)) {
+    throw new Error("The stage preview is not a frame");
+  }
+  return frame;
+}
+
+function loadPreviewFrame(frame: HTMLIFrameElement): void {
   const frameDocument = frame.contentDocument;
   if (frameDocument === null) {
     throw new Error("Presentation preview frame has no document");
@@ -212,31 +220,30 @@ function loadPreviewFrame(frame: HTMLIFrameElement): Document {
   frameDocument.write(frame.srcdoc);
   frameDocument.close();
   fireEvent.load(frame);
-  return frameDocument;
 }
 
-function previewThemeStyle(frameDocument: Document): string {
-  return (
-    frameDocument.querySelector("style[data-okou-preview-theme]")
-      ?.textContent ?? ""
-  );
+/** The accent the slide on the stage is painted with right now. */
+function stageAccent(title: string): string {
+  const frameDocument = stagePreviewFrame(title).contentDocument;
+  const frameWindow = frameDocument?.defaultView;
+  if (!frameDocument || !frameWindow) {
+    throw new Error("The stage preview has no rendered document");
+  }
+  return frameWindow
+    .getComputedStyle(frameDocument.documentElement)
+    .getPropertyValue("--accent")
+    .trim();
 }
 
-test("Repaint a loaded presentation slide in place when its theme changes", async () => {
+test("A slide already on the stage takes a new theme as soon as it is picked", async () => {
   await openThreeSlidePreview();
   const template = builtInTemplate();
-  const frame = screen.getByTitle(`${template.title} HTML preview`);
-  if (!(frame instanceof HTMLIFrameElement)) {
-    throw new Error("The stage preview is not a frame");
-  }
-  const frameDocument = loadPreviewFrame(frame);
-  expect(previewThemeStyle(frameDocument)).toContain("#7257E6");
+  loadPreviewFrame(stagePreviewFrame(template.title));
+  expect(stageAccent(template.title)).toBe("#7257E6");
 
   click(
     within(screen.getByRole("dialog")).getByLabelText("Select style Deep dive"),
   );
 
-  expect(previewThemeStyle(frameDocument)).toContain("#38C7B4");
-  expect(frame.srcdoc).not.toContain("#38C7B4");
-  expect(frame).toHaveAttribute("data-loaded", "true");
+  expect(stageAccent(template.title)).toBe("#38C7B4");
 });

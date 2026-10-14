@@ -23,10 +23,13 @@ interface SelectTemplatePreview extends TemplatePreviewSelection {
 }
 
 function applyFrameTheme(frame: HTMLIFrameElement, themeCss: string): void {
+  // A registered frame is mounted and same-origin (`allow-same-origin`), so it
+  // always has a document; one that does not is a broken sandbox, not a state.
   const frameDocument = frame.contentDocument;
-  if (frameDocument !== null) {
-    applyPresentationPreviewThemeStyle(frameDocument, themeCss);
+  if (frameDocument === null) {
+    throw new Error("A themed template preview frame has no document");
   }
+  applyPresentationPreviewThemeStyle(frameDocument, themeCss);
 }
 
 /**

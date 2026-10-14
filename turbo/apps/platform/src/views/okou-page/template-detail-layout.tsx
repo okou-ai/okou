@@ -236,14 +236,15 @@ export function TemplateDetailSideColumn({
 
 /**
  * A template's name, said once: as the last step of the header's breadcrumb,
- * editable in place where the member can manage it. The field matches the
- * breadcrumb's type and shows its edge only on hover and focus, and it grows
- * to wrap rather than scroll a long name. A textarea over an invisible mirror
+ * editable in place where the member can manage it. The field sits beside the
+ * dialog's title rather than inside it, so the heading that names the dialog
+ * stays text; it matches the breadcrumb's type, shows its edge only on hover
+ * and focus, and grows to wrap rather than scroll a long name. A textarea over an invisible mirror
  * of its value does the growing, so the mirror's `data-value` must follow the
  * field on every change. `-ml-1.5` keeps the text on the breadcrumb's line.
  */
 export const TEMPLATE_DETAIL_TITLE_FIELD =
-  "-my-1 -ml-1.5 grid min-w-0 max-w-full rounded-md border border-transparent px-1.5 py-1 text-base font-medium leading-6 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10";
+  "-my-1 -ml-1.5 grid min-w-0 max-w-full rounded-md border border-transparent px-1.5 py-1 text-base font-semibold leading-6 text-foreground transition-colors after:col-start-1 after:row-start-1 after:invisible after:whitespace-pre-wrap after:break-words after:content-[attr(data-value)_'_'] hover:border-[hsl(var(--gray-400))] focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/10";
 export const TEMPLATE_DETAIL_TITLE_TEXTAREA =
   "col-start-1 row-start-1 resize-none overflow-hidden break-words bg-transparent p-0 outline-none";
 
@@ -401,10 +402,12 @@ export function TemplateDetailAccess({
     <DropdownMenu>
       <DropdownMenuTrigger
         disabled={disabled}
-        aria-label={triggerLabel}
         className="-mx-2 flex w-[calc(100%+1rem)] items-start gap-2 rounded-lg px-2 py-1.5 text-left text-muted-foreground transition-colors hover:bg-state-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 data-[popup-open]:bg-state-hover"
       >
         {body}
+        {/* Named by what it shows, so the level a screen reader announces
+            and the one a voice command says are the visible "Private". */}
+        <span className="sr-only">{triggerLabel}</span>
         <ChevronDown size={16} className="mt-0.5 shrink-0" aria-hidden="true" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
