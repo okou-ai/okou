@@ -143,10 +143,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
                     .get("categories")
                     .and_then(|value| value.get("diagnostics"))
                     .and_then(Value::as_u64)
-                    == Some(1) =>
-            {
-                ()
-            }
+                    == Some(1) => {}
             _ => return Err(io::Error::other("packaged Guest hello mismatch").into()),
         }
         match receive(channel).await? {
@@ -158,10 +155,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
                 ..
             } if category == "diagnostics"
                 && event == "notice"
-                && data == json!({"message":"ready"}) =>
-            {
-                ()
-            }
+                && data == json!({"message":"ready"}) => {}
             _ => {
                 return Err(
                     io::Error::other("first Guest business event did not follow hello").into(),
