@@ -511,8 +511,10 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
     drop(extra);
     fixture.close().await;
     assert!(first.closed());
-    // A subsequent job is the worker's maintenance barrier, without sleeps.
+    // The worker may already be waiting for a job after sweeping the live owner.
+    // Wake it first, then await another job after the next maintenance pass.
     let fresh = owner(&filesystem);
+    list(&filesystem, &fresh, json!({"path":[]})).await.unwrap();
     list(&filesystem, &fresh, json!({"path":[]})).await.unwrap();
     assert!(first.state.lock().unwrap().is_none());
 }
