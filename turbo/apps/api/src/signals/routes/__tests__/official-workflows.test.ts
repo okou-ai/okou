@@ -1772,39 +1772,124 @@ describe("Official schedule expiry", () => {
     return response.body;
   }
 
-  it.each(["user.deleted", "organization.deleted"] as const)(
-    "stops claimed Morning Brief occurrences only in the deleted scope after %s",
-    async (type) => {
+  async function prepareBriefDeletionOwners({
+    type,
+    bulk,
+  }: {
+    readonly type: "user.deleted" | "organization.deleted";
+    readonly bulk: "revoked" | "surviving";
+  }) {
+    const stoppedOwnerKeys =
+      type === "user.deleted"
+        ? (["doomed", "sameUserElsewhere"] as const)
+        : (["doomed", "peer"] as const);
+    const survivingOwnerKeys =
+      type === "user.deleted"
+        ? (["peer", "foreign"] as const)
+        : (["sameUserElsewhere", "foreign"] as const);
+    const selectedOwnerKeys = new Set(
+      bulk === "revoked"
+        ? [...stoppedOwnerKeys, survivingOwnerKeys[0]]
+        : [stoppedOwnerKeys[0], ...survivingOwnerKeys],
+    );
+    const { actor: doomed, ...entitlement } =
+      await workflowBdd.setupWorkflowOrg({
+        tier: "team",
+      });
+    const sameUserElsewhere = bdd.user({ userId: doomed.userId });
+    const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
+    const foreign = selectedOwnerKeys.has("foreign")
+      ? (
+          await workflowBdd.setupWorkflowOrg({
+            tier: "team",
+          })
+        ).actor
+      : bdd.user();
+    if (selectedOwnerKeys.has("sameUserElsewhere")) {
+      await runs.grantProEntitlement(sameUserElsewhere, { tier: "team" });
+      // Personal subscriptions belong to this membership, not every org
+      // of the same Clerk user.
+      await selectPersonalDefaultModel(sameUserElsewhere);
+    }
+    const existingOrgMembers: ApiTestUser[] = [];
+    if (selectedOwnerKeys.has("peer")) {
+      await bdd.completeOnboarding(peer);
+      await selectPersonalDefaultModel(peer);
+      existingOrgMembers.push(peer);
+    }
+    const otherAuditor =
+      type === "user.deleted" && selectedOwnerKeys.has("sameUserElsewhere")
+        ? bdd.user({
+            orgId: sameUserElsewhere.orgId,
+            orgRole: "org:admin",
+          })
+        : null;
+    if (otherAuditor) {
+      await bdd.completeOnboarding(otherAuditor);
+      existingOrgMembers.push(otherAuditor);
+    }
+    const owners = { doomed, sameUserElsewhere, peer, foreign };
+    const occurrenceActors = [...selectedOwnerKeys].map((key) => {
+      return owners[key];
+    });
+    const members = [...new Set([...occurrenceActors, ...existingOrgMembers])];
+    return {
+      doomed,
+      entitlement,
+      peer,
+      otherAuditor,
+      occurrenceActors,
+      members,
+      existingOrgMembers,
+      stoppedCount: bulk === "revoked" ? 2 : 1,
+      survivingCount: bulk === "surviving" ? 2 : 1,
+    };
+  }
+
+  it.each([
+    {
+      type: "user.deleted",
+      bulk: "revoked",
+    },
+    {
+      type: "user.deleted",
+      bulk: "surviving",
+    },
+    {
+      type: "organization.deleted",
+      bulk: "revoked",
+    },
+    {
+      type: "organization.deleted",
+      bulk: "surviving",
+    },
+  ] as const)(
+    "stops claimed Morning Brief occurrences only in the deleted scope after $type (multiple $bulk owners)",
+    async ({ type, bulk }) => {
       await withMockNowForTest(new Date("2030-01-01T00:00:00Z"), async () => {
         // The authenticated catalog publisher and automation cron are explicitly
         // in scope as production system/operator boundaries. Catalog publication
         // is the first real request and owns this case's isolated database.
         installCatalogStorageFixture();
         await syncDeployedCatalog();
-        const { actor: doomed, ...entitlement } =
-          await workflowBdd.setupWorkflowOrg({
-            timezone: "Asia/Shanghai",
-            tier: "team",
-          });
-        const sameUserElsewhere = bdd.user({ userId: doomed.userId });
-        const peer = bdd.user({ orgId: doomed.orgId, orgRole: "org:admin" });
-        const { actor: foreign } = await workflowBdd.setupWorkflowOrg({
-          timezone: "Asia/Shanghai",
-          tier: "team",
+        const {
+          doomed,
+          entitlement,
+          peer,
+          otherAuditor,
+          occurrenceActors,
+          members,
+          existingOrgMembers,
+          stoppedCount,
+          survivingCount,
+        } = await prepareBriefDeletionOwners({
+          type,
+          bulk,
         });
-        await runs.grantProEntitlement(sameUserElsewhere, { tier: "team" });
-        // The model preference and personal subscription belong to this org's
-        // member, not every membership of the same Clerk user.
-        await selectPersonalDefaultModel(sameUserElsewhere);
-        await bdd.completeOnboarding(peer);
-        await selectPersonalDefaultModel(peer);
-        const otherAuditor = bdd.user({
-          orgId: sameUserElsewhere.orgId,
-          orgRole: "org:admin",
-        });
-        await bdd.completeOnboarding(otherAuditor);
         const occurrences = [];
-        for (const actor of [doomed, sameUserElsewhere, peer, foreign]) {
+        // Both bulk revocation and bulk continuation retain mixed live owners;
+        // neither first-match-only nor overly broad cancellation may pass.
+        for (const actor of occurrenceActors) {
           await bdd.updateUserTimezone(actor, "Asia/Shanghai");
           await connectBriefSource(actor);
           await accept(
@@ -1835,13 +1920,7 @@ describe("Official schedule expiry", () => {
             automation,
           });
         }
-        const members = [
-          doomed,
-          sameUserElsewhere,
-          peer,
-          foreign,
-          otherAuditor,
-        ];
+        expect(occurrences).toHaveLength(3);
         function mockCurrentMembers(currentMembers: readonly ApiTestUser[]) {
           // BDD authentication helpers install a single-actor Clerk response.
           // Restore the complete provider directory before background work and
@@ -1892,7 +1971,7 @@ describe("Official schedule expiry", () => {
         // Existing-org joiners must enter through the real membership webhook
         // before the scheduler can recognize them as present owners/admins.
         webhooks.configureClerkWebhookSecret();
-        for (const actor of [peer, otherAuditor]) {
+        for (const actor of existingOrgMembers) {
           webhooks.verifyNextClerkWebhook({
             type: "organizationMembership.created",
             data: {
@@ -1920,7 +1999,9 @@ describe("Official schedule expiry", () => {
           10,
         );
         mockCurrentMembers(members);
-        expect((await executeAutomationCron()).body.executed).toBe(4);
+        expect((await executeAutomationCron()).body.executed).toBe(
+          occurrences.length,
+        );
         await flushWaitUntilForTest();
         const isStopped = (actor: ApiTestUser) => {
           return type === "user.deleted"
@@ -2034,6 +2115,9 @@ describe("Official schedule expiry", () => {
           })) {
             const observer =
               occurrence.actor.orgId === peer.orgId ? peer : otherAuditor;
+            if (!observer) {
+              throw new Error("Expected a surviving Morning Brief admin");
+            }
             await accept(
               automationClient().get({
                 headers: authHeaders(observer),
@@ -2043,11 +2127,16 @@ describe("Official schedule expiry", () => {
             );
           }
         }
+        expect(
+          claimed.filter((entry) => {
+            return entry.stopped;
+          }),
+        ).toHaveLength(stoppedCount);
         await assertStoppedOccurrences();
         const unaffected = claimed.filter((entry) => {
           return !entry.stopped;
         });
-        expect(unaffected).toHaveLength(2);
+        expect(unaffected).toHaveLength(survivingCount);
         for (const occurrence of unaffected) {
           await expect(
             runs.readRunnerCancellation(
@@ -2096,10 +2185,12 @@ describe("Official schedule expiry", () => {
             30 * 60_000,
         );
         await runs.heartbeatRunner(runnerGroup);
-        // The real scheduler reports only the two surviving owners dispatched.
+        // The real scheduler dispatches only this case's surviving owners.
         // No private journal/queue reader is needed, including for a deleted
         // organization whose private configuration has no surviving caller.
-        expect((await executeAutomationCron()).body.executed).toBe(2);
+        expect((await executeAutomationCron()).body.executed).toBe(
+          unaffected.length,
+        );
         await flushWaitUntilForTest();
         const polledRunIds = [];
         for (const occurrence of unaffected) {
