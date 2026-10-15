@@ -167,7 +167,7 @@ export const sshCommand = new Command("ssh")
   .addHelpText(
     "after",
     `
-Connections use the owner's saved Direct SSH, Cloudflare Access, SSH over Tailscale or Tailscale SSH settings; credentials stay outside the sandbox and no proxy or token options are needed. Both Tailscale modes reuse saved network configurations. Tailscale SSH uses the tagged source identity, destination OS username and port 22, without an SSH password or private key. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
+Connections use the owner's saved Direct SSH, Cloudflare Access, Tailscale or Tailscale SSH settings; credentials stay outside the sandbox and no proxy or token options are needed. Both Tailscale modes reuse saved network configurations. Tailscale SSH uses the tagged source identity, destination OS username and port 22, without an SSH password or private key. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
 
 Command guide (read the relevant subcommand's --help before use):
   - Find authorized execution hosts: okou ssh host list --json

@@ -102,7 +102,7 @@ function SshConnectionType({ disabled }: { readonly disabled: boolean }) {
           {
             value: "tailscale",
             label: t(($) => {
-              return $.ssh.tailscale.overTitle;
+              return $.tailscale.title;
             }),
           },
           {

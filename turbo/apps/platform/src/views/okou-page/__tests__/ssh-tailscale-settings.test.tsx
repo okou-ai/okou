@@ -114,7 +114,7 @@ async function addHost() {
     }),
   );
   const dialog = await screen.findByRole("dialog");
-  await chooseSshConnectionType(dialog, "SSH over Tailscale");
+  await chooseSshConnectionType(dialog, "Tailscale");
   await within(dialog).findByLabelText("Tailscale");
   await fill(within(dialog).getByLabelText("Display name"), "New private host");
   await fill(
@@ -155,7 +155,7 @@ test("Tailscale SSH reuses the selected network, preserves drafts and saves only
     name: "System username",
   });
   await fill(username, "ubuntu");
-  await chooseSshConnectionType(dialog, "SSH over Tailscale");
+  await chooseSshConnectionType(dialog, "Tailscale");
   expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
   expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
     "SSH login",
@@ -489,9 +489,7 @@ test("The default-off UI preserves existing Tailscale metadata and its reader-on
   await userEvent.click(
     within(dialog).getByRole("combobox", { name: "Connection" }),
   );
-  expect(
-    screen.queryByRole("option", { name: "SSH over Tailscale" }),
-  ).toBeNull();
+  expect(screen.queryByRole("option", { name: "Tailscale" })).toBeNull();
   expect(screen.queryByRole("option", { name: "Tailscale SSH" })).toBeNull();
 });
 
@@ -510,7 +508,7 @@ test("Changing carriers preserves endpoint drafts and the independently selected
   expect(
     within(dialog).getByLabelText("Public hostname or IP address"),
   ).toHaveValue("100.64.0.2");
-  await chooseSshConnectionType(dialog, "SSH over Tailscale");
+  await chooseSshConnectionType(dialog, "Tailscale");
   await expect(
     within(dialog).findByLabelText("Tailnet hostname or IP address"),
   ).resolves.toHaveValue("100.64.0.2");

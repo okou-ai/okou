@@ -338,7 +338,7 @@ describe("okou ssh command", () => {
         sshCommand.parseAsync(["--help"], { from: "user" }),
       ).rejects.toThrow("CLI exit");
       expect(help).toContain(
-        "Direct SSH, Cloudflare Access, SSH over Tailscale or Tailscale SSH",
+        "Direct SSH, Cloudflare Access, Tailscale or Tailscale SSH",
       );
       expect(help).toContain("port 443 identify the gateway");
       expect(help).toContain("Remote control tab of /connectors");

@@ -5416,7 +5416,6 @@
       "authenticationFailed": "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy.",
       "editUnavailable": "This host now uses Tailscale. Tailscale editing and rebinding are not available here yet. Cancel this edit to keep its saved transport.",
       "needsRebind": "This host needs a new Tailscale configuration. Tailscale setup and rebinding are not available here yet.",
-      "overTitle": "SSH over Tailscale",
       "sshHelp": "Uses your selected Tailscale network identity without an SSH password or private key. Enable Tailscale SSH on a tagged destination and allow this system username in an SSH accept policy.",
       "sshTitle": "Tailscale SSH",
       "username": "System username"

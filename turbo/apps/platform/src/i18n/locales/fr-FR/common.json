@@ -5496,7 +5496,6 @@
       "authenticationFailed": "L’authentification Tailscale SSH a échoué. Vérifiez le nom d’utilisateur système, activez Tailscale SSH sur la cible avec un tag et autorisez cette connexion dans la règle SSH accept du tailnet.",
       "editUnavailable": "Cet hôte utilise désormais Tailscale. La modification et la réassociation de Tailscale ne sont pas encore disponibles ici. Annulez cette modification pour conserver son transport enregistré.",
       "needsRebind": "Cet hôte nécessite une nouvelle configuration Tailscale. La configuration et la réassociation de Tailscale ne sont pas encore disponibles ici.",
-      "overTitle": "SSH via Tailscale",
       "sshHelp": "Utilise l’identité du réseau Tailscale sélectionné, sans mot de passe SSH ni clé privée. Activez Tailscale SSH sur une machine cible avec un tag et autorisez ce nom d’utilisateur système dans une règle SSH accept.",
       "sshTitle": "Tailscale SSH",
       "username": "Nom d’utilisateur système"
