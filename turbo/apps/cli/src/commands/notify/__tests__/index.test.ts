@@ -82,7 +82,7 @@ describe("okou notify", () => {
     expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(receipt));
   });
 
-  it("sends the explicit Morning Brief purpose without client-supplied presentation links", async () => {
+  it("sends the explicit Morning Brief purpose without a key or client-supplied presentation links", async () => {
     server.use(
       http.post(`${url}/mail`, async ({ request }) => {
         expect(await request.json()).toStrictEqual({
@@ -90,19 +90,37 @@ describe("okou notify", () => {
           kind: "morning-brief",
           subject: "Your brief",
           text: "## Today\nUseful update.",
-          idempotencyKey: "brief:2026-10-08",
         });
         return HttpResponse.json(receipt);
       }),
     );
     await run(
-      ...args,
+      "mail",
       "--kind",
       "morning-brief",
+      "--subject",
+      "Your brief",
       "--text",
       "## Today\nUseful update.",
+      "--json",
     );
     expect(log).toHaveBeenCalledExactlyOnceWith(JSON.stringify(receipt));
+  });
+
+  it("requires a key for an ordinary notification before sending", async () => {
+    let requests = 0;
+    server.use(
+      http.post(`${url}/mail`, () => {
+        requests += 1;
+        return HttpResponse.json(receipt);
+      }),
+    );
+    await expect(
+      run("mail", "--subject", "Your brief", "--text", "hello", "--json"),
+    ).rejects.toThrow("process.exit called");
+    expect(requests).toBe(0);
+    expect(error.mock.calls[0]?.[0]).toContain('"code":"INVALID_INPUT"');
+    expect(error.mock.calls[0]?.[0]).toContain("idempotencyKey");
   });
 
   it("reads a UTF-8 Markdown file without modifying its content", async () => {

@@ -3,7 +3,10 @@ import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-br
 
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
-import { notifyMailBodySchema } from "@okouai/api-contracts/contracts/notifications";
+import {
+  notifyMailSubjectSchema,
+  notifyMailTextSchema,
+} from "@okouai/api-contracts/contracts/notifications";
 import {
   renderAgentMorningBriefEmail,
   renderAgentNotificationEmail,
@@ -93,8 +96,8 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       template: z.literal("agent-morning-brief"),
       props: z
         .object({
-          subject: notifyMailBodySchema.shape.subject,
-          text: notifyMailBodySchema.shape.text,
+          subject: notifyMailSubjectSchema,
+          text: notifyMailTextSchema,
           runUrl: z.url().max(1024),
           manageUrl: z.url().max(1024),
         })
@@ -106,8 +109,8 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       template: z.literal("agent-notification"),
       props: z
         .object({
-          subject: notifyMailBodySchema.shape.subject,
-          text: notifyMailBodySchema.shape.text,
+          subject: notifyMailSubjectSchema,
+          text: notifyMailTextSchema,
           runUrl: z.url().max(1024),
         })
         .strict(),

@@ -27,6 +27,9 @@ Prepare the briefing as concise Markdown and return it in the Chat. Choose short
 
 `;
 
+// The `--idempotency-key morning-brief` retry covers Runner rootfs CLIs that
+// still require the flag. Remove it, together with the contract's ignored
+// Morning Brief key, after Runners with those CLIs have drained.
 const MORNING_BRIEF_DELIVERY_INSTRUCTION = `## Decide whether to email the briefing
 
 You own the email decision. Send only when the verified briefing contains useful information worth notifying the user about, such as an upcoming commitment, a decision or request needing attention, a blocker, a conflict, or a clear next action. A completed run, an empty briefing, routine noise, or unavailable sources alone are not reasons to send. When there is nothing useful to notify, skip email and leave the briefing and coverage information in the Chat.
@@ -35,15 +38,13 @@ Use only \`okou notify mail --kind morning-brief\` to send to the user's account
 
 ## Send once per automation event
 
-Read the server-provided Automation identity block in this run's prompt. Use its exact \`automationId\` and \`automationEventId\` to form the idempotency key \`morning-brief:<automationId>:<automationEventId>\`. This identity comes from Okou, not from the external event payload. Never use the current clock, only a calendar date, or a Run ID: retries of one event must reuse its key, while separate manual requests must remain distinct even when they share a timestamp.
-
-If the Automation identity block or either ID is missing, do not invent a key or send a new notification; report the missing context in the Chat. If a resumed event already submitted a notification, retain its original key and exact subject and body instead of deriving a replacement key from the current prompt.
+Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID. If the command is rejected only because \`--idempotency-key\` is required, rerun it unchanged except for \`--idempotency-key morning-brief\`; Okou ignores that value for Morning Brief.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
-\`okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --idempotency-key "<event-key>" --json\`
+\`okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --json\`
 
-Preserve the exact subject, file contents, and event key for retries. A \`queued\` receipt means delivery was accepted into the outbox; the delivery service owns provider retries, so do not submit another notification or wait for inbox delivery. \`sent\` means the provider accepted it, not that the user read or received it. Use \`okou notify get <notification-id> --json\` when you need the receipt's current status. Respect \`skipped\` and \`failed\` receipts without choosing a new key to force another attempt. After a transport timeout, retry only the same key and exact content, or query the receipt if its ID is known. On a content conflict, do not change the key or regenerate the briefing to resend; report the unresolved delivery state in the Chat. If the original content cannot be recovered, do not start a new notification for this event.
+Preserve the exact subject and file contents for retries. A \`queued\` receipt means delivery was accepted into the outbox; the delivery service owns provider retries, so do not submit another notification or wait for inbox delivery. \`sent\` means the provider accepted it, not that the user read or received it. Use \`okou notify get <notification-id> --json\` when you need the receipt's current status. Respect \`skipped\` and \`failed\` receipts without trying to force another attempt. After a transport timeout, retry only with the exact same subject and content, or query the receipt if its ID is known. A conflict means this event already has a notification with different content; do not regenerate the briefing to resend, and report the unresolved delivery state in the Chat.
 
 Do not read application database tables or use internal application APIs, signed input or output URLs, or callback endpoints.`;
 
