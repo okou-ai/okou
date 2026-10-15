@@ -193,34 +193,62 @@ async function setupMessageSharing(
   };
 }
 
-test("Select message groups once through the row label, checkbox, and keyboard", async () => {
-  const user = userEvent.setup();
+async function prepareGroupSelection() {
   const { promptGroup } = await setupMessageSharing();
-  const promptSelection = within(promptGroup).getByRole("checkbox", {
+  const selection = within(promptGroup).getByRole("checkbox", {
     name: "Select message group",
   });
-  click(within(promptGroup).getByText("Select message group"));
+  return { promptGroup, selection };
+}
+
+async function expectOneSelectedGroup(selection: HTMLElement) {
   await waitFor(() => {
-    expect(promptSelection).toBeChecked();
-    expect(promptSelection).toHaveAccessibleName("Deselect message group");
+    expect(selection).toBeChecked();
+    expect(selection).toHaveAccessibleName("Deselect message group");
     expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
       "1 selected",
     );
   });
-  await user.click(promptSelection);
+}
+
+async function expectNoSelectedGroups(selection: HTMLElement) {
   await waitFor(() => {
-    expect(promptSelection).not.toBeChecked();
-    expect(promptSelection).toHaveAccessibleName("Select message group");
+    expect(selection).not.toBeChecked();
+    expect(selection).toHaveAccessibleName("Select message group");
+    expect(requiredButtonNamed("Share")).toBeDisabled();
   });
-  expect(promptSelection).toHaveFocus();
+}
+
+test("The row label toggles a message group once", async () => {
+  const { promptGroup, selection } = await prepareGroupSelection();
+  expect(selection).not.toBeChecked();
+  click(within(promptGroup).getByText("Select message group"));
+  await expectOneSelectedGroup(selection);
+  click(within(promptGroup).getByText("Deselect message group"));
+  await expectNoSelectedGroups(selection);
+});
+
+test("The checkbox toggles a message group once", async () => {
+  const user = userEvent.setup({ delay: null });
+  const { selection } = await prepareGroupSelection();
+  await user.click(selection);
+  await expectOneSelectedGroup(selection);
+  await user.click(selection);
+  await expectNoSelectedGroups(selection);
+  expect(selection).toHaveFocus();
+});
+
+test("Keyboard toggling preserves focus and the message group count", async () => {
+  const user = userEvent.setup({ delay: null });
+  const { selection } = await prepareGroupSelection();
+  selection.focus();
+  expect(selection).toHaveFocus();
   await user.keyboard(" ");
-  expect(promptSelection).toBeChecked();
-  expect(requiredButtonNamed("Share").closest("footer")).toHaveTextContent(
-    "1 selected",
-  );
+  await expectOneSelectedGroup(selection);
+  expect(selection).toHaveFocus();
   await user.keyboard(" ");
-  expect(promptSelection).not.toBeChecked();
-  expect(requiredButtonNamed("Share")).toBeDisabled();
+  await expectNoSelectedGroups(selection);
+  expect(selection).toHaveFocus();
 });
 
 test("Message text and code copying remain separate from group selection", async () => {

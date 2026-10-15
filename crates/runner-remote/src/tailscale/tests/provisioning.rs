@@ -26,7 +26,8 @@ use super::{
     super::{Configuration, Control, Failure, Work, provisioning::Provider},
     fixture::bounded,
 };
-use crate::ssh::{FailureReason, cache::Cache};
+use crate::ssh::FailureReason;
+use crate::tailscale::tests::fixture::Cache;
 use fixture::{Loopback, Phase, Service};
 
 fn configuration(id: uuid::Uuid) -> Configuration {
@@ -96,9 +97,10 @@ async fn cancelling_an_accepted_create_without_its_id_seals_the_attempt_and_repo
         .unwrap();
     service.next(Phase::OAuth).await;
     service.next(Phase::Create).await;
+    let retired = node.physical();
     cache.invalidate(run, None);
-    assert_eq!(bounded(node.physical()).await, Err(Failure::DomainFailed));
     drop(node);
+    assert_eq!(bounded(retired).await, Err(Failure::DomainFailed));
     let fresh = registration.lookup(uuid::Uuid::new_v4()).unwrap();
     assert!(matches!(
         fresh.native_configured(configuration(id), factory(service.dial.clone(), false)),

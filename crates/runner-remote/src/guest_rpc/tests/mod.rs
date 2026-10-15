@@ -57,11 +57,7 @@ impl GuestRpcAcceptor for FailedOwner {
 #[tokio::test]
 async fn shutdown_reports_failed_owner_without_returning_its_panic_payload() {
     let entered = CancellationToken::new();
-    let runtime = Runtime {
-        ssh: None,
-        vnc: None,
-        usage: None,
-    };
+    let runtime = Runtime::new(None, None, None);
     let run = runtime.start(
         Arc::new(FailedOwner(entered.clone())),
         "assigned-sandbox".into(),
@@ -109,11 +105,7 @@ impl Harness {
         let (incoming, receiver) = mpsc::channel(16);
         let cancelled = CancellationToken::new();
         let run_id = runner_types::ids::RunId::new_v4();
-        let runtime = Runtime {
-            ssh: None,
-            vnc: None,
-            usage: None,
-        };
+        let runtime = Runtime::new(None, None, None);
         let run = runtime.start_with_usage(
             Arc::new(Acceptor(Mutex::new(receiver))),
             "assigned-sandbox".into(),

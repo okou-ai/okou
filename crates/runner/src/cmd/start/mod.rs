@@ -711,12 +711,14 @@ async fn run_start_observed(
         None
     };
     let (usage_flush_tx, usage_flush_rx) = mpsc::channel(1);
-    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| crate::guest_rpc::Runtime {
-        ssh,
-        vnc,
-        usage: Some(crate::run_usage::Runtime::new(
-            crate::MitmUsageHandle::from(&mitm),
-        )),
+    let guest_rpc = (ssh.is_some() || vnc.is_some()).then(|| {
+        crate::guest_rpc::Runtime::new(
+            ssh,
+            vnc,
+            Some(crate::run_usage::Runtime::new(
+                crate::MitmUsageHandle::from(&mitm),
+            )),
+        )
     });
     let host_telemetry = if args.local {
         None

@@ -319,7 +319,7 @@ async fn natural_key_expiry_wakes_the_actual_pending_tls_writer_without_a_map_up
 #[tokio::test]
 async fn run_retirement_joins_a_partial_tls_sdk_frame_and_closes_the_actual_os_descriptor() {
     use crate::{
-        ssh::cache::Cache,
+        tailscale::tests::fixture::Cache,
         tailscale::{Key, Work, registration::Registration},
     };
     use std::os::fd::AsRawFd;

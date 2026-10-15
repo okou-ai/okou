@@ -652,11 +652,6 @@
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
     },
     {
-      "id": "TX-0273",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-allocation-change.service.ts",
-      "owner": "prepareUsagePackChangeConfirmation$"
-    },
-    {
       "id": "TX-0274",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "insertPendingInvitationPurchase$"
@@ -765,11 +760,6 @@
       "id": "TX-0327",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishConcurrencyInvoice$"
-    },
-    {
-      "id": "TX-0328",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishConcurrencySubscription$"
     },
     {
       "id": "TX-0329",

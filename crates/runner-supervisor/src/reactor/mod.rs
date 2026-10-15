@@ -35,7 +35,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use futures_util::future::BoxFuture;
 use sandbox::SandboxRuntime;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -45,9 +44,9 @@ use tracing::{error, info, warn};
 use crate::dns;
 use crate::duration::duration_ms as saturated_duration_ms;
 use crate::executor::{ExecutorConfig, RunnerPreSpawnConcurrency};
+use crate::home_image_cache::HomeCacheChange;
 #[cfg(test)]
 use crate::home_image_cache::HomeImageCache;
-use crate::home_image_cache::{HomeCacheChange, HomeCacheWatcher};
 use crate::idle_pool::ParkingGate;
 #[cfg(test)]
 use crate::idle_pool::{IdlePool, IdlePoolConfig};
@@ -63,7 +62,6 @@ use crate::proxy;
 use crate::resource_budget::ResourceBudget;
 use crate::status::StatusTracker;
 use error::{ReactorError as RunnerError, ReactorResult as RunnerResult};
-use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_host::paths::HomePaths;
 #[cfg(test)]
 use runner_host::paths::RunnerPaths;
@@ -79,6 +77,7 @@ pub mod error;
 mod factory_lifecycle;
 mod finalizing_claim;
 mod heartbeat;
+mod home_cache_observation;
 mod job_discovery;
 mod job_spawn;
 mod job_terminal_log;
@@ -93,7 +92,7 @@ mod startup;
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    WssIngressServiceProbe, refresh_initial_home_cache_snapshot,
+    WssIngressServiceProbe,
 };
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
@@ -102,6 +101,9 @@ use crate::orphan_reap::{OrphanReapMode, OrphanedActiveRuns};
 use claim_tasks::ClaimTasks;
 use factory_lifecycle::{shutdown_factory_instances, shutdown_runtime};
 use heartbeat::heartbeat_profiles;
+use home_cache_observation::{
+    HomeCacheObservation, HomeCacheObservationEvent, InitialHomeCacheObservation,
+};
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
@@ -161,33 +163,6 @@ impl MaintenanceTrigger {
                     .expect("manual maintenance sender should remain open");
             }
         }
-    }
-}
-
-type HomeCacheChangeFuture = BoxFuture<
-    'static,
-    (
-        HomeCacheWatcher,
-        RunnerResult<crate::home_image_cache::HomeCacheChange>,
-    ),
->;
-
-fn home_cache_change_future(mut watcher: HomeCacheWatcher) -> HomeCacheChangeFuture {
-    Box::pin(async move {
-        let result = watcher.next_change().await;
-        (watcher, result.map_err(Into::into))
-    })
-}
-
-async fn next_home_cache_change(
-    future: &mut Option<HomeCacheChangeFuture>,
-) -> (
-    HomeCacheWatcher,
-    RunnerResult<crate::home_image_cache::HomeCacheChange>,
-) {
-    match future {
-        Some(future) => future.await,
-        None => std::future::pending().await,
     }
 }
 
@@ -1108,20 +1083,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     );
     orphan_reap_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let mut home_cache_watcher = match exec_config.home_cache.clone() {
-        Some(cache) => match HomeCacheWatcher::new(cache).await {
-            Ok(watcher) => Some(watcher),
-            Err(error) => {
-                warn!(error = %error, "home cache watcher unavailable; using periodic reconciliation");
-                None
-            }
-        },
-        None => None,
-    };
-    #[cfg(test)]
-    if let Some(gate) = &test_hooks.before_initial_home_cache_scan {
-        gate.enter_and_wait().await;
-    }
     let projected_heartbeat_profiles = heartbeat_profiles(&runner.profiles);
     let hb_ctx = HeartbeatContext::new(HeartbeatContextInit {
         idle_pool: &shared.idle_pool,
@@ -1136,78 +1097,27 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         wss_ingress_service_probe,
         sandbox_op_reporter: sandbox_op_reporter.clone(),
     });
-    if exec_config.home_cache.is_some()
-        && let Some(reporter) = &sandbox_op_reporter
-    {
-        let mut observation = HomeObservation::new(
-            HomeObservationKind::Inventory,
-            HomeObservationOutcome::Loading,
-        );
-        observation.runner_id = Some(runner.identity.runner_id().to_string());
-        observation.runner_heartbeat_generation = Some(runner.identity.heartbeat_generation());
-        observation.inventory_loaded = Some(false);
-        observation.reason = Some("initial_scan".into());
-        let mut record = runner_storage::SandboxOpRecord::new(
-            "runner_home_inventory",
-            Duration::ZERO,
-            true,
-            None,
-        );
-        record.home = Some(observation);
-        reporter.record(record);
-    }
-    let initial_home_cache = refresh_initial_home_cache_snapshot(
-        &home_cache_snapshot,
+    let (mut home_cache_observation, initial_home_cache) = HomeCacheObservation::initialize(
         exec_config.home_cache.as_ref(),
+        &home_cache_snapshot,
         &projected_heartbeat_profiles,
+        runner.identity,
+        sandbox_op_reporter.as_ref(),
+        #[cfg(test)]
+        &test_hooks,
     )
     .await;
-    #[cfg(test)]
-    if let Some(gate) = &test_hooks.after_initial_home_cache_scan {
-        gate.enter_and_wait().await;
-    }
-    debug_assert!(home_cache_snapshot.home_cache_loaded());
-    let mut initial_relevant_cache_keys = initial_home_cache.loaded_cache_keys;
-    initial_relevant_cache_keys.extend(initial_home_cache.locked_commit_keys.iter().cloned());
-    let mut initial_home_cache_change = match home_cache_watcher.as_mut() {
-        Some(watcher) => match watcher
-            .reconcile_initial_relevant_entries(&initial_relevant_cache_keys)
-            .await
-        {
-            Ok(change) => change,
-            Err(error) => {
-                warn!(error = %error, "home cache watcher failed during startup reconciliation; using periodic reconciliation");
-                home_cache_watcher = None;
-                Some(crate::home_image_cache::HomeCacheChange {
-                    observed_at: tokio::time::Instant::now(),
-                    committed_cache_keys: std::collections::BTreeSet::new(),
-                })
-            }
-        },
-        None => None,
-    };
-    if !initial_home_cache.locked_commit_keys.is_empty() {
-        let locked_change = crate::home_image_cache::HomeCacheChange {
-            observed_at: tokio::time::Instant::now(),
-            committed_cache_keys: initial_home_cache.locked_commit_keys,
-        };
-        match initial_home_cache_change.as_mut() {
-            Some(change) => change.merge(locked_change),
-            None => initial_home_cache_change = Some(locked_change),
-        }
-    }
-    let mut home_cache_change_fut = home_cache_watcher.map(home_cache_change_future);
     let mut heartbeat = HeartbeatController::new(hb_ctx);
     let initial_heartbeat_mode = lifecycle.current_mode();
     if initial_heartbeat_mode == RunnerMode::Running {
-        match initial_home_cache_change {
-            Some(change) => {
+        match initial_home_cache {
+            InitialHomeCacheObservation::Change(change) => {
                 heartbeat.request_initial_home_cache(initial_heartbeat_mode, change)?;
             }
-            None if !initial_home_cache.states.is_empty() => {
+            InitialHomeCacheObservation::LoadedSnapshot => {
                 heartbeat.request_initial_home_cache_snapshot(initial_heartbeat_mode)?;
             }
-            None => {}
+            InitialHomeCacheObservation::Empty => {}
         }
     }
 
@@ -1540,10 +1450,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     break;
                 }
             }
-            (watcher, result) = next_home_cache_change(&mut home_cache_change_fut) => {
-                match result {
-                    Ok(change) => {
-                        home_cache_change_fut = Some(home_cache_change_future(watcher));
+            observation = home_cache_observation.wait() => {
+                match observation {
+                    HomeCacheObservationEvent::Change(change) => {
                         #[cfg(test)]
                         test_hooks
                             .test_observer
@@ -1553,9 +1462,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
                     }
-                    Err(error) => {
+                    HomeCacheObservationEvent::Unavailable(error) => {
                         warn!(error = %error, "home cache watcher failed; using periodic reconciliation");
-                        home_cache_change_fut = None;
                     }
                 }
             }
@@ -1767,7 +1675,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // outcomes still enter the existing activation/executor ownership path.
     drop(discover_fut);
     teardown.event("drop_discover_fut");
-    drop(home_cache_change_fut);
+    drop(home_cache_observation);
     let phase = teardown.phase_start("claims_drain");
     while let Some(result) = claim_tasks.next().await {
         if let Err(failure) = claim_tasks.consume(result, &mut jobs).await {

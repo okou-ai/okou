@@ -63,6 +63,49 @@ fn token(name: &[u8]) -> String {
 }
 
 #[tokio::test]
+async fn guest_root_home_and_nested_locations_use_one_raw_namespace() {
+    let guest = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(guest.path().join("home/user/workspace")).unwrap();
+    std::fs::write(guest.path().join("home/user/workspace/leaf"), b"private").unwrap();
+    let filesystem = Filesystem::start(guest.path().into()).unwrap();
+    let owner = owner(&filesystem);
+    for (parts, expected) in [
+        (vec![], "home"),
+        (vec!["home"], "user"),
+        (vec!["home", "user"], "workspace"),
+        (vec!["home", "user", "workspace"], "leaf"),
+    ] {
+        let path: Vec<_> = parts.iter().map(|name| token(name.as_bytes())).collect();
+        let page = list(&filesystem, &owner, json!({"path":path}))
+            .await
+            .unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.entries[0].name_token, token(expected.as_bytes()));
+        assert!(page.next_cursor.is_none());
+    }
+}
+
+#[tokio::test]
+async fn canonical_home_transition_still_rejects_symlink_replacement() {
+    let guest = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::create_dir(guest.path().join("home")).unwrap();
+    symlink(outside.path(), guest.path().join("home/user")).unwrap();
+    let filesystem = Filesystem::start(guest.path().into()).unwrap();
+    let owner = owner(&filesystem);
+    assert_eq!(
+        list(
+            &filesystem,
+            &owner,
+            json!({"path":[token(b"home"),token(b"user")]})
+        )
+        .await
+        .unwrap_err(),
+        Error::LinkNotExpandable,
+    );
+}
+
+#[tokio::test]
 async fn raw_names_kinds_and_safe_labels_never_follow_links_or_open_contents() {
     let home = tempfile::tempdir().unwrap();
     std::fs::create_dir(home.path().join("nested")).unwrap();
@@ -370,8 +413,8 @@ impl PeerFixture {
             guest_contracts::private_duplex::ACTIVATED
         );
         let mut fixture = Self { stream, task };
-        fixture.send(json!({"schemaVersion":1,"type":"hello","id":id(1),"categories":{"diagnostics":1,"fs":1}})).await;
-        assert_eq!(fixture.receive().await["result"]["categories"]["fs"], 1);
+        fixture.send(json!({"schemaVersion":1,"type":"hello","id":id(1),"categories":{"diagnostics":1,"fs":2}})).await;
+        assert_eq!(fixture.receive().await["result"]["categories"]["fs"], 2);
         assert_eq!(fixture.receive().await["event"], "notice");
         fixture
     }
@@ -400,6 +443,23 @@ fn id(n: u64) -> String {
 }
 
 #[tokio::test]
+async fn old_fs_category_cannot_reinterpret_home_paths_as_guest_root() {
+    let guest = tempfile::tempdir().unwrap();
+    std::fs::create_dir(guest.path().join("home")).unwrap();
+    let filesystem = Filesystem::start(guest.path().into()).unwrap();
+    let mut fixture = PeerFixture::new(filesystem.service()).await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    assert_eq!(
+        fixture.receive().await["error"]["code"],
+        "category_version_mismatch"
+    );
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(3),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
+    let reply = fixture.receive().await;
+    assert_eq!(reply["result"]["entries"][0]["nameToken"], token(b"home"));
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn cancelled_peer_releases_its_observation_before_physical_filesystem_work_unwinds() {
     let home = tempfile::tempdir().unwrap();
     tree(home.path(), 300);
@@ -412,12 +472,12 @@ async fn cancelled_peer_releases_its_observation_before_physical_filesystem_work
         gate.recv_timeout(Duration::from_secs(5)).unwrap();
     }));
     let weak = Arc::downgrade(&active);
-    let mut fixture = PeerFixture::new(Arc::new(HomeFiles {
+    let mut fixture = PeerFixture::new(Arc::new(GuestFiles {
         filesystem: filesystem.clone(),
         owner: Some(Arc::clone(&active)),
     }))
     .await;
-    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
     tokio::time::timeout(Duration::from_secs(5), waiting)
         .await
         .unwrap()
@@ -461,12 +521,12 @@ async fn peer_closing_during_maintenance_releases_filesystem_state() {
         entered.send(()).unwrap();
         gate.recv_timeout(Duration::from_secs(5)).unwrap();
     }));
-    let mut fixture = PeerFixture::new(Arc::new(HomeFiles {
+    let mut fixture = PeerFixture::new(Arc::new(GuestFiles {
         filesystem: filesystem.clone(),
         owner: Some(Arc::clone(&active)),
     }))
     .await;
-    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
     assert!(fixture.receive().await["result"]["nextCursor"].is_string());
     tokio::time::timeout(Duration::from_secs(5), waiting)
         .await
@@ -494,12 +554,12 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
         entered.send(()).unwrap();
         gate.recv_timeout(Duration::from_secs(5)).unwrap();
     }));
-    let service = Arc::new(HomeFiles {
+    let service = Arc::new(GuestFiles {
         filesystem: filesystem.clone(),
         owner: Some(Arc::clone(&first)),
     });
     let mut fixture = PeerFixture::new(service).await;
-    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
     tokio::time::timeout(Duration::from_secs(5), waiting)
         .await
         .unwrap()
@@ -510,7 +570,7 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
         (4, "list", json!({"path":[token(b"..")] }), "invalid_params"),
         (5, "unknown", json!({"path":[]}), "unknown_operation"),
     ] {
-        fixture.send(json!({"schemaVersion":1,"type":"request","id":id(n),"category":"fs","categoryVersion":1,"operation":operation,"params":params})).await;
+        fixture.send(json!({"schemaVersion":1,"type":"request","id":id(n),"category":"fs","categoryVersion":2,"operation":operation,"params":params})).await;
         assert_eq!(fixture.receive().await["error"]["code"], code);
     }
     let mut queued = Vec::new();
@@ -538,7 +598,7 @@ async fn blocked_physical_worker_keeps_protocol_routing_live_and_admission_bound
     let mut pressured = PeerFixture::new(filesystem.service()).await;
     pressured.send(json!({"schemaVersion":1,"type":"request","id":id(6),"category":"diagnostics","categoryVersion":1,"operation":"echo","params":{"payload":""}})).await;
     assert_eq!(pressured.receive().await["result"], json!({"payload":""}));
-    pressured.send(json!({"schemaVersion":1,"type":"request","id":id(7),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    pressured.send(json!({"schemaVersion":1,"type":"request","id":id(7),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
     assert_eq!(pressured.receive().await["error"]["code"], "busy");
     pressured.close().await;
     drop(live);

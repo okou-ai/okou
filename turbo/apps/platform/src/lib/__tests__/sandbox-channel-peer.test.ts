@@ -25,7 +25,7 @@ class Socket extends EventTarget {
   readonly application: SandboxChannelMessage[] = [];
   admission: unknown;
   readonly responses = [
-    { categories: { fs: 1 } },
+    { categories: { fs: 2 } },
     {
       listingId: "home",
       entries: [
@@ -129,7 +129,7 @@ test("the inert Platform factory uses authenticated bootstrap and shared busines
     nextCursor: null,
   });
   expect(remote?.application).toMatchObject([
-    { type: "hello", categories: { fs: 1 } },
+    { type: "hello", categories: { fs: 2 } },
     {
       type: "request",
       category: "fs",

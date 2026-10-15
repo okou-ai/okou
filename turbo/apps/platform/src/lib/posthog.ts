@@ -2,6 +2,7 @@ import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
+import { redactProofUrl } from "./redact-proof-url.ts";
 
 const RUNTIME_CONFIG = resolvePlatformRuntimeConfig();
 const POSTHOG_HOST = RUNTIME_CONFIG.postHogHost;
@@ -9,6 +10,31 @@ const POSTHOG_KEY = RUNTIME_CONFIG.postHogKey;
 
 const APP_FIRST_SKELETON_PAINT_EVENT = "app_first_skeleton_paint";
 const APP_FIRST_SKELETON_PAINT_DISTINCT_ID = "app-bootstrap";
+
+function redactProofUrlProperties(
+  properties: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(properties).map(([name, value]) => {
+      if (typeof value === "string") {
+        return [name, redactProofUrl(value)];
+      }
+      // PostHog emits person properties both here and at the envelope level.
+      if (
+        (name === "$set" || name === "$set_once") &&
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
+        return [
+          name,
+          redactProofUrlProperties(value as Record<string, unknown>),
+        ];
+      }
+      return [name, value];
+    }),
+  );
+}
 
 function finiteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -50,7 +76,16 @@ function sanitizePostHogCaptureResult(
       uuid: captureResult.uuid,
     };
   }
-  return captureResult;
+  return {
+    ...captureResult,
+    properties: redactProofUrlProperties(captureResult.properties),
+    ...(captureResult.$set
+      ? { $set: redactProofUrlProperties(captureResult.$set) }
+      : {}),
+    ...(captureResult.$set_once
+      ? { $set_once: redactProofUrlProperties(captureResult.$set_once) }
+      : {}),
+  };
 }
 
 function runPostHog(action: (key: string, host: string) => void): void {

@@ -50,8 +50,8 @@ async fn eight_requests_are_admitted_before_parsing_and_completed_exec_releases_
 #[tokio::test]
 async fn three_runs_share_a_runtime_and_admit_twenty_four_requests() {
     let mut h = Harness::new(Reply::default()).await;
-    let second = AdditionalRun::new(&h.runtime, "sandbox-second").await;
-    let third = AdditionalRun::new(&h.runtime, "sandbox-third").await;
+    let second = AdditionalRun::new(&h.rpc, "sandbox-second").await;
+    let third = AdditionalRun::new(&h.rpc, "sandbox-third").await;
     let mut pending = Vec::new();
     for _ in 0..8 {
         pending.push(h.open().await);

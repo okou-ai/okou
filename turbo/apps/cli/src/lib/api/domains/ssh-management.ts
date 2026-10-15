@@ -125,11 +125,20 @@ export async function updateSshHost(
   return metadata(hostMetadataSchema, result.body);
 }
 
-export async function deleteSshHost(id: string) {
+export async function deleteSshHost(id: string, expectedGeneration: number) {
   const client = initClient(sshConnectionsContract, await getClientConfig());
   const result = await managementRequest(() => {
-    return client.delete({ params: { connectionId: id } });
+    return client.delete({
+      params: { connectionId: id },
+      body: { expectedGeneration },
+    });
   });
+  if (result.status === 409) {
+    handleManagementError(
+      result,
+      `Cannot delete SSH host. Review it with okou ssh host show ${id}, then explicitly delete with the reviewed expectedGeneration`,
+    );
+  }
   if (result.status !== 204)
     handleManagementError(result, "Cannot delete SSH host");
   return { id, outcome: "deleted" };

@@ -68,11 +68,7 @@ async fn desktop(
         .unwrap()
         .to_owned();
     (
-        Runtime {
-            ssh: Some(Arc::clone(&h.runtime)),
-            vnc: Some(vnc),
-            usage: None,
-        },
+        Runtime::new(Some(Arc::clone(&h.runtime)), Some(vnc), None),
         session,
         bridge,
     )

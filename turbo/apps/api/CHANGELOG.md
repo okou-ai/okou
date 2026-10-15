@@ -9,6 +9,52 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.740.2](https://github.com/okou-ai/okou/compare/api-v1.740.1...api-v1.740.2) (2026-10-15)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.565.0
+    * @okouai/core bumped to 8.759.0
+    * @okouai/db bumped to 1.340.4
+    * @okouai/pi-agent-runtime bumped to 1.50.3
+
+## [1.740.1](https://github.com/okou-ai/okou/compare/api-v1.740.0...api-v1.740.1) (2026-10-15)
+
+
+### Refactoring
+
+* **api:** retire concurrency projection transaction (tx-0328) ([#40202](https://github.com/okou-ai/okou/issues/40202)) ([588e07a](https://github.com/okou-ai/okou/commit/588e07a88bd8f0a6534453084febdc9ef337d0f0))
+
+## [1.740.0](https://github.com/okou-ai/okou/compare/api-v1.739.0...api-v1.740.0) (2026-10-15)
+
+
+### Features
+
+* **api:** accept subscription grants from atom ([#40179](https://github.com/okou-ai/okou/issues/40179)) ([b4e4443](https://github.com/okou-ai/okou/commit/b4e444385ab8f7865b3a867db545308fe51e448b))
+
+
+### Bug Fixes
+
+* **db:** batch session runtime migration backfills ([#40197](https://github.com/okou-ai/okou/issues/40197)) ([3026e8b](https://github.com/okou-ai/okou/commit/3026e8bf4ce8bb45115425199a12ecc88282eb47))
+
+
+### Refactoring
+
+* **api:** own teams download reads and strict fixture cleanup ([#40120](https://github.com/okou-ai/okou/issues/40120)) ([6ab4cec](https://github.com/okou-ai/okou/commit/6ab4cec95799993f8f5f678c619bfc4670ecdd3b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.564.0
+    * @okouai/core bumped to 8.758.2
+    * @okouai/db bumped to 1.340.3
+    * @okouai/pi-agent-runtime bumped to 1.50.2
+
 ## [1.739.0](https://github.com/okou-ai/okou/compare/api-v1.738.1...api-v1.739.0) (2026-10-15)
 
 

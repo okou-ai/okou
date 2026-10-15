@@ -5,7 +5,7 @@ import type {
   SandboxChannelOperation,
 } from "./sandbox-channel";
 
-export const SANDBOX_FS_VERSION = 1;
+export const SANDBOX_FS_VERSION = 2;
 export const SANDBOX_FS_LIMITS = {
   maxEntries: 128,
   maxResponseBytes: 48 * 1024,
@@ -67,6 +67,7 @@ const pathSchema = z
   });
 const handleSchema = z.string().regex(/^[A-Za-z0-9_-]{1,128}$/);
 
+/** fs v2 paths are raw basename tokens relative to Guest /; [] denotes /. */
 export const sandboxFsListParamsSchema = z
   .strictObject({
     path: pathSchema.optional(),

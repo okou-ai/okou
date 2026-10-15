@@ -411,3 +411,65 @@ suppression, paced recovery and cancellation/late-result integration remain
 #40173 under #39997. Full native failures and provenance/residency/envelopes remain
 #39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
 composition-root activation follows from these supplied test-policy observations.
+
+## Native observation gaps and recovery
+
+For a bounded native run using the local profile, optimize the verification hash
+dependency while retaining complete artifact and snapshot byte checks:
+
+```sh
+OKOU_TEST_BUILD_SOURCE_SHA="$(git rev-parse HEAD)" \
+  cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  --config 'profile.local.package."sha2@0.11.0".opt-level=3' \
+  -p runner --test guarded_idle_native --no-run --message-format=json
+```
+
+Record this package override and the returned compiler artifacts with the frozen
+binary. Unoptimized hashing of complete rootfs/COW/memory inputs can exhaust the
+P1 window before optional work starts. Keep the supplied P2 limits, full reads,
+test assertions and collector guards when preparing the verification build.
+
+`native_recovery_records_stale_revocation_and_paced_snapshot_reads` selects
+`Recovery-fresh` and `Recovery-snapshot`. It delays the external observation
+source before real `/proc/meminfo` reads, retaining the unchanged independent
+pressure owner and original shared P2 authority. It never fabricates memory
+availability or renews a cached observation's timestamp.
+
+The corpus requires initial Unknown, fresh sustained recovery, a shared cadence
+refusal after another real read, and an opportunity revoked across a real P2
+admission wait until stale. A single fresh burst must expire with no runtime
+read accepted; sustained recovery then permits two complete reads of separately
+named, hash-verified immutable copies of the original packaged snapshot. The
+source reopens before every shutdown, including failures, so accepted observation,
+admission and prefetch owners are joined before required original home saving.
+Original full-lease, positive backing wait and durable 64 MiB tail checks remain.
+Copies live inside the measured case directory: failures preserve them, and only
+full case success permits the outer owner to remove them with the other files.
+
+Use the same `OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON as the Ready corpus, and
+set a supplied optional interval longer than the actual stale admission wait plus
+sustained recovery. The native source records actual read-start/completion clocks and costs.
+Scheduling-offer cadence and observed physical acceptance clocks are distinct;
+IO latency is not an exact scheduling timestamp or a performance measurement.
+Input hashing and copying warm the file cache; this corpus does not establish
+cold-cache IO or snapshot residency.
+
+Include exact raw `native_recovery_policy_json`, `native_recovery_inputs_json`,
+`native_recovery_snapshot_bytes` and the original `native_terminal_artifacts`
+manifest in bounded P1 metadata. Validate with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/recovery_report.py <p1-directory>
+```
+
+The report rejects missing/replayed/stale/short recovery, revived opportunities,
+premature/partial reads and incomplete physical joins. Its real-file/CLI
+regressions run through an ordinary Rust test in default CI. Actual KVM/NBD runs
+still require separately verified committed source, binary and matching Guests,
+rootfs and snapshot. Observation gaps do not establish numerical host shortage,
+physical RAM relief, calibrated envelopes or production protection.
+
+This is #40230 under #40173/#39997. #40231 retains Critical bounded-wave optional
+suppression, startup readers, independent foreground/heartbeat progress and
+Guest/provider/cancellation/late-result integration. #39998 and higher/P4 retain
+full provenance, residency, envelope and activation gates; no parent closes here.

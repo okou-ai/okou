@@ -38,7 +38,7 @@ async fn native_common_cleanup_rejection_reaches_guest_rpc_without_retry_or_logi
     assert_eq!(failed, crate::guest_rpc::CleanupError::Native);
     assert_eq!(
         failed.to_string(),
-        "native SSH resource cleanup was not confirmed"
+        "native resource cleanup was not confirmed"
     );
     assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
     assert!(h.observed.commands.lock().unwrap().is_empty());

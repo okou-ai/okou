@@ -165,6 +165,16 @@ export function immutableConnectorRuntimeSelection(
   });
 }
 
+export function createImmutableConnectorRuntimeSelection(
+  input$: Computed<Promise<SelectionInput | null>>,
+): Computed<Promise<ImmutableConnectorRuntimeSelection | null>> {
+  const source$ = capturedEntries(input$);
+  return computed(async (get) => {
+    const source = await get(source$);
+    return source ? materializeImmutableSelection(source.input, source) : null;
+  });
+}
+
 /**
  * An agent can keep a connector whose entry has left the catalog; the Run
  * launches without it instead of failing.

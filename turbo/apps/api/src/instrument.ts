@@ -13,6 +13,11 @@ import {
   filterDiscordOauthSentryEvent,
   isDiscordOauthTelemetryUrl,
 } from "./lib/discord-oauth-telemetry";
+import {
+  filterTelegramAuthSentryBreadcrumb,
+  filterTelegramAuthSentryEvent,
+  isTelegramAuthTelemetryUrl,
+} from "./lib/telegram-auth-telemetry";
 
 const OTEL_SERVICE_NAME = "vm0-api";
 
@@ -58,14 +63,26 @@ function setupSentry() {
       httpIntegration({
         spans: false,
         tracePropagation: false,
-        ignoreIncomingRequestBody: isDiscordOauthTelemetryUrl,
+        ignoreIncomingRequestBody: (url) => {
+          return (
+            isDiscordOauthTelemetryUrl(url) || isTelegramAuthTelemetryUrl(url)
+          );
+        },
       }),
       nativeNodeFetchIntegration({ tracePropagation: false }),
     ],
     release,
     sendDefaultPii: false,
-    beforeSend: filterDiscordOauthSentryEvent,
-    beforeBreadcrumb: filterDiscordOauthSentryBreadcrumb,
+    beforeSend: (event) => {
+      return filterTelegramAuthSentryEvent(event)
+        ? filterDiscordOauthSentryEvent(event)
+        : null;
+    },
+    beforeBreadcrumb: (breadcrumb) => {
+      return filterTelegramAuthSentryBreadcrumb(breadcrumb)
+        ? filterDiscordOauthSentryBreadcrumb(breadcrumb)
+        : null;
+    },
     shutdownTimeout: 500,
     skipOpenTelemetrySetup: true,
     tracesSampleRate: 0,

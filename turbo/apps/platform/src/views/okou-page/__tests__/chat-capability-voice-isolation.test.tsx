@@ -16,11 +16,16 @@ import {
 
 const secondContext = testContext();
 
+function installVoiceChat() {
+  installRunChat({ selectedModel: null });
+  context.mocks.data.availableRunModels([]);
+}
+
 test("Release a VAD session initialized after the old composer was cancelled", async () => {
   const loadStarted = context.mocks.deferred<void>();
   const modelReady = context.mocks.deferred<void>();
   const released = context.mocks.deferred<void>();
-  installRunChat();
+  installVoiceChat();
   context.mocks.browser.voiceInput({
     rms: 0.12,
     vadModelReady: () => {
@@ -66,7 +71,7 @@ function releasePageDom() {
 }
 
 function installVoiceBoundaries() {
-  installRunChat();
+  installVoiceChat();
   context.mocks.browser.voiceInput({ rms: 0.12 });
   context.mocks.api(voiceIoQuotaContract.get, ({ respond }) => {
     return respond(200, { allowed: true, count: 0, limit: 60 });

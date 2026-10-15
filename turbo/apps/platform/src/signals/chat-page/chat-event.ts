@@ -11,7 +11,6 @@ import {
   chatThreadPinContract,
   chatThreadUnpinContract,
   chatThreadRenameContract,
-  type ChatEventUsagePayload,
   type FeedbackNotePart,
   type UserMessageDocument,
   type UserMessagePart,
@@ -143,7 +142,8 @@ export interface ChatEventGroup {
   beginEventId: string;
   role: "user" | "assistant";
   events: EnrichedChatEvent[];
-  usage?: ChatEventUsagePayload;
+  /** Only the last eligible assistant group in a run shows its usage chip. */
+  showRunUsage?: boolean;
 }
 
 // ---------------------------------------------------------------------------

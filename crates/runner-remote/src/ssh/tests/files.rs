@@ -80,11 +80,7 @@ async fn active_binary_upload_and_followup_download_survive_vnc_only_invalidatio
     .unwrap()
     .unwrap();
     h.restart_with_vnc(Arc::clone(&vnc)).await;
-    let runtime = Runtime {
-        ssh: Some(Arc::clone(&h.runtime)),
-        vnc: Some(vnc),
-        usage: None,
-    };
+    let runtime = Runtime::new(Some(Arc::clone(&h.runtime)), Some(vnc), None);
     let resolve = h.resolve(h.credential(true)).await;
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("binary-file");
