@@ -217,6 +217,7 @@ function configureCatalog(
 }
 
 function configureSetupThread(): void {
+  context.mocks.data.availableRunModels([]);
   context.mocks.api(agentSetupPromptsContract.create, ({ body, respond }) => {
     return respond(200, {
       prompt: `Hi ${body.agentName}, adopt this responsibility and update your description and instructions: ${body.responsibility}`,

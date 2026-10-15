@@ -1601,7 +1601,9 @@ test.each([
   async ({ label, value }) => {
     installCapabilityChat({
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
+      selectedModel: null,
     });
+    context.mocks.data.availableRunModels([]);
     // An abandoned refresh has no page result. Observe the actual HTTP
     // boundary, then assert route ownership in the test body rather than
     // throwing inside a handler that MSW could turn into a 500 response.
@@ -1624,7 +1626,6 @@ test.each([
         return linkByName("Capability conversation");
       }),
     );
-    await readyChat();
     click(await findButton("Enter information"));
     const dialog = await screen.findByRole("dialog", {
       name: "Sign in to download invoices",
@@ -1652,7 +1653,6 @@ test.each([
         return linkByName("Capability conversation");
       }),
     );
-    await readyChat();
     click(await findButton("Enter information"));
     const reopened = await screen.findByRole("dialog", {
       name: "Sign in to download invoices",
