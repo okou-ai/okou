@@ -430,8 +430,8 @@ all I/O limiters are disabled.
 
 ### Worked Example
 
-With the example values above and a resolved denominator of `4`, startup logs
-show these sandbox-level limits:
+With a resolved denominator of `4`, the example host inputs below produce these
+sandbox-level limits:
 
 | Capacity       | Host input     | Sandbox limit after reserve and division | Structured log field           |
 | -------------- | -------------- | ---------------------------------------- | ------------------------------ |
