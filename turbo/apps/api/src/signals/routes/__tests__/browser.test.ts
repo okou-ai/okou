@@ -2026,6 +2026,15 @@ describe("Browser user-action route", () => {
         state: "uncertain",
         callbackDelivered: false,
       });
+      const replayAfterFailure = await userActionClient().apply({
+        headers,
+        params,
+        body: input,
+      });
+      expect(replayAfterFailure).toMatchObject({
+        status: 409,
+        body: { error: { code: "BROWSER_USER_ACTION_CONFLICT" } },
+      });
     });
   });
 
@@ -6465,7 +6474,7 @@ describe("Browser user-action route", () => {
       ).body.state,
     ).toBe("pending");
     const writesBeforeProviderRetry = browserInputWrites().length;
-    await accept(
+    const appliedAfterProviderRetry = await accept(
       userActionClient().apply({
         headers: { authorization: "Bearer clerk-session" },
         params: {
@@ -6475,6 +6484,7 @@ describe("Browser user-action route", () => {
       }),
       [200],
     );
+    expect(appliedAfterProviderRetry.body.state).toBe("succeeded");
     expect(browserInputWrites()).toHaveLength(writesBeforeProviderRetry + 1);
 
     const staleCandidate = await accept(

@@ -157,7 +157,6 @@ export const prepareBrowserUserFileUpload$ = command(
     },
     signal: AbortSignal,
   ): Promise<ServiceResult<{ readonly uploadUrl: string }>> => {
-    const db = set(writeDb$);
     const row = await set(loadOwnedBrowserUserActionRequest$, args, signal);
     signal.throwIfAborted();
     if (!row) {
@@ -192,7 +191,7 @@ export const prepareBrowserUserFileUpload$ = command(
     signal.throwIfAborted();
     // The signed PUT and the provider's idle lease use the same duration.
     // Its absolute timeout and request state still gate the subsequent apply.
-    if (!(await touchExactProvider(db, row))) {
+    if (!(await set(touchExactProvider$, row))) {
       return expired();
     }
     signal.throwIfAborted();
@@ -428,60 +427,69 @@ const requestHasLiveBrowser$ = command(
   },
 );
 
-async function touchExactProvider(db: Db, row: RequestRow): Promise<boolean> {
-  const now = nowDate();
-  const [touched] = await db
-    .update(browserSessionInstances)
-    .set({
-      lastTouchedAt: now,
-      idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(browserSessionInstances.providerSessionId, row.providerSessionId),
-        eq(browserSessionInstances.chatThreadId, row.chatThreadId),
-        eq(browserSessionInstances.status, "active"),
-        gt(browserSessionInstances.timeoutAt, now),
-        gt(browserSessionInstances.idleExpiresAt, now),
-      ),
-    )
-    .returning({
-      providerSessionId: browserSessionInstances.providerSessionId,
-    });
-  return touched !== undefined;
-}
+const touchExactProvider$ = command(
+  async ({ set }, row: RequestRow): Promise<boolean> => {
+    const db = set(writeDb$);
+    const now = nowDate();
+    const [touched] = await db
+      .update(browserSessionInstances)
+      .set({
+        lastTouchedAt: now,
+        idleExpiresAt: new Date(now.getTime() + IDLE_LEASE_MS),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(browserSessionInstances.providerSessionId, row.providerSessionId),
+          eq(browserSessionInstances.chatThreadId, row.chatThreadId),
+          eq(browserSessionInstances.status, "active"),
+          gt(browserSessionInstances.timeoutAt, now),
+          gt(browserSessionInstances.idleExpiresAt, now),
+        ),
+      )
+      .returning({
+        providerSessionId: browserSessionInstances.providerSessionId,
+      });
+    return touched !== undefined;
+  },
+);
 
-async function restorePending(db: Db, requestTokenHash: string): Promise<void> {
-  await db
-    .update(browserUserActionRequests)
-    .set({ status: "pending", applyStartedAt: null })
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, requestTokenHash),
-        eq(browserUserActionRequests.status, "applying"),
-      ),
-    );
-}
+const restorePending$ = command(
+  async ({ set }, requestTokenHash: string): Promise<void> => {
+    const db = set(writeDb$);
+    await db
+      .update(browserUserActionRequests)
+      .set({ status: "pending", applyStartedAt: null })
+      .where(
+        and(
+          eq(browserUserActionRequests.requestTokenHash, requestTokenHash),
+          eq(browserUserActionRequests.status, "applying"),
+        ),
+      );
+  },
+);
 
-async function finalize(
-  db: Db,
-  requestTokenHash: string,
-  status: "succeeded" | "stale" | "uncertain",
-): Promise<RequestRow | null> {
-  const now = nowDate();
-  const [row] = await db
-    .update(browserUserActionRequests)
-    .set({ status, completedAt: now })
-    .where(
-      and(
-        eq(browserUserActionRequests.requestTokenHash, requestTokenHash),
-        eq(browserUserActionRequests.status, "applying"),
-      ),
-    )
-    .returning();
-  return row ?? null;
-}
+const finalize$ = command(
+  async (
+    { set },
+    requestTokenHash: string,
+    status: "succeeded" | "stale" | "uncertain",
+  ): Promise<RequestRow | null> => {
+    const db = set(writeDb$);
+    const now = nowDate();
+    const [row] = await db
+      .update(browserUserActionRequests)
+      .set({ status, completedAt: now })
+      .where(
+        and(
+          eq(browserUserActionRequests.requestTokenHash, requestTokenHash),
+          eq(browserUserActionRequests.status, "applying"),
+        ),
+      )
+      .returning();
+    return row ?? null;
+  },
+);
 
 async function convertClosedBrowserUserActions(
   db: Db,
@@ -1480,7 +1488,7 @@ export const preflightBrowserUserAction$ = command(
     if (located.status !== "pending") {
       return conflict("Browser input is no longer pending");
     }
-    const leased = await touchExactProvider(db, located);
+    const leased = await set(touchExactProvider$, located);
     signal.throwIfAborted();
     if (!leased) {
       return expired();
@@ -1604,89 +1612,93 @@ function browserApplyField(
   };
 }
 
-async function applyClaimedBrowserUserAction(
-  db: Db,
-  claimed: RequestRow,
-  payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
-  submission: {
-    readonly values: ReadonlyMap<string, SubmittedBrowserValue>;
-    readonly fileContents:
-      | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
-      | undefined;
-  },
-  signal: AbortSignal,
-): Promise<ServiceResult<RequestRow>> {
-  // Once claimed, every exit settles the request: a terminal state or a
-  // restored pending state, each conditional on the claim still applying.
-  const leased = await touchExactProvider(db, claimed);
-  if (!leased) {
-    const terminal = await finalize(db, claimed.requestTokenHash, "stale");
-    return terminal
-      ? { kind: "ok", value: terminal }
-      : conflict("Browser input state changed during application");
-  }
-  const target = exactInputTarget(payload);
-  const provider = await settleIncludingAbort(
-    getBrowserUseSession(claimed.providerSessionId, signal),
-  );
-  if (!provider.ok) {
-    await restorePending(db, claimed.requestTokenHash);
-    return providerFailure(provider.error);
-  }
-  if (provider.value.status !== "active" || !provider.value.cdpUrl) {
-    await restorePending(db, claimed.requestTokenHash);
-    return providerFailure(new Error("Browser provider is not active"));
-  }
-  const operation = await settle(
-    applyBrowserUseUserAction(
-      provider.value.cdpUrl,
-      {
-        ...target,
-        fields: payload.target.fields.map((field) => {
-          return browserApplyField(
-            field,
-            submission.values.get(field.key),
-            submission.fileContents,
-          );
-        }),
-      },
-      signal,
-    ),
-  );
-  if (!operation.ok) {
-    if (
-      operation.error instanceof BrowserUseUserActionMutationError &&
-      operation.error.writeStarted
-    ) {
-      const terminal = await finalize(
-        db,
-        claimed.requestTokenHash,
-        "uncertain",
-      );
+const applyClaimedBrowserUserAction$ = command(
+  async (
+    { set },
+    claimed: RequestRow,
+    payload: Extract<BrowserUserActionPayload, { kind: "input" }>,
+    submission: {
+      readonly values: ReadonlyMap<string, SubmittedBrowserValue>;
+      readonly fileContents:
+        | BrowserUseUserActionExactTarget["fields"][number]["fileChoice"]
+        | undefined;
+    },
+    providerSignal: AbortSignal,
+  ): Promise<ServiceResult<RequestRow>> => {
+    // Once claimed, every exit settles the request: a terminal state or a
+    // restored pending state, each conditional on the claim still applying.
+    // Provider work is cancellable; the guarded compensation writes below
+    // must settle at their existing exits before cancellation propagates.
+    const leased = await set(touchExactProvider$, claimed);
+    if (!leased) {
+      const terminal = await set(finalize$, claimed.requestTokenHash, "stale");
       return terminal
         ? { kind: "ok", value: terminal }
         : conflict("Browser input state changed during application");
     }
-    await restorePending(db, claimed.requestTokenHash);
-    return providerFailure(operation.error);
-  }
-  if (operation.value === "invalid") {
-    await restorePending(db, claimed.requestTokenHash);
-    return conflict(
-      "Browser input does not meet the website control constraints",
-      "BROWSER_USER_ACTION_INVALID_VALUE",
+    const target = exactInputTarget(payload);
+    const provider = await settleIncludingAbort(
+      getBrowserUseSession(claimed.providerSessionId, providerSignal),
     );
-  }
-  const terminal = await finalize(
-    db,
-    claimed.requestTokenHash,
-    operation.value,
-  );
-  signal.throwIfAborted();
-  return terminal
-    ? { kind: "ok", value: terminal }
-    : conflict("Browser input state changed during application");
-}
+    if (!provider.ok) {
+      await set(restorePending$, claimed.requestTokenHash);
+      return providerFailure(provider.error);
+    }
+    if (provider.value.status !== "active" || !provider.value.cdpUrl) {
+      await set(restorePending$, claimed.requestTokenHash);
+      return providerFailure(new Error("Browser provider is not active"));
+    }
+    const operation = await settle(
+      applyBrowserUseUserAction(
+        provider.value.cdpUrl,
+        {
+          ...target,
+          fields: payload.target.fields.map((field) => {
+            return browserApplyField(
+              field,
+              submission.values.get(field.key),
+              submission.fileContents,
+            );
+          }),
+        },
+        providerSignal,
+      ),
+    );
+    if (!operation.ok) {
+      if (
+        operation.error instanceof BrowserUseUserActionMutationError &&
+        operation.error.writeStarted
+      ) {
+        const terminal = await set(
+          finalize$,
+          claimed.requestTokenHash,
+          "uncertain",
+        );
+        return terminal
+          ? { kind: "ok", value: terminal }
+          : conflict("Browser input state changed during application");
+      }
+      await set(restorePending$, claimed.requestTokenHash);
+      return providerFailure(operation.error);
+    }
+    if (operation.value === "invalid") {
+      await set(restorePending$, claimed.requestTokenHash);
+      return conflict(
+        "Browser input does not meet the website control constraints",
+        "BROWSER_USER_ACTION_INVALID_VALUE",
+      );
+    }
+    const terminal = await set(
+      finalize$,
+      claimed.requestTokenHash,
+      operation.value,
+    );
+    providerSignal.throwIfAborted();
+    return terminal
+      ? { kind: "ok", value: terminal }
+      : conflict("Browser input state changed during application");
+  },
+);
 
 export const applyBrowserUserAction$ = command(
   async (
@@ -1772,8 +1784,8 @@ export const applyBrowserUserAction$ = command(
     if (!claimed) {
       return conflict("Browser input has already been claimed");
     }
-    const applied = await applyClaimedBrowserUserAction(
-      db,
+    const applied = await set(
+      applyClaimedBrowserUserAction$,
       claimed,
       payload,
       { values: valuesResult.value, fileContents },
