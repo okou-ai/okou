@@ -43,7 +43,7 @@ async function browser(
   });
   const response = await app.request(url.pathname + url.search);
   const html = await response.text();
-  const script = /<script>([\s\S]*?)<\/script>/u.exec(html)?.[1];
+  const script = /<script>([\s\S]*?)<\/script>/iu.exec(html)?.[1];
   if (!script) {
     throw new Error("Callback did not return an executable script");
   }
@@ -425,6 +425,7 @@ describe("Telegram callback HTTP/browser protocol", () => {
     { callbackProtocol: "" },
     { operationId: "" },
     { operationId: "not-a-uuid" },
+    { operationId: `${OPERATION}\n` },
     { bot: "other" },
     { bot: "" },
     { targetOrigin: "https://evil.example" },
