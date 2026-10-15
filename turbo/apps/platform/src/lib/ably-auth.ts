@@ -6,7 +6,6 @@ import type { AuthOptions } from "ably";
 import type { platformRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
   detach,
-  onRejection,
   Reason,
   throwIfAbort,
   waitForOperation,
@@ -73,24 +72,12 @@ export function createAblyAuthCallback(
         try {
           signal.throwIfAborted();
           const client = createClient(invocation);
-          const res = await onRejection(
-            waitForOperation(
-              accept(
-                client.create({ body: {}, fetchOptions: { signal } }),
-                [200],
-              ),
-              signal,
+          const res = await waitForOperation(
+            accept(
+              client.create({ body: {}, fetchOptions: { signal } }),
+              [200],
             ),
-            (error) => {
-              if (signal.aborted && !rootSignal.aborted) {
-                throw new Error(
-                  "Ably authentication timed out after 5 seconds",
-                  {
-                    cause: error,
-                  },
-                );
-              }
-            },
+            signal,
           );
           recordAuthDiagnostic({
             stage: "ably_auth_api_finished",

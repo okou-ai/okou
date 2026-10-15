@@ -130,6 +130,17 @@ function controlledDeadline() {
   const signal = context.store.set(resetDeadline$, context.signal);
   vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(signal);
   return () => {
+    // Deliver the native timeout reason at the observed boundary, without
+    // sleeping or turning an auth deadline into root AbortError cancellation.
+    const abort = AbortController.prototype.abort;
+    vi.spyOn(AbortController.prototype, "abort").mockImplementationOnce(
+      function (this: AbortController) {
+        abort.call(
+          this,
+          new DOMException("The operation timed out", "TimeoutError"),
+        );
+      },
+    );
     context.store.set(resetDeadline$, context.signal);
   };
 }
@@ -171,14 +182,10 @@ test("Auth deadline rejects the SDK request and ignores a late page token before
   expire();
   await expect(result).resolves.toMatchObject({
     ok: false,
-    error: {
-      code: 40_170,
-      message: expect.stringContaining(
-        "Ably authentication timed out after 5 seconds",
-      ),
-    },
+    error: { code: 40_170 },
   });
   expect(signal.aborted).toBeTruthy();
+  expect(signal.reason).toMatchObject({ name: "TimeoutError" });
   expect(apiRequests).toBe(0);
 
   token.resolve("late-clerk-token");
@@ -229,12 +236,7 @@ test("Auth deadline aborts an in-flight platform token HTTP request without exch
   expire();
   await expect(result).resolves.toMatchObject({
     ok: false,
-    error: {
-      code: 40_170,
-      message: expect.stringContaining(
-        "Ably authentication timed out after 5 seconds",
-      ),
-    },
+    error: { code: 40_170 },
   });
   await aborted.promise;
   expect(signal.aborted).toBeTruthy();
