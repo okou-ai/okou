@@ -121,15 +121,34 @@ BEGIN
   END IF;
 END $$;
 --> statement-breakpoint
-UPDATE agent_runs r SET agent_id = s.agent_id
-FROM agent_sessions s
-WHERE r.session_id = s.id AND r.agent_id IS NULL AND s.agent_id IS NOT NULL;
+-- vm0:batch-by-uuid
+WITH batch AS MATERIALIZED (
+  SELECT id, session_id FROM agent_runs
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND agent_id IS NULL
+  ORDER BY id LIMIT 1000
+), updated AS (
+  UPDATE agent_runs r SET agent_id = s.agent_id
+  FROM batch b JOIN agent_sessions s ON s.id = b.session_id
+  WHERE r.id = b.id AND r.agent_id IS NULL AND s.agent_id IS NOT NULL
+  RETURNING r.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 --> statement-breakpoint
-UPDATE agent_runs r SET
-  framework = c.cli_agent_type,
-  framework_session_id = c.cli_agent_session_id,
-  legacy_conversation_history_hash = c.cli_agent_session_history_hash
-FROM conversations c WHERE c.run_id = r.id AND r.framework IS NULL;
+-- vm0:batch-by-uuid
+WITH batch AS MATERIALIZED (
+  SELECT id FROM agent_runs
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND framework IS NULL
+  ORDER BY id LIMIT 1000
+), updated AS (
+  UPDATE agent_runs r SET
+    framework = c.cli_agent_type,
+    framework_session_id = c.cli_agent_session_id,
+    legacy_conversation_history_hash = c.cli_agent_session_history_hash
+  FROM batch b JOIN conversations c ON c.run_id = b.id
+  WHERE r.id = b.id AND r.framework IS NULL
+  RETURNING r.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;
 --> statement-breakpoint
 -- Transfer only already-committed private-maintenance output facts. A missing
 -- or mismatched legacy receipt cannot authorize the next maintenance Run.
@@ -152,17 +171,32 @@ WHERE c.run_id = r.id AND s.id = r.session_id
 --> statement-breakpoint
 -- Historical admission bindings are not history-generation identities. Bind
 -- only the real Conversation-producing Run of the same owned Thread/Agent.
-UPDATE chat_threads t SET
-  framework = r.framework,
-  framework_session_id = r.framework_session_id,
-  framework_session_run_id = r.id
-FROM agent_sessions s JOIN conversations c ON c.id = s.conversation_id
-JOIN agent_runs r ON r.id = c.run_id
-JOIN agents a ON a.id = r.agent_id
-WHERE t.agent_session_id = s.id AND r.chat_thread_id = t.id
-  AND r.user_id = t.user_id AND r.org_id = a.org_id
-  AND r.agent_id = t.agent_id
-  AND r.framework IN ('claude-code', 'codex', 'pi')
-  AND r.framework_session_id ~ '^[A-Za-z0-9_-]{1,255}$'
-  AND t.framework IS NULL AND t.framework_session_id IS NULL
-  AND t.framework_session_run_id IS NULL;
+-- vm0:batch-by-uuid
+WITH batch AS MATERIALIZED (
+  SELECT id, user_id, agent_id, agent_session_id FROM chat_threads
+  WHERE ($1::uuid IS NULL OR id > $1::uuid) AND agent_session_id IS NOT NULL
+    AND framework IS NULL AND framework_session_id IS NULL
+    AND framework_session_run_id IS NULL
+  ORDER BY id LIMIT 1000
+), native_facts AS MATERIALIZED (
+  SELECT t.id, r.framework, r.framework_session_id, r.id AS generation_run_id
+  FROM batch t
+  JOIN agent_sessions s ON t.agent_session_id = s.id
+  JOIN conversations c ON c.id = s.conversation_id
+  JOIN agent_runs r ON r.id = c.run_id
+  JOIN agents a ON a.id = r.agent_id
+  WHERE r.chat_thread_id = t.id AND r.user_id = t.user_id
+    AND r.org_id = a.org_id AND r.agent_id = t.agent_id
+    AND r.framework IN ('claude-code', 'codex', 'pi')
+    AND r.framework_session_id ~ '^[A-Za-z0-9_-]{1,255}$'
+), updated AS (
+  UPDATE chat_threads t SET
+    framework = f.framework,
+    framework_session_id = f.framework_session_id,
+    framework_session_run_id = f.generation_run_id
+  FROM native_facts f WHERE t.id = f.id
+    AND t.framework IS NULL AND t.framework_session_id IS NULL
+    AND t.framework_session_run_id IS NULL
+  RETURNING t.id
+)
+SELECT (SELECT id FROM batch ORDER BY id DESC LIMIT 1) AS next_cursor;

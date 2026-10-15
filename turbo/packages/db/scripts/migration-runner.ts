@@ -1,5 +1,6 @@
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import type postgres from "postgres";
+import { z } from "zod";
 import { DRIZZLE_MIGRATE_OUT } from "../drizzle.config";
 
 type DbMigration = {
@@ -9,6 +10,11 @@ type DbMigration = {
 };
 
 export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- vm0:non-transactional";
+export const UUID_BATCH_MIGRATION_MARKER = "-- vm0:batch-by-uuid";
+
+const batchCursorSchema = z.tuple([
+  z.object({ next_cursor: z.guid().nullable() }),
+]);
 
 export interface ApplyPendingMigrationsOptions {
   /**
@@ -66,6 +72,9 @@ export async function applyPendingMigrations(
         if (statement.trim().length === 0) {
           continue;
         }
+        if (statement.includes(UUID_BATCH_MIGRATION_MARKER)) {
+          throw new Error("UUID batches require a transactional migration");
+        }
         await sql.unsafe(statement);
       }
 
@@ -83,6 +92,24 @@ export async function applyPendingMigrations(
 
       for (const statement of migration.sql) {
         if (statement.trim().length === 0) {
+          continue;
+        }
+        if (statement.includes(UUID_BATCH_MIGRATION_MARKER)) {
+          let cursor: string | null = null;
+          while (true) {
+            const [{ next_cursor: nextCursor }] = batchCursorSchema.parse(
+              await transaction.unsafe(statement, [cursor]),
+            );
+            if (nextCursor === null) {
+              break;
+            }
+            if (cursor !== null && nextCursor <= cursor) {
+              throw new Error(
+                `Batch cursor did not advance in migration ${migration.folderMillis}`,
+              );
+            }
+            cursor = nextCursor;
+          }
           continue;
         }
         await transaction.unsafe(statement);
