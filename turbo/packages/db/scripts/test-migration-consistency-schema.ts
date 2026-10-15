@@ -591,6 +591,7 @@ async function validateChatEventContextPointerConstraints(
       "teams",
       "telegram",
       "web",
+      "wechat",
     ]);
     await client.query(
       `

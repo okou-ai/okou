@@ -85,6 +85,8 @@ import { cronSyncSkillsRoutes } from "./routes/cron-sync-skills";
 import { cronTelegramCleanupRoutes } from "./routes/cron-telegram-cleanup";
 import { customConnectorsRoutes } from "./routes/custom-connectors";
 import { desktopUpdateRoutes } from "./routes/desktop-updates";
+import { wechatGatewayRoutes } from "./routes/wechat-gateway";
+import { integrationsWechatRoutes } from "./routes/integrations-wechat";
 import { discordGatewayRoutes } from "./routes/discord-gateway";
 import { discordInteractionsRoutes } from "./routes/discord-interactions";
 import { discordOauthRoutes } from "./routes/discord-oauth";
@@ -416,6 +418,8 @@ export const ROUTES: readonly RouteEntry[] = [
   ...discordInteractionsRoutes,
   ...slackCommandsRoutes,
   ...slackEventsRoutes,
+  ...integrationsWechatRoutes,
+  ...wechatGatewayRoutes,
   ...discordGatewayRoutes,
   ...slackInteractiveRoutes,
   ...feishuBrowserConnectRoutes,

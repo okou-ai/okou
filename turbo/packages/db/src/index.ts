@@ -1,3 +1,4 @@
+import * as wechatSchema from "./schema/wechat";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
@@ -163,6 +164,7 @@ import * as tailscaleConfigSchema from "./schema/tailscale-config";
 
 export const schema = {
   ...mailNotificationSchema,
+  ...wechatSchema,
   ...getStartedClaimSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,

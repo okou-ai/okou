@@ -1,3 +1,12 @@
+import {
+  wechatDeliveryTargetSchema,
+  type WechatDeliveryTarget,
+} from "./wechat-chat-callback-payload";
+import { loadWechatQueuedLaunchMaterial$ } from "./wechat-context.service";
+import {
+  sendWechatChatReply$,
+  type WechatReplyRequest,
+} from "./wechat-delivery.service";
 import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
@@ -272,6 +281,7 @@ const chatCallbackPayloadSchema = z
     feishuDelivery: feishuDeliveryTargetSchema.optional(),
     teamsDelivery: teamsDeliveryTargetSchema.optional(),
     discordDelivery: discordDeliveryTargetSchema.optional(),
+    wechatDelivery: wechatDeliveryTargetSchema.optional(),
     telegramDelivery: telegramDeliveryTargetSchema.optional(),
     agentphoneDelivery: agentphoneDeliveryTargetSchema.optional(),
   })
@@ -393,6 +403,7 @@ export interface CreateQueuedChatRunInput {
   readonly feishuDelivery?: FeishuDeliveryTarget;
   readonly teamsDelivery?: TeamsDeliveryTarget;
   readonly discordDelivery?: DiscordDeliveryTarget;
+  readonly wechatDelivery?: WechatDeliveryTarget;
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly autonomyBudget: number;
@@ -459,6 +470,18 @@ interface DiscordQueuedMessageAdmissionFailure {
   readonly error: QueuedMessageModelRouteError;
 }
 
+interface WechatQueuedMessageAdmissionFailure {
+  readonly kind: "wechat_admission_failure";
+  readonly orgId: string;
+  readonly userId: string;
+  readonly agentId: string;
+  readonly threadId: string;
+  readonly queuedMessage: QueuedUserMessage;
+  readonly triggerSource: QueuedUserMessageTriggerSource;
+  readonly wechatDelivery: WechatDeliveryTarget;
+  readonly error: QueuedMessageModelRouteError;
+}
+
 interface TelegramQueuedMessageAdmissionFailure {
   readonly kind: "telegram_admission_failure";
   readonly orgId: string;
@@ -489,6 +512,7 @@ export type QueuedMessageAdmissionFailure =
   | FeishuQueuedMessageAdmissionFailure
   | TeamsQueuedMessageAdmissionFailure
   | DiscordQueuedMessageAdmissionFailure
+  | WechatQueuedMessageAdmissionFailure
   | TelegramQueuedMessageAdmissionFailure
   | AgentPhoneQueuedMessageAdmissionFailure;
 
@@ -501,6 +525,7 @@ type CompletedChatCallbackResult =
       readonly feishuDeliveryCallbackId?: string;
       readonly teamsDeliveryCallbackId?: string;
       readonly discordReply?: DiscordReplyRequest;
+      readonly wechatReply?: WechatReplyRequest;
       readonly telegramDeliveryCallbackId?: string;
       readonly agentphoneDeliveryCallbackId?: string;
     }
@@ -514,6 +539,7 @@ type FailedChatCallbackResult =
       readonly feishuDeliveryCallbackId?: string;
       readonly teamsDeliveryCallbackId?: string;
       readonly discordReply?: DiscordReplyRequest;
+      readonly wechatReply?: WechatReplyRequest;
       readonly telegramDeliveryCallbackId?: string;
       readonly agentphoneDeliveryCallbackId?: string;
     }
@@ -525,6 +551,7 @@ interface TerminalChatCallbackWork {
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
   readonly discordReply?: DiscordReplyRequest;
+  readonly wechatReply?: WechatReplyRequest;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
   readonly runFinishedEvent?: ChatRunFinishedEvent;
@@ -552,6 +579,7 @@ export function queuedChatRunCallbackInputs(
     | "feishuDelivery"
     | "teamsDelivery"
     | "discordDelivery"
+    | "wechatDelivery"
     | "telegramDelivery"
     | "agentphoneDelivery"
   >,
@@ -567,6 +595,7 @@ export function queuedChatRunCallbackInputs(
         feishuDelivery: input.feishuDelivery,
         teamsDelivery: input.teamsDelivery,
         discordDelivery: input.discordDelivery,
+        wechatDelivery: input.wechatDelivery,
         telegramDelivery: input.telegramDelivery,
         agentphoneDelivery: input.agentphoneDelivery,
       },
@@ -968,6 +997,22 @@ async function discordReplyRequest(args: {
   };
 }
 
+function wechatReplyRequest(args: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly threadId: string;
+  readonly target: WechatDeliveryTarget;
+  readonly chatEventId: string;
+}): WechatReplyRequest {
+  return {
+    chatEventId: args.chatEventId,
+    chatThreadId: args.threadId,
+    userId: args.userId,
+    orgId: args.orgId,
+    target: args.target,
+  };
+}
+
 async function insertTelegramChatDeliveryCallback(args: {
   readonly db: ChatCallbackTransaction;
   readonly runId: string;
@@ -1046,6 +1091,7 @@ interface AssistantErrorEventArgs {
   readonly feishuDelivery?: FeishuDeliveryTarget;
   readonly teamsDelivery?: TeamsDeliveryTarget;
   readonly discordDelivery?: DiscordDeliveryTarget;
+  readonly wechatDelivery?: WechatDeliveryTarget;
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly sourceCallbackId: string;
@@ -1127,6 +1173,16 @@ async function insertAssistantErrorEventTransaction(
           chatEventId: event.id,
         })
       : undefined;
+  const wechatReply =
+    input.wechatDelivery && insertedEvent
+      ? wechatReplyRequest({
+          userId: input.userId,
+          orgId: input.orgId,
+          threadId: input.threadId,
+          target: input.wechatDelivery,
+          chatEventId: event.id,
+        })
+      : undefined;
   const telegramDeliveryCallbackId = input.telegramDelivery
     ? await insertTelegramChatDeliveryCallback({
         db: tx,
@@ -1151,6 +1207,7 @@ async function insertAssistantErrorEventTransaction(
     feishuDeliveryCallbackId,
     teamsDeliveryCallbackId,
     discordReply,
+    wechatReply,
     telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId,
   };
@@ -1200,6 +1257,7 @@ const insertAssistantErrorEvent$ = command(
       feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
       discordReply: inserted.discordReply,
+      wechatReply: inserted.wechatReply,
       telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     };
@@ -1300,6 +1358,7 @@ interface RunLifecycleMarkerArgs {
   readonly feishuDelivery?: FeishuDeliveryTarget;
   readonly teamsDelivery?: TeamsDeliveryTarget;
   readonly discordDelivery?: DiscordDeliveryTarget;
+  readonly wechatDelivery?: WechatDeliveryTarget;
   readonly telegramDelivery?: TelegramDeliveryTarget;
   readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
   readonly sourceCallbackId: string;
@@ -1310,6 +1369,7 @@ interface RunLifecycleDeliveryCallbacks {
   readonly feishuDeliveryCallbackId?: string;
   readonly teamsDeliveryCallbackId?: string;
   readonly discordReply?: DiscordReplyRequest;
+  readonly wechatReply?: WechatReplyRequest;
   readonly telegramDeliveryCallbackId?: string;
   readonly agentphoneDeliveryCallbackId?: string;
 }
@@ -1321,6 +1381,7 @@ function hasExternalNotificationDeliveryChannel(
     | "feishuDelivery"
     | "teamsDelivery"
     | "discordDelivery"
+    | "wechatDelivery"
     | "telegramDelivery"
     | "agentphoneDelivery"
   >,
@@ -1330,6 +1391,7 @@ function hasExternalNotificationDeliveryChannel(
     args.feishuDelivery ||
     args.teamsDelivery ||
     args.discordDelivery ||
+    args.wechatDelivery ||
     args.telegramDelivery ||
     args.agentphoneDelivery,
   );
@@ -1343,6 +1405,7 @@ function requiresIntegrationCompletionFallback(
     Boolean(
       args.teamsDelivery ||
       args.discordDelivery ||
+      args.wechatDelivery ||
       args.telegramDelivery ||
       args.agentphoneDelivery,
     )
@@ -1394,6 +1457,16 @@ async function registerRunLifecycleDeliveryCallbacks(
           chatEventId: deliveryEvent.id,
         })
       : undefined;
+  const wechatReply =
+    deliveryEvent && input.wechatDelivery && markerInserted
+      ? wechatReplyRequest({
+          userId: input.userId,
+          orgId: input.orgId,
+          threadId: input.threadId,
+          target: input.wechatDelivery,
+          chatEventId: deliveryEvent.id,
+        })
+      : undefined;
   const telegramDeliveryCallbackId =
     deliveryEvent && input.telegramDelivery
       ? await insertTelegramChatDeliveryCallback({
@@ -1419,6 +1492,7 @@ async function registerRunLifecycleDeliveryCallbacks(
     feishuDeliveryCallbackId,
     teamsDeliveryCallbackId,
     discordReply,
+    wechatReply,
     telegramDeliveryCallbackId,
     agentphoneDeliveryCallbackId,
   };
@@ -1541,6 +1615,7 @@ const insertRunLifecycleMarker$ = command(
       feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
       discordReply: inserted.discordReply,
+      wechatReply: inserted.wechatReply,
       telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     };
@@ -1732,6 +1807,7 @@ const handleCompletedChatCallback$ = command(
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
       readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly wechatDelivery?: WechatDeliveryTarget;
       readonly telegramDelivery?: TelegramDeliveryTarget;
       readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
       readonly sourceCallbackId: string;
@@ -1759,6 +1835,7 @@ const handleCompletedChatCallback$ = command(
           args.slackDelivery !== undefined ||
           args.teamsDelivery !== undefined ||
           args.discordDelivery !== undefined ||
+          args.wechatDelivery !== undefined ||
           args.telegramDelivery !== undefined ||
           args.agentphoneDelivery !== undefined,
         timing: args.timing,
@@ -1791,6 +1868,7 @@ const handleCompletedChatCallback$ = command(
           feishuDelivery: args.feishuDelivery,
           teamsDelivery: args.teamsDelivery,
           discordDelivery: args.discordDelivery,
+          wechatDelivery: args.wechatDelivery,
           telegramDelivery: args.telegramDelivery,
           agentphoneDelivery: args.agentphoneDelivery,
           sourceCallbackId: args.sourceCallbackId,
@@ -1841,6 +1919,7 @@ const handleCompletedChatCallback$ = command(
       feishuDeliveryCallbackId: inserted.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: inserted.teamsDeliveryCallbackId,
       discordReply: inserted.discordReply,
+      wechatReply: inserted.wechatReply,
       telegramDeliveryCallbackId: inserted.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: inserted.agentphoneDeliveryCallbackId,
     };
@@ -1969,6 +2048,7 @@ const handleFailedChatCallback$ = command(
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
       readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly wechatDelivery?: WechatDeliveryTarget;
       readonly telegramDelivery?: TelegramDeliveryTarget;
       readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
       readonly sourceCallbackId: string;
@@ -2004,6 +2084,7 @@ const handleFailedChatCallback$ = command(
         feishuDelivery: args.feishuDelivery,
         teamsDelivery: args.teamsDelivery,
         discordDelivery: args.discordDelivery,
+        wechatDelivery: args.wechatDelivery,
         telegramDelivery: args.telegramDelivery,
         agentphoneDelivery: args.agentphoneDelivery,
         sourceCallbackId: args.sourceCallbackId,
@@ -2104,6 +2185,7 @@ type QueuedIntegrationDeliveries = Pick<
   | "feishuDelivery"
   | "teamsDelivery"
   | "discordDelivery"
+  | "wechatDelivery"
   | "telegramDelivery"
   | "agentphoneDelivery"
 >;
@@ -2172,6 +2254,7 @@ export type QueuedRunAdmissionFailureInput = Pick<
   | "feishuDelivery"
   | "teamsDelivery"
   | "discordDelivery"
+  | "wechatDelivery"
   | "telegramDelivery"
   | "agentphoneDelivery"
 >;
@@ -2205,6 +2288,7 @@ function channelQueuedMessageAdmissionFailure(
     | "feishuDelivery"
     | "teamsDelivery"
     | "discordDelivery"
+    | "wechatDelivery"
     | "telegramDelivery"
     | "agentphoneDelivery"
   >,
@@ -2251,6 +2335,16 @@ function channelQueuedMessageAdmissionFailure(
         ...common,
         discordDelivery: requiredQueuedDelivery(
           delivery.discordDelivery,
+          contextType,
+        ),
+      };
+    }
+    case "wechat": {
+      return {
+        kind: "wechat_admission_failure",
+        ...common,
+        wechatDelivery: requiredQueuedDelivery(
+          delivery.wechatDelivery,
           contextType,
         ),
       };
@@ -2323,6 +2417,7 @@ type QueuedAdmissionFailureChannel = QueuedAdmissionFailureDelivery &
         readonly target: TeamsDeliveryTarget;
       }
     | { readonly kind: "Discord"; readonly target: DiscordDeliveryTarget }
+    | { readonly kind: "Wechat"; readonly target: WechatDeliveryTarget }
     | {
         readonly kind: "Telegram";
         readonly agentId: string;
@@ -2369,6 +2464,9 @@ function queuedAdmissionFailureChannel(
     }
     case "discord_admission_failure": {
       return { ...base, kind: "Discord", target: failure.discordDelivery };
+    }
+    case "wechat_admission_failure": {
+      return { ...base, kind: "Wechat", target: failure.wechatDelivery };
     }
     case "telegram_admission_failure": {
       return {
@@ -2433,6 +2531,14 @@ const sendQueuedAdmissionFailure$ = command(
         await set(
           sendDiscordChatReply$,
           db,
+          { ...base, target: channel.target },
+          signal,
+        );
+        return;
+      }
+      case "Wechat": {
+        await set(
+          sendWechatChatReply$,
           { ...base, target: channel.target },
           signal,
         );
@@ -2634,6 +2740,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
       readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly wechatDelivery?: WechatDeliveryTarget;
       readonly telegramDelivery?: TelegramDeliveryTarget;
       readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
       readonly sourceCallbackId: string;
@@ -2659,6 +2766,7 @@ const prepareCompletedTerminalChatCallbackWork$ = command(
       feishuDeliveryCallbackId: completed.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: completed.teamsDeliveryCallbackId,
       discordReply: completed.discordReply,
+      wechatReply: completed.wechatReply,
       telegramDeliveryCallbackId: completed.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: completed.agentphoneDeliveryCallbackId,
       runFinishedEvent: {
@@ -2694,6 +2802,7 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       readonly feishuDelivery?: FeishuDeliveryTarget;
       readonly teamsDelivery?: TeamsDeliveryTarget;
       readonly discordDelivery?: DiscordDeliveryTarget;
+      readonly wechatDelivery?: WechatDeliveryTarget;
       readonly telegramDelivery?: TelegramDeliveryTarget;
       readonly agentphoneDelivery?: AgentPhoneDeliveryTarget;
       readonly sourceCallbackId: string;
@@ -2732,6 +2841,7 @@ const prepareFailedTerminalChatCallbackWork$ = command(
       feishuDeliveryCallbackId: failed.feishuDeliveryCallbackId,
       teamsDeliveryCallbackId: failed.teamsDeliveryCallbackId,
       discordReply: failed.discordReply,
+      wechatReply: failed.wechatReply,
       telegramDeliveryCallbackId: failed.telegramDeliveryCallbackId,
       agentphoneDeliveryCallbackId: failed.agentphoneDeliveryCallbackId,
       runFinishedEvent: {
@@ -2868,6 +2978,7 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
       readonly feishuDeliveryCallbackId: string | undefined;
       readonly teamsDeliveryCallbackId: string | undefined;
       readonly discordReply: DiscordReplyRequest | undefined;
+      readonly wechatReply: WechatReplyRequest | undefined;
       readonly telegramDeliveryCallbackId: string | undefined;
       readonly agentphoneDeliveryCallbackId: string | undefined;
     },
@@ -2965,6 +3076,9 @@ const dispatchCanonicalDeliveryCallbacks$ = command(
         });
       }
     }
+    if (args.wechatReply) {
+      await set(sendWechatChatReply$, args.wechatReply, signal);
+    }
     if (args.discordReply) {
       await set(sendDiscordChatReply$, args.db, args.discordReply, signal);
     }
@@ -2985,6 +3099,7 @@ function terminalIntegrationDeliveries(
   | "feishuDelivery"
   | "teamsDelivery"
   | "discordDelivery"
+  | "wechatDelivery"
   | "telegramDelivery"
   | "agentphoneDelivery"
 > {
@@ -2993,6 +3108,7 @@ function terminalIntegrationDeliveries(
     feishuDelivery: payload.feishuDelivery,
     teamsDelivery: payload.teamsDelivery,
     discordDelivery: payload.discordDelivery,
+    wechatDelivery: payload.wechatDelivery,
     telegramDelivery: payload.telegramDelivery,
     agentphoneDelivery: payload.agentphoneDelivery,
   };
@@ -3073,6 +3189,7 @@ const finishTerminalChatCallbackAfterProjection$ = command(
         feishuDeliveryCallbackId: args.work.feishuDeliveryCallbackId,
         teamsDeliveryCallbackId: args.work.teamsDeliveryCallbackId,
         discordReply: args.work.discordReply,
+        wechatReply: args.work.wechatReply,
         telegramDeliveryCallbackId: args.work.telegramDeliveryCallbackId,
         agentphoneDeliveryCallbackId: args.work.agentphoneDeliveryCallbackId,
       },
@@ -3373,14 +3490,16 @@ const loadQueuedRejectionChannel$ = command(
     signal: AbortSignal,
   ): Promise<QueuedAdmissionFailureChannel | undefined> => {
     const contextType = head.contextType;
-    if (
-      contextType !== "slack" &&
-      contextType !== "feishu" &&
-      contextType !== "teams" &&
-      contextType !== "discord" &&
-      contextType !== "telegram" &&
-      contextType !== "agentphone"
-    ) {
+    const deliveryTypes: readonly string[] = [
+      "slack",
+      "feishu",
+      "teams",
+      "discord",
+      "wechat",
+      "telegram",
+      "agentphone",
+    ];
+    if (contextType === null || !deliveryTypes.includes(contextType)) {
       return undefined;
     }
     const db = set(writeDb$);
@@ -3435,6 +3554,16 @@ const loadQueuedRejectionChannel$ = command(
         );
         return material
           ? { ...delivery, kind: "Discord", target: material.discordDelivery }
+          : undefined;
+      }
+      case "wechat": {
+        const material = await set(
+          loadWechatQueuedLaunchMaterial$,
+          source,
+          signal,
+        );
+        return material
+          ? { ...delivery, kind: "Wechat", target: material.wechatDelivery }
           : undefined;
       }
       case "telegram": {

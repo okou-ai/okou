@@ -1,3 +1,7 @@
+import {
+  loadWechatQueuedLaunchMaterial$,
+  WechatLaunchUnavailableError,
+} from "./wechat-context.service";
 import { command } from "ccstate";
 import { ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -37,7 +41,13 @@ type ChatEventContextType = NonNullable<
 >;
 
 type ContextBackedContextType =
-  "slack" | "feishu" | "teams" | "discord" | "telegram" | "agentphone";
+  | "wechat"
+  | "slack"
+  | "feishu"
+  | "teams"
+  | "discord"
+  | "telegram"
+  | "agentphone";
 
 interface ActiveInputPromptEvent {
   readonly id: string;
@@ -57,6 +67,7 @@ const CONTEXT_BACKED_CONTEXT_TYPES: readonly ContextBackedContextType[] = [
   "feishu",
   "teams",
   "discord",
+  "wechat",
   "telegram",
   "agentphone",
 ];
@@ -220,6 +231,9 @@ const loadIntegrationPromptMaterial$ = command(
       case "feishu": {
         return await loadFeishuQueuedLaunchMaterial(db, loaderArgs);
       }
+      case "wechat": {
+        return await set(loadWechatQueuedLaunchMaterial$, loaderArgs, signal);
+      }
       case "discord": {
         return await set(
           loadDiscordQueuedLaunchMaterial$,
@@ -282,6 +296,9 @@ const materializeActiveInputPrompt$ = command(
     );
     if (args.event.contextType === "discord" && !integration) {
       throw new DiscordQueuedLaunchUnavailableError();
+    }
+    if (args.event.contextType === "wechat" && !integration) {
+      throw new WechatLaunchUnavailableError();
     }
     if (isContextBackedContextType(args.event.contextType) && !integration) {
       throw new Error(

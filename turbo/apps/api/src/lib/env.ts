@@ -162,6 +162,9 @@ const SCHEMA = {
     .string()
     .regex(/^[a-fA-F0-9]{64}$/)
     .optional(),
+  WECHAT_GATEWAY_URL: z.string().url().optional(),
+  WECHAT_GATEWAY_SECRET: z.string().optional(),
+  WECHAT_GATEWAY_CONTROL_SECRET: z.string().optional(),
   DISCORD_GATEWAY_SECRET: z.string().min(32).optional(),
   MICROSOFT_OAUTH_CLIENT_ID: z.string().min(1).optional(),
   MICROSOFT_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),

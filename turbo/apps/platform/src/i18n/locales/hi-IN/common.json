@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "टेस्ट",
       "web": "वेब",
-      "webhook": "वेबहुक"
+      "webhook": "वेबहुक",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "रद्द कर दिया गया",
@@ -2012,7 +2013,8 @@
       "openTelegramMessage": "Telegram में मूल संदेश खोलें",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -6574,6 +6576,30 @@
     "telegram": {
       "description": "एजेंटों को Telegram संदेश रूट करें",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "सत्यापन कोड",
+      "connect": "कनेक्ट करें",
+      "connected": "कनेक्टेड",
+      "creating": "QR कोड बनाया जा रहा है…",
+      "description": "WeChat पर अपने एजेंट से चैट करें।",
+      "disconnect": "डिस्कनेक्ट करें",
+      "expired": "इस QR कोड की समय सीमा समाप्त हो गई है। नया बनाएँ।",
+      "failed": "WeChat से कनेक्ट नहीं हो सका। फिर से कोशिश करें।",
+      "instructions": "WeChat से यह QR कोड स्कैन करें, फिर अपने फ़ोन पर पुष्टि करें।",
+      "name": "WeChat",
+      "reconnect": "फिर से कनेक्ट करें",
+      "reconnect_required": "फिर से कनेक्ट करने के लिए दोबारा स्कैन करें।",
+      "restart_required": "यह WeChat खाता पहले से जुड़ा है। फिर से कनेक्ट करने के लिए नया QR कोड बनाएँ।",
+      "retry": "नया QR कोड बनाएँ",
+      "scanned": "स्कैन हो गया। अपने फ़ोन पर पुष्टि करें।",
+      "scope": "केवल इस एजेंट को भेजे गए आपके सीधे संदेश कनेक्ट होते हैं। टेक्स्ट संदेश समर्थित हैं।",
+      "title": "WeChat कनेक्ट करें",
+      "unavailable": "कनेक्शन अभी कॉन्फ़िगर नहीं किया गया है।",
+      "verification_blocked": "बहुत अधिक प्रयास हुए। नया QR कोड बनाएँ।",
+      "verification_required": "WeChat में दिखाया गया सत्यापन कोड दर्ज करें।",
+      "verify": "सत्यापित करें",
+      "waiting": "स्कैन का इंतज़ार है…"
     }
   }
 }

@@ -175,7 +175,7 @@ function capturedIdentityCtes(): SQL {
         CASE
           WHEN trigger_source = 'web' THEN 'chat'
           WHEN trigger_source IN ('automation-schedule', 'automation-event') THEN 'automation'
-          WHEN trigger_source IN ('slack', 'discord', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN trigger_source
+          WHEN trigger_source IN ('slack', 'discord', 'wechat', 'teams', 'telegram', 'email', 'agentphone', 'github', 'agent') THEN trigger_source
           ELSE 'other'
         END,
         chat_thread_id,

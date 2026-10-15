@@ -335,7 +335,8 @@
       "telegram": "Telegram",
       "test": "テスト",
       "web": "ウェブ",
-      "webhook": "Webhook"
+      "webhook": "Webhook",
+      "wechat": "WeChat"
     },
     "statuses": {
       "cancelled": "キャンセルされました",
@@ -2005,7 +2006,8 @@
       "openTelegramMessage": "Telegram で元のメッセージを開く",
       "slack": "Slack",
       "teams": "Microsoft Teams",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "wechat": "WeChat"
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
@@ -6547,6 +6549,30 @@
     "telegram": {
       "description": "Telegram メッセージをエージェントにルーティングする",
       "title": "Telegram"
+    },
+    "wechat": {
+      "code": "確認コード",
+      "connect": "接続",
+      "connected": "接続済み",
+      "creating": "QRコードを作成中…",
+      "description": "WeChatでエージェントとチャットできます。",
+      "disconnect": "接続解除",
+      "expired": "このQRコードは期限切れです。新しく作成してください。",
+      "failed": "WeChatに接続できませんでした。もう一度お試しください。",
+      "instructions": "WeChatでこのQRコードをスキャンし、スマートフォンで確認してください。",
+      "name": "WeChat",
+      "reconnect": "再接続",
+      "reconnect_required": "もう一度スキャンして再接続してください。",
+      "restart_required": "このWeChatアカウントはすでに連携されています。再接続するには新しいQRコードを作成してください。",
+      "retry": "新しいQRコードを作成",
+      "scanned": "スキャンしました。スマートフォンで確認してください。",
+      "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
+      "title": "WeChatに接続",
+      "unavailable": "接続はまだ設定されていません。",
+      "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
+      "verification_required": "WeChatに表示された確認コードを入力してください。",
+      "verify": "確認",
+      "waiting": "スキャンを待っています…"
     }
   }
 }
