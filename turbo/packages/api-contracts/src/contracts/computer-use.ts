@@ -325,8 +325,9 @@ const computerUseCommandResultSchema = z.record(z.string(), z.unknown());
  * only a private object pointer. Unrecognized strings can still be persisted
  * but are not downloadable as screenshots. The stored pointer carries
  * `bucket`/`key`; the client-facing pointer omits
- * them so internal storage layout never leaves the API. After retention
- * deletes the object the pointer is rewritten to `{ type: "expired" }`.
+ * them so internal storage layout never leaves the API. Retention deletes
+ * commands together with their objects. Existing `{ type: "expired" }`
+ * pointers from screenshot-only retention remain readable until command cleanup.
  */
 export interface StoredScreenshotPointer {
   readonly type: "s3";

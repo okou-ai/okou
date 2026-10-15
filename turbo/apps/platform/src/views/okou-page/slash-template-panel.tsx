@@ -188,14 +188,15 @@ function SlashTemplateDetailPane({
       data-category={category}
     >
       {/*
-        No bottom padding: the covers scroll all the way to the panel's bottom
-        edge, so a half-visible row reads as more content rather than sitting
-        above a white gutter. The trailing space lives inside the scroller.
+        No top or bottom padding: the covers scroll all the way to the panel's
+        top and bottom edges, so a half-visible row reads as more content
+        rather than being cut off by a white gutter. The leading and trailing
+        space live inside the scroller.
       */}
       <div
         // The rows set the menu height; previews scroll within that height
         // without moving the menu when the pointer switches between rows.
-        className="absolute inset-0 flex flex-col px-4 pt-4"
+        className="absolute inset-0 flex flex-col px-4"
       >
         {/*
           The scroller reaches the pane's right edge and pads its content back,
@@ -205,11 +206,11 @@ function SlashTemplateDetailPane({
           so its trailing padding is an ordinary block margin every engine
           measures, not padding on a scroll container.
 
-          The 1px top and left padding is what keeps the cards' hairline visible.
-          `ring` is an outset shadow and `overflow-y-auto` clips to the padding
-          box on both axes, so without it the top row and the left column lose
-          the edge of their ring. `-ml-px` cancels the left padding. The bottom
-          stays unpadded, since the covers are meant to bleed off that edge.
+          The 16px top inset is padding on the scroller, not on the pane, so
+          the first row rests 16px down but scrolls up to the pane's top edge.
+          The 1px left padding keeps the left column's hairline visible: `ring`
+          is an outset shadow and `overflow-y-auto` clips to the padding box on
+          both axes. `-ml-px` cancels it.
         */}
         {/*
           Keyed by category so each type gets its own scroller. The pane stays
@@ -221,7 +222,7 @@ function SlashTemplateDetailPane({
         <div
           key={category}
           data-slot="slash-template-covers"
-          className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-px"
+          className="-ml-px -mr-4 min-h-0 flex-1 overflow-y-auto pl-px pr-4 pt-4"
         >
           {/*
             Illustration uses native Grid Lanes when available, with multi-column

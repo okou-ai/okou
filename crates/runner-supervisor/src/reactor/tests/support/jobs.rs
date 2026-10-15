@@ -36,6 +36,7 @@ pub(in super::super) async fn shutdown(
         "run should finish within 10s",
     )
     .await;
+    env.shutdown_startup_api().await;
 }
 
 /// ExecutionContext with a resume_session for idle pool testing.

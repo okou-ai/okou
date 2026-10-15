@@ -1,4 +1,7 @@
-import { vncConnectionObservationSchema } from "@okouai/api-contracts/contracts/vnc-connection-observations";
+import {
+  vncConnectionObservationSchema,
+  VNC_NATIVE_CONNECTION_FAILURE_REASONS,
+} from "@okouai/api-contracts/contracts/vnc-connection-observations";
 import type { RunnerVncObservationRequest } from "@okouai/api-contracts/contracts/runner-vnc";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -184,6 +187,16 @@ function transportObservationAuthority(input: ObservationInput, owner: Owner) {
   const query = new QueryBuilder();
   const transport = input.expectedTransport;
   const kdc = input.expectedKdcTransport;
+  // B accepts prepared protocol snapshots before C (#40224) adds native storage/authority.
+  if (
+    VNC_NATIVE_CONNECTION_FAILURE_REASONS.some((reason) => {
+      return reason === input.failureReason;
+    }) ||
+    (transport.type !== "direct" && transport.type !== "ssh") ||
+    (kdc !== undefined && kdc.type !== "direct" && kdc.type !== "ssh")
+  ) {
+    return sql`false`;
+  }
   return and(
     eq(vncConnections.transportType, transport.type),
     transport.type === "ssh"

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 
 export const CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH = 4_096;
 // Service-token values become HTTP headers. Preserve bytes, but reject controls,
@@ -35,7 +36,11 @@ const sshHostReferenceSchema = z
   .object({ id: z.uuid(), displayName: z.string() })
   .strict();
 export const cloudflareAccessConfigSchema = cloudflareAccessConfigMetadataSchema
-  .extend({ sshHosts: z.array(sshHostReferenceSchema) })
+  .extend({
+    sshHosts: z.array(sshHostReferenceSchema),
+    // B reader preparation; G emits this canonically and H (#40229) requires it.
+    vncHosts: z.array(vncNetworkHostReferenceSchema).optional(),
+  })
   .strict();
 export const scopedCloudflareAccessConfigSchema =
   cloudflareAccessConfigSchema.extend({
@@ -77,7 +82,7 @@ const deleteBody = z
     impactSnapshot: impactSnapshot.optional(),
   })
   .strict();
-// Only aggregate SSH host usage is exposed to the reviewing administrator.
+// Only aggregate host usage is exposed to the reviewing administrator.
 const impactPreviewSchema = z
   .object({
     expectedRevision: revision,

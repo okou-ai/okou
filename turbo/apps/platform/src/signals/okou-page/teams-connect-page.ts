@@ -5,7 +5,7 @@ import { TeamsConnectPage } from "../../views/okou-page/teams-connect-page.tsx";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
-import { initTeamsConnectPage$ } from "./teams-connect-signals.ts";
+import { watchTeamsConnection$ } from "./teams.ts";
 
 export const setupTeamsConnectPage$ = command(
   async ({ set }, signal: AbortSignal) => {
@@ -19,7 +19,7 @@ export const setupTeamsConnectPage$ = command(
 
     await Promise.all([
       set(hideAppSkeleton$, signal),
-      set(initTeamsConnectPage$, signal),
+      set(watchTeamsConnection$, signal),
     ]);
   },
 );

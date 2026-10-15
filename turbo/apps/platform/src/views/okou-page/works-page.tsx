@@ -1,4 +1,3 @@
-import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { ROUTES } from "../../signals/route-paths.ts";
 import type { ReactNode } from "react";
 import {
@@ -68,6 +67,9 @@ import {
 } from "../../signals/okou-page/telegram.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
+import { TeamsStatusRefresh } from "./teams-status-refresh.tsx";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -699,7 +701,7 @@ function teamsCardDescription(args: {
 function TeamsCard({ displayName }: { displayName: string }) {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
-  const teamsDataLoadable = useLastLoadable(teamsOrgData$);
+  const teamsDataLoadable = useLoadable(teamsOrgData$);
   const teamsData =
     teamsDataLoadable.state === "hasData" ? teamsDataLoadable.data : null;
   const [disconnectLoadable, disconnect] = useLoadableSet(disconnectTeamsOrg$);
@@ -711,16 +713,23 @@ function TeamsCard({ displayName }: { displayName: string }) {
   const showUninstallDialog = useGet(showTeamsUninstallDialog$);
   const setShowUninstallDialog = useSet(setShowTeamsUninstallDialog$);
 
-  const isConnected = teamsData?.isConnected ?? false;
+  const isConnected =
+    teamsData?.isConnected === true &&
+    teamsData.isInstalled &&
+    teamsData.pendingInstallation !== true;
   const isInstalled = teamsData?.isInstalled ?? false;
   const isAdmin = teamsData?.isAdmin ?? false;
   const connectedDetail = teamsData?.teamName ?? teamsData?.tenantName;
   const permissionMismatch = teamsData?.permissionMismatch === true;
-  const description = teamsCardDescription({
-    isInstalled,
-    isConnected,
-    isAdmin,
-  });
+  const description = teamsData
+    ? teamsCardDescription({ isInstalled, isConnected, isAdmin })
+    : teamsDataLoadable.state === "hasError"
+      ? t(($) => {
+          return $.connectors.providerConnect.teams.statusFailed;
+        })
+      : t(($) => {
+          return $.connectors.providerConnect.common.checkingTitle;
+        });
 
   return (
     <>
@@ -744,8 +753,8 @@ function TeamsCard({ displayName }: { displayName: string }) {
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}
-            installUrl={teamsData?.connectUrl ?? teamsData?.installUrl}
-            connectUrl={teamsData?.connectUrl}
+            installUrl={teamsData ? teamsEntryUrl(teamsData) : null}
+            connectUrl={teamsData ? teamsEntryUrl(teamsData) : null}
             connectedDetail={connectedDetail}
             connectedTestId="teams-connected-indicator"
             installTestId="teams-install-button"
@@ -772,9 +781,15 @@ function TeamsCard({ displayName }: { displayName: string }) {
           />
         </div>
 
+        <div className="px-4 pb-3">
+          <TeamsStatusRefresh />
+        </div>
+
         <PermissionWarning
           reinstallUrl={
-            isAdmin && permissionMismatch ? teamsData?.reinstallUrl : null
+            isAdmin && permissionMismatch
+              ? INTEGRATION_SETTINGS_PATHS.teams
+              : null
           }
           message={t(($) => {
             return $.works.teams.permissionsUpdated;

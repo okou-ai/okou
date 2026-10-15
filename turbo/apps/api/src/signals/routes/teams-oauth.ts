@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command } from "ccstate";
 import { teamsOauthContract } from "@okouai/api-contracts/contracts/teams-oauth";
 import { z } from "zod";
@@ -87,7 +88,9 @@ function appUrl(path: string): string {
 
 function settingsErrorRedirect(message: string): Response {
   return redirectResponse(
-    appUrl(`/settings/teams?error=${encodeURIComponent(message)}`),
+    appUrl(
+      `${INTEGRATION_SETTINGS_PATHS.teams}?error=${encodeURIComponent(message)}`,
+    ),
   );
 }
 
@@ -104,7 +107,9 @@ function settingsSuccessRedirect(args: {
     params.set("teamName", args.teamName);
   }
   params.set("botName", teamsBotDisplayName(args.botName));
-  return redirectResponse(appUrl(`/settings/teams?${params.toString()}`));
+  return redirectResponse(
+    appUrl(`${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`),
+  );
 }
 
 function teamsInstallRedirect(tenantId: string, state: OAuthState): Response {
@@ -112,7 +117,9 @@ function teamsInstallRedirect(tenantId: string, state: OAuthState): Response {
   // bridge only after those readers and retained rollback APIs drain (#40196).
   if (state.completion === "settings") {
     const params = new URLSearchParams({ status: "pending", tenantId });
-    return noStoreRedirect(appUrl(`/settings/teams?${params.toString()}`));
+    return noStoreRedirect(
+      appUrl(`${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`),
+    );
   }
   const installUrl = buildTeamsInstallUrl(tenantId);
   if (!installUrl) {

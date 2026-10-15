@@ -211,6 +211,11 @@ pub(super) fn credential(
                     generation,
                 }
             }
+            // Prepared contract only; F owns native KDC implementation/advertisement.
+            ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::CloudflareAccess { .. }
+            | ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport::Tailscale { .. } => {
+                return Err(Failure::Authority);
+            }
         };
         let lifetime = kdc.ticket_lifetime_seconds;
         let renewable = kdc.renewable_lifetime_seconds;

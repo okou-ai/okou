@@ -251,6 +251,9 @@ pub(super) fn parse_transport(
                 generation,
             })
         }
+        // B prepares the private contract before E implements/advertises native RFB.
+        ResolveResponseResolvedTransportTransport::CloudflareAccess { .. }
+        | ResolveResponseResolvedTransportTransport::Tailscale { .. } => Err(Failure::Authority),
     }
 }
 
@@ -1473,6 +1476,10 @@ mod rsa_aes_tests {
                 }
                 ResolveRequestSupportedProfileTransportType::Ssh => {
                     json!({"type":"ssh","connectionId":"10000000-0000-4000-8000-000000000001","generation":1})
+                }
+                ResolveRequestSupportedProfileTransportType::CloudflareAccess
+                | ResolveRequestSupportedProfileTransportType::Tailscale => {
+                    panic!("native profiles must not be advertised before implementation")
                 }
             };
             let response: ResolveResponse = serde_json::from_value(json!({"outcome":"resolved_rsa_aes","host":"127.0.0.1","port":5900,"generation":1,"transport":transport,"authentication":authentication,"security":{"type":mode,"serverKeySha256":"ab".repeat(32)}})).unwrap();

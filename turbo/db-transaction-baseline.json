@@ -422,11 +422,6 @@
       "owner": "finalizeReconfiguration$"
     },
     {
-      "id": "TX-0200",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "persistPausedReconfiguration$"
-    },
-    {
       "id": "TX-0201",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "stageAutomationStructureTransition$"
@@ -435,11 +430,6 @@
       "id": "TX-0202",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "finalizeAutomationStructureTransition$"
-    },
-    {
-      "id": "TX-0203",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "markActiveAutomationFailed$"
     },
     {
       "id": "TX-0204",

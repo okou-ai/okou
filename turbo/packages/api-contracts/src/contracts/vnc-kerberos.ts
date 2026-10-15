@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { vncKdcTransportMetadataSchema } from "./vnc-transport";
 
 export const KERBEROS_INPUT_MAX_BYTES = 65_536;
 export const KERBEROS_INPUT_MAX_BASE64 = 87_384;
@@ -128,3 +129,7 @@ export const kerberosKdcSchema = z
   })
   .strict();
 export type KerberosKdc = z.infer<typeof kerberosKdcSchema>;
+
+export const kerberosKdcMetadataSchema = kerberosKdcSchema.extend({
+  transport: vncKdcTransportMetadataSchema,
+});

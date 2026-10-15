@@ -233,6 +233,33 @@ describe("private Runner VNC authority", () => {
     return result.body.observations;
   }
 
+  it("does not record prepared native snapshots against current Direct/SSH storage", async () => {
+    mockNow(new Date("2026-10-14T00:00:30.000Z"));
+    const f = await claimedFixture();
+    for (const type of ["cloudflare_access", "tailscale"] as const) {
+      const transport = { type, configId: randomUUID(), generation: 1 };
+      await expect(
+        observe(f, { expectedTransport: transport }),
+      ).resolves.toStrictEqual({ outcome: "ignored" });
+      await expect(
+        observe(f, { expectedKdcTransport: transport }),
+      ).resolves.toStrictEqual({ outcome: "ignored" });
+    }
+    for (const failureReason of [
+      "access_rejected",
+      "access_tls_failure",
+      "access_protocol_failure",
+      "origin_tls_failure",
+      "tailscale_unavailable",
+    ] as const) {
+      await expect(observe(f, { failureReason })).resolves.toStrictEqual({
+        outcome: "ignored",
+      });
+    }
+    await expect(observations(f)).resolves.toStrictEqual([]);
+    await expect(observe(f)).resolves.toStrictEqual({ outcome: "recorded" });
+  });
+
   it("records bounded owner evidence, recovers and ignores reordered, duplicate and future VNC observations", async () => {
     mockNow(new Date("2026-10-14T00:00:30.000Z"));
     const f = await claimedFixture();

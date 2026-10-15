@@ -144,6 +144,38 @@ for (const kind of ["cloudflare-access", "tailscale"] as const) {
       noCredentials();
     });
 
+    it("preserves VNC roles and protocol identity while stripping nested provider secrets", async () => {
+      server.use(
+        http.get(url, () => {
+          return HttpResponse.json({
+            configs: [
+              {
+                ...config(),
+                vncHosts: [
+                  {
+                    id: HOST_ID,
+                    displayName: "VNC reference",
+                    roles: ["rfb", "kdc"],
+                    credentials,
+                    clientSecret: SECRET,
+                  },
+                ],
+              },
+            ],
+          });
+        }),
+      );
+      await run("list", "--json");
+      const result = JSON.parse(String(log.mock.calls[0]?.[0]));
+      expect(result.configs[0].sshHosts).toEqual([
+        { id: HOST_ID, displayName: "SSH reference" },
+      ]);
+      expect(result.configs[0].vncHosts).toEqual([
+        { id: HOST_ID, displayName: "VNC reference", roles: ["rfb", "kdc"] },
+      ]);
+      noCredentials();
+    });
+
     it("creates a default UUID using only POST with credentials in the JSON body", async () => {
       const body = {
         name: "Work",

@@ -6,7 +6,6 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, inArray, isNotNull, or, type SQL } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
-import type { ReadonlyDb } from "../external/db";
 
 const L = logger("connector-account-resolution");
 
@@ -192,33 +191,6 @@ function resolved(
   };
 }
 
-export async function resolveConnectorAccounts(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly requests: readonly ConnectorAccountResolutionRequest[];
-  },
-): Promise<ReadonlyMap<string, ConnectorAccountResolution>> {
-  const plan = connectorAccountResolutionReadPlan(args);
-  if (plan.requests.length === 0) {
-    return new Map();
-  }
-  const [exactRows, defaultRows] = await Promise.all([
-    plan.exactWhere
-      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
-      : [],
-    plan.defaultWhere
-      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
-      : [],
-  ]);
-  return connectorAccountResolutionsFromRows({
-    requests: plan.requests,
-    exactRows,
-    defaultRows,
-  });
-}
-
 export function connectorAccountResolutionsFromRows(args: {
   readonly requests: readonly ConnectorAccountResolutionRequest[];
   readonly exactRows: readonly ConnectorAccountIdentityRow[];
@@ -306,27 +278,6 @@ export function connectorAccountResolutionsFromRows(args: {
     ...outcomeCounts,
   });
   return resolutions;
-}
-
-export async function resolveConnectorAccount(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly request: ConnectorAccountResolutionRequest;
-  },
-): Promise<ConnectorAccountResolution> {
-  const key = connectorAccountTargetKey(args.request.target);
-  const resolutions = await resolveConnectorAccounts(db, {
-    orgId: args.orgId,
-    userId: args.userId,
-    requests: [args.request],
-  });
-  const resolution = resolutions.get(key);
-  if (!resolution) {
-    throw new Error("Expected one connector account resolution");
-  }
-  return resolution;
 }
 
 export function resolvedConnectorAccountIdsByTarget(
