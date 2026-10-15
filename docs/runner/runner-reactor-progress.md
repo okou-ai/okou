@@ -215,14 +215,22 @@ remain periodic GC policy, not a strict per-promotion whole-cache admission
 bound. Profile-bound image eligibility, fresh allocation/reserve and cross-device
 copy headroom remain mandatory.
 
-Publication gives observed capacity contention a bounded asynchronous retry
-before staging, while retaining its entry lock. A capacity owner must never wait
-for an entry lock. This retry has a separate budget from startup's short entry
-wait and immediate-fallback policy. Proven guest exit releases healthy
-reclamation CPU permits before publication, but the entry and applicable logical
-lease remain owned until their cleanup contract completes. Waiting can therefore
-affect same-key checkout, resource-limited blank refill and joined shutdown; its
-contention deadline does not bound filesystem I/O.
+Stopped publishers share one fair process-local publication permit, separate
+from Guest reclamation admission. They retain entry ownership while queued for
+up to 30 seconds before staging. Admission timeout leaves the original context
+untouched and reports `publication_admission_timeout`; ordinary abandonment and
+required-saving recovery retain their existing policies. This initial retention
+cap is not a measured optimum. Only the admitted publisher starts the existing
+250 ms observed capacity-flock contention retry. Other processes and GC still
+compete through that flock; checkout never joins the publication queue.
+
+Publication retains its local permit through the existing commit or refusal.
+A capacity owner must never wait for an entry lock. This retry has a separate
+budget from startup's short entry wait and immediate-fallback policy. Proven
+guest exit releases healthy reclamation CPU permits before publication, but the
+entry and applicable logical lease remain owned until their cleanup contract
+completes. Waiting can therefore affect same-key checkout, resource-limited blank
+refill and joined shutdown; its contention deadline does not bound filesystem I/O.
 
 Checkout protects and examines the requested entry before considering disk
 pressure, with the existing short entry wait or immediate fallback. It never
