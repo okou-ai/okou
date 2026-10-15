@@ -521,12 +521,12 @@ async fn peer_closing_during_maintenance_releases_filesystem_state() {
         entered.send(()).unwrap();
         gate.recv_timeout(Duration::from_secs(5)).unwrap();
     }));
-    let mut fixture = PeerFixture::new(Arc::new(HomeFiles {
+    let mut fixture = PeerFixture::new(Arc::new(GuestFiles {
         filesystem: filesystem.clone(),
         owner: Some(Arc::clone(&active)),
     }))
     .await;
-    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":1,"operation":"list","params":{"path":[]}})).await;
+    fixture.send(json!({"schemaVersion":1,"type":"request","id":id(2),"category":"fs","categoryVersion":2,"operation":"list","params":{"path":[]}})).await;
     assert!(fixture.receive().await["result"]["nextCursor"].is_string());
     tokio::time::timeout(Duration::from_secs(5), waiting)
         .await
