@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { discordSnowflakeSchema } from "@okouai/api-contracts/contracts/integrations-discord-read";
 import { getPlatformOrigin } from "../../lib/platform-url";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -31,7 +32,10 @@ Notes:
         options.guildId === undefined
           ? undefined
           : discordSnowflakeSchema.parse(options.guildId);
-      const url = new URL("/settings/discord", await getPlatformOrigin());
+      const url = new URL(
+        INTEGRATION_SETTINGS_PATHS.discord,
+        await getPlatformOrigin(),
+      );
       if (guildId) {
         url.searchParams.set("guild_id", guildId);
       }

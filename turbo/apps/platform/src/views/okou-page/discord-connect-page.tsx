@@ -15,6 +15,8 @@ import {
   discordApprovalAvailable$,
   discordApprovalRequest$,
   discordApprovalSucceeded$,
+  continueDiscordApproval$,
+  discordApprovalContinuation$,
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -47,29 +49,11 @@ export function DiscordConnectPage() {
 }
 
 function PageContent() {
-  const { t } = useTranslation();
-  const params = useGet(searchParams$);
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
   const approvalAvailable = useGet(discordApprovalAvailable$);
   const approved = useGet(discordApprovalSucceeded$);
   if (enabled && (approvalAvailable || approved)) {
     return <DiscordApprovalState />;
-  }
-  const callbackStatus = params.get("status");
-  if (enabled && (callbackStatus === "error" || callbackStatus === "pending")) {
-    return (
-      <ConnectErrorState
-        message={
-          callbackStatus === "error"
-            ? t(($) => {
-                return $.works.discord.authorizationError;
-              })
-            : t(($) => {
-                return $.works.discord.pendingConsent;
-              })
-        }
-      />
-    );
   }
   return <DiscordConnectionState />;
 }
@@ -79,6 +63,8 @@ function DiscordApprovalState() {
   const request = useLoadable(discordApprovalRequest$);
   const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
+  const continuation = useGet(discordApprovalContinuation$);
+  const [recovery, continueApproval] = useLoadableSet(continueDiscordApproval$);
   const failed = request.state === "hasError";
   if (failed) {
     return (
@@ -110,6 +96,33 @@ function DiscordApprovalState() {
   return (
     <>
       <ConnectCheckingState />
+      {continuation ? (
+        <>
+          <p className="text-center text-sm text-muted-foreground">
+            {t(($) => {
+              return $.works.discord.continueDescription;
+            })}
+          </p>
+          <ConnectErrorAlert
+            error={
+              recovery.state === "hasError"
+                ? t(($) => {
+                    return $.works.discord.popupBlocked;
+                  })
+                : null
+            }
+          />
+          <ConnectSubmitButton
+            connecting={false}
+            label={t(($) => {
+              return $.works.discord.continueInNewTab;
+            })}
+            onConnect={() => {
+              detach(continueApproval(pageSignal), Reason.DomCallback);
+            }}
+          />
+        </>
+      ) : null}
       <SettingsBackLink />
     </>
   );
@@ -118,21 +131,13 @@ function DiscordApprovalState() {
 function DiscordConnectionState() {
   const { t } = useTranslation();
   const status = useLastLoadable(discordOrgData$);
-  const guildId = useGet(searchParams$).get("guild_id");
+  const params = useGet(searchParams$);
+  const guildId = params.get("guild_id");
+  const enabled = useGet(featureSwitch$)[FeatureSwitchKey.DiscordIntegration];
+  const failedAttempt =
+    enabled &&
+    (params.get("status") === "pending" || params.get("status") === "error");
   const installing = useGet(pathname$) === ROUTES.settingsDiscordInstall;
-  const [authorization, connect] = useLoadableSet(connectDiscordAccount$);
-  const pageSignal = useGet(pageSignal$);
-  const connecting = authorization.state === "loading";
-  const error =
-    authorization.state === "hasError"
-      ? authorization.error instanceof DiscordPopupBlockedError
-        ? t(($) => {
-            return $.works.discord.popupBlocked;
-          })
-        : t(($) => {
-            return $.works.discord.authorizationError;
-          })
-      : null;
   if (status.state === "loading") {
     return <ConnectCheckingState />;
   }
@@ -160,29 +165,78 @@ function DiscordConnectionState() {
   }
   // A callback URL is presentation metadata, not evidence of a connection.
   // An existing account connection does not prove this installation completed.
-  if (data?.isConnected && !installing) {
+  if (data?.isConnected && !installing && !failedAttempt) {
     return <DiscordSuccessState data={data} guildId={guildId} />;
   }
   return (
+    <DiscordConnectionActions
+      data={data}
+      guildId={guildId}
+      installing={installing}
+      failedAttempt={failedAttempt}
+    />
+  );
+}
+
+function DiscordConnectionActions({
+  data,
+  guildId,
+  installing,
+  failedAttempt,
+}: {
+  data: DiscordOrgStatus | null;
+  guildId: string | null;
+  installing: boolean;
+  failedAttempt: boolean;
+}) {
+  const { t } = useTranslation();
+  const [authorization, connect] = useLoadableSet(connectDiscordAccount$);
+  const pageSignal = useGet(pageSignal$);
+  const connecting = authorization.state === "loading";
+  const error =
+    authorization.state === "hasError"
+      ? authorization.error instanceof DiscordPopupBlockedError
+        ? t(($) => {
+            return $.works.discord.popupBlocked;
+          })
+        : t(($) => {
+            return $.works.discord.authorizationError;
+          })
+      : null;
+  return (
     <>
-      <DiscordConnectIntro data={data} installing={installing} />
+      {failedAttempt ? (
+        <DiscordAttemptFailure />
+      ) : (
+        <DiscordConnectIntro data={data} installing={installing} />
+      )}
+      {(failedAttempt || installing) && data?.isConnected ? (
+        <DiscordIdentity data={data} existing={failedAttempt} />
+      ) : null}
       <ConnectErrorAlert error={error} />
-      {data && (installing ? data.isAvailable : canAuthorizeDiscord(data)) ? (
+      {data &&
+      (installing || failedAttempt
+        ? data.isAvailable
+        : canAuthorizeDiscord(data)) ? (
         <ConnectSubmitButton
           connecting={connecting}
           spinnerClassName="animate-spin mr-2"
           label={
-            error
+            failedAttempt
               ? t(($) => {
-                  return $.works.discord.retry;
+                  return $.works.discord.restartAuthorization;
                 })
-              : installing
+              : error
                 ? t(($) => {
-                    return $.works.discord.addNewServer;
+                    return $.works.discord.retry;
                   })
-                : t(($) => {
-                    return $.works.actions.connect;
-                  })
+                : installing
+                  ? t(($) => {
+                      return $.works.discord.addNewServer;
+                    })
+                  : t(($) => {
+                      return $.works.actions.connect;
+                    })
           }
           onConnect={() => {
             detach(
@@ -200,6 +254,90 @@ function DiscordConnectionState() {
       ) : null}
       <SettingsBackLink />
     </>
+  );
+}
+
+function DiscordAttemptFailure() {
+  const { t } = useTranslation();
+  const params = useGet(searchParams$);
+  const code = params.get("discord_error");
+  const message =
+    params.get("status") === "pending"
+      ? t(($) => {
+          return $.works.discord.pendingConsent;
+        })
+      : code === "cancelled"
+        ? t(($) => {
+            return $.works.discord.cancelled;
+          })
+        : code === "invalid_state" || code === "invalid_authorization"
+          ? t(($) => {
+              return $.works.discord.invalidLink;
+            })
+          : code === "forbidden" ||
+              code === "guild_unverified" ||
+              code === "bot_missing"
+            ? t(($) => {
+                return $.works.discord.serverPermissionRequired;
+              })
+            : t(($) => {
+                return $.works.discord.authorizationError;
+              });
+  return (
+    <>
+      <ConnectStatusMark state="error" idle={<DiscordMark size={40} />} />
+      <div role="alert">
+        <CenterText
+          title={t(($) => {
+            return $.connectors.providerConnect.common.connectionFailed;
+          })}
+          body={message}
+        />
+      </div>
+    </>
+  );
+}
+
+function DiscordIdentity({
+  data,
+  existing = false,
+}: {
+  data: DiscordOrgStatus;
+  existing?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="text-center text-sm text-muted-foreground">
+      {existing ? (
+        <p>
+          {t(($) => {
+            return $.works.discord.existingConnection;
+          })}
+        </p>
+      ) : null}
+      {data.discordUserId ? (
+        <p>
+          {t(
+            ($) => {
+              return $.works.discord.connectedIdentity;
+            },
+            {
+              id: data.discordUserId,
+            },
+          )}
+        </p>
+      ) : null}
+      {data.guildName ? (
+        <p>
+          {t(
+            ($) => {
+              return $.works.discord.connectedServer;
+            },
+            { name: data.guildName },
+          )}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -264,6 +402,7 @@ function DiscordSuccessState({
           return $.works.discord.description;
         })}
       />
+      <DiscordIdentity data={data} />
       <div className="flex w-full flex-col gap-3">
         <a
           href={`discord://-/${destination}`}

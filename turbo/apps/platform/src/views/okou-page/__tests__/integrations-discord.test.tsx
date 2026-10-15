@@ -246,7 +246,7 @@ test.each([true, false])(
     expect(within(card).queryByRole("alert")).toBeNull();
     expect(
       within(card).queryByText(
-        "Close this tab and restart the connection from the original tab.",
+        "This authorization was interrupted or refreshed. Start again to verify a new connection.",
       ),
     ).toBeNull();
     expect(within(card).queryByText(/^Connected(?: \(.+\))?$/u)).toBeNull();
@@ -624,6 +624,7 @@ test.each(["connected", "pending", "error"])(
 test.each(["/works?discord=pending", "/settings/discord?status=pending"])(
   "Consent browser at %s verifies the current account and stays open while completion is pending",
   async (callbackPath) => {
+    vi.stubGlobal("opener", context.mocks.browser.authWindow());
     const closed = vi.spyOn(window, "close").mockImplementation(() => {});
     let approvalBody: unknown;
     let authorization: string | null = null;
@@ -686,7 +687,7 @@ test.each(["", "invalid-proof"])(
     });
     await expect(
       screen.findByText(
-        "Close this tab and restart the connection from the original tab.",
+        "This authorization was interrupted or refreshed. Start again to verify a new connection.",
       ),
     ).resolves.toBeInTheDocument();
     expect(window.location.hash).toBe("");
