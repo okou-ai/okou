@@ -115,6 +115,12 @@ describe("Atom subscription grants", () => {
           organization: { uuid: "claude-workspace", name: "Personal" },
         });
       }),
+      http.get("https://api.anthropic.com/api/oauth/usage", () => {
+        return HttpResponse.json({
+          five_hour: { utilization: 0, resets_at: null },
+          seven_day: { utilization: 0, resets_at: null },
+        });
+      }),
     );
   });
 
