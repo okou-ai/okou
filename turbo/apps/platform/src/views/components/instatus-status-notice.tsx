@@ -139,8 +139,10 @@ function placementClassName(placement: InstatusNoticePlacement): string {
     }
     case "list": {
       // The mobile chat list replaces the drawer, so the notice sits above
-      // its rows and shares their inset.
-      return "mx-3 mb-2 mt-1 flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain";
+      // its rows and shares their inset. The inset is padding, not margin:
+      // this element scrolls, and the card's shadow needs room inside it or
+      // the scroller cuts it to a hard edge.
+      return "flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain px-3 pt-2 pb-3";
     }
   }
 }
