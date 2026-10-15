@@ -12,6 +12,34 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1029.0](https://github.com/okou-ai/okou/compare/app-v0.1028.0...app-v0.1029.0) (2026-10-15)
+
+
+### Features
+
+* add a home shortcut to the sandbox files toolbar ([#40235](https://github.com/okou-ai/okou/issues/40235)) ([64f6cca](https://github.com/okou-ai/okou/commit/64f6cca3778211b939109df56b7913b850a70875))
+* **app:** show both usage windows in the subscription usage panel ([#40249](https://github.com/okou-ai/okou/issues/40249)) ([130af21](https://github.com/okou-ai/okou/commit/130af21b73bd62f337cf4d926204255e6277b652))
+* **ssh:** support tailscale ssh with saved networks ([#40212](https://github.com/okou-ai/okou/issues/40212)) ([31db119](https://github.com/okou-ai/okou/commit/31db1195d86e33e52a576e0b50286312366d198e))
+
+
+### Bug Fixes
+
+* **app:** derive visible run usage from the latest usage hint ([#40241](https://github.com/okou-ai/okou/issues/40241)) ([9500b2a](https://github.com/okou-ai/okou/commit/9500b2abffa416353363b419ea342aea42000ac0))
+* **chat:** give thread muting feedback, header entry points and a clean unmute ([#40253](https://github.com/okou-ai/okou/issues/40253)) ([59d7408](https://github.com/okou-ai/okou/commit/59d74089e1e28403b00b04f2aeef146a5f448333))
+
+
+### Performance Improvements
+
+* **app:** narrow file subscriptions and trim ci fixture overhead ([#40239](https://github.com/okou-ai/okou/issues/40239)) ([cbeb10f](https://github.com/okou-ai/okou/commit/cbeb10fd3ff50ef6b1b44f1bfcf3c7883474903a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+
 ## [0.1028.0](https://github.com/okou-ai/okou/compare/app-v0.1027.1...app-v0.1028.0) (2026-10-15)
 
 

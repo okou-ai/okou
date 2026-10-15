@@ -1,5 +1,21 @@
 # Changelog
 
+## [9.393.0](https://github.com/okou-ai/okou/compare/cli-v9.392.5...cli-v9.393.0) (2026-10-15)
+
+
+### Features
+
+* **ssh:** support tailscale ssh with saved networks ([#40212](https://github.com/okou-ai/okou/issues/40212)) ([31db119](https://github.com/okou-ai/okou/commit/31db1195d86e33e52a576e0b50286312366d198e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+    * @okouai/pi-agent-runtime bumped to 1.50.4
+
 ## [9.392.5](https://github.com/okou-ai/okou/compare/cli-v9.392.4...cli-v9.392.5) (2026-10-15)
 
 
