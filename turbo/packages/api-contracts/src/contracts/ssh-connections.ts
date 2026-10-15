@@ -20,14 +20,6 @@ export {
 const c = initContract();
 
 export const SSH_HOST_MAX_LENGTH = 253;
-// A connection mode selects both network access and SSH authentication.
-export const SSH_CONNECTION_MODES = [
-  "direct",
-  "cloudflare_access",
-  "tailscale",
-  "tailscale_ssh",
-] as const;
-export type SshConnectionMode = (typeof SSH_CONNECTION_MODES)[number];
 
 const displayNameSchema = z
   .string()
@@ -332,5 +324,9 @@ export type CreateSshConnectionRequest = z.infer<
 export type UpdateSshConnectionRequest = z.infer<
   typeof updateSshConnectionRequestSchema
 >;
+// A connection mode selects both network access and SSH authentication.
+export type SshConnectionMode = NonNullable<
+  UpdateSshConnectionRequest["transport"]
+>["type"];
 export type SshConnectionResponse = z.infer<typeof sshConnectionResponseSchema>;
 export type SshConnectionsContract = typeof sshConnectionsContract;
