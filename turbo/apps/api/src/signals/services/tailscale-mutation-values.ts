@@ -13,7 +13,6 @@ export function tailscaleHostMutationValues(args: TailscaleMutationArgs) {
     return {
       ...advanced,
       tailscaleId: null,
-      transport: "tailscale" as const,
     };
   }
   if (args.operation === "adopt") {
@@ -21,7 +20,6 @@ export function tailscaleHostMutationValues(args: TailscaleMutationArgs) {
       ...advanced,
       tailscaleId: sql`CASE WHEN ${eq(sshConnections.userId, args.owner.userId)}
         THEN ${sshConnections.tailscaleId} ELSE NULL END`,
-      transport: "tailscale" as const,
     };
   }
   return advanced;

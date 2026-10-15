@@ -895,6 +895,53 @@ function validateSuccessfulPayment(
 
 class InvitationPaymentPublicationChanged extends Error {}
 
+function successfulPaymentPublication(
+  purchase: UsagePackInvitationPurchaseRow,
+  args: SuccessfulPaymentArgs,
+  superseded: boolean,
+) {
+  const invalidPayment =
+    args.amountPaidCents !== purchase.expectedAmountCents ||
+    args.paidAt >= purchase.currentPeriodEnd;
+  const requiresRefund = superseded || invalidPayment;
+  return {
+    values: {
+      stripeCheckoutSessionId:
+        args.checkoutSessionId ?? purchase.stripeCheckoutSessionId,
+      stripePaymentIntentId: args.paymentIntentId,
+      amountPaidCents: args.amountPaidCents,
+      paidAt: args.paidAt,
+      status: requiresRefund ? "refund_pending" : "payment_succeeded",
+      failureReason: superseded
+        ? "superseded_invitation_payment"
+        : invalidPayment
+          ? "invalid_or_expired_payment"
+          : null,
+    } satisfies Partial<typeof usagePackInvitationPurchases.$inferInsert>,
+    condition: and(
+      eq(usagePackInvitationPurchases.id, purchase.id),
+      inArray(usagePackInvitationPurchases.status, [
+        "checkout_pending",
+        "failed",
+        "payment_succeeded",
+      ]),
+      args.paymentIntentId === null
+        ? isNull(usagePackInvitationPurchases.stripePaymentIntentId)
+        : or(
+            isNull(usagePackInvitationPurchases.stripePaymentIntentId),
+            eq(
+              usagePackInvitationPurchases.stripePaymentIntentId,
+              args.paymentIntentId,
+            ),
+          ),
+      or(
+        isNull(usagePackInvitationPurchases.amountPaidCents),
+        eq(usagePackInvitationPurchases.amountPaidCents, args.amountPaidCents),
+      ),
+    ),
+  };
+}
+
 const persistSuccessfulPayment$ = command(
   async (
     { set },
@@ -903,9 +950,10 @@ const persistSuccessfulPayment$ = command(
   ): Promise<UsagePackInvitationPurchaseRow> => {
     signal?.throwIfAborted();
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0275; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      const [purchase] = await tx
+    // Keep this financial attempt under its original entry/outer abort checkpoints.
+    // The inline block is immediately awaited; no handle or executor escapes.
+    return await (async () => {
+      const [purchase] = await db
         .select()
         .from(usagePackInvitationPurchases)
         .where(eq(usagePackInvitationPurchases.id, args.purchaseId))
@@ -915,7 +963,7 @@ const persistSuccessfulPayment$ = command(
           `Unknown usage pack invitation purchase ${args.purchaseId}`,
         );
       }
-      const [subscription] = await tx
+      const [subscription] = await db
         .select({ stripeCustomerId: usagePackSubscriptions.stripeCustomerId })
         .from(usagePackSubscriptions)
         .where(eq(usagePackSubscriptions.id, purchase.usagePackSubscriptionId))
@@ -931,7 +979,7 @@ const persistSuccessfulPayment$ = command(
       ) {
         return purchase;
       }
-      const [competing] = await tx
+      const [competing] = await db
         .select({
           id: usagePackInvitationPurchases.id,
           status: usagePackInvitationPurchases.status,
@@ -952,80 +1000,60 @@ const persistSuccessfulPayment$ = command(
           ),
         )
         .limit(1);
-      let superseded =
-        competing !== undefined && competing.status !== "checkout_pending";
       if (competing?.status === "checkout_pending") {
-        const [retired] = await tx
-          .update(usagePackInvitationPurchases)
-          .set({
-            status: "failed",
-            failureReason: "superseded_by_paid_purchase",
-            updatedAt: nowDate(),
-          })
-          .where(
-            and(
-              eq(usagePackInvitationPurchases.id, competing.id),
-              eq(usagePackInvitationPurchases.status, "checkout_pending"),
-            ),
-          )
-          .returning({ id: usagePackInvitationPurchases.id });
-        superseded = !retired;
-      }
-      const invalidPayment =
-        args.amountPaidCents !== purchase.expectedAmountCents ||
-        args.paidAt >= purchase.currentPeriodEnd;
-      const requiresRefund = superseded || invalidPayment;
-      const [updated] = await tx
-        .update(usagePackInvitationPurchases)
-        .set({
-          stripeCheckoutSessionId:
-            args.checkoutSessionId ?? purchase.stripeCheckoutSessionId,
-          stripePaymentIntentId: args.paymentIntentId,
-          amountPaidCents: args.amountPaidCents,
-          paidAt: args.paidAt,
-          status: requiresRefund ? "refund_pending" : "payment_succeeded",
-          failureReason: superseded
-            ? "superseded_invitation_payment"
-            : invalidPayment
-              ? "invalid_or_expired_payment"
-              : null,
-          updatedAt: nowDate(),
-        })
-        .where(
-          and(
-            eq(usagePackInvitationPurchases.id, purchase.id),
-            inArray(usagePackInvitationPurchases.status, [
-              "checkout_pending",
-              "failed",
-              "payment_succeeded",
-            ]),
-            args.paymentIntentId === null
-              ? isNull(usagePackInvitationPurchases.stripePaymentIntentId)
-              : or(
-                  isNull(usagePackInvitationPurchases.stripePaymentIntentId),
-                  eq(
-                    usagePackInvitationPurchases.stripePaymentIntentId,
-                    args.paymentIntentId,
-                  ),
-                ),
-            or(
-              isNull(usagePackInvitationPurchases.amountPaidCents),
-              eq(
-                usagePackInvitationPurchases.amountPaidCents,
-                args.amountPaidCents,
+        const retiredAt = nowDate();
+        // eslint-disable-next-line api/no-db-transaction -- Billing atomicity: competing checkout retirement and this payment's identity/amount/refund disposition must commit together; single-statement alternative: retirement-first CTEs retain retirement on a zero target UPDATE, while target-first publication cannot use the retirement UPDATE's actual RETURNING.
+        return await db.transaction(async (tx) => {
+          const [retired] = await tx
+            .update(usagePackInvitationPurchases)
+            .set({
+              status: "failed",
+              failureReason: "superseded_by_paid_purchase",
+              updatedAt: retiredAt,
+            })
+            .where(
+              and(
+                eq(usagePackInvitationPurchases.id, competing.id),
+                eq(usagePackInvitationPurchases.status, "checkout_pending"),
               ),
-            ),
-          ),
-        )
+            )
+            .returning({ id: usagePackInvitationPurchases.id });
+          const superseded = !retired;
+          const publication = successfulPaymentPublication(
+            purchase,
+            args,
+            superseded,
+          );
+          const [updated] = await tx
+            .update(usagePackInvitationPurchases)
+            .set({ ...publication.values, updatedAt: nowDate() })
+            .where(publication.condition)
+            .returning();
+          if (!updated) {
+            // Roll back every mutation in this delivery, including retirement of
+            // a competing email slot. The outer command resolves one receipt,
+            // never retries this financial transaction.
+            throw new InvitationPaymentPublicationChanged();
+          }
+          return updated;
+        });
+      }
+      const superseded = competing !== undefined;
+      const publication = successfulPaymentPublication(
+        purchase,
+        args,
+        superseded,
+      );
+      const [updated] = await db
+        .update(usagePackInvitationPurchases)
+        .set({ ...publication.values, updatedAt: nowDate() })
+        .where(publication.condition)
         .returning();
       if (!updated) {
-        // Roll back every mutation in this delivery, including retirement of
-        // a competing email slot. The outer command resolves one receipt,
-        // never retries this financial transaction.
         throw new InvitationPaymentPublicationChanged();
       }
       return updated;
-    });
+    })();
   },
 );
 

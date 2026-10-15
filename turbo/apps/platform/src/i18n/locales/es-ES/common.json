@@ -5494,8 +5494,14 @@
     "summary_many": "{{count}} hosts configurados",
     "summary_other": "{{count}} hosts configurados",
     "tailscale": {
+      "authenticationFailed": "Falló la autenticación de Tailscale SSH. Comprueba el nombre de usuario del sistema, activa Tailscale SSH en el destino etiquetado y permite este inicio de sesión en la política SSH accept de la tailnet.",
+      "deleteHelp": "¿Eliminar este host? Los agentes dejarán de verlo en el inventario en tiempo real.",
       "editUnavailable": "Este host ahora usa Tailscale. La edición y la revinculación de Tailscale aún no están disponibles aquí. Cancela esta edición para conservar su transporte guardado.",
-      "needsRebind": "Este host necesita una nueva configuración de Tailscale. La configuración y la revinculación de Tailscale aún no están disponibles aquí."
+      "needsRebind": "Este host necesita una nueva configuración de Tailscale. La configuración y la revinculación de Tailscale aún no están disponibles aquí.",
+      "sshDocs": "Documentación de Tailscale SSH",
+      "sshHelp": "Usa la identidad de la red Tailscale seleccionada, sin contraseña SSH ni clave privada. Activa Tailscale SSH en un dispositivo de destino etiquetado y permite este nombre de usuario del sistema en una política SSH accept.",
+      "sshTitle": "Tailscale SSH",
+      "username": "Nombre de usuario del sistema"
     },
     "unavailable": "El acceso SSH no está disponible para esta cuenta.",
     "username": "Nombre de usuario SSH"

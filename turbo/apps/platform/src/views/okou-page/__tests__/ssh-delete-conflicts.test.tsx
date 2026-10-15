@@ -3,6 +3,8 @@ import {
   type SshConnectionResponse,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
+import { tailscaleContract } from "@okouai/api-contracts/contracts/tailscale";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -36,7 +38,10 @@ const empty =
   "No SSH hosts configured. Add a host, then enable it by default or in individual chats.";
 
 function mockSettings() {
-  const data = { connections: [host], failed: false };
+  const data: { connections: SshConnectionResponse[]; failed: boolean } = {
+    connections: [host],
+    failed: false,
+  };
   context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
     return data.failed
       ? respond(500, {
@@ -50,10 +55,13 @@ function mockSettings() {
   return data;
 }
 
-async function openDeletion() {
+async function openDeletion(tailscaleEnabled = false) {
   await setupPage({
     context,
     path: "/connectors?scope=remote-control&type=ssh",
+    featureSwitches: {
+      [FeatureSwitchKey.TailscaleAccess]: tailscaleEnabled,
+    },
     auth: {
       user: owner,
       session: { id: "ssh-delete-session", token: "original-token" },
@@ -127,6 +135,74 @@ test.each(["click", "Enter", "Space"])(
     ]);
   },
 );
+
+test("A Tailscale SSH deletion reviews credential-free identity before acknowledging its generation", async () => {
+  const data = mockSettings();
+  const networkId = "e0000000-0000-4000-8000-000000000001";
+  const identity: SshConnectionResponse = {
+    id: host.id,
+    displayName: host.displayName,
+    host: "private-peer",
+    port: 22,
+    username: "ubuntu",
+    generation: host.generation,
+    learnedHostKey: null,
+    createdAt: host.createdAt,
+    updatedAt: host.updatedAt,
+    transport: {
+      type: "tailscale_ssh",
+      configId: networkId,
+    },
+  };
+  data.connections = [identity];
+  context.mocks.api(tailscaleContract.list, ({ respond }) => {
+    return respond(200, {
+      configs: [
+        {
+          id: networkId,
+          name: "Identity network",
+          scope: "personal",
+          tags: ["tag:qa"],
+          revision: 1,
+          generation: 1,
+          sshHosts: [{ id: host.id, displayName: host.displayName }],
+          createdAt: host.createdAt,
+          updatedAt: host.updatedAt,
+        },
+      ],
+    });
+  });
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.delete, ({ body, respond }) => {
+    requests.push(body);
+    if (body.expectedGeneration === 4) {
+      data.connections = [{ ...identity, host: "updated-peer", generation: 5 }];
+      return respond(409, {
+        error: { code: "SSH_GENERATION_CONFLICT", message: "changed" },
+      });
+    }
+    data.connections = [];
+    return respond(204);
+  });
+  const dialog = await openDeletion(true);
+  click(getAction("button", "Delete host", dialog));
+  await within(dialog).findByText("Version 5");
+  expect(within(dialog).getByText("ubuntu@updated-peer:22")).toBeVisible();
+  expect(within(dialog).getByText("Tailscale SSH")).toBeVisible();
+  expect(getAction("button", "Delete host", dialog)).toBeDisabled();
+  click(getAction("button", "Use this version for deletion", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Delete host", dialog)).toBeEnabled();
+  });
+  expect(requests).toStrictEqual([{ expectedGeneration: 4 }]);
+  click(getAction("button", "Delete host", dialog));
+  await screen.findByText(empty);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(requests).toStrictEqual([
+    { expectedGeneration: 4 },
+    { expectedGeneration: 5 },
+  ]);
+});
 
 test("Passive refresh preserves original and acknowledged deletion generations across repeated conflicts", async () => {
   const data = mockSettings();

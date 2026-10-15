@@ -139,3 +139,52 @@ test.each([
   const input = { expectedGeneration: 2, transport };
   expect(updateSshConnectionRequestSchema.parse(input)).toStrictEqual(input);
 });
+
+test.each([
+  { type: "tailscale_ssh", configId },
+  {
+    type: "tailscale_ssh",
+    create: {
+      name: "Private network",
+      credentials: {
+        clientId: "synthetic-client",
+        clientSecret: "synthetic-secret",
+      },
+      tags: ["tag:runner"],
+    },
+  },
+])(
+  "Tailscale SSH accepts identity login and defaults to port 22: %j",
+  (transport) => {
+    const input = {
+      id: metadata.id,
+      displayName: metadata.displayName,
+      host: "private-host",
+      username: "ubuntu",
+      transport,
+    };
+    expect(createSshConnectionRequestSchema.parse(input)).toStrictEqual({
+      ...input,
+      port: 22,
+    });
+  },
+);
+
+test.each([
+  { username: "ubuntu" },
+  { credential: undefined },
+  { transport: { type: "tailscale", configId }, credential: undefined },
+  { transport: { type: "tailscale_ssh", configId }, username: "ubuntu" },
+  { transport: { type: "tailscale_ssh", configId }, credential: undefined },
+  {
+    transport: { type: "tailscale_ssh", configId },
+    credential: undefined,
+    username: "ubuntu",
+    port: 2222,
+  },
+])("Create rejects incompatible network and login inputs: %j", (fields) => {
+  expect(
+    createSshConnectionRequestSchema.safeParse({ ...create, ...fields })
+      .success,
+  ).toBe(false);
+});

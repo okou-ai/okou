@@ -355,13 +355,8 @@ export function scrollFilesToEnd(panel: HTMLElement): void {
   });
 }
 
-export async function loadMoreFiles(
-  panel: HTMLElement,
-  { scrollToEnd = true }: { readonly scrollToEnd?: boolean } = {},
-): Promise<void> {
-  if (scrollToEnd) {
-    scrollFilesToEnd(panel);
-  }
+export async function loadMoreFiles(panel: HTMLElement): Promise<void> {
+  scrollFilesToEnd(panel);
   const more = await waitFor(() => {
     const control = filesButton("Load more", panel);
     expectEnabled(control);

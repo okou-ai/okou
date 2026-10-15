@@ -491,210 +491,234 @@ const finalize$ = command(
   },
 );
 
-async function convertClosedBrowserUserActions(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
-): Promise<number> {
-  const candidates = await db
-    .select({
-      requestTokenHash: browserUserActionRequests.requestTokenHash,
-      payload: browserUserActionRequests.payload,
-      providerSessionId: browserUserActionRequests.providerSessionId,
-      status: browserUserActionRequests.status,
-      finishedAt: browserSessionInstances.finishedAt,
-    })
-    .from(browserUserActionRequests)
-    .innerJoin(
-      browserSessionInstances,
-      eq(
-        browserSessionInstances.providerSessionId,
-        browserUserActionRequests.providerSessionId,
+const deleteTemporaryBrowserUserActionFiles$ = command(
+  async (
+    { get },
+    requestTokenHash: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    await get(
+      deleteS3Objects(
+        env("R2_USER_STORAGES_BUCKET_NAME"),
+        temporaryBrowserFileKeys(requestTokenHash),
+        signal,
       ),
-    )
-    .where(
-      and(
-        inArray(browserUserActionRequests.status, ["pending", "applying"]),
-        eq(browserSessionInstances.status, "stopped"),
-        isNotNull(browserSessionInstances.finishedAt),
-      ),
-    )
-    .orderBy(asc(browserUserActionRequests.requestTokenHash))
-    .limit(limit);
-  signal.throwIfAborted();
+    );
+  },
+);
 
-  for (const candidate of candidates) {
-    if (
-      candidate.finishedAt === null ||
-      (candidate.status !== "pending" && candidate.status !== "applying")
-    ) {
-      throw new Error("Expected a closed Browser user-action candidate");
-    }
-    const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
-    const updated = await db
-      .update(browserUserActionRequests)
-      .set({
-        status: nextStatus,
-        completedAt: candidate.finishedAt,
+const convertClosedBrowserUserActions$ = command(
+  async (
+    { set },
+    limit: number,
+    maintenanceSignal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const candidates = await db
+      .select({
+        requestTokenHash: browserUserActionRequests.requestTokenHash,
+        payload: browserUserActionRequests.payload,
+        providerSessionId: browserUserActionRequests.providerSessionId,
+        status: browserUserActionRequests.status,
+        finishedAt: browserSessionInstances.finishedAt,
       })
-      .where(
-        and(
-          eq(
-            browserUserActionRequests.requestTokenHash,
-            candidate.requestTokenHash,
-          ),
-          eq(
-            browserUserActionRequests.providerSessionId,
-            candidate.providerSessionId,
-          ),
-          eq(browserUserActionRequests.status, candidate.status),
+      .from(browserUserActionRequests)
+      .innerJoin(
+        browserSessionInstances,
+        eq(
+          browserSessionInstances.providerSessionId,
+          browserUserActionRequests.providerSessionId,
         ),
       )
+      .where(
+        and(
+          inArray(browserUserActionRequests.status, ["pending", "applying"]),
+          eq(browserSessionInstances.status, "stopped"),
+          isNotNull(browserSessionInstances.finishedAt),
+        ),
+      )
+      .orderBy(asc(browserUserActionRequests.requestTokenHash))
+      .limit(limit);
+    maintenanceSignal.throwIfAborted();
+
+    for (const candidate of candidates) {
+      if (
+        candidate.finishedAt === null ||
+        (candidate.status !== "pending" && candidate.status !== "applying")
+      ) {
+        throw new Error("Expected a closed Browser user-action candidate");
+      }
+      const nextStatus = candidate.status === "pending" ? "stale" : "uncertain";
+      const updated = await db
+        .update(browserUserActionRequests)
+        .set({
+          status: nextStatus,
+          completedAt: candidate.finishedAt,
+        })
+        .where(
+          and(
+            eq(
+              browserUserActionRequests.requestTokenHash,
+              candidate.requestTokenHash,
+            ),
+            eq(
+              browserUserActionRequests.providerSessionId,
+              candidate.providerSessionId,
+            ),
+            eq(browserUserActionRequests.status, candidate.status),
+          ),
+        )
+        .returning({
+          requestTokenHash: browserUserActionRequests.requestTokenHash,
+        });
+      if (
+        updated.length > 0 &&
+        candidate.payload.kind === "input" &&
+        candidate.payload.target.fields[0]?.fieldKind === "file"
+      ) {
+        const cleanup = await settle(
+          set(
+            deleteTemporaryBrowserUserActionFiles$,
+            candidate.requestTokenHash,
+            maintenanceSignal,
+          ),
+        );
+        if (!cleanup.ok) {
+          L.warn("Temporary Browser file cleanup failed");
+        }
+      }
+      maintenanceSignal.throwIfAborted();
+    }
+    return candidates.length;
+  },
+);
+
+const deleteRetiredDirectBrowserUserActions$ = command(
+  async ({ set }, limit: number, signal: AbortSignal): Promise<number> => {
+    const db = set(writeDb$);
+    const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
+    const candidates = db
+      .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
+      .from(browserUserActionRequests)
+      .where(retiredKind)
+      .orderBy(asc(browserUserActionRequests.requestTokenHash))
+      .limit(limit);
+    const removed = await db
+      .delete(browserUserActionRequests)
+      .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
       .returning({
         requestTokenHash: browserUserActionRequests.requestTokenHash,
       });
-    if (
-      updated.length > 0 &&
-      candidate.payload.kind === "input" &&
-      candidate.payload.target.fields[0]?.fieldKind === "file"
-    ) {
-      const cleanup = await settle(
-        cleanupFileObjects(candidate.requestTokenHash),
-      );
-      if (!cleanup.ok) {
-        L.warn("Temporary Browser file cleanup failed");
-      }
-    }
     signal.throwIfAborted();
-  }
-  return candidates.length;
-}
+    return removed.length;
+  },
+);
 
-async function deleteRetiredDirectBrowserUserActions(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-): Promise<number> {
-  const retiredKind = sql`${browserUserActionRequests.payload}->>'kind' = 'direct_interaction'`;
-  const candidates = db
-    .select({ requestTokenHash: browserUserActionRequests.requestTokenHash })
-    .from(browserUserActionRequests)
-    .where(retiredKind)
-    .orderBy(asc(browserUserActionRequests.requestTokenHash))
-    .limit(limit);
-  const removed = await db
-    .delete(browserUserActionRequests)
-    .where(inArray(browserUserActionRequests.requestTokenHash, candidates))
-    .returning({
-      requestTokenHash: browserUserActionRequests.requestTokenHash,
-    });
-  signal.throwIfAborted();
-  return removed.length;
-}
-
-async function deleteExpiredBrowserUserActions(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
-): Promise<number> {
-  const cutoff = new Date(nowDate().getTime() - CALLBACK_RECOVERY_RETENTION_MS);
-  const candidates = await db
-    .select({
-      requestTokenHash: browserUserActionRequests.requestTokenHash,
-      payload: browserUserActionRequests.payload,
-      providerSessionId: browserUserActionRequests.providerSessionId,
-      status: browserUserActionRequests.status,
-      completedAt: browserUserActionRequests.completedAt,
-    })
-    .from(browserUserActionRequests)
-    .innerJoin(
-      browserSessionInstances,
-      eq(
-        browserSessionInstances.providerSessionId,
-        browserUserActionRequests.providerSessionId,
-      ),
-    )
-    .where(
-      and(
-        inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
-        isNotNull(browserUserActionRequests.completedAt),
-        lte(browserUserActionRequests.completedAt, cutoff),
-        eq(browserSessionInstances.status, "stopped"),
-        isNotNull(browserSessionInstances.finishedAt),
-        lte(browserSessionInstances.finishedAt, cutoff),
-      ),
-    )
-    .orderBy(asc(browserUserActionRequests.requestTokenHash))
-    .limit(limit);
-  signal.throwIfAborted();
-
-  for (const candidate of candidates) {
-    if (
-      candidate.completedAt === null ||
-      !TERMINAL_STATES.includes(candidate.status)
-    ) {
-      throw new Error("Expected a retained Browser user-action candidate");
-    }
-    if (
-      candidate.payload.kind === "input" &&
-      candidate.payload.target.fields[0]?.fieldKind === "file"
-    ) {
-      const cleanup = await settle(
-        cleanupFileObjects(candidate.requestTokenHash),
-      );
-      if (!cleanup.ok) {
-        L.warn("Temporary Browser file cleanup failed");
-        continue;
-      }
-    }
-    await db
-      .delete(browserUserActionRequests)
+const deleteExpiredBrowserUserActions$ = command(
+  async (
+    { set },
+    limit: number,
+    maintenanceSignal: AbortSignal,
+  ): Promise<number> => {
+    const db = set(writeDb$);
+    const cutoff = new Date(
+      nowDate().getTime() - CALLBACK_RECOVERY_RETENTION_MS,
+    );
+    const candidates = await db
+      .select({
+        requestTokenHash: browserUserActionRequests.requestTokenHash,
+        payload: browserUserActionRequests.payload,
+        providerSessionId: browserUserActionRequests.providerSessionId,
+        status: browserUserActionRequests.status,
+        completedAt: browserUserActionRequests.completedAt,
+      })
+      .from(browserUserActionRequests)
+      .innerJoin(
+        browserSessionInstances,
+        eq(
+          browserSessionInstances.providerSessionId,
+          browserUserActionRequests.providerSessionId,
+        ),
+      )
       .where(
         and(
-          eq(
-            browserUserActionRequests.requestTokenHash,
-            candidate.requestTokenHash,
-          ),
-          eq(
-            browserUserActionRequests.providerSessionId,
-            candidate.providerSessionId,
-          ),
-          eq(browserUserActionRequests.status, candidate.status),
-          eq(browserUserActionRequests.completedAt, candidate.completedAt),
+          inArray(browserUserActionRequests.status, [...TERMINAL_STATES]),
+          isNotNull(browserUserActionRequests.completedAt),
+          lte(browserUserActionRequests.completedAt, cutoff),
+          eq(browserSessionInstances.status, "stopped"),
+          isNotNull(browserSessionInstances.finishedAt),
+          lte(browserSessionInstances.finishedAt, cutoff),
         ),
-      );
-    signal.throwIfAborted();
-  }
-  return candidates.length;
-}
+      )
+      .orderBy(asc(browserUserActionRequests.requestTokenHash))
+      .limit(limit);
+    maintenanceSignal.throwIfAborted();
 
-export async function reconcileBrowserUserActions(
-  db: Db,
-  limit: number,
-  signal: AbortSignal,
-  cleanupFileObjects: (requestTokenHash: string) => Promise<void>,
-): Promise<number> {
-  const retired = await deleteRetiredDirectBrowserUserActions(
-    db,
-    limit,
-    signal,
-  );
-  const checkedForConversion = await convertClosedBrowserUserActions(
-    db,
-    limit,
-    signal,
-    cleanupFileObjects,
-  );
-  const checkedForCleanup = await deleteExpiredBrowserUserActions(
-    db,
-    limit,
-    signal,
-    cleanupFileObjects,
-  );
-  return retired + checkedForConversion + checkedForCleanup;
-}
+    for (const candidate of candidates) {
+      if (
+        candidate.completedAt === null ||
+        !TERMINAL_STATES.includes(candidate.status)
+      ) {
+        throw new Error("Expected a retained Browser user-action candidate");
+      }
+      if (
+        candidate.payload.kind === "input" &&
+        candidate.payload.target.fields[0]?.fieldKind === "file"
+      ) {
+        const cleanup = await settle(
+          set(
+            deleteTemporaryBrowserUserActionFiles$,
+            candidate.requestTokenHash,
+            maintenanceSignal,
+          ),
+        );
+        if (!cleanup.ok) {
+          L.warn("Temporary Browser file cleanup failed");
+          continue;
+        }
+      }
+      await db
+        .delete(browserUserActionRequests)
+        .where(
+          and(
+            eq(
+              browserUserActionRequests.requestTokenHash,
+              candidate.requestTokenHash,
+            ),
+            eq(
+              browserUserActionRequests.providerSessionId,
+              candidate.providerSessionId,
+            ),
+            eq(browserUserActionRequests.status, candidate.status),
+            eq(browserUserActionRequests.completedAt, candidate.completedAt),
+          ),
+        );
+      maintenanceSignal.throwIfAborted();
+    }
+    return candidates.length;
+  },
+);
+
+export const reconcileBrowserUserActions$ = command(
+  async ({ set }, limit: number, signal: AbortSignal): Promise<number> => {
+    const retired = await set(
+      deleteRetiredDirectBrowserUserActions$,
+      limit,
+      signal,
+    );
+    const checkedForConversion = await set(
+      convertClosedBrowserUserActions$,
+      limit,
+      signal,
+    );
+    const checkedForCleanup = await set(
+      deleteExpiredBrowserUserActions$,
+      limit,
+      signal,
+    );
+    return retired + checkedForConversion + checkedForCleanup;
+  },
+);
 
 interface CreateBrowserUserActionArgs {
   readonly orgId: string;

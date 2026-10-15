@@ -61,7 +61,7 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         .where(eq(sshCredentials.id, credential.id)),
       [{ needsRebind: null }],
     );
-    for (const transport of [
+    for (const connectionMode of [
       "direct",
       "cloudflare_access",
       "tailscale",
@@ -70,14 +70,15 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         .insert(sshConnections)
         .values({
           ...owner,
-          displayName: `Canonical ${transport}`,
-          host: transport === "tailscale" ? "100.64.0.2" : "ssh.example.com",
-          port: transport === "cloudflare_access" ? 443 : 22,
+          displayName: `Canonical ${connectionMode}`,
+          host:
+            connectionMode === "tailscale" ? "100.64.0.2" : "ssh.example.com",
+          port: connectionMode === "cloudflare_access" ? 443 : 22,
           credentialId: credential.id,
-          transport,
+          connectionMode,
           cloudflareAccessId:
-            transport === "cloudflare_access" ? access.id : null,
-          tailscaleId: transport === "tailscale" ? tailscale.id : null,
+            connectionMode === "cloudflare_access" ? access.id : null,
+          tailscaleId: connectionMode === "tailscale" ? tailscale.id : null,
           generation: 11,
           learnedHostKeyAlgorithm: "ssh-ed25519",
           learnedHostKeyFingerprint: "SHA256:pin",
@@ -88,14 +89,17 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
       const readState = async () => {
         const [row] = await db
           .select({
-            transport: sshConnections.transport,
+            connectionMode: sshConnections.connectionMode,
             needsRebind: sshConnectionNeedsRebind,
           })
           .from(sshConnections)
           .where(eq(sshConnections.id, host.id));
         return row;
       };
-      assert.deepEqual(await readState(), { transport, needsRebind: false });
+      assert.deepEqual(await readState(), {
+        connectionMode,
+        needsRebind: false,
+      });
       assert.deepEqual(
         await db.query.sshConnections.findFirst({
           where: eq(sshConnections.id, host.id),
@@ -135,8 +139,8 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         tailscaleId: null,
       });
       assert.deepEqual(await readState(), {
-        transport,
-        needsRebind: transport !== "direct",
+        connectionMode,
+        needsRebind: connectionMode !== "direct",
       });
       const [rebound] = await db
         .update(sshConnections)
@@ -147,7 +151,10 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         .where(eq(sshConnections.id, host.id))
         .returning();
       assert.deepEqual(rebound, host);
-      assert.deepEqual(await readState(), { transport, needsRebind: false });
+      assert.deepEqual(await readState(), {
+        connectionMode,
+        needsRebind: false,
+      });
       await assert.rejects(
         client.query("DELETE FROM ssh_credentials WHERE id=$1", [
           credential.id,
@@ -163,6 +170,48 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         .returning();
       assert.deepEqual(removed, host);
     }
+    const [identity] = await db
+      .insert(sshConnections)
+      .values({
+        ...owner,
+        displayName: "Tailscale identity",
+        host: "100.64.0.2",
+        port: 22,
+        connectionMode: "tailscale_ssh",
+        tailscaleId: tailscale.id,
+        tailscaleSshUsername: "ubuntu",
+      })
+      .returning();
+    assert.ok(identity);
+    assert.equal(identity.credentialId, null);
+    for (const change of [
+      "port=2222",
+      "tailscale_ssh_username=NULL",
+      "tailscale_ssh_username=' '",
+      "transport='tailscale'",
+      `credential_id='${credential.id}'`,
+    ]) {
+      await assert.rejects(
+        client.query(`UPDATE ssh_connections SET ${change} WHERE id=$1`, [
+          identity.id,
+        ]),
+        { code: "23514", constraint: "chk_ssh_connections_login" },
+      );
+    }
+    await db
+      .update(sshConnections)
+      .set({ tailscaleId: null })
+      .where(eq(sshConnections.id, identity.id));
+    assert.deepEqual(
+      await db
+        .select({
+          connectionMode: sshConnections.connectionMode,
+          needsRebind: sshConnectionNeedsRebind,
+        })
+        .from(sshConnections)
+        .where(eq(sshConnections.id, identity.id)),
+      [{ connectionMode: "tailscale_ssh", needsRebind: true }],
+    );
   } finally {
     try {
       if (connected) {

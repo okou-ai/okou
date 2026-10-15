@@ -679,7 +679,7 @@ export const deleteCloudflareAccessConfig$ = command(
         .update(sshConnections)
         .set({
           cloudflareAccessId: null,
-          transport: "cloudflare_access",
+          connectionMode: "cloudflare_access",
           generation: sql`${sshConnections.generation} + 1`,
           updatedAt: nowDate(),
         })
@@ -1058,7 +1058,7 @@ export const convertCloudflareAccessToPersonal$ = command(
           .update(sshConnections)
           .set({
             cloudflareAccessId: null,
-            transport: "cloudflare_access",
+            connectionMode: "cloudflare_access",
             generation: sql`${sshConnections.generation} + 1`,
             updatedAt: nowDate(),
           })

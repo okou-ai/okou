@@ -117,7 +117,10 @@ async function createCredential(name = "Login", id: string = randomUUID()) {
 
 async function createHost(
   credentialId: string,
-  transport?: CreateSshConnectionRequest["transport"],
+  transport?: Exclude<
+    CreateSshConnectionRequest["transport"],
+    { type: "tailscale_ssh" }
+  >,
   id: string = randomUUID(),
 ) {
   return (

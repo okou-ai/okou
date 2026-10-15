@@ -34,6 +34,7 @@ interface RunnerCredentialTarget {
 interface ProvisionRunnerCredentialOptions {
   readonly apiUrl: string;
   readonly appUrl: string;
+  readonly expectedAppBuildSha?: string;
   readonly browser: Browser;
   readonly outputDirectory: string;
   readonly target: RunnerCredentialTarget;
@@ -44,6 +45,7 @@ async function main(): Promise<void> {
   requiredEnvironmentVariable("JOB_REF");
   const apiUrl = resolveApiBackendUrl();
   const appUrl = requiredEnvironmentVariable("OKOU_APP_URL");
+  const expectedAppBuildSha = process.env.OKOU_EXPECTED_APP_BUILD_SHA;
   const outputDirectory = process.argv[2];
   if (!outputDirectory) {
     throw new Error("Usage: runner-token.ts <output-directory>");
@@ -113,6 +115,7 @@ async function main(): Promise<void> {
           provisionRunnerCredential({
             apiUrl,
             appUrl,
+            expectedAppBuildSha,
             browser,
             outputDirectory,
             target,
@@ -171,6 +174,7 @@ async function provisionRunnerCredential(
       appUrl,
       {
         activeOrganizationId: target.organizationId,
+        expectedAppBuildSha: options.expectedAppBuildSha,
         diagnosticPath: join(
           outputDirectory,
           "e2e-runner-sign-in-diagnostics",

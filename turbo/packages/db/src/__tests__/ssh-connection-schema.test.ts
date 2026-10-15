@@ -39,6 +39,7 @@ describe("SSH connection schema", () => {
       "default_enabled_for_chats",
       "created_at",
       "updated_at",
+      "tailscale_ssh_username",
     ]);
     expect(
       config.indexes.map((index) => {
@@ -63,6 +64,7 @@ describe("SSH connection schema", () => {
     expect(Object.keys(checks)).toStrictEqual([
       "chk_ssh_connections_transport",
       "chk_ssh_connections_transport_binding",
+      "chk_ssh_connections_login",
       "chk_ssh_connections_cloudflare_access_destination",
       "chk_ssh_connections_display_name",
       "chk_ssh_connections_host",
@@ -70,16 +72,25 @@ describe("SSH connection schema", () => {
       "chk_ssh_connections_generation",
       "chk_ssh_connections_learned_host_key_pair",
     ]);
-    expect(sshConnections.transport.notNull).toBe(true);
-    expect(sshConnections.transport.hasDefault).toBe(false);
-    expect(sshConnections.transport.default).toBeUndefined();
+    expect(sshConnections.connectionMode.notNull).toBe(true);
+    expect(sshConnections.connectionMode.hasDefault).toBe(false);
+    expect(sshConnections.connectionMode.default).toBeUndefined();
     expect(checks.chk_ssh_connections_transport).toContain(
-      "IN ('direct', 'cloudflare_access', 'tailscale')",
+      "IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')",
     );
     expect(checks.chk_ssh_connections_transport_binding).toContain(
       '"tailscale_id" IS NULL',
     );
     expect(checks.chk_ssh_connections_port).toContain("BETWEEN 1 AND 65535");
+    expect(checks.chk_ssh_connections_login).toContain(
+      '"credential_id" IS NULL',
+    );
+    expect(checks.chk_ssh_connections_login).toContain(
+      '"credential_id" IS NOT NULL',
+    );
+    expect(checks.chk_ssh_connections_login).toContain(
+      '"tailscale_ssh_username" IS NOT NULL',
+    );
     expect(checks.chk_ssh_connections_generation).toContain("> 0");
     expect(checks.chk_ssh_connections_learned_host_key_pair).toContain(
       "IS NULL",
@@ -133,7 +144,7 @@ describe("SSH connection schema", () => {
     expect(sshConnections.tailscaleId.notNull).toBe(false);
   });
 
-  it("requires a same-owner credential and restricts deletion while referenced", () => {
+  it("restricts referenced credentials to the same owner while allowing credentialless Tailscale SSH", () => {
     const config = getTableConfig(sshConnections);
     const credentialForeignKey = config.foreignKeys.find((key) => {
       return key.getName() === "ssh_connections_credential_owner_fk";
@@ -145,7 +156,7 @@ describe("SSH connection schema", () => {
         return column.name;
       }),
     ).toStrictEqual(["credential_id", "org_id", "user_id"]);
-    expect(sshConnections.credentialId.notNull).toBe(true);
+    expect(sshConnections.credentialId.notNull).toBe(false);
     const credentialConfig = getTableConfig(sshCredentials);
     expect(
       credentialConfig.checks.map((check) => {

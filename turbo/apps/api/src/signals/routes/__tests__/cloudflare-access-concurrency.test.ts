@@ -1,3 +1,4 @@
+import { credentialBackedSshHost } from "./helpers/ssh-credential";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -723,7 +724,7 @@ test.each(["create", "update"] as const)(
       ).toContainEqual(
         expect.objectContaining({
           id: saved.body.id,
-          credentialId: saved.body.credentialId,
+          credentialId: credentialBackedSshHost(saved.body).credentialId,
           host: saved.body.host,
           port: 443,
           generation: saved.body.generation + 1,
@@ -825,7 +826,7 @@ test("requires a fresh deletion preview for a first concurrent member binding", 
     ).toContainEqual(
       expect.objectContaining({
         id: saved.body.id,
-        credentialId: saved.body.credentialId,
+        credentialId: credentialBackedSshHost(saved.body).credentialId,
         generation: saved.body.generation + 1,
         port: 443,
         transport: { type: "cloudflare_access", needsRebind: true },
@@ -1008,7 +1009,7 @@ test.each(["first", "late"] as const)(
         return id === created.id;
       });
       expect(saved).toMatchObject({
-        credentialId: created.credentialId,
+        credentialId: credentialBackedSshHost(created).credentialId,
         host: created.host,
         port: 443,
         transport: { type: "cloudflare_access", configId: shared.id },
@@ -1157,7 +1158,7 @@ test.each(["rotate", "convert", "delete"] as const)(
       expect(saved).toHaveLength(1);
       expect(saved[0]).toMatchObject({
         id: host.id,
-        credentialId: host.credentialId,
+        credentialId: credentialBackedSshHost(host).credentialId,
         host: host.host,
         port: host.port,
         generation: host.generation + 1,
@@ -1252,7 +1253,7 @@ test.each(["delete", "detach"] as const)(
         expect(listed).toContainEqual(
           expect.objectContaining({
             id: host.id,
-            credentialId: host.credentialId,
+            credentialId: credentialBackedSshHost(host).credentialId,
             generation: host.generation + 1,
             port: 22,
           }),
@@ -1297,7 +1298,7 @@ test("serializes configuration rotation with independent-login deletion without 
     accept(
       credentials().delete({
         headers: owner.headers,
-        params: { credentialId: host.credentialId },
+        params: { credentialId: credentialBackedSshHost(host).credentialId },
         body: { expectedRevision: 1 },
       }),
       [409],
@@ -1311,7 +1312,7 @@ test("serializes configuration rotation with independent-login deletion without 
   ).toContainEqual(
     expect.objectContaining({
       id: host.id,
-      credentialId: host.credentialId,
+      credentialId: credentialBackedSshHost(host).credentialId,
       generation: host.generation + 1,
       transport: { type: "cloudflare_access", configId: shared.id },
     }),
@@ -1321,7 +1322,7 @@ test("serializes configuration rotation with independent-login deletion without 
       .credentials,
   ).toContainEqual(
     expect.objectContaining({
-      id: host.credentialId,
+      id: credentialBackedSshHost(host).credentialId,
       revision: 1,
       username: "deploy",
     }),
@@ -1750,7 +1751,7 @@ describe("protected host writes with authorized Runner authority", () => {
     ).toContainEqual(
       expect.objectContaining({
         id: host.id,
-        credentialId: host.credentialId,
+        credentialId: credentialBackedSshHost(host).credentialId,
         host: host.host,
         port: host.port,
         generation: host.generation + 1,
@@ -1868,7 +1869,7 @@ describe("protected host writes with authorized Runner authority", () => {
         id: host.id,
         host: host.host,
         port: host.port,
-        credentialId: host.credentialId,
+        credentialId: credentialBackedSshHost(host).credentialId,
         generation: host.generation + 1,
         learnedHostKey: hostKey,
         transport: { type: "cloudflare_access", configId: shared.id },
@@ -1941,7 +1942,7 @@ describe("protected host writes with authorized Runner authority", () => {
       throw new Error("Expected the retained protected SSH host");
     }
     expect(saved).toMatchObject({
-      credentialId: host.credentialId,
+      credentialId: credentialBackedSshHost(host).credentialId,
       host: host.host,
       port: host.port,
       transport: { type: "cloudflare_access", configId: shared.id },
@@ -1993,7 +1994,7 @@ describe("protected host writes with authorized Runner authority", () => {
         .credentials,
     ).toContainEqual(
       expect.objectContaining({
-        id: host.credentialId,
+        id: credentialBackedSshHost(host).credentialId,
         revision: 1,
         username: login.username,
       }),
