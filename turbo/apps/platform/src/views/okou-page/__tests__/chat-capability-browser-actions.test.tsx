@@ -1602,9 +1602,12 @@ test.each([
     installCapabilityChat({
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
     });
+    // An abandoned refresh has no page result. Observe the actual HTTP
+    // boundary, then assert route ownership in the test body rather than
+    // throwing inside a handler that MSW could turn into a 500 response.
+    const readRoutes: string[] = [];
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-      // A read for the abandoned card must not acquire the new route's lifetime.
-      expect(window.location.pathname).toBe(RUN_PATH);
+      readRoutes.push(window.location.pathname);
       return respond(200, browserInputAction("pending"));
     });
     context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
@@ -1630,6 +1633,7 @@ test.each([
     const input = within(dialog).getByLabelText(label);
     await fill(input, value);
     expect(input).toHaveValue(value);
+    expect(readRoutes).toContain(RUN_PATH);
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
@@ -1657,6 +1661,7 @@ test.each([
     expect(within(reopened).getByLabelText("Verification code")).toHaveValue(
       "",
     );
+    expect(readRoutes).not.toContain("/connectors");
   },
 );
 
