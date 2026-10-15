@@ -13,7 +13,7 @@ import { z } from "zod";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import { nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
@@ -235,24 +235,6 @@ export function builtinConnectorCredentialConnectionFromRow(
   };
 }
 
-export async function loadBuiltinConnectorCredentialConnection(args: {
-  readonly connectorId: string;
-  readonly connectorSlug: string;
-  readonly db: ReadonlyDb;
-  readonly orgId: string;
-  readonly snapshot: ConnectorRuntimeAuthLookup;
-  readonly userId: string;
-}): Promise<BuiltinConnectorCredentialConnectionResult> {
-  const { db, ...input } = args;
-  const plan = builtinConnectorCredentialConnectionReadPlan(input);
-  const [row] = await db
-    .select(plan.columns)
-    .from(connectors)
-    .where(plan.condition)
-    .limit(1);
-  return builtinConnectorCredentialConnectionFromRow(input, row);
-}
-
 export function builtinConnectorCredentialRuntimeValueRef(
   connection: BuiltinConnectorCredentialConnection,
   environmentName: string,
@@ -321,7 +303,7 @@ export function builtinConnectorVariableValuesFromRows(
   return values;
 }
 
-async function builtinConnectorCredentialValuesFromRows(
+export async function builtinConnectorCredentialValuesFromRows(
   args: {
     readonly connection: BuiltinConnectorCredentialConnection;
     readonly featureSwitchContext?: FeatureSwitchContext;
@@ -353,30 +335,6 @@ async function builtinConnectorCredentialValuesFromRows(
     }
   }
   return values;
-}
-
-export async function loadBuiltinConnectorCredentialValues(args: {
-  readonly connection: BuiltinConnectorCredentialConnection;
-  readonly db: ReadonlyDb;
-  readonly featureSwitchContext?: FeatureSwitchContext;
-  readonly valueRefs: readonly string[];
-}): Promise<ReadonlyMap<string, string>> {
-  const { db, ...input } = args;
-  const plan = builtinConnectorCredentialValuesReadPlan(input);
-  if (plan === null) {
-    return new Map();
-  }
-  const rows = await db
-    .select(plan.secretColumns)
-    .from(secrets)
-    .where(plan.secretCondition)
-    .unionAll(
-      db
-        .select(plan.variableColumns)
-        .from(variables)
-        .where(plan.variableCondition),
-    );
-  return await builtinConnectorCredentialValuesFromRows(input, rows);
 }
 
 function refreshTokenExpiresAt(
@@ -820,10 +778,7 @@ export const refreshBuiltinConnectorCredentialAccess$ = command(
 export const loadBuiltinConnectorCredentialConnection$ = command(
   async (
     { get },
-    args: Omit<
-      Parameters<typeof loadBuiltinConnectorCredentialConnection>[0],
-      "db"
-    >,
+    args: Parameters<typeof builtinConnectorCredentialConnectionReadPlan>[0],
   ): Promise<BuiltinConnectorCredentialConnectionResult> => {
     const plan = builtinConnectorCredentialConnectionReadPlan(args);
     const [row] = await get(db$)
@@ -837,10 +792,7 @@ export const loadBuiltinConnectorCredentialConnection$ = command(
 export const loadBuiltinConnectorCredentialValues$ = command(
   async (
     { get },
-    args: Omit<
-      Parameters<typeof loadBuiltinConnectorCredentialValues>[0],
-      "db"
-    >,
+    args: Parameters<typeof builtinConnectorCredentialValuesReadPlan>[0],
     signal: AbortSignal,
   ): Promise<ReadonlyMap<string, string>> => {
     const plan = builtinConnectorCredentialValuesReadPlan(args);
