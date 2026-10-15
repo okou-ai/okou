@@ -107,7 +107,7 @@ function menuItemNames() {
   });
 }
 
-async function expectMobileSidebarPin(pinned: boolean) {
+async function openMobileSidebarPin(pinned: boolean): Promise<HTMLElement> {
   click(buttonNamed("Open menu"));
   const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
   await waitFor(() => {
@@ -115,6 +115,11 @@ async function expectMobileSidebarPin(pinned: boolean) {
       within(drawer).getByTestId("chat-thread-menu-trigger"),
     ).toHaveAttribute("data-pinned", String(pinned));
   });
+  return drawer;
+}
+
+async function expectMobileSidebarPin(pinned: boolean) {
+  const drawer = await openMobileSidebarPin(pinned);
   click(within(drawer).getByLabelText("Collapse sidebar"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
@@ -185,15 +190,23 @@ test("Keep rapid pin changes responsive across resize and save without a success
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await expectMobileSidebarPin(false);
+  const drawer = await openMobileSidebarPin(false);
 
   pinResponse.resolve();
   await waitFor(() => {
-    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-      "Pin changes saved",
-    );
+    expect(drawer).toBeInTheDocument();
+    expect(drawer).toHaveTextContent("Pin changes saved");
   });
-  await expectMobileSidebarPin(false);
+  expect(
+    within(drawer).getByTestId("chat-thread-menu-trigger"),
+  ).toHaveAttribute("data-pinned", "false");
+  click(within(drawer).getByLabelText("Collapse sidebar"));
+  await waitFor(() => {
+    expect(drawer).not.toBeInTheDocument();
+  });
+  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+    "Pin changes saved",
+  );
   expect(screen.queryByText("Chat pinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Chat unpinned")).not.toBeInTheDocument();
   expect(screen.queryByText("Undo")).not.toBeInTheDocument();

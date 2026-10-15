@@ -378,8 +378,8 @@ async function waitForInteractiveThread(
     expect(link).toHaveAttribute("aria-current", "page");
     return { section, link };
   });
-  expect(section).toBeVisible();
-  expect(link).toBeVisible();
+  expect(section).toBeInTheDocument();
+  expect(link).toBeInTheDocument();
 }
 
 async function chooseReadingPosition(

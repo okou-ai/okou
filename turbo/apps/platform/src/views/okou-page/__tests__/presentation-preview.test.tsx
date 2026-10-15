@@ -77,13 +77,14 @@ function activePreviewFrame(): HTMLIFrameElement {
 
 async function openPresentationDetail(): Promise<HTMLIFrameElement> {
   await clickComposerAddMenuItem("Template");
-  const dialog = await screen.findByRole("dialog");
-  click(
-    await waitForNamedButton(
-      `Preview ${TEMPLATE_NAME} at current slide`,
-      dialog,
-    ),
+  const preview = await screen.findByLabelText(
+    `Preview ${TEMPLATE_NAME} at current slide`,
   );
+  const dialog = preview.closest('[role="dialog"]');
+  if (!(dialog instanceof HTMLElement)) {
+    throw new Error("Presentation gallery dialog not found");
+  }
+  click(preview);
   await screen.findByTitle(PREVIEW_TITLE);
   return activePreviewFrame();
 }

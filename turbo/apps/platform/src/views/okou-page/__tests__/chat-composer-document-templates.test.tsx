@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
+  fill,
   setupPage,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
@@ -59,11 +60,9 @@ test("Document remains hidden when its rollout switch is off", async () => {
   ).not.toContain("Document");
 });
 
-test("Document category and scroll survive preview; Use preserves the draft and does not send", async () => {
+test("Document category and scroll survive preview", async () => {
   const { user, capture } = await setup();
-  const editor = await findComposerEditor();
-  await user.click(editor);
-  await user.keyboard("Prepare the invoice for my client.");
+  await fill(await findComposerEditor(), "Prepare the invoice for my client.");
   const dialog = await openTemplatePicker(user);
   const tabs = queryAllByRoleFast("tab", dialog);
   expect(
@@ -80,7 +79,7 @@ test("Document category and scroll survive preview; Use preserves the draft and 
   click(control(dialog, "tab", "Document"));
   expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(51);
-  await user.click(control(dialog, "button", "Invoice"));
+  click(control(dialog, "button", "Invoice"));
   expect(within(dialog).getAllByLabelText(/^Preview /u)).toHaveLength(7);
   const grid = dialog.querySelector<HTMLElement>(
     "[data-document-template-grid-scroll]",
@@ -106,6 +105,17 @@ test("Document category and scroll survive preview; Use preserves the draft and 
   );
   expect(restored?.scrollTop).toBe(120);
   expect(control(dialog, "button", "Preview Simple invoice")).toHaveFocus();
+  await expect(findComposerEditor()).resolves.toHaveTextContent(
+    "Prepare the invoice for my client.",
+  );
+  expect(capture.sentMessages).toHaveLength(0);
+});
+
+test("Using a document template preserves the draft until the user sends it", async () => {
+  const { user, capture } = await setup();
+  await fill(await findComposerEditor(), "Prepare the invoice for my client.");
+  const dialog = await openTemplatePicker(user);
+  click(control(dialog, "tab", "Document"));
   click(control(dialog, "button", "Use Simple invoice"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -117,7 +127,7 @@ test("Document category and scroll survive preview; Use preserves the draft and 
   expect(composerInlineTemplates()).toHaveLength(1);
   expect(composerInlineTemplates()[0]).toHaveTextContent("Simple invoice");
   expect(capture.sentMessages).toHaveLength(0);
-  await user.click(await findComposerEditor());
+  click(await findComposerEditor());
   await user.keyboard("{Enter}");
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);

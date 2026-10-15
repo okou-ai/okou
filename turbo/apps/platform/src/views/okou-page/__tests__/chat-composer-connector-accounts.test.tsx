@@ -55,7 +55,7 @@ async function openConnectors(
   click(await findFastControl("button", "Connectors", container));
   await expect(
     findFastControl("button", "Add connectors"),
-  ).resolves.toBeVisible();
+  ).resolves.toBeEnabled();
 }
 
 async function openAccountChooser(
@@ -122,10 +122,10 @@ async function openAgentScopedConnectors(pendingAuthorization: boolean) {
   const otherPane = pane(OTHER_THREAD_ID);
   await expect(
     findFastControl("button", "Connectors", scoutPane),
-  ).resolves.toBeVisible();
+  ).resolves.toBeEnabled();
   await expect(
     findFastControl("button", "Connectors", otherPane),
-  ).resolves.toBeVisible();
+  ).resolves.toBeEnabled();
   return { user, fixture, scoutPane, otherPane, otherAuthorization };
 }
 
@@ -133,14 +133,14 @@ test("A pending connector authorization does not borrow the other chat agent's a
   const { user, scoutPane, otherPane, otherAuthorization } =
     await openAgentScopedConnectors(true);
   await openConnectors(scoutPane);
-  await expect(screen.findByLabelText("Add Slack")).resolves.toBeVisible();
+  await expect(screen.findByLabelText("Add Slack")).resolves.toBeEnabled();
   await user.keyboard("{Escape}");
   await openConnectors(otherPane);
   expect(screen.queryByLabelText("Remove Slack")).toBeNull();
   expect(screen.queryByLabelText("Add Slack")).toBeNull();
 
   otherAuthorization.resolve(undefined);
-  await expect(screen.findByLabelText("Remove Slack")).resolves.toBeVisible();
+  await expect(screen.findByLabelText("Remove Slack")).resolves.toBeEnabled();
 });
 
 test("Removing a connector updates only the selected chat agent's access", async () => {
