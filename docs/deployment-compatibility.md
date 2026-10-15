@@ -74,18 +74,33 @@ Evaluate all reachable combinations:
 
 ### Runner, Guest, and CLI Artifacts
 
-Runner and its bundled Guest binaries are one deployment artifact. Each sandbox
-belongs exclusively to the Runner that created it; another Runner does not adopt
-it, and stopping its owner destroys it. Files private to that sandbox lifetime
-need no cross-version reader solely because they cross the Runner/Guest boundary.
+Runner embeds its Guest binaries and the Okou CLI package in one deployment
+artifact. Rootfs builds install that CLI into the Guest. Each sandbox belongs
+exclusively to the Runner that created it; another Runner does not adopt it, and
+stopping its owner destroys it. Files private to that sandbox lifetime need no
+cross-version reader solely because they cross the Runner/Guest boundary.
 The embedded MITM addon and recreated Runner-private registry share that same
 artifact boundary. This exemption does not cover independently persisted or
 externally consumed data.
 
-CLI packages can be selected separately and captured by queued or active Run
-contexts. Keep the exact captured package available through queueing, execution,
-and finalization. Do not infer the CLI version from the current API or Runner
-version, or remove a protocol merely because a new package has been published.
+Pi normally executes the installed CLI without downloading another package. The
+[Guest's CLI selection](../crates/guest-agent/src/cli/okou_cli_launch.rs) checks the
+Run's API-captured compatibility requirements, including session-construction
+identity and minimum CLI version. The installed CLI remains usable across API
+releases while it satisfies those requirements.
+
+API and Runner promotion happen at different times. During deployment overlap,
+a newer API can dispatch to an older Runner whose bundled CLI no longer matches,
+for example after a tool-schema or system-prompt change. When the installed CLI
+is unavailable or cannot satisfy the captured requirements, Pi launches the Run's
+captured CLI package through `npx`.
+
+That package is built from the capturing API's commit and fixed in the Run
+context. A separately selected CLI has its own execution lifetime and must remain
+compatible with its Runner/Guest. Keep the exact captured package available
+through queueing, execution, and finalization. Use the Run's captured package and
+requirements for compatibility decisions; the current API or Runner version and
+publication of a newer package do not establish that old consumers have drained.
 
 Never replace a captured package's bytes or redirect its historical URL to a
 newer package. Use the exact artifact and required runtime identity for
@@ -135,7 +150,8 @@ Compatibility applies to:
 - queue and persisted job/Run/session payloads;
 - cross-Runner caches, metadata, and independently consumed host files;
 - browser-resident Workers and clients that can outlive a deployment;
-- captured CLI packages and contexts that retain their own execution lifetime.
+- separately selected CLI packages and captured Run contexts that can outlive an
+  API deployment.
 
 Compatibility is not required between package internals in one frontend build,
 API build, or Runner artifact, or for state private to one Runner-owned sandbox
@@ -346,7 +362,8 @@ business triggers; follow the [trigger policy](api/database.md#database-triggers
 - **New App -> old API:** the old API is neither serving nor a supported rollback
   target.
 - **Runner or sandbox:** old owners finish draining, including bounded
-  finalization, not merely agent execution. Account for captured CLI contexts.
+  finalization, not merely agent execution. Account for both bundled and
+  separately selected CLI executions.
 - **Database/API:** the migration succeeded, outgoing consumers drained, and
   retained rollback targets work with the contracted schema.
 - **Persisted formats and durable references:** account for retained data and

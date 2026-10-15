@@ -156,6 +156,11 @@ identity comparison, SHA/size self-checks or installed-manifest regeneration.
 External disk state still needs installation verification and exact cached-sidecar
 comparison. No separate CLI package crate or runtime decoder is needed.
 
+Pi normally executes this rootfs-installed CLI. When it cannot satisfy the Run's
+API-captured compatibility requirements, Pi uses the captured commit-addressed
+package. See [CLI selection and deployment compatibility](../deployment-compatibility.md#runner-guest-and-cli-artifacts)
+for deployment overlap and package lifetime requirements.
+
 The **local rootfs** CLI contribution is only the build-time SHA-256 computed from
 the verified package. Packed identity uniquely determines the installed versions and
 session metadata; package size follows from bytes and installation paths follow

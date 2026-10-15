@@ -417,9 +417,11 @@ verification use the generic helper identity. Runner and bundled guest binaries
 ship together, without an SSH-specific compatibility alias. API and
 control-channel contracts are unchanged.
 
-Runner/rootfs, API, UI and selected commit-addressed CLI artifacts retain their
-independent deployment boundaries. Add no negotiation header, fallback routing, plugin
-registry, batching or pooling. See [deployment compatibility](../deployment-compatibility.md).
+API and UI deploy independently of Runner/rootfs. Runner bundles the default
+Okou CLI; a separately selected commit-addressed CLI package retains its own
+artifact boundary. Preserve CLI/helper compatibility across those boundaries;
+see [CLI selection and deployment compatibility](../deployment-compatibility.md#runner-guest-and-cli-artifacts).
+Add no negotiation header, fallback routing, plugin registry, batching or pooling.
 
 Local tests use real sockets, files, the real control handshake and operation
 tracker, plus unrelated external test methods. They require no web server.
