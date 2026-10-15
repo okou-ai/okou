@@ -27,8 +27,10 @@ const READY_CONTROL_MESSAGE_ID: &str = "process-control-after-cli-ready";
 
 type TestResult<T> = Result<T, Box<dyn std::error::Error>>;
 
-struct MockStartGate {
-    writer: File,
+struct MockGates {
+    start: File,
+    completion: File,
+    start_released: bool,
 }
 
 struct ConnectionHarness {
@@ -36,9 +38,36 @@ struct ConnectionHarness {
     guest: Option<thread::JoinHandle<io::Result<()>>>,
 }
 
-impl MockStartGate {
+impl MockGates {
     fn create(dir: &Path, mock: &Path) -> TestResult<(Self, PathBuf)> {
-        let fifo = dir.join("mock-start.fifo");
+        let start_fifo = dir.join("mock-start.fifo");
+        let completion_fifo = dir.join("mock-completion.fifo");
+        let start = Self::create_fifo(&start_fifo)?;
+        let completion = Self::create_fifo(&completion_fifo)?;
+
+        let wrapper = dir.join("gated-mock-claude.sh");
+        let script = format!(
+            "#!/bin/sh\nIFS= read -r _ < {} || exit 1\nMOCK_CLAUDE_ACTIVE_INPUT_COMPLETION_FIFO={} exec {} \"$@\"\n",
+            quote_shell_arg(&start_fifo.to_string_lossy()),
+            quote_shell_arg(&completion_fifo.to_string_lossy()),
+            quote_shell_arg(&mock.to_string_lossy()),
+        );
+        std::fs::write(&wrapper, script)?;
+        let mut permissions = std::fs::metadata(&wrapper)?.permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&wrapper, permissions)?;
+
+        Ok((
+            Self {
+                start,
+                completion,
+                start_released: false,
+            },
+            wrapper,
+        ))
+    }
+
+    fn create_fifo(fifo: &Path) -> TestResult<File> {
         let c_fifo = std::ffi::CString::new(fifo.as_os_str().as_bytes())?;
         // SAFETY: c_fifo is a valid NUL-terminated path and the mode is a
         // normal POSIX permission mask for a test-only FIFO.
@@ -46,8 +75,8 @@ impl MockStartGate {
             return Err(io::Error::last_os_error().into());
         }
 
-        // Keep both FIFO ends open so the wrapper can block on its read even
-        // when the test releases it before the wrapper reaches that read.
+        // Keep both ends open until the guest exits, including when release
+        // precedes the reader opening the FIFO during error cleanup.
         // SAFETY: c_fifo remains valid for the call and ownership of the
         // returned descriptor transfers to File below.
         let fd = unsafe {
@@ -60,24 +89,19 @@ impl MockStartGate {
             return Err(io::Error::last_os_error().into());
         }
         // SAFETY: fd is a freshly opened descriptor owned by this function.
-        let writer = unsafe { File::from_raw_fd(fd) };
-
-        let wrapper = dir.join("gated-mock-claude.sh");
-        let script = format!(
-            "#!/bin/sh\nIFS= read -r _ < {}\nexec {} \"$@\"\n",
-            quote_shell_arg(&fifo.to_string_lossy()),
-            quote_shell_arg(&mock.to_string_lossy()),
-        );
-        std::fs::write(&wrapper, script)?;
-        let mut permissions = std::fs::metadata(&wrapper)?.permissions();
-        permissions.set_mode(0o700);
-        std::fs::set_permissions(&wrapper, permissions)?;
-
-        Ok((Self { writer }, wrapper))
+        Ok(unsafe { File::from_raw_fd(fd) })
     }
 
-    fn release(&mut self) -> io::Result<()> {
-        self.writer.write_all(b"start\n")
+    fn release_start(&mut self) -> io::Result<()> {
+        if !self.start_released {
+            self.start.write_all(b"start\n")?;
+            self.start_released = true;
+        }
+        Ok(())
+    }
+
+    fn release_completion(&mut self) -> io::Result<()> {
+        self.completion.write_all(b"complete\n")
     }
 }
 
@@ -121,7 +145,7 @@ impl Drop for ConnectionHarness {
 async fn process_control_channel_reaches_guest_agent() -> TestResult<()> {
     let mock = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
-    let (mut mock_start_gate, gated_mock) = MockStartGate::create(tmp.path(), &mock)?;
+    let (mut mock_gates, gated_mock) = MockGates::create(tmp.path(), &mock)?;
     let run_id = format!(
         "process-control-channel-{}-{}",
         std::process::id(),
@@ -204,43 +228,94 @@ async fn process_control_channel_reaches_guest_agent() -> TestResult<()> {
         .take_stream_receiver()
         .ok_or("supervised exec should expose stdout stream")?;
 
-    let pre_ready_payload = guest_contracts::active_input::encode_active_input(
-        "1e208848-53bc-440a-85d8-adcd048e167c",
-        "before-ready",
-    )?;
-    let pre_ready_ack = handle
-        .control(
-            PRE_READY_CONTROL_MESSAGE_ID,
-            &pre_ready_payload,
-            Duration::from_secs(10),
+    let mut stdout = Vec::new();
+    let control_result = async {
+        let pre_ready_payload = guest_contracts::active_input::encode_active_input(
+            "1e208848-53bc-440a-85d8-adcd048e167c",
+            "before-ready",
+        )?;
+        let pre_ready_ack = handle
+            .control(
+                PRE_READY_CONTROL_MESSAGE_ID,
+                &pre_ready_payload,
+                Duration::from_secs(10),
+            )
+            .await
+            .map_err(|error| format!("before-ready control failed: {error}"))?;
+
+        mock_gates.release_start()?;
+        stdout.extend(
+            collect_stdout_until(
+                &mut stdout_rx,
+                b"READY_FOR_ACTIVE_INPUT",
+                Duration::from_secs(10),
+            )
+            .await?,
+        );
+
+        let ready_payload = guest_contracts::active_input::encode_active_input(
+            "e6c121e3-9a6f-4835-87c0-a31b042f3008",
+            "after-ready",
+        )?;
+        let ack = handle
+            .control(
+                READY_CONTROL_MESSAGE_ID,
+                &ready_payload,
+                Duration::from_secs(10),
+            )
+            .await
+            .map_err(|error| format!("after-ready control failed: {error}"))?;
+        Ok::<_, Box<dyn std::error::Error>>((pre_ready_ack, ack))
+    }
+    .await;
+
+    // The mock must not emit its final result and trigger control shutdown
+    // before both ACKs return. Release on failure too, then retain guest stderr.
+    mock_gates.release_start()?;
+    mock_gates.release_completion()?;
+
+    let wait_timeout = Duration::from_secs(20);
+    let wait_deadline = tokio::time::Instant::now() + wait_timeout;
+    let cancel_result = if control_result.is_err()
+        && let Some(cancel) = handle.take_cancel_handle()
+    {
+        cancel.cancel(wait_timeout).await
+    } else {
+        Ok(())
+    };
+    // Keep the terminal receiver: cancel_and_wait can turn an already-failed
+    // process result into a cancellation error and discard captured stderr.
+    let exit = handle
+        .wait(wait_deadline.saturating_duration_since(tokio::time::Instant::now()))
+        .await
+        .map_err(|error| {
+            format!("guest terminal result unavailable: {error}; control={control_result:?}; cancel={cancel_result:?}")
+        })?;
+    stdout.extend(
+        collect_stdout(&mut stdout_rx, Duration::from_secs(5))
+            .await
+            .map_err(|error| {
+                format!(
+                    "guest stdout drain failed: {error}; control={control_result:?}; termination={:?} diagnostic={} stderr={}",
+                    exit.termination,
+                    exit.diagnostic,
+                    captured_output_lossy(&exit.stderr)
+                )
+            })?,
+    );
+
+    let finish_result = connection.finish();
+
+    let (pre_ready_ack, ack) = control_result.map_err(|error| {
+        format!(
+            "{error}; termination={:?} diagnostic={} stdout={} stderr={} cancel={cancel_result:?} connection={finish_result:?}",
+            exit.termination,
+            exit.diagnostic,
+            String::from_utf8_lossy(&stdout),
+            captured_output_lossy(&exit.stderr)
         )
-        .await?;
-
-    mock_start_gate.release()?;
-    let mut stdout = collect_stdout_until(
-        &mut stdout_rx,
-        b"READY_FOR_ACTIVE_INPUT",
-        Duration::from_secs(10),
-    )
-    .await?;
-
-    let ready_payload = guest_contracts::active_input::encode_active_input(
-        "e6c121e3-9a6f-4835-87c0-a31b042f3008",
-        "after-ready",
-    )?;
-    let ack = handle
-        .control(
-            READY_CONTROL_MESSAGE_ID,
-            &ready_payload,
-            Duration::from_secs(10),
-        )
-        .await?;
-
-    let exit = handle.wait(Duration::from_secs(20)).await?;
-    stdout.extend(collect_stdout(&mut stdout_rx, Duration::from_secs(5)).await?);
-
-    connection.finish()?;
-
+    })?;
+    finish_result?;
     assert_eq!(pre_ready_ack.message_id, PRE_READY_CONTROL_MESSAGE_ID);
     assert_eq!(ack.message_id, READY_CONTROL_MESSAGE_ID);
     assert!(
