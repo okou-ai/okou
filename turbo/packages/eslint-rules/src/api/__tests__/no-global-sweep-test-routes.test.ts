@@ -17,6 +17,10 @@ const piLifecycle =
   "/repo/turbo/apps/api/src/signals/routes/__tests__/pi-memory-maintenance-publication.test.ts";
 const piCleanupImport =
   'import { cronCleanupSandboxesRoutes } from "../cron-cleanup-sandboxes";';
+const computerUseRetention =
+  "/repo/turbo/apps/api/src/signals/routes/__tests__/computer-use-retention.test.ts";
+const computerUseCleanupImport =
+  'import { cronComputerUseScreenshotCleanupRoutes } from "../cron-computer-use-screenshot-cleanup";';
 
 const helperImport = `
   import { expectGlobalSweepMissingAuth } from "./helpers/global-sweep-contract";
@@ -27,6 +31,14 @@ const routeImport = `
 
 ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
   valid: [
+    {
+      name: "the isolated Computer Use retention suite mounts its real operator",
+      filename: computerUseRetention,
+      code: `${computerUseCleanupImport}
+        import { setupApp } from "../../../__tests__/test-helpers";
+        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true })(contract);
+      `,
+    },
     {
       name: "the exact isolated Pi lifecycle directly mounts its approved cleanup operator",
       filename: piLifecycle,
@@ -136,6 +148,45 @@ ruleTester.run("no-global-sweep-test-routes", noGlobalSweepTestRoutes, {
     },
   ],
   invalid: [
+    {
+      name: "retention coverage must explicitly isolate its database",
+      filename: computerUseRetention,
+      code: `${computerUseCleanupImport}
+        import { setupApp } from "../../../__tests__/test-helpers";
+        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes });
+      `,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "retention coverage cannot override isolation through a spread",
+      filename: computerUseRetention,
+      code: `${computerUseCleanupImport}
+        import { setupApp } from "../../../__tests__/test-helpers";
+        setupApp({ context, routes: cronComputerUseScreenshotCleanupRoutes, isolatePg: true, ...options });
+      `,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "ordinary coverage cannot use the Computer Use retention operator",
+      filename: behaviorTest,
+      code: computerUseCleanupImport,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "retention coverage cannot import an unrelated global operator",
+      filename: computerUseRetention,
+      code: piCleanupImport,
+      errors: [{ messageId: "globalSweep" }],
+    },
+    {
+      name: "retention coverage cannot use a private operator driver",
+      filename: computerUseRetention,
+      code: `${computerUseCleanupImport}
+        import { setupApp } from "./private-driver";
+        setupApp({ routes: cronComputerUseScreenshotCleanupRoutes });
+      `,
+      errors: [{ messageId: "globalSweep" }],
+    },
     {
       name: "Pi coverage cannot send its operator to a local function named setupApp",
       filename: piLifecycle,
