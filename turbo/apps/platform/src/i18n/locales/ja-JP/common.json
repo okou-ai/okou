@@ -5073,6 +5073,16 @@
       "saveChanges": "変更を保存する",
       "saving": "保存中..."
     },
+    "wallet": {
+      "actionError": "操作を完了できませんでした。接続を確認し、ポップアップを許可して再試行してください。",
+      "connect": "接続",
+      "description": "エージェントが Link を通じて購入をリクエストできます。購入ごとにあなたの承認が必要です。",
+      "disconnect": "接続を解除",
+      "loadError": "ウォレットを読み込めませんでした。",
+      "retry": "再試行",
+      "scope": "このワークスペース内のあなたのエージェントで共有する Link ウォレット。",
+      "title": "ウォレット"
+    },
     "workspace": {
       "danger": {
         "delete": {

@@ -23,6 +23,7 @@ import {
   startWalletOAuth$,
   walletRunOwner$,
   walletStatus$,
+  walletSettingsStatus$,
   walletConnectStatus$,
 } from "../services/link-wallet.service";
 import { settle } from "../utils";
@@ -126,6 +127,44 @@ const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const result = await settle(
     set(disconnectWallet$, owner.value, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const userStatus$ = command(async ({ get }, signal: AbortSignal) => {
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const result = await settle(get(walletSettingsStatus$), signal);
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const { orgId, userId } = get(organizationAuthContext$);
+  const result = await settle(
+    set(startWalletOAuth$, { orgId, userId }, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  return walletResponse(result);
+});
+const userDisconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const { orgId, userId } = get(organizationAuthContext$);
+  const result = await settle(
+    set(disconnectWallet$, { orgId, userId }, signal),
     signal,
   );
   signal.throwIfAborted();
@@ -239,6 +278,18 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.status,
+    handler: authRoute(userAuth, userStatus$),
+  },
+  {
+    route: walletUserContract.connect,
+    handler: authRoute(userAuth, userConnect$),
+  },
+  {
+    route: walletUserContract.disconnect,
+    handler: authRoute(userAuth, userDisconnect$),
+  },
   {
     route: walletUserContract.connectStatus,
     handler: authRoute(userAuth, connectStatus$),

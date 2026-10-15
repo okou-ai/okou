@@ -5094,6 +5094,16 @@
       "saveChanges": "Änderungen speichern",
       "saving": "Speichern..."
     },
+    "wallet": {
+      "actionError": "Die Aktion konnte nicht abgeschlossen werden. Prüfe deine Verbindung, erlaube Pop-ups und versuche es erneut.",
+      "connect": "Verbinden",
+      "description": "Deine Agenten können über Link Einkäufe anfragen. Du bestätigst jeden Einkauf.",
+      "disconnect": "Trennen",
+      "loadError": "Dein Wallet konnte nicht geladen werden.",
+      "retry": "Erneut versuchen",
+      "scope": "Dein Link-Wallet für alle deine Agenten in diesem Workspace.",
+      "title": "Wallet"
+    },
     "workspace": {
       "danger": {
         "delete": {

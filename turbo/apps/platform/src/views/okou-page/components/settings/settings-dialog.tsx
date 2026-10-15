@@ -25,6 +25,7 @@ import {
   SlidersHorizontal,
   Users,
   Wrench,
+  Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -52,6 +53,7 @@ import { ModelSection } from "./sections/model-section.tsx";
 import { ToolsSection } from "./sections/paid-tools-section.tsx";
 import { PeopleSection } from "./sections/people-section.tsx";
 import { PreferenceSection } from "./sections/preference-section.tsx";
+import { WalletSection } from "./sections/wallet-section.tsx";
 import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
@@ -87,6 +89,7 @@ const SECTION_COMPONENTS = {
   usage: CreditBalanceSection,
   "usage-records": UsageRecordsSection,
   invoices: InvoicesSection,
+  wallet: WalletSection,
 } as const satisfies Record<SettingsSection, () => ReactNode>;
 
 function SectionContent({ section }: { section: SettingsSection }) {
@@ -151,6 +154,7 @@ function SettingsDialog({
   const isAdminLoadable = useLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
+  const showWallet = features[FeatureSwitchKey.LinkWallet] ?? false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
 
   const sectionMeta = {
@@ -232,6 +236,14 @@ function SettingsDialog({
       }),
       description: t(($) => {
         return $.settings.dialog.sections.usage.usageDescription;
+      }),
+    },
+    wallet: {
+      title: t(($) => {
+        return $.settings.wallet.title;
+      }),
+      description: t(($) => {
+        return $.settings.wallet.scope;
       }),
     },
     invoices: {
@@ -317,6 +329,15 @@ function SettingsDialog({
             },
           ]
         : []),
+      ...(showWallet
+        ? [
+            {
+              id: "wallet" as const,
+              label: sectionMeta.wallet.title,
+              icon: Wallet,
+            },
+          ]
+        : []),
     ],
   };
   const sidebarGroups: readonly SidebarGroup[] = [
@@ -337,7 +358,8 @@ function SettingsDialog({
     isAdmin,
   });
   const resolvedSection: SettingsSection =
-    !showDebug && availableSection === "debug"
+    (!showDebug && availableSection === "debug") ||
+    (!showWallet && availableSection === "wallet")
       ? "preference"
       : availableSection;
   const meta = sectionMeta[resolvedSection];

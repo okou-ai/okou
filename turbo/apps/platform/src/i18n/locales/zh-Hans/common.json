@@ -5073,6 +5073,16 @@
       "saveChanges": "保存更改",
       "saving": "保存中…"
     },
+    "wallet": {
+      "actionError": "操作未完成。请检查网络、允许弹出窗口后重试。",
+      "connect": "连接",
+      "description": "让 Agent 通过 Link 发起购买请求。每笔购买都由你确认。",
+      "disconnect": "断开连接",
+      "loadError": "无法加载钱包。",
+      "retry": "重试",
+      "scope": "你的 Link 钱包，由你在此工作区的所有 Agent 共用。",
+      "title": "钱包"
+    },
     "workspace": {
       "danger": {
         "delete": {

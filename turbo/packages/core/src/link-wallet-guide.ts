@@ -21,8 +21,9 @@ order.
    card, successful consent updates the card and automatically continues the
    conversation; do not ask the user to send a completion message. A registered
    client ID is not the user's permission.
-   OAuth consent authorizes this user's wallet for this agent only; it does not
-   approve purchases.
+   OAuth consent authorizes this user's wallet across agents in the current
+   workspace; it does not approve purchases. The user can also manage the
+   connection in Settings > Billing & pricing > Wallet.
 2. Establish the specific item, merchant, final total including tax/shipping,
    USD currency, and the user's budget. Do not assume a budget or approve on the
    user's behalf. Generate one UUID purchase intent and retain it across retries.
@@ -60,10 +61,11 @@ order.
    or wallet authorization must not reuse it. A changed purchase requires fresh
    user agreement and a new Link approval. Do not increase a budget silently.
 8. Use okou wallet spend cancel <id> to cancel an unused request, and okou wallet
-   disconnect to disable this agent's wallet access and revoke its Link grant.
+   disconnect to revoke this user's Link grant for all agents in this workspace.
 
 Only active user-initiated web-chat runs can use this wallet. Automation runs,
-other users, other organizations and other agents cannot use the grant. The
+other users and other organizations cannot use the grant. Purchase requests
+remain tied to their originating agent and cannot be transferred. The
 feature switch gates API access, token capability and injected guidance. Existing
 Stripe merchant credentials are unrelated and must not be repurposed.
 `;

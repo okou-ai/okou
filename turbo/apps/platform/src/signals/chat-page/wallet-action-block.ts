@@ -4,6 +4,7 @@ import { command, computed, state } from "ccstate";
 
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
+import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { apiClient$ } from "../api-client.ts";
 import { waitAblyPayloadLoopUntil$ } from "../realtime.ts";
 import { onRejection, withCleanup } from "../utils.ts";
@@ -88,9 +89,18 @@ function createWalletConnectSignals(
     },
   );
   const onWalletChanged$ = command(
-    async ({ set }, payload: unknown, signal: AbortSignal) => {
+    async ({ get, set }, payload: unknown, signal: AbortSignal) => {
       const parsed = walletChangedPayloadSchema.safeParse(payload);
-      if (!parsed.success || parsed.data.agentId !== context.agentId) {
+      if (!parsed.success) {
+        return false;
+      }
+      const identity = await get(runtimeAuthenticatedIdentity$);
+      signal.throwIfAborted();
+      if (
+        "orgId" in parsed.data
+          ? parsed.data.orgId !== identity.orgId
+          : parsed.data.agentId !== context.agentId
+      ) {
         return false;
       }
       return await set(refreshCompletion$, signal);

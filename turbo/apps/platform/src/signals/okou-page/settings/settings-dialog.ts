@@ -1,4 +1,10 @@
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../external/feature-switch.ts";
+import {
+  observeWalletConnection$,
+  refreshWalletConnection$,
+} from "./wallet.ts";
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
@@ -39,6 +45,7 @@ export const SETTINGS_SECTIONS = [
   "usage",
   "usage-records",
   "invoices",
+  "wallet",
 ] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
@@ -239,6 +246,7 @@ export const setSettingsDialogOpen$ = command(
     }
 
     set(retryEmailSubscription$);
+    set(refreshWalletConnection$);
     if (!get(internalSettingsDialogOpen$)) {
       set(internalSettingsVisit$, (visit) => {
         return visit + 1;
@@ -263,6 +271,9 @@ export const setSettingsDialogOpen$ = command(
       { once: true },
     );
     set(internalSettingsDialogSignal$, modalSignal);
+    if (get(featureSwitch$)[FeatureSwitchKey.LinkWallet]) {
+      set(observeWalletConnection$, modalSignal);
+    }
     set(internalSettingsDialogSessionActive$, true);
     // A plans sub-page that is already open when the session starts was opened
     // by an entry point outside Settings, so that flow owns the whole dialog.

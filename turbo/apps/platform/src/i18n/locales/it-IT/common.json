@@ -5162,6 +5162,16 @@
       "saveChanges": "Salva modifiche",
       "saving": "Salvataggio..."
     },
+    "wallet": {
+      "actionError": "Impossibile completare l’azione. Controlla la connessione, consenti i popup e riprova.",
+      "connect": "Collega",
+      "description": "I tuoi agenti possono richiedere acquisti tramite Link. Approvi tu ogni acquisto.",
+      "disconnect": "Scollega",
+      "loadError": "Impossibile caricare il tuo portafoglio.",
+      "retry": "Riprova",
+      "scope": "Il tuo portafoglio Link, condiviso dai tuoi agenti in questo spazio di lavoro.",
+      "title": "Portafoglio"
+    },
     "workspace": {
       "danger": {
         "delete": {

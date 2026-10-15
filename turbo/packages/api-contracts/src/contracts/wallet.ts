@@ -14,21 +14,6 @@ export const walletConnectStatusSchema = z.discriminatedUnion("status", [
 ]);
 export type WalletConnectStatus = z.infer<typeof walletConnectStatusSchema>;
 
-export const walletUserContract = c.router({
-  connectStatus: {
-    method: "POST",
-    path: "/api/wallet/connect/status",
-    headers: authHeadersSchema,
-    body: z.object({ agentId: z.uuid(), state: z.string().min(43).max(128) }),
-    responses: {
-      200: walletConnectStatusSchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-    },
-  },
-});
-
 export const walletSpendStatusSchema = z.enum([
   "creating",
   "created",
@@ -254,6 +239,42 @@ export const walletCallbackContract = c.router({
       409: apiErrorSchema,
       502: apiErrorSchema,
       503: apiErrorSchema,
+    },
+  },
+});
+
+export const walletUserContract = c.router({
+  status: {
+    ...walletContract.status,
+    path: "/api/wallet/connection",
+    responses: {
+      ...walletContract.status.responses,
+      200: walletContract.status.responses[200].extend({
+        revocationPending: z.boolean(),
+      }),
+    },
+  },
+  connect: {
+    ...walletContract.connect,
+    path: "/api/wallet/connection/connect",
+  },
+  disconnect: {
+    ...walletContract.disconnect,
+    path: "/api/wallet/connection/disconnect",
+  },
+  connectStatus: {
+    method: "POST",
+    path: "/api/wallet/connect/status",
+    headers: authHeadersSchema,
+    body: z.object({
+      agentId: z.uuid().optional(),
+      state: z.string().min(43).max(128),
+    }),
+    responses: {
+      200: walletConnectStatusSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
     },
   },
 });

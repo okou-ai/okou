@@ -304,7 +304,7 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
         [200],
       )
     ).body,
-  ).toStrictEqual({ status: "unavailable" });
+  ).toStrictEqual({ status: "pending" });
   await accept(
     userClient().connectStatus({
       ...statusRequest,
@@ -367,6 +367,7 @@ test("accepts hosted PKCE consent after 20 minutes, binds the callback to the se
     `user:${fixture.actor.userId}`,
   ]);
   expect(context.mocks.ably.publish).toHaveBeenCalledWith("wallet:changed", {
+    orgId: fixture.actor.orgId,
     agentId: fixture.agentId,
   });
   const authorized = await accept(
@@ -547,6 +548,7 @@ test("tracks the exact wallet consent instead of an older grant, including repla
     `user:${fixture.actor.userId}`,
     `user:${fixture.actor.userId}`,
     `user:${fixture.actor.userId}`,
+    `user:${fixture.actor.userId}`,
   ]);
 });
 
@@ -620,7 +622,7 @@ test("deduplicates immutable intent details, returns the exact approval URL, and
   );
 });
 
-test("keeps ownership scoped to the user, organization and agent", async () => {
+test("keeps purchase ownership scoped to the user, organization and agent", async () => {
   const fixture = await carrier();
   server.use(tokenHandler());
   await connect(fixture);
@@ -733,13 +735,17 @@ test("cancels unused requests and disables locally before a failed revocation, a
     }),
   );
   await accept(
-    client().disconnect({ headers: fixture.headers, body: {} }),
+    userClient().disconnect({ headers: sessionHeaders, body: {} }),
     [502],
   );
   expect(
     (await accept(client().status({ headers: fixture.headers }), [200])).body
       .connected,
   ).toBeFalsy();
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({ connected: false, revocationPending: true });
   await accept(
     client().createSpend({ headers: fixture.headers, body: purchase() }),
     [409],
@@ -750,9 +756,13 @@ test("cancels unused requests and disables locally before a failed revocation, a
     }),
   );
   await accept(
-    client().disconnect({ headers: fixture.headers, body: {} }),
+    userClient().disconnect({ headers: sessionHeaders, body: {} }),
     [200],
   );
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+      .body,
+  ).toMatchObject({ connected: false, revocationPending: false });
 });
 
 test("refreshes rotating credentials only on the backend and isolates requests from a replaced authorization", async () => {
@@ -837,9 +847,14 @@ test("prevents an in-flight OAuth callback from resurrecting a disconnected gran
   ).toBeFalsy();
 });
 
-test("does not share a wallet grant with another agent of the same user", async () => {
+test("shares a workspace wallet across agents while isolating purchase approvals", async () => {
   const fixture = await carrier();
-  server.use(tokenHandler());
+  server.use(
+    tokenHandler(),
+    http.post("https://login.link.com/auth/revoke", () => {
+      return HttpResponse.json({});
+    }),
+  );
   await connect(fixture);
   const input = purchase();
   spendProvider(input);
@@ -851,7 +866,7 @@ test("does not share a wallet grant with another agent of the same user", async 
   expect(
     (await accept(client().status({ headers: otherAgent.headers }), [200])).body
       .connected,
-  ).toBeFalsy();
+  ).toBeTruthy();
   await accept(
     client().getSpend({
       headers: otherAgent.headers,
@@ -867,6 +882,22 @@ test("does not share a wallet grant with another agent of the same user", async 
     }),
     [404],
   );
+  const secondPurchase = purchase();
+  spendProvider(secondPurchase);
+  await accept(
+    client().createSpend({ headers: otherAgent.headers, body: secondPurchase }),
+    [200],
+  );
+  await accept(
+    userClient().disconnect({ headers: sessionHeaders, body: {} }),
+    [200],
+  );
+  for (const headers of [fixture.headers, otherAgent.headers]) {
+    expect(
+      (await accept(client().status({ headers }), [200])).body.connected,
+    ).toBeFalsy();
+    await accept(client().createSpend({ headers, body: purchase() }), [409]);
+  }
 });
 
 test("denies unattended automation runs even when the user's switch is enabled", async () => {
@@ -1900,4 +1931,103 @@ test("retains a bounded plain-text provider rejection without exposing its ident
     "Account verification is required",
   );
   expect(rejected.body.error.message).not.toContain("customer@example.test");
+});
+
+test("manages a personal workspace wallet from a member session without an agent or run", async () => {
+  const bdd = createBddApi(context);
+  const owner = bdd.user({ orgRole: "org:member" });
+  if (!owner.orgId) {
+    throw new Error("Missing organization");
+  }
+  mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
+  server.use(
+    tokenHandler(),
+    http.post("https://login.link.com/auth/revoke", () => {
+      return HttpResponse.json({});
+    }),
+  );
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200])).body
+      .connected,
+  ).toBeFalsy();
+  const started = await accept(
+    userClient().connect({ headers: sessionHeaders, body: {} }),
+    [200],
+  );
+  const state = new URL(started.body.url).searchParams.get("state") ?? "";
+  await accept(
+    callbackClient().callback({
+      headers: sessionHeaders,
+      query: { state, code: "session-wallet-code", responseMode: "json" },
+    }),
+    [200],
+  );
+  expect(
+    (
+      await accept(
+        userClient().connectStatus({
+          headers: sessionHeaders,
+          body: { state },
+        }),
+        [200],
+      )
+    ).body.status,
+  ).toBe("authorized");
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200])).body
+      .connected,
+  ).toBeTruthy();
+  // Settings grants connection management, never purchase execution.
+  await accept(
+    client().createSpend({ headers: sessionHeaders, body: purchase() }),
+    [403],
+  );
+  for (const peer of [
+    bdd.user({ orgId: owner.orgId }),
+    bdd.user({ userId: owner.userId }),
+  ]) {
+    mocks.clerk.session(peer.userId, peer.orgId, peer.orgRole);
+    expect(
+      (await accept(userClient().status({ headers: sessionHeaders }), [200]))
+        .body.connected,
+    ).toBeFalsy();
+    expect(
+      (
+        await accept(
+          userClient().connectStatus({
+            headers: sessionHeaders,
+            body: { state },
+          }),
+          [200],
+        )
+      ).body.status,
+    ).toBe("unavailable");
+    await accept(
+      userClient().disconnect({ headers: sessionHeaders, body: {} }),
+      [200],
+    );
+  }
+  mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200])).body
+      .connected,
+  ).toBeTruthy();
+  await accept(
+    userClient().disconnect({ headers: sessionHeaders, body: {} }),
+    [200],
+  );
+  expect(
+    (await accept(userClient().status({ headers: sessionHeaders }), [200])).body
+      .connected,
+  ).toBeFalsy();
+});
+
+test("gates session wallet management and rejects run tokens on settings endpoints", async () => {
+  const fixture = await carrier(false);
+  for (const headers of [sessionHeaders, fixture.headers]) {
+    const denied = await accept(userClient().status({ headers }), [403]);
+    expect(denied.status).toBe(403);
+    await accept(userClient().connect({ headers, body: {} }), [403]);
+    await accept(userClient().disconnect({ headers, body: {} }), [403]);
+  }
 });

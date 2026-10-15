@@ -5162,6 +5162,16 @@
       "saveChanges": "Enregistrer les modifications",
       "saving": "Enregistrement..."
     },
+    "wallet": {
+      "actionError": "Impossible de terminer cette action. Vérifie ta connexion, autorise les fenêtres pop-up et réessaie.",
+      "connect": "Connecter",
+      "description": "Tes agents peuvent demander des achats via Link. Tu approuves chaque achat.",
+      "disconnect": "Déconnecter",
+      "loadError": "Impossible de charger ton portefeuille.",
+      "retry": "Réessayer",
+      "scope": "Ton portefeuille Link, partagé par tes agents dans cet espace de travail.",
+      "title": "Portefeuille"
+    },
     "workspace": {
       "danger": {
         "delete": {

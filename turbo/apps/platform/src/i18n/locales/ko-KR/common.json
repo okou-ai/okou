@@ -5073,6 +5073,16 @@
       "saveChanges": "변경 사항 저장",
       "saving": "저장 중..."
     },
+    "wallet": {
+      "actionError": "작업을 완료하지 못했습니다. 연결을 확인하고 팝업을 허용한 후 다시 시도하세요.",
+      "connect": "연결",
+      "description": "에이전트가 Link를 통해 구매를 요청할 수 있습니다. 모든 구매는 직접 승인합니다.",
+      "disconnect": "연결 해제",
+      "loadError": "지갑을 불러오지 못했습니다.",
+      "retry": "다시 시도",
+      "scope": "이 워크스페이스의 내 에이전트가 함께 사용하는 Link 지갑입니다.",
+      "title": "지갑"
+    },
     "workspace": {
       "danger": {
         "delete": {

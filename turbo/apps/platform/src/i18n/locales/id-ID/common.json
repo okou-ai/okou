@@ -5073,6 +5073,16 @@
       "saveChanges": "Simpan perubahan",
       "saving": "Menyimpan..."
     },
+    "wallet": {
+      "actionError": "Tindakan tidak dapat diselesaikan. Periksa koneksi, izinkan pop-up, lalu coba lagi.",
+      "connect": "Hubungkan",
+      "description": "Agen Anda dapat meminta pembelian melalui Link. Anda menyetujui setiap pembelian.",
+      "disconnect": "Putuskan",
+      "loadError": "Dompet Anda tidak dapat dimuat.",
+      "retry": "Coba lagi",
+      "scope": "Dompet Link Anda, digunakan bersama oleh agen Anda di ruang kerja ini.",
+      "title": "Dompet"
+    },
     "workspace": {
       "danger": {
         "delete": {

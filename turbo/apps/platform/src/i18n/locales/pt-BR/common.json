@@ -5162,6 +5162,16 @@
       "saveChanges": "Salvar alterações",
       "saving": "Salvando..."
     },
+    "wallet": {
+      "actionError": "Não foi possível concluir a ação. Verifique sua conexão, permita pop-ups e tente novamente.",
+      "connect": "Conectar",
+      "description": "Seus agentes podem solicitar compras pelo Link. Você aprova cada compra.",
+      "disconnect": "Desconectar",
+      "loadError": "Não foi possível carregar sua carteira.",
+      "retry": "Tentar novamente",
+      "scope": "Sua carteira Link, compartilhada pelos seus agentes neste espaço de trabalho.",
+      "title": "Carteira"
+    },
     "workspace": {
       "danger": {
         "delete": {

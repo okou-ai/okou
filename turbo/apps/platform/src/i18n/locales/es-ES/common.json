@@ -5162,6 +5162,16 @@
       "saveChanges": "Guardar cambios",
       "saving": "Guardando..."
     },
+    "wallet": {
+      "actionError": "No se pudo completar la acción. Comprueba la conexión, permite las ventanas emergentes e inténtalo de nuevo.",
+      "connect": "Conectar",
+      "description": "Tus agentes pueden solicitar compras a través de Link. Tú apruebas cada compra.",
+      "disconnect": "Desconectar",
+      "loadError": "No se pudo cargar tu cartera.",
+      "retry": "Reintentar",
+      "scope": "Tu cartera de Link, compartida por tus agentes en este espacio de trabajo.",
+      "title": "Cartera"
+    },
     "workspace": {
       "danger": {
         "delete": {

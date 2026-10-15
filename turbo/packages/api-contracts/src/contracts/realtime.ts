@@ -72,7 +72,10 @@ export type ConnectorChangedPayload = z.infer<
   typeof connectorChangedPayloadSchema
 >;
 
-export const walletChangedPayloadSchema = z.object({ agentId: z.uuid() });
+export const walletChangedPayloadSchema = z.union([
+  z.object({ orgId: z.string().min(1), agentId: z.uuid().optional() }),
+  z.object({ agentId: z.uuid() }),
+]);
 
 export type WalletChangedPayload = z.infer<typeof walletChangedPayloadSchema>;
 

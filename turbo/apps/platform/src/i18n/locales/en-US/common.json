@@ -5086,6 +5086,16 @@
       "saveChanges": "Save changes",
       "saving": "Saving..."
     },
+    "wallet": {
+      "actionError": "Couldn’t complete the action. Check your connection, allow pop-ups, and try again.",
+      "connect": "Connect",
+      "description": "Let your agents request purchases through Link. You approve each purchase.",
+      "disconnect": "Disconnect",
+      "loadError": "Couldn’t load your wallet.",
+      "retry": "Retry",
+      "scope": "Your Link wallet, shared by your agents in this workspace.",
+      "title": "Wallet"
+    },
     "workspace": {
       "danger": {
         "delete": {
