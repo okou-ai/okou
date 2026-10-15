@@ -308,27 +308,17 @@ async fn stopped_publication_batch_reclaims_old_commits_and_keeps_new_bytes_reus
     for byte in 1..=8u8 {
         let key = format!("stopped-{byte}");
         let context = dense_context(&f, &key, byte, "2026-10-15T08:03:00Z").await;
-        pending.push((key, byte, context));
+        pending.push(context);
     }
-    let outcomes =
-        futures_util::future::join_all(pending.into_iter().map(|(key, byte, context)| {
-            let cache = f.cache.clone();
-            async move {
-                let outcome = context.promote().await.unwrap();
-                assert_eq!(outcome, HomeImagePromotionOutcome::Promoted);
-                let image = cache
-                    .entry_paths(&cache.scoped_cache_key(PROFILE, &key, SIZE))
-                    .image(&context.publication_generation())
-                    .unwrap();
-                assert_eq!(
-                    tokio::fs::read(image).await.unwrap(),
-                    vec![byte; SIZE as usize]
-                );
-                drop(context);
-                outcome
-            }
-        }))
-        .await;
+    let outcomes = futures_util::future::join_all(pending.into_iter().map(|context| async move {
+        let outcome = context.promote().await.unwrap();
+        assert_eq!(outcome, HomeImagePromotionOutcome::Promoted);
+        // Completed publishers release ownership before another await so
+        // later GC can reclaim their now-disposable committed generations.
+        drop(context);
+        outcome
+    }))
+    .await;
     assert_eq!(outcomes.len(), 8);
     let events = recorded.events();
     assert_eq!(
