@@ -328,7 +328,6 @@ export function officialCopyMaterialization(
     const resolved = resolveOfficialWorkflowBlueprintForReconciliation(
       blueprint,
       row.officialParameterBindings,
-      [],
       row.timezone,
     );
     if (!resolved.ok) {
