@@ -406,7 +406,7 @@ test("Create image sends every edited draft template reference", async () => {
   expect(JSON.stringify(parts)).toContain("for the cover.");
 });
 
-test("Presentation adds another template when the draft already has one", async () => {
+async function setupSavedPresentationDraft() {
   setupModels();
   const [first, second] = PRESENTATION_TEMPLATE_PICKER_ITEMS;
   if (!first || !second) {
@@ -431,14 +431,28 @@ test("Presentation adds another template when the draft already has one", async 
     });
   });
   const editor = await setupComposer();
-  const user = userEvent.setup({ delay: null });
   await waitFor(() => {
     expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
   });
+  return { editor, first, second };
+}
+
+test("The Presentation slash command preserves an existing draft template", async () => {
+  const { editor, first } = await setupSavedPresentationDraft();
+  const user = userEvent.setup({ delay: null });
   await user.click(editor);
   await user.paste(" /");
   const menu = await screen.findByTestId("slash-workflow-menu");
   await clickPanelRow("Presentation", menu);
+  expect(taskChip("Presentation")).toBeInTheDocument();
+  expect(composerInlineTemplates()).toHaveLength(1);
+  expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+});
+
+test("Presentation adds another template when the draft already has one", async () => {
+  const { first, second } = await setupSavedPresentationDraft();
+  const tasks = await screen.findByRole("group", { name: "Choose a task" });
+  click(button("Presentation", tasks));
   await waitFor(() => {
     expect(taskChip("Presentation")).toBeInTheDocument();
   });
