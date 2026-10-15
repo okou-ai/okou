@@ -2873,8 +2873,10 @@
       "archivedMuted": "Chat archiviata. È silenziata, quindi le nuove risposte non la riporteranno indietro.",
       "copied": "Copiato",
       "deleted": "Chat eliminata",
+      "muted": "Chat silenziata. Le nuove risposte non risulteranno come non lette né invieranno notifiche push.",
       "unarchived": "Chat spostata nella posta in arrivo",
-      "undo": "Annulla"
+      "undo": "Annulla",
+      "unmuted": "Notifiche chat riattivate"
     },
     "voice": {
       "checkingLimit": "Controllo del limite di input vocale",

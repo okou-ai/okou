@@ -2873,8 +2873,10 @@
       "archivedMuted": "Conversa arquivada. Ela está silenciada, então novas respostas não a trarão de volta.",
       "copied": "Copiado",
       "deleted": "Conversa excluída",
+      "muted": "Conversa silenciada. Novas respostas não aparecerão como não lidas nem enviarão notificações push.",
       "unarchived": "Conversa movida para a caixa de entrada",
-      "undo": "Desfazer"
+      "undo": "Desfazer",
+      "unmuted": "Notificações da conversa reativadas"
     },
     "voice": {
       "checkingLimit": "Verificando limite da entrada de voz",

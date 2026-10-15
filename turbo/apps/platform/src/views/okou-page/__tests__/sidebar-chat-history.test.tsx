@@ -552,7 +552,96 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
   });
 });
 
-test("The muted filter is hidden when chat muting is disabled", async () => {
+function mockUnreadThreads(threadIds: readonly string[]): void {
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: { [AGENT_ID]: "unread" },
+      threads: Object.fromEntries(
+        threadIds.map((threadId) => {
+          return [threadId, "unread"] as const;
+        }),
+      ),
+      unreadAt: Object.fromEntries(
+        threadIds.map((threadId) => {
+          return [threadId, "2026-03-10T00:05:00Z"] as const;
+        }),
+      ),
+    });
+  });
+}
+
+test("Mute an unread chat with feedback and undo it from the toast", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task"),
+  ]);
+  mockUnreadThreads([INCIDENT_THREAD_ID]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
+  });
+  await waitFor(() => {
+    expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
+      "Quiet task Unread",
+    );
+  });
+
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Mute chat"));
+  await expect(
+    screen.findByText(
+      "Chat muted. New replies won't show as unread or send push notifications.",
+    ),
+  ).resolves.toBeInTheDocument();
+  expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
+    "Quiet task Muted",
+  );
+
+  // Undo puts the chat back as it was, unread included.
+  click(buttonByText("Undo"));
+  await waitFor(() => {
+    expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
+      "Quiet task Unread",
+    );
+  });
+});
+
+test("Unmute a chat without resurfacing replies that arrived while it was muted", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Release plan"),
+    createThread(RESEARCH_THREAD_ID, "Incident notes"),
+    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
+  ]);
+  // The server counts the muted chat's replies as unread once it is unmuted.
+  mockUnreadThreads([RESEARCH_THREAD_ID, INCIDENT_THREAD_ID]);
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
+  });
+  await waitFor(() => {
+    expect(threadLinkByTitle("Incident notes")).toHaveAccessibleName(
+      "Incident notes Unread",
+    );
+    expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
+      "Quiet task Muted",
+    );
+  });
+
+  openThreadMenu("Quiet task");
+  expect(queryMenuItemByText("Mark unread")).not.toBeInTheDocument();
+  click(menuItemByText("Unmute chat"));
+  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
+  expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
+  expect(threadLinkByTitle("Incident notes")).toHaveAccessibleName(
+    "Incident notes Unread",
+  );
+});
+
+test("Hide muting when the switch is off but keep Unmute for chats already muted", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -567,6 +656,18 @@ test("The muted filter is hidden when chat muting is disabled", async () => {
   openChatListMenu();
   expect(queryMenuItemByText("Muted")).not.toBeInTheDocument();
   expect(menuItemByText("All chats")).toBeInTheDocument();
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  openThreadMenu("Release plan");
+  expect(menuItemByText("Rename chat")).toBeInTheDocument();
+  expect(queryMenuItemByText("Mute chat")).not.toBeInTheDocument();
+  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
+
+  openThreadMenu("Quiet task");
+  click(menuItemByText("Unmute chat"));
+  await waitFor(() => {
+    expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
+  });
 });
 
 async function prepareMutedChatFilter() {

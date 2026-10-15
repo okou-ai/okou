@@ -136,7 +136,10 @@ import {
 } from "../../signals/external/model-catalog.ts";
 import { emptyChatImg, thinkingSpinnerImg } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ChatThreadPinButton } from "./chat-thread-header-actions.tsx";
+import {
+  ChatThreadMutedButton,
+  ChatThreadPinButton,
+} from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
@@ -803,7 +806,10 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       <div className="flex min-w-0 items-center gap-2 pr-3">
         <ChatThreadHeaderTitle thread={thread} />
         <SettledChatThreadActions thread={thread}>
-          <ChatThreadPinButton thread={thread} />
+          <div className="flex shrink-0 items-center gap-0.5">
+            <ChatThreadPinButton thread={thread} />
+            <ChatThreadMutedButton thread={thread} />
+          </div>
         </SettledChatThreadActions>
       </div>
       <SettledChatThreadActions thread={thread}>

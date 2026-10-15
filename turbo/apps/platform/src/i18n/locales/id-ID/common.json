@@ -2814,8 +2814,10 @@
       "archivedMuted": "Chat diarsipkan. Chat ini dibisukan, jadi balasan baru tidak akan mengembalikannya.",
       "copied": "Disalin",
       "deleted": "Chat dihapus",
+      "muted": "Chat dibisukan. Balasan baru tidak akan ditandai belum dibaca atau mengirim notifikasi push.",
       "unarchived": "Chat dipindahkan ke Kotak masuk",
-      "undo": "Urungkan"
+      "undo": "Urungkan",
+      "unmuted": "Notifikasi chat diaktifkan"
     },
     "voice": {
       "checkingLimit": "Memeriksa batas input suara",

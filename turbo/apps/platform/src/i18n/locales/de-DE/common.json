@@ -2825,8 +2825,10 @@
       "archivedMuted": "Chat archiviert. Er ist stummgeschaltet, neue Antworten holen ihn nicht zurück.",
       "copied": "Kopiert",
       "deleted": "Chat gelöscht",
+      "muted": "Chat stummgeschaltet. Neue Antworten erscheinen nicht als ungelesen und senden keine Push-Benachrichtigungen.",
       "unarchived": "Chat in den Posteingang verschoben",
-      "undo": "Rückgängig"
+      "undo": "Rückgängig",
+      "unmuted": "Stummschaltung aufgehoben"
     },
     "voice": {
       "checkingLimit": "Überprüfung des Spracheingabelimits",

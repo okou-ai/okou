@@ -19,12 +19,16 @@ function muteHandler(muted: boolean) {
     const auth = get(organizationAuthContext$);
     const params = get(pathParamsOf(route));
     const query = get(queryOf(route));
-    const context = await get(
-      userFeatureSwitchContext(auth.orgId, auth.userId),
-    );
-    signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.ChatThreadMuting, context)) {
-      return notFound("Chat thread muting is not available");
+    // Suppression follows the stored flag, not the switch, so a chat muted
+    // while the switch was on must stay unmutable after it goes off.
+    if (muted) {
+      const context = await get(
+        userFeatureSwitchContext(auth.orgId, auth.userId),
+      );
+      signal.throwIfAborted();
+      if (!isFeatureEnabled(FeatureSwitchKey.ChatThreadMuting, context)) {
+        return notFound("Chat thread muting is not available");
+      }
     }
     const written = await set(
       updateOwnedChatThreadWithEvent$,
