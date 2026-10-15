@@ -12,7 +12,7 @@ use api_contracts::generated::types::webhooks::agent::{
     session_history::prepare as history, storages,
 };
 use bytes::Bytes;
-use http_body_util::{BodyExt, Full};
+use http_body_util::{BodyExt, Full, Limited};
 use hyper::{Method, Request, Response, StatusCode, body::Incoming, service::service_fn};
 use hyper_util::rt::TokioIo;
 use serde_json::{Value, json};
@@ -176,10 +176,7 @@ async fn respond(
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let (parts, body) = request.into_parts();
     let result: TestResult<Reply> = async {
-        let bytes = body.collect().await?.to_bytes();
-        if bytes.len() > MAX_HISTORY as usize {
-            return Err(io::Error::other("synthetic native request exceeds its fixture bound").into());
-        }
+        let bytes = Limited::new(body, MAX_HISTORY as usize).collect().await?.to_bytes();
         let path = parts.uri.path();
         let mut state = ledger.lock().map_err(|_| io::Error::other("native API ledger poisoned"))?;
         if parts.method == Method::GET && let Some(hash) = path.strip_prefix("/history/") {

@@ -352,7 +352,10 @@ Production builds allocate no witness and change no memory policy or protocol.
 Default Crates CI runs the ordinary Rust wrapper and ten real-file/CLI report
 regressions, the resource-budget lifetime/transfer regressions, and the synthetic
 peer's complete-history prepare/upload/completion round trip through its separate
-Guest and loopback Host listeners. Actual KVM/NBD
+Guest and loopback Host listeners. A separate peer regression requires rejection
+as soon as a chunked request exceeds 4 MiB, before its terminating chunk or EOF;
+the peer enforces this bound while reading, before buffering the complete request.
+Actual KVM/NBD
 cases remain ignored/opt-in and require separate submitted-source/binary/artifact
 verification. Terminal12 and pressure4 contracts remain unchanged. The remaining
 optional/recovery/full failure/race, provenance/residency/conservative-envelope,

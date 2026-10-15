@@ -163,6 +163,44 @@ async fn native_continuation_peer_keeps_complete_history_across_both_listeners()
     api.finish().await
 }
 
+#[tokio::test]
+async fn native_continuation_peer_rejects_oversized_stream_before_eof() -> TestResult<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let api = continuation_api::Api::bind(std::net::Ipv4Addr::new(127, 0, 0, 2)).await?;
+    let mut stream = tokio::net::TcpStream::connect(
+        api.host_url
+            .strip_prefix("http://")
+            .ok_or_else(|| io::Error::other("native fixture requires an HTTP listener"))?,
+    )
+    .await?;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stream
+            .write_all(
+                b"POST /api/webhooks/agent/events HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
+            )
+            .await?;
+        let chunk = vec![b'x'; 64 * 1024];
+        for _ in 0..64 {
+            stream.write_all(b"10000\r\n").await?;
+            stream.write_all(&chunk).await?;
+            stream.write_all(b"\r\n").await?;
+        }
+        // Cross the 4 MiB limit without sending the terminating zero chunk.
+        // Waiting for EOF before rejecting would retain an unbounded request.
+        stream.write_all(b"1\r\nx\r\n").await?;
+        let mut response = Vec::new();
+        (&mut stream).take(1024).read_to_end(&mut response).await?;
+        Ok::<_, io::Error>(response)
+    })
+    .await;
+    drop(stream);
+    let shutdown = api.finish().await;
+    assert!(response??.starts_with(b"HTTP/1.1 400 "));
+    assert!(shutdown.is_err(), "rejected native input must fail its run");
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug)]
 enum NativeScope {
     Batch(IdleRetirementBatchScope),
