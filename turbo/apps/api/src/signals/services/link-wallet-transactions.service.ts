@@ -52,6 +52,7 @@ export const walletTransactions$ = computed(async (get) => {
         createdAt: row.createdAt.toISOString(),
       });
     }),
-    nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
+    // The query schema guarantees limit >= 1, so an extra row proves page is nonempty.
+    nextCursor: rows.length > limit ? page.at(-1)!.id : null,
   };
 });

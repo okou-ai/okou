@@ -179,6 +179,8 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
+// Historical consent has no requested-scope snapshot. Keep it unknown until
+// reauthorization; refresh cannot establish consent. Convergence gate: #40206.
 function walletScopeChange(
   storedScopes: string | null,
   workspaceScopeChanged = false,
@@ -240,6 +242,8 @@ export const walletSettingsStatus$ = computed(
         ),
       )
       .limit(1);
+    // Retire this bridge only after old writers/rollback targets are gone and
+    // their grants are explicitly reauthorized or revoked; see #40206.
     const [legacy] = await db
       .select({ id: linkWalletConnections.id })
       .from(linkWalletConnections)
@@ -550,6 +554,8 @@ const publishWalletOAuth$ = command(
     // Consuming the still-live OAuth attempt and publishing the grant is atomic.
     // Disconnect deletes attempts before revoking connections, so an in-flight
     // callback cannot resurrect a grant after the user has disconnected it.
+    // Outgoing API attempts must retain their original consent scope. Remove
+    // this branch only after those writers and pending attempts drain (#40206).
     const grantAgentId = attempt.scope === "agent" ? attempt.agentId : null;
     const conflictTarget = grantAgentId
       ? sql`(org_id, user_id, agent_id)`
