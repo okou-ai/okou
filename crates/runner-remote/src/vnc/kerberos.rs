@@ -264,7 +264,7 @@ pub(super) fn credential(
     })
 }
 
-pub(super) struct Caller {
+pub(super) struct Caller<'a> {
     pub(super) runtime: Arc<VncRuntime>,
     pub(super) run: RunId,
     pub(super) connection: Uuid,
@@ -280,8 +280,9 @@ pub(super) struct Caller {
     pub(super) exchanges: usize,
     pub(super) total: usize,
     pub(super) awaiting_kdc_reply: bool,
+    pub(super) diagnostics: &'a mut super::sessions::StartEvidence,
 }
-impl Caller {
+impl Caller<'_> {
     pub(super) fn authentication_result<T>(
         &self,
         result: Result<T, rfb_client::Error>,
@@ -307,7 +308,7 @@ impl Caller {
         }
     }
 }
-impl kerberos_worker::KdcExchange for Caller {
+impl kerberos_worker::KdcExchange for Caller<'_> {
     fn work_owner(&self) -> Option<Arc<dyn WorkOwner>> {
         Some(Arc::clone(&self.owner))
     }
@@ -375,19 +376,23 @@ impl kerberos_worker::KdcExchange for Caller {
                 generation,
             } => {
                 let ssh = self.ssh.as_ref().ok_or(E::Authority)?;
+                // Bound the enclosing GSSAPI future's stack use during nested SSH setup.
                 let stream = self
                     .scope
-                    .wait(ssh.open_direct_tcpip(
+                    .wait(Box::pin(ssh.open_direct_tcpip_diagnosed(
                         connection,
                         generation,
                         &host,
                         port,
                         self.scope.session.clone(),
                         self.scope.deadline,
-                    ))
+                    )))
                     .await
                     .map_err(|_| E::Authority)?
-                    .map_err(|_| E::KdcUnavailable)?;
+                    .map_err(|failure| {
+                        self.diagnostics.retain_ssh_failure(connection, failure);
+                        E::KdcUnavailable
+                    })?;
                 // The shared SSH authority permits only its attested first-use
                 // host-key pin transition. Retain that generation and recheck
                 // the independent KDC grant before sending any KDC bytes.
@@ -442,7 +447,10 @@ mod tests {
     use tokio::{net::TcpStream, time::Instant};
     use tokio_util::sync::CancellationToken;
 
-    fn caller(h: &Harness) -> Caller {
+    fn caller<'a>(
+        h: &Harness,
+        diagnostics: &'a mut super::super::sessions::StartEvidence,
+    ) -> Caller<'a> {
         let runtime = VncRuntime::official(
             http_client(HttpClientConfig {
                 api_url: h.api.base_url(),
@@ -486,6 +494,7 @@ mod tests {
             exchanges: 0,
             total: 0,
             awaiting_kdc_reply: false,
+            diagnostics,
         }
     }
 
@@ -547,7 +556,8 @@ mod tests {
         let pin = pin(&h).await;
         let initial = check(&h, 7, "valid", None).await;
         let learned = check(&h, 8, "valid", None).await;
-        let mut caller = caller(&h);
+        let mut diagnostics = super::super::sessions::StartEvidence::default();
+        let mut caller = caller(&h, &mut diagnostics);
         for _ in 0..2 {
             let exchange = caller.exchange("EXAMPLE.TEST", b"test");
             let kdc = async {
@@ -582,7 +592,8 @@ mod tests {
         let pin = pin(&h).await;
         let initial = check(&h, 7, "valid", None).await;
         let revoked = check(&h, 8, "unavailable", None).await;
-        let mut caller = caller(&h);
+        let mut diagnostics = super::super::sessions::StartEvidence::default();
+        let mut caller = caller(&h, &mut diagnostics);
         let exchange = caller.exchange("EXAMPLE.TEST", b"test");
         let kdc = async {
             let mut stream = h.accept_forwarded().await;
@@ -611,7 +622,8 @@ mod tests {
         let resolve = h.resolve_for_run(h.run, h.credential(false)).await;
         let pin = pin(&h).await;
         let current = check(&h, 8, "valid", Some(8)).await;
-        let mut caller = caller(&h);
+        let mut diagnostics = super::super::sessions::StartEvidence::default();
+        let mut caller = caller(&h, &mut diagnostics);
         let original = caller.kdc.as_ref().unwrap().transport;
         let ssh = h.ssh();
         let open = ssh.open_direct_tcpip(
@@ -658,7 +670,8 @@ mod tests {
         let pin = pin(&h).await;
         let initial = check(&h, 7, "valid", None).await;
         let learned = check(&h, 8, "valid", None).await;
-        let mut caller = caller(&h);
+        let mut diagnostics = super::super::sessions::StartEvidence::default();
+        let mut caller = caller(&h, &mut diagnostics);
         let (request_received, deadline) = tokio::sync::oneshot::channel();
         let authenticate = async {
             let result = {
@@ -699,7 +712,8 @@ mod tests {
         let pin = pin(&h).await;
         let initial = check(&h, 7, "valid", None).await;
         let learned = check(&h, 8, "valid", None).await;
-        let mut caller = caller(&h);
+        let mut diagnostics = super::super::sessions::StartEvidence::default();
+        let mut caller = caller(&h, &mut diagnostics);
         let exchange = caller.exchange("EXAMPLE.TEST", b"test");
         let kdc = async {
             let mut stream = h.accept_forwarded().await;

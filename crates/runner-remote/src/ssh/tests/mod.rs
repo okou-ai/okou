@@ -7,6 +7,7 @@ pub(crate) mod files;
 mod forwarding;
 mod framing;
 pub(crate) mod harness;
+mod kdc_diagnostics;
 mod key_wait;
 mod lifecycle;
 mod notifications;

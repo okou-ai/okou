@@ -124,6 +124,7 @@ impl AsyncWrite for DirectTcpIpStream {
 }
 
 impl Run {
+    #[cfg(test)]
     pub(crate) async fn open_direct_tcpip(
         &self,
         connection: Uuid,

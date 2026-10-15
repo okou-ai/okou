@@ -31,6 +31,7 @@ enum Profile {
     None,
     Vnc,
     Plain,
+    Gssapi,
     InvalidFramebuffer,
 }
 
@@ -59,6 +60,10 @@ impl Peer {
 
     pub(crate) async fn plain() -> Self {
         Self::with_profile(Profile::Plain, false).await
+    }
+
+    pub(crate) async fn gssapi() -> Self {
+        Self::with_profile(Profile::Gssapi, false).await
     }
 
     pub(crate) async fn invalid_framebuffer() -> Self {
@@ -208,6 +213,7 @@ async fn serve(
         Profile::None | Profile::InvalidFramebuffer => 260,
         Profile::Vnc => 261,
         Profile::Plain => 262,
+        Profile::Gssapi => 263,
     };
     socket.write_u32(subtype).await?;
     assert_eq!(socket.read_u32().await?, subtype);
@@ -240,6 +246,18 @@ async fn serve(
             socket.read_exact(&mut password).await?;
             assert_eq!(username, PLAIN_USERNAME.as_bytes());
             assert_eq!(password, PLAIN_PASSWORD.as_bytes());
+        }
+        Profile::Gssapi => {
+            socket.write_u32(6).await?;
+            socket.write_all(b"GSSAPI").await?;
+            socket.flush().await?;
+            let result = socket.read(&mut [0]).await;
+            assert!(
+                matches!(result, Ok(0))
+                    || matches!(result, Err(error) if matches!(error.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset)),
+                "KDC refusal must close before sending a GSS mechanism or token"
+            );
+            return Ok(());
         }
     }
     if refuse.load(Ordering::SeqCst) {

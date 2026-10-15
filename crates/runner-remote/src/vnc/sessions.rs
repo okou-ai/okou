@@ -171,10 +171,27 @@ pub(crate) struct Run {
 }
 
 #[derive(Default)]
-struct StartEvidence {
+pub(super) struct StartEvidence {
     identity: crate::diagnostics::Identity,
     dependency: Option<crate::diagnostics::Dependency>,
     native: Option<crate::diagnostics::NativeSource>,
+}
+
+impl StartEvidence {
+    pub(super) fn retain_ssh_failure(
+        &mut self,
+        connection: Uuid,
+        failure: crate::ssh::ForwardingFailure,
+    ) {
+        self.native = failure.native;
+        self.dependency = Some(crate::diagnostics::Dependency {
+            protocol: crate::diagnostics::Protocol::Ssh,
+            connection_id: connection,
+            cause: Some(crate::diagnostics::Cause::Ssh(failure.reason)),
+            configuration_created_at: failure.identity.created_at,
+            configuration_generation: failure.identity.generation,
+        });
+    }
 }
 
 impl Run {
@@ -384,15 +401,9 @@ impl Run {
                         ))
                         .await?
                         .map_err(|failure| {
-                            evidence.native = failure.native;
-                            evidence.dependency = Some(crate::diagnostics::Dependency {
-                                protocol: crate::diagnostics::Protocol::Ssh,
-                                connection_id: connection,
-                                cause: Some(crate::diagnostics::Cause::Ssh(failure.reason)),
-                                configuration_created_at: failure.identity.created_at,
-                                configuration_generation: failure.identity.generation,
-                            });
-                            Failure::from(failure.reason)
+                            let reason = Failure::from(failure.reason);
+                            evidence.retain_ssh_failure(connection, failure);
+                            reason
                         })?;
                     transport = Transport::Ssh {
                         connection,
@@ -448,6 +459,7 @@ impl Run {
                                 exchanges: 0,
                                 total: 0,
                                 awaiting_kdc_reply: false,
+                                diagnostics: evidence,
                             };
                             let result = Box::pin(rfb_client::authenticate_qemu_gssapi(
                                 stream,

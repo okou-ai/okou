@@ -53,3 +53,16 @@ Rollout uses the default-off `remoteConnectionDiagnostics` key in the existing
 Run feature map. Enabling it does not grant SSH or VNC access. Report fields and
 finite vocabularies are a versioned contract; incompatible additions require a
 new negotiated version or method, leaving legacy business replies unchanged.
+
+SSH-routed Kerberos KDC failures retain their source cause and creation identity
+before Kerberos error conversion. The native RPC regression uses a real packaged
+Kerberos worker, controlled RFB/TLS peer and SSH trust refusal. It requires a
+supported Linux user/mount namespace and Landlock runtime and is selected
+explicitly:
+
+```sh
+cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  -p runner-remote --lib \
+  ssh::tests::kdc_diagnostics::vnc_history_retains_kdc_ssh_failure_before_kerberos_conversion \
+  -- --exact --ignored
+```
