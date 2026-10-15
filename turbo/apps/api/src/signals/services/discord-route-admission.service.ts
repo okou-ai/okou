@@ -7,6 +7,7 @@ import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 
 import {
   discordMessageCreateSchema,
+  isDiscordUserMessage,
   type DiscordMessageCreate,
 } from "../../lib/discord-gateway-event";
 import { DiscordIngressFailure } from "../../lib/discord-ingress-failure";
@@ -14,7 +15,11 @@ import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { nowDate } from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import type { DiscordChannel } from "../external/discord-client";
-import { requireDiscordConversationAccess$ } from "./discord-access.service";
+import { getDiscordAppConfig } from "./discord-config";
+import {
+  resolveDiscordProviderAccess,
+  type DiscordProviderSnapshot,
+} from "./discord-provider-access";
 import {
   discordChatThreadRouteWhere,
   ensureCanonicalDiscordChatThreadRoute$,
@@ -66,6 +71,8 @@ const terminalIngress$ = command(
 interface DiscordIngressClaim {
   readonly ingressId: string;
   readonly claimToken: string;
+  /** The Gateway's verified binding, scoped to this immediate processing attempt. */
+  readonly admittedBinding?: DiscordVerifiedBinding;
 }
 
 type DiscordIngress = typeof discordChatIngress.$inferSelect;
@@ -76,6 +83,16 @@ interface DiscordAdmissionSource {
   readonly isDm: boolean;
   readonly isThread: boolean;
   readonly routeChannelId: string;
+  readonly botToken: string;
+  readonly applicationId: string;
+  readonly snapshot: DiscordProviderSnapshot;
+}
+
+export interface PreparedDiscordIngress {
+  readonly ingress: DiscordIngress;
+  readonly message: DiscordMessageCreate;
+  readonly source: DiscordAdmissionSource;
+  readonly route: DiscordChatThreadRouteBinding;
 }
 
 interface DiscordAdmissionContext {
@@ -94,12 +111,19 @@ const resolveDiscordAdmissionSource$ = command(
     signal: AbortSignal,
   ): Promise<DiscordAdmissionSource | null> => {
     set(writeDb$);
-    const bindings = await get(discordIngressSenderBindings(message.author.id));
+    const binding =
+      args.admittedBinding ??
+      (await get(discordIngressSenderBindings(message.author.id))).find(
+        (candidate) => {
+          return candidate.connectionId === ingress.connectionId;
+        },
+      );
     signal.throwIfAborted();
-    const binding = bindings.find((candidate) => {
-      return candidate.connectionId === ingress.connectionId;
-    });
-    if (!binding) {
+    if (
+      !binding ||
+      binding.connectionId !== ingress.connectionId ||
+      binding.discordUserId !== message.author.id
+    ) {
       await set(
         terminalIngress$,
         { ...args, reason: "binding_revoked" },
@@ -108,11 +132,19 @@ const resolveDiscordAdmissionSource$ = command(
       signal.throwIfAborted();
       return null;
     }
-    const sourceAccess = await set(
-      requireDiscordConversationAccess$,
+    const config = getDiscordAppConfig();
+    if (!config) {
+      throw new DiscordIngressFailure(
+        "discord:config_unavailable",
+        true,
+        0,
+        "Discord is temporarily unavailable",
+      );
+    }
+    const sourceAccess = await resolveDiscordProviderAccess(
       {
-        orgId: binding.orgId,
-        userId: binding.userId,
+        ...binding,
+        botToken: config.botToken,
         guildId: message.guild_id,
         channelId: message.channel_id,
         mode: "write",
@@ -132,15 +164,6 @@ const resolveDiscordAdmissionSource$ = command(
       await set(
         terminalIngress$,
         { ...args, reason: "conversation_unavailable" },
-        signal,
-      );
-      signal.throwIfAborted();
-      return null;
-    }
-    if (sourceAccess.binding.connectionId !== binding.connectionId) {
-      await set(
-        terminalIngress$,
-        { ...args, reason: "binding_changed" },
         signal,
       );
       signal.throwIfAborted();
@@ -167,11 +190,14 @@ const resolveDiscordAdmissionSource$ = command(
       throw new Error("Discord thread has no parent channel");
     }
     return {
-      binding: sourceAccess.binding,
+      binding: { ...binding, guildId: channel.guild_id ?? binding.guildId },
       channel,
       isDm,
       isThread,
       routeChannelId,
+      botToken: config.botToken,
+      applicationId: config.applicationId,
+      snapshot: sourceAccess.snapshot,
     };
   },
 );
@@ -377,29 +403,26 @@ const resolveCanonicalDiscordRoute$ = command(
 
 const resolveDiscordAdmissionDestination$ = command(
   async (
-    { set },
+    _context,
     context: DiscordAdmissionContext,
     route: DiscordChatThreadRouteBinding,
     signal: AbortSignal,
   ): Promise<
     | { readonly kind: "deferred" }
     | { readonly kind: "ready"; readonly channelId: string }
-    | { readonly kind: "unavailable" }
   > => {
-    set(writeDb$);
-    const { claim, source } = context;
+    const { source } = context;
     const { binding, channel, isDm, isThread } = source;
     let destinationChannelId = route.destinationChannelId;
     if (!destinationChannelId) {
       if (isDm || isThread) {
         destinationChannelId = channel.id;
       } else {
-        const createAccess = await set(
-          requireDiscordConversationAccess$,
+        const createAccess = await resolveDiscordProviderAccess(
           {
-            orgId: binding.orgId,
-            userId: binding.userId,
-            guildId: binding.guildId,
+            ...binding,
+            botToken: source.botToken,
+            snapshot: source.snapshot,
             channelId: channel.id,
             mode: "write",
             createPublicThread: true,
@@ -415,26 +438,17 @@ const resolveDiscordAdmissionDestination$ = command(
             "Discord thread creation is unavailable",
           );
         }
-        if (createAccess.binding.connectionId !== binding.connectionId) {
-          await set(
-            terminalIngress$,
-            { ...claim, reason: "binding_changed" },
-            signal,
-          );
-          signal.throwIfAborted();
-          return { kind: "unavailable" };
-        }
         // Keep the route pending until there is actual content to deliver.
         // Discord gives a message-started thread the starter message's ID.
         return { kind: "deferred" };
       }
     }
-    const destinationAccess = await set(
-      requireDiscordConversationAccess$,
+    const destinationAccess = await resolveDiscordProviderAccess(
       {
-        orgId: binding.orgId,
-        userId: binding.userId,
-        guildId: binding.guildId,
+        ...binding,
+        guildId: isDm ? undefined : binding.guildId,
+        botToken: source.botToken,
+        snapshot: source.snapshot,
         channelId: destinationChannelId,
         mode: "write",
       },
@@ -448,15 +462,6 @@ const resolveDiscordAdmissionDestination$ = command(
         (destinationAccess.response.body.error.retryAfterSeconds ?? 0) * 1000,
         "Discord destination is unavailable",
       );
-    }
-    if (destinationAccess.binding.connectionId !== binding.connectionId) {
-      await set(
-        terminalIngress$,
-        { ...claim, reason: "binding_changed" },
-        signal,
-      );
-      signal.throwIfAborted();
-      return { kind: "unavailable" };
     }
     return { kind: "ready", channelId: destinationChannelId };
   },
@@ -571,7 +576,7 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
     { set },
     args: DiscordIngressClaim,
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ): Promise<PreparedDiscordIngress | null> => {
     const db = set(writeDb$);
     const [ingress] = await db
       .select()
@@ -586,12 +591,21 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!ingress) {
-      return false;
+      return null;
     }
     const envelope = discordGatewayEnvelopeSchema.parse(
       JSON.parse(ingress.payload),
     );
     const message = discordMessageCreateSchema.parse(envelope.payload);
+    if (
+      envelope.eventType !== "MESSAGE_CREATE" ||
+      message.id !== ingress.messageId ||
+      !isDiscordUserMessage(message)
+    ) {
+      throw new Error(
+        "Canonical Discord ingress message does not match its receipt",
+      );
+    }
     const source = await set(
       resolveDiscordAdmissionSource$,
       args,
@@ -601,13 +615,13 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
     );
     signal.throwIfAborted();
     if (!source) {
-      return false;
+      return null;
     }
     const context = { claim: args, ingress, message, source };
     const route = await set(resolveCanonicalDiscordRoute$, context, signal);
     signal.throwIfAborted();
     if (!route) {
-      return false;
+      return null;
     }
     const destination = await set(
       resolveDiscordAdmissionDestination$,
@@ -616,18 +630,23 @@ export const prepareCanonicalDiscordIngressRoute$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (destination.kind === "unavailable") {
-      return false;
-    }
     if (destination.kind === "deferred") {
-      return true;
+      return { ingress, message, source, route };
     }
-    return await set(
+    const persisted = await set(
       persistDiscordAdmissionDestination$,
       args,
       route.id,
       destination.channelId,
       signal,
     );
+    return persisted
+      ? {
+          ingress,
+          message,
+          source,
+          route: { ...route, destinationChannelId: destination.channelId },
+        }
+      : null;
   },
 );
