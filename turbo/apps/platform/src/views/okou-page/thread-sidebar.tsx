@@ -496,7 +496,7 @@ function ThreadFilesPanel({ thread }: { readonly thread: ChatPanelSignals }) {
   return (
     <section
       ref={mount}
-      className="flex h-full min-h-0 flex-col"
+      className="flex h-full w-full min-h-0 min-w-0 flex-col"
       aria-label={t(($) => {
         return $.chat.files.title;
       })}
