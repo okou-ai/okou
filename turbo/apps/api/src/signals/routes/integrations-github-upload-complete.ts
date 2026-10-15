@@ -1,4 +1,6 @@
 import { command } from "ccstate";
+import { githubInstallations } from "@okouai/db/schema/github-installation";
+import { and, eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import {
   integrationsGithubUploadCompleteContract,
@@ -11,10 +13,7 @@ import { bodyResultOf } from "../context/request";
 import { db$ } from "../external/db";
 import { materializeUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { postGithubIssueComment } from "../services/github-issues-api.service";
-import {
-  getGithubIntegrationAccessToken,
-  loadActiveGithubInstallationForOrg,
-} from "../services/github-integration-files.service";
+import { getGithubIntegrationAccessToken } from "../services/github-integration-files.service";
 import { recordGithubUploadedFile$ } from "../services/run-uploaded-files.service";
 import type { RouteEntry } from "../route-entry";
 import { settle } from "../utils";
@@ -76,10 +75,16 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = bodyResult.data;
 
   const db = get(db$);
-  const installation = await loadActiveGithubInstallationForOrg({
-    db,
-    orgId: auth.orgId,
-  });
+  const [installation] = await db
+    .select()
+    .from(githubInstallations)
+    .where(
+      and(
+        eq(githubInstallations.orgId, auth.orgId),
+        eq(githubInstallations.status, "active"),
+      ),
+    )
+    .limit(1);
   signal.throwIfAborted();
   if (!installation) {
     return routeError(404, "No GitHub installation found", "NOT_FOUND");

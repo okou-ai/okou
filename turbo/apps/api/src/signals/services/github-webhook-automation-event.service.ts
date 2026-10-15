@@ -27,7 +27,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { resolveImmutableDedupeInsert } from "../../lib/immutable-dedupe-insert";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   AutomationEventSourceTiming,
@@ -211,8 +211,6 @@ type GithubWebhookAutomationEvent =
       readonly webhookEvent: "issue_comment";
       readonly payload: GithubIssueCommentEventPayload;
     };
-
-type GithubInstallationRecord = typeof githubInstallations.$inferSelect;
 
 interface GithubWebhookAutomationRow {
   readonly automation: AutomationRow;
@@ -454,23 +452,6 @@ function eventMatchesAutomation(
       );
     }
   }
-}
-
-async function findActiveInstallation(args: {
-  readonly db: ReadonlyDb;
-  readonly ghInstallationId: string;
-}): Promise<GithubInstallationRecord | null> {
-  const [installation] = await args.db
-    .select()
-    .from(githubInstallations)
-    .where(
-      and(
-        eq(githubInstallations.installationId, args.ghInstallationId),
-        eq(githubInstallations.status, "active"),
-      ),
-    )
-    .limit(1);
-  return installation ?? null;
 }
 
 const loadGithubWebhookAutomations$ = command(
@@ -934,10 +915,18 @@ export const dispatchGithubWebhookAutomations$ = command(
     const installation = await sourceTiming.measure(
       "api_dispatch_pre_create_agent_automation_event_load_source_state",
       async () => {
-        return await findActiveInstallation({
-          db,
-          ghInstallationId: String(eventInstallation(args.event).id),
-        });
+        const ghInstallationId = String(eventInstallation(args.event).id);
+        const [installation] = await db
+          .select()
+          .from(githubInstallations)
+          .where(
+            and(
+              eq(githubInstallations.installationId, ghInstallationId),
+              eq(githubInstallations.status, "active"),
+            ),
+          )
+          .limit(1);
+        return installation ?? null;
       },
     );
     signal.throwIfAborted();
