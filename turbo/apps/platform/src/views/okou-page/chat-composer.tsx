@@ -8962,7 +8962,7 @@ function ComposerConnectorDialogsSlot({
   );
 }
 
-function ComposerFooter({
+function ComposerIdleControls({
   signals,
   actions,
   connectorActions,
@@ -8970,6 +8970,32 @@ function ComposerFooter({
   signals: ComposerSignals;
   actions: ComposerActions;
   connectorActions: ComposerConnectorActions;
+}) {
+  return (
+    <>
+      <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
+        <ComposerAddMenuSlot signals={signals} />
+        <ComposerTemplatePickerSlot signals={signals} />
+        <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
+        <ComposerTaskControls signals={signals} />
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
+        <ComposerModelPickerSlot signals={signals} />
+        <MicButton signals={signals} actions={actions} />
+        <ComposerSendControl signals={signals} actions={actions} />
+      </div>
+    </>
+  );
+}
+
+function ComposerFooter({
+  signals,
+  actions,
+  children,
+}: {
+  signals: ComposerSignals;
+  actions: ComposerActions;
+  children: ReactNode;
 }) {
   const voiceDraft = useResolved(signals.voice.state$);
   const capture = useGet(signals.voice.capture$);
@@ -9012,22 +9038,7 @@ function ComposerFooter({
           voiceMessage={voiceDraft?.message}
         />
       ) : (
-        <>
-          <div className="flex min-w-0 items-center gap-1 text-muted-foreground composer-wide:gap-1.5">
-            <ComposerAddMenuSlot signals={signals} />
-            <ComposerTemplatePickerSlot signals={signals} />
-            <ComposerConnectorsSlot
-              signals={signals}
-              actions={connectorActions}
-            />
-            <ComposerTaskControls signals={signals} />
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">
-            <ComposerModelPickerSlot signals={signals} />
-            <MicButton signals={signals} actions={actions} />
-            <ComposerSendControl signals={signals} actions={actions} />
-          </div>
-        </>
+        children
       )}
     </div>,
   );
@@ -9104,11 +9115,13 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
           />
           {/* Voice states share 8px/12px outer tray spacing and 12px/8px
               inner padding so their surfaces stay aligned through handoff. */}
-          <ComposerFooter
-            signals={signals}
-            actions={actions}
-            connectorActions={connectorActions}
-          />
+          <ComposerFooter signals={signals} actions={actions}>
+            <ComposerIdleControls
+              signals={signals}
+              actions={actions}
+              connectorActions={connectorActions}
+            />
+          </ComposerFooter>
         </div>
       </CardContent>
     </Card>
