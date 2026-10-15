@@ -5331,6 +5331,13 @@
     "credentialsHelp": "Credentials are write-only and stay outside the sandbox. Paste the complete key; whitespace is preserved. Fields are cleared when this form closes.",
     "delete": "Delete host",
     "deleteHelp": "Delete this host? Its credential will be kept. Agents will no longer see this host in the live inventory.",
+    "deleteReview": {
+      "acknowledge": "Use this version for deletion",
+      "changed": "This host changed. Review its latest saved settings before deleting.",
+      "help": "Review these saved settings, then choose Delete host to delete this version.",
+      "unavailable": "This host is no longer available. Close this dialog and refresh the configuration before trying again.",
+      "version": "Version {{version}}"
+    },
     "description": "Let your agents run commands on remote machines.",
     "displayName": "Display name",
     "edit": "Edit host",

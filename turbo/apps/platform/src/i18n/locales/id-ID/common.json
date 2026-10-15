@@ -5315,6 +5315,13 @@
     "credentialsHelp": "Kredensial hanya dapat ditulis dan tetap berada di luar sandbox. Tempelkan kunci lengkap; spasi dipertahankan. Kolom dikosongkan saat formulir ditutup.",
     "delete": "Hapus host",
     "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
+    "deleteReview": {
+      "acknowledge": "Gunakan versi ini untuk penghapusan",
+      "changed": "Host ini telah berubah. Tinjau pengaturan tersimpan terbarunya sebelum menghapus.",
+      "help": "Tinjau pengaturan tersimpan ini, lalu pilih Hapus host untuk menghapus versi ini.",
+      "unavailable": "Host ini tidak lagi tersedia. Tutup dialog ini dan muat ulang konfigurasi sebelum mencoba lagi.",
+      "version": "Versi {{version}}"
+    },
     "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
     "displayName": "Nama tampilan",
     "edit": "Edit host",

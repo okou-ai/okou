@@ -5410,6 +5410,13 @@
     "credentialsHelp": "As credenciais são somente para gravação e ficam fora do sandbox. Cole a chave completa; os espaços são preservados. Os campos são limpos ao fechar o formulário.",
     "delete": "Excluir host",
     "deleteHelp": "Excluir este host? A credencial será mantida. Os Agents não o verão mais no inventário.",
+    "deleteReview": {
+      "acknowledge": "Usar esta versão para exclusão",
+      "changed": "Este host foi alterado. Revise as configurações salvas mais recentes antes de excluí-lo.",
+      "help": "Revise estas configurações salvas e escolha Excluir host para excluir esta versão.",
+      "unavailable": "Este host não está mais disponível. Feche esta janela e atualize a configuração antes de tentar novamente.",
+      "version": "Versão {{version}}"
+    },
     "description": "Configure hosts SSH para seus agentes executarem comandos remotos.",
     "displayName": "Nome de exibição",
     "edit": "Editar host",

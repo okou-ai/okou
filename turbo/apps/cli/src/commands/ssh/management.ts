@@ -5,6 +5,7 @@ import {
   createSshConnectionRequestSchema,
   updateSshConnectionRequestSchema,
   resetSshConnectionHostKeyRequestSchema,
+  deleteSshConnectionRequestSchema,
 } from "@okouai/api-contracts/contracts/ssh-connections";
 import {
   sshCredentialsContract,
@@ -137,15 +138,29 @@ Credentials are write-only: provide them via --input, never command-line passwor
     )
     .addCommand(
       new Command("delete")
-        .description(
-          "Delete an owned host; backend ownership and reference checks apply",
-        )
+        .description("Delete an owned host using the generation you reviewed")
         .argument("<connection-id>", "Configured host UUID")
+        .requiredOption(
+          "--input <file|->",
+          "JSON {expectedGeneration}; file or - for stdin",
+        )
         .option("--json", "Print JSON")
+        .addHelpText(
+          "after",
+          "\nReview the host with okou ssh host show <connection-id>, then supply its expectedGeneration. A conflict requires another review and explicit delete; deletion never fetches or retries automatically.\n",
+        )
         .action(
-          withErrorHandler(async (id: string, options: OutputOptions) => {
+          withErrorHandler(async (id: string, options: InputOptions) => {
             requireSandboxCapability("connector:write");
-            output(await deleteSshHost(resourceId(id)), options);
+            const connectionId = resourceId(id);
+            const body = await readManagementInput(
+              options.input,
+              deleteSshConnectionRequestSchema.required(),
+            );
+            output(
+              await deleteSshHost(connectionId, body.expectedGeneration),
+              options,
+            );
           }),
         ),
     )

@@ -5410,6 +5410,13 @@
     "credentialsHelp": "Les identifiants sont accessibles uniquement en écriture et restent hors du sandbox. Collez la clé complète ; les espaces sont conservés. Les champs sont effacés à la fermeture du formulaire.",
     "delete": "Supprimer l’hôte",
     "deleteHelp": "Supprimer cet hôte ? Ses identifiants seront conservés. Les Agents ne le verront plus dans l’inventaire.",
+    "deleteReview": {
+      "acknowledge": "Utiliser cette version pour la suppression",
+      "changed": "Cet hôte a été modifié. Vérifiez ses derniers paramètres enregistrés avant de le supprimer.",
+      "help": "Vérifiez ces paramètres enregistrés, puis choisissez Supprimer l’hôte pour supprimer cette version.",
+      "unavailable": "Cet hôte n’est plus disponible. Fermez cette fenêtre et actualisez la configuration avant de réessayer.",
+      "version": "Version {{version}}"
+    },
     "description": "Configurez des hôtes SSH pour que vos agents exécutent des commandes à distance.",
     "displayName": "Nom affiché",
     "edit": "Modifier l’hôte",
