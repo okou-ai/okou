@@ -3,17 +3,10 @@ import {
   usagePackCreditRefunds,
   type UsagePackCreditRefundSourceType,
 } from "@okouai/db/schema/usage-pack-credit-refund";
-import { usagePackInvitationPurchases } from "@okouai/db/schema/usage-pack-subscription";
 import { and, asc, eq, gt, inArray, like, lt, or } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
-import {
-  requireUsagePackOverdraftTransfer,
-  usagePackOverdraftTransferOutcomeRow,
-} from "./usage-pack-overdraft-transfer.service";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import type { Db } from "../external/db";
 import {
   getStripeClient,
@@ -26,15 +19,12 @@ import {
 } from "../external/stripe-client";
 import { settle } from "../utils";
 
-const CREDITS_PER_CENT = 10;
 const RECONCILIATION_LIMIT = 100;
 const MAX_REFUND_ATTEMPTS = 3;
 const L = logger("UsagePackCreditRefund");
 
 type UsagePackCreditRefundRow = typeof usagePackCreditRefunds.$inferSelect;
-type UsagePackCreditGrantRow = typeof usagePackCreditGrants.$inferSelect;
 type CreditRefundSourceStore = Pick<Db, "insert" | "select">;
-type CreditRefundStore = Pick<Db, "insert" | "select" | "update" | "execute">;
 
 export type UsagePackCreditRefundSource =
   | {
@@ -164,142 +154,6 @@ export function legacyInvitationPurchaseId(
     idempotencyKey,
   );
   return match?.[1] ?? null;
-}
-
-async function inferLegacyRefundSource(
-  db: Pick<Db, "select">,
-  grant: UsagePackCreditGrantRow,
-): Promise<UsagePackCreditRefundSource | null> {
-  const invitationPurchaseId = legacyInvitationPurchaseId(grant.idempotencyKey);
-  if (invitationPurchaseId) {
-    const [purchase] = await db
-      .select({
-        orgId: usagePackInvitationPurchases.orgId,
-        acceptedUserId: usagePackInvitationPurchases.acceptedUserId,
-        amountPaidCents: usagePackInvitationPurchases.amountPaidCents,
-        stripePaymentIntentId:
-          usagePackInvitationPurchases.stripePaymentIntentId,
-      })
-      .from(usagePackInvitationPurchases)
-      .where(eq(usagePackInvitationPurchases.id, invitationPurchaseId))
-      .limit(1);
-    if (
-      !purchase ||
-      purchase.orgId !== grant.orgId ||
-      purchase.acceptedUserId !== grant.userId
-    ) {
-      throw new Error(
-        `Usage pack grant ${grant.id} has no refundable invitation payment`,
-      );
-    }
-    if (purchase.amountPaidCents === 0) {
-      return null;
-    }
-    if (purchase.amountPaidCents === null || !purchase.stripePaymentIntentId) {
-      throw new Error(
-        `Usage pack grant ${grant.id} has no refundable invitation payment`,
-      );
-    }
-    return {
-      type: "payment_intent",
-      paymentIntentId: purchase.stripePaymentIntentId,
-      amountCents: purchase.amountPaidCents,
-    };
-  }
-
-  const invoiceId = legacyInvoiceId(grant.idempotencyKey);
-  const amountCents = Math.floor(grant.originalAmount / CREDITS_PER_CENT);
-  if (!invoiceId || amountCents <= 0) {
-    throw new Error(
-      `Usage pack grant ${grant.id} has no refundable Stripe source`,
-    );
-  }
-  return { type: "invoice", invoiceId, amountCents };
-}
-
-async function loadRefundSource(
-  db: CreditRefundStore,
-  grant: UsagePackCreditGrantRow,
-): Promise<UsagePackCreditRefundRow | null> {
-  const [existing] = await db
-    .select()
-    .from(usagePackCreditRefunds)
-    .where(eq(usagePackCreditRefunds.creditGrantId, grant.id))
-    .limit(1);
-  if (existing) {
-    return existing;
-  }
-  const source = await inferLegacyRefundSource(db, grant);
-  if (!source) {
-    return null;
-  }
-  await ensureUsagePackCreditRefundSource(db, {
-    creditGrantId: grant.id,
-    orgId: grant.orgId,
-    userId: grant.userId,
-    source,
-  });
-  const [created] = await db
-    .select()
-    .from(usagePackCreditRefunds)
-    .where(eq(usagePackCreditRefunds.creditGrantId, grant.id))
-    .limit(1);
-  if (!created) {
-    throw new Error(`Usage pack grant ${grant.id} refund source was not saved`);
-  }
-  return created;
-}
-
-export async function prepareUsagePackMemberCreditRefunds(
-  db: CreditRefundStore,
-  args: { readonly orgId: string; readonly userId: string },
-): Promise<number> {
-  const at = nowDate();
-  requireUsagePackOverdraftTransfer(
-    parseRawRows(
-      usagePackOverdraftTransferOutcomeRow,
-      await db.execute(usagePackOverdraftTransferSql(args, at)),
-    ),
-  );
-  const grants = await db
-    .select()
-    .from(usagePackCreditGrants)
-    .where(refundableUsagePackCreditGrantCondition(args, at))
-    .for("update");
-  if (grants.length === 0) {
-    return 0;
-  }
-
-  let prepared = 0;
-  for (const grant of grants) {
-    const source = await loadRefundSource(db, grant);
-    if (!source || source.status !== "available") {
-      continue;
-    }
-    const requestedAmountCents = Math.floor(
-      (source.sourceAmountCents * grant.remainingAmount) / grant.originalAmount,
-    );
-    if (requestedAmountCents <= 0) {
-      continue;
-    }
-    const rows = await db
-      .update(usagePackCreditRefunds)
-      .set({
-        status: "pending",
-        refundCredits: grant.remainingAmount,
-        requestedAmountCents,
-        updatedAt: at,
-      })
-      .where(
-        and(
-          eq(usagePackCreditRefunds.creditGrantId, grant.id),
-          eq(usagePackCreditRefunds.status, "available"),
-        ),
-      )
-      .returning({ creditGrantId: usagePackCreditRefunds.creditGrantId });
-    prepared += rows.length;
-  }
-  return prepared;
 }
 
 function creditNoteLineParams(

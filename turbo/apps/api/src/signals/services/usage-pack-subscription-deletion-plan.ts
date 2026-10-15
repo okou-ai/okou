@@ -32,10 +32,14 @@ function* canceledPlanEntitlementPlan(
   const sourceMetadata = retireMarketingMetadata(
     entitlementArgs.sourceMetadata,
   );
-  const values = orgPlanEntitlementValues(entitlementArgs, {
-    stripeSubscriptionId: null,
-    sourceMetadata,
-  }, (yield* usagePackSqlClock()));
+  const values = orgPlanEntitlementValues(
+    entitlementArgs,
+    {
+      stripeSubscriptionId: null,
+      sourceMetadata,
+    },
+    yield* usagePackSqlClock(),
+  );
   yield* usagePackSqlWrite(
     usagePackSqlInsert(orgPlanEntitlements, values, {
       conflict: {
@@ -85,7 +89,7 @@ export function* canceledPlanSubscriptionPlan(
         pendingSubscriptionScheduleId: null,
         pendingSubscriptionTargetTier: null,
         pendingSubscriptionChangeAt: null,
-        updatedAt: (yield* usagePackSqlClock()),
+        updatedAt: yield* usagePackSqlClock(),
       },
       eq(orgMetadata.stripeSubscriptionId, subscription.id),
       { orgId: orgMetadata.orgId },

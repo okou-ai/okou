@@ -25,7 +25,11 @@ import {
   USAGE_PACK_PURCHASE_CLAIM_STATUS,
 } from "./billing-purchase-claim.service";
 import { tierForKnownPlanPrice } from "./billing-checkout.service";
-import type { CreateUsagePackCheckoutSessionArgs, UsagePackContext, PreparedPendingUsagePackCheckout } from "./usage-pack-subscription.service";
+import type {
+  CreateUsagePackCheckoutSessionArgs,
+  UsagePackContext,
+  PreparedPendingUsagePackCheckout,
+} from "./usage-pack-subscription.service";
 import type {
   UsagePackPendingSnapshotOperation,
   UsagePackPendingSnapshotResult,
@@ -560,7 +564,7 @@ function* deactivatePlan(
           sourceMetadata,
         },
         { stripeSubscriptionId: null, sourceMetadata },
-        (yield* usagePackSqlClock()),
+        yield* usagePackSqlClock(),
       );
       yield* usagePackSqlWrite(
         usagePackSqlInsert(orgPlanEntitlements, values, {

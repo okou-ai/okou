@@ -1,4 +1,3 @@
-
 import {
   usagePackAllocationChanges,
   usagePackAllocations,
@@ -7,7 +6,16 @@ import {
 } from "@okouai/db/schema/usage-pack-subscription";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import { usagePackCreditRefunds } from "@okouai/db/schema/usage-pack-credit-refund";
-import { and, eq, inArray, isNotNull, notInArray, desc, ne, getTableColumns } from "drizzle-orm";
+import {
+  and,
+  eq,
+  inArray,
+  isNotNull,
+  notInArray,
+  desc,
+  ne,
+  getTableColumns,
+} from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import { usagePackOverdraftTransferSql } from "@okouai/db/operations/usage-pack-overdraft-transfer";
@@ -62,7 +70,6 @@ const TERMINAL_SUBSCRIPTION_STATUSES = [
   "incomplete_expired",
   "invalid",
 ] as const;
-
 
 function activeMemberAllocations(
   context: UsagePackChangeContext,
@@ -234,10 +241,6 @@ function* activateExistingUsagePackRemovalPlan(
   }
   return { context: refreshedContext, change: activated };
 }
-
-
-
-
 
 function* prepareUsagePackMemberCreditRefundsPlan(args: {
   readonly orgId: string;
@@ -532,4 +535,3 @@ export function* prepareUsagePackMemberRemovalPlan(
   }
   return { context: refreshedContext, change };
 }
-

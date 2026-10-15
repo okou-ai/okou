@@ -3005,7 +3005,9 @@ const commitReflectedUsagePackChanges$ = command(
               .set({ status: "inactive", updatedAt })
               .where(reflectedSourceCondition(change))
               .returning({ id: usagePackAllocations.id });
-            if (!source) {throw new ReflectedUsagePackSnapshotChanged();}
+            if (!source) {
+              throw new ReflectedUsagePackSnapshotChanged();
+            }
           }
           let replacementAllocationId: string | null = null;
           if (change.kind !== "removal") {
@@ -3022,7 +3024,9 @@ const commitReflectedUsagePackChanges$ = command(
                 where: sql`${usagePackAllocations.userId} IS NOT NULL AND ${usagePackAllocations.status} <> 'inactive'`,
               })
               .returning({ id: usagePackAllocations.id });
-            if (!replacement) {throw new ReflectedUsagePackSnapshotChanged();}
+            if (!replacement) {
+              throw new ReflectedUsagePackSnapshotChanged();
+            }
             replacementAllocationId = replacement.id;
           }
 
@@ -5834,8 +5838,9 @@ const loadUpgradeInvoiceObservation$ = command(
 );
 
 function reflectedSourceCondition(change: UsagePackAllocationChangeRow) {
-  if (!change.sourceAllocationId || !change.sourceStripePriceId)
-    {throw new Error(`Usage pack change ${change.id} has no source`);}
+  if (!change.sourceAllocationId || !change.sourceStripePriceId) {
+    throw new Error(`Usage pack change ${change.id} has no source`);
+  }
   return and(
     eq(usagePackAllocations.id, change.sourceAllocationId),
     eq(usagePackAllocations.orgId, change.orgId),
@@ -5854,8 +5859,9 @@ function reflectedReplacementValues(
   period: UsagePackPeriod,
   updatedAt: Date,
 ): typeof usagePackAllocations.$inferInsert {
-  if (change.targetUsagePackUsd === null || !change.targetStripePriceId)
-    {throw new Error(`Usage pack change ${change.id} has no target`);}
+  if (change.targetUsagePackUsd === null || !change.targetStripePriceId) {
+    throw new Error(`Usage pack change ${change.id} has no target`);
+  }
   return {
     usagePackSubscriptionId: context.subscription.id,
     orgId: context.subscription.orgId,
