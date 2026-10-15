@@ -1,19 +1,39 @@
-import { command, computed } from "ccstate";
+import { command, computed, state } from "ccstate";
 import { searchParams$ } from "../route.ts";
 import {
   slackConnectContract,
   type SlackConnectLinkStatus,
 } from "@okouai/api-contracts/contracts/slack-connect";
 import { apiClient$ } from "../api-client.ts";
+import { appendCapturedPreviewBypassToUrl } from "../../lib/preview-bypass-cookie.ts";
 import { accept } from "../../lib/accept.ts";
+import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
+import { slackOrgData$, reloadSlackOrg$ } from "./slack.ts";
+
+const linkReload$ = state(0);
+export const reloadSlackConnectStatus$ = command(({ set }) => {
+  set(linkReload$, (value) => {
+    return value + 1;
+  });
+  set(reloadSlackOrg$);
+});
 
 interface SlackConnectWorkspaceStatus {
   readonly workspaceName?: string | null;
 }
 
 export type SlackConnectStatus =
+  | {
+      readonly kind: "overview";
+      readonly data: SlackOrgStatus;
+      readonly authorizationUrl: string | null;
+    }
+  | { readonly kind: "invalid" }
   | ({ readonly kind: "connect" } & SlackConnectWorkspaceStatus)
-  | ({ readonly kind: "success" } & SlackConnectWorkspaceStatus)
+  | ({
+      readonly kind: "success";
+      readonly slackUserId: string;
+    } & SlackConnectWorkspaceStatus)
   | (Exclude<
       SlackConnectLinkStatus,
       { readonly kind: "connect" | "connected" }
@@ -25,15 +45,32 @@ export const slackConnectStatus$ = computed(
     const params = get(searchParams$);
     const workspaceId = params.get("w");
     const slackUserId = params.get("u");
-    const initialStatus = params.get("status");
-    const initialError = params.get("error");
+    get(linkReload$);
 
-    if (initialStatus === "connected") {
-      return { kind: "success" };
+    if (!workspaceId && !slackUserId) {
+      const data = await get(slackOrgData$);
+      const action =
+        data.scopeMismatch && data.isAdmin
+          ? data.reinstallUrl
+          : data.isConnected
+            ? null
+            : (data.connectUrl ?? data.installUrl);
+      const url = action ? new URL(action, window.location.origin) : null;
+      const prompt = params.get("prompt");
+      if (url && prompt) {
+        url.searchParams.set("prompt", prompt);
+      }
+      if (url) {
+        appendCapturedPreviewBypassToUrl(url);
+      }
+      return {
+        kind: "overview",
+        data,
+        authorizationUrl: url?.toString() ?? null,
+      };
     }
-
-    if (initialError || !workspaceId || !slackUserId) {
-      return { kind: "connect" };
+    if (!workspaceId || !slackUserId) {
+      return { kind: "invalid" };
     }
 
     const client = get(apiClient$)(slackConnectContract);
@@ -44,7 +81,7 @@ export const slackConnectStatus$ = computed(
     const { linkStatus, workspaceName } = result.body;
     const workspace = workspaceName === undefined ? {} : { workspaceName };
     if (linkStatus.kind === "connected") {
-      return { kind: "success", ...workspace };
+      return { kind: "success", slackUserId, ...workspace };
     }
     if (linkStatus.kind === "connect") {
       return { kind: "connect", ...workspace };
@@ -58,13 +95,24 @@ export const effectiveError$ = computed((get) => {
   return params.get("error") ?? "";
 });
 
-// Init: handle the URL-driven redirect. The view owns status loading.
-export const initSlackConnectPage$ = command(({ get }, signal: AbortSignal) => {
+// Every visit/reload reconciles authenticated state; a result marker is only a hint.
+export const initSlackConnectPage$ = command(({ set }, signal: AbortSignal) => {
   signal.throwIfAborted();
+  set(reloadSlackConnectStatus$);
+});
+
+export const slackReturnUrl$ = computed((get) => {
   const params = get(searchParams$);
-  if (params.get("status") === "connected") {
-    window.location.href = "slack://open";
+  const workspace = params.get("w");
+  const channel = params.get("c");
+  const url = new URL(channel ? "slack://channel" : "slack://open");
+  if (workspace) {
+    url.searchParams.set("team", workspace);
   }
+  if (channel) {
+    url.searchParams.set("id", channel);
+  }
+  return url.toString();
 });
 
 // Connect account

@@ -150,7 +150,10 @@ test("The step sends an admin to Slack's own install and turns connected once th
 
   click(getButtonByName(SLACK_ADD));
 
-  expect(open).toHaveBeenCalledWith(`${SLACK_INSTALL_URL}?_t=${NOW}`, "_blank");
+  expect(open).toHaveBeenCalledWith(
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
+    "_blank",
+  );
 
   click(getChannelTile("Teams"));
 
@@ -211,7 +214,7 @@ test("A protected worker preview keeps access on its matching OAuth start URL", 
   click(getButtonByName(SLACK_ADD));
 
   expect(open).toHaveBeenCalledWith(
-    `${installUrl}&_t=${NOW}&x-vercel-protection-bypass=preview-secret`,
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
     "_blank",
   );
 });
@@ -249,7 +252,7 @@ test("An installed workspace offers the account connect rather than the install"
   click(getButtonByName("Connect Slack"));
 
   expect(open).toHaveBeenCalledWith(
-    `https://slack.example.test/oauth/connect?_t=${NOW}`,
+    `${window.location.origin}/settings/slack?_t=${NOW}`,
     "_blank",
   );
 });

@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import {
   useGet,
   useLoadable,
@@ -192,7 +193,9 @@ function InstalledChannelButton({
           } else {
             captureChannelClicked("teams", true);
           }
-          openFreshOAuth(actionUrl);
+          openFreshOAuth(
+            channel === "slack" ? INTEGRATION_SETTINGS_PATHS.slack : actionUrl,
+          );
         }
       }}
     >

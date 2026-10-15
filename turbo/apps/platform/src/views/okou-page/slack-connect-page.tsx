@@ -1,13 +1,16 @@
-import { useGet, useLoadable } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { CircleCheck } from "lucide-react";
-import { Button, BrandSlack } from "@okouai/ui";
+import { Button, BrandSlack, buttonVariants, cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { detach, Reason } from "../../signals/utils.ts";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { searchParams$ } from "../../signals/route.ts";
 import {
   effectiveError$,
+  reloadSlackConnectStatus$,
+  slackReturnUrl$,
   slackConnectStatus$,
   type SlackConnectStatus,
   connectSlackAccount$,
@@ -33,39 +36,66 @@ type PageStatus =
 export function SlackConnectPage() {
   return (
     <PageShell>
+      <SlackAttemptNotice />
       <PageContent />
     </PageShell>
   );
 }
 
+function SlackAttemptNotice() {
+  const { t } = useTranslation();
+  const error = useGet(effectiveError$);
+  const params = useGet(searchParams$);
+  if (error) {
+    return (
+      <ConnectErrorAlert
+        error={
+          error === "access_denied"
+            ? t(($) => {
+                return $.connectors.providerConnect.slack.authorizationFailed;
+              })
+            : error
+        }
+      />
+    );
+  }
+  if (
+    params.get("status") === "connected" ||
+    ["updated", "installed", "connected"].some((key) => {
+      return params.get(key) === "1";
+    })
+  ) {
+    return (
+      <p className="text-sm text-muted-foreground" role="status">
+        {t(($) => {
+          return $.connectors.providerConnect.slack.authorizationReturned;
+        })}
+      </p>
+    );
+  }
+  return null;
+}
+
 function PageContent() {
   const { t } = useTranslation();
-  const params = useGet(searchParams$);
-  const workspaceId = params.get("w");
-  const slackUserId = params.get("u");
-  const callbackWorkspaceName = params.get("workspace");
-
-  const effectiveError = useGet(effectiveError$);
   const statusLoadable = useLoadable(slackConnectStatus$);
   const status: PageStatus =
-    effectiveError !== ""
-      ? { kind: "error", message: effectiveError }
-      : statusLoadable.state === "loading"
-        ? { kind: "checking" }
-        : statusLoadable.state === "hasData"
-          ? statusLoadable.data
-          : statusLoadable.state === "hasError"
-            ? {
-                kind: "error",
-                message: connectErrorMessage(
-                  statusLoadable.error,
-                  t(($) => {
-                    return $.connectors.providerConnect.slack.errorFallback;
-                  }),
-                ),
-              }
-            : { kind: "connect" };
-
+    statusLoadable.state === "loading"
+      ? { kind: "checking" }
+      : statusLoadable.state === "hasData"
+        ? statusLoadable.data
+        : statusLoadable.state === "hasError"
+          ? {
+              kind: "error",
+              message: connectErrorMessage(
+                statusLoadable.error,
+                t(($) => {
+                  return $.connectors.providerConnect.slack.errorFallback;
+                }),
+              ),
+            }
+          : { kind: "checking" };
+  const reload = useSet(reloadSlackConnectStatus$);
   const [connectLoadable, connect] = useLoadableSet(connectSlackAccount$);
   const connectLoading = connectLoadable.state === "loading";
   const connectError =
@@ -78,36 +108,48 @@ function PageContent() {
         )
       : null;
   const workspaceName =
-    "workspaceName" in status
-      ? (status.workspaceName ?? callbackWorkspaceName)
-      : callbackWorkspaceName;
+    "workspaceName" in status ? (status.workspaceName ?? null) : null;
   const pageSignal = useGet(pageSignal$);
   const handleConnect = (intent: "connect" | "switch") => {
     detach(connect(intent, pageSignal), Reason.DomCallback);
   };
 
-  // Error state
   if (status.kind === "error") {
-    return <ConnectErrorState message={status.message} />;
+    return (
+      <>
+        <ConnectErrorState message={status.message} />
+        <Button
+          onClick={() => {
+            return reload();
+          }}
+        >
+          {t(($) => {
+            return $.connectors.providerConnect.slack.retryStatus;
+          })}
+        </Button>
+      </>
+    );
   }
-  // Success state
-  if (status.kind === "success") {
-    return <SlackSuccessState workspaceName={workspaceName} />;
-  }
-
-  // Loading — checking login / connection status
   if (status.kind === "checking") {
     return <ConnectCheckingState />;
   }
-
+  if (status.kind === "overview") {
+    return <SlackOverview status={status} />;
+  }
+  if (status.kind === "success") {
+    return (
+      <SlackSuccessState
+        workspaceName={workspaceName}
+        slackUserId={status.slackUserId}
+      />
+    );
+  }
   if (status.kind === "slack_account_in_use") {
     return <SlackAccountInUseState />;
   }
-
   if (status.kind === "workspace_mismatch") {
     return <SlackWorkspaceMismatchState status={status} />;
   }
-
   if (status.kind === "slack_account_mismatch") {
     return (
       <SlackAccountMismatchState
@@ -116,60 +158,123 @@ function PageContent() {
         connectError={connectError}
         connecting={connectLoading}
         onSwitch={() => {
-          handleConnect("switch");
+          return handleConnect("switch");
         }}
       />
     );
   }
-
-  // Connect confirmation (from Slack link with w + u params)
-  if (workspaceId && slackUserId) {
+  if (status.kind === "invalid") {
     return (
       <>
-        <BrandSlack size={40} className="" />
-        <CenterText
-          title={t(($) => {
-            return $.connectors.providerConnect.slack.connectTitle;
-          })}
-          body={t(($) => {
-            return $.connectors.providerConnect.slack.connectDescription;
+        <ConnectInvalidLinkState
+          description={t(($) => {
+            return $.connectors.providerConnect.slack.invalidDescription;
           })}
         />
-        <ConnectErrorAlert error={connectError} />
-        <ConnectSubmitButton
-          connecting={connectLoading}
-          onConnect={() => {
-            handleConnect("connect");
-          }}
-          spinnerClassName="animate-spin mr-2"
-        />
-        <SettingsBackLink />
+        <a href={INTEGRATION_SETTINGS_PATHS.slack} className={buttonVariants()}>
+          {t(($) => {
+            return $.connectors.providerConnect.slack.startAgain;
+          })}
+        </a>
       </>
     );
   }
-
-  // No params — invalid access
   return (
-    <ConnectInvalidLinkState
-      description={t(($) => {
-        return $.connectors.providerConnect.slack.invalidDescription;
-      })}
-    />
+    <>
+      <BrandSlack size={40} />
+      <CenterText
+        title={t(($) => {
+          return $.connectors.providerConnect.slack.connectTitle;
+        })}
+        body={
+          workspaceName ??
+          t(($) => {
+            return $.connectors.providerConnect.slack.connectDescription;
+          })
+        }
+      />
+      <ConnectErrorAlert error={connectError} />
+      <ConnectSubmitButton
+        connecting={connectLoading}
+        onConnect={() => {
+          return handleConnect("connect");
+        }}
+        spinnerClassName="animate-spin mr-2"
+      />
+      <SettingsBackLink />
+    </>
+  );
+}
+
+function SlackOverview({
+  status,
+}: {
+  status: Extract<SlackConnectStatus, { kind: "overview" }>;
+}) {
+  const { t } = useTranslation();
+  const { data, authorizationUrl } = status;
+  return (
+    <>
+      {data.isConnected ? (
+        <SlackSuccessState workspaceName={data.workspaceName ?? null} />
+      ) : (
+        <>
+          <BrandSlack size={40} />
+          <CenterText
+            title={t(($) => {
+              return $.connectors.providerConnect.slack.connectTitle;
+            })}
+            body={t(($) => {
+              return $.connectors.providerConnect.slack.connectDescription;
+            })}
+          />
+        </>
+      )}
+      {authorizationUrl ? (
+        <a href={authorizationUrl} className={cn(buttonVariants(), "w-full")}>
+          {data.scopeMismatch && data.isAdmin
+            ? t(($) => {
+                return $.connectors.providerConnect.slack.reauthorize;
+              })
+            : data.isInstalled
+              ? t(($) => {
+                  return $.works.actions.connect;
+                })
+              : t(($) => {
+                  return $.works.slack.install;
+                })}
+        </a>
+      ) : !data.isConnected ? (
+        <p className="text-sm text-muted-foreground">
+          {data.isAdmin
+            ? t(($) => {
+                return $.connectors.providerConnect.slack.unavailable;
+              })
+            : t(($) => {
+                return $.works.slack.adminInstall;
+              })}
+        </p>
+      ) : null}
+      {!data.isConnected && <SettingsBackLink />}
+    </>
   );
 }
 
 function SlackSuccessState({
   workspaceName,
+  slackUserId,
 }: {
   workspaceName: string | null;
+  slackUserId?: string;
 }) {
   const { t } = useTranslation();
+  const returnUrl = useGet(slackReturnUrl$);
   return (
     <>
       <CircleCheck size={40} className="text-emerald-500" />
       <CenterText
         title={t(($) => {
-          return $.connectors.providerConnect.slack.successTitle;
+          return $.connectors.providerConnect.slack.currentConnection;
         })}
         body={
           workspaceName
@@ -185,19 +290,28 @@ function SlackSuccessState({
               })
         }
       />
+      {slackUserId && (
+        <p className="text-sm text-muted-foreground">
+          {t(
+            ($) => {
+              return $.connectors.providerConnect.slack.connectedAccount;
+            },
+            {
+              account: slackUserId,
+            },
+          )}
+        </p>
+      )}
       <div className="flex flex-col gap-3 w-full">
-        <Button
-          size="default"
-          className="w-full gap-2"
-          onClick={() => {
-            window.location.href = "slack://open";
-          }}
+        <a
+          href={slackUserId ? returnUrl : "slack://open"}
+          className={cn(buttonVariants(), "w-full gap-2")}
         >
           <BrandSlack size={16} />
           {t(($) => {
             return $.connectors.providerConnect.slack.open;
           })}
-        </Button>
+        </a>
         <div className="flex justify-center">
           <SettingsBackLink />
         </div>

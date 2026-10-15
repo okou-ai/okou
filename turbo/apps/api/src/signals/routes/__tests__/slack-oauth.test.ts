@@ -348,7 +348,7 @@ describe("Slack OAuth API routes", () => {
           );
           const location = response.headers.get("location");
           expect(location).toBe(
-            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}`,
+            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}&w=${encodeURIComponent(installation.slackWorkspaceId)}&u=${encodeURIComponent(installation.slackUserId)}`,
           );
           expect(context.mocks.slack.oauth.v2.access).toHaveBeenLastCalledWith({
             client_id: "test-slack-client-id",
@@ -394,7 +394,7 @@ describe("Slack OAuth API routes", () => {
             [307],
           );
           expect(response.headers.get("location")).toBe(
-            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}`,
+            `${APP_ORIGIN}/settings/slack?status=connected&workspace=${encodeURIComponent(installation.slackWorkspaceName)}&w=${encodeURIComponent(installation.slackWorkspaceId)}&u=${encodeURIComponent(installation.slackUserId)}`,
           );
           const status = await readCallbackLink(
             installation,
@@ -417,7 +417,7 @@ describe("Slack OAuth API routes", () => {
           if (!expiredLocation) {
             throw new Error("Expected the expired OAuth redirect");
           }
-          expect(new URL(expiredLocation).pathname).toBe("/slack/failed");
+          expect(new URL(expiredLocation).pathname).toBe("/settings/slack");
           expect(new URL(expiredLocation).searchParams.get("error")).toBe(
             "Invalid OAuth state.",
           );
@@ -987,7 +987,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       expect(new URL(response.headers.get("location")!).pathname).toBe(
-        "/slack/failed",
+        "/settings/slack",
       );
       expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
     });
@@ -1011,7 +1011,7 @@ describe("Slack OAuth API routes", () => {
 
         expect(response.status).toBe(307);
         const location = new URL(response.headers.get("location")!);
-        expect(location.pathname).toBe("/slack/failed");
+        expect(location.pathname).toBe("/settings/slack");
         expect(location.searchParams.get("error")).toBe("Invalid OAuth state.");
         expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
       });
@@ -1029,7 +1029,7 @@ describe("Slack OAuth API routes", () => {
       expect(response.status).toBe(307);
       const location = new URL(response.headers.get("location")!);
       expect(location.origin).toBe(OKOU_APP_ORIGIN);
-      expect(location.pathname).toBe("/slack/failed");
+      expect(location.pathname).toBe("/settings/slack");
       expect(location.searchParams.get("error")).toBe("Invalid OAuth state.");
       expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
     });
@@ -1043,7 +1043,7 @@ describe("Slack OAuth API routes", () => {
       expect(response.status).toBe(307);
       const location = new URL(response.headers.get("location")!);
       expect(location.origin).toBe(OKOU_APP_ORIGIN);
-      expect(location.pathname).toBe("/slack/failed");
+      expect(location.pathname).toBe("/settings/slack");
       expect(location.searchParams.get("error")).toBe("access_denied");
       expect(context.mocks.slack.oauth.v2.access).not.toHaveBeenCalled();
     });
@@ -1081,7 +1081,7 @@ describe("Slack OAuth API routes", () => {
       expect(callback.status).toBe(307);
       const callbackLocation = new URL(callback.headers.get("location")!);
       expect(callbackLocation.origin).toBe(previewAppOrigin);
-      expect(callbackLocation.pathname).toBe("/slack/failed");
+      expect(callbackLocation.pathname).toBe("/settings/slack");
       expect(context.mocks.slack.oauth.v2.access).toHaveBeenCalledWith(
         expect.objectContaining({
           redirect_uri: `${previewApiOrigin}/api/integrations/slack/oauth/callback`,
@@ -1104,7 +1104,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       const location = response.headers.get("location");
-      expect(location).toContain("/slack/failed");
+      expect(location).toContain("/settings/slack");
       expect(decodeURIComponent(location ?? "")).toContain("Only org admins");
       expect(
         (await readGetStartedStatus(context, fixture)).recentGrants,
@@ -1184,7 +1184,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       const location = response.headers.get("location");
-      expect(location).toContain(`${APP_ORIGIN}/slack/failed`);
+      expect(location).toContain(`${APP_ORIGIN}/settings/slack`);
       expect(decodeURIComponent(location ?? "")).toContain(
         "Failed to complete Slack installation",
       );
@@ -1205,7 +1205,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       const location = response.headers.get("location");
-      expect(location).toContain(`${APP_ORIGIN}/slack/failed`);
+      expect(location).toContain(`${APP_ORIGIN}/settings/slack`);
       expect(decodeURIComponent(location ?? "")).toContain(
         "Failed to complete Slack installation",
       );
@@ -1226,7 +1226,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       const location = response.headers.get("location");
-      expect(location).toContain(`${APP_ORIGIN}/slack/failed`);
+      expect(location).toContain(`${APP_ORIGIN}/settings/slack`);
       if (!location) {
         throw new Error("Expected Slack OAuth failure redirect location");
       }
@@ -1562,7 +1562,7 @@ describe("Slack OAuth API routes", () => {
       );
     });
 
-    it("redirects explicit platform reinstalls back to the Works page", async () => {
+    it("redirects explicit platform reinstalls to the canonical Slack page", async () => {
       const fixture = await installPublicOrg();
       await seedMembership(fixture.orgId, fixture.userId, "admin");
       mockOAuthSuccess({
@@ -1581,7 +1581,7 @@ describe("Slack OAuth API routes", () => {
 
       expect(response.status).toBe(307);
       expect(response.headers.get("location")).toContain(
-        `${APP_ORIGIN}/?tab=works&updated=1`,
+        `${APP_ORIGIN}/settings/slack?status=connected&updated=1`,
       );
     });
 
@@ -1599,7 +1599,7 @@ describe("Slack OAuth API routes", () => {
       );
       expect(slackError.status).toBe(307);
       expect(slackError.headers.get("location")).toBe(
-        `${APP_ORIGIN}/slack/failed?error=access_denied`,
+        `${APP_ORIGIN}/settings/slack?error=access_denied`,
       );
     });
   });

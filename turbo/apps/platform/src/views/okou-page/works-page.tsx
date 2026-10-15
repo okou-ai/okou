@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import type { ReactNode } from "react";
 import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -427,8 +428,12 @@ function SlackCard({ displayName }: { displayName: string }) {
             isConnected={isConnected}
             isInstalled={isInstalled}
             isAdmin={isAdmin}
-            installUrl={slackData?.installUrl}
-            connectUrl={slackData?.connectUrl}
+            installUrl={
+              slackData?.installUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
+            }
+            connectUrl={
+              slackData?.connectUrl ? INTEGRATION_SETTINGS_PATHS.slack : null
+            }
             connectedDetail={slackData?.workspaceName}
             connectedTestId="slack-connected-indicator"
             installTestId="slack-install-button"
@@ -455,7 +460,11 @@ function SlackCard({ displayName }: { displayName: string }) {
         </div>
 
         <PermissionWarning
-          reinstallUrl={scopeMismatch && isAdmin ? reinstallUrl : null}
+          reinstallUrl={
+            scopeMismatch && isAdmin && reinstallUrl
+              ? INTEGRATION_SETTINGS_PATHS.slack
+              : null
+          }
           message={t(($) => {
             return $.works.slack.permissionsUpdated;
           })}
