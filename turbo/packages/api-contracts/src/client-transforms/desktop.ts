@@ -14,7 +14,7 @@ export const desktopResponseTransforms: readonly ClientResponseTransform[] = [
     path: "/api/computer-use/hosts/:hostId/commands/next",
     status: 200,
     maxVersion: "0.53.4",
-    since: "#40319",
+    since: "#40349",
     transform: (body) => {
       const claim =
         computerUseSessionHostsContract.next.responses[200].parse(body);
