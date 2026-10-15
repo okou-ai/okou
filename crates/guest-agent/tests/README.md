@@ -3,6 +3,13 @@
 Use native module directories to share compilation within a domain. Each domain
 target imports `common` once; its case modules import `crate::common`.
 
+Neutral command/session cleanup, file readiness, HTTP recording, mock builds and
+JSON/image fixtures compile in `cli-test-support`, enabled only as a development
+dependency through its `test-support` feature. `common` re-exports those helpers
+and retains guest runtime adapters, manifest-derived workspace lookup and
+process-global environment/cwd, log and resource-limit setup. Sharing compiled
+helpers does not combine the executables or relax their isolation requirements.
+
 | Target                   | Ownership                                                                          |
 | ------------------------ | ---------------------------------------------------------------------------------- |
 | `api_contracts`          | API configuration, active input, search policy and public surface                  |

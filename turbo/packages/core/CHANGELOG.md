@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.761.0](https://github.com/okou-ai/okou/compare/core-v8.760.0...core-v8.761.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** retain same-run ssh and vnc failure diagnostics ([#40358](https://github.com/okou-ai/okou/issues/40358)) ([4e5cd58](https://github.com/okou-ai/okou/commit/4e5cd5836d1f051a85ca076d170cc2e30e3a8177))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.568.0
+
 ## [8.760.0](https://github.com/okou-ai/okou/compare/core-v8.759.3...core-v8.760.0) (2026-10-15)
 
 

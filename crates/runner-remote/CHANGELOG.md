@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.19.0...runner-remote-v0.20.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** retain same-run ssh and vnc failure diagnostics ([#40358](https://github.com/okou-ai/okou/issues/40358)) ([4e5cd58](https://github.com/okou-ai/okou/commit/4e5cd5836d1f051a85ca076d170cc2e30e3a8177))
+
 ## [0.19.0](https://github.com/okou-ai/okou/compare/runner-remote-v0.18.1...runner-remote-v0.19.0) (2026-10-15)
 
 

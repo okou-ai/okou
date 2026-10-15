@@ -12,6 +12,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1031.1](https://github.com/okou-ai/okou/compare/app-v0.1031.0...app-v0.1031.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **slack:** preserve get started chat during connection ([#40403](https://github.com/okou-ai/okou/issues/40403)) ([43f72b9](https://github.com/okou-ai/okou/commit/43f72b9e960115e0da83f55e362cbbf9202415c9))
+
+
+### Performance Improvements
+
+* avoid unrelated template catalog subscriptions ([#40430](https://github.com/okou-ai/okou/issues/40430)) ([55bd1ca](https://github.com/okou-ai/okou/commit/55bd1ca95d5c23ffad9ff6965880279adf4bc2ce))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.568.0
+    * @okouai/core bumped to 8.761.0
+
 ## [0.1031.0](https://github.com/okou-ai/okou/compare/app-v0.1030.0...app-v0.1031.0) (2026-10-15)
 
 

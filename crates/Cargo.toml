@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "ably-subscriber",
     "api-contracts",
+    "cli-test-support",
     "guest-agent",
     "guest-contracts",
     "session-history-selector",
@@ -56,6 +57,7 @@ edition = "2024"
 # Internal crates
 ably-subscriber = { path = "ably-subscriber" }
 api-contracts = { path = "api-contracts" }
+cli-test-support = { path = "cli-test-support" }
 guest-agent = { path = "guest-agent" }
 guest-contracts = { path = "guest-contracts" }
 session-history-selector = { path = "session-history-selector" }
