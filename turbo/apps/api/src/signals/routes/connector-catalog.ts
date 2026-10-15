@@ -20,15 +20,21 @@ import {
   discoverPublicConnectorCatalogStatus,
   publicConnectorCatalogPermissionDetail,
   isConnectorCatalogUnavailableError,
-  listConnectorCatalogConnectItems,
   listPublicConnectorCatalog,
   listPublicConnectorCatalogStatus,
 } from "../services/connector-catalog-reader.service";
 import {
   connectorCatalogDisplayColumns,
   materializeConnectorCatalogDisplayRow,
+  type ConnectorCatalogDisplayConnector,
 } from "../services/connector-catalog-columns";
-import { publicConnectorCatalogStatusFromSource } from "../services/connector-catalog-external-reader.service";
+import {
+  catalogSource,
+  connectorCatalogConnectItemsFromSource,
+  loadAcceptedConnectorCatalogSnapshot,
+  publicConnectorCatalogStatusFromSource,
+  type ConnectorCatalogSlugSource,
+} from "../services/connector-catalog-external-reader.service";
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
@@ -172,12 +178,59 @@ export const listConnectorCatalogConnectItems$ = command(
     signal.throwIfAborted();
 
     const catalog = await settleConnectorCatalogRead(
-      listConnectorCatalogConnectItems({
-        db: context.db,
-        featureStates: context.featureStates,
-        connections: connectorState.value,
-        filter,
-      }),
+      (async () => {
+        const catalogDb = context.db;
+        const featureStates = context.featureStates;
+        const connections = connectorState.value;
+        let source: ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>;
+        if (filter.kind === "slugs") {
+          const slugs = filter.connectorSlugs;
+          if (slugs.length === 0) {
+            source = { connectors: [], filteredMethodKeys: new Set<string>() };
+          } else {
+            const rows = await catalogDb
+              .select({
+                current: {
+                  schemaVersion: connectorCatalog.schemaVersion,
+                  hash: connectorCatalog.hash,
+                },
+                entry: connectorCatalogDisplayColumns,
+              })
+              .from(connectorCatalog)
+              .leftJoin(
+                connectorCatalogEntries,
+                connectorCatalogSlugJoin(slugs),
+              )
+              .where(connectorCatalogCurrentWhere());
+            source = connectorCatalogSlugSourceFromRows(
+              rows.map((row) => {
+                return {
+                  current: row.current,
+                  entry:
+                    row.entry === null
+                      ? null
+                      : materializeConnectorCatalogDisplayRow(row.entry),
+                };
+              }),
+              slugs,
+            );
+          }
+        } else {
+          source = catalogSource(
+            await loadAcceptedConnectorCatalogSnapshot(
+              catalogDb,
+              undefined,
+              "display",
+            ),
+          );
+        }
+        return connectorCatalogConnectItemsFromSource({
+          catalog: source,
+          featureStates,
+          connections,
+          oneClickOnly: filter.kind === "one-click",
+        });
+      })(),
       signal,
     );
     if (!catalog.ok) {

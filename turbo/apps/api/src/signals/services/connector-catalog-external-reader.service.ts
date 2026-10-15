@@ -565,7 +565,7 @@ function featureSwitchHidesAuthMethod(
   return featureSwitch !== undefined && featureStates?.[featureSwitch] === true;
 }
 
-function catalogSource<Connector extends CompatibleCatalogConnector>(
+export function catalogSource<Connector extends CompatibleCatalogConnector>(
   catalog: AcceptedCatalogSnapshot<Connector>,
 ): ConnectorCatalogSlugSource<Connector> {
   return {
@@ -743,15 +743,6 @@ export function getConnectorCatalogResolutionDetail(
     },
     authMethods: connector.authMethods,
   });
-}
-
-/** The whole accepted catalog, for reads that must scan every connector. */
-export async function loadCompleteConnectorCatalogSource(
-  db: ReadonlyDb,
-): Promise<ConnectorCatalogSlugSource<ConnectorCatalogDisplayConnector>> {
-  return catalogSource(
-    await loadAcceptedConnectorCatalogSnapshot(db, undefined, "display"),
-  );
 }
 
 export function listAcceptedConnectorCatalogAvailableSlugs(args: {
