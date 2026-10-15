@@ -37,7 +37,8 @@ import { commitConnectorRuntimeMutation } from "./connector-runtime-wakeup.servi
 import {
   connectorCatalogCurrentWhere,
   connectorCatalogSlugJoin,
-  loadConnectorRuntimeSlugSelection,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
 } from "./connector-catalog-slug-source.service";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 
@@ -706,9 +707,17 @@ export const applyUserPermissionGrants$ = command(
     signal: AbortSignal,
   ): Promise<ApplyUserPermissionGrantsResult> => {
     const writeDb = set(writeDb$);
-    const snapshot = await loadConnectorRuntimeSlugSelection(writeDb, {
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs: [args.apply.connectorSlug],
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await writeDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     signal.throwIfAborted();
     const validation = await validateApplyUserPermissionGrants(
       args.apply,

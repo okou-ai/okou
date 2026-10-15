@@ -1,4 +1,8 @@
 import { computed, type Computed } from "ccstate";
+import {
+  connectorCatalog,
+  connectorCatalogEntries,
+} from "@okouai/db/runtime/connector-catalog";
 import type {
   ConnectorAuthMethodId,
   ConnectorSlug,
@@ -19,7 +23,11 @@ import {
   type ConnectorRuntimeMethod,
   type ConnectorRuntimeSelection,
 } from "./connector-catalog-runtime.service";
-import { loadConnectorRuntimeSlugSelection } from "./connector-catalog-slug-source.service";
+import {
+  connectorCatalogCurrentWhere,
+  connectorRuntimeSlugSelectionReadPlan,
+  connectorRuntimeSlugSelectionFromRows,
+} from "./connector-catalog-slug-source.service";
 
 const log = logger("api:connector-action-resolver");
 
@@ -290,9 +298,18 @@ export function connectorActionResolver(
   connectorSlugs: readonly ConnectorSlug[],
 ): Computed<Promise<ConnectorActionResolver>> {
   return computed(async (get): Promise<ConnectorActionResolver> => {
-    const snapshot = await loadConnectorRuntimeSlugSelection(get(db$), {
+    const catalogDb = get(db$);
+    const catalogPlan = connectorRuntimeSlugSelectionReadPlan({
       connectorSlugs,
     });
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      catalogPlan.selection,
+      await catalogDb
+        .select(catalogPlan.columns)
+        .from(connectorCatalog)
+        .leftJoin(connectorCatalogEntries, catalogPlan.join)
+        .where(connectorCatalogCurrentWhere()),
+    );
     return createConnectorActionResolver(snapshot);
   });
 }
