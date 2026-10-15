@@ -1,3 +1,5 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { i18n } from "../../i18n/index.ts";
 
 export interface TelegramConnectParams {
@@ -36,10 +38,10 @@ function firstParam(
   key: string,
 ): string | undefined {
   if (searchParams instanceof URLSearchParams) {
-    return searchParams.get(key) ?? undefined;
+    return searchParams.get(key)?.trim();
   }
   const value = searchParams[key];
-  return Array.isArray(value) ? value[0] : value;
+  return (Array.isArray(value) ? value[0] : value)?.trim();
 }
 
 function encodeReturnPath(params: TelegramConnectParams): string {
@@ -55,7 +57,7 @@ function encodeReturnPath(params: TelegramConnectParams): string {
       search.set("tgDisplayName", params.connectSignature.telegramDisplayName);
     }
   }
-  return `/telegram/connect?${search.toString()}`;
+  return `${INTEGRATION_SETTINGS_PATHS.telegram}?${search.toString()}`;
 }
 
 function normalizeTelegramUsernameParam(
@@ -134,26 +136,37 @@ function telegramConnectParamError(
   })();
   return {
     ok: false,
-    returnPath: "/telegram/connect",
+    returnPath: INTEGRATION_SETTINGS_PATHS.telegram,
     error: { code, title, message },
   };
+}
+
+function hasDuplicateProofParams(searchParams: SearchParams): boolean {
+  return ["bot", "tgUser", "ts", "sig"].some((key) => {
+    return searchParams instanceof URLSearchParams
+      ? searchParams.getAll(key).length > 1
+      : Array.isArray(searchParams[key]);
+  });
 }
 
 export function parseTelegramConnectParams(
   searchParams: SearchParams,
 ): ParsedTelegramConnectParams {
-  const bot = firstParam(searchParams, "bot")?.trim();
-  const tgUser = firstParam(searchParams, "tgUser")?.trim();
+  const bot = firstParam(searchParams, "bot") ?? OFFICIAL_TELEGRAM_BOT_ID;
+  const tgUser = firstParam(searchParams, "tgUser");
   const telegramUsername = normalizeTelegramUsernameParam(
     firstParam(searchParams, "tgUserName"),
   );
   const telegramDisplayName = normalizeTelegramDisplayNameParam(
     firstParam(searchParams, "tgDisplayName"),
   );
-  const tsRaw = firstParam(searchParams, "ts")?.trim();
-  const sig = firstParam(searchParams, "sig")?.trim();
+  const tsRaw = firstParam(searchParams, "ts");
+  const sig = firstParam(searchParams, "sig");
 
-  if (!bot) {
+  if (
+    hasDuplicateProofParams(searchParams) ||
+    bot !== OFFICIAL_TELEGRAM_BOT_ID
+  ) {
     return telegramConnectParamError("incomplete");
   }
 
