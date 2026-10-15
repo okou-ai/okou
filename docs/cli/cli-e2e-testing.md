@@ -155,13 +155,14 @@ as defined by its
 [organization settings contract](https://github.com/clerk/openapi-specs/blob/a91bd1815277a236107ef325be6e138db32762cb/bapi/2026-05-12.yml).
 Account preparation must establish the required admin role; the provider's
 [roles documentation](https://clerk.com/docs/guides/organizations/control-access/roles-and-permissions)
-confirms that Creator Role is configurable. Read current organization settings
-within preparation and fail before creating identities when settings are
-unavailable, organizations are disabled, or Creator Role is invalid. Do not
-cache settings across batches or treat an earlier observation as a permanent
-guarantee. A preparation-scoped read does not provide atomic isolation from
-administrator changes to Creator Roles or Role Sets during provisioning.
-Account preparation does not change those instance settings.
+confirms that Creator Role is configurable. When preparation relies on that
+configured role, read current organization settings within preparation and fail
+before creating identities when settings are unavailable, organizations are
+disabled, or Creator Role is invalid. Do not cache settings across batches or
+treat an earlier observation as a permanent guarantee. A preparation-scoped
+read does not provide atomic isolation from administrator changes to Creator
+Roles or Role Sets during provisioning. Account preparation does not change
+those instance settings.
 
 Clerk resource creation records exact IDs in `E2E_CLERK_RESOURCE_DIR`. Normal
 cleanup verifies those IDs' ownership against Clerk and deletes organizations
