@@ -176,7 +176,7 @@ const expectedVercelCrons = [
   },
   {
     path: cronComputerUseScreenshotCleanupContract.cleanup.path,
-    schedule: "30 2 * * *",
+    schedule: "0 * * * *",
   },
   {
     path: cronBrowserReconcileContract.reconcile.path,
