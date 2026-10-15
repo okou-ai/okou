@@ -6,7 +6,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate } from "../../lib/time";
 import { getConnectorRuntimeConnector } from "./connector-catalog-runtime.service";
 import { builtinConnectorCredentialStatusWithMethod } from "./connector-credential-status.service";
@@ -73,13 +73,12 @@ function builtinMcpConnectors(
     return admitted.length === 0
       ? null
       : {
-          runtimeConnectorSlugs: admitted.map((row) => {
+          requestedConnectorSlugs: admitted.map((row) => {
             return row.slug;
           }),
-          metadataConnectorSlugs: [],
         };
   });
-  const catalog$ = createConnectorRuntimeSelection(catalogRequest$);
+  const catalog$ = createImmutableConnectorRuntimeSelection(catalogRequest$);
   return computed(async (get) => {
     const snapshot = await get(catalog$);
     if (!snapshot) {
