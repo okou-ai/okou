@@ -437,11 +437,6 @@
       "owner": "finalizeAutomationStructureTransition$"
     },
     {
-      "id": "TX-0203",
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "owner": "markActiveAutomationFailed$"
-    },
-    {
       "id": "TX-0204",
       "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
       "owner": "reserveDormantIdentity$"
