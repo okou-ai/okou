@@ -49,7 +49,7 @@ export type UsagePackCreditRefundSource =
       readonly amountCents: number;
     };
 
-function refundableUsagePackCreditGrantCondition(
+export function refundableUsagePackCreditGrantCondition(
   args: { readonly orgId: string; readonly userId: string },
   at: Date,
 ) {
@@ -62,7 +62,7 @@ function refundableUsagePackCreditGrantCondition(
   );
 }
 
-function sourceColumns(source: UsagePackCreditRefundSource): {
+export function sourceColumns(source: UsagePackCreditRefundSource): {
   readonly sourceType: UsagePackCreditRefundSourceType;
   readonly stripeInvoiceId: string | null;
   readonly stripeInvoiceLineId: string | null;
@@ -90,7 +90,7 @@ function sourceColumns(source: UsagePackCreditRefundSource): {
   };
 }
 
-function refundSourceMatches(
+export function refundSourceMatches(
   row: UsagePackCreditRefundRow,
   source: ReturnType<typeof sourceColumns>,
   args: { readonly orgId: string; readonly userId: string },
@@ -139,7 +139,7 @@ export async function ensureUsagePackCreditRefundSource(
   }
 }
 
-function legacyInvoiceId(idempotencyKey: string): string | null {
+export function legacyInvoiceId(idempotencyKey: string): string | null {
   const renewal = /^usage-pack:([^:]+):[^:]+:purchased$/.exec(idempotencyKey);
   if (renewal?.[1]) {
     return renewal[1];
@@ -157,7 +157,9 @@ function legacyInvoiceId(idempotencyKey: string): string | null {
   return subscriptionChange?.[1] ?? null;
 }
 
-function legacyInvitationPurchaseId(idempotencyKey: string): string | null {
+export function legacyInvitationPurchaseId(
+  idempotencyKey: string,
+): string | null {
   const match = /^usage-pack-invitation:([^:]+):purchased$/.exec(
     idempotencyKey,
   );

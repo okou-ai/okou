@@ -82,9 +82,10 @@ export async function writeOrgMetadataWithPlanEntitlements<Row>(
 export function orgPlanEntitlementValues(
   args: UpsertOrgPlanEntitlementArgs,
   stripeSubscriptionSnapshot: ResolvedStripeSubscriptionSnapshot,
+  at?: Date,
 ) {
   const limits = ORG_PLAN_ENTITLEMENT_TIER_VALUES[args.tier];
-  const updatedAt = nowDate();
+  const updatedAt = at ?? nowDate();
   const showUsagePack =
     (args.tier === "pro" || args.tier === "team") &&
     args.showUsagePack === true;

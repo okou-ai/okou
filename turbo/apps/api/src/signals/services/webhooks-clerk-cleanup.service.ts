@@ -37,7 +37,7 @@ import { pendingChatQueueEventCondition } from "./chat-event-queue.service";
 import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 import { cancelAndRefundOrgBillingForDeletion } from "./org-deletion-billing.service";
 import { cleanupOrgMemberResources$ } from "./org-member-cleanup.service";
-import { removeUsagePackMemberAllocation } from "./usage-pack-allocation-change.service";
+import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change.service";
 import { refundUsagePackMemberCredits } from "./usage-pack-credit-refund.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -457,8 +457,8 @@ const commitClerkDeletedOrgMembershipCleanup$ = command(
   ): Promise<void> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const emptyCancellation = await removeUsagePackMemberAllocation(
-      db,
+    const emptyCancellation = await set(
+      removeUsagePackMemberAllocation$,
       args,
       signal,
     );
