@@ -4186,7 +4186,33 @@ export function registerFeishuIntegrationTests(
           signal: context.signal,
           routes: feishuBrowserConnectRoutes,
         });
-        fixtureState.failedSendTargets.push("ou_feishu_user");
+        let rejectedWelcomeIdempotencyKey: string | undefined;
+        server.use(
+          http.post(
+            `${provider.apiOrigin}/open-apis/im/v1/messages`,
+            async ({ request }) => {
+              const body = await request.json();
+              if (
+                typeof body !== "object" ||
+                body === null ||
+                !("uuid" in body) ||
+                typeof body.uuid !== "string" ||
+                !("receive_id" in body) ||
+                body.receive_id !== "ou_feishu_user"
+              ) {
+                throw new Error(
+                  "Expected an idempotent connect welcome request",
+                );
+              }
+              rejectedWelcomeIdempotencyKey = body.uuid;
+              return HttpResponse.json({
+                code: 1,
+                msg: "temporary message failure",
+              });
+            },
+            { once: true },
+          ),
+        );
         context.mocks.ably.publish.mockClear();
         const connectResponse = await own(() => {
           return connectApp.request("/api/feishu/connect", {
@@ -4305,6 +4331,29 @@ export function registerFeishuIntegrationTests(
         });
         expect(welcome?.msgType).toBe("interactive");
         expect(welcome ? messageContent(welcome) : "").toContain("Okou");
+        expect(welcome?.idempotencyKey).toBe(
+          requireValue(
+            rejectedWelcomeIdempotencyKey,
+            "Expected the provider to reject the first welcome",
+          ),
+        );
+        const reconnectedStatus = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(reconnectedStatus.body.installations).toContainEqual(
+          expect.objectContaining({
+            id: fixture.installationId,
+            appId,
+            defaultAgentId,
+            isConnected: true,
+            connectedUserName: "Feishu User",
+          }),
+        );
       });
     }
 

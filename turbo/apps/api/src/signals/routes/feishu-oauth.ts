@@ -72,7 +72,7 @@ import {
   type CustomConnectorRow,
 } from "../services/custom-connector.service";
 import { publishFeishuOrgChanged } from "../services/feishu-realtime.service";
-import { notifyFeishuConnect } from "../services/feishu-welcome.service";
+import { notifyFeishuConnect$ } from "../services/feishu-welcome.service";
 import { tapError } from "../utils";
 
 const L = logger("FeishuOAuth");
@@ -533,98 +533,109 @@ async function persistFeishuOAuthConnection(
   });
 }
 
-async function finishFeishuOAuthConnection(
-  args: {
-    readonly db: Db;
-    readonly state: FeishuConnectionState;
-    readonly installation: FeishuInstallationOAuthRow;
-    readonly connector: CustomConnectorHttpRow;
-    readonly token: CustomConnectorOAuthTokenResult;
-    readonly userInfo: FeishuUserInfo;
-    readonly expectedOpenId?: string;
-    readonly featureContext: FeatureSwitchContext;
-  },
-  signal: AbortSignal,
-): Promise<
-  "account_in_use" | "connected" | "identity_mismatch" | "tenant_mismatch"
-> {
-  if (args.expectedOpenId && args.expectedOpenId !== args.userInfo.openId) {
-    return "identity_mismatch";
-  }
-  if (
-    args.installation.tenantKey &&
-    args.userInfo.tenantKey &&
-    args.installation.tenantKey !== args.userInfo.tenantKey
-  ) {
-    return "tenant_mismatch";
-  }
-  const connectionPersistence = persistFeishuOAuthConnection(args, signal);
-  const connection = await commitConnectorRuntimeMutation(
-    connectionPersistence,
-    (result) => {
-      return result.connected
-        ? {
-            db: args.db,
-            scope: { orgId: args.state.orgId, userId: args.state.userId },
-            targets: [{ kind: "custom", customConnectorId: args.connector.id }],
-          }
-        : undefined;
+type FeishuConnectionCompletionResult =
+  "account_in_use" | "connected" | "identity_mismatch" | "tenant_mismatch";
+
+const finishFeishuOAuthConnection$ = command(
+  async (
+    { set },
+    args: {
+      readonly state: FeishuConnectionState;
+      readonly installation: FeishuInstallationOAuthRow;
+      readonly connector: CustomConnectorHttpRow;
+      readonly token: CustomConnectorOAuthTokenResult;
+      readonly userInfo: FeishuUserInfo;
+      readonly expectedOpenId?: string;
+      readonly featureContext: FeatureSwitchContext;
     },
-  );
-  if (!connection.connected) {
-    signal.throwIfAborted();
-    return "account_in_use";
-  }
-
-  await publishCustomConnectorUserInvalidationAfterCommit(
-    args.state.userId,
-    signal,
-  );
-  await publishUserSignal(
-    [args.state.userId],
-    "composerAgentConnectorsChanged",
-    { agentId: args.installation.defaultAgentId },
-  );
-  signal.throwIfAborted();
-
-  await publishFeishuOrgChanged(
-    args.db,
-    args.state.orgId,
-    args.installation.ownerUserId,
-    [args.state.userId],
-  );
-  signal.throwIfAborted();
-  if (connection.shouldNotify) {
-    const backgroundSignal = new AbortController().signal;
-    waitUntil(
-      tapError(
-        notifyFeishuConnect(
-          {
-            db: args.db,
-            installationId: args.state.installationId,
-            connectionId: connection.connectionId,
-            openId: args.userInfo.openId,
-          },
-          backgroundSignal,
-        ),
-        (error) => {
-          L.warn("Failed to send Feishu connect welcome", {
-            error,
-            installationId: args.state.installationId,
-            openId: args.userInfo.openId,
-          });
-        },
-      ),
+    signal: AbortSignal,
+  ): Promise<FeishuConnectionCompletionResult> => {
+    const db = set(writeDb$);
+    if (args.expectedOpenId && args.expectedOpenId !== args.userInfo.openId) {
+      return "identity_mismatch";
+    }
+    if (
+      args.installation.tenantKey &&
+      args.userInfo.tenantKey &&
+      args.installation.tenantKey !== args.userInfo.tenantKey
+    ) {
+      return "tenant_mismatch";
+    }
+    const connectionPersistence = persistFeishuOAuthConnection(
+      { ...args, db },
+      signal,
     );
-  }
-  return "connected";
-}
+    const connection = await commitConnectorRuntimeMutation(
+      connectionPersistence,
+      (result) => {
+        return result.connected
+          ? {
+              db,
+              scope: { orgId: args.state.orgId, userId: args.state.userId },
+              targets: [
+                { kind: "custom", customConnectorId: args.connector.id },
+              ],
+            }
+          : undefined;
+      },
+    );
+    // A committed connection must invalidate clients before surfacing abort.
+    if (signal.aborted) {
+      if (!connection.connected) {
+        signal.throwIfAborted();
+      }
+    }
+    if (!connection.connected) {
+      return "account_in_use";
+    }
+
+    await publishCustomConnectorUserInvalidationAfterCommit(
+      args.state.userId,
+      signal,
+    );
+    await publishUserSignal(
+      [args.state.userId],
+      "composerAgentConnectorsChanged",
+      { agentId: args.installation.defaultAgentId },
+    );
+    signal.throwIfAborted();
+
+    await publishFeishuOrgChanged(
+      db,
+      args.state.orgId,
+      args.installation.ownerUserId,
+      [args.state.userId],
+    );
+    signal.throwIfAborted();
+    if (connection.shouldNotify) {
+      const backgroundSignal = new AbortController().signal;
+      waitUntil(
+        tapError(
+          set(
+            notifyFeishuConnect$,
+            {
+              installationId: args.state.installationId,
+              connectionId: connection.connectionId,
+              openId: args.userInfo.openId,
+            },
+            backgroundSignal,
+          ),
+          (error) => {
+            L.warn("Failed to send Feishu connect welcome", {
+              error,
+              installationId: args.state.installationId,
+              openId: args.userInfo.openId,
+            });
+          },
+        ),
+      );
+    }
+    return "connected";
+  },
+);
 
 function connectionErrorMessage(
-  result: Exclude<
-    Awaited<ReturnType<typeof finishFeishuOAuthConnection>>,
-    "connected"
-  >,
+  result: Exclude<FeishuConnectionCompletionResult, "connected">,
   platform: FeishuPlatform,
 ): string {
   switch (result) {
@@ -823,9 +834,9 @@ const completeLegacyFeishuOAuth$ = command(
       userFeatureSwitchContext(state.orgId, state.userId),
     );
     signal.throwIfAborted();
-    const completed = await finishFeishuOAuthConnection(
+    const completed = await set(
+      finishFeishuOAuthConnection$,
       {
-        db,
         state: {
           ...state,
           accountMutation,
@@ -853,7 +864,7 @@ const completeLegacyFeishuOAuth$ = command(
 
 const completeClaimedCustomFeishuOAuth$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly db: Db;
       readonly query: FeishuOAuthCallbackQuery & { readonly state: string };
@@ -956,9 +967,9 @@ const completeClaimedCustomFeishuOAuth$ = command(
       userId: args.state.userId,
       accountMutation: args.state.accountMutation,
     };
-    const completed = await finishFeishuOAuthConnection(
+    const completed = await set(
+      finishFeishuOAuthConnection$,
       {
-        db,
         state: connectionState,
         installation,
         connector,
