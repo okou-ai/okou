@@ -48,8 +48,7 @@ jq -n \
       sha256: $package_sha256,
       size: $package_size
     },
-    versions: $identity.versions,
-    sessionConstruction: $identity.sessionConstruction
+    versions: $identity.versions
   }' > "$output_dir/manifest.json"
 
 manifest_sha256="$(sha256sum "$output_dir/manifest.json" | cut -d ' ' -f 1)"

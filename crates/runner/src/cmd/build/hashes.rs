@@ -20,8 +20,9 @@ const TEMPLATE_CACHE_VERSION: u32 = 1;
 /// Bump to invalidate all local rootfs images.
 ///
 /// Rootfs images are not shared through R2 because they include guest binaries
-/// and host-local CA material.
-const ROOTFS_CACHE_VERSION: u32 = 3;
+/// and host-local CA material. Rotate this version when installed CLI metadata
+/// serialization or fixed installation rules change.
+const ROOTFS_CACHE_VERSION: u32 = 4;
 
 /// Bump to invalidate all cached snapshots (local only; R2 stores only the template).
 const SNAPSHOT_CACHE_VERSION: u32 = 3;

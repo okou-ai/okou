@@ -9,7 +9,6 @@ import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
 import { createRunsApi, expectCanonicalStorageManifest } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createFirewallApi } from "./api-bdd-firewall";
-import { configureNativeCliArtifact } from "./chat-events-fixture";
 import { createPublicFirewallFixture } from "./public-firewall-fixture";
 
 export function memoryArchive(path: string, content: string): Buffer {
@@ -98,7 +97,6 @@ export function createPublicRunnerMemory(
     api.acceptTelemetryIngest();
     api.configureRunnerGroup();
     mockOptionalEnv("OPENROUTER_API_KEY", undefined);
-    configureNativeCliArtifact();
     const admin =
       fixture.actor.orgRole === "org:member"
         ? bdd.user({ orgId: fixture.actor.orgId, orgRole: "org:admin" })

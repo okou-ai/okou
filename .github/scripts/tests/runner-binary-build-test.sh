@@ -419,8 +419,7 @@ jq -n \
     version: 1,
     commitSha: $commit,
     package: {path: "package.tgz", sha256: $sha, size: $size},
-    versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.87.1+okou.0123456789ab"},
-    sessionConstruction: {digest: ("d" * 64)}
+    versions: {cli: "9.353.0", piAgentRuntime: "1.36.0", piSdk: "0.87.1+okou.0123456789ab"}
   }' > "$cli_manifest"
 cp "$cli_manifest" "$cli_manifest_base"
 
@@ -444,7 +443,7 @@ embedded_x86_digest=$(cli_digest_value x86_64-unknown-linux-musl)
 # Pin the hash-input contract, not the parser: package identity contributes its
 # actual SHA once, while fixed/derived manifest package fields are validation-only.
 cli_package_sha256=$(sha256sum "$cli_package" | awk '{print $1}')
-cli_compilation_identity=$(jq -cS '{versions, sessionConstruction}' "$cli_manifest")
+cli_compilation_identity=$(jq -cS '{versions}' "$cli_manifest")
 for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
   expected_cli_digest=$(
     {
@@ -486,8 +485,7 @@ jq -cS . "$cli_manifest_base" > "$cli_manifest"
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "CLI JSON formatting and key order must not affect the digest"
 jq '.createdAt = "2026-10-07T00:00:00Z" |
-    .package.provenance = "unused" | .versions.note = "unused" |
-    .sessionConstruction.note = "unused"' "$cli_manifest_base" > "$cli_manifest"
+    .package.provenance = "unused" | .versions.note = "unused"' "$cli_manifest_base" > "$cli_manifest"
 [ "$(cli_digest_value)" = "$embedded_arm_digest" ] \
   || fail "unconsumed CLI metadata must not affect the digest"
 cli_manifest_compact=$(jq -c . "$cli_manifest_base")
@@ -519,8 +517,7 @@ cp "$cli_package" "$cli_package_copy"
 for mutation in \
   '.versions.cli = "9.354.0"' \
   '.versions.piAgentRuntime = "1.37.0"' \
-  '.versions.piSdk = "0.87.1+okou.abcdefabcdef"' \
-  '.sessionConstruction.digest = ("e" * 64)'; do
+  '.versions.piSdk = "0.87.1+okou.abcdefabcdef"'; do
   jq "$mutation" "$cli_manifest_base" > "$cli_manifest"
   [ "$(cli_digest_value)" != "$changed_cli_digest" ] \
     || fail "compiled CLI identity change must invalidate the digest: ${mutation}"
@@ -546,15 +543,12 @@ for mutation in \
   'del(.versions.cli)' \
   'del(.versions.piAgentRuntime)' \
   'del(.versions.piSdk)' \
-  'del(.sessionConstruction.digest)' \
   '.versions.cli = "09.353.0"' \
   '.versions.cli = "9.353.0\n"' \
   '.versions.piAgentRuntime = 1' \
   '.versions.piAgentRuntime = "1.36.0\n"' \
   '.versions.piSdk = "0.87.1"' \
-  '.versions.piSdk = "0.87.1+okou.0123456789ab\n"' \
-  '.sessionConstruction.digest = "invalid"' \
-  '.sessionConstruction.digest = ("d" * 64 + "\n")'; do
+  '.versions.piSdk = "0.87.1+okou.0123456789ab\n"'; do
   jq "$mutation" "$cli_manifest_base" > "$cli_manifest"
   assert_cli_digest_fails "invalid CLI identity: ${mutation}"
 done
@@ -570,7 +564,7 @@ for token in "${cli_package_size}.0" "${cli_package_size}e0" "${cli_package_size
   printf '%s\n' "${cli_manifest_compact/\"size\":${cli_package_size}/\"size\":${token}}" > "$cli_manifest"
   assert_cli_digest_fails "non-integer CLI size token: ${token}"
 done
-for field in version package versions sessionConstruction path sha256 size cli piAgentRuntime piSdk digest; do
+for field in version package versions path sha256 size cli piAgentRuntime piSdk; do
   printf '%s\n' "${cli_manifest_compact/\"${field}\":/\"${field}\":null,\"${field}\":}" > "$cli_manifest"
   assert_cli_digest_fails "duplicate consumed CLI field: ${field}"
 done

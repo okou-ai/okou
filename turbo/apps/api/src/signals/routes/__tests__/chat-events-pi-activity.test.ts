@@ -110,7 +110,7 @@ describe("CHAT-02: model-first routing", () => {
       },
     );
     mockPiResourceArchiveDownloads();
-    const okouCliCommand = `npx --yes --package="\${CLI_PKG_URL}" okou --help`;
+    const okouCliCommand = "okou --help";
     const adHocNoteFilename = "2026-09-05T16-15-00-sandbox-note.md";
     const adHocNote = "# Sandbox note\n\nPersist this staged sandbox note.\n";
     const prompt = "use the Okou CLI in the Sandbox";
@@ -137,7 +137,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
     const lunaEnvironment = claimEnvironment(claimed.claim);
     expect(lunaEnvironment.OKOU_TOKEN).toBeTruthy();
-    expect(lunaEnvironment.CLI_PKG_URL).toBeTruthy();
     const lunaInstructions = claimed.claim.appendSystemPrompt;
     if (!lunaInstructions) {
       throw new Error("Expected Luna Web instructions");

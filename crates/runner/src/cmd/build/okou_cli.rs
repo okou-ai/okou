@@ -104,7 +104,7 @@ impl OkouCliArtifact {
 pub(super) mod test_support {
     use guest_contracts::okou_cli::{
         InstalledOkouCli, OKOU_CLI_INSTALLED_MANIFEST_SCHEMA_VERSION, OkouCliInstalledPackage,
-        OkouCliSessionConstruction, OkouCliVersions,
+        OkouCliVersions,
     };
     use sha2::{Digest, Sha256};
 
@@ -131,9 +131,6 @@ pub(super) mod test_support {
                 sha256: sha256.clone(),
                 size: package.len() as u64,
             },
-            session_construction: Some(OkouCliSessionConstruction {
-                digest: "d".repeat(64),
-            }),
         };
         let mut metadata = serde_json::to_vec(&installed).unwrap();
         metadata.push(b'\n');
@@ -147,8 +144,7 @@ pub(super) mod test_support {
             "name": "@okouai/cli", "version": cli,
             "okouBuildIdentity": {
                 "schemaVersion": 1, "piAgentRuntime": runtime,
-                "piSdk": "0.86.1+okou.0123456789ab",
-                "sessionConstruction": {"digest": "d".repeat(64)}
+                "piSdk": "0.86.1+okou.0123456789ab"
             }
         }))
         .unwrap();
@@ -170,7 +166,7 @@ pub(super) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliSessionConstruction};
+    use guest_contracts::okou_cli::InstalledOkouCli;
     use sha2::{Digest, Sha256};
 
     use super::test_support::{package_bytes_with_identity, stage_fixture};
@@ -193,12 +189,6 @@ mod tests {
         );
         let installed = InstalledOkouCli::parse(artifact.installed_manifest_bytes()).unwrap();
         assert_eq!(installed.versions.pi_agent_runtime, "1.36.0");
-        assert_eq!(
-            installed.session_construction,
-            Some(OkouCliSessionConstruction {
-                digest: "d".repeat(64)
-            })
-        );
         assert_eq!(
             installed.package.sha256,
             hex::encode(Sha256::digest(&expected_package))

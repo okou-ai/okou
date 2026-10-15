@@ -35,7 +35,6 @@ import {
   AUTO_RUN_PROVIDER,
   isAutoRunPreset,
 } from "@okouai/core/auto-run-model";
-import { env } from "../../lib/env";
 import type { ResolvedModelProviderEnvironment } from "./agent-run-contracts";
 import type { BuiltInModelRuntimeRoute } from "./built-in-model-runtime-route.service";
 import type { ModelCatalog } from "./model-catalog.service";
@@ -298,26 +297,6 @@ export function resolvePiSandboxModelConfig(
   };
 }
 
-function assertCurrentPiCliArtifact(): void {
-  // The writer and CLI reader are built from the same commit. A mutable or
-  // differently pinned package cannot consume a newly captured model.
-  const commit = env("GIT_COMMIT_SHA");
-  const cliUrl = new URL(env("CLI_PKG_URL"));
-  if (
-    !/^[0-9a-f]{40}$/u.test(commit) ||
-    cliUrl.origin !== "https://static.okou.io" ||
-    cliUrl.username ||
-    cliUrl.password ||
-    cliUrl.search ||
-    cliUrl.hash ||
-    cliUrl.pathname !== `/okou-cli/${commit}/package.tgz`
-  ) {
-    throw new PiModelConfigurationError(
-      "Pi requires the current commit-addressed CLI reader artifact",
-    );
-  }
-}
-
 /** The plain run facts Pi model preparation reads. */
 export interface PiModelPreparationInput {
   readonly catalog: ModelCatalog;
@@ -366,7 +345,6 @@ export function resolvePlatformMemoryPiModelConfig(
       "Invalid platform memory model binding",
     );
   }
-  assertCurrentPiCliArtifact();
   const config = resolveOpenRouterPiModelConfig({
     ...provider,
     selectedModel: provider.selectedModel,

@@ -3,7 +3,7 @@ import type { PiAgentThinkingLevel } from "./types";
 /** Private, platform-funded memory identity; never a foreground model choice. */
 export const PI_MEMORY_STAGE1_BUILT_IN_MODEL = "okou-memory";
 export const PI_MEMORY_PRESET = "@preset/memory";
-export const PI_MEMORY_PRESET_REQUEST_FIELDS = [
+const PI_MEMORY_PRESET_REQUEST_FIELDS = [
   "model",
   "messages",
   "tools",

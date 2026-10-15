@@ -83,29 +83,19 @@ The embedded MITM addon and recreated Runner-private registry share that same
 artifact boundary. This exemption does not cover independently persisted or
 externally consumed data.
 
-Pi normally executes the installed CLI without downloading another package. The
-[Guest's CLI selection](../crates/guest-agent/src/cli/okou_cli_launch.rs) checks the
-Run's API-captured compatibility requirements, including session-construction
-identity and minimum CLI version. The installed CLI remains usable across API
-releases while it satisfies those requirements.
+Pi executes the installed CLI for the whole session. API and Runner releases can
+differ, so launch payloads and model configurations must remain compatible with
+supported Runner builds. Deploy a new CLI reader in the Runner before activating
+an API writer that requires it; model-config generation capabilities gate claims.
 
-API and Runner promotion happen at different times. During deployment overlap,
-a newer API can dispatch to an older Runner whose bundled CLI no longer matches,
-for example after a tool-schema or system-prompt change. When the installed CLI
-is unavailable or cannot satisfy the captured requirements, Pi launches the Run's
-captured CLI package through `npx`.
-
-That package is built from the capturing API's commit and fixed in the Run
-context. A separately selected CLI has its own execution lifetime and must remain
-compatible with its Runner/Guest. Keep the exact captured package available
-through queueing, execution, and finalization. Use the Run's captured package and
-requirements for compatibility decisions; the current API or Runner version and
-publication of a newer package do not establish that old consumers have drained.
+Run contexts can still capture CLI package URLs for explicit tool invocations,
+and draining Runners can use those URLs for Pi startup. Keep the exact captured
+package available through queueing, execution, and finalization until those
+consumers and rollback builds have drained. Package publication alone does not
+retire an API/Runner protocol.
 
 Never replace a captured package's bytes or redirect its historical URL to a
-newer package. Use the exact artifact and required runtime identity for
-compatibility decisions. Package semver is a sufficient floor only when the
-release process guarantees it advances for every relevant artifact change.
+newer package.
 
 A Runner drain acknowledgement means it stopped admitting new work; claimed
 work and finalization can still be running. A healthy replacement or promotion
@@ -150,7 +140,7 @@ Compatibility applies to:
 - queue and persisted job/Run/session payloads;
 - cross-Runner caches, metadata, and independently consumed host files;
 - browser-resident Workers and clients that can outlive a deployment;
-- separately selected CLI packages and captured Run contexts that can outlive an
+- captured Run contexts and their referenced CLI packages that can outlive an
   API deployment.
 
 Compatibility is not required between package internals in one frontend build,
@@ -362,8 +352,8 @@ business triggers; follow the [trigger policy](api/database.md#database-triggers
 - **New App -> old API:** the old API is neither serving nor a supported rollback
   target.
 - **Runner or sandbox:** old owners finish draining, including bounded
-  finalization, not merely agent execution. Account for both bundled and
-  separately selected CLI executions.
+  finalization, not merely agent execution. Account for captured CLI packages
+  still used by draining owners and explicit tool consumers.
 - **Database/API:** the migration succeeded, outgoing consumers drained, and
   retained rollback targets work with the contracted schema.
 - **Persisted formats and durable references:** account for retained data and

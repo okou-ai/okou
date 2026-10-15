@@ -16,7 +16,7 @@ release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 jq -e '
   .jobs["build-runner-release-assets"] as $job |
   ($job | has("environment") | not) and
-  $job.needs == ["release-please", "publish-cli-versioned-artifact"] and
+  $job.needs == ["release-please", "prepare-runner-cli"] and
   any($job.steps[];
     .with.name == "runner-release-cli-${{ github.run_id }}" and
     .with.path == "runner-cli-intermediate"

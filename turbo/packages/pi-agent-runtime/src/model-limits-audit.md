@@ -8,7 +8,7 @@ opaque deployment names as provider identities.
 The DeepSeek V4.1 entry below is historical: its memory execution binding and
 limit override are retired after the
 [production drain gate](https://github.com/okou-ai/okou/blob/9813db4b51faa42c982dcfec1720caf5bd5b1b82/docs/deployment-compatibility.md#deepseek-memory-execution-retirement-2026-10-08).
-The Codex correction and installed-CLI parity checks remain active.
+The Codex correction remains active in the bundled CLI.
 
 ## Meaning of the numbers
 
@@ -74,27 +74,15 @@ owners.
 
 Re-audit the exact provider bindings before changing a correction. When the
 upstream SDK actually carries matching metadata, remove the redundant override
-with the same request and parity checks. Do not substitute a similar model,
-or create a new provider reader.
+while verifying the request identity and effective context/output limits. Do not
+substitute a similar model or create a new provider reader.
 
-## Installed CLI parity and mixed versions
+## Bundled CLI deployment
 
-The internal session-construction hash document now includes the correction
-table as well as the existing prompt/tool profiles. The public launch and
-manifest still carry the same opaque SHA-256 string, not that document.
-Regenerate with:
-
-```bash
-pnpm --filter @okouai/pi-agent-runtime update-session-construction-digest
-```
-
-A limits-only change must invalidate an older installed CLI even when its
-prompt/tools have not changed. New API/old installed CLI and old API/new installed
-CLI therefore use the existing task-captured immutable package on a digest
-mismatch. Matching new API/new CLI can reuse the installed bundle. Old queued
-contexts keep their original digest and captured package; no historical session,
-selection, usage or event is rewritten. No new generation, DDL or deployment
-order requirement is introduced.
+Pi uses the CLI bundled into its owning Runner. Model-limit corrections reach
+sandbox sessions through a Runner release; an API-only deployment does not
+update that runtime. No historical session, selection, usage or event is
+rewritten.
 
 ## Incident and policy boundary
 

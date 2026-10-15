@@ -79,9 +79,9 @@ async fn run_oversized_case(
             .collect::<String>(),
     )?;
 
-    let npx = bin_dir.join("npx");
+    let okou = bin_dir.join("okou");
     std::fs::write(
-        &npx,
+        &okou,
         r#"#!/bin/sh
 set -eu
 IFS= read -r state_command
@@ -103,9 +103,9 @@ if IFS= read -r unexpected; then
 fi
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&okou, permissions)?;
 
     let paths = GuestPaths::from_home(tmp.path(), case.run_id)?;
     let payload_path = common::write_run_payload_file_for_test(
@@ -124,6 +124,7 @@ fi
         api_token: "test-token".into(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".into(),
         cli_agent_type: "pi".into(),
+        test_pi_cli_path: Some(okou.to_string_lossy().into_owned()),
         home: Some(tmp.path().to_string_lossy().into_owned()),
         run_payload_file: payload_path.to_string_lossy().into_owned(),
         guest_runtime_dir: Some(paths.runtime_dir().into()),
@@ -133,10 +134,6 @@ fi
         (
             "PATH".into(),
             format!("{}:/usr/bin:/bin", bin_dir.display()),
-        ),
-        (
-            "CLI_PKG_URL".into(),
-            "https://example.invalid/current-okou-cli.tgz".into(),
         ),
         (
             "PI_EVENT_PATH".into(),

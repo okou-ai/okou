@@ -9,7 +9,6 @@
 mod common;
 
 use serde_json::Value;
-use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -53,9 +52,9 @@ async fn pi_records_startup_success_at_first_projected_record() -> TestResult {
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), &serving_pi_host_script())?;
+    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script())?;
 
-    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-startup-success").await?;
+    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &okou, "pi-startup-success").await?;
 
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
@@ -77,9 +76,9 @@ async fn pi_records_startup_failure_when_the_host_never_serves() -> TestResult {
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), "#!/bin/sh\nexit 3\n")?;
+    let okou = install_mock_okou(tmp.path(), "#!/bin/sh\nexit 3\n")?;
 
-    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-startup-failure").await?;
+    let output = run_pi_guest_agent(&runtime_dir, tmp.path(), &okou, "pi-startup-failure").await?;
 
     assert!(
         !output.status.success(),
@@ -98,10 +97,10 @@ async fn pi_records_sandbox_preparation_phases_from_the_host_envelopes() -> Test
 
     let tmp = tempfile::tempdir()?;
     let runtime_dir = tmp.path().join("runtime");
-    let npx = install_mock_npx(tmp.path(), &serving_pi_host_script())?;
+    let okou = install_mock_okou(tmp.path(), &serving_pi_host_script())?;
 
     let output =
-        run_pi_guest_agent(&runtime_dir, tmp.path(), &npx, "pi-preparation-phases").await?;
+        run_pi_guest_agent(&runtime_dir, tmp.path(), &okou, "pi-preparation-phases").await?;
 
     assert_guest_success(&output);
     let operations = read_sandbox_operations(&runtime_dir)?;
@@ -191,7 +190,7 @@ fn assert_segment_partition(operations: &[Value]) -> TestResult {
 /// phases on stderr the way the real sandbox CLI does.
 fn serving_pi_host_script() -> String {
     let mut script = String::from(
-        "#!/bin/sh\nset -eu\nprintf '%s' \"${OKOU_PI_PREPARATION_TIMING:-}\" > \"$HOME/preparation-timing-env.txt\"\n",
+        "#!/bin/sh\nset -eu\ntest \"$#\" -eq 1\ntest \"$1\" = __agent-loop\nprintf '%s' \"${OKOU_PI_PREPARATION_TIMING:-}\" > \"$HOME/preparation-timing-env.txt\"\n",
     );
     for (phase, outcome) in OBSERVED_PHASES {
         script.push_str(&format!(
@@ -242,21 +241,21 @@ fn guest_run_id() -> &'static str {
     "00000000-0000-4000-8000-000000000123"
 }
 
-fn install_mock_npx(home: &Path, script: &str) -> Result<PathBuf, TestError> {
+fn install_mock_okou(home: &Path, script: &str) -> Result<PathBuf, TestError> {
     let bin_dir = home.join("bin");
     std::fs::create_dir_all(&bin_dir)?;
-    let npx = bin_dir.join("npx");
-    std::fs::write(&npx, script)?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let okou = bin_dir.join("okou");
+    std::fs::write(&okou, script)?;
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
-    Ok(npx)
+    std::fs::set_permissions(&okou, permissions)?;
+    Ok(okou)
 }
 
 async fn run_pi_guest_agent(
     runtime_dir: &Path,
     home: &Path,
-    npx: &Path,
+    okou: &Path,
     scenario: &str,
 ) -> Result<Output, TestError> {
     let run_payload_path = common::write_run_payload_file_for_test(
@@ -270,7 +269,7 @@ async fn run_pi_guest_agent(
         },
     )?;
     let user_env_path = write_user_env_file(runtime_dir)?;
-    let bin_dir = npx.parent().ok_or("mock npx must live in a directory")?;
+    let bin_dir = okou.parent().ok_or("mock okou must live in a directory")?;
     let path_value = std::env::join_paths([bin_dir, Path::new("/usr/bin"), Path::new("/bin")])?;
 
     let mut command = Command::new(env!("CARGO_BIN_EXE_guest-agent"));
@@ -278,6 +277,7 @@ async fn run_pi_guest_agent(
         .env_clear()
         .env(guest_contracts::env::RUN_ID_ENV, guest_run_id())
         .env("CLI_AGENT_TYPE", "pi")
+        .env("OKOU_TEST_PI_CLI_PATH", okou)
         .env(
             guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
             &run_payload_path,
@@ -313,11 +313,7 @@ fn write_user_env_file(runtime_dir: &Path) -> Result<PathBuf, TestError> {
     let dir = runtime_dir.join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(guest_contracts::env::USER_ENV_FILENAME);
-    let user_env = HashMap::from([(
-        "CLI_PKG_URL".to_string(),
-        "https://example.invalid/current-okou-cli.tgz".to_string(),
-    )]);
-    std::fs::write(&path, serde_json::to_vec(&user_env)?)?;
+    std::fs::write(&path, b"{}")?;
     Ok(path)
 }
 

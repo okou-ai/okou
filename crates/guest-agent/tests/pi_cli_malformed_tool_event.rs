@@ -16,9 +16,9 @@ async fn missing_pi_tool_result_error_status_terminates_projection()
     let server = common::RecordingServer::start(200, Duration::ZERO).await?;
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
-    let npx = bin_dir.join("npx");
+    let okou = bin_dir.join("okou");
     std::fs::write(
-        &npx,
+        &okou,
         r#"#!/bin/sh
 set -eu
 IFS= read -r state_command
@@ -39,9 +39,9 @@ while :; do
 done
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&okou, permissions)?;
 
     let run_id = "00000000-0000-4000-8000-000000000124";
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
@@ -59,11 +59,7 @@ done
             "00000000-0000-4000-8000-000000000abc",
         );
         std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
+        std::env::set_var("OKOU_TEST_PI_CLI_PATH", &okou);
         common::set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {
@@ -74,13 +70,7 @@ done
                 ..guest_contracts::env::RunPayload::default()
             },
         )?;
-        common::set_user_env_file_env_for_test(
-            &runtime_dir,
-            &HashMap::from([(
-                "CLI_PKG_URL".to_string(),
-                "https://example.invalid/current-okou-cli.tgz".to_string(),
-            )]),
-        )?;
+        common::set_user_env_file_env_for_test(&runtime_dir, &HashMap::new())?;
     }
     common::ensure_canonical_workspace_for_test()?;
     std::env::set_current_dir(tmp.path())?;

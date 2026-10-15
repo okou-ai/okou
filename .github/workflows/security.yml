@@ -310,6 +310,7 @@ jobs:
             crates/runner/tests/behavior/runner-behavior-*.sh \
             crates/sandbox-firecracker/tests/native/runner-behavior-*.sh \
             .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
+            .github/scripts/artifacts/fetch-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-cli-artifact.sh \
             .github/scripts/artifacts/verify-okou-desktop-artifact.sh \
             .github/scripts/runner/with-runner-lifecycle-lock.sh \
@@ -338,6 +339,7 @@ jobs:
             .github/scripts/tests/download-okou-cli-cdn-file-test.sh \
             .github/scripts/tests/download-verified-test.sh \
             .github/scripts/tests/fetch-okou-desktop-artifact-test.sh \
+            .github/scripts/tests/fetch-okou-cli-artifact-test.sh \
             crates/nbd-cow/tests/infrastructure/nbd-cow-upload-test.sh \
             .github/scripts/tests/neon-credential-mask-test.sh \
             .github/scripts/tests/neon-connection-string-ssl-test.sh \

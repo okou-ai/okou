@@ -17,7 +17,6 @@ import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { configureNativeCliArtifact } from "./helpers/chat-events-fixture";
 import { createPublicTeamsDispatchFixture } from "./helpers/public-teams-dispatch-fixture";
 import {
   installTeamsForTest,
@@ -277,7 +276,6 @@ describe("Teams webhook dispatch", () => {
     configurePublicTeamsMocks(fixture);
     runs.acceptStorageDownloads();
     runs.configureRunnerGroup();
-    configureNativeCliArtifact();
     owned.defaultAgentId = await bdd.bootstrapLimitedFreeOnboarding(actor, {
       displayName: "Teams realtime failure",
     });

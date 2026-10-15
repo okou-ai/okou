@@ -6,18 +6,16 @@ interface PiModelLimits {
 
 /**
  * Exact catalog bindings, not a second admission list or a live metadata cache.
- * Included in installed-CLI parity so a corrected API cannot reuse stale limits.
+ * Sandbox sessions receive these corrections through their bundled Runner CLI.
  */
-export const PI_MODEL_LIMIT_OVERRIDES = {
+const LIMITS_BY_PROVIDER: Readonly<
+  Record<string, Readonly<Record<string, PiModelLimits>>>
+> = {
   "openai-codex": {
     // Subscription runtime defaults are not the public API's total context.
     "gpt-6.1-sol": { contextWindow: 272_000, maxTokens: 128_000 },
   },
-} as const satisfies Record<string, Record<string, PiModelLimits>>;
-
-const LIMITS_BY_PROVIDER: Readonly<
-  Record<string, Readonly<Record<string, PiModelLimits>>>
-> = PI_MODEL_LIMIT_OVERRIDES;
+};
 
 export function piModelLimitOverride(
   provider: string,

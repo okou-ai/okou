@@ -6,7 +6,6 @@ command. [Artifact tools](../artifacts/) own build, fetch, verification and smok
 
 | Responsibility                                 | Entry point                                  |
 | ---------------------------------------------- | -------------------------------------------- |
-| Immutable CLI version publication              | `publish-okou-cli-versioned-artifact.sh`     |
 | Immutable App asset publication                | `publish-okou-app-assets.sh`                 |
 | Release PR gates                               | `pass-release-pr-ci-gates.sh`                |
 | Desktop version decision                       | `resolve-desktop-version-change.sh`          |

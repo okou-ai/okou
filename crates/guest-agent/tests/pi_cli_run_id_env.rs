@@ -17,7 +17,6 @@ async fn guest_projects_pi_blocks_with_canonical_sequences_and_run_id()
     let bin_dir = tmp.path().join("bin");
     std::fs::create_dir_all(&bin_dir)?;
     let capture_path = tmp.path().join("canonical-run-id.txt");
-    let npm_cache_capture_path = tmp.path().join("npm-cache.txt");
     let payload_capture_path = tmp.path().join("pi-launch-payload-path.txt");
     let final_assistant_event_path = tmp.path().join("pi-final-assistant-event.jsonl");
     let large_tool_payload = "x".repeat(1024 * 1024);
@@ -73,12 +72,13 @@ async fn guest_projects_pi_blocks_with_canonical_sequences_and_run_id()
             })
         ),
     )?;
-    let npx = bin_dir.join("npx");
+    let okou = bin_dir.join("okou");
     std::fs::write(
-        &npx,
+        &okou,
         r#"#!/bin/sh
 set -eu
-test "$*" = "--yes --no-audit --package=https://example.invalid/current-okou-cli.tgz okou __agent-loop"
+test "$#" -eq 1
+test "$1" = "__agent-loop"
 test -n "${OKOU_RUN_ID:-}"
 test -z "${OKOU_PI_LAUNCH_CONFIG:-}"
 test -n "${OKOU_PI_LAUNCH_PAYLOAD_FILE:-}"
@@ -86,7 +86,6 @@ test -n "${PI_FINAL_ASSISTANT_EVENT_PATH:-}"
 test -n "${HOME:-}"
 printf '%s' "$OKOU_RUN_ID" > "$RUN_ID_CAPTURE_PATH"
 printf '%s' "$OKOU_PI_LAUNCH_PAYLOAD_FILE" > "$PI_PAYLOAD_CAPTURE_PATH"
-printf '%s' "${npm_config_cache:-$HOME/.npm}" > "$NPM_CACHE_CAPTURE_PATH"
 IFS= read -r state_command
 case "$state_command" in
   *'"type":"get_state"'*) ;;
@@ -115,9 +114,9 @@ if IFS= read -r unexpected; then
 fi
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&okou, permissions)?;
 
     let run_id = "00000000-0000-4000-8000-000000000123";
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
@@ -135,11 +134,7 @@ fi
             "00000000-0000-4000-8000-000000000abc",
         );
         std::env::set_var("HOME", tmp.path());
-        let mut paths = vec![bin_dir.clone()];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
-        std::env::set_var("PATH", std::env::join_paths(paths)?);
+        std::env::set_var("OKOU_TEST_PI_CLI_PATH", &okou);
         common::set_run_payload_file_env_for_test(
             &runtime_dir,
             &guest_contracts::env::RunPayload {
@@ -154,10 +149,9 @@ fi
         common::set_user_env_file_env_for_test(
             &runtime_dir,
             &HashMap::from([
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
+                // A user PATH without the installed launcher must not change
+                // which Pi runtime executes this run.
+                ("PATH".to_string(), "/usr/bin:/bin".to_string()),
                 (
                     "RUN_ID_CAPTURE_PATH".to_string(),
                     capture_path.to_string_lossy().into_owned(),
@@ -165,10 +159,6 @@ fi
                 (
                     "PI_PAYLOAD_CAPTURE_PATH".to_string(),
                     payload_capture_path.to_string_lossy().into_owned(),
-                ),
-                (
-                    "NPM_CACHE_CAPTURE_PATH".to_string(),
-                    npm_cache_capture_path.to_string_lossy().into_owned(),
                 ),
                 (
                     "PI_FINAL_ASSISTANT_EVENT_PATH".to_string(),
@@ -438,10 +428,6 @@ fi
         "official rpc projection 界<oai-\n\n界🙂\n\n完成<oai-mem"
     );
     assert_eq!(std::fs::read_to_string(capture_path)?, run_id);
-    assert_eq!(
-        std::fs::read_to_string(npm_cache_capture_path)?,
-        format!("{}/.npm", tmp.path().display())
-    );
 
     let payload_path = std::fs::read_to_string(payload_capture_path)?;
     assert_eq!(
