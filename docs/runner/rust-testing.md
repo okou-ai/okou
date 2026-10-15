@@ -233,6 +233,14 @@ failed coverage still fails the Crates gate.
 
 ## Test Organization
 
+Guest CLI integration executables share compiled neutral fixtures through
+`cli-test-support` and its non-default `test-support` feature. Keep that edge in
+development dependencies. Guest runtime adapters, compile-time manifest paths
+and process-global setup stay with the test owner; the fixture crate must not
+depend back on guest-agent. Reusing a library does not make process-global tests
+safe to combine into one executable. Existing fixture contracts exercise the
+real command, file, HTTP and verified Cargo/nextest mock-session boundaries.
+
 ### Keep large fixtures cheap without weakening their contracts
 
 Remove redundant setup and observation instead of reducing a slow test's workload.
