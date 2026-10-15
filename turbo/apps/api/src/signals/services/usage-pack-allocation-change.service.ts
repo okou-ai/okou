@@ -4910,11 +4910,10 @@ export const prepareUsagePackChangeConfirmation$ = command(
   ): Promise<PreparedUsagePackChangeConfirmation> => {
     const db = set(writeDb$);
     const at = nowDate();
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0273; new non-billing transactions are prohibited.
-    const result = await db.transaction(async (tx) => {
+    const result = await (async () => {
       // The existing live standalone-operation uniqueness plus the real
       // preview -> applying transition admits this stored financial intent.
-      const [found] = await tx
+      const [found] = await db
         .select({ change: usagePackAllocationChanges })
         .from(usagePackAllocationChanges)
         .innerJoin(
@@ -4947,7 +4946,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       }
       if (
         (
-          await tx.execute(
+          await db.execute(
             conflictingUsagePackMutationSql({
               subscriptionId: change.usagePackSubscriptionId,
               allocationChangeId: change.id,
@@ -4966,7 +4965,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         fulfillmentChangeIdentity(change),
       );
       if (!change.previewExpiresAt || change.previewExpiresAt <= at) {
-        const [expired] = await tx
+        const [expired] = await db
           .update(usagePackAllocationChanges)
           .set({
             status: "failed",
@@ -4984,7 +4983,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         throw new Error(`Usage pack change ${change.id} has no source`);
       }
       // The source is revalidated again when the Stripe result is reflected.
-      const [source] = await tx
+      const [source] = await db
         .select()
         .from(usagePackAllocations)
         .where(eq(usagePackAllocations.id, change.sourceAllocationId))
@@ -4996,7 +4995,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
         source.usagePackUsd !== change.sourceUsagePackUsd ||
         source.stripePriceId !== change.sourceStripePriceId
       ) {
-        await tx
+        await db
           .update(usagePackAllocationChanges)
           .set({
             status: "failed",
@@ -5007,7 +5006,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
           .where(previewedChange);
         return { status: "conflict" as const };
       }
-      const [prepared] = await tx
+      const [prepared] = await db
         .update(usagePackAllocationChanges)
         .set({ status: "applying", updatedAt: at })
         .where(
@@ -5021,7 +5020,7 @@ export const prepareUsagePackChangeConfirmation$ = command(
       return prepared
         ? { status: "ready" as const, change: prepared }
         : { status: "conflict" as const };
-    });
+    })();
     signal.throwIfAborted();
     return result;
   },
