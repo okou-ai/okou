@@ -1,4 +1,8 @@
-use super::super::fs::{PinnedImage, statvfs_bytes, sync_directory, sync_private_file};
+use super::super::fs::{
+    PinnedImage, fs_stats_from_statvfs, statvfs_bytes, statvfs_for_path, sync_directory,
+    sync_private_file,
+};
+use super::super::types::FsStats;
 use super::support::{Fixture, SIZE, write_image};
 use crate::error::LifecycleError;
 use std::error::Error;
@@ -24,6 +28,54 @@ fn assert_missing_path_context(error: LifecycleError, operation: &str, path: &Pa
     assert!(message.contains(&hex::encode(Sha256::digest(path.as_os_str().as_bytes()))));
     assert!(!message.contains("private-workload-name"));
     assert!(!message.contains(path.to_string_lossy().as_ref()));
+}
+
+#[test]
+fn statvfs_conversion_uses_fragment_size_and_available_counters() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stats = statvfs_for_path(dir.path()).unwrap();
+    stats.f_bsize = 8192;
+    stats.f_frsize = 1024;
+    stats.f_blocks = 13;
+    stats.f_bfree = 7;
+    stats.f_bavail = 5;
+    stats.f_files = 19;
+    stats.f_ffree = 11;
+    stats.f_favail = 3;
+
+    assert_eq!(
+        fs_stats_from_statvfs(&stats),
+        FsStats {
+            total_bytes: 13312,
+            available_bytes: 5120,
+            total_inodes: 19,
+            available_inodes: 3,
+        }
+    );
+}
+
+#[test]
+fn statvfs_conversion_saturates_bytes_without_scaling_inodes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut stats = statvfs_for_path(dir.path()).unwrap();
+    stats.f_bsize = 1;
+    stats.f_frsize = 2;
+    stats.f_blocks = u64::MAX;
+    stats.f_bfree = u64::MAX - 1;
+    stats.f_bavail = u64::MAX / 2 + 1;
+    stats.f_files = 19;
+    stats.f_ffree = 11;
+    stats.f_favail = 3;
+
+    assert_eq!(
+        fs_stats_from_statvfs(&stats),
+        FsStats {
+            total_bytes: u64::MAX,
+            available_bytes: u64::MAX,
+            total_inodes: 19,
+            available_inodes: 3,
+        }
+    );
 }
 
 #[tokio::test]
