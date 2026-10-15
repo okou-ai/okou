@@ -8,7 +8,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   accountSummary,
   builtinConnector,
@@ -137,14 +137,13 @@ test.each(["pagination", "remote search"] as const)(
       "GitHub · Selected account: Personal",
     );
     await within(chooser).findByRole("option", { name: /^Personal/u });
-    if (kind === "pagination") {
-      click(await findFastControl("button", "Load more", chooser));
-      await within(chooser).findByRole("option", { name: /^Client/u });
-    } else {
+    click(await findFastControl("button", "Load more", chooser));
+    await within(chooser).findByRole("option", { name: /^Client/u });
+    if (kind === "remote search") {
       const input = within(chooser).getByRole("textbox", {
         name: "Find accounts",
       });
-      await user.type(input, "remote");
+      await fill(input, "remote");
       await within(chooser).findByRole("option", { name: /^Research/u });
     }
     expect(
