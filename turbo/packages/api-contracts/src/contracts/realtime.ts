@@ -72,6 +72,10 @@ export type ConnectorChangedPayload = z.infer<
   typeof connectorChangedPayloadSchema
 >;
 
+export const walletChangedPayloadSchema = z.object({ agentId: z.uuid() });
+
+export type WalletChangedPayload = z.infer<typeof walletChangedPayloadSchema>;
+
 export const composerAgentConnectorsChangedPayloadSchema = z
   .object({ agentId: z.uuid() })
   .strict();
@@ -84,22 +88,6 @@ export const browserSessionChangedPayloadSchema = z
 
 export type BrowserSessionChangedPayload = z.infer<
   typeof browserSessionChangedPayloadSchema
->;
-
-/** Notify one Agent's home page when its visible task cards change. */
-export const homeTaskRecommendationsChangedPayloadSchema = z
-  .object({
-    agentId: z.uuid(),
-    revision: z
-      .string()
-      .regex(/^[0-9a-f]{64}$/)
-      .optional(),
-    removed: z.boolean().optional(),
-  })
-  .strict();
-
-export type HomeTaskRecommendationsChangedPayload = z.infer<
-  typeof homeTaskRecommendationsChangedPayloadSchema
 >;
 
 /**

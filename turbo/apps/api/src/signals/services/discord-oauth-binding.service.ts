@@ -81,18 +81,39 @@ function isBindingConflict(error: unknown): boolean {
   );
 }
 
-const consumeConflictedAttempt$ = command(
-  async (
-    { set },
-    attempt: DiscordOauthAttempt,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    // An exact constraint failure rolls back the entire statement. Consume only
-    // this owned proof, matching the existing non-replayable conflict outcome.
-    await set(writeDb$)
-      .delete(discordOauthStates)
-      .where(approvedAttemptWhere(attempt));
+const resolveConflictedAttempt$ = command(
+  async ({ set }, args: DiscordOauthBindingArgs, signal: AbortSignal) => {
     signal.throwIfAborted();
+    const { attempt, evidence } = args;
+    const db = set(writeDb$);
+    // A constraint failure rolls back the entire claim. Consume only this exact
+    // live proof and observe the committed winner in a fresh statement snapshot.
+    const consumed = db.$with("consumed_discord_oauth_conflict").as(
+      db
+        .delete(discordOauthStates)
+        .where(
+          and(
+            approvedAttemptWhere(attempt),
+            gt(discordOauthStates.expiresAt, nowDate()),
+          ),
+        )
+        .returning({ id: discordOauthStates.id }),
+    );
+    return await db
+      .with(consumed)
+      .select({
+        attemptId: consumed.id,
+        connectionId: discordOrgConnections.id,
+      })
+      .from(consumed)
+      .leftJoin(
+        discordOrgConnections,
+        and(
+          eq(discordOrgConnections.orgId, attempt.orgId),
+          eq(discordOrgConnections.userId, attempt.userId),
+          eq(discordOrgConnections.discordUserId, evidence.discordUserId),
+        ),
+      );
   },
 );
 
@@ -167,10 +188,15 @@ export const persistDiscordOauth$ = command(
       if (!isBindingConflict(result.error)) {
         throw result.error;
       }
-      await set(consumeConflictedAttempt$, args.attempt, signal);
-      return "conflict";
     }
-    const committed = result.value[0];
+    // Another unique key can reject a simultaneous first insert before the
+    // upsert arbitrates it. Only the same workspace, owner and verified sender
+    // may reuse that winner; a different account or sender remains a conflict.
+    const committed = (
+      result.ok
+        ? result.value
+        : await set(resolveConflictedAttempt$, args, signal)
+    )[0];
     if (!committed || !committed.connectionId) {
       signal.throwIfAborted();
       return committed ? "conflict" : "invalid";

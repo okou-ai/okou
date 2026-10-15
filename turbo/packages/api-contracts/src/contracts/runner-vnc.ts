@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { vncConnectionFailureReasonSchema } from "./vnc-connection-observations";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { runnerHeartbeatGenerationSchema } from "./runner-primitives";
@@ -340,6 +341,12 @@ const checkResponseSchema = z.discriminatedUnion("outcome", [
   configurationChangedSchema,
 ]);
 
+const observationRequestSchema = checkRequestSchema.extend({
+  expectedCreatedAt: z.string().datetime(),
+  observedAt: z.string().datetime(),
+  failureReason: vncConnectionFailureReasonSchema.nullable(),
+});
+
 const pathParams = z.object({ runId: z.uuid() }).strict();
 const errors = {
   400: apiErrorSchema,
@@ -349,6 +356,20 @@ const errors = {
 };
 
 export const runnerVncContract = c.router({
+  observe: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/vnc/observations",
+    pathParams,
+    headers: authHeadersSchema,
+    body: observationRequestSchema,
+    responses: {
+      200: z
+        .object({ outcome: z.enum(["recorded", "ignored", "unavailable"]) })
+        .strict(),
+      ...errors,
+    },
+    summary: "Record connection evidence from the winning official VNC Runner",
+  },
   resolve: {
     method: "POST",
     path: "/api/runners/runs/:runId/vnc/resolve",
@@ -374,3 +395,6 @@ export type RunnerVncResolveRequest = z.infer<typeof resolveRequestSchema>;
 export type RunnerVncResolveResponse = z.infer<typeof resolveResponseSchema>;
 export type RunnerVncCheckRequest = z.infer<typeof checkRequestSchema>;
 export type RunnerVncCheckResponse = z.infer<typeof checkResponseSchema>;
+export type RunnerVncObservationRequest = z.infer<
+  typeof observationRequestSchema
+>;

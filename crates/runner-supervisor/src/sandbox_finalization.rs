@@ -25,6 +25,7 @@ use crate::job_lifecycle::{
 use crate::ownership::OwnershipTransitions;
 use runner_executor::executor::{SandboxReuseDisposition, SandboxReuseTerminal};
 use runner_executor::telemetry::JobTelemetry;
+use runner_host::home_observation::{HomeObservation, HomeObservationKind, HomeObservationOutcome};
 use runner_lifecycle::active_runs::{ActiveRunHandoffDeliveryResult, ActiveRunReusePublisher};
 use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
@@ -53,13 +54,22 @@ use runner_types::types::{
 struct FinalizationTelemetry<'a> {
     telemetry: Option<&'a mut JobTelemetry>,
     physical_park_completed_at: Option<Instant>,
+    home_identity: HomeObservation,
 }
 
 impl<'a> FinalizationTelemetry<'a> {
-    fn new(telemetry: &'a mut JobTelemetry) -> Self {
+    fn new(telemetry: &'a mut JobTelemetry, ctx: &FinalizeContext) -> Self {
+        let mut home_identity = HomeObservation::new(
+            HomeObservationKind::Preservation,
+            HomeObservationOutcome::Retained,
+        );
+        home_identity.run_id = Some(ctx.run_id);
+        home_identity.reuse_key = ctx.reuse_key.clone();
+        home_identity.profile_name = Some(ctx.profile_name.clone());
         Self {
             telemetry: Some(telemetry),
             physical_park_completed_at: None,
+            home_identity,
         }
     }
 
@@ -68,6 +78,10 @@ impl<'a> FinalizationTelemetry<'a> {
         Self {
             telemetry: None,
             physical_park_completed_at: None,
+            home_identity: HomeObservation::new(
+                HomeObservationKind::Preservation,
+                HomeObservationOutcome::Retained,
+            ),
         }
     }
 
@@ -82,6 +96,11 @@ impl<'a> FinalizationTelemetry<'a> {
                 success,
                 error,
             );
+            if success {
+                let mut observation = self.home_identity.clone();
+                observation.reason = Some("idle_pool".into());
+                telemetry.observe_home(observation);
+            }
         }
     }
 
@@ -91,18 +110,24 @@ impl<'a> FinalizationTelemetry<'a> {
         }
     }
 
-    fn record_handoff(
-        &mut self,
-        success: bool,
-        error: Option<&'static str>,
-        outcome: &'static str,
-    ) {
+    fn record_handoff_delivered(&mut self, handoff_path: &'static str) {
         if let Some(telemetry) = self.telemetry.as_deref_mut() {
+            let mut observation = self.home_identity.clone();
+            observation.reason = Some("exact_handoff".into());
+            observation.handoff_path = Some(handoff_path.into());
+            telemetry.observe_home(observation);
+        }
+    }
+
+    fn record_handoff_failed(&mut self, error: &'static str, outcome: &'static str) {
+        if let Some(telemetry) = self.telemetry.as_deref_mut() {
+            // A refused/cancelled attempt can still fall back to idle or image
+            // preservation. Keep its diagnostic separate from retained-home facts.
             telemetry.record_with_outcome(
                 "runner_host_exact_sandbox_handoff",
                 Duration::ZERO,
-                success,
-                error,
+                false,
+                Some(error),
                 Some(outcome),
             );
         }
@@ -375,7 +400,7 @@ async fn finalize_claimed_run_inner(
     let ready = finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         #[cfg(any(test, feature = "test-support"))]
         test_hooks,
@@ -434,7 +459,7 @@ pub async fn finalize_sandbox_for_completion_with_telemetry(
     finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         #[cfg(any(test, feature = "test-support"))]
         FinalizationTestHooks::default(),
@@ -455,7 +480,7 @@ pub async fn finalize_sandbox_for_completion_with_test_hooks(
     finalize_sandbox_for_completion_inner(
         sandbox,
         active_lease,
-        FinalizationTelemetry::new(telemetry),
+        FinalizationTelemetry::new(telemetry, &ctx),
         ctx,
         test_hooks,
     )
@@ -583,7 +608,39 @@ async fn finalize_sandbox_for_completion_inner(
         .map(|promotion| promotion.reuse_key().to_owned());
 
     let mut reuse_state_changed = false;
-    let budget = if let Some(reuse_key) = parkable_reuse_key {
+    let budget = 'finalization: {
+        let Some(reuse_key) = parkable_reuse_key else {
+            // No parkable reuse key — stop + destroy.
+            let cleanup_reason = active_cleanup_reason(
+                sandbox_reuse_disposition,
+                hard_cancelled,
+                parking_gate.is_open(),
+            );
+            let destroy_result = stop_and_destroy_sandbox(
+                sandbox,
+                &**factory,
+                home_promotion,
+                ActiveCleanupContext {
+                    run_id,
+                    sandbox_id,
+                    profile_name: &profile_name,
+                    cli_agent_session_id: resolved_cli_agent_session_id,
+                    reason: cleanup_reason,
+                    network_log_session: network_log_session.take(),
+                    network_log_drain: network_log_drain.clone(),
+                },
+            )
+            .await;
+            reuse_state_changed |= mark_home_cache_snapshot_promoted(
+                &home_cache_snapshot,
+                home_promotion_reuse_key.as_deref(),
+                &profile_name,
+                &completed_at,
+                destroy_result.home_cache_promoted,
+            );
+            record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
+            break 'finalization BudgetOwnership::active(active_lease);
+        };
         let reuse_key_fingerprint = runner_host::paths::short_digest(&reuse_key);
         let reuse_kind = reuse_key_kind(&reuse_key);
         // Inflate the guest balloon BEFORE acquiring the pool lock —
@@ -714,17 +771,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
                 IdleParkFailureParts::RunningHandoff {
                     candidate,
@@ -890,7 +944,7 @@ async fn finalize_sandbox_for_completion_inner(
                 if cancel.is_hard_cancelled() {
                     drop(transfer_guard);
                     telemetry.record_outcome("runner_host_finalization_cancelled", "cancelled");
-                    telemetry.record_handoff(false, Some("cancelled"), "cancelled");
+                    telemetry.record_handoff_failed("cancelled", "cancelled");
                     let (payload, budget_lease) = candidate.into_active_destroy_parts();
                     let destroy_result = destroy_active_owned_idle_payload(
                         payload,
@@ -899,17 +953,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
                 match deliver_exact_handoff(&active_run_reuse, candidate, run_id) {
                     ExactHandoffAttempt::Delivered { handoff_point } => {
@@ -930,14 +981,7 @@ async fn finalize_sandbox_for_completion_inner(
                             }
                             None => "after_full_park",
                         };
-                        telemetry.record_handoff(true, None, handoff_path);
-                        info!(
-                            run_id = %run_id,
-                            reuse_key_fingerprint = %reuse_key_fingerprint,
-                            reuse_key_kind = reuse_kind,
-                            handoff_path,
-                            "sandbox delivered directly to claimed exact successor"
-                        );
+                        telemetry.record_handoff_delivered(handoff_path);
                         return FinalizationReady::new(BudgetOwnership::handoff_owned());
                     }
                     ExactHandoffAttempt::ContinueIdle(candidate) => {
@@ -968,7 +1012,7 @@ async fn finalize_sandbox_for_completion_inner(
                     } else {
                         "request_unavailable_destroyed"
                     };
-                    telemetry.record_handoff(false, Some(error), handoff_outcome);
+                    telemetry.record_handoff_failed(error, handoff_outcome);
                     warn!(
                         run_id = %run_id,
                         reuse_key_fingerprint = %reuse_key_fingerprint,
@@ -984,17 +1028,14 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
             };
             #[cfg(any(test, feature = "test-support"))]
@@ -1026,17 +1067,14 @@ async fn finalize_sandbox_for_completion_inner(
                             destroy_bookkeeping,
                         )
                         .await;
-                        let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                        reuse_state_changed = mark_home_cache_snapshot_promoted(
                             &home_cache_snapshot,
                             Some(&reuse_key),
                             &profile_name,
                             &completed_at,
                             destroy_result.home_cache_promoted,
                         );
-                        return mark_reuse_state_refresh(
-                            FinalizationReady::new(destroy_result.budget),
-                            home_cache_promoted,
-                        );
+                        break 'finalization destroy_result.budget;
                     }
                     drop(transfer_guard);
                     continue;
@@ -1060,19 +1098,16 @@ async fn finalize_sandbox_for_completion_inner(
                         destroy_bookkeeping,
                     )
                     .await;
-                    let home_cache_promoted = mark_home_cache_snapshot_promoted(
+                    reuse_state_changed = mark_home_cache_snapshot_promoted(
                         &home_cache_snapshot,
                         Some(&reuse_key),
                         &profile_name,
                         &completed_at,
                         destroy_result.home_cache_promoted,
                     );
-                    return mark_reuse_state_refresh(
-                        FinalizationReady::new(destroy_result.budget),
-                        home_cache_promoted,
-                    );
+                    break 'finalization destroy_result.budget;
                 }
-                break match pool.park(candidate) {
+                let replacement_cleanup = match pool.park(candidate) {
                     ParkResult::Parked => {
                         info!(
                             run_id = %run_id,
@@ -1085,59 +1120,18 @@ async fn finalize_sandbox_for_completion_inner(
                             run_id,
                             reuse_key: reuse_key.clone(),
                         });
-                        cleanup_state.mark_idle_pool_owned();
-                        #[cfg(any(test, feature = "test-support"))]
-                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
-                        // Push fresh idle state to status.json BEFORE
-                        // conditional active-run removal (below) clears the run_id
-                        // from active_runs. Without this, doctor would
-                        // briefly see the FC as unknown (neither active
-                        // nor idle), producing transient false-positive
-                        // FirecrackerNotInStatus warnings.
-                        let snapshot = pool.status_snapshot();
-                        drop(transfer_guard);
-                        drop(pool);
-                        if publishes_exact_sandbox {
-                            active_run_reuse.publish_exact_sandbox();
-                        }
-                        let ownership = OwnershipTransitions::new(status.as_ref());
-                        ownership
-                            .publish_idle_status_after_pool_transfer(snapshot)
-                            .await;
-                        reuse_state_changed = true;
-                        telemetry.record_idle_publication(true, None);
-                        reuse_state_notify.notify_one();
-                        BudgetOwnership::idle_owned()
+                        None
                     }
                     ParkResult::Replaced(evicted) => {
-                        let mut destroy_task =
-                            idle_destroy_tracker.spawn_job(evicted, "park_replaced");
+                        // Adopt evicted ownership before status publication can await.
+                        let destroy_task = idle_destroy_tracker.spawn_job(evicted, "park_replaced");
                         info!(
                             run_id = %run_id,
                             reuse_key_fingerprint = %reuse_key_fingerprint,
                             reuse_key_kind = reuse_kind,
                             "sandbox parked, evicting previous"
                         );
-                        cleanup_state.mark_idle_pool_owned();
-                        #[cfg(any(test, feature = "test-support"))]
-                        test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
-                        let snapshot = pool.status_snapshot();
-                        drop(transfer_guard);
-                        drop(pool);
-                        if publishes_exact_sandbox {
-                            active_run_reuse.publish_exact_sandbox();
-                        }
-                        let ownership = OwnershipTransitions::new(status.as_ref());
-                        ownership
-                            .publish_idle_status_after_pool_transfer(snapshot)
-                            .await;
-                        reuse_state_changed = true;
-                        telemetry.record_idle_publication(true, None);
-                        reuse_state_notify.notify_one();
-                        if let Err(error) = destroy_task.join().await {
-                            warn!(%error, "replaced idle cleanup producer lost");
-                        }
-                        BudgetOwnership::idle_owned()
+                        Some(destroy_task)
                     }
                     ParkResult::Rejected(rejected) => {
                         telemetry.record_idle_publication(false, Some("idle_pool_rejected"));
@@ -1149,10 +1143,8 @@ async fn finalize_sandbox_for_completion_inner(
                         );
                         drop(transfer_guard);
                         drop(pool);
-                        // Pool unchanged (park rejected) — no status
-                        // update needed. The rejected sandbox was just
-                        // park()ed above; destroying a parked sandbox is
-                        // safe — see Replaced arm for rationale.
+                        // Pool unchanged: the parked candidate remains active-owned
+                        // until destruction completes, without idle publication.
                         let (payload, lease) = rejected.into_active_destroy_parts();
                         let destroy_result = destroy_active_owned_idle_payload(
                             payload,
@@ -1168,42 +1160,35 @@ async fn finalize_sandbox_for_completion_inner(
                             &completed_at,
                             destroy_result.home_cache_promoted,
                         );
-                        destroy_result.budget
+                        break destroy_result.budget;
                     }
                 };
+                cleanup_state.mark_idle_pool_owned();
+                #[cfg(any(test, feature = "test-support"))]
+                test_hooks.emit(FinalizationTestEvent::IdlePoolOwned { run_id });
+                // Publish idle status before later settlement removes active visibility,
+                // so doctor cannot briefly see the sandbox as neither active nor idle.
+                let snapshot = pool.status_snapshot();
+                drop(transfer_guard);
+                drop(pool);
+                if publishes_exact_sandbox {
+                    active_run_reuse.publish_exact_sandbox();
+                }
+                let ownership = OwnershipTransitions::new(status.as_ref());
+                ownership
+                    .publish_idle_status_after_pool_transfer(snapshot)
+                    .await;
+                reuse_state_changed = true;
+                telemetry.record_idle_publication(true, None);
+                reuse_state_notify.notify_one();
+                if let Some(mut destroy_task) = replacement_cleanup
+                    && let Err(error) = destroy_task.join().await
+                {
+                    warn!(%error, "replaced idle cleanup producer lost");
+                }
+                break BudgetOwnership::idle_owned();
             }
         }
-    } else {
-        // No parkable reuse key — stop + destroy.
-        let cleanup_reason = active_cleanup_reason(
-            sandbox_reuse_disposition,
-            hard_cancelled,
-            parking_gate.is_open(),
-        );
-        let destroy_result = stop_and_destroy_sandbox(
-            sandbox,
-            &**factory,
-            home_promotion,
-            ActiveCleanupContext {
-                run_id,
-                sandbox_id,
-                profile_name: &profile_name,
-                cli_agent_session_id: resolved_cli_agent_session_id,
-                reason: cleanup_reason,
-                network_log_session: network_log_session.take(),
-                network_log_drain: network_log_drain.clone(),
-            },
-        )
-        .await;
-        reuse_state_changed |= mark_home_cache_snapshot_promoted(
-            &home_cache_snapshot,
-            home_promotion_reuse_key.as_deref(),
-            &profile_name,
-            &completed_at,
-            destroy_result.home_cache_promoted,
-        );
-        record_destroy_result(destroy_result.outcome, destroy_bookkeeping);
-        BudgetOwnership::active(active_lease)
     };
 
     mark_reuse_state_refresh(FinalizationReady::new(budget), reuse_state_changed)
@@ -2488,11 +2473,21 @@ mod tests {
         context.home_image = Some(home_image);
         context.home_image_size_bytes = TEST_HOME_IMAGE_SIZE as u64;
 
-        let _finalization_ready = finalize_sandbox_for_completion(
+        let http =
+            runner_provider::http::HttpClient::new(runner_provider::http::HttpClientConfig {
+                api_url: "http://localhost".into(),
+                vercel_bypass: None,
+                client_session_id: "retained-home-test".into(),
+                runner_version: env!("CARGO_PKG_VERSION"),
+            })
+            .unwrap();
+        let mut telemetry = JobTelemetry::new(http, run_id, String::new(), None);
+        let _finalization_ready = finalize_sandbox_for_completion_with_telemetry(
             Some(Box::new(mock_sandbox_ready_for_idle_reuse(
                 "guest-session-promotion",
             ))),
             ActiveBudgetLease::new(lease),
+            &mut telemetry,
             context,
         )
         .await;
@@ -2505,6 +2500,17 @@ mod tests {
             cache_states.is_empty(),
             "parked sandboxes keep the live home mounted and must not publish a separate cache image"
         );
+        let facts = telemetry.pending_home_snapshot();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].kind, HomeObservationKind::Preservation);
+        assert_eq!(facts[0].outcome, HomeObservationOutcome::Retained);
+        assert_eq!(facts[0].run_id, Some(run_id));
+        assert_eq!(
+            facts[0].reuse_key.as_deref(),
+            Some("unused-context-session")
+        );
+        assert_eq!(facts[0].reason.as_deref(), Some("idle_pool"));
+        assert!(facts[0].image_generation.is_none());
     }
 
     #[tokio::test]

@@ -3,7 +3,6 @@ import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRunConnectorDiagnosticRegistrations } from "@okouai/db/schema/agent-run-connector-diagnostic-registration";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { exportJobs } from "@okouai/db/schema/export-job";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 import { command } from "ccstate";
@@ -617,8 +616,8 @@ export const cleanupSandboxes$ = command(
       })
       .from(activeAgentRuns)
       .innerJoin(agentRuns, eq(agentRuns.id, activeAgentRuns.runId))
-      .leftJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
-      .leftJoin(agents, eq(agentSessions.agentId, agents.id))
+
+      .leftJoin(agents, eq(agentRuns.agentId, agents.id))
       .where(inArray(agentRuns.status, ["pending", "running"]));
     signal.throwIfAborted();
 

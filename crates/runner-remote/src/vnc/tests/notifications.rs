@@ -142,8 +142,7 @@ async fn delivered_vnc_invalidation_is_connection_and_run_scoped_and_never_grant
 async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_a_session() {
     for during_check in [false, true] {
         let peer = Peer::new().await;
-        let resolved = json_response(
-            "200 OK",
+        let resolved = super::harness::resolved_response(
             &json!({
                 "outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
@@ -157,6 +156,12 @@ async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_
             actions.push(RawHttpAction::Respond(resolved));
         }
         actions.push(RawHttpAction::WaitForDisconnect);
+        if during_check {
+            actions.push(RawHttpAction::Respond(json_response(
+                "200 OK",
+                &json!({"outcome":"unavailable"}).to_string(),
+            )));
+        }
         actions.push(RawHttpAction::Respond(json_response(
             "200 OK",
             &json!({"outcome":"unavailable"}).to_string(),
@@ -186,6 +191,17 @@ async fn invalidation_cancels_pending_resolve_and_final_check_without_admitting_
         );
         if during_check {
             closed(&h).await;
+            let report = server.next_request("completed connection evidence").await;
+            assert!(report.starts_with(&format!(
+                "POST /api/runners/runs/{}/vnc/observations ",
+                h.run.id
+            )));
+            let (_, body) = report.split_once("\r\n\r\n").unwrap();
+            let evidence: Value = serde_json::from_str(body).unwrap();
+            assert_eq!(evidence["connectionId"], CONNECTION);
+            assert_eq!(evidence["expectedGeneration"], 7);
+            assert_eq!(evidence["expectedTransport"], json!({"type":"direct"}));
+            assert!(evidence["failureReason"].is_null());
         }
         assert!(!h.run.cancel.is_cancelled());
         assert_eq!(

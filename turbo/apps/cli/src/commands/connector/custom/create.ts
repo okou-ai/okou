@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readManagementInput } from "../../../lib/management-input";
+import { customConnectorMetadata } from "../management";
 
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import chalk from "chalk";
@@ -34,7 +35,7 @@ async function printCreateResult(
   json: boolean,
 ): Promise<void> {
   if (json) {
-    console.log(JSON.stringify(connector, null, 2));
+    console.log(JSON.stringify(customConnectorMetadata(connector), null, 2));
     return;
   }
 
@@ -60,7 +61,10 @@ async function printCreateResult(
 export const createCustomConnectorCommand = new Command()
   .name("create")
   .description("Create a custom HTTP or MCP connector definition from JSON")
-  .requiredOption("-f, --file <path>", "JSON connector definition file")
+  .requiredOption(
+    "-f, --file <path|->",
+    "JSON connector definition file, or '-' for stdin",
+  )
   .option("--json", "Print the created connector as JSON")
   .addHelpText(
     "after",
@@ -219,9 +223,10 @@ Notes:
   .action(
     withErrorHandler(async (options: CreateOptions) => {
       requireCustomConnectorWriteCapability();
-      const raw = await readFile(options.file, "utf8");
-      const input: unknown = JSON.parse(raw);
-      const definition = createCustomConnectorDefinitionFileSchema.parse(input);
+      const definition = await readManagementInput(
+        options.file,
+        createCustomConnectorDefinitionFileSchema,
+      );
       const connector = await createCustomConnector(definition);
       await printCreateResult(connector, options.json ?? false);
     }),

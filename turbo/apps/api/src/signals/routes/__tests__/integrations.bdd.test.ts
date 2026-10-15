@@ -1,23 +1,20 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { publicPlanLifecycle } from "./helpers/public-plan-lifecycle";
 import {
   captureIntegrationInputUploads,
   expectIntegrationInputPreview,
 } from "./helpers/integration-input-assets";
-import { createHash, createHmac, randomInt, randomUUID } from "node:crypto";
+import { createHmac, randomInt, randomUUID } from "node:crypto";
 import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
+
 import type { ChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { createPiSessionJsonl } from "@okouai/pi-agent-runtime/api";
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { env, mockEnv, mockOptionalEnv } from "../../../lib/env";
-import { now, nowDate, withMockNowForTest } from "../../../lib/time";
+import { now, withMockNowForTest } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { seededSystemSkillArchive } from "../../../test-fixtures/seeded-system-skill-archive";
 
@@ -392,7 +389,9 @@ async function pollQueuedWebAndSlackRuns(args: {
   }
 
   const claim2 = await runs.claimRunnerJob(firstQueuedRunId);
-  expect(claim2.resumeSession?.sessionId).toBe(args.expectedSlackSessionId);
+  expect(claim2.nativeContinuation?.sessionId).toBe(
+    args.expectedSlackSessionId,
+  );
   return {
     webRunId: await pollRunnerRun(
       args.runnerGroup,
@@ -484,9 +483,7 @@ async function completeSlackTriggeredRun(args: {
       completion: {
         cliAgentType: args.cliAgentType,
         cliAgentSessionId: `bdd-slack-cli-${args.runId}`,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`bdd slack history ${args.runId}`)
-          .digest("hex"),
+        cliAgentSessionHistoryDisposition: "native_only",
       },
       ...(outputEvents.length > 0
         ? { lastEventSequence: outputEvents.length - 1 }
@@ -729,39 +726,6 @@ type CanonicalSlackPiScenario = Awaited<
 
 type SlackPiClaim = Awaited<ReturnType<typeof runs.claimRunnerJob>>;
 
-/**
- * Rebuild the session a claimed Slack Pi Sandbox starts from, as the CLI does:
- * the claim's inline or blob-referenced resume history, else a fresh session.
- */
-function readSlackPiSandboxBaseSession(
-  scenario: CanonicalSlackPiScenario,
-  claim: SlackPiClaim,
-): string {
-  const resume = claim.resumeSession;
-  if (!resume) {
-    if (!claim.piSessionId) {
-      throw new Error("Expected a claimed Slack Pi session id");
-    }
-    return createPiSessionJsonl({
-      cwd: CANONICAL_WORKING_DIR,
-      sessionId: claim.piSessionId,
-      timestamp: nowDate().toISOString(),
-    });
-  }
-  if (!("historyRef" in resume)) {
-    return resume.sessionHistory;
-  }
-  expect(resume.historyRef.encoding).toBe("identity");
-  const objectKey = new URL(resume.historyRef.url).searchParams.get("object");
-  const sessionBytes = objectKey
-    ? scenario.historyObjects.get(objectKey)
-    : undefined;
-  if (!sessionBytes) {
-    throw new Error("Expected the referenced Slack Pi session bytes");
-  }
-  return sessionBytes.toString("utf8");
-}
-
 /** Complete a claimed Slack Pi turn the way the Sandbox does. */
 async function completeSlackPiTurnInSandbox(args: {
   readonly scenario: CanonicalSlackPiScenario;
@@ -770,45 +734,7 @@ async function completeSlackPiTurnInSandbox(args: {
   readonly prompt: string;
   readonly answer: string;
 }): Promise<void> {
-  const session = MemoryPiSession.fromJsonl(
-    readSlackPiSandboxBaseSession(args.scenario, args.claim),
-  );
-  session.appendMessage({ role: "user", content: args.prompt, timestamp: 1 });
-  session.appendMessage({
-    role: "assistant",
-    content: [{ type: "text", text: args.answer }],
-    api: "openai-responses",
-    provider: "openai-codex",
-    model: args.scenario.selectedModel,
-    usage: {
-      input: 5,
-      output: 3,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 8,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason: "stop",
-    timestamp: 2,
-  });
-  const history = session.toJsonl();
-  const historyHash = createHash("sha256").update(history).digest("hex");
   const sandboxHeaders = { authorization: `Bearer ${args.claim.sandboxToken}` };
-  await webhooks.requestAgentSessionHistoryPrepare(
-    {
-      runId: args.runId,
-      hash: historyHash,
-      rawSize: Buffer.byteLength(history),
-      encodedSize: Buffer.byteLength(history),
-      encoding: "identity",
-    },
-    sandboxHeaders,
-    [200],
-  );
-  args.scenario.historyObjects.set(
-    `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${historyHash}.blob`,
-    Buffer.from(history, "utf8"),
-  );
   await webhooks.requestAgentEvents(
     {
       runId: args.runId,
@@ -836,7 +762,7 @@ async function completeSlackPiTurnInSandbox(args: {
       completion: {
         cliAgentType: "pi",
         cliAgentSessionId: args.scenario.chatThreadId,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     sandboxHeaders,
@@ -868,6 +794,7 @@ async function runFirstCanonicalSlackPiTurn(
   expect((await readRunLog(scenario.actor, runId)).prompt).toContain(prompt);
   const claim = await runs.claimRunnerJob(runId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
+    nativeContinuationSupported: true,
   });
   return { prompt, runId, claim };
 }
@@ -892,8 +819,10 @@ async function expectFirstSlackPiExecution(args: {
   // The fresh Pi session still carries the canonical Slack history to the
   // Sandbox that executes the first turn.
   const launchInput = JSON.stringify(claim);
-  expect(launchInput).toContain("establish non-Pi Slack history");
-  expect(launchInput).toContain("Historical Claude answer");
+  expect(claim.nativeContinuation?.sessionId).toBeNull();
+  expect(claim.nativeContinuation?.recoveryPrompt).toContain(
+    "okou chat messages --output-dir threads",
+  );
   expect(launchInput).toContain(args.turn.prompt);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
@@ -907,7 +836,7 @@ async function expectFirstSlackPiExecution(args: {
     args.scenario.actor,
     args.turn.runId,
   );
-  expect(sessionId).toBe(args.scenario.historicalSessionId);
+  expect(sessionId).toBe(args.scenario.chatThreadId);
   return sessionId;
 }
 
@@ -935,7 +864,10 @@ async function expectSlackPiOwnership(args: {
     true,
     args.runId,
     [404],
-    { capabilities: { piModelConfigGenerations: [1, 2] } },
+    {
+      capabilities: { piModelConfigGenerations: [1, 2] },
+      nativeContinuationSupported: true,
+    },
   );
   expect(duplicateClaim.status).toBe(404);
   const events = (
@@ -976,29 +908,19 @@ async function claimContinuedSlackPiTurn(args: {
   const runId = await pollSlackRun(args.scenario.runnerGroup);
   const claim = await runs.claimRunnerJob(runId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
+    nativeContinuationSupported: true,
   });
   expect(claim.cliAgentType).toBe("pi");
   expect(claim.piLaunchConfig).toBeDefined();
   expect(claim.piSessionId).toBe(args.scenario.chatThreadId);
-  expect(claim.resumeSession).toMatchObject({
+  expect(claim.resumeSession).toBeNull();
+  expect(claim.nativeContinuation).toMatchObject({
     sessionId: args.scenario.chatThreadId,
-    historyRef: {
-      kind: "blob",
-      hash: expect.stringMatching(/^[a-f0-9]{64}$/u),
-    },
-  });
-  const history = claim.resumeSession;
-  if (!history || !("historyRef" in history)) {
-    throw new Error("Expected the continued Pi run to restore native JSONL");
-  }
-  expect(
-    args.scenario.historyObjects.has(
-      `${env("R2_USER_STORAGES_BUCKET_NAME")}/blobs/${history.historyRef.hash}.blob`,
+    generationRunId: expect.any(String),
+    recoveryPrompt: expect.stringContaining(
+      "okou chat messages --output-dir threads",
     ),
-  ).toBeTruthy();
-  const resumeBytes = readSlackPiSandboxBaseSession(args.scenario, claim);
-  expect(resumeBytes).toContain(args.firstPrompt);
-  expect(resumeBytes).toContain("Canonical Slack Pi answer");
+  });
   await expectThreadModelCredits(
     context,
     args.scenario.actor,
@@ -1064,14 +986,10 @@ async function runSuccessfulContinuedSlackPiTurn(args: {
   const completedRunId = await pollSlackRun(args.scenario.runnerGroup);
   const claim = await runs.claimRunnerJob(completedRunId, {
     capabilities: { piModelConfigGenerations: [1, 2] },
+    nativeContinuationSupported: true,
   });
-  expect(claim.resumeSession).toMatchObject({
-    sessionId: args.scenario.chatThreadId,
-    historyRef: { kind: "blob" },
-  });
-  const resumed = readSlackPiSandboxBaseSession(args.scenario, claim);
-  expect(resumed).toContain(args.firstPrompt);
-  expect(resumed).toContain("Canonical Slack Pi answer");
+  expect(claim.resumeSession).toBeNull();
+  expect(claim.nativeContinuation?.sessionId).toBe(args.scenario.chatThreadId);
   await completeSlackPiTurnInSandbox({
     scenario: args.scenario,
     runId: completedRunId,
@@ -2794,7 +2712,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       await flushWaitUntilForTest();
       const run1 = await runs.readRun(actor, run1Id);
-      const slackSessionId = run1.result?.agentSessionId;
+      const slackSessionId = run1.result?.frameworkSessionId;
       if (!slackSessionId) {
         throw new Error(
           "Expected the first canonical Slack run to save a session",
@@ -2811,7 +2729,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       let run2Id = queuedRuns.run2Id;
 
       const webClaim = await runs.claimRunnerJob(webRunId);
-      expect(webClaim.resumeSession?.sessionId).toBe(`bdd-slack-cli-${run1Id}`);
+      expect(webClaim.nativeContinuation?.sessionId).toBe(
+        `bdd-slack-cli-${run1Id}`,
+      );
       context.mocks.slack.chat.postMessage.mockClear();
       await completeSlackTriggeredRun({
         runId: webRunId,
@@ -2822,18 +2742,20 @@ describe("INT-01: Slack app deep webhook flows", () => {
       await flushWaitUntilForTest();
       expect(context.mocks.slack.chat.postMessage).not.toHaveBeenCalled();
       const webRun = await runs.readRun(actor, webRunId);
-      const webSessionId = webRun.result?.agentSessionId;
+      const webSessionId = webRun.result?.frameworkSessionId;
       if (!webSessionId) {
         throw new Error("Expected the Web run to save its canonical session");
       }
-      expect(webSessionId).toBe(slackSessionId);
+      expect(webSessionId).toBe(`bdd-slack-cli-${webRunId}`);
 
       ({ run2Id, claim2 } = await ensureSlackRunClaimed({
         runnerGroup,
         run2Id,
         claim2,
       }));
-      expect(claim2.resumeSession?.sessionId).toBe(`bdd-slack-cli-${webRunId}`);
+      expect(claim2.nativeContinuation?.sessionId).toBe(
+        `bdd-slack-cli-${webRunId}`,
+      );
       await expect(readRunLog(actor, webRunId)).resolves.toMatchObject({
         triggerSource: "web",
       });
@@ -2867,8 +2789,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
         ]),
       );
       const run2 = await runs.readRun(actor, run2Id);
-      expect(run2.result?.agentSessionId).toBe(slackSessionId);
-      expect(run2.result?.agentSessionId).toBe(webSessionId);
+      expect(run2.result?.frameworkSessionId).toBe(`bdd-slack-cli-${run2Id}`);
     });
   });
 
@@ -2961,7 +2882,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const firstRunId = await pollSlackRun(runnerGroup);
       const firstClaim = await runs.claimRunnerJob(firstRunId);
-      expect(firstClaim.resumeSession).toBeNull();
+      expect(firstClaim.nativeContinuation?.sessionId).toBeNull();
       await completeSlackTriggeredRun({
         runId: firstRunId,
         sandboxToken: firstClaim.sandboxToken,
@@ -2980,7 +2901,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       const returnToDefaultRunId = await pollSlackRun(runnerGroup);
       const returnToDefaultClaim =
         await runs.claimRunnerJob(returnToDefaultRunId);
-      expect(returnToDefaultClaim.resumeSession?.sessionId).toBe(
+      expect(returnToDefaultClaim.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${firstRunId}`,
       );
       await completeSlackTriggeredRun({
@@ -3038,7 +2959,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       });
       const continuedRunId = await pollSlackRun(runnerGroup);
       const continuedClaim = await runs.claimRunnerJob(continuedRunId);
-      expect(continuedClaim.resumeSession?.sessionId).toBe(
+      expect(continuedClaim.nativeContinuation?.sessionId).toBe(
         `bdd-slack-cli-${firstRunId}`,
       );
       expect(continuedClaim.appendSystemPrompt).toContain(
@@ -3093,7 +3014,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const mainRunId = await pollSlackRun(runnerGroup);
     const mainClaim = await runs.claimRunnerJob(mainRunId);
-    expect(mainClaim.resumeSession).toBeNull();
+    expect(mainClaim.nativeContinuation?.sessionId).toBeNull();
     await completeSlackTriggeredRun({
       runId: mainRunId,
       sandboxToken: mainClaim.sandboxToken,
@@ -3114,7 +3035,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const threadRunId = await pollSlackRun(runnerGroup);
     const threadClaim = await runs.claimRunnerJob(threadRunId);
-    expect(threadClaim.resumeSession).toBeNull();
+    expect(threadClaim.nativeContinuation?.sessionId).toBeNull();
     await completeSlackTriggeredRun({
       runId: threadRunId,
       sandboxToken: threadClaim.sandboxToken,
@@ -3133,7 +3054,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const threadFollowUpRunId = await pollSlackRun(runnerGroup);
     const threadFollowUpClaim = await runs.claimRunnerJob(threadFollowUpRunId);
-    expect(threadFollowUpClaim.resumeSession?.sessionId).toBe(
+    expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${threadRunId}`,
     );
     await completeSlackTriggeredRun({
@@ -3153,7 +3074,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const returnToMainRunId = await pollSlackRun(runnerGroup);
     const returnToMainClaim = await runs.claimRunnerJob(returnToMainRunId);
-    expect(returnToMainClaim.resumeSession?.sessionId).toBe(
+    expect(returnToMainClaim.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${mainRunId}`,
     );
   });
@@ -4099,7 +4020,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run1 = await runs.readRun(actor, run1Id);
     expect(run1.status).toBe("completed");
-    const session1 = run1.result?.agentSessionId;
+    const session1 = run1.result?.frameworkSessionId;
     if (!session1) {
       throw new Error("Expected completed Slack run to expose its session");
     }
@@ -4114,14 +4035,16 @@ describe("INT-01: Slack app deep webhook flows", () => {
     });
     const run2Id = await pollSlackRun(runnerGroup);
     const claim2 = await runs.claimRunnerJob(run2Id);
-    expect(claim2.resumeSession?.sessionId).toBe(`bdd-slack-cli-${run1Id}`);
+    expect(claim2.nativeContinuation?.sessionId).toBe(
+      `bdd-slack-cli-${run1Id}`,
+    );
     await completeSlackTriggeredRun({
       runId: run2Id,
       sandboxToken: claim2.sandboxToken,
       cliAgentType: "claude-code",
     });
     const run2 = await runs.readRun(actor, run2Id);
-    expect(run2.result?.agentSessionId).toBe(session1);
+    expect(run2.result?.frameworkSessionId).toBe(`bdd-slack-cli-${run2Id}`);
   });
 
   it("pins model choices to canonical Slack threads", async () => {
@@ -4161,7 +4084,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
       cliAgentType: "codex",
     });
     const gptRun = await runs.readRun(actor, gptRunId);
-    const gptSessionId = gptRun.result?.agentSessionId;
+    const gptSessionId = gptRun.result?.frameworkSessionId;
     if (!gptSessionId) {
       throw new Error("Expected GPT Slack run to expose its session");
     }
@@ -4181,7 +4104,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
     expect(continuationClaim.environment).toMatchObject({
       OPENAI_MODEL: "gpt-6-astra",
     });
-    expect(continuationClaim.resumeSession?.sessionId).toBe(
+    expect(continuationClaim.nativeContinuation?.sessionId).toBe(
       `bdd-slack-cli-${gptRunId}`,
     );
     await completeSlackTriggeredRun({
@@ -4190,7 +4113,9 @@ describe("INT-01: Slack app deep webhook flows", () => {
       cliAgentType: "codex",
     });
     const continuationRun = await runs.readRun(actor, continuationRunId);
-    expect(continuationRun.result?.agentSessionId).toBe(gptSessionId);
+    expect(continuationRun.result?.frameworkSessionId).toBe(
+      `bdd-slack-cli-${continuationRunId}`,
+    );
   });
 
   it("keeps an explicit Auto pin on a historical Slack thread when the member preference changes", async () => {
@@ -4568,9 +4493,6 @@ describe("INT-01: Slack app deep webhook flows", () => {
     integrations.configureSlackAppMocks();
     await bdd.readOnboardingStatus(actor);
     await bdd.completeOnboarding(actor);
-    onTestFinished(async () => {
-      await deletePublicWorkspace(context, actor);
-    });
     const slackUserId = uniqueSlackUserId();
     const install = await integrations.installSlackWorkspace(null);
     await integrations.connectSlackUser(actor, {
@@ -4755,11 +4677,7 @@ describe("INT-01: Slack app deep webhook flows", () => {
 
   it("replies with canonical run-creation errors for Slack messages", async () => {
     const actor = bdd.user();
-    const owner = publicRunOwner(context, actor, {
-      afterRuns: async () => {
-        await deletePublicWorkspace(context, actor);
-      },
-    });
+    const owner = publicRunOwner(context, actor);
     await owner.run(async () => {
       bdd.acceptAgentStorageWrites();
       integrations.configureSlackAppMocks();

@@ -63,6 +63,11 @@ interface SharedDatabaseQueryTelemetry {
   readonly template: string;
 }
 
+interface AuthLifecycleTelemetry {
+  readonly event_name: "auth.lifecycle";
+  readonly attributes: ClientTelemetryAttributes;
+}
+
 interface SharedDatabaseTokenRequestTelemetry {
   readonly event_name: "shared_database.token_request";
   readonly request_id: string;
@@ -103,6 +108,7 @@ export type ClientTelemetryOperation =
   | IndexedDbTransactionTelemetry
   | SharedDatabaseQueryTelemetry
   | SharedDatabaseTokenRequestTelemetry
+  | AuthLifecycleTelemetry
   | SharedWorkerFailureTelemetry
   | BootstrapStylesheetTelemetry
   | SharedDatabaseWorkerUnavailableTelemetry
@@ -114,6 +120,9 @@ function runtimeName(): "shared_worker" | "window" {
 }
 
 function scopeName(operation: ClientTelemetryOperation): string {
+  if (operation.event_name === "auth.lifecycle") {
+    return "okou-app/auth-diagnostics";
+  }
   if (operation.event_name === "marketing.event.send") {
     return "okou-app/marketing";
   }
@@ -164,7 +173,8 @@ function operationName(operation: ClientTelemetryOperation): string {
     operation.event_name === "marketing.event.send" ||
     operation.event_name === "bootstrap.stylesheet" ||
     operation.event_name === "shared_database.worker_unavailable" ||
-    operation.event_name === "shared_database.token_request"
+    operation.event_name === "shared_database.token_request" ||
+    operation.event_name === "auth.lifecycle"
   ) {
     return operation.event_name;
   }
@@ -183,6 +193,9 @@ function operationName(operation: ClientTelemetryOperation): string {
 function operationAttributes(
   operation: ClientTelemetryOperation,
 ): ClientTelemetryAttributes {
+  if (operation.event_name === "auth.lifecycle") {
+    return operation.attributes;
+  }
   if (operation.event_name === "marketing.event.send") {
     return {
       "okou.marketing.event.tag": operation.tag,
@@ -347,6 +360,25 @@ function authTokenClaims(token: string | null): Record<string, unknown> | null {
     null,
   );
   return isNonArrayRecord(claims) ? claims : null;
+}
+
+export function authTokenDiagnostics(token: string | null, timestamp: number) {
+  const claims = authTokenClaims(token);
+  const expiresAt =
+    typeof claims?.exp === "number" && Number.isFinite(claims.exp)
+      ? claims.exp
+      : undefined;
+  return {
+    "okou.auth.token_present": token === null ? 0 : 1,
+    "okou.auth.jwt_decoded": claims === null ? 0 : 1,
+    ...(expiresAt === undefined
+      ? {}
+      : {
+          "okou.auth.token_ttl_seconds": Math.floor(
+            expiresAt - timestamp / 1000,
+          ),
+        }),
+  };
 }
 
 export function recordClientAuthFailure(request: {

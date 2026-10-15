@@ -28,7 +28,6 @@ use std::path::{Path, PathBuf};
 // preventing layout-shaped trees from turning session lookup into an
 // unbounded synchronous walk.
 const CODEX_SESSION_LOOKUP_SCAN_BUDGET: usize = 16_384;
-const CODEX_SESSION_LOOKUP_SCAN_BUDGET_ERROR: &str = "Codex session lookup exceeded scan budget";
 
 pub(crate) fn session_history_exceeds_max_error(max_bytes: u64) -> AgentError {
     AgentError::SessionHistoryTooLarge { max_bytes }
@@ -357,10 +356,7 @@ fn open_exact_session_history(
         .metadata()
         .map_err(|error| read_history_error(&path, error))?;
     if !metadata.file_type().is_file() {
-        return Err(AgentError::Finalization(format!(
-            "Session history source is not a regular file: {}",
-            path.display()
-        )));
+        return Err(AgentError::SessionHistoryNotRegular { path });
     }
     Ok(ResolvedSessionHistory {
         replacement_target: SafeHistoryReplacementTarget {
@@ -472,10 +468,9 @@ fn resolve_codex_session_history_impl(
 }
 
 fn codex_session_not_found_error(sessions_dir: &Path) -> AgentError {
-    AgentError::Finalization(format!(
-        "Codex session file not found under {}",
-        sessions_dir.display()
-    ))
+    AgentError::SessionHistoryMissing {
+        root: sessions_dir.to_path_buf(),
+    }
 }
 
 fn scan_codex_session_dirs(
@@ -765,19 +760,16 @@ impl CodexSessionLookupBudget {
     fn inspect_entry(&mut self) -> Result<(), AgentError> {
         self.inspected_entries += 1;
         if self.inspected_entries > CODEX_SESSION_LOOKUP_SCAN_BUDGET {
-            return Err(AgentError::Finalization(
-                CODEX_SESSION_LOOKUP_SCAN_BUDGET_ERROR.to_string(),
-            ));
+            return Err(AgentError::SessionHistoryLookupBudgetExceeded { framework: "Codex" });
         }
         Ok(())
     }
 }
 
 fn duplicate_codex_session_error(root: &Path) -> AgentError {
-    AgentError::Finalization(format!(
-        "Multiple Codex session files found under {}",
-        root.display()
-    ))
+    AgentError::SessionHistoryAmbiguous {
+        root: root.to_path_buf(),
+    }
 }
 
 fn codex_session_filename_matches(name: &OsStr, id_norm: &str) -> bool {
@@ -836,7 +828,7 @@ fn is_filesystem_loop_error(_: &io::Error) -> bool {
 }
 
 fn read_history_error(_path: &Path, source: io::Error) -> AgentError {
-    AgentError::Finalization(format!("Failed to read session history: {source}"))
+    AgentError::SessionHistoryRead(source)
 }
 
 enum DecodedSessionHistoryReader {

@@ -37,6 +37,12 @@ cargo test --manifest-path crates/Cargo.toml --profile local
 # Specific crate
 cargo test --manifest-path crates/Cargo.toml --profile local -p guest-agent
 
+# Shared raw HTTP transport fixtures and their single contract suite
+# Consumers use dev-dependencies or opt-in test-support builds; default production
+# builds do not include the fixture API or its Tokio dependency.
+cargo test --manifest-path crates/Cargo.toml --profile local --locked \
+  -j 1 -p raw-http-test-support --all-features -- --test-threads=1
+
 # Extracted Runner host primitives and their owner tests
 # Host covers process-identity persistence. Runner's start integration checks
 # identity allocation before later setup failure.

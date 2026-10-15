@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.2...sandbox-firecracker-v0.50.0) (2026-10-15)
+
+
+### Features
+
+* add bounded readonly guest home listings ([#40042](https://github.com/okou-ai/okou/issues/40042)) ([3e5d3be](https://github.com/okou-ai/okou/commit/3e5d3be42daf26e045459d9ffbbae25d85bbe9cb))
+
+## [0.49.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.1...sandbox-firecracker-v0.49.2) (2026-10-14)
+
+## [0.49.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.0...sandbox-firecracker-v0.49.1) (2026-10-14)
+
+## [0.49.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.6...sandbox-firecracker-v0.49.0) (2026-10-14)
+
+
+### Features
+
+* add native sandbox channel peer and diagnostics ([#39953](https://github.com/okou-ai/okou/issues/39953)) ([0fed55f](https://github.com/okou-ai/okou/commit/0fed55fb786b7532d9f4cf9b38aa0f7a1cc9c7e7))
+
+## [0.48.6](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.5...sandbox-firecracker-v0.48.6) (2026-10-14)
+
+
+### Documentation
+
+* **rust:** correct balloon settle extension bounds ([#39994](https://github.com/okou-ai/okou/issues/39994)) ([8944c6e](https://github.com/okou-ai/okou/commit/8944c6eee4d77a8625ecc4d1dbcb5e29b62be53a))
+
+## [0.48.5](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.4...sandbox-firecracker-v0.48.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** attribute guest-control closure after cancellation ([#39958](https://github.com/okou-ai/okou/issues/39958)) ([dfe813b](https://github.com/okou-ai/okou/commit/dfe813bc829a208cb75225488173fac39e0ac0a7))
+
+## [0.48.4](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.3...sandbox-firecracker-v0.48.4) (2026-10-14)
+
+## [0.48.3](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.2...sandbox-firecracker-v0.48.3) (2026-10-14)
+
 ## [0.48.2](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.1...sandbox-firecracker-v0.48.2) (2026-10-14)
 
 ## [0.48.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.48.0...sandbox-firecracker-v0.48.1) (2026-10-14)

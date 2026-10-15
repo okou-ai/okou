@@ -24,6 +24,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   draftAttachment,
@@ -95,6 +96,7 @@ function queryTab(name: string) {
 }
 function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
   let items = initial;
+  const consumed: string[] = [];
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
     return respond(200, { suggestions: items });
   });
@@ -107,12 +109,14 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
         error: { code: "CONFLICT", message: "Already consumed" },
       });
     }
+    consumed.push(params.id);
     items = items.filter((entry) => {
       return entry.id !== params.id;
     });
     return respond(200, { ...found, status: "consumed" });
   });
   return {
+    consumed,
     publish: (item: Suggestion) => {
       items = [...items, item];
     },
@@ -188,8 +192,40 @@ test("An empty pool hides Suggestions until a realtime publication without chang
   await screen.findByText(makeSuggestion().title);
   expect(composer()).toHaveTextContent("Keep my draft");
 });
-test("A suggestion-list failure stays visible rather than appearing to be an empty pool", async () => {
+test("Suggestions stays out of the row until the pool resolves with items", async () => {
+  const requested = createDeferredPromise<void>(context.signal);
+  const answer = createDeferredPromise<void>(context.signal);
+  context.mocks.api(suggestionsContract.list, async ({ respond }) => {
+    if (!requested.settled()) {
+      requested.resolve();
+    }
+    await answer.promise;
+    return respond(200, { suggestions: [makeSuggestion()] });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
+  });
+  await requested.promise;
+  await waitFor(() => {
+    expect(queryTab("Workflow")).toBeInTheDocument();
+  });
+  expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  answer.resolve();
+  await screen.findByText(makeSuggestion().title);
+  expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
+});
+test("A failed suggestion read stays silent until a realtime publication recovers the pool", async () => {
+  let available = false;
+  const failed = createDeferredPromise<void>(context.signal);
   context.mocks.api(suggestionsContract.list, ({ respond }) => {
+    if (available) {
+      return respond(200, { suggestions: [makeSuggestion()] });
+    }
+    if (!failed.settled()) {
+      failed.resolve();
+    }
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Suggestion service unavailable" },
     });
@@ -199,10 +235,22 @@ test("A suggestion-list failure stays visible rather than appearing to be an emp
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
-  await screen.findByText("Suggestions could not be loaded.");
+  await failed.promise;
+  await waitFor(() => {
+    expect(queryTab("Workflow")).toBeInTheDocument();
+  });
+  expect(queryTab("Suggestions")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscription("agentSuggestionsChanged"),
+    ).toBeTruthy();
+  });
+  available = true;
+  context.mocks.ably.trigger("agentSuggestionsChanged");
+  await screen.findByText(makeSuggestion().title);
   expect(button("Suggestions", "tab")).toHaveAttribute("aria-selected", "true");
   expect(
-    screen.queryByText("No suggestions right now."),
+    screen.queryByText("Suggestion service unavailable"),
   ).not.toBeInTheDocument();
 });
 test("A new-chat suggestion is consumed and prepends its structured reference without sending", async () => {
@@ -351,32 +399,82 @@ test("Realtime removal hides Suggestions without changing another selected categ
     screen.queryByText("No suggestions right now."),
   ).not.toBeInTheDocument();
 });
-test("The action list starts with five suggestions and expands without modifying the composer", async () => {
-  mockPool(
-    Array.from({ length: 10 }, (_, index) => {
-      return {
-        ...makeSuggestion(),
-        id: `a0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
-        title: `Suggested action ${index + 1}`,
-      };
-    }),
-  );
+function numberedSuggestions(count: number): Suggestion[] {
+  return Array.from({ length: count }, (_, index) => {
+    return {
+      ...makeSuggestion(),
+      id: `a0000000-0000-4000-a000-${String(index + 1).padStart(12, "0")}`,
+      title: `Suggested action ${index + 1}`,
+    };
+  });
+}
+test("Suggestions loop in both directions without modifying the composer", async () => {
+  const user = userEvent.setup();
+  mockPool(numberedSuggestions(3));
   await setupPage({
     context,
     path: `/agents/${agentId}/chat`,
     featureSwitches: features,
   });
   await screen.findByText("Suggested action 1");
-  expect(screen.getByText("Suggested action 5")).toBeInTheDocument();
-  expect(screen.queryByText("Suggested action 6")).not.toBeInTheDocument();
+  expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 2")).not.toBeInTheDocument();
   await fill(composer(), "Keep this draft");
-  click(button("View all 10"));
-  await screen.findByText("Suggested action 10");
+  await user.click(button("Next suggestion"));
+  await screen.findByText("Suggested action 2");
+  expect(screen.getByText("2 of 3")).toBeInTheDocument();
+  expect(screen.queryByText("Suggested action 1")).not.toBeInTheDocument();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Suggested action 3");
+  expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Suggested action 1");
+  expect(screen.getByText("1 of 3")).toBeInTheDocument();
+  expect(button("Next suggestion")).toHaveFocus();
+  await user.click(button("Previous suggestion"));
+  await screen.findByText("Suggested action 3");
+  expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  expect(button("Previous suggestion")).toHaveFocus();
+  await user.keyboard("{Enter}");
+  await screen.findByText("Suggested action 2");
   expect(composer()).toHaveTextContent("Keep this draft");
-  click(button("Show fewer"));
-  await waitFor(() => {
-    expect(screen.queryByText("Suggested action 6")).not.toBeInTheDocument();
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+});
+test("Dismissing a suggestion consumes it without opening it and brings up the next one", async () => {
+  const pool = mockPool(numberedSuggestions(2));
+  await setupPage({
+    context,
+    path: `/agents/${agentId}/chat`,
+    featureSwitches: features,
   });
+  await screen.findByText("Suggested action 1");
+  await fill(composer(), "Keep this draft");
+  click(button("Dismiss"));
+  await screen.findByText("Suggested action 2");
+  expect(screen.getByText("1 of 1")).toBeInTheDocument();
+  expect(button("Previous suggestion")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(button("Next suggestion")).toHaveAttribute("aria-disabled", "true");
+  await waitFor(() => {
+    expect(pool.consumed).toStrictEqual([
+      "a0000000-0000-4000-a000-000000000001",
+    ]);
+  });
+  expect(composer()).toHaveTextContent("Keep this draft");
+  expect(composer()).not.toHaveTextContent("Referenced decision");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
+  click(button("Dismiss"));
+  await waitFor(() => {
+    expect(queryTab("Suggestions")).not.toBeInTheDocument();
+    expect(pool.consumed).toStrictEqual([
+      "a0000000-0000-4000-a000-000000000001",
+      "a0000000-0000-4000-a000-000000000002",
+    ]);
+  });
+  expect(composer()).toHaveTextContent("Keep this draft");
+  expect(pathname()).toBe(`/agents/${agentId}/chat`);
 });
 test("A deleted target shows the ordinary missing-thread state after consuming the suggestion", async () => {
   mockPool([{ ...makeSuggestion(), threadId }]);

@@ -1,5 +1,139 @@
 # Changelog
 
+## [8.758.0](https://github.com/okou-ai/okou/compare/core-v8.757.0...core-v8.758.0) (2026-10-15)
+
+
+### Features
+
+* add bounded readonly guest home listings ([#40042](https://github.com/okou-ai/okou/issues/40042)) ([3e5d3be](https://github.com/okou-ai/okou/commit/3e5d3be42daf26e045459d9ffbbae25d85bbe9cb))
+* add built-in document templates ([#40052](https://github.com/okou-ai/okou/issues/40052)) ([987e011](https://github.com/okou-ai/okou/commit/987e0110410c5019842c26411306736b69fe4def))
+* add google docs and sheets artifact conversion ([#40019](https://github.com/okou-ai/okou/issues/40019)) ([9d83ecd](https://github.com/okou-ai/okou/commit/9d83ecdba2060f7f121c00426259e01c82f659a2))
+* **app:** redesign the subscription usage panel ([#40083](https://github.com/okou-ai/okou/issues/40083)) ([ca1b80f](https://github.com/okou-ai/okou/commit/ca1b80f33705d7ad069048da9012d9b0dc533235))
+* **app:** rename sidebar chats in place on double-click ([#40077](https://github.com/okou-ai/okou/issues/40077)) ([3d24b2c](https://github.com/okou-ai/okou/commit/3d24b2c29fd51ed4fb00906cc389d6bec4d0a28e))
+
+
+### Bug Fixes
+
+* **workflows:** make official workflows internal-only and remove their switch ([#40056](https://github.com/okou-ai/okou/issues/40056)) ([6c9dc4e](https://github.com/okou-ai/okou/commit/6c9dc4e67ad60faf5ce6020c185899cb59a93bc9))
+
+
+### Refactoring
+
+* roll out composer anchored suggestions ([#40070](https://github.com/okou-ai/okou/issues/40070)) ([b12f3e5](https://github.com/okou-ai/okou/commit/b12f3e54a9f40aafeffdba5f87a46ffb11ed62ca))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.562.0
+
+## [8.757.0](https://github.com/okou-ai/okou/compare/core-v8.756.0...core-v8.757.0) (2026-10-14)
+
+
+### Features
+
+* log link wallet usage and enable general availability ([#40058](https://github.com/okou-ai/okou/issues/40058)) ([a74aa11](https://github.com/okou-ai/okou/commit/a74aa11ef6782fbd5d70513e95cb0352cf6409b4))
+
+
+### Bug Fixes
+
+* clarify when to use link wallet for purchases ([#40051](https://github.com/okou-ai/okou/issues/40051)) ([fde8e03](https://github.com/okou-ai/okou/commit/fde8e038215a1ec8d899e6318931e10a73fb179d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.561.0
+
+## [8.756.0](https://github.com/okou-ai/okou/compare/core-v8.755.0...core-v8.756.0) (2026-10-14)
+
+
+### Features
+
+* add write-only connector and remote control cli management ([#40008](https://github.com/okou-ai/okou/issues/40008)) ([80c57de](https://github.com/okou-ai/okou/commit/80c57de957fa0f4b38fdd064181b54f0a0caa24f))
+* **app:** add passive ably token exchange diagnostics ([#40037](https://github.com/okou-ai/okou/issues/40037)) ([eecafda](https://github.com/okou-ai/okou/commit/eecafda4f3043a7a32d7d0695431ca2398d8524f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.1
+
+## [8.755.0](https://github.com/okou-ai/okou/compare/core-v8.754.0...core-v8.755.0) (2026-10-14)
+
+
+### Features
+
+* **core:** enable agent suggestions for staff organizations ([#40020](https://github.com/okou-ai/okou/issues/40020)) ([8f9c3da](https://github.com/okou-ai/okou/commit/8f9c3da31b7745ebf99d2285963bed426220edae))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.560.0
+
+## [8.754.0](https://github.com/okou-ai/okou/compare/core-v8.753.2...core-v8.754.0) (2026-10-14)
+
+
+### Features
+
+* add link payment credential retrieval to wallet cli ([#40016](https://github.com/okou-ai/okou/issues/40016)) ([6844864](https://github.com/okou-ai/okou/commit/6844864ee67b12e4d95967214a6487f454fa82c2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.559.0
+
+## [8.753.2](https://github.com/okou-ai/okou/compare/core-v8.753.1...core-v8.753.2) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.3
+
+## [8.753.1](https://github.com/okou-ai/okou/compare/core-v8.753.0...core-v8.753.1) (2026-10-14)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.2
+
+## [8.753.0](https://github.com/okou-ai/okou/compare/core-v8.752.2...core-v8.753.0) (2026-10-14)
+
+
+### Features
+
+* **app:** add passive token and realtime auth diagnostics ([#39916](https://github.com/okou-ai/okou/issues/39916)) ([ba5b45a](https://github.com/okou-ai/okou/commit/ba5b45a6d899ac1c387c94babeeca1cd080b1a8a))
+
+## [8.752.2](https://github.com/okou-ai/okou/compare/core-v8.752.1...core-v8.752.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* align wallet authorization cards and resume chat after consent ([#39918](https://github.com/okou-ai/okou/issues/39918)) ([b8f5ba9](https://github.com/okou-ai/okou/commit/b8f5ba9616117089475b8aef8854808195ec09f4))
+
+
+### Refactoring
+
+* remove abandoned home task recommendations ([#39928](https://github.com/okou-ai/okou/issues/39928)) ([334940b](https://github.com/okou-ai/okou/commit/334940bb4da2cf321bf65b6a376c4dc1ae12daa4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.558.1
+
 ## [8.752.1](https://github.com/okou-ai/okou/compare/core-v8.752.0...core-v8.752.1) (2026-10-14)
 
 

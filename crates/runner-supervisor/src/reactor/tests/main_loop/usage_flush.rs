@@ -142,6 +142,8 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_url = format!("http://{}", listener.local_addr().unwrap());
+    let run_id = RunId::new_v4();
+    let (startup_tx, mut startup_reports) = tokio::sync::mpsc::unbounded_channel();
     let (upload_tx, mut uploads) = tokio::sync::mpsc::unbounded_channel();
     let (stop_server, mut server_stopped) = tokio::sync::oneshot::channel();
     // JoinSet owns the server even when an assertion fails. Handing the
@@ -154,9 +156,18 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
                 accepted = listener.accept() => accepted.unwrap(),
             };
             let request = read_http_request(&mut socket).await.unwrap();
-            assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
             let (_, body) = request.split_once("\r\n\r\n").unwrap();
             let payload: serde_json::Value = serde_json::from_str(body).unwrap();
+            if request.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup ")) {
+                assert_eq!(payload, serde_json::json!({ "sandboxStartupPath": "cold" }));
+                startup_tx.send(payload).unwrap();
+                socket
+                    .write_all(b"HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+                    .await
+                    .unwrap();
+                continue;
+            }
+            assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
             if payload.get("networkLogs").is_some() {
                 upload_tx.send((socket, payload)).unwrap();
             } else {
@@ -187,7 +198,6 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
 
     // Seed a network log file so `upload_network_logs` has a payload to POST
     // (otherwise it early-returns on NotFound).
-    let run_id = RunId::new_v4();
     let network_log_path = config.exec_config.log_paths.network_log(run_id);
     std::fs::create_dir_all(network_log_path.parent().unwrap()).unwrap();
     std::fs::write(
@@ -290,6 +300,14 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
         ),
         "network logs should be uploaded exactly once",
     );
+    assert_eq!(
+        startup_reports.try_recv().unwrap(),
+        serde_json::json!({ "sandboxStartupPath": "cold" })
+    );
+    assert!(matches!(
+        startup_reports.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
     stop_server.send(()).unwrap();
     tokio::time::timeout(WAIT, server_tasks.join_next())
         .await

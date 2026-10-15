@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { env } from "../../lib/env";
 import {
   integrationsTeamsUploadCompleteContract,
@@ -16,8 +16,8 @@ import {
 } from "../services/uploaded-artifact.service";
 import { recordTeamsUploadedFile$ } from "../services/run-uploaded-files.service";
 import {
-  loadInstallation,
-  resolveTeamsMessageTarget,
+  teamsInstallation,
+  resolveTeamsMessageTarget$,
   routeError,
   teamsErrorResponse,
 } from "../services/teams-message-target.service";
@@ -62,6 +62,11 @@ function buildMetadata(args: {
   };
 }
 
+const installationOrgId$ = computed((get) => {
+  return get(organizationAuthContext$).orgId;
+});
+const installation$ = teamsInstallation(installationOrgId$);
+
 const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const runId =
@@ -75,8 +80,8 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   const body = bodyResult.data;
 
-  const db = set(writeDb$);
-  const installation = await loadInstallation(db, auth.orgId);
+  set(writeDb$);
+  const installation = await get(installation$);
   signal.throwIfAborted();
   if (!installation) {
     return routeError(
@@ -102,9 +107,9 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
     return routeError(404, "Uploaded file not found", "NOT_FOUND");
   }
 
-  const target = await resolveTeamsMessageTarget(
+  const target = await set(
+    resolveTeamsMessageTarget$,
     {
-      db,
       installation,
       userId: auth.userId,
       body,

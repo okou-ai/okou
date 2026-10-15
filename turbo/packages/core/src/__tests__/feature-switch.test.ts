@@ -211,23 +211,23 @@ describe("isFeatureEnabled", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Lab, {})).toBe(false);
   });
 
-  it("should apply user overrides to the staff-default Official Workflows switch", () => {
+  it("should apply user overrides to a staff-default switch", () => {
     const staffOrgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: staffOrgId,
       }),
     ).toBe(true);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: staffOrgId,
-        overrides: { [FeatureSwitchKey.OfficialWorkflows]: false },
+        overrides: { [FeatureSwitchKey.Lab]: false },
       }),
     ).toBe(false);
     expect(
-      isFeatureEnabled(FeatureSwitchKey.OfficialWorkflows, {
+      isFeatureEnabled(FeatureSwitchKey.Lab, {
         orgId: "org_nonexistent",
-        overrides: { [FeatureSwitchKey.OfficialWorkflows]: true },
+        overrides: { [FeatureSwitchKey.Lab]: true },
       }),
     ).toBe(true);
   });
@@ -277,7 +277,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PiMemory]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(true);
 
@@ -289,7 +288,6 @@ describe("getAllFeatureStates", () => {
     expect(otherOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PiMemory]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(otherOrgStates[FeatureSwitchKey.OfficialWorkflows]).toBe(false);
     expect(otherOrgStates[FeatureSwitchKey.CustomTemplates]).toBe(false);
   });
 

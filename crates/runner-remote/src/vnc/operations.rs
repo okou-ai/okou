@@ -140,29 +140,36 @@ impl Run {
             "vnc.session.list" => {
                 let result = async {
                     parse::<protocol::Empty>(raw)?;
-                    let mut infos = Vec::<Info>::new();
+                    let mut admitted = Vec::<Arc<Session>>::new();
                     for session in self.snapshot()? {
                         let operation = session_scope(&scope, &session);
                         let result = async {
                             let _engine = lock(&session, &operation).await?;
-                            self.authorize(&session, &operation).await
+                            self.authorize(&session, &operation)
                         }
                         .await;
                         // Closing a snapshot member must not cancel the list,
                         // but cancellation/deadline of the request still wins.
                         scope.check()?;
                         match result {
-                            Ok(()) => infos.push(session.info.clone()),
-                            // The authority owns saved connections. An expected
-                            // removal or change closes only that stale session;
-                            // it must not hide independently authorized siblings.
-                            Err(Failure::Unavailable | Failure::ConfigurationChanged) => {}
-                            Err(Failure::Cancelled | Failure::Disconnected)
+                            Ok(()) => admitted.push(Arc::clone(&session)),
+                            // A revoked or expired member cannot hide siblings.
+                            Err(Failure::Cancelled | Failure::Disconnected | Failure::TimedOut)
                                 if session.cancel.is_cancelled() => {}
                             Err(error) => return Err(error),
                         }
                     }
                     scope.check()?;
+                    // A sibling may close while another engine is locked by
+                    // capture. Recheck local lifetime/cancellation after waits.
+                    let infos = admitted
+                        .into_iter()
+                        .filter(|session| {
+                            !session.cancel.is_cancelled()
+                                && tokio::time::Instant::now() < session.expires
+                        })
+                        .map(|session| session.info.clone())
+                        .collect::<Vec<Info>>();
                     Ok::<_, Failure>(infos)
                 }
                 .await;
@@ -183,7 +190,7 @@ impl Run {
                     } else {
                         let scope = session_scope(&scope, &session);
                         let _engine = lock(&session, &scope).await?;
-                        self.authorize(&session, &scope).await?;
+                        self.authorize(&session, &scope)?;
                         Ok(json!({"outcome":"status","session":session.info}))
                     }
                 }
@@ -210,7 +217,7 @@ impl Run {
             let session = self.lookup(params.session_id)?;
             let operation = session_scope(scope, &session);
             let mut engine = lock(&session, &operation).await?;
-            self.authorize(&session, &operation).await?;
+            self.authorize(&session, &operation)?;
             let result = async {
                 let capture = operation
                     .wait(engine.capture(operation.deadline))
@@ -285,7 +292,7 @@ impl Run {
             let session = self.lookup(params.session_id)?;
             let operation = session_scope(scope, &session);
             let mut engine = lock(&session, &operation).await?;
-            self.authorize(&session, &operation).await?;
+            self.authorize(&session, &operation)?;
             let result = operation
                 .wait(engine.input(
                     params.input.as_input(&keys),

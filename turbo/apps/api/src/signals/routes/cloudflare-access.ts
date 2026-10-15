@@ -8,7 +8,7 @@ import {
 import { command } from "ccstate";
 import { cloudflareAccessErrorResponse } from "../../lib/cloudflare-access-error";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { authRoute } from "../auth/auth-route";
+import { remoteControlOwnerRoute } from "./remote-control-owner-auth";
 import { setResHeader$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { createClerkReadContext } from "../external/clerk";
@@ -25,12 +25,6 @@ import {
 } from "../services/cloudflare-access.service";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 import { loadUserDisplayNames$ } from "../services/user-profile-directory.service";
-
-const ownerAuth = {
-  requireOrganization: true,
-  missingOrganizationStatus: 401,
-  accept: ["session"],
-} as const;
 
 const encryptionContext$ = command(async ({ get }, signal: AbortSignal) => {
   const owner = get(organizationAuthContext$);
@@ -292,30 +286,30 @@ const convert$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const cloudflareAccessRoutes: readonly RouteEntry[] = [
   {
     route: cloudflareAccessContract.list,
-    handler: authRoute(ownerAuth, list$),
+    handler: remoteControlOwnerRoute("connector:read", list$),
   },
   {
     route: cloudflareAccessContract.create,
-    handler: authRoute(ownerAuth, create$),
+    handler: remoteControlOwnerRoute("connector:write", create$),
   },
   {
     route: cloudflareAccessContract.update,
-    handler: authRoute(ownerAuth, update$),
+    handler: remoteControlOwnerRoute("connector:write", update$),
   },
   {
     route: cloudflareAccessContract.delete,
-    handler: authRoute(ownerAuth, delete$),
+    handler: remoteControlOwnerRoute("connector:write", delete$),
   },
   {
     route: cloudflareAccessContract.convertToOrganization,
-    handler: authRoute(ownerAuth, promote$),
+    handler: remoteControlOwnerRoute("connector:write", promote$),
   },
   {
     route: cloudflareAccessContract.impactPreview,
-    handler: authRoute(ownerAuth, impactPreview$),
+    handler: remoteControlOwnerRoute("connector:read", impactPreview$),
   },
   {
     route: cloudflareAccessContract.convertToPersonal,
-    handler: authRoute(ownerAuth, convert$),
+    handler: remoteControlOwnerRoute("connector:write", convert$),
   },
 ];

@@ -52,7 +52,7 @@ teardown() {
     assert_success
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0) and
+        (.result.frameworkSessionId | type == "string" and length > 0) and
         .source.providerType == "built-in" and
         .source.runtimeProviderType == "openrouter-codex" and
         .source.model == "auto" and

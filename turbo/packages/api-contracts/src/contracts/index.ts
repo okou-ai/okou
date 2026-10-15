@@ -5,6 +5,7 @@
  * typing.
  */
 export { initContract } from "./base";
+export { runnersRunStartupContract } from "./runner-startup";
 export {
   ORG_OPENROUTER_PRESETS,
   orgOpenrouterPresetSchema,
@@ -267,8 +268,6 @@ export {
   cronDrainEmailOutboxContract,
   cronDrainEmailOutboxResponseSchema,
   cronExecuteWorkflowAutomationsContract,
-  cronRefreshHomeTaskRecommendationsContract,
-  cronRefreshHomeTaskRecommendationsResponseSchema,
   cronRenewGmailWatchesContract,
   cronRenewGmailWatchesResponseSchema,
   cronRenewGoogleFormsWatchesContract,
@@ -292,7 +291,6 @@ export {
   type CronConnectorOauthStateCleanupContract,
   type CronDrainEmailOutboxContract,
   type CronProcessUsageEventsContract,
-  type CronRefreshHomeTaskRecommendationsContract,
   type CronReconcileBillingEntitlementsContract,
   type CronRenewGmailWatchesContract,
   type CronRenewGoogleFormsWatchesContract,
@@ -520,10 +518,8 @@ export {
   ablyTokenRequestSchema,
   browserSessionChangedPayloadSchema,
   connectorChangedPayloadSchema,
-  homeTaskRecommendationsChangedPayloadSchema,
   type BrowserSessionChangedPayload,
   type ConnectorChangedPayload,
-  type HomeTaskRecommendationsChangedPayload,
   runnerRealtimeTokenContract,
   type RunnerRealtimeTokenContract,
   platformRealtimeTokenContract,
@@ -843,24 +839,6 @@ export {
   type WorkflowVisibilityContract,
   type WorkflowAutomationsContract,
 } from "./workflows";
-export {
-  officialWorkflowCatalogSummarySchema,
-  officialWorkflowCatalogDetailSchema,
-  officialWorkflowInstallRequestSchema,
-  officialWorkflowReconfigureRequestSchema,
-  officialWorkflowInstallationDefinitionSchema,
-  officialWorkflowInstallationResponseSchema,
-  officialWorkflowsContract,
-  officialWorkflowInstallationsContract,
-  type OfficialWorkflowCatalogSummary,
-  type OfficialWorkflowCatalogDetail,
-  type OfficialWorkflowInstallRequest,
-  type OfficialWorkflowReconfigureRequest,
-  type OfficialWorkflowInstallationDefinition,
-  type OfficialWorkflowInstallationResponse,
-  type OfficialWorkflowsContract,
-  type OfficialWorkflowInstallationsContract,
-} from "./official-workflows";
 export {
   userBuiltinConnectorsContract,
   userBuiltinConnectorEnabledSlugsSchema,
@@ -1694,14 +1672,3 @@ export {
   chatInputStatusResponseSchema,
   type ChatInputStatusResponse,
 } from "./chat-input-status";
-
-export {
-  HOME_TASK_RECOMMENDATION_LIMIT,
-  HOME_TASK_RECOMMENDATION_MIN_ACTIONABILITY,
-  HOME_TASK_RECOMMENDATION_REFRESH_MS,
-  homeTaskRecommendationSchema,
-  homeTaskRecommendationsContract,
-  homeTaskRecommendationsResponseSchema,
-  type HomeTaskRecommendation,
-  type HomeTaskRecommendationsResponse,
-} from "./home-task-recommendations";

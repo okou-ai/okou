@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { describe, expect, it } from "vitest";
@@ -93,9 +93,6 @@ async function completeChatRunOk(
   runId: string,
   sandboxHeaders: { readonly authorization: string },
 ): Promise<void> {
-  const historyHash = createHash("sha256")
-    .update(`bdd artifacts history ${runId}`)
-    .digest("hex");
   await webhooks.requestAgentComplete(
     {
       runId,
@@ -103,7 +100,7 @@ async function completeChatRunOk(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `bdd-cli-${runId}`,
-        cliAgentSessionHistoryHash: historyHash,
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     sandboxHeaders,

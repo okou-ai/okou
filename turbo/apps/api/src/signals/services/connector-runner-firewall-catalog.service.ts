@@ -10,9 +10,10 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { asc, eq } from "drizzle-orm";
+import { computed } from "ccstate";
 
 import { singleton } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { onRejection } from "../utils";
 import { ExternalConnectorCatalogUnavailableError } from "./connector-catalog-external-reader.service";
 import { connectorCatalogRuntimeColumns } from "./connector-catalog-columns";
@@ -34,8 +35,6 @@ interface CatalogCache {
   key: string | undefined;
   readonly inFlight: Map<string, Promise<ConnectorRunnerFirewallCatalog>>;
 }
-
-type ReadonlyDbLoader = () => ReadonlyDb;
 
 interface CapturedCatalog {
   readonly schemaVersion: number;
@@ -97,9 +96,8 @@ const catalogCache = singleton((): CatalogCache => {
   return { catalog: undefined, key: undefined, inFlight: new Map() };
 });
 
-async function loadCatalog(
-  db: ReadonlyDb,
-): Promise<ConnectorRunnerFirewallCatalog> {
+export const connectorRunnerFirewallCatalog$ = computed(async (get) => {
+  const db = get(db$);
   const [captured] = await db
     .select({
       schemaVersion: connectorCatalog.schemaVersion,
@@ -123,7 +121,22 @@ async function loadCatalog(
   if (existing) {
     return await existing;
   }
-  const promise = readCatalog(db, captured.hash);
+  // The digest covers every connector firewall, so read all entries at the
+  // captured hash, selecting only the slug and firewall rules.
+  const promise = (async (): Promise<ConnectorRunnerFirewallCatalog> => {
+    const connectors = await db
+      .select({
+        slug: connectorCatalogRuntimeColumns.slug,
+        firewall: connectorCatalogRuntimeColumns.firewall,
+      })
+      .from(connectorCatalogEntries)
+      .where(eq(connectorCatalogEntries.hash, captured.hash))
+      .orderBy(asc(connectorCatalogEntries.slug));
+    if (connectors.length === 0) {
+      throw new ExternalConnectorCatalogUnavailableError("missing_entries");
+    }
+    return createCatalog(connectors);
+  })();
   cache.inFlight.set(key, promise);
   const catalog = await onRejection(promise, () => {
     deleteInFlightCatalog(cache, key, promise);
@@ -132,7 +145,7 @@ async function loadCatalog(
   cache.key = key;
   cache.catalog = catalog;
   return catalog;
-}
+});
 
 function deleteInFlightCatalog(
   cache: CatalogCache,
@@ -142,32 +155,4 @@ function deleteInFlightCatalog(
   if (cache.inFlight.get(key) === promise) {
     cache.inFlight.delete(key);
   }
-}
-
-/**
- * The digest covers every connector firewall, so this reads every entry at
- * the captured hash, but only its slug and firewall rules.
- */
-async function readCatalog(
-  db: ReadonlyDb,
-  hash: string,
-): Promise<ConnectorRunnerFirewallCatalog> {
-  const connectors = await db
-    .select({
-      slug: connectorCatalogRuntimeColumns.slug,
-      firewall: connectorCatalogRuntimeColumns.firewall,
-    })
-    .from(connectorCatalogEntries)
-    .where(eq(connectorCatalogEntries.hash, hash))
-    .orderBy(asc(connectorCatalogEntries.slug));
-  if (connectors.length === 0) {
-    throw new ExternalConnectorCatalogUnavailableError("missing_entries");
-  }
-  return createCatalog(connectors);
-}
-
-export async function loadConnectorRunnerFirewallCatalog(
-  loadDb: ReadonlyDbLoader,
-): Promise<ConnectorRunnerFirewallCatalog> {
-  return await loadCatalog(loadDb());
 }

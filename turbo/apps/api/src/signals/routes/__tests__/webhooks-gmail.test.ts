@@ -1,11 +1,6 @@
 import { describe, beforeEach, it } from "vitest";
 import { Buffer } from "node:buffer";
-import {
-  createHash,
-  generateKeyPairSync,
-  randomUUID,
-  sign as signData,
-} from "node:crypto";
+import { generateKeyPairSync, randomUUID, sign as signData } from "node:crypto";
 import {
   connectorAccountsContract,
   type ConnectorAccountMutationIntent,
@@ -741,9 +736,7 @@ async function completeRunThroughSandbox(
       completion: {
         cliAgentType: "claude-code",
         cliAgentSessionId: `gmail-workflow-cli-${runId}`,
-        cliAgentSessionHistoryHash: createHash("sha256")
-          .update(`gmail workflow history ${runId}`)
-          .digest("hex"),
+        cliAgentSessionHistoryDisposition: "native_only",
       },
     },
     sandboxHeaders,

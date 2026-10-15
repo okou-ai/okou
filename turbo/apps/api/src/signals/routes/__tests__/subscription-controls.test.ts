@@ -506,6 +506,87 @@ test("claude Code exposes natural usage windows but explicitly rejects manual re
   expect(reset.status).toBe(404);
 });
 
+test("mixed subscriptions keep provider usage separate when Claude usage becomes unavailable", async () => {
+  const { actor, accountIds } = await fixture();
+  mockClaudeCodeTokenEndpoint({
+    accountEmail: actor.email,
+    organizationName: `Workspace ${randomUUID()}`,
+  });
+  const client = app()(personalModelProvidersMainContract);
+  const headers = human(actor);
+  const connected = await accept(
+    client.upsert({
+      headers,
+      body: {
+        type: "claude-code-oauth-token",
+        secret: `sk-ant-oat-${randomUUID()}`,
+      },
+    }),
+    [201],
+  );
+  const listed = await accept(client.list({ headers }), [200]);
+  expect(
+    listed.body.modelProviders
+      .map((provider) => {
+        return provider.id;
+      })
+      .sort(),
+  ).toStrictEqual([...accountIds, connected.body.provider.id].sort());
+  for (const id of accountIds) {
+    expect(listed.body.modelProviders).toContainEqual(
+      expect.objectContaining({
+        id,
+        type: "codex-oauth-token",
+        subscriptionUsage: expect.objectContaining({
+          fiveHour: expect.objectContaining({ usedPercent: 75 }),
+          weekly: expect.objectContaining({ usedPercent: 40 }),
+        }),
+      }),
+    );
+  }
+  expect(listed.body.modelProviders).toContainEqual(
+    expect.objectContaining({
+      id: connected.body.provider.id,
+      type: "claude-code-oauth-token",
+      subscriptionUsage: expect.objectContaining({
+        fiveHour: expect.objectContaining({ usedPercent: 12 }),
+        weekly: expect.objectContaining({ usedPercent: 24 }),
+      }),
+    }),
+  );
+
+  server.use(
+    http.get("https://api.anthropic.com/api/oauth/usage", () => {
+      return HttpResponse.json({ error: "unavailable" }, { status: 503 });
+    }),
+  );
+  const degraded = await accept(client.list({ headers }), [200]);
+  expect(
+    degraded.body.modelProviders.map((provider) => {
+      return provider.id;
+    }),
+  ).toStrictEqual(
+    listed.body.modelProviders.map((provider) => {
+      return provider.id;
+    }),
+  );
+  for (const id of accountIds) {
+    const before = listed.body.modelProviders.find((provider) => {
+      return provider.id === id;
+    });
+    expect(degraded.body.modelProviders).toContainEqual(before);
+  }
+  const claude = degraded.body.modelProviders.find((provider) => {
+    return provider.id === connected.body.provider.id;
+  });
+  expect(claude).toMatchObject({
+    id: connected.body.provider.id,
+    type: "claude-code-oauth-token",
+    needsReconnect: false,
+  });
+  expect(claude?.subscriptionUsage ?? null).toBeNull();
+});
+
 test("a subscription reset link does not grant unauthenticated access", async () => {
   context.mocks.clerk.authenticateRequest.mockResolvedValue({
     isAuthenticated: false,

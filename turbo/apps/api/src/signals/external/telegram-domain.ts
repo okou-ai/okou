@@ -1,28 +1,76 @@
-import { tapError } from "../utils";
+import { settle } from "../utils";
 
 const TELEGRAM_OAUTH_BASE_URL = "https://oauth.telegram.org/auth";
+
+interface TelegramDomainCheckResult {
+  readonly configured: boolean;
+  readonly reason:
+    | "verified"
+    | "missing_content_length"
+    | "invalid_content_length"
+    | "short_response"
+    | "request_failed"
+    | "request_timeout";
+  readonly httpStatus: number | null;
+  readonly contentLength: number | null;
+  readonly durationMs: number;
+  readonly errorType?: "TimeoutError" | "TypeError" | "Error" | "unknown";
+}
 
 export async function checkTelegramDomain(
   telegramBotId: string,
   appUrl: string,
-): Promise<boolean> {
+): Promise<TelegramDomainCheckResult> {
   const query = new URLSearchParams({
     bot_id: telegramBotId,
     origin: appUrl,
   });
-  // A probe that cannot reach Telegram is expected transient noise, not an
-  // actionable failure, so it is not logged. The outbound HEAD is already
-  // traced as a client span, which carries its own error status and duration.
-  const response = await tapError(
+  const startedAt = performance.now();
+  const result = await settle(
     fetch(`${TELEGRAM_OAUTH_BASE_URL}?${query}`, {
       method: "HEAD",
       signal: AbortSignal.timeout(3000),
     }),
   );
-  if (!response) {
-    return false;
+  const durationMs = Math.round(performance.now() - startedAt);
+  if (!result.ok) {
+    const error = result.error;
+    const errorType =
+      error instanceof Error && error.name === "TimeoutError"
+        ? "TimeoutError"
+        : error instanceof TypeError
+          ? "TypeError"
+          : error instanceof Error
+            ? "Error"
+            : "unknown";
+    return {
+      configured: false,
+      reason:
+        errorType === "TimeoutError" ? "request_timeout" : "request_failed",
+      httpStatus: null,
+      contentLength: null,
+      durationMs,
+      errorType,
+    };
   }
 
+  const response = result.value;
   const contentLength = response.headers.get("content-length");
-  return contentLength !== null && Number(contentLength) > 1000;
+  const length = contentLength === null ? null : Number(contentLength);
+  // Preserve the existing readiness gate. A short/missing response only means
+  // this heuristic could not verify the domain; it does not prove misconfiguration.
+  const configured = length !== null && length > 1000;
+  return {
+    configured,
+    reason: configured
+      ? "verified"
+      : length === null
+        ? "missing_content_length"
+        : !Number.isFinite(length)
+          ? "invalid_content_length"
+          : "short_response",
+    httpStatus: response.status,
+    contentLength: length !== null && Number.isFinite(length) ? length : null,
+    durationMs,
+  };
 }

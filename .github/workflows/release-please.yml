@@ -164,6 +164,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-contracts--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-storage-apply--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-init--sha']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-channel-server--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/claude-mock--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/codex-mock--sha']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-state-restore--sha']) }},
@@ -258,6 +259,7 @@ jobs:
               ${{ toJSON(steps.release.outputs['crates/guest-contracts--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-storage-apply--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-init--tag_name']) }},
+              ${{ toJSON(steps.release.outputs['crates/guest-channel-server--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/claude-mock--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/codex-mock--tag_name']) }},
               ${{ toJSON(steps.release.outputs['crates/guest-state-restore--tag_name']) }},
@@ -597,6 +599,9 @@ jobs:
             HOMEBREW_NO_AUTO_UPDATE=1 brew install awscli
           fi
           aws --version
+
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
 
       - name: Download canonical Desktop app
         id: desktop-app
@@ -1678,6 +1683,9 @@ jobs:
           /tmp/awscli/aws/install
           aws --version
 
+          # Keep R2 transfers on classic after the AWS CLI 2.38 CRT default change.
+          aws configure set s3.preferred_transfer_client classic
+
       - name: Prepare standalone App Worker production deployment
         id: worker-production
         env:
@@ -1996,6 +2004,9 @@ jobs:
     runs-on: ubuntu-latest-8-cores
     container:
       image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+    env:
+      KERBEROS_NATIVE_BUILD_ENV: ghcr.io/${{ github.repository_owner }}/vm0-toolchain-rust:20261009
+      TARGET_TRIPLE: ${{ matrix.target }}
     defaults:
       run:
         shell: bash
@@ -2050,6 +2061,16 @@ jobs:
           shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Configure pinned Kerberos cache
+        run: echo "KERBEROS_NATIVE_CACHE_DIR=$RUNNER_TEMP/kerberos-native-cache" >> "$GITHUB_ENV"
+
+      - name: Restore pinned Kerberos dependencies
+        id: kerberos-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: kerberos-native-runner-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.KERBEROS_NATIVE_BUILD_ENV }}-${{ hashFiles('crates/kerberos-worker/native/build-dependencies.sh') }}-${{ env.TARGET_TRIPLE }}
+
       - name: Notify Slack - Starting
         id: slack-start
         if: ${{ vars.SLACK_RELEASE_CHANNEL_ID != '' }}
@@ -2100,6 +2121,14 @@ jobs:
             guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
           done
           env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
+
+      # Release always builds both targets; CI Runner compilers restore only.
+      - name: Save pinned Runner Kerberos dependencies
+        if: github.ref == 'refs/heads/main' && steps.kerberos-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.KERBEROS_NATIVE_CACHE_DIR }}
+          key: ${{ steps.kerberos-cache.outputs.cache-primary-key }}
 
       - name: Upload runner binary to GitHub Release
         env:

@@ -70,6 +70,7 @@ pub(super) struct Authority {
 
 /// Consumed by one handshake; never cached, cloned or exposed to the guest.
 pub(super) struct Credential {
+    pub(super) created_at: chrono::DateTime<chrono::Utc>,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) generation: i64,
@@ -119,7 +120,12 @@ pub(super) enum Transport {
     Ssh { connection: Uuid, generation: i64 },
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn rsa_aes_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -173,6 +179,7 @@ fn rsa_aes_credential(
     }
     .map_err(|_| Failure::InvalidCredential)?;
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,
@@ -247,7 +254,12 @@ pub(super) fn parse_transport(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_vnc_password_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -273,6 +285,7 @@ fn apple_vnc_password_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,
@@ -281,7 +294,12 @@ fn apple_vnc_password_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_dh_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -310,6 +328,7 @@ fn apple_dh_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,
@@ -318,7 +337,12 @@ fn apple_dh_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_srp_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -347,6 +371,7 @@ fn apple_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,
@@ -355,7 +380,12 @@ fn apple_srp_credential(
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "The exact protocol handoff includes endpoint, creation identity, and authentication fields."
+)]
 fn apple_rsa_srp_credential(
+    created_at: chrono::DateTime<chrono::Utc>,
     host: String,
     port: u64,
     generation: i64,
@@ -384,6 +414,7 @@ fn apple_rsa_srp_credential(
         _ => return Err(Failure::Authority),
     };
     Ok(Credential {
+        created_at,
         host,
         port,
         generation,
@@ -428,6 +459,7 @@ mod apple_vnc_password_tests {
             panic!("expected Apple classic password outcome");
         };
         apple_vnc_password_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -504,6 +536,7 @@ mod apple_dh_tests {
             panic!("expected Apple DH outcome");
         };
         apple_dh_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -599,6 +632,7 @@ mod apple_srp_tests {
             panic!("expected Apple SRP outcome");
         };
         apple_srp_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -713,6 +747,7 @@ mod apple_rsa_srp_tests {
             panic!("expected Apple RSA/SRP outcome");
         };
         apple_rsa_srp_credential(
+            chrono::Utc::now(),
             host,
             port,
             generation,
@@ -774,6 +809,82 @@ mod apple_rsa_srp_tests {
 }
 
 impl Authority {
+    pub(super) async fn observe(
+        &self,
+        run: RunId,
+        connection: Uuid,
+        observation: super::observation::Observation,
+    ) {
+        let transport = |route| match route {
+            Transport::Direct => ObservationRequestExpectedTransport::Direct,
+            Transport::Ssh {
+                connection,
+                generation,
+            } => ObservationRequestExpectedTransport::Ssh {
+                connection_id: connection.to_string(),
+                generation,
+            },
+        };
+        let request = ObservationRequest {
+            expected_created_at: observation
+                .attempt
+                .created_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            connection_id: connection.to_string(),
+            runner_identity: ObservationRequestRunnerIdentity {
+                runner_id: self.identity.runner_id().to_string(),
+                heartbeat_generation: self.identity.heartbeat_generation() as i64,
+            },
+            expected_generation: observation.attempt.generation,
+            expected_transport: transport(observation.attempt.transport),
+            expected_credential_revision: observation
+                .attempt
+                .kerberos
+                .map(|binding| binding.revision),
+            expected_kdc_transport: observation
+                .attempt
+                .kerberos
+                .and_then(|binding| binding.kdc)
+                .map(|route| match route {
+                    Transport::Direct => ObservationRequestExpectedKdcTransport::Direct,
+                    Transport::Ssh {
+                        connection,
+                        generation,
+                    } => ObservationRequestExpectedKdcTransport::Ssh {
+                        connection_id: connection.to_string(),
+                        generation,
+                    },
+                }),
+            observed_at: observation
+                .observed_at
+                .to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+            failure_reason: observation.failure,
+        };
+        let report = async {
+            let body = serde_json::to_value(request).ok()?;
+            let request = self
+                .http
+                .json_request(
+                    routes::observations::route(routes::observations::Params {
+                        run_id: &run.to_string(),
+                    }),
+                    &self.token,
+                    &body,
+                )
+                .ok()?;
+            let response = self.transport.execute(request).await.ok()?;
+            response.status().is_success().then_some(())
+        };
+        // Reporting outages never change connection results.
+        if !tokio::time::timeout(std::time::Duration::from_secs(1), report)
+            .await
+            .is_ok_and(|result| result.is_some())
+        {
+            // No raw response/error, credentials, session or output at this boundary.
+            tracing::info!(run_id = %run, connection_id = %connection, "VNC observation report not confirmed");
+        }
+    }
+
     pub(super) fn new(
         http: HttpClient,
         token: String,
@@ -798,7 +909,7 @@ impl Authority {
         &self,
         route: api_contracts::ResolvedRoute,
         body: &impl Serialize,
-    ) -> Result<T, Failure> {
+    ) -> Result<(T, Option<chrono::DateTime<chrono::Utc>>), Failure> {
         let body = serde_json::to_value(body).map_err(|_| Failure::Authority)?;
         let request = self
             .http
@@ -816,6 +927,12 @@ impl Authority {
         {
             return Err(Failure::Authority);
         }
+        let created_at = response
+            .headers()
+            .get("x-vnc-connection-created-at")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&chrono::Utc));
         // A fixed capacity avoids leaving reallocated plaintext buffers behind.
         let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_API_BYTES));
         while let Some(chunk) = response.chunk().await.map_err(|_| Failure::Authority)? {
@@ -824,7 +941,9 @@ impl Authority {
             }
             bytes.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&bytes).map_err(|_| Failure::Authority)
+        serde_json::from_slice(&bytes)
+            .map(|body| (body, created_at))
+            .map_err(|_| Failure::Authority)
     }
 
     pub(super) async fn resolve(
@@ -961,7 +1080,7 @@ impl Authority {
             },
             supported_profiles,
         };
-        let response = self
+        let (response, created_at) = self
             .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
@@ -987,6 +1106,7 @@ impl Authority {
                         return Err(Failure::Authority);
                     }
                     return super::kerberos::credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1007,6 +1127,7 @@ impl Authority {
                     security,
                 } => {
                     return rsa_aes_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1025,6 +1146,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_vnc_password_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1043,6 +1165,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_dh_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1061,6 +1184,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_srp_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1079,6 +1203,7 @@ impl Authority {
                     security,
                 } => {
                     return apple_rsa_srp_credential(
+                        created_at.ok_or(Failure::Authority)?,
                         host,
                         port,
                         generation,
@@ -1202,6 +1327,7 @@ impl Authority {
             }
         };
         Ok(Credential {
+            created_at: created_at.ok_or(Failure::Authority)?,
             host,
             port,
             generation,
@@ -1224,7 +1350,7 @@ impl Authority {
         })
     }
 
-    pub(super) async fn check_kerberos(
+    pub(super) async fn check(
         &self,
         run: RunId,
         connection: uuid::Uuid,
@@ -1265,13 +1391,14 @@ impl Authority {
             ),
         };
         match self
-            .call(
+            .call::<CheckResponse>(
                 routes::check::route(routes::check::Params {
                     run_id: &run.to_string(),
                 }),
                 &request,
             )
             .await?
+            .0
         {
             CheckResponse::Valid => Ok(()),
             CheckResponse::Unavailable => Err(Failure::Unavailable),
@@ -1361,6 +1488,7 @@ mod rsa_aes_tests {
                 panic!("wrong private handoff");
             };
             let credential = rsa_aes_credential(
+                chrono::Utc::now(),
                 host,
                 port,
                 generation,

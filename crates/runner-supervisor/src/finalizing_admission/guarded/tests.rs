@@ -328,8 +328,6 @@ impl Fixture {
                     failure_reason: None,
                     error: Some("finalizing successor cancelled".into()),
                     sandbox_id: None,
-                    sandbox_reuse_result: None,
-                    home_reuse_result: None,
                 },
                 auth,
             )

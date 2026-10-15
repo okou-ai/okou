@@ -1,4 +1,5 @@
 import { command } from "ccstate";
+import type { HomeReuseResult } from "@okouai/api-contracts/contracts/runner-primitives";
 import {
   webhookHeartbeatContract,
   webhookTelemetryContract,
@@ -33,6 +34,7 @@ import {
   ingestAxiomDirect,
 } from "../external/axiom";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
+import { runnerAuth$ } from "../auth/runner-auth";
 import type { RouteEntry } from "../route-entry";
 import { dispatchProgressCallbacks$ } from "../services/agent-run-callbacks.service";
 import { hasAgentPhoneTypingTargetForRun$ } from "../services/agent-event-consumer-agentphone-typing.service";
@@ -103,6 +105,15 @@ interface SandboxOperationDimensionInput extends Readonly<SessionHistoryDownload
   readonly storage_batch_payload_size_bucket?: string;
   readonly storage_batch_timing?: string;
   readonly runner_startup_path?: RunnerStartupPath;
+  readonly is_first_run?: boolean;
+  readonly reuse_key?: string;
+  readonly run_id?: string;
+  readonly cache_key?: string;
+  readonly profile_name?: string;
+  readonly image_generation?: string;
+  readonly allocated_bytes?: number;
+  readonly handoff_path?: string;
+  readonly home_reuse_result?: HomeReuseResult;
   readonly sandbox_reuse_result?: SandboxReuseResult;
   readonly runner_pre_spawn_concurrency_bucket?: RunnerPreSpawnConcurrencyBucket;
   readonly runner_resource_budget_vcpu_utilization_bucket?: RunnerResourceBudgetUtilizationBucket;
@@ -336,6 +347,22 @@ function archiveConnectionAttemptDimensions(
   };
 }
 
+function homeImageDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | number> {
+  return {
+    ...(op.cache_key === undefined ? {} : { cache_key: op.cache_key }),
+    ...(op.profile_name === undefined ? {} : { profile_name: op.profile_name }),
+    ...(op.image_generation === undefined
+      ? {}
+      : { image_generation: op.image_generation }),
+    ...(op.allocated_bytes === undefined
+      ? {}
+      : { allocated_bytes: op.allocated_bytes }),
+    ...(op.handoff_path === undefined ? {} : { handoff_path: op.handoff_path }),
+  };
+}
+
 function sandboxOperationDimensions(
   op: SandboxOperationDimensionInput,
   runner: SandboxRunnerDimensionInput,
@@ -349,6 +376,7 @@ function sandboxOperationDimensions(
     ...(op.error ? { error: op.error } : {}),
     ...(op.outcome ? { outcome: op.outcome } : {}),
     ...(op.reason ? { reason: op.reason } : {}),
+    ...homeImageDimensions(op),
     ...(op.archive_size_mismatch
       ? {
           archive_size_mismatch_expected_bytes:
@@ -366,9 +394,7 @@ function sandboxOperationDimensions(
     ...archiveConnectionAttemptDimensions(op),
     ...dnsReadinessDimensions(op),
     ...storageBatchDimensions(op),
-    ...(op.runner_startup_path
-      ? { runner_startup_path: op.runner_startup_path }
-      : {}),
+    ...sandboxStartupContextDimensions(op),
     ...(op.sandbox_reuse_result
       ? { sandbox_reuse_result: op.sandbox_reuse_result }
       : {}),
@@ -432,6 +458,21 @@ function sandboxOperationDimensions(
       : {}),
     ...(op.session_history_download_source
       ? { session_history_download_source: op.session_history_download_source }
+      : {}),
+  };
+}
+
+function sandboxStartupContextDimensions(
+  op: SandboxOperationDimensionInput,
+): Record<string, string | boolean> {
+  return {
+    ...(op.runner_startup_path
+      ? { runner_startup_path: op.runner_startup_path }
+      : {}),
+    ...(op.is_first_run !== undefined ? { is_first_run: op.is_first_run } : {}),
+    ...(op.reuse_key !== undefined ? { reuse_key: op.reuse_key } : {}),
+    ...(op.home_reuse_result
+      ? { home_reuse_result: op.home_reuse_result }
       : {}),
   };
 }
@@ -822,8 +863,84 @@ function telemetryOomEvents(
   ];
 }
 
+function recordTelemetrySandboxOperations(
+  body: TelemetryBody,
+  attribution: {
+    readonly runId?: string;
+    readonly runnerAuthType?: "user" | "official-runner";
+  },
+): void {
+  for (const op of body.sandboxOperations ?? []) {
+    const dimensions = sandboxOperationDimensions(op, {
+      runnerHostname: body.runnerHostname,
+      runnerVersion: body.runnerVersion,
+    });
+    if (attribution.runnerAuthType !== undefined) {
+      dimensions.runner_auth_type = attribution.runnerAuthType;
+      dimensions.source = "runner";
+    }
+    recordSandboxOperation({
+      actionType: op.action_type,
+      sandboxType: "runner",
+      durationMs: op.duration_ms,
+      success: op.success,
+      runId: attribution.runId ?? op.run_id,
+      timestamp: op.ts,
+      dimensions,
+    });
+  }
+}
+
+const runnerTelemetry$ = command(
+  async ({ get, set }, body: TelemetryBody, signal: AbortSignal) => {
+    if (
+      body.systemLog !== undefined ||
+      body.metrics !== undefined ||
+      body.networkLogs !== undefined ||
+      body.oomEvidence !== undefined ||
+      body.sandboxId !== undefined ||
+      !body.sandboxOperations?.length
+    ) {
+      return badRequestMessage(
+        "Runless telemetry accepts sandbox operations only",
+      );
+    }
+    const runnerAuth = await set(runnerAuth$, get(authorization$), signal);
+    signal.throwIfAborted();
+    if (!runnerAuth) {
+      return unauthorizedRunMismatch;
+    }
+    if (runnerAuth.type === "user") {
+      const runIds = [
+        ...new Set(
+          body.sandboxOperations.flatMap((op) => {
+            return op.run_id === undefined ? [] : [op.run_id];
+          }),
+        ),
+      ];
+      if (runIds.length > 0) {
+        const runs = await get(db$)
+          .select({ id: agentRuns.id })
+          .from(agentRuns)
+          .where(
+            and(
+              inArray(agentRuns.id, runIds),
+              eq(agentRuns.userId, runnerAuth.userId),
+            ),
+          );
+        signal.throwIfAborted();
+        if (runs.length !== runIds.length) {
+          return unauthorizedRunMismatch;
+        }
+      }
+    }
+    recordTelemetrySandboxOperations(body, { runnerAuthType: runnerAuth.type });
+    return { status: 200 as const, body: { success: true } };
+  },
+);
+
 const telemetryBody$ = bodyResultOf(webhookTelemetryContract.send);
-const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
+const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
   const bodyResult = await get(telemetryBody$);
   signal.throwIfAborted();
   if (!bodyResult.ok) {
@@ -831,7 +948,11 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
   }
 
   const body = bodyResult.data;
-  const authResult = resolveSandboxAuthForRun(body.runId, get(authorization$));
+  const runId = body.runId;
+  if (runId === undefined) {
+    return set(runnerTelemetry$, body, signal);
+  }
+  const authResult = resolveSandboxAuthForRun(runId, get(authorization$));
   if (!authResult.ok) {
     L.warn("Agent telemetry rejected sandbox auth", {
       authFailureReason: authResult.reason,
@@ -839,12 +960,19 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     return unauthorizedRunMismatch;
   }
   const { auth } = authResult;
+  if (
+    body.sandboxOperations?.some((op) => {
+      return op.run_id !== undefined && op.run_id !== runId;
+    })
+  ) {
+    return unauthorizedRunMismatch;
+  }
 
   const db = get(db$);
   const [run] = await db
     .select({ id: agentRuns.id })
     .from(agentRuns)
-    .where(and(eq(agentRuns.id, body.runId), eq(agentRuns.userId, auth.userId)))
+    .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, auth.userId)))
     .limit(1);
   signal.throwIfAborted();
 
@@ -860,7 +988,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
       events: [
         {
           _time: nowDate().toISOString(),
-          runId: body.runId,
+          runId: runId,
           userId: auth.userId,
           log: body.systemLog,
         },
@@ -872,7 +1000,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     telemetryBatches.push({
       dataset: getDatasetName(SANDBOX_TELEMETRY_METRICS_DATASET),
       events: body.metrics.map((metric) => {
-        return telemetryMetricEvent(metric, body.runId, auth.userId);
+        return telemetryMetricEvent(metric, runId, auth.userId);
       }),
     });
   }
@@ -883,7 +1011,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
       dataset: getDatasetName(SANDBOX_TELEMETRY_METRICS_DATASET),
       events: telemetryOomEvents(
         body.oomEvidence,
-        body.runId,
+        runId,
         auth.userId,
         body.sandboxId,
       ),
@@ -897,7 +1025,7 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
         return {
           ...rest,
           _time: timestamp,
-          runId: body.runId,
+          runId: runId,
           userId: auth.userId,
         };
       }),
@@ -927,28 +1055,13 @@ const telemetry$ = command(async ({ get }, signal: AbortSignal) => {
     });
   }
 
-  if (body.sandboxOperations && body.sandboxOperations.length > 0) {
-    for (const op of body.sandboxOperations) {
-      recordSandboxOperation({
-        actionType: op.action_type,
-        sandboxType: "runner",
-        durationMs: op.duration_ms,
-        success: op.success,
-        runId: body.runId,
-        timestamp: op.ts,
-        dimensions: sandboxOperationDimensions(op, {
-          runnerHostname: body.runnerHostname,
-          runnerVersion: body.runnerVersion,
-        }),
-      });
-    }
-  }
+  recordTelemetrySandboxOperations(body, { runId });
 
   return {
     status: 200 as const,
     body: {
       success: true,
-      id: body.runId,
+      id: runId,
       ...(oomEvidenceIngested ? { oomEvidenceVersion: 1 as const } : {}),
     },
   };

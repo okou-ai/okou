@@ -333,7 +333,7 @@ export function MarkdownCardView({
       return <BankingActionCard signals={card.signals} />;
     }
     case "wallet-action": {
-      return <WalletActionCard descriptor={card.descriptor} />;
+      return <WalletActionCard signals={card.signals} />;
     }
     case "unavailable-action": {
       return <UnavailableActionCard />;

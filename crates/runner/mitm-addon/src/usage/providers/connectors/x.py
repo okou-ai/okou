@@ -19,6 +19,7 @@ import request_streaming
 import stream_capture
 from body_limits import REQUEST_BODY_BILLING_INSPECTION_LIMIT
 from logging_utils import log_proxy_entry
+from runtime_url_parsing import runtime_url_path
 
 from ...buffer import UsageEvent, buffer_source_usage_events
 from ...idempotency import USAGE_EVENT_NAMESPACE_CONNECTOR, derive_usage_idempotency_key
@@ -201,7 +202,7 @@ def _parse_request_metadata(original_url: str) -> dict:
     Parses the dispatcher-required original URL rather than ``pretty_url`` to
     stay consistent with the rest of the addon.
     """
-    return {"is_count_endpoint": _is_count_path(urllib.parse.urlparse(original_url).path)}
+    return {"is_count_endpoint": _is_count_path(runtime_url_path(original_url))}
 
 
 def _decode_request_query_hint_key(raw_key: str) -> str | None:
@@ -293,7 +294,7 @@ def _parse_request_query_fallback_hints(original_url: str) -> dict:
 
     Returns ``request_ids_count`` and ``max_results``.
     """
-    policy = _request_fallback_hint_policy_for_path(urllib.parse.urlparse(original_url).path)
+    policy = _request_fallback_hint_policy_for_path(runtime_url_path(original_url))
     if policy is None:
         return _empty_request_query_fallback_hints()
 
@@ -602,6 +603,19 @@ def _compute_billable_counts(
     return counts
 
 
+def needs_request_body_inspection(flow: http.HTTPFlow) -> bool:
+    """Retain bounded request bytes only for X endpoint body-based pricing."""
+    permission = flow_metadata.firewall_permission(flow.metadata)
+    if not permission:
+        return False
+    method = flow.request.method.upper()
+    request_path = _strip_request_target_query(flow.request.path)
+    endpoint_bucket = classify_bucket(permission, method, request_path)
+    return endpoint_bucket is not None and bucket_needs_body_refinement(
+        endpoint_bucket, method, request_path
+    )
+
+
 def _response_usage_context(flow: http.HTTPFlow) -> _ResponseUsageContext | None:
     if not flow.response or not (
         _HTTP_STATUS_OK_MIN <= flow.response.status_code < _HTTP_STATUS_REDIRECT_MIN
@@ -628,7 +642,7 @@ def create_response_parser(
     flow: http.HTTPFlow, original_url: str
 ) -> ConnectorResponseParser | None:
     """Compose validated stream observations with the existing X billing policy."""
-    if is_stream_path(urllib.parse.urlparse(original_url).path):
+    if is_stream_path(runtime_url_path(original_url)):
         flow.metadata[metadata_keys.X_RESOURCE_STREAM_REPORTED] = True
 
     def report_row(response: dict, ordinal: int) -> None:
@@ -834,7 +848,7 @@ def _report_usage(
                 event,
                 resp_meta,
                 endpoint_bucket=endpoint_bucket,
-                path=urllib.parse.urlparse(original_url).path,
+                path=runtime_url_path(original_url),
                 observation_time=observation_time,
                 count_endpoint=req_meta["is_count_endpoint"],
             )

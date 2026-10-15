@@ -585,6 +585,12 @@ describe("canonical Discord ingress", () => {
       "`okou discord upload-file -h` can attach a local file to a Discord channel or thread",
     );
     expect(claim.appendSystemPrompt).toContain(
+      'okou discord install-link --invite "<invitation-url>" --json',
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      "Never claim Okou has joined based only on link generation",
+    );
+    expect(claim.appendSystemPrompt).toContain(
       "- Discord files: when the task explicitly asks to share a file in Discord, use `okou discord upload-file --help`",
     );
     expect(claim.appendSystemPrompt).not.toContain(

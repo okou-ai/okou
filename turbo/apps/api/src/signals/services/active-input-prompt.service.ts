@@ -4,7 +4,11 @@ import {
   chatEvents,
   type ChatEventUserMessage,
 } from "@okouai/db/schema/chat-event";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { Db } from "../external/db";
@@ -115,7 +119,7 @@ export const materializeActiveInputSource$ = command(
     source: ActiveInputSourceRow,
     auth: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     if (
       !source.userMessage ||
       (source.eventType !== "input.prompt" &&
@@ -133,6 +137,17 @@ export const materializeActiveInputSource$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (
+      !isFeatureEnabled(
+        FeatureSwitchKey.BuiltinDocumentTemplates,
+        featureSwitchContext,
+      ) &&
+      projectUserMessage(source.userMessage).templates.some((template) => {
+        return template.type === "document";
+      })
+    ) {
+      return null;
+    }
     return await set(
       materializeActiveInputPrompt$,
       db,

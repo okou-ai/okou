@@ -43,13 +43,15 @@ const syncInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   return result;
 });
 
-const uploadArtifactInner$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+function uploadArtifactHandler(
+  route:
+    | typeof artifactGoogleDriveContract.upload
+    | typeof artifactGoogleDriveContract.uploadWithMode,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const { artifactId } = get(
-      pathParamsOf(artifactGoogleDriveContract.upload),
-    );
-    const body = await get(bodyResultOf(artifactGoogleDriveContract.upload));
+    const { artifactId } = get(pathParamsOf(route));
+    const body = await get(bodyResultOf(route));
     signal.throwIfAborted();
     if (!body.ok) {
       return body.response;
@@ -75,8 +77,8 @@ const uploadArtifactInner$ = command(
       },
       signal,
     );
-  },
-);
+  });
+}
 
 export const chatThreadsArtifactsSyncRoutes: readonly RouteEntry[] = [
   {
@@ -88,7 +90,19 @@ export const chatThreadsArtifactsSyncRoutes: readonly RouteEntry[] = [
         requiredCapability: "file:write",
         accept: ["session", "pat", "agent"],
       },
-      uploadArtifactInner$,
+      uploadArtifactHandler(artifactGoogleDriveContract.upload),
+    ),
+  },
+  {
+    route: artifactGoogleDriveContract.uploadWithMode,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "file:write",
+        accept: ["session", "pat", "agent"],
+      },
+      uploadArtifactHandler(artifactGoogleDriveContract.uploadWithMode),
     ),
   },
   {

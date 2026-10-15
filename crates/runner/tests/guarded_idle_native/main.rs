@@ -2,11 +2,14 @@
 
 //! Opt-in packaged-guest terminal saving fixture; see README.md in this directory.
 
+mod continuation;
+mod continuation_api;
 mod evidence;
 mod finalizing;
 mod fixture;
 mod optional;
 mod pressure;
+mod pressure_condition;
 mod refusal;
 mod tail;
 mod transitions;
@@ -40,6 +43,12 @@ use tokio::sync::Notify;
 
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Corpus {
+    Terminal,
+    Continuation,
+}
+
 const MISSING_GUEST_TIMEZONE: &str = "Etc/okou-test-missing-zone";
 
 #[test]
@@ -56,6 +65,140 @@ fn native_report_consumer_validates_external_receipts() {
         "native report contract failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn native_pressure_report_consumer_validates_external_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/pressure_report_test.py"
+        ))
+        .output()
+        .expect("native pressure report contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native pressure report contract failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_continuation_report_consumer_validates_complete_session_receipts() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/continuation_report_test.py"
+        ))
+        .output()
+        .expect("native continuation contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native continuation report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[tokio::test]
+async fn native_continuation_peer_keeps_complete_history_across_both_listeners() -> TestResult<()> {
+    let api = continuation_api::Api::bind(std::net::Ipv4Addr::new(127, 0, 0, 2)).await?;
+    let client_config = |url| runner_provider::http::HttpClientConfig {
+        api_url: url,
+        vercel_bypass: None,
+        client_session_id: "continuation-peer-regression".into(),
+        runner_version: env!("CARGO_PKG_VERSION"),
+    };
+    runner_provider::http::HttpClient::new(client_config(api.host_url.clone()))?;
+    assert!(
+        runner_provider::http::HttpClient::new(client_config("http://10.0.0.1:1234".into()))
+            .is_err()
+    );
+    let http = reqwest::Client::new();
+    let url = api.history_url(continuation::SEED)?;
+    let original = http
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .bytes()
+        .await?;
+    assert_eq!(original.as_ref(), continuation::SEED);
+    let mut complete = original.to_vec();
+    complete.extend_from_slice(b"\ncomplete original native fixture boundary\n");
+    let hash = continuation::digest(&complete);
+    let run = RunId::new_v4().to_string();
+    let prepared: serde_json::Value = http
+        .post(format!(
+            "{}/api/webhooks/agent/session-history/prepare",
+            api.host_url
+        ))
+        .bearer_auth(continuation_api::TOKEN)
+        .json(&serde_json::json!({
+            "runId":run,"hash":hash,"rawSize":complete.len(),
+            "encodedSize":complete.len(),"encoding":"identity"
+        }))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let upload = prepared
+        .get("presignedUrl")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| io::Error::other("native fixture upload preparation missing"))?;
+    http.put(upload)
+        .body(complete.clone())
+        .send()
+        .await?
+        .error_for_status()?;
+    http.post(format!("{}/api/webhooks/agent/complete", api.host_url))
+        .bearer_auth(continuation_api::TOKEN)
+        .json(&serde_json::json!({"runId":run,"exitCode":0,"completion":{
+            "cliAgentSessionId":continuation::THREAD,"cliAgentSessionHistoryHash":hash
+        }}))
+        .send()
+        .await?
+        .error_for_status()?;
+    assert_eq!(api.finalized_history(&run, continuation::THREAD)?, complete);
+    api.finish().await
+}
+
+#[tokio::test]
+async fn native_continuation_peer_rejects_oversized_stream_before_eof() -> TestResult<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let api = continuation_api::Api::bind(std::net::Ipv4Addr::new(127, 0, 0, 2)).await?;
+    let mut stream = tokio::net::TcpStream::connect(
+        api.host_url
+            .strip_prefix("http://")
+            .ok_or_else(|| io::Error::other("native fixture requires an HTTP listener"))?,
+    )
+    .await?;
+    let response = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        stream
+            .write_all(
+                b"POST /api/webhooks/agent/events HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n",
+            )
+            .await?;
+        let chunk = vec![b'x'; 64 * 1024];
+        for _ in 0..64 {
+            stream.write_all(b"10000\r\n").await?;
+            stream.write_all(&chunk).await?;
+            stream.write_all(b"\r\n").await?;
+        }
+        // Cross the 4 MiB limit without sending the terminating zero chunk.
+        // Waiting for EOF before rejecting would retain an unbounded request.
+        stream.write_all(b"1\r\nx\r\n").await?;
+        let mut response = Vec::new();
+        (&mut stream).take(1024).read_to_end(&mut response).await?;
+        Ok::<_, io::Error>(response)
+    })
+    .await;
+    drop(stream);
+    let shutdown = api.finish().await;
+    assert!(response??.starts_with(b"HTTP/1.1 400 "));
+    assert!(shutdown.is_err(), "rejected native input must fail its run");
+    Ok(())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -97,6 +240,51 @@ async fn guarded_terminal_saving_restores_home_without_private_runtime_bytes() -
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires owned KVM/NBD artifacts, compiled source identity and P1 measurement"]
 async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult<()> {
+    measured_corpus(&[
+        NativeScope::Batch(IdleRetirementBatchScope::Exact),
+        NativeScope::Batch(IdleRetirementBatchScope::All),
+        NativeScope::CallerOwned,
+        NativeScope::SpeculativeGuestFailure,
+        NativeScope::FinalizingParked,
+        NativeScope::FinalizingRunning,
+    ])
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real Critical-policy observation and P1 measurement"]
+async fn native_policy_pressure_records_saving_and_free_logical_capacity() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Pressure]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real fitting headroom and P1 measurement"]
+async fn native_logical_pressure_records_replacement_and_required_saving() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Logical]).await
+}
+
+async fn measured_corpus(scopes: &[NativeScope]) -> TestResult<()> {
+    measured_selected_corpus(scopes, Corpus::Terminal).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, synthetic native API, mock Codex and exact-source P1 proof"]
+async fn native_continuation_records_complete_session_history_and_required_saving() -> TestResult<()>
+{
+    measured_selected_corpus(
+        &[
+            NativeScope::Batch(IdleRetirementBatchScope::Exact),
+            NativeScope::Logical,
+            NativeScope::Replacement,
+            NativeScope::Restore,
+            NativeScope::Aged,
+        ],
+        Corpus::Continuation,
+    )
+    .await
+}
+
+async fn measured_selected_corpus(scopes: &[NativeScope], corpus: Corpus) -> TestResult<()> {
     native_logging()?;
     if !nix::unistd::getuid().is_root() {
         return Err(io::Error::other("native terminal corpus requires root").into());
@@ -120,16 +308,9 @@ async fn native_terminal_corpus_records_data_and_phase_ownership() -> TestResult
         host_cpu_placement: None,
     })
     .await?;
-    let scopes = [
-        NativeScope::Batch(IdleRetirementBatchScope::Exact),
-        NativeScope::Batch(IdleRetirementBatchScope::All),
-        NativeScope::CallerOwned,
-        NativeScope::SpeculativeGuestFailure,
-        NativeScope::FinalizingParked,
-        NativeScope::FinalizingRunning,
-    ];
     let result =
-        exercise_selected_factories(&runtime, &base, &inputs, &scopes, Some(&artifacts)).await;
+        exercise_selected_factories(&runtime, &base, &inputs, scopes, Some(&artifacts), corpus)
+            .await;
     if result.is_ok() {
         runtime.shutdown().await;
     }
@@ -193,7 +374,7 @@ async fn exercise_factories(
         NativeScope::FinalizingRunning,
         NativeScope::Pressure,
     ];
-    exercise_selected_factories(runtime, base, inputs, &scopes, None).await
+    exercise_selected_factories(runtime, base, inputs, &scopes, None, Corpus::Terminal).await
 }
 
 async fn exercise_selected_factories(
@@ -202,6 +383,7 @@ async fn exercise_selected_factories(
     inputs: &fixture::Inputs,
     scopes: &[NativeScope],
     artifacts: Option<&evidence::Artifacts>,
+    corpus: Corpus,
 ) -> TestResult<()> {
     for &scope in scopes {
         for restored in [false, true] {
@@ -211,7 +393,19 @@ async fn exercise_selected_factories(
             let proof = artifacts
                 .map(|artifacts| {
                     evidence::Case::new(
-                        format!("{scope:?}-{}", if restored { "snapshot" } else { "fresh" }),
+                        format!(
+                            "{}-{}",
+                            if corpus == Corpus::Continuation {
+                                if matches!(scope, NativeScope::Batch(_)) {
+                                    "ContinuationNonzero".into()
+                                } else {
+                                    format!("Continuation{scope:?}")
+                                }
+                            } else {
+                                format!("{scope:?}")
+                            },
+                            if restored { "snapshot" } else { "fresh" }
+                        ),
                         artifacts.clone(),
                     )
                 })
@@ -245,8 +439,15 @@ async fn exercise_selected_factories(
                 factory
             };
             let factory = Arc::new(factory);
-            let result =
-                exercise_retirement(factory.clone(), paths, inputs, scope, proof.as_ref()).await;
+            let result = exercise_retirement(
+                factory.clone(),
+                paths,
+                inputs,
+                scope,
+                proof.as_ref(),
+                corpus,
+            )
+            .await;
             // A failed measured case is not permission to tear down dependencies
             // or delete its files. Accepted cleanup retains its own factory owner.
             if proof.is_some() {
@@ -278,6 +479,7 @@ async fn exercise_retirement(
     inputs: &fixture::Inputs,
     scope: NativeScope,
     proof: Option<&Arc<evidence::Case>>,
+    corpus: Corpus,
 ) -> TestResult<()> {
     let status = Arc::new(StatusTracker::new(
         paths.base_dir().join("status.json"),
@@ -286,7 +488,7 @@ async fn exercise_retirement(
         None,
     ));
     status.write_initial().await?;
-    let cache = HomeImageCache::new(paths);
+    let cache = HomeImageCache::new(paths.clone());
     let run_id = RunId::new_v4();
     let sandbox_id = SandboxId::new_v4();
     let reuse_key = format!("thread:native-guarded-{run_id}");
@@ -295,24 +497,97 @@ async fn exercise_retirement(
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
     let operations = inputs.operations()?;
-    let mut home = fixture::checkout(&cache, run_id, sandbox_id, &reuse_key, &rootfs_hash).await;
-    let mut sandbox = factory
-        .create(fixture::sandbox_config(sandbox_id, &mut home))
-        .await?;
-    let prepared = fixture::prepare_guest(&mut *sandbox, run_id).await;
-    if let Err(error) = prepared {
-        factory.destroy(sandbox).await;
-        return Err(error);
-    }
     let (vcpu, memory) = match scope {
-        NativeScope::Replacement | NativeScope::Restore => (4, 8192),
+        NativeScope::Pressure => (6, 12288),
+        NativeScope::Replacement | NativeScope::Restore => (6, 12288),
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
         }
         _ => (2, 4096),
     };
     let budget = Arc::new(ResourceBudget::new(vcpu, memory, 1.0, 0));
-    if let Some(proof) = proof {
+    let mut first_lease = None;
+    let mut session_identity = None;
+    let mut original_history = Vec::new();
+    let mut storage_fingerprints = StorageFingerprints::default();
+    let mut original_exit = 0;
+    let mut continuation_fixture = None;
+    let (mut sandbox, home) = if corpus == Corpus::Continuation {
+        let proof = proof
+            .ok_or_else(|| io::Error::other("native continuation requires measured owners"))?;
+        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096)
+            .ok_or_else(|| io::Error::other("native original full lease unavailable"))?;
+        proof.bind_original_lease(&lease)?;
+        proof.retain(operations.clone());
+        proof.retain(factory.clone());
+        let continuation = continuation::Fixture::new(
+            &paths,
+            cache.clone(),
+            rootfs_hash.clone(),
+            proof.clone(),
+            matches!(scope, NativeScope::Batch(_)),
+        )
+        .await?;
+        let result = continuation
+            .execute(continuation::Execution {
+                factory: factory.clone(),
+                operations: operations.clone(),
+                inputs,
+                run: run_id,
+                id: sandbox_id,
+                key: reuse_key.clone(),
+                history: continuation::SEED.to_vec(),
+                original: run_id,
+                continued: false,
+                require_bound_history: false,
+            })
+            .await;
+        let mut prepared = match result {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                proof.retain(lease);
+                proof.retain(continuation);
+                return Err(error);
+            }
+        };
+        original_exit = prepared.exit_code;
+        storage_fingerprints = prepared.storage.clone();
+        session_identity = prepared.identity.clone();
+        first_lease = Some(lease);
+        let backing = prepared
+            .sandbox
+            .backing_process()
+            .ok_or_else(|| io::Error::other("native original backing unavailable"))?;
+        proof.bind(sandbox_id.to_string(), backing, budget.clone())?;
+        continuation.record_original(run_id, &prepared)?;
+        original_history = std::mem::take(&mut prepared.history);
+        continuation_fixture = Some(continuation);
+        (prepared.sandbox, prepared.home)
+    } else {
+        let mut home =
+            fixture::checkout(&cache, run_id, sandbox_id, &reuse_key, &rootfs_hash).await;
+        let mut sandbox = factory
+            .create(fixture::sandbox_config(sandbox_id, &mut home))
+            .await?;
+        if let Err(error) = fixture::prepare_guest(&mut *sandbox, run_id).await {
+            factory.destroy(sandbox).await;
+            return Err(error);
+        }
+        (sandbox, home)
+    };
+    if corpus == Corpus::Continuation
+        && let Err(error) = fixture::prepare_started_guest(&mut *sandbox, run_id).await
+    {
+        if let Some(proof) = proof {
+            proof.retain(sandbox);
+            proof.retain(home);
+            proof.retain(first_lease);
+        }
+        return Err(error);
+    }
+    if let Some(proof) = proof
+        && corpus == Corpus::Terminal
+    {
         let backing = sandbox
             .backing_process()
             .ok_or_else(|| io::Error::other("native receipt has no backing"))?;
@@ -351,28 +626,48 @@ async fn exercise_retirement(
         if sandbox.park().await? != SandboxParkOutcome::Reusable {
             return Err(io::Error::other("native fixture could not physically park").into());
         }
-        let promotion = home
-            .into_promotion_context(HomeImagePromotionRequest {
-                run_id,
-                sandbox_id,
-                restored_session_identity: None,
-                terminal_status: HomeCacheTerminalStatus::Success,
-                completed_at: chrono::Utc::now().to_rfc3339(),
-                storage_fingerprints: StorageFingerprints::default(),
-            })
-            .ok_or_else(|| io::Error::other("native fixture could not own home saving"))?;
-        let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).ok_or_else(|| {
-            io::Error::other("native fixture could not acquire its logical lease")
-        })?;
-        Ok((backing, promotion, lease))
+        let lease = if corpus == Corpus::Continuation {
+            first_lease.take()
+        } else {
+            ResourceBudget::try_reserve_lease(&budget, 2, 4096)
+        }
+        .ok_or_else(|| io::Error::other("native fixture could not acquire its logical lease"))?;
+        Ok((backing, lease))
     }
     .await;
-    let (backing, promotion, lease) = match parked {
+    let (backing, lease) = match parked {
         Ok(parked) => parked,
         Err(error) => {
-            factory.destroy(sandbox).await;
+            if let Some(proof) = proof {
+                proof.retain(sandbox);
+                proof.retain(home);
+                proof.retain(first_lease);
+            } else {
+                factory.destroy(sandbox).await;
+            }
             return Err(error);
         }
+    };
+    let promotion = home.into_promotion_context(HomeImagePromotionRequest {
+        run_id,
+        sandbox_id,
+        restored_session_identity: session_identity.as_ref(),
+        terminal_status: if original_exit == 0 {
+            HomeCacheTerminalStatus::Success
+        } else {
+            HomeCacheTerminalStatus::NonzeroExit
+        },
+        completed_at: chrono::Utc::now().to_rfc3339(),
+        storage_fingerprints: storage_fingerprints.clone(),
+    });
+    let Some(promotion) = promotion else {
+        if let Some(proof) = proof {
+            proof.retain(sandbox);
+            proof.retain(lease);
+        } else {
+            factory.destroy(sandbox).await;
+        }
+        return Err(io::Error::other("native fixture could not own home saving").into());
     };
     let mut pool = IdlePool::new(IdlePoolConfig {
         max_idle: if matches!(scope, NativeScope::OptionalOrdinary) {
@@ -382,7 +677,7 @@ async fn exercise_retirement(
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    let mut candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
+    let candidate = ParkedIdleCandidateBuilder::new(&reuse_key, lease)
         .with_sandbox(sandbox)
         .with_factory(factory.clone())
         .with_sandbox_id(sandbox_id)
@@ -390,8 +685,18 @@ async fn exercise_retirement(
         .with_rootfs_hash(&rootfs_hash)
         .with_history_generation_run_id(run_id)
         .with_home_promotion(promotion)
-        .build();
+        .with_storage_fingerprints(storage_fingerprints);
+    let candidate = if let Some(identity) = session_identity {
+        candidate.with_restored_session_identity(identity)
+    } else {
+        candidate
+    };
+    let mut candidate = candidate.build();
     if let Err(error) = candidate.capture_retirement_backing() {
+        if let Some(proof) = proof {
+            proof.retain(candidate);
+            return Err(error.into());
+        }
         // Explicit disposal of this invocation's native fixture, never a
         // production guarded-admission fallback.
         let (payload, lease) = candidate.into_active_destroy_parts();
@@ -415,6 +720,36 @@ async fn exercise_retirement(
         proof.retain(pool.clone());
         proof.retain(tracker.clone());
         proof.retain(operations.clone());
+        if corpus == Corpus::Continuation {
+            let policy = inputs.pressure_policy()?;
+            let observation = operations.observe_pressure().await;
+            let now = tokio::time::Instant::now();
+            let available = observation.available_bytes_at(now, policy.max_sample_age)?;
+            let required = policy
+                .bounds
+                .operating_floor_bytes
+                .checked_add(policy.bounds.cleanup_reserve_bytes)
+                .and_then(|v| v.checked_add(4 * 1024 * 1024 * 1024))
+                .and_then(|v| v.checked_add(inputs.preparation_bytes()))
+                .ok_or_else(|| io::Error::other("native continuation headroom overflow"))?;
+            if available < required || available < policy.bounds.recovery_available_bytes {
+                return Err(io::Error::other(
+                    "actual native continuation lacks fitting supplied headroom",
+                )
+                .into());
+            }
+            proof.continuation_witness("scenario_observed",serde_json::json!({
+                "policy":serde_json::to_value(inputs)?,"available_bytes":available,
+                "age_ns":u64::try_from(observation.age_at(now).ok_or_else(||io::Error::other("native sample is in the future"))?.as_nanos())?,
+                "read_duration_ns":u64::try_from(observation.read_duration().as_nanos())?,
+                "allocated":budget.allocated(),"profile_can_fit":budget.can_afford(2,4096),
+            }))?;
+        }
+        if corpus == Corpus::Terminal
+            && matches!(scope, NativeScope::Pressure | NativeScope::Logical)
+        {
+            pressure_condition::observe(&operations, &budget, inputs, scope, proof).await?;
+        }
         proof.event("terminal_started", serde_json::json!({}))?;
     }
     let retirement: TestResult<_> = async {
@@ -428,7 +763,7 @@ async fn exercise_retirement(
                 Ok(None)
             }
             NativeScope::Pressure => {
-                pressure::exercise(&pool, &status, &tracker, &operations, inputs).await?;
+                pressure::exercise(&pool, &status, &tracker, &operations, inputs, proof).await?;
                 Ok(None)
             }
             NativeScope::FinalizingParked | NativeScope::FinalizingRunning => Err(io::Error::other("finalizing scope did not enter its producer transition").into()),
@@ -606,52 +941,85 @@ async fn exercise_retirement(
                 };
                 assert_eq!((lease.vcpu(), lease.memory_mb()), (2, 4096));
                 assert_eq!(result.retirements.len(), 1);
-                // Prepare a different guest before joining old cleanup. Ordinary
-                // external gates establish still-live overlap, without timing claims.
-                let next_factory = factory.clone();
-                let next_cache = cache.clone();
-                let next_rootfs = rootfs_hash.clone();
-                let work = permit.spawn(move |mut operation| async move {
-                    let next_run = RunId::new_v4();
-                    let next_id = SandboxId::new_v4();
-                    let key = format!("thread:native-logical-replacement-{next_run}");
-                    let mut home =
-                        fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
-                    let mut next = next_factory
-                        .create(fixture::sandbox_config(next_id, &mut home))
-                        .await?;
-                    let prepared: TestResult<()> = async {
-                        let backing = next
-                            .backing_process()
-                            .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
-                        operation.bind_backing(backing)?;
-                        fixture::prepare_guest(&mut *next, next_run).await?;
-                        loop {
-                            match operation.complete_phase().await {
-                                Ok(()) => break,
-                                Err(MemoryOperationError::AccountingChanged) => {
-                                    tokio::task::yield_now().await
+                let completed: TestResult<()> = async {
+                    // Prepare a different guest before joining old cleanup;
+                    // this adds no old-exit barrier or still-live overlap claim.
+                    let next_factory = factory.clone();
+                    let next_cache = cache.clone();
+                    let next_rootfs = rootfs_hash.clone();
+                    let next_proof = proof.cloned();
+                    let work = permit.spawn(move |mut operation| async move {
+                        let next_run = RunId::new_v4();
+                        let next_id = SandboxId::new_v4();
+                        let key = format!("thread:native-logical-replacement-{next_run}");
+                        let mut home =
+                            fixture::checkout(&next_cache, next_run, next_id, &key, &next_rootfs).await;
+                        let mut next = next_factory
+                            .create(fixture::sandbox_config(next_id, &mut home))
+                            .await?;
+                        let prepared: TestResult<()> = async {
+                            // The Fresh operation covers startup; Firecracker exposes
+                            // its backing only after the process has started.
+                            fixture::start_guest(&mut *next, next_run).await?;
+                            let backing = next
+                                .backing_process()
+                                .ok_or_else(|| io::Error::other("replacement supplied no backing"))?;
+                            operation.bind_backing(backing)?;
+                            fixture::prepare_started_guest(&mut *next, next_run).await?;
+                            loop {
+                                match operation.complete_phase().await {
+                                    Ok(()) => break,
+                                    Err(MemoryOperationError::AccountingChanged) => {
+                                        tokio::task::yield_now().await
+                                    }
+                                    Err(error) => return Err(error.into()),
                                 }
-                                Err(error) => return Err(error.into()),
                             }
+                            if let Some(proof) = &next_proof
+                                && corpus == Corpus::Terminal {
+                                proof.pressure_witness(
+                                    "different_guest_prepared",
+                                    serde_json::json!({
+                                        "incoming_sandbox_id": next_id.to_string(),
+                                        "admitted": true,
+                                    }),
+                                )?;
+                                }
+                            Ok(())
                         }
-                        Ok(())
+                        .await;
+                        next_factory.destroy(next).await;
+                        prepared
+                    })?;
+                    work.join().await??;
+                    if let Some(proof) = proof
+                        && corpus == Corpus::Terminal {
+                        proof.pressure_witness(
+                            "original_join_requested",
+                            serde_json::json!({"retirements": result.retirements.len()}),
+                        )?;
+                        }
+                    for task in &mut result.retirements {
+                        let completion = task.join().await??;
+                        if completion.outcome != DestroyOutcome::Completed
+                            || !completion.home_cache_promoted
+                        {
+                            return Err(io::Error::other(
+                                "native logical retirement did not prove complete saving",
+                            )
+                            .into());
+                        }
                     }
-                    .await;
-                    next_factory.destroy(next).await;
-                    prepared
-                })?;
-                work.join().await??;
-                for task in &mut result.retirements {
-                    let completion = task.join().await??;
-                    if completion.outcome != DestroyOutcome::Completed
-                        || !completion.home_cache_promoted
-                    {
-                        return Err(io::Error::other(
-                            "native logical retirement did not prove complete saving",
-                        )
-                        .into());
+                    Ok(())
+                }
+                .await;
+                if let Err(error) = completed {
+                    if let Some(proof) = proof {
+                        // Accepted saving can outlive failed replacement work.
+                        // Preserve its complete original lease with the owners.
+                        proof.retain(lease);
                     }
+                    return Err(error);
                 }
                 Ok(Some(lease))
             }
@@ -678,10 +1046,37 @@ async fn exercise_retirement(
     assert!(pool.lock().await.is_empty());
     assert!(backing.exit_confirmed().await);
     tracker.close_and_wait().await;
-    let report = operations.close_and_wait().await?;
-    assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
     drop(logical_lease);
     assert_eq!(budget.allocated(), (0, 0, 0));
+    if let Some(continuation) = continuation_fixture {
+        let continued_tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
+        if let Some(proof) = proof {
+            proof.retain(continued_tracker.clone());
+        }
+        continuation
+            .continue_and_save(continuation::Saving {
+                factory: factory.clone(),
+                operations: &operations,
+                inputs,
+                budget: &budget,
+                tracker: &continued_tracker,
+                status: &status,
+                key: &reuse_key,
+                original: run_id,
+                history: &original_history,
+            })
+            .await?;
+        continued_tracker.close_and_wait().await;
+        let report = operations.close_and_wait().await?;
+        assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
+        assert_eq!(budget.allocated(), (0, 0, 0));
+        let continuation = Arc::try_unwrap(continuation)
+            .map_err(|_| io::Error::other("native continuation still has accepted work"))?;
+        continuation.finish().await?;
+        return Ok(());
+    }
+    let report = operations.close_and_wait().await?;
+    assert_eq!((report.registered_operations, report.tracked_tasks), (0, 0));
     let next_run = RunId::new_v4();
     let next_id = SandboxId::new_v4();
     let mut restored = fixture::checkout(&cache, next_run, next_id, &reuse_key, &rootfs_hash).await;

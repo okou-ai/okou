@@ -68,19 +68,27 @@ async function openTelemetryTestDatabase() {
 
 async function capturedEvents(
   expectedCount: number,
+  name?: string,
 ): Promise<readonly Record<string, unknown>[]> {
+  const observed = () => {
+    return axiomTelemetry.ingest.mock.calls
+      .map(([dataset, events]) => {
+        expect(dataset).toBe("vm0-client-telemetry-prod");
+        expect(events).toHaveLength(1);
+        return events[0]!;
+      })
+      .filter((event) => {
+        return name === undefined || event.name === name;
+      });
+  };
   await vi.waitFor(() => {
-    expect(axiomTelemetry.ingest).toHaveBeenCalledTimes(expectedCount);
+    expect(observed()).toHaveLength(expectedCount);
   });
-  return axiomTelemetry.ingest.mock.calls.map(([dataset, events]) => {
-    expect(dataset).toBe("vm0-client-telemetry-prod");
-    expect(events).toHaveLength(1);
-    return events[0]!;
-  });
+  return observed();
 }
 
-async function capturedEvent(): Promise<Record<string, unknown>> {
-  const events = await capturedEvents(1);
+async function capturedEvent(name?: string): Promise<Record<string, unknown>> {
+  const events = await capturedEvents(1, name);
   return events[0]!;
 }
 
@@ -344,7 +352,10 @@ test("Reports typed API requests with route templates and no parameters", async 
     }),
   ).resolves.toMatchObject({ status: 200 });
 
-  const event = await capturedEvent();
+  // Auth lifecycle point records coexist with the unchanged HTTP RED record.
+  const event = await capturedEvent(
+    "GET /api/chat-threads/:threadId/event-rows",
+  );
   expect(event).toMatchObject({
     "attributes.custom": {
       "okou.client.outcome": "success",
@@ -385,7 +396,9 @@ test("Reports API server failures as RED errors", async () => {
 
   await expect(client.get()).resolves.toMatchObject({ status: 500 });
 
-  await expect(capturedEvent()).resolves.toMatchObject({
+  await expect(
+    capturedEvent("GET /api/feature-switches"),
+  ).resolves.toMatchObject({
     "attributes.custom": {
       "okou.client.outcome": "error",
     },

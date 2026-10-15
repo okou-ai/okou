@@ -127,59 +127,41 @@ function identitySelection() {
   };
 }
 
-async function loadExactRows(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly requests: readonly ConnectorAccountResolutionRequest[];
-  },
-): Promise<readonly ConnectorAccountIdentityRow[]> {
-  const sourceIds = args.requests.flatMap((request) => {
+export function connectorAccountResolutionReadPlan(args: {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly requests: readonly ConnectorAccountResolutionRequest[];
+}) {
+  const requests = [...normalizeRequests(args.requests).values()];
+  const sourceIds = requests.flatMap((request) => {
     return request.selection.kind === "exact"
       ? [request.selection.sourceId]
       : [];
   });
-  if (sourceIds.length === 0) {
-    return [];
-  }
-  return await db
-    .select(identitySelection())
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        inArray(connectors.id, sourceIds),
-      ),
-    );
-}
-
-async function loadDefaultRows(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly requests: readonly ConnectorAccountResolutionRequest[];
-  },
-): Promise<readonly ConnectorAccountIdentityRow[]> {
-  const targets = args.requests.flatMap((request) => {
+  const targets = requests.flatMap((request) => {
     return request.selection.kind === "default" ? [request.target] : [];
   });
-  if (targets.length === 0) {
-    return [];
-  }
-  return await db
-    .select(identitySelection())
-    .from(connectors)
-    .where(
-      and(
-        eq(connectors.orgId, args.orgId),
-        eq(connectors.userId, args.userId),
-        eq(connectors.isDefault, true),
-        targetCondition(targets),
-      ),
-    );
+  return {
+    requests,
+    columns: identitySelection(),
+    exactWhere:
+      sourceIds.length > 0
+        ? and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            inArray(connectors.id, sourceIds),
+          )
+        : undefined,
+    defaultWhere:
+      targets.length > 0
+        ? and(
+            eq(connectors.orgId, args.orgId),
+            eq(connectors.userId, args.userId),
+            eq(connectors.isDefault, true),
+            targetCondition(targets),
+          )
+        : undefined,
+  };
 }
 
 function rowsByTarget(
@@ -218,17 +200,20 @@ export async function resolveConnectorAccounts(
     readonly requests: readonly ConnectorAccountResolutionRequest[];
   },
 ): Promise<ReadonlyMap<string, ConnectorAccountResolution>> {
-  const requests = normalizeRequests(args.requests);
-  if (requests.size === 0) {
+  const plan = connectorAccountResolutionReadPlan(args);
+  if (plan.requests.length === 0) {
     return new Map();
   }
-  const normalizedRequests = [...requests.values()];
   const [exactRows, defaultRows] = await Promise.all([
-    loadExactRows(db, { ...args, requests: normalizedRequests }),
-    loadDefaultRows(db, { ...args, requests: normalizedRequests }),
+    plan.exactWhere
+      ? db.select(plan.columns).from(connectors).where(plan.exactWhere)
+      : [],
+    plan.defaultWhere
+      ? db.select(plan.columns).from(connectors).where(plan.defaultWhere)
+      : [],
   ]);
   return connectorAccountResolutionsFromRows({
-    requests: normalizedRequests,
+    requests: plan.requests,
     exactRows,
     defaultRows,
   });

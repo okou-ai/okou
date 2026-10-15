@@ -20,6 +20,19 @@ const cgroup = z
   .regex(
     /^\/vm0-exec\/exec-[0-9-]+\/workload(?:\/(?:runtime|tools(?:\/tool-[0-9-]+)?))?$/,
   );
+// Match guest-contracts::managed_task::owned_task_path, including canonical
+// lowercase UUIDs that are not restricted to a particular UUID version.
+const taskHandle =
+  "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const managedTaskCgroup = z
+  .string()
+  .max(256)
+  .regex(
+    new RegExp(
+      String.raw`^/vm0-exec/exec-[0-9-]+/workload(?:/tools/task-${taskHandle})+(?:/(?:runtime|tools(?:/tool-[0-9]{1,20})?))?$(?![\s\S])`,
+    ),
+  );
+const kernelCgroup = z.union([cgroup, managedTaskCgroup]);
 const limit = z
   .string()
   .max(20)
@@ -73,7 +86,7 @@ const kernelEvent = z
     ]),
     oom_cgroup: z
       .union([
-        cgroup,
+        kernelCgroup,
         z.string().regex(/^(?:\/|\/vm0-exec(?:\/exec-[0-9-]+)?)$/),
       ])
       .nullable(),
@@ -89,7 +102,7 @@ const kernelEvent = z
         });
       }),
     task_cgroup: z.union([
-      cgroup,
+      kernelCgroup,
       z
         .string()
         .max(256)

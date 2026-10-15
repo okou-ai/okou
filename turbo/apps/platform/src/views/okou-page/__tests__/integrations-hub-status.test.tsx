@@ -1,5 +1,6 @@
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { integrationsGithubContract } from "@okouai/api-contracts/contracts/integrations-github";
+import { integrationsSlackContract } from "@okouai/api-contracts/contracts/integrations-slack";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -103,6 +104,42 @@ test("Integrations show current status and refresh after GitHub connects", async
   ).resolves.toBeInTheDocument();
 });
 
+test.each([true, false])(
+  "Slack keeps account disconnect in its overflow menu (admin: %s)",
+  async (isAdmin) => {
+    let isConnected = true;
+    context.mocks.api(integrationsSlackContract.getStatus, ({ respond }) => {
+      return respond(200, {
+        isConnected,
+        isInstalled: true,
+        isAdmin,
+        installUrl: null,
+        connectUrl: "https://slack.com/oauth/v2/authorize?state=reconnect",
+        reinstallUrl: null,
+        scopeMismatch: false,
+        workspaceName: "Okou HQ",
+      });
+    });
+    context.mocks.api(integrationsSlackContract.disconnect, ({ respond }) => {
+      isConnected = false;
+      return respond(200, { ok: true });
+    });
+    await setupIntegrationsPage(context);
+    const card = getIntegrationCard("Slack");
+    expect(within(card).getByText("Connected (Okou HQ)")).toBeInTheDocument();
+    expect(queryAction("button", "Disconnect", card)).toBeNull();
+    click(getAction("button", "More options", card));
+    expect(queryAction("button", "Uninstall") !== null).toBe(isAdmin);
+    click(getAction("button", "Disconnect"));
+    await waitFor(() => {
+      expect(getAction("button", "Connect", card)).toBeEnabled();
+    });
+    expect(within(card).queryByText("Connected (Okou HQ)")).toBeNull();
+    expect(queryAction("button", "Disconnect")).toBeNull();
+    expect(window.location.pathname).toBe("/works");
+  },
+);
+
 test("A workspace member is directed to an admin for GitHub installation", async () => {
   mockSlack(context, { isConnected: true, isInstalled: true, isAdmin: false });
   context.mocks.api(
@@ -181,16 +218,11 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   await setupIntegrationsPage(context);
 
   await expect(screen.findByText("Telegram")).resolves.toBeInTheDocument();
-  click(getAction("link", "Open Telegram settings"));
-
-  await expect(
-    waitFor(() => {
-      return getAction("link", "Back to integrations");
-    }),
-  ).resolves.toBeInTheDocument();
-
+  const telegramCard = getIntegrationCard("Telegram");
   const connect = await waitFor(() => {
-    return getAction("button", "Connect");
+    const button = getAction("button", "Connect", telegramCard);
+    expect(button).toBeEnabled();
+    return button;
   });
   expect(connect).toBeEnabled();
   click(connect);
@@ -224,8 +256,8 @@ test("Authorize the official Telegram bot directly in a new tab from Integration
   await expect(
     screen.findByText("Connected (@alice)"),
   ).resolves.toBeInTheDocument();
-  expect(pathname()).toBe("/settings/telegram");
-  expect(getAction("link", "Back to integrations")).toBeInTheDocument();
+  expect(pathname()).toBe("/works");
+  expect(queryAction("button", "Connect", telegramCard)).toBeNull();
 });
 
 test("The shared phone card and connect dialog display digits instead of a vanity number", async () => {

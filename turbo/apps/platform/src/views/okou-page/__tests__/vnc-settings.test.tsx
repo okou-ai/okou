@@ -199,6 +199,466 @@ async function openAddHostPage() {
   );
 }
 
+test("VNC settings show a current-generation failure and its observation time", async () => {
+  mockSettings();
+  let failed = true;
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "authentication_failed" : null,
+        },
+      ],
+    });
+  });
+  await page();
+  const failure = await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  expect(failure).toBeInTheDocument();
+  const card = failure.closest("article");
+  if (!card) {
+    throw new Error("Expected a VNC host card");
+  }
+  expect(within(card).getByText(/^Observed /)).toHaveAttribute(
+    "datetime",
+    "2026-10-14T00:00:00.000Z",
+  );
+  expect(within(card).getByText("Configured")).toBeInTheDocument();
+  await screen.findByRole("status", { name: "1 VNC host needs attention" });
+  failed = false;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: "another-org",
+  });
+  expect(failure).toBeInTheDocument();
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).not.toBeInTheDocument();
+  expect(within(card).getByText("Configured")).toBeInTheDocument();
+});
+
+test.each([
+  {
+    name: "generation",
+    generation: host.generation - 1,
+    createdAt: host.createdAt,
+  },
+  {
+    name: "creation instance",
+    generation: host.generation,
+    createdAt: "2026-08-01T00:00:00.000Z",
+  },
+])(
+  "VNC settings do not render a previous $name's failure as current",
+  async ({ generation, createdAt }) => {
+    mockSettings({
+      connections: [host, plainHost],
+      credentials: [credential, plainCredential],
+    });
+    context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: createdAt,
+            generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+          {
+            connectionId: plainHost.id,
+            connectionCreatedAt: plainHost.createdAt,
+            generation: plainHost.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "network_failure",
+          },
+        ],
+      });
+    });
+    await page();
+    await screen.findByText("The connection transport failed.");
+    expect(screen.getAllByText("Configured")).toHaveLength(2);
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "1 VNC host needs attention" }),
+    ).toBeInTheDocument();
+  },
+);
+
+test("VNC settings refresh observations when their SSH carrier changes", async () => {
+  const data = mockSettings({
+    connections: [tunneledHost],
+    sshConnections: [sshHost],
+  });
+  let currentCarrier = true;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
+  await page();
+  await expect(
+    screen.findByText("Authentication or server identity verification failed."),
+  ).resolves.toBeInTheDocument();
+  currentCarrier = false;
+  data.sshConnections = [{ ...sshHost, generation: sshHost.generation + 1 }];
+  context.mocks.ably.trigger("ssh:changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await started.promise;
+  try {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  } finally {
+    release.resolve();
+  }
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("Configured")).toBeInTheDocument();
+});
+
+test("A local SSH carrier reset invalidates retained VNC diagnostics before realtime delivery", async () => {
+  const data = mockSettings({
+    connections: [tunneledHost],
+    sshConnections: [
+      {
+        ...sshHost,
+        learnedHostKey: {
+          algorithm: "ssh-ed25519",
+          fingerprint: "SHA256:fixture",
+        },
+      },
+    ],
+  });
+  let currentCarrier = true;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (!currentCarrier) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: currentCarrier
+          ? [
+              {
+                connectionId: tunneledHost.id,
+                connectionCreatedAt: tunneledHost.createdAt,
+                generation: tunneledHost.generation,
+                observedAt: "2026-10-14T00:00:00.000Z",
+                failureReason: "authentication_failed",
+              },
+            ]
+          : [],
+      });
+    },
+  );
+  context.mocks.api(sshConnectionsContract.resetHostKey, ({ respond }) => {
+    currentCarrier = false;
+    const updated = { ...sshHost, generation: sshHost.generation + 1 };
+    data.sshConnections = [updated];
+    return respond(200, updated);
+  });
+  await page("/connectors?scope=remote-control");
+  await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  click(getAction("button", "Reset host key"));
+  const dialog = await screen.findByRole("dialog", { name: "Reset host key" });
+  click(getAction("button", "Reset host key", dialog));
+  try {
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+    await started.promise;
+  } finally {
+    release.resolve();
+  }
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeNull();
+  expect(screen.getByText(tunneledHost.displayName)).toBeInTheDocument();
+});
+
+test("VNC settings distinguish successful and unobserved hosts from failed hosts", async () => {
+  const failedHost = {
+    ...host,
+    id: "b0000000-0000-4000-8000-000000000005",
+    displayName: "Failed workstation",
+  };
+  mockSettings({
+    connections: [host, plainHost, failedHost],
+    credentials: [credential, plainCredential],
+  });
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: null,
+        },
+        {
+          connectionId: failedHost.id,
+          connectionCreatedAt: failedHost.createdAt,
+          generation: failedHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: "network_failure",
+        },
+      ],
+    });
+  });
+  await page();
+  const failure = await screen.findByText("The connection transport failed.");
+  expect(
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
+  expect(screen.getAllByText("Configured")).toHaveLength(3);
+  const failedCard = failure.closest("article");
+  if (!failedCard) {
+    throw new Error("Expected a VNC host card");
+  }
+  expect(
+    within(failedCard).getByText(failedHost.displayName),
+  ).toBeInTheDocument();
+  for (const connection of [host, plainHost]) {
+    const card = screen.getByText(connection.displayName).closest("article");
+    if (!card) {
+      throw new Error("Expected a VNC host card");
+    }
+    expect(within(card).queryByRole("status")).toBeNull();
+    expect(within(card).getByText("Configured")).toBeInTheDocument();
+  }
+});
+
+test.each([404, 500] as const)(
+  "VNC settings keep configured hosts with unavailable diagnostics from API %s",
+  async (status) => {
+    mockSettings();
+    context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+      return respond(status, {
+        error: { code: "UNAVAILABLE", message: "Not available" },
+      });
+    });
+    await page();
+    await expect(
+      screen.findByRole("status", {
+        name: "VNC connection status is unavailable",
+      }),
+    ).resolves.toBeInTheDocument();
+    expect(screen.getByText(host.displayName)).toBeInTheDocument();
+    expect(screen.queryByRole("status", { name: /VNC.*attention/ })).toBeNull();
+  },
+);
+
+test("VNC settings retain the current owner's warning while observations refresh", async () => {
+  mockSettings();
+  let refreshing = false;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (refreshing) {
+        started.resolve();
+        await release.promise;
+      }
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
+            generation: host.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: refreshing ? null : "authentication_failed",
+          },
+        ],
+      });
+    },
+  );
+  await page();
+  const failure = await screen.findByText(
+    "Authentication or server identity verification failed.",
+  );
+  refreshing = true;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await started.promise;
+  expect(failure).toBeInTheDocument();
+  expect(
+    screen.getByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeInTheDocument();
+  release.resolve();
+  await waitFor(() => {
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+  ).toBeNull();
+});
+
+test("VNC settings never retain the previous owner's diagnostic warning", async () => {
+  const data = mockSettings();
+  let changedOwner = false;
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  context.mocks.api(
+    vncConnectionsContract.observations,
+    async ({ respond }) => {
+      if (changedOwner) {
+        started.resolve();
+        await release.promise;
+        return respond(200, { observations: [] });
+      }
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: host.createdAt,
+            generation: host.generation,
+            observedAt: "2026-10-14T00:00:00.000Z",
+            failureReason: "authentication_failed",
+          },
+        ],
+      });
+    },
+  );
+  await page();
+  await screen.findByRole("status", { name: "1 VNC host needs attention" });
+  changedOwner = true;
+  data.connections = [plainHost];
+  const clerk = context.mocks.clerk();
+  act(() => {
+    clerk.user(
+      { id: "other-vnc-owner", fullName: "Other Owner" },
+      { token: "other-token" },
+    );
+    clerk.stateChanged();
+  });
+  await started.promise;
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "1 VNC host needs attention" }),
+    ).toBeNull();
+    expect(
+      screen.queryByText(
+        "Authentication or server identity verification failed.",
+      ),
+    ).not.toBeInTheDocument();
+  });
+  release.resolve();
+  await screen.findByText(plainHost.displayName);
+});
+
+test("VNC settings summarize failed hosts and clear attention after recovery", async () => {
+  const recoveredHost = {
+    ...host,
+    id: "b0000000-0000-4000-8000-000000000004",
+    displayName: "Recovery workstation",
+  };
+  mockSettings({ connections: [host, plainHost, recoveredHost] });
+  let failed = true;
+  context.mocks.api(vncConnectionsContract.observations, ({ respond }) => {
+    return respond(200, {
+      observations: [
+        {
+          connectionId: host.id,
+          connectionCreatedAt: host.createdAt,
+          generation: host.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "authentication_failed" : null,
+        },
+        {
+          connectionId: plainHost.id,
+          connectionCreatedAt: plainHost.createdAt,
+          generation: plainHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: failed ? "network_failure" : null,
+        },
+        {
+          connectionId: recoveredHost.id,
+          connectionCreatedAt: recoveredHost.createdAt,
+          generation: recoveredHost.generation,
+          observedAt: "2026-10-14T00:00:00.000Z",
+          failureReason: null,
+        },
+      ],
+    });
+  });
+  await page();
+  await screen.findByRole("status", { name: "2 VNC hosts need attention" });
+  expect(screen.getByText(recoveredHost.displayName)).toBeInTheDocument();
+  failed = false;
+  context.mocks.ably.trigger("vnc:observations-changed", {
+    orgId: auth.organization.activeOrg.id,
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "2 VNC hosts need attention" }),
+    ).toBeNull();
+  });
+  expect(screen.getAllByText("Configured")).toHaveLength(3);
+});
+
 test("VNC host settings update the chat remote access default", async () => {
   mockSettings();
   let enabled = false;

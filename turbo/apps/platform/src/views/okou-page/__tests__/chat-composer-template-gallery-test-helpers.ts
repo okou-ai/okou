@@ -24,6 +24,7 @@ import {
 } from "./chat-composer-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
+import { click } from "../../../__tests__/page-helper.ts";
 
 export { AGENT_ID, THREAD_ID, context };
 
@@ -84,7 +85,7 @@ export function mockTemplateChat(options?: {
 }
 
 export async function openTemplatePicker(
-  user: ReturnType<typeof userEvent.setup>,
+  _user: ReturnType<typeof userEvent.setup>,
   category?: "Presentation" | "Website" | "Illustration",
 ): Promise<HTMLElement> {
   await clickComposerAddMenuItem("Template");
@@ -92,7 +93,10 @@ export async function openTemplatePicker(
     return screen.getByRole("dialog");
   });
   if (category) {
-    await user.click(tabByText(category));
+    const tab = tabByText(category);
+    if (tab.getAttribute("aria-selected") !== "true") {
+      click(tab);
+    }
   }
   return dialog;
 }
@@ -141,8 +145,9 @@ export async function sendComposerMessage(
     }
     return candidate;
   });
+  // Append text without selecting the existing inline template nodes.
   await user.click(editor);
-  await user.keyboard(text);
+  await user.paste(text);
   await user.keyboard("{Enter}");
 }
 

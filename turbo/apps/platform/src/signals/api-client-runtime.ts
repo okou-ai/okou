@@ -1,8 +1,13 @@
 import { command, computed, state } from "ccstate";
+import type {
+  AuthDiagnosticContext,
+  AuthTokenProvider,
+} from "../lib/auth-diagnostics.ts";
 
 interface ApiClientRuntime {
   readonly apiBaseUrl: string;
-  readonly getToken: (signal?: AbortSignal) => Promise<string | null>;
+  readonly getToken: AuthTokenProvider;
+  readonly authDiagnosticContext?: AuthDiagnosticContext;
   readonly oauthApiBaseUrl: string;
   readonly vercelProtectionBypass?: string;
   readonly onForceUpgrade?: () => void;

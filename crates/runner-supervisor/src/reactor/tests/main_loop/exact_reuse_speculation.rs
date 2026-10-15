@@ -18,7 +18,7 @@ use tracing_test_support::CapturedEvents;
 use crate::guest_timezone::GuestTimezoneIntent;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_provider::{ActiveRunnerPreference, JobCandidate, RunnerPreferenceTier};
-use runner_types::types::{ExecutionContext, SandboxReuseResult};
+use runner_types::types::ExecutionContext;
 
 fn exact_generation_candidate(
     run_id: RunId,
@@ -158,7 +158,6 @@ async fn exact_reuse_restores_guest_while_claim_is_blocked() {
         .await
         .expect("exact-reuse run should complete after claim release");
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(guest_restore_timezones(&overrides).len(), 1);
     assert!(timezone_correction_commands(&overrides).is_empty());
 
@@ -179,7 +178,7 @@ async fn assert_timezone_transition_with(
     add_healthy_reuse_preparation_matcher(&overrides);
     let reuse_key = RunId::new_v4().to_string();
     let generation_run_id = RunId::new_v4();
-    seed_idle_pool_with_speculative_timezone(
+    let reused_sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
         &overrides,
@@ -213,7 +212,7 @@ async fn assert_timezone_transition_with(
         .wait_completion(run_id, Duration::from_secs(30))
         .await
         .expect("timezone transition run should complete");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
 
     let restores = guest_restore_timezones(&overrides);
     assert_eq!(restores, [Some(expected_restore_zone.to_owned())]);
@@ -355,7 +354,6 @@ async fn assert_timezone_correction_failure_remains_best_effort(
         .await
         .expect("timezone correction failure should remain best effort");
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
     assert_eq!(overrides.destroy_call_count(), 0);
 
     shutdown(&env, run_handle).await;
@@ -430,7 +428,7 @@ async fn unknown_previous_timezone_keeps_restore_after_claim() {
     add_healthy_reuse_preparation_matcher(&overrides);
     let reuse_key = RunId::new_v4().to_string();
     let generation_run_id = RunId::new_v4();
-    seed_idle_pool_with_speculative_timezone(
+    let reused_sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
         &overrides,
@@ -476,7 +474,7 @@ async fn unknown_previous_timezone_keeps_restore_after_claim() {
         .wait_completion(run_id, Duration::from_secs(30))
         .await
         .expect("unknown prediction should retain ordinary exact reuse");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     assert_eq!(guest_restore_timezones(&overrides).len(), 1);
 
     shutdown(&env, run_handle).await;
@@ -490,7 +488,7 @@ async fn unknown_claimed_timezone_repeats_authoritative_guest_restore() {
     add_healthy_reuse_preparation_matcher(&overrides);
     let reuse_key = RunId::new_v4().to_string();
     let generation_run_id = RunId::new_v4();
-    seed_idle_pool_with_speculative_timezone(
+    let reused_sandbox_id = seed_idle_pool_with_speculative_timezone(
         &env.idle_pool,
         &budget,
         &overrides,
@@ -530,7 +528,7 @@ async fn unknown_claimed_timezone_repeats_authoritative_guest_restore() {
         .wait_completion(run_id, Duration::from_secs(30))
         .await
         .expect("unknown claimed timezone should complete through full restore fallback");
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
     let restores = guest_restore_timezones(&overrides);
     assert_eq!(restores, [Some("Asia/Shanghai".into()), None]);
 
@@ -624,7 +622,6 @@ async fn unavailable_claim_reparks_speculative_sandbox() {
         .await
         .expect("restored speculative sandbox should serve the next exact claim");
     assert_eq!(completion.sandbox_id, Some(sandbox_id));
-    assert_eq!(completion.reuse_result, Some(SandboxReuseResult::Reused));
 
     shutdown(&env, run_handle).await;
 }
@@ -965,10 +962,6 @@ async fn cancellation_during_speculative_cleanup_does_not_start_fresh_agent() {
         .expect("claimed cancellation should be completed after speculative cleanup");
     assert_eq!(completion.error.as_deref(), Some("cancelled by user"));
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed)
-    );
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     assert!(!env.start_observer.active_run_status_was_published(run_id));
@@ -1037,10 +1030,6 @@ async fn cancellation_wins_when_speculative_cleanup_is_uncertain() {
         .expect("claimed cancellation should win after uncertain speculative cleanup");
     assert_eq!(completion.error.as_deref(), Some("cancelled by user"));
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed)
-    );
     wait_idle_pool_len(&env.idle_pool, 0, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 0, Duration::from_secs(5)).await;
     let status_path = env._temp_dir.path().join("status.json");
@@ -1301,10 +1290,6 @@ async fn assert_speculation_failure_falls_back_to_fresh(
         .sandbox_id
         .expect("fresh fallback should complete with a sandbox");
     assert_ne!(fresh_sandbox_id, idle_sandbox_id);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed)
-    );
     wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(5)).await;
     wait_budget_count(&budget, 1, Duration::from_secs(5)).await;
     wait_idle_pool_len(&env.idle_pool, 1, Duration::from_secs(5)).await;

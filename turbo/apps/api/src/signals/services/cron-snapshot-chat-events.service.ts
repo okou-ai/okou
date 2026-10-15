@@ -1,11 +1,15 @@
+import {
+  chatEventRowFromDbRow,
+  ARCHIVE_ROW_CONTRACT_REVISION,
+  LEGACY_ARCHIVE_OBJECT_KEY_PATTERN,
+  isCurrentChatEventSnapshotObjectKey,
+  isLegacyChatEventSnapshotObjectKey,
+} from "./chat-event-row-read.service";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 
-import {
-  chatEventRowSchema,
-  type ChatEventRow,
-} from "@okouai/api-contracts/contracts/chat-event-rows";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
 import {
@@ -42,6 +46,7 @@ import {
   listS3ObjectsPage,
   putImmutableS3Object,
   type S3Object,
+  type S3DownloadFailureDiagnostics,
 } from "../external/s3";
 import {
   awaitWithSignal,
@@ -116,11 +121,6 @@ interface SnapshotCandidate {
 const ARCHIVE_CONTENT_TYPE = "application/x-ndjson";
 const ARCHIVE_CONTENT_ENCODING = "gzip";
 /** Object-key revision for snapshots validated after Phase B. */
-const ARCHIVE_ROW_CONTRACT_REVISION = 1;
-const ARCHIVE_OBJECT_KEY_PREFIX_PATTERN = "^chat-events/[0-9a-f-]{36}/[0-9]+";
-const ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN = "-[0-9a-f]{64}[.]ndjson[.]gz$";
-const LEGACY_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
-const CURRENT_ARCHIVE_OBJECT_KEY_PATTERN = `${ARCHIVE_OBJECT_KEY_PREFIX_PATTERN}-r${ARCHIVE_ROW_CONTRACT_REVISION.toString()}${ARCHIVE_OBJECT_KEY_SUFFIX_PATTERN}`;
 const gzipAsync = promisify(gzip);
 const gunzipAsync = promisify(gunzip);
 /**
@@ -196,23 +196,6 @@ function encodeArchiveLine(line: ChatEventRow): Buffer {
  * explicitly so a chat_events schema change cannot silently alter the durable
  * wire shape.
  */
-export function chatEventRowFromDbRow(row: ArchiveEventRow): ChatEventRow {
-  return chatEventRowSchema.parse({
-    id: row.id,
-    chatThreadId: row.chatThreadId,
-    runId: row.runId,
-    revokesEventId: row.revokesEventId,
-    eventType: row.eventType,
-    payload: row.payload,
-    ...(row.failureReason === null ? {} : { failureReason: row.failureReason }),
-    contextType: row.contextType,
-    contextId: row.contextId,
-    runEventSequenceNumber: row.runEventSequenceNumber,
-    runEventId: row.runEventId,
-    seqId: row.seqId,
-    createdAt: row.createdAt.toISOString(),
-  });
-}
 
 function archiveLine(row: ArchiveEventRow): Buffer {
   return encodeArchiveLine(chatEventRowFromDbRow(row));
@@ -228,16 +211,6 @@ function chatEventSnapshotObjectKey(
   contentSha256: string,
 ): string {
   return `chat-events/${chatThreadId}/${lastSeqId}-r${ARCHIVE_ROW_CONTRACT_REVISION.toString()}-${contentSha256}.ndjson.gz`;
-}
-
-export function isCurrentChatEventSnapshotObjectKey(
-  objectKey: string,
-): boolean {
-  return new RegExp(CURRENT_ARCHIVE_OBJECT_KEY_PATTERN, "u").test(objectKey);
-}
-
-export function isLegacyChatEventSnapshotObjectKey(objectKey: string): boolean {
-  return new RegExp(LEGACY_ARCHIVE_OBJECT_KEY_PATTERN, "u").test(objectKey);
 }
 
 interface CanonicalEventArchive {
@@ -325,6 +298,25 @@ type SnapshotSkipReason = "unreadable" | "undecodable" | "incomplete";
 type SnapshotDecodeFailureClass =
   "checksum" | "gzip" | "raw_row" | "projection" | "prefix" | "terminal";
 
+type SnapshotDownloadFailureClass =
+  | "not_found"
+  | "access_denied"
+  | "throttled"
+  | "upstream"
+  | "timeout"
+  | "transport"
+  | "body"
+  | "unknown";
+
+interface SnapshotDownloadFailure {
+  readonly failureClass: SnapshotDownloadFailureClass;
+  readonly downloadStage?: S3DownloadFailureDiagnostics["stage"];
+  readonly providerStatus?: number;
+  /** SDK attempts include the initial request; retries exclude it. */
+  readonly providerAttempts?: number;
+  readonly providerRetries?: number;
+}
+
 class SnapshotDecodeFailure extends Error {
   readonly failureClass: SnapshotDecodeFailureClass;
   readonly projectionSubstage: ChatEventSnapshotProjectionSubstage | undefined;
@@ -345,7 +337,12 @@ class SnapshotDecodeFailure extends Error {
 type SnapshotSkippedResolution =
   | {
       readonly kind: "skipped";
-      readonly reason: "unreadable" | "incomplete";
+      readonly reason: "incomplete";
+    }
+  | {
+      readonly kind: "skipped";
+      readonly reason: "unreadable";
+      readonly downloadFailure: SnapshotDownloadFailure;
     }
   | {
       readonly kind: "skipped";
@@ -533,17 +530,141 @@ async function decodeSnapshotPrefix(
   };
 }
 
+function snapshotDownloadFailureClass(
+  error: unknown,
+  stage: S3DownloadFailureDiagnostics["stage"] | undefined,
+  providerStatus: number | undefined,
+): SnapshotDownloadFailureClass {
+  const name =
+    typeof error === "object" && error !== null && "name" in error
+      ? error.name
+      : undefined;
+  const code =
+    typeof error === "object" && error !== null && "code" in error
+      ? error.code
+      : undefined;
+  if (
+    providerStatus === 404 ||
+    ["NoSuchKey", "NotFound"].some((allowed) => {
+      return name === allowed;
+    })
+  ) {
+    return "not_found";
+  }
+  if (
+    providerStatus === 401 ||
+    providerStatus === 403 ||
+    [
+      "AccessDenied",
+      "InvalidAccessKeyId",
+      "SignatureDoesNotMatch",
+      "ExpiredToken",
+      "InvalidToken",
+    ].some((allowed) => {
+      return name === allowed;
+    })
+  ) {
+    return "access_denied";
+  }
+  if (
+    providerStatus === 429 ||
+    ["SlowDown", "Throttling", "ThrottlingException"].some((allowed) => {
+      return name === allowed;
+    })
+  ) {
+    return "throttled";
+  }
+  if (providerStatus !== undefined && providerStatus >= 500) {
+    return "upstream";
+  }
+  if (
+    ["TimeoutError", "RequestTimeout", "RequestTimeoutException"].some(
+      (allowed) => {
+        return name === allowed;
+      },
+    ) ||
+    code === "ETIMEDOUT"
+  ) {
+    return "timeout";
+  }
+  if (
+    [
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "EPIPE",
+      "UND_ERR_SOCKET",
+    ].some((allowed) => {
+      return code === allowed;
+    })
+  ) {
+    return "transport";
+  }
+  return stage === "read_body" ? "body" : "unknown";
+}
+
+function snapshotDownloadFailure(
+  error: unknown,
+  diagnostics: S3DownloadFailureDiagnostics | undefined,
+): SnapshotDownloadFailure {
+  const status = diagnostics?.providerStatus;
+  const attempts = diagnostics?.providerAttempts;
+  const providerStatus =
+    status !== undefined &&
+    Number.isInteger(status) &&
+    status >= 100 &&
+    status <= 599
+      ? status
+      : undefined;
+  // Bound diagnostic cardinality without inventing an exact count for outliers.
+  const providerAttempts =
+    attempts !== undefined &&
+    Number.isInteger(attempts) &&
+    attempts >= 1 &&
+    attempts <= 100
+      ? attempts
+      : undefined;
+  return {
+    failureClass: snapshotDownloadFailureClass(
+      error,
+      diagnostics?.stage,
+      providerStatus,
+    ),
+    ...(diagnostics === undefined ? {} : { downloadStage: diagnostics.stage }),
+    ...(providerStatus === undefined ? {} : { providerStatus }),
+    ...(providerAttempts === undefined
+      ? {}
+      : { providerAttempts, providerRetries: providerAttempts - 1 }),
+  };
+}
+
 function readSnapshotPrefix(
   args: SnapshotPrefixArgs,
   signal: AbortSignal,
 ): Computed<Promise<SnapshotPrefixResolution>> {
   return computed(async (get): Promise<SnapshotPrefixResolution> => {
+    let failureDiagnostics: S3DownloadFailureDiagnostics | undefined;
     const downloaded = await settle(
-      get(downloadS3Buffer(args.bucket, args.source.objectKey, signal)),
+      get(
+        downloadS3Buffer(args.bucket, args.source.objectKey, {
+          signal,
+          onFailure: (diagnostics) => {
+            failureDiagnostics = diagnostics;
+          },
+        }),
+      ),
       signal,
     );
     if (!downloaded.ok) {
-      return { kind: "skipped", reason: "unreadable" };
+      return {
+        kind: "skipped",
+        reason: "unreadable",
+        downloadFailure: snapshotDownloadFailure(
+          downloaded.error,
+          failureDiagnostics,
+        ),
+      };
     }
     const decoded = await settle(
       decodeSnapshotPrefix(downloaded.value, args),
@@ -646,13 +767,12 @@ interface ArchivedThread {
 }
 
 function skippedArchivedThread(
-  candidate: SnapshotCandidate,
   resolution: SnapshotSkippedResolution,
 ): ArchivedThread {
   log.warn("Skipped Chat Event Snapshot pointer", {
     type: "chat_event_snapshot_head_skipped",
-    chatThreadId: candidate.chatThreadId,
     reason: resolution.reason,
+    ...(resolution.reason === "unreadable" ? resolution.downloadFailure : {}),
     ...(resolution.reason === "undecodable"
       ? {
           failureClass: resolution.failureClass,
@@ -893,7 +1013,7 @@ const archiveThread$ = command(async function archiveThread(
   );
   signal.throwIfAborted();
   if (resolved.kind === "skipped") {
-    return skippedArchivedThread(candidate, resolved);
+    return skippedArchivedThread(resolved);
   }
   const { source, prefix, terminalSeqId, terminalEventId } = resolved;
   const targetSeqId = Math.max(candidate.indexedSeqId, source?.lastSeqId ?? 0);

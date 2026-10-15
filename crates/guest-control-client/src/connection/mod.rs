@@ -1,8 +1,10 @@
+mod close;
 mod frame;
 mod listener;
 mod request;
 mod timing;
 
+pub use close::{ConnectionCloseInfo, ConnectionCloseReason, ConnectionClosedAtAdmission};
 pub use timing::GuestConnectionTiming;
 
 use std::collections::HashMap;
@@ -14,8 +16,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use guest_control_proto::{BorrowedRawMessage, DecodeWithError, Decoder, RawMessage};
+use sandbox::OperationCancellationContext;
 use tokio::io::AsyncReadExt;
 use tokio::sync::{Notify, oneshot};
+use uuid::Uuid;
 
 use crate::operation_tracker::{
     NormalOperationToken, NormalOperationTracker, NormalOperationTransitionHandle,
@@ -55,11 +59,13 @@ pub(super) enum ConnectionState {
         /// Active exec-operation state owned by the exec_operation module.
         operations: exec_operation::Operations,
     },
-    Closed,
+    Closed(Arc<ConnectionCloseInfo>),
 }
 
 /// Shared state between the reader task and public API methods.
 pub(super) struct Shared {
+    pub(super) connection_id: Uuid,
+    pub(super) sandbox_id: Option<String>,
     pub(crate) file_stream: crate::file_stream::State,
     /// Serialises writes to the stream.
     pub(super) writer: tokio::sync::Mutex<tokio::net::unix::OwnedWriteHalf>,
@@ -160,11 +166,8 @@ impl Shared {
                     break route_id;
                 }
             },
-            ConnectionState::Closed => {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionReset,
-                    "connection closed",
-                ));
+            ConnectionState::Closed(info) => {
+                return Err(ConnectionClosedAtAdmission::into_io_error(Arc::clone(info)));
             }
         };
         let value = register(route_id, &mut guard)?;
@@ -239,14 +242,25 @@ impl Shared {
     /// can be moved out for destructuring. The already-`Closed` arm uses an `@`
     /// binding to write the whole variant back unchanged, so double-close is a
     /// structural no-op rather than a convention.
-    fn close(&self) {
-        self.close_with_reason("connection closed", ConnectionCloseKind::Closed);
+    fn close(&self, reason: ConnectionCloseReason) {
+        self.close_with_reason(reason, ConnectionCloseKind::Closed, None);
     }
 
-    fn close_with_reason(&self, reason: &'static str, kind: ConnectionCloseKind) {
+    fn close_with_reason(
+        &self,
+        reason: ConnectionCloseReason,
+        kind: ConnectionCloseKind,
+        owner: Option<&OperationCancellationContext>,
+    ) {
         let maps_to_drop = {
             let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
-            match std::mem::replace(&mut *guard, ConnectionState::Closed) {
+            let info = Arc::new(ConnectionCloseInfo::new(
+                self.connection_id,
+                self.sandbox_id.as_deref(),
+                reason,
+                owner,
+            ));
+            match std::mem::replace(&mut *guard, ConnectionState::Closed(Arc::clone(&info))) {
                 ConnectionState::Connected {
                     pending,
                     operations,
@@ -259,10 +273,9 @@ impl Shared {
                         ConnectionCloseKind::Poisoned => self.normal_operations.mark_not_parkable(),
                     }
                     let exec_operation_snapshot = operations.close_snapshot();
-                    *guard = ConnectionState::Closed;
-                    Some((pending, operations, exec_operation_snapshot))
+                    Some((pending, operations, exec_operation_snapshot, info))
                 }
-                closed @ ConnectionState::Closed => {
+                closed @ ConnectionState::Closed(_) => {
                     // Reassign the whole variant by binding rather than by
                     // convention.
                     *guard = closed;
@@ -270,16 +283,38 @@ impl Shared {
                 }
             }
         };
-        if let Some((pending, operations, exec_operation_snapshot)) = maps_to_drop {
+        if let Some((pending, operations, exec_operation_snapshot, info)) = maps_to_drop {
             let maps = (pending, operations);
             drop(maps);
             self.close_notify.notify_waiters();
-            exec_operation::log_operations_closed(reason, &exec_operation_snapshot);
+            exec_operation::log_operations_closed(
+                &info,
+                kind == ConnectionCloseKind::Poisoned,
+                &exec_operation_snapshot,
+            );
+        } else if matches!(
+            reason,
+            ConnectionCloseReason::ProtocolError | ConnectionCloseReason::DispatchError(_)
+        ) {
+            // A buffered malformed frame can be decoded after another owner
+            // closed the transport. Keep its actual fault observable without
+            // replacing the first close's immutable cancellation/cause facts.
+            tracing::warn!(
+                connection_id = %self.connection_id,
+                sandbox_id = self.sandbox_id.as_deref(),
+                error_origin = reason.as_str(),
+                error_kind = ?reason.error_kind(),
+                "guest-control protocol fault observed after connection closed"
+            );
         }
     }
 
-    pub(super) fn poison_connection(&self) {
-        self.close_with_reason("connection poisoned", ConnectionCloseKind::Poisoned);
+    pub(super) fn poison_connection(
+        &self,
+        reason: ConnectionCloseReason,
+        owner: Option<&OperationCancellationContext>,
+    ) {
+        self.close_with_reason(reason, ConnectionCloseKind::Poisoned, owner);
         let _ = nix::sys::socket::shutdown(self.fd, nix::sys::socket::Shutdown::Both);
     }
 
@@ -350,7 +385,7 @@ impl Drop for GuestControlClient {
         // reader task can win that race. Closing here makes active exec
         // handles and stream receivers release immediately when the host is
         // dropped.
-        self.shared.close();
+        self.shared.close(ConnectionCloseReason::ClientDropped);
         // Signal EOF on the socket so the reader_loop's `read()` and the
         // remote peer's blocking `read()` return immediately. Without this,
         // the split stream halves keep the fd alive until the reader task is
@@ -371,7 +406,14 @@ async fn reader_loop(
     let mut buf = Box::new([0u8; READ_BUF_SIZE]);
     loop {
         let n = match reader.read(buf.as_mut()).await {
-            Ok(0) | Err(_) => break,
+            Ok(0) => {
+                shared.close(ConnectionCloseReason::PeerClosed);
+                return;
+            }
+            Err(error) => {
+                shared.close(ConnectionCloseReason::ReadError(error.kind()));
+                return;
+            }
             Ok(n) => n,
         };
         // n <= READ_BUF_SIZE guaranteed by read()
@@ -379,17 +421,16 @@ async fn reader_loop(
             dispatch_reader_frame(&shared, msg)
         }) {
             Ok(()) => {}
-            Err(DecodeWithError::Protocol(_)) => break,
-            Err(DecodeWithError::Visitor(_)) => {
-                shared.poison_connection();
+            Err(DecodeWithError::Protocol(_)) => {
+                shared.close(ConnectionCloseReason::ProtocolError);
+                return;
+            }
+            Err(DecodeWithError::Visitor(error)) => {
+                shared.poison_connection(ConnectionCloseReason::DispatchError(error.kind()), None);
                 return;
             }
         }
     }
-    // Connection lost — transition state to Closed. `close()` drops all
-    // registration maps outside the lock (waking every pending receiver
-    // with `RecvError`) and fires `close_notify` so test helpers wake.
-    shared.close();
 }
 
 fn dispatch_reader_frame(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Result<()> {
@@ -423,7 +464,7 @@ fn dispatch_reader_frame(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> i
                     None
                 }
             }
-            ConnectionState::Closed => None,
+            ConnectionState::Closed(_) => None,
         }
     };
     if let Some(pending_response) = pending_response {
@@ -448,7 +489,7 @@ impl GuestControlClient {
 
             if matches!(
                 &*self.shared.state.lock().unwrap_or_else(|e| e.into_inner()),
-                ConnectionState::Closed
+                ConnectionState::Closed(_)
             ) {
                 return Ok(());
             }

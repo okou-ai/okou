@@ -24,7 +24,7 @@ import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import {
-  startTelegramSettingsRealtime$,
+  watchTelegramConnection$,
   telegramBots$,
 } from "../okou-page/telegram.ts";
 import { enterOnboardingPhoneCode$ } from "./onboarding-chat-channels.ts";
@@ -273,7 +273,7 @@ const watchOnboardingAgentPhone$ = command(
 
 const watchOnboardingTelegram$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    set(startTelegramSettingsRealtime$, signal);
+    set(watchTelegramConnection$, signal);
     await get(telegramBots$);
     signal.throwIfAborted();
   },

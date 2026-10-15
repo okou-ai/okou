@@ -255,6 +255,90 @@ test("overview projects connected connector briefs and default accounts for one 
     }),
   );
 
+  const summaries = await accept(
+    client(connectorAccountsContract).summaries({ headers }),
+    [200],
+  );
+  expect(summaries.body.summaries).toContainEqual(
+    expect.objectContaining({
+      target: { kind: "builtin", connectorSlug: "gitlab" },
+      accountCount: 1,
+      attentionCount: 0,
+      defaultConnection: expect.objectContaining({ id: builtin.body.id }),
+    }),
+  );
+
+  const secondBuiltin = await accept(
+    client(builtinConnectorManualGrantContract).connect({
+      headers,
+      params: { connectorSlug: "gitlab" },
+      body: {
+        authMethod: "api-token",
+        account: { intent: "add" },
+        values: {
+          accessToken: "gl-second-test-token",
+          host: "gitlab.example.com",
+        },
+      },
+    }),
+    [200],
+  );
+  await trackCleanup(
+    Promise.resolve(async () => {
+      mocks.clerk.session(userId, orgId);
+      await accept(
+        client(connectorAccountsContract).delete({
+          headers,
+          params: { connectionId: secondBuiltin.body.id },
+          body: { target: { kind: "builtin", connectorSlug: "gitlab" } },
+        }),
+        [200],
+      );
+    }),
+  );
+  const renamed = await accept(
+    client(connectorAccountsContract).rename({
+      headers,
+      params: { connectionId: secondBuiltin.body.id },
+      body: {
+        target: { kind: "builtin", connectorSlug: "gitlab" },
+        displayName: "Second GitLab account",
+      },
+    }),
+    [200],
+  );
+  expect(renamed.body.displayName).toBe("Second GitLab account");
+  const defaultAccount = await accept(
+    client(connectorAccountsContract).setDefault({
+      headers,
+      params: { connectionId: secondBuiltin.body.id },
+      body: { target: { kind: "builtin", connectorSlug: "gitlab" } },
+    }),
+    [200],
+  );
+  expect(defaultAccount.body.isDefault).toBeTruthy();
+
+  const updatedSummaries = await accept(
+    client(connectorAccountsContract).summaries({ headers }),
+    [200],
+  );
+  const updatedOverview = await accept(
+    client(connectorOverviewContract).overview({ headers }),
+    [200],
+  );
+  const updatedSummary = expect.objectContaining({
+    target: { kind: "builtin", connectorSlug: "gitlab" },
+    accountCount: 2,
+    attentionCount: 0,
+    defaultConnection: expect.objectContaining({
+      id: secondBuiltin.body.id,
+      displayName: "Second GitLab account",
+      connectionStatus: "connected",
+    }),
+  });
+  expect(updatedSummaries.body.summaries).toContainEqual(updatedSummary);
+  expect(updatedOverview.body.accountSummaries).toContainEqual(updatedSummary);
+
   mocks.clerk.session(`user_${randomUUID()}`, orgId);
   const otherUser = await accept(
     client(connectorOverviewContract).overview({ headers }),

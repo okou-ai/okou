@@ -1,5 +1,96 @@
 # Changelog
 
+## [0.232.0](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.12...runner-rs-v0.232.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+
+### Bug Fixes
+
+* **mitm-addon:** avoid redundant billing work during stream inspection ([#40119](https://github.com/okou-ai/okou/issues/40119)) ([a07dbd0](https://github.com/okou-ai/okou/commit/a07dbd06aae99ca3e7b8e21c819871e12faccb2a))
+* **runner:** align task oom priority and correct runtime attribution ([#40068](https://github.com/okou-ai/okou/issues/40068)) ([b94851a](https://github.com/okou-ai/okou/commit/b94851a584b74d0edfbd53e46576cb66ff753c64))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.12](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.11...runner-rs-v0.231.12) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.11](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.10...runner-rs-v0.231.11) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.10](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.9...runner-rs-v0.231.10) (2026-10-14)
+
+
+### Performance Improvements
+
+* **runner:** bound permitted upload body buffering ([#40023](https://github.com/okou-ai/okou/issues/40023)) ([16bded4](https://github.com/okou-ai/okou/commit/16bded4879ba82f2e4e66730b6f31bcdde370395))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.9](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.8...runner-rs-v0.231.9) (2026-10-14)
+
+
+### Performance Improvements
+
+* **python:** avoid caching x request urls ([#40015](https://github.com/okou-ai/okou/issues/40015)) ([c203f7b](https://github.com/okou-ai/okou/commit/c203f7bbf289fb6ce0c1eb69848464b30790f4ee))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.8](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.7...runner-rs-v0.231.8) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.7](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.6...runner-rs-v0.231.7) (2026-10-14)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#39966](https://github.com/okou-ai/okou/issues/39966)) ([1d331fc](https://github.com/okou-ai/okou/commit/1d331fcf527832ed096e9016bdb21588542dd642))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.6](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.5...runner-rs-v0.231.6) (2026-10-14)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.231.5](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.4...runner-rs-v0.231.5) (2026-10-14)
+
+
+### Bug Fixes
+
+* **runner:** avoid retaining aws query request urls ([#39938](https://github.com/okou-ai/okou/issues/39938)) ([5d6acb3](https://github.com/okou-ai/okou/commit/5d6acb3b4e73c442b7d9ef048b6e836c483fdabb))
+* **runner:** preserve cleanup on response inspection cancellation ([#39941](https://github.com/okou-ai/okou/issues/39941)) ([bd2b16f](https://github.com/okou-ai/okou/commit/bd2b16f1a9b72ffecec8d069425c9bb56beb4244))
+
+
+### Performance Improvements
+
+* **python:** bound nested-finally metadata linter replay ([#39942](https://github.com/okou-ai/okou/issues/39942)) ([7662d21](https://github.com/okou-ai/okou/commit/7662d2190c2d312b1d278c7a161e32787c0b6fb1))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.231.4](https://github.com/okou-ai/okou/compare/runner-rs-v0.231.3...runner-rs-v0.231.4) (2026-10-14)
 
 

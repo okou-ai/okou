@@ -2058,6 +2058,14 @@ describe("connector catalog valid lifecycle", () => {
       { credential: "legacy-catalog-secret" },
     );
 
+    const legacySibling = await connectorsApi.connectManualGrant(
+      actor,
+      "agora",
+      "legacy",
+      { credential: "sibling-legacy-catalog-secret" },
+    );
+    expect(legacySibling.id).not.toBe(legacyConnection.id);
+
     const removed = buildRelease({
       version: "2026-07-15.external-stored-method-removed",
       connectorSlug: "agora",
@@ -2126,6 +2134,25 @@ describe("connector catalog valid lifecycle", () => {
         });
       },
     );
+    const accountsBeforeDeletion =
+      await connectorsApi.listBuiltinConnectorAccounts(actor, "agora");
+    expect(accountsBeforeDeletion).toHaveLength(2);
+    const defaultAccount = accountsBeforeDeletion.find((account) => {
+      return account.id === legacyConnection.id;
+    });
+    expect(defaultAccount).toMatchObject({
+      isDefault: true,
+      authMethod: "current",
+      connectionStatus: "connected",
+    });
+    await connectorsApi.deleteBuiltinConnectorAccount(
+      actor,
+      "agora",
+      legacySibling.id,
+    );
+    await expect(
+      connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
+    ).resolves.toStrictEqual([defaultAccount]);
     await connectorsApi.deleteDefaultBuiltinConnectorAccount(actor, "agora");
     await expect(
       connectorsApi.listBuiltinConnectorAccounts(actor, "agora"),
@@ -3876,9 +3903,16 @@ describe("connector catalog valid lifecycle", () => {
     expect(response.body.firewalls).not.toHaveProperty(release.connectorSlug);
   });
 
-  it("serializes overlapping syncs without a mixed snapshot", async () => {
+  it("reuses bundled skill registrations across overlapping syncs and later releases", async () => {
     configureSource();
-    const release = buildRelease({ version: "2026-07-15.concurrent" });
+    const skill = buildBundledSkillFixture("agora");
+    const release = buildRelease({
+      version: "2026-07-15.concurrent",
+      connectorSlug: "agora",
+      mutateRuntime: (artifact) => {
+        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
+      },
+    });
     serveObjects(catalogObjects([release], release));
     const results = await Promise.all([syncCatalog(), syncCatalog()]);
     // The last writer wins: both attempts may publish the same generation, or
@@ -3891,6 +3925,87 @@ describe("connector catalog valid lifecycle", () => {
       expect(["accepted", "unchanged"]).toContain(outcome);
     }
     // The serving generation is the release, so a later sync is unchanged.
+    expect((await syncCatalog()).body).toStrictEqual({
+      outcome: "unchanged",
+      failureCode: null,
+    });
+
+    const later = buildRelease({
+      version: "2026-07-15.reused-bundled-skill",
+      connectorSlug: "agora",
+      label: "Reused bundled skill",
+      mutateRuntime: (artifact) => {
+        firstRecord(artifact.connectors, "connectors").skill = {
+          ...skill.descriptor,
+          size: skill.contentSize + 128,
+          archiveSize: skill.archiveSize + 99,
+          fileCount: 2,
+        };
+      },
+    });
+    serveObjects(catalogObjects([release, later], later));
+    expect((await syncCatalog()).body).toStrictEqual({
+      outcome: "accepted",
+      failureCode: null,
+    });
+    await expect(servedConnectors()).resolves.toStrictEqual([
+      expect.objectContaining({ slug: "agora", label: "Reused bundled skill" }),
+    ]);
+
+    const actor = bdd.user();
+    onTestFinished(createConnectorCleanup(actor, "agora"));
+    await connectorsApi.connectManualGrant(actor, "agora", "api-token", {
+      credential: "bundled-skill-token",
+    });
+    await withConnectorRuntime(context, actor, "agora", ({ claim }) => {
+      const mounts = expectCanonicalStorageManifest(
+        claim.storageManifest,
+      )?.storageMounts;
+      expect(mounts).toContainEqual(
+        expect.objectContaining({
+          name: skill.storageName,
+          versionId: skill.versionId,
+          archiveSize: skill.archiveSize,
+        }),
+      );
+    });
+  });
+
+  it("rejects a bundled skill version rebound to another storage and keeps the accepted catalog", async () => {
+    configureSource();
+    const skill = buildBundledSkillFixture("agora");
+    const accepted = buildRelease({
+      version: "2026-07-15.accepted-bundled-skill",
+      connectorSlug: "agora",
+      label: "Accepted bundled skill",
+      mutateRuntime: (artifact) => {
+        firstRecord(artifact.connectors, "connectors").skill = skill.descriptor;
+      },
+    });
+    serveObjects(catalogObjects([accepted], accepted));
+    expect((await syncCatalog()).body).toStrictEqual({
+      outcome: "accepted",
+      failureCode: null,
+    });
+
+    const rebound = buildRelease({
+      version: "2026-07-15.rebound-bundled-skill",
+      connectorSlug: "agora",
+      label: "Rebound bundled skill",
+      mutateRuntime: (artifact) => {
+        firstRecord(artifact.connectors, "connectors").skill =
+          buildBundledSkill("agora", skill.versionId);
+      },
+    });
+    serveObjects(catalogObjects([accepted, rebound], rebound));
+    expectRejectedAttempt((await syncCatalog()).body, "invalid-reference");
+    await expect(servedConnectors()).resolves.toStrictEqual([
+      expect.objectContaining({
+        slug: "agora",
+        label: "Accepted bundled skill",
+      }),
+    ]);
+    serveObjects(catalogObjects([accepted, rebound], accepted));
     expect((await syncCatalog()).body).toStrictEqual({
       outcome: "unchanged",
       failureCode: null,

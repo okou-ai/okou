@@ -12,11 +12,6 @@ import type {
   OfficialWorkflowParameterValue,
   OfficialWorkflowTemplateJsonValue,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
-import type {
-  OfficialWorkflowCatalogDetail,
-  OfficialWorkflowCatalogSummary,
-  OfficialWorkflowInstallationDefinition,
-} from "@okouai/api-contracts/contracts/official-workflows";
 import { isValidTimeZone, parseScheduledAtTime } from "@okouai/core/timezone";
 import {
   officialWorkflowCatalogState,
@@ -91,122 +86,6 @@ type OfficialWorkflowBlueprintReconciliationResolution =
 type ResolveResult =
   | { readonly ok: true; readonly blueprints: readonly ResolvedBlueprint[] }
   | { readonly ok: false; readonly message: string };
-
-function catalogSummary(
-  definition: OfficialWorkflowAcceptedDefinition,
-  detail: OfficialWorkflowCatalogDetail,
-): OfficialWorkflowCatalogSummary {
-  return {
-    name: definition.name,
-    revision: definition.revision,
-    displayName: detail.workflow.displayName,
-    description: detail.workflow.description,
-    blueprints: detail.blueprints,
-    presentation: definition.presentation,
-  };
-}
-
-const catalogDetail$ = command(
-  async (
-    { set },
-    definition: OfficialWorkflowAcceptedDefinition,
-    signal: AbortSignal,
-  ): Promise<OfficialWorkflowCatalogDetail> => {
-    const revision = await set(
-      readAcceptedOfficialWorkflowRevision$,
-      { name: definition.name, revision: definition.revision },
-      signal,
-    );
-    if (!revision) {
-      throw new Error(
-        `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
-      );
-    }
-    return {
-      name: definition.name,
-      revision: definition.revision,
-      lifecycle: definition.lifecycle,
-      displayName: revision.definition.workflow.displayName,
-      description: revision.definition.workflow.description,
-      workflow: revision.definition.workflow,
-      blueprints: revision.definition.blueprints,
-      presentation: definition.presentation,
-    };
-  },
-);
-
-export const listActiveOfficialWorkflows$ = command(
-  async (
-    { set },
-    signal: AbortSignal,
-  ): Promise<readonly OfficialWorkflowCatalogSummary[]> => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    if (!catalog) {
-      return [];
-    }
-    const active = catalog.payload.definitions.filter((definition) => {
-      return definition.lifecycle === "active";
-    });
-    const details = await Promise.all(
-      active.map(async (definition) => {
-        const detail = await set(catalogDetail$, definition, signal);
-        return catalogSummary(definition, detail);
-      }),
-    );
-    signal.throwIfAborted();
-    return details.sort((left, right) => {
-      const leftOrder = left.presentation.order ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = right.presentation.order ?? Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder || left.name.localeCompare(right.name);
-    });
-  },
-);
-
-export const getOfficialWorkflow$ = command(
-  async (
-    { set },
-    name: string,
-    signal: AbortSignal,
-  ): Promise<OfficialWorkflowCatalogDetail | null> => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((entry) => {
-      return entry.name === name;
-    });
-    return definition ? await set(catalogDetail$, definition, signal) : null;
-  },
-);
-
-export const getOfficialWorkflowInstallationDefinition$ = command(
-  async (
-    { set },
-    name: string,
-    signal: AbortSignal,
-  ): Promise<OfficialWorkflowInstallationDefinition | null> => {
-    const catalog = await set(readAcceptedOfficialWorkflowCatalog$, signal);
-    const definition = catalog?.payload.definitions.find((entry) => {
-      return entry.name === name;
-    });
-    if (!definition) {
-      return null;
-    }
-    const revision = await set(
-      readAcceptedOfficialWorkflowRevision$,
-      { name: definition.name, revision: definition.revision },
-      signal,
-    );
-    if (!revision) {
-      throw new Error(
-        `Accepted Official Workflow revision is missing: ${definition.name}@${definition.revision}`,
-      );
-    }
-    return {
-      name: definition.name,
-      revision: definition.revision,
-      lifecycle: definition.lifecycle,
-      blueprints: revision.definition.blueprints,
-    };
-  },
-);
 
 function isParameterReference(
   value: unknown,
@@ -879,6 +758,10 @@ const insertInstallingWorkflow$ = command(
         isUniqueViolation(
           inserted.error,
           "idx_workflows_official_owner_agent_definition_unique",
+        ) ||
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_morning_brief_owner_agent_unique",
         )
       ) {
         return {

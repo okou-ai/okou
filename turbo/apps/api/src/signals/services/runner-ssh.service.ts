@@ -14,7 +14,6 @@ import { cloudflareAccessConfigs } from "@okouai/db/schema/cloudflare-access-con
 import { tailscaleConfigs } from "@okouai/db/schema/tailscale-config";
 import { agents } from "@okouai/db/schema/agent";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   sshConnectionNeedsRebind,
   sshConnections,
@@ -28,6 +27,7 @@ import { decryptStoredSecretValue } from "./crypto.utils";
 import { commitRunnerSshPinAttempt$ } from "./runner-ssh-pin.service";
 import { commitRunnerSshObservationAttempt$ } from "./runner-ssh-observation.service";
 import { runThreadSshAccess } from "./run-thread-remote-access.service";
+import { sshCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 
 type SshResolveInput = RunnerSshResolveRequest & {
   readonly runId: string;
@@ -51,6 +51,7 @@ const connectionFields = Object.freeze({
   authMethod: sshCredentials.authMethod,
   encryptedPassword: sshCredentials.encryptedPassword,
   generation: sshConnections.generation,
+  createdAt: sshCreationTimestamp,
   algorithm: sshConnections.learnedHostKeyAlgorithm,
   fingerprint: sshConnections.learnedHostKeyFingerprint,
   encryptedPrivateKey: sshCredentials.encryptedPrivateKey,
@@ -73,13 +74,8 @@ const connectionFields = Object.freeze({
     encryptedClientSecret: cloudflareAccessConfigs.encryptedClientSecret,
   },
 });
-const sessionAuthority = and(
-  eq(agentSessions.id, agentRuns.sessionId),
-  eq(agentSessions.orgId, agentRuns.orgId),
-  eq(agentSessions.userId, agentRuns.userId),
-);
 const agentAuthority = and(
-  eq(agents.id, agentSessions.agentId),
+  eq(agents.id, agentRuns.agentId),
   eq(agents.orgId, agentRuns.orgId),
   or(eq(agents.visibility, "public"), eq(agents.owner, agentRuns.userId)),
 );
@@ -143,7 +139,7 @@ export function createCurrentRunnerSshConnection(
     const [row] = await get(db$)
       .select(connectionFields)
       .from(agentRuns)
-      .innerJoin(agentSessions, sessionAuthority)
+
       .innerJoin(agents, agentAuthority)
       .innerJoin(sshConnections, connectionAuthority(input))
       .innerJoin(sshCredentials, credentialAuthority)

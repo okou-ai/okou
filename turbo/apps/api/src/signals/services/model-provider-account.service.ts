@@ -31,7 +31,7 @@ import {
 import { badRequestMessage, conflict, notFound } from "../../lib/error";
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { settle } from "../utils";
 import { fetchClaudeCodeProfileMetadata } from "./claude-code-usage.service";
@@ -967,28 +967,6 @@ export const disconnectPersonalModelProviderAccounts$ = command(
     return result;
   },
 );
-
-export async function personalModelProviderAccountById(args: {
-  readonly db: ReadonlyDb;
-  readonly runId?: string;
-  readonly id: string;
-  readonly orgId: string;
-  readonly userId: string;
-}): Promise<AccountRow | null> {
-  const [account] = await args.db
-    .select()
-    .from(modelProviderAccounts)
-    .where(
-      and(
-        eq(modelProviderAccounts.id, args.id),
-        personalSubscriptionAccountAccessCondition(args.runId),
-        eq(modelProviderAccounts.orgId, args.orgId),
-        eq(modelProviderAccounts.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return account ?? null;
-}
 
 /** Exact management reads never enumerate, seed, or substitute a sibling. */
 export function personalModelProviderAccountResponseById(

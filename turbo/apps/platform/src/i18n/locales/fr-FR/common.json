@@ -124,35 +124,15 @@
         "title": "Journal introuvable"
       },
       "runner": {
-        "cacheMiss": "Aucun répertoire personnel en cache ne correspondait à la clé de réutilisation.",
-        "deviceLimitMismatch": "Une entrée de pool inactif existe mais son état de limiteur de débit de l'appareil ne correspond pas.",
-        "diskPressure": "La réutilisation du répertoire personnel a été ignorée en raison de la pression disque du runner.",
         "environment": "Environnement",
-        "featureDisabled": "La réutilisation du bac à sable est désactivée pour cette exécution.",
         "framework": "Framework",
         "generation": "Génération",
-        "home": "Répertoire personnel",
-        "homeNoReuseKey": "Aucune clé de réutilisation du répertoire personnel n’était disponible.",
-        "homeReusedDescription": "Le répertoire personnel a été restauré depuis le cache du runner.",
         "hostname": "Nom d’hôte",
-        "invalidMetadata": "Les métadonnées du répertoire personnel en cache n'étaient pas valides.",
-        "invalidWorkingDir": "Le répertoire de travail demandé n'a pas pu être réutilisé.",
-        "lockBusy": "Une autre exécution préparait le même répertoire personnel.",
-        "noReuseKey": "Aucune clé de réutilisation n'était disponible pour trouver un bac à sable inactif.",
-        "noSessionId": "Résultat hérité : la raison exacte pour laquelle le bac à sable n'a pas été réutilisé n'est pas disponible.",
-        "notConfigured": "La réutilisation du répertoire personnel n'était pas configurée pour cette exécution.",
-        "notReused": "Non réutilisé",
-        "outcomeUnavailableDescription": "Aucun détail supplémentaire n'est disponible.",
-        "poolMiss": "Aucun bac à sable correspondant trouvé dans le pool inactif.",
-        "profileMismatch": "Une entrée de pool inactif existe mais son profil ne correspond pas.",
         "provisioning": "Provisionnement",
-        "reused": "Réutilisé",
-        "reusedDescription": "Le bac à sable a été remis en service depuis le pool inactif.",
         "runnerId": "ID du runner",
-        "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "Un répertoire personnel en cache a été trouvé, mais n'a pas pu être utilisé après la préparation du bac à sable.",
-        "sandboxReusedDescription": "Le répertoire personnel est resté disponible dans le bac à sable réutilisé.",
         "startup": "Démarrage",
+        "startupBlank": "Démarrage avec un bac à sable vide",
+        "startupBlankDescription": "Un bac à sable préparé a démarré avec un nouveau répertoire personnel.",
         "startupCold": "Démarrage à froid",
         "startupColdDescription": "Un nouveau bac à sable et un nouvel espace de travail ont été préparés.",
         "startupHome": "Réutilisation du répertoire personnel",
@@ -162,7 +142,6 @@
         "startupUnknown": "Inconnu",
         "startupUnknownDescription": "Les détails de réutilisation au démarrage ne sont pas disponibles.",
         "unavailable": "Indisponible",
-        "unparkFailed": "La tentative de remise en service a échoué ; un bac à sable neuf a été provisionné.",
         "version": "Version"
       },
       "steps": {
@@ -558,7 +537,12 @@
       "agentLoading": "L'agent est encore en cours de chargement",
       "connect": "Connecter Google Drive",
       "connectTooltip": "Connecter Google Drive pour télécharger des artéfacts",
+      "conversionNotice": "Crée une copie modifiable. La mise en forme peut changer ; le fichier original est conservé.",
+      "conversionUnconfirmed": "La conversion Google n’a pas pu être confirmée. Vérifiez Drive avant de réessayer.",
       "noArtifacts": "Aucun artéfact à synchroniser",
+      "openDocs": "Ouvrir dans Google Docs",
+      "openSheets": "Ouvrir dans Google Sheets",
+      "openSlides": "Ouvrir dans Google Slides",
       "partial_one": "{{synced}} sur {{count}} fichier synchronisé sur Google Drive",
       "partial_many": "{{synced}} sur {{count}} fichiers synchronisés sur Google Drive",
       "partial_other": "{{synced}} sur {{count}} fichiers synchronisés sur Google Drive",
@@ -566,7 +550,6 @@
       "syncedFiles_one": "Synchronisé sur Google Drive",
       "syncedFiles_many": "{{count}} fichiers synchronisés sur Google Drive",
       "syncedFiles_other": "{{count}} fichiers synchronisés sur Google Drive",
-      "syncedSlides": "Synchronisé sur Google Slides",
       "syncFailed": "Échec de la synchronisation vers Google Drive",
       "syncingArtifact": "Synchronisation de l'artéfact...",
       "syncingFiles_one": "Synchronisation de {{count}} fichier...",
@@ -574,6 +557,8 @@
       "syncingFiles_other": "Synchronisation de {{count}} fichiers...",
       "syncingNamed": "Synchronisation de {{filename}}...",
       "upload": "Téléverser sur Google Drive",
+      "uploadDocs": "Importer dans Google Docs",
+      "uploadSheets": "Importer dans Google Sheets",
       "uploadSlides": "Téléverser sur Google Slides"
     },
     "kinds": {
@@ -590,6 +575,7 @@
       "markdown": "Markdown",
       "presentation": "Présentation",
       "sharedConversation": "Conversation partagée",
+      "spreadsheet": "Feuille de calcul",
       "text": "Texte",
       "video": "Vidéo"
     },
@@ -706,7 +692,6 @@
       "use": "Utiliser",
       "useThisTemplate": "Utilisez ce modèle",
       "visibility": {
-        "change": "Modifier",
         "changeLabel": "Modifier la visibilité du modèle",
         "privateState": "Vous seul pouvez le voir et l'utiliser",
         "workspaceState": "Tout le monde dans cet espace de travail peut l'utiliser"
@@ -1544,15 +1529,13 @@
       "viewAgentProfile": "Voir le profil de l'agent"
     },
     "agentSuggestions": {
-      "existingThread": "Conversation existante",
+      "continueChat": "Continuer la discussion",
+      "dismiss": "Ignorer",
       "label": "Suggestions",
-      "loadFailed": "Impossible de charger les suggestions.",
-      "newThread": "Nouvelle conversation avec Okou",
-      "origin": "De votre briefing matinal",
-      "showAll_one": "Voir les {{count}}",
-      "showAll_many": "Voir les {{count}}",
-      "showAll_other": "Voir les {{count}}",
-      "showLess": "Voir moins"
+      "newChat": "Nouvelle discussion",
+      "next": "Suggestion suivante",
+      "position": "{{current}} sur {{total}}",
+      "previous": "Suggestion précédente"
     },
     "attachments": {
       "attach": "Joindre",
@@ -1800,9 +1783,8 @@
       "threadSuggestions": "Conversations",
       "useForFutureChats": "Utiliser ce modèle pour les prochaines discussions",
       "workflows": {
-        "empty": "Aucun workflow correspondant",
         "loading": "Chargement des workflows...",
-        "showAll": "Afficher tous les workflows",
+        "showAllCount": "Afficher les {{total}}",
         "title": "Workflows"
       }
     },
@@ -1983,15 +1965,6 @@
       "threads": "Chats",
       "title": "Transférer vers"
     },
-    "homeTasks": {
-      "empty": "Aucune tâche suggérée pour le moment",
-      "existingThread": "Continuer le chat",
-      "exploreWorkflow": "Explorer un workflow",
-      "heading": "Repris de votre travail récent",
-      "newTasksAvailable": "De nouvelles tâches sont disponibles",
-      "newThread": "Nouveau chat",
-      "reload": "Recharger les tâches"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -2035,6 +2008,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "Ouvrir la discussion",
       "openChatIn": "Ouvrir la conversation dans {{integration}}",
       "openDiscordMessage": "Ouvrir le message d’origine dans Discord",
@@ -2095,6 +2069,26 @@
       "removeQueuedMessage": "Supprimer le message en attente",
       "skipAutomationEvent": "Ignorer l'événement d'automatisation"
     },
+    "relations": {
+      "communications": "Messages",
+      "created": "Créées",
+      "idle": "Inactive",
+      "loadFailed": "Échec du chargement",
+      "loading": "Chargement…",
+      "messageUnavailable": "Message indisponible",
+      "more": "Plus",
+      "origin": "Depuis",
+      "parallelHint": "Discutez en parallèle. Attendez moins.",
+      "queued": "En attente",
+      "received": "Reçu",
+      "refresh": "Actualiser",
+      "running": "En cours",
+      "sent": "Envoyé",
+      "title": "Discussions liées",
+      "toggleMessages": "Messages avec {{title}}",
+      "unavailable": "Indisponible",
+      "untitled": "Sans titre"
+    },
     "remoteAccess": {
       "default": "Par défaut",
       "defaultEnabled": "Activé par défaut pour les chats",
@@ -2105,16 +2099,22 @@
       "loading": "Chargement de l'accès à distance…",
       "off": "Désactivé",
       "on": "Activé",
-      "requiresSsh": "Nécessite aussi l'accès à l'hôte SSH {{name}}.",
+      "requiresSsh": "SSH requis : {{name}}",
       "retry": "Réessayer",
+      "sshDisabled": "Activez SSH : {{name}}",
+      "sshEnabled": "SSH activé : {{name}}",
       "title": "Accès à distance",
       "unavailableSsh": "hôte SSH indisponible"
     },
     "resources": {
+      "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "empty": "Ce chat ne contient pas encore d’artéfacts ni de liens",
+      "emptyLinks": "Aucun lien dans ce chat pour le moment",
+      "expand": "Développer",
       "links": "Liens",
       "loadFailed": "Impossible de charger les ressources",
+      "loadingLinks": "Chargement des liens",
       "retry": "Réessayer",
       "title": "Ressources du chat",
       "viewAll": "Tout voir"
@@ -2801,7 +2801,6 @@
         "workflow": "Workflow"
       },
       "importedLoadFailed": "Impossible de charger les modèles importés.",
-      "importedLoading": "Chargement des modèles importés…",
       "importedUnavailable": "Les modèles importés sont temporairement indisponibles.",
       "previewTemplate": "Aperçu du modèle {{title}}",
       "previewWebsite": "Aperçu du modèle de site web {{title}}",
@@ -2884,10 +2883,18 @@
     "walletAction": {
       "approveButton": "Vérifier",
       "approveTitle": "Vérifier l’achat",
+      "authorized": "Autorisé",
+      "callbackFailed": "Autorisé. Sélectionnez Continuer pour réessayer d’envoyer votre message.",
+      "callbackPrompt": "Le portefeuille Link a été autorisé. Poursuivez la tâche précédente.",
+      "checkFailed": "Impossible de vérifier l’autorisation. Réessayez.",
       "connectButton": "Autoriser",
       "connectTitle": "Autoriser le portefeuille Link",
       "continueButton": "Continuer",
-      "continueTitle": "Continuer dans Link"
+      "continueTitle": "Continuer dans Link",
+      "expired": "Autorisation expirée",
+      "failed": "Autorisation non terminée",
+      "unavailable": "Autorisation indisponible",
+      "waiting": "En attente d’autorisation"
     },
     "workflows": {
       "named": "Workflow {{title}}",
@@ -3515,13 +3522,15 @@
         "alreadyDescription": "Vous êtes déjà connecté. Envoyez un message sur Telegram pour commencer à discuter.",
         "alreadyDescriptionNamed": "Vous êtes déjà connecté à {{bot}}. Envoyez un message sur Telegram pour commencer à discuter.",
         "alreadyTitle": "Déjà connecté à Telegram",
-        "back": "Retour aux paramètres Telegram",
+        "botNotConfigured": "La connexion Telegram n'est pas encore configurée. Veuillez contacter l'assistance.",
         "checkingConnectionDescription": "Veuillez patienter pendant que nous vérifions votre connexion Telegram.",
         "checkingConnectionTitle": "Vérification de la connexion...",
         "checkingSession": "Veuillez patienter pendant que nous vérifions votre session {{brandName}}.",
         "connectDescription": "Liez votre compte à ce bot Telegram afin de pouvoir interagir avec votre agent directement depuis Telegram.",
+        "connectionCheckFailed": "Impossible de joindre Telegram pour vérifier la connexion. Veuillez réessayer dans un instant.",
         "connectTitle": "Se connecter à Telegram",
         "continue": "Continuer avec Telegram",
+        "domainNotVerified": "Impossible de vérifier la connexion à Telegram pour cette application. Réessayez ou contactez l'assistance si le problème persiste.",
         "errorFallback": "Nous n'avons pas pu connecter Telegram. Réessayez depuis Telegram.",
         "invalidSignature": "La signature sur ce lien n'est pas valide.",
         "invalidTimestamp": "L'horodatage sur ce lien n'est pas valide.",
@@ -3836,16 +3845,8 @@
       },
       "telegram": {
         "backToIntegrations": "Retour aux intégrations",
-        "botFallback": "Bot Telegram",
-        "disconnectAria": "Déconnecter {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Impossible de charger les paramètres Telegram.",
-        "moreOptions": "Plus d'options pour {{bot}}",
-        "notConnected": "Non connecté",
-        "officialBot": "Bot Telegram officiel",
-        "officialDescription": "Bot officiel fourni par {{brandName}}.",
-        "officialMissing": "La configuration du bot officiel est manquante.",
-        "pageDescription": "Gérer le routage du bot pour cet espace de travail"
+        "officialMissing": "La configuration du bot officiel est manquante."
       },
       "toasts": {
         "agentphoneConnected": "Numéro de téléphone connecté",
@@ -3881,6 +3882,65 @@
     "toasts": {
       "connected": "{{connector}} connecté"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "Un point de départ pour votre accord. Vérifiez les conditions de votre projet et le droit applicable avant de signer.",
+    "back": "Retour aux modèles",
+    "categories": {
+      "all": "Tous",
+      "business-record": "Documents commerciaux",
+      "contract": "Contrat",
+      "creative-brief": "Brief créatif",
+      "guide": "Guides",
+      "invoice": "Facture",
+      "letter": "Lettres",
+      "report": "Rapports",
+      "resume": "CV",
+      "service-agreement": "Accord de services"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Conditions et responsabilités",
+        "delivery": "Révision et signatures",
+        "details": "Durée et résiliation",
+        "overview": "Parties et périmètre"
+      },
+      "brief": {
+        "content": "Public cible et message principal",
+        "delivery": "Calendrier et processus de validation",
+        "details": "Livrables et formats",
+        "overview": "Présentation et objectifs du projet"
+      },
+      "general": {
+        "content": "Sections pour votre contenu",
+        "delivery": "Document Word modifiable ou PDF",
+        "details": "Mise en page cohérente",
+        "overview": "Structure claire du document"
+      },
+      "invoice": {
+        "content": "Services et tarifs détaillés",
+        "delivery": "Informations de paiement",
+        "details": "Taxes, totaux et échéance",
+        "overview": "Coordonnées du prestataire et du client"
+      }
+    },
+    "filter": "Catégorie de document",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Document Word"
+    },
+    "imageError": "Aperçu indisponible",
+    "included": "Contenu inclus",
+    "nextPage": "Page d’exemple suivante",
+    "openLarger": "Ouvrir l’aperçu agrandi",
+    "page": "Page {{page}}",
+    "preview": "Aperçu de {{title}}",
+    "previousPage": "Page d’exemple précédente",
+    "retry": "Réessayer",
+    "samplePages": "Pages d’exemple : {{total}}",
+    "title": "Document",
+    "use": "Utiliser ce modèle",
+    "useNamed": "Utiliser {{title}}"
   },
   "global": {
     "actions": {
@@ -4593,17 +4653,9 @@
       "settings": "Paramètres",
       "signOut": "Se déconnecter",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Réinitialisation du temps indisponible",
         "usage": "Utilisation de {{provider}}",
-        "usageRemaining": "Il reste {{provider}} {{window}}",
-        "windows": {
-          "fiveHour": "5h",
-          "week": "semaine"
-        }
+        "usageRemaining": "Il reste {{provider}} {{window}}"
       },
       "switchAccount": "Changer de compte",
       "userFallback": "Utilisateur"
@@ -4772,10 +4824,16 @@
       "personal": {
         "accountFallback": "Compte {{number}}",
         "activeAccount": "Actif",
+        "autoCredits": "Utilise des crédits Okou",
         "autoDescription": "Connectez votre compte Claude ou ChatGPT pour utiliser plus de modèles.",
         "autoTitle": "Utilisez plus de modèles",
+        "claudeGroup": "Votre forfait Claude",
+        "claudePlans": "Pro ou Max",
         "claudeTitle": "Claude",
+        "codexGroup": "Votre forfait ChatGPT",
+        "codexPlans": "Plus, Pro ou Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "Connecter",
         "connectAccount": "Connecter un compte",
         "disconnectAccount": "Déconnecter le compte",
         "disconnectDescription": "Cette action supprime le compte d’Okou. Elle n’annule pas votre abonnement auprès du fournisseur.",
@@ -4783,7 +4841,9 @@
         "disconnectTitle": "Déconnecter {{account}} ?",
         "loadError": "Impossible de charger vos comptes.",
         "loadingAccounts": "Chargement des comptes…",
+        "managePlans": "Gérer les forfaits",
         "noAccounts": "Aucun compte connecté.",
+        "ownPlan": "Utiliser votre propre forfait",
         "reconnectAccount": "Reconnecter",
         "retry": "Réessayer",
         "status": {
@@ -4981,26 +5041,22 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
-        "morningBriefEmail": {
-          "checkStatus": "Vérifier l’état de livraison",
-          "description": "Envoyez un exemple fixe à l’adresse de votre compte avec le modèle Morning Brief. Cela n’exécute aucun Agent et ne modifie pas votre planning.",
-          "reasons": {
-            "delivery-failed": "La livraison a échoué. Une tentative précédente a peut-être été acceptée par le fournisseur.",
-            "expired": "Le délai de livraison a expiré. Une tentative précédente a peut-être été acceptée par le fournisseur.",
-            "no-email": "Ignoré : votre compte n’a pas d’adresse e-mail.",
-            "suppressed": "Ignoré : la livraison à l’adresse de votre compte est bloquée.",
-            "unsubscribed": "Ignoré : votre compte est désabonné des mises à jour par e-mail."
-          },
-          "requestFailed": "La demande n’a pas abouti. Une nouvelle tentative réutilise la même demande pour éviter un doublon.",
-          "retry": "Réessayer l’e-mail de test",
-          "send": "Envoyer l’e-mail de test",
-          "sendAnother": "Envoyer un autre e-mail de test",
-          "sending": "Envoi en cours…",
+        "morningBrief": {
+          "checkStatus": "Vérifier le statut",
+          "description": "Exécute une fois le workflow activé de ton compte. Il peut actualiser les suggestions et envoyer un véritable e-mail. Ton horaire quotidien reste inchangé.",
+          "openChat": "Ouvrir la conversation",
+          "requestFailed": "La demande n’a pas abouti. Réessayer utilise la même demande pour éviter une exécution en double.",
+          "retry": "Réessayer",
+          "run": "Lancer le brief",
+          "runAgain": "Lancer un autre brief",
+          "starting": "Démarrage…",
           "status": {
-            "queued": "En attente de livraison. Vérifiez l’état avant d’envoyer un autre exemple.",
-            "sent": "Accepté par le fournisseur d’e-mail. Vérifiez votre boîte de réception et les indésirables ; l’arrivée dans la boîte n’est pas confirmée."
+            "completed": "Le brief est terminé.",
+            "failed": "Le brief a échoué. Ouvre la conversation pour voir les détails.",
+            "queued": "En attente. Ouvre la conversation pour suivre le brief.",
+            "running": "Le brief est en cours."
           },
-          "title": "E-mail de test Morning Brief"
+          "title": "Brief du matin"
         },
         "openrouterPreset": {
           "description": "S’applique aux nouvelles exécutions Auto et Okou 1.0 intégré de toute l’organisation. Les exécutions existantes restent inchangées.",
@@ -5417,7 +5473,6 @@
     "addressHelp": "Utilisez l'IP, le nom d'hôte complet ou le nom court d'un pair enregistré du tailnet. L'authentification SSH et la vérification de la clé d'hôte restent nécessaires.",
     "adoptHelp": "Transformez ce réseau d'organisation en votre réseau personnel. Les autres propriétaires devront réassocier leurs hôtes enregistrés.",
     "changed": "Ce réseau Tailscale a changé. Vérifiez les paramètres actuels avant d'enregistrer votre brouillon.",
-    "cleanupHelp": "Les nœuds temporaires peuvent rester dans Tailscale après la fermeture d'une connexion. Le délai de nettoyage du fournisseur n'est pas garanti.",
     "clientId": "Identifiant du client OAuth",
     "clientSecret": "Secret du client OAuth",
     "createNew": "Créer un réseau Tailscale",
@@ -5426,6 +5481,24 @@
     "edit": "Modifier Tailscale",
     "failed": "Impossible d'enregistrer la modification Tailscale. Réessayez.",
     "forbidden": "Vous ne pouvez pas gérer ce réseau Tailscale. Les réseaux d'organisation nécessitent un administrateur.",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "Dans Trust credentials, sélectionnez Credential → OAuth. Sous Keys → Auth Keys, sélectionnez Write et tag:okou. Choisissez Generate credential et copiez Client ID et Client secret dans les champs ci-dessous.",
+      "policyHelp": "Cette règle autorise tag:okou à accéder à tous les utilisateurs et appareils sur tous les ports et protocoles. Ajoutez-la à vos grants existants et conservez le reste de votre politique.",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "Dans Access controls → Visual editor → General access rules, sélectionnez Add rule et utilisez ces valeurs recommandées.",
+      "source": "Source",
+      "stepsLabel": "Étapes de configuration de Tailscale",
+      "tags": "Tags",
+      "tagsHelp": "Utilisez le tailnet de votre appareil cible. Dans Access controls → Visual editor → Tags, sélectionnez Create tag. Saisissez okou dans Tag name et choisissez Tag owners. Saisissez tag:okou dans les tags d’enregistrement ci-dessous.",
+      "title": "Comment configurer Tailscale ?",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "Vos hôtes SSH utilisent encore ce réseau. Réassociez-les ou supprimez-les d'abord.",
     "invalid": "Certains paramètres Tailscale sont invalides. Vérifiez les champs et réessayez.",
     "loadFailed": "Impossible de charger Tailscale. Réessayez.",
@@ -5440,7 +5513,6 @@
     "rebindHelp": "Choisissez ou créez un réseau Tailscale pour réassocier cet hôte. L'authentification SSH et la clé d'hôte approuvée sont conservées.",
     "replace": "Remplacer les identifiants OAuth",
     "select": "Choisir un réseau Tailscale",
-    "setupHelp": "Utilisez un client OAuth limité à ces tags. La politique de votre tailnet doit autoriser le port SSH. Enregistrer ne teste pas la connexion et n'accorde pas l'accès au chat.",
     "summary_one": "{{count}} Tailscale configuré",
     "summary_many": "{{count}} Tailscale configurés",
     "summary_other": "{{count}} Tailscale configurés",
@@ -5480,6 +5552,11 @@
     },
     "importHint": "Importez un document, une présentation ou une image.",
     "loadFailed": "Impossible de charger les modèles.",
+    "rename": {
+      "action": "Renommer",
+      "cancel": "Annuler",
+      "save": "Enregistrer"
+    },
     "renameFailed": "Impossible de renommer le modèle.",
     "retry": "Réessayer",
     "sharedBy": "Partagé par {{owner}}",
@@ -5553,6 +5630,26 @@
     "cancel": "Annuler",
     "close": "Fermer",
     "configured": "Configuré",
+    "connectionStatus": {
+      "attention_one": "{{count}} hôte VNC nécessite votre attention",
+      "attention_many": "{{count}} hôtes VNC nécessitent votre attention",
+      "attention_other": "{{count}} hôtes VNC nécessitent votre attention",
+      "observedAt": "Observé {{time}}",
+      "reasons": {
+        "authentication_failed": "L’authentification ou la vérification de l’identité du serveur a échoué.",
+        "disconnected": "Le serveur s’est déconnecté pendant la tentative de connexion.",
+        "invalid_credential": "Les identifiants enregistrés n’ont pas pu être utilisés.",
+        "kerberos_expired": "Les identifiants Kerberos ont expiré.",
+        "kerberos_non_renewable": "Les identifiants Kerberos ne peuvent pas être renouvelés.",
+        "kerberos_renewal_exhausted": "La limite de renouvellement des identifiants Kerberos a été atteinte.",
+        "network_failure": "Le transport de la connexion a échoué.",
+        "protocol": "Le serveur n’a pas terminé le protocole de connexion sélectionné.",
+        "timed_out": "La tentative de connexion a expiré.",
+        "unsafe_destination": "La destination a été refusée par la politique réseau.",
+        "unsupported_profile": "Le serveur ne prend pas en charge le profil de sécurité sélectionné."
+      },
+      "unavailable": "L’état de la connexion VNC est indisponible"
+    },
     "credential": {
       "add": "Ajouter des identifiants",
       "appleDhFieldHelp": "Chaque champ doit contenir de 1 à 63 octets UTF-8. NUL est interdit.",
@@ -6395,70 +6492,6 @@
       "title": "Workflows",
       "viewAutomations": "Voir les automatisations"
     },
-    "official": {
-      "activeInstallationDescription": "Ce workflow officiel reste opérationnel et son contenu géré reste en lecture seule.",
-      "activeInstallationTitle": "Workflow officiel",
-      "agent": "Agent",
-      "automationCount_one": "{{count}} automatisation",
-      "automationCount_many": "",
-      "automationCount_other": "{{count}} automatisations",
-      "badge": "Officiel",
-      "browse": "Parcourir les workflows officiels",
-      "chooseValue": "Choisir une valeur",
-      "copySucceededUninstallFailed": "La copie est prête, mais le workflow officiel d’origine n’a pas pu être désinstallé.",
-      "description": "Installez des workflows gérés et maintenus par l’Okou Official Team.",
-      "empty": "Aucun workflow officiel n’est disponible.",
-      "includedAutomations": "Automatisations incluses",
-      "install": "Installer",
-      "installDescription": "Choisissez un agent et renseignez chaque paramètre obligatoire. Toutes les automatisations incluses seront installées.",
-      "installed": "Workflow officiel installé",
-      "installedStatus": "Installé",
-      "installErrorDescription": "Vérifiez l’agent et les valeurs des paramètres, puis réessayez.",
-      "installErrorTitle": "Le workflow officiel n’a pas pu être installé",
-      "installTitle": "Installer {{name}}",
-      "intendedOff": "doit être désactivé",
-      "intendedOn": "doit être activé",
-      "loadErrorDescription": "Ce catalogue est peut-être indisponible ou non activé pour votre compte.",
-      "loadErrorTitle": "Impossible de charger les workflows officiels",
-      "no": "Non",
-      "noParameters": "Aucun paramètre n’est requis.",
-      "noResults": "Aucun workflow officiel ne correspond à votre recherche.",
-      "notFound": "Ce workflow officiel est introuvable.",
-      "parameterCount_one": "{{count}} paramètre",
-      "parameterCount_many": "",
-      "parameterCount_other": "{{count}} paramètres",
-      "parameterRequired": "{{key}} (obligatoire)",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "Reconfigurer",
-      "reconfigured": "Workflow officiel reconfiguré",
-      "reconfigureDescription": "Mettez à jour les paramètres typés sans remplacer ce workflow ni ses automatisations.",
-      "reconfigureDialogDescription": "Vérifiez chaque automatisation gérée et mettez à jour ses paramètres.",
-      "reconfigureErrorDescription": "Vérifiez les valeurs obligatoires et réessayez.",
-      "reconfigureErrorTitle": "Le workflow officiel n’a pas pu être reconfiguré",
-      "reconfigureTitle": "Paramètres d’installation",
-      "reconfigureUnavailable": "Les métadonnées de paramètres faisant autorité sont temporairement indisponibles.",
-      "retiredBadge": "Officiel · Retiré",
-      "retiredDefinitionDescription": "Cette définition conservée peut être consultée, mais ne peut plus être installée.",
-      "retiredInstallationDescription": "Cette définition est retirée. Votre installation existante reste opérationnelle et en lecture seule jusqu’à sa désinstallation.",
-      "retiredInstallationTitle": "Workflow officiel retiré",
-      "retiredTitle": "Définition retirée",
-      "retry": "Réessayer",
-      "search": "Rechercher des workflows officiels",
-      "selectAgent": "Sélectionner un agent",
-      "statusCurrent": "À jour",
-      "statusFailed": "Échec",
-      "statusNeedsReconfiguration": "Reconfiguration requise",
-      "statusReconciling": "Synchronisation",
-      "title": "Workflows officiels",
-      "unavailableInstallationDescription": "La définition acceptée est temporairement indisponible. Les contrôles opérationnels existants restent disponibles.",
-      "unavailableInstallationTitle": "Définition officielle indisponible",
-      "uninstall": "Désinstaller",
-      "uninstallConfirm": "Cela supprime l’installation officielle et toutes ses automatisations. Cette action est irréversible.",
-      "uninstallDescription": "Supprimez cette installation de workflow officiel via son cycle de vie géré.",
-      "uninstallTitle": "Désinstaller le workflow officiel",
-      "viewAndInstall": "Afficher et installer",
-      "yes": "Oui"
-    },
     "skillImport": {
       "action": "Importer des skills",
       "description": "Exécutez ce prompt là où se trouvent vos skills. Chacune devient un workflow privé.",
@@ -6478,7 +6511,6 @@
       "connect": "Connecter",
       "disconnect": "Se déconnecter",
       "disconnecting": "Déconnexion…",
-      "manage": "Gérer",
       "moreOptions": "Plus d'options",
       "uninstall": "Désinstaller",
       "uninstalling": "Désinstallation…",
@@ -6487,22 +6519,19 @@
     "connected": "Connecté",
     "connectedWithDetail": "Connecté ({{detail}})",
     "discord": {
-      "accountSetup": "Connectez votre compte Discord via le consentement officiel dans le navigateur.",
-      "approvalConfirmed": "Fermez cet onglet pour terminer la connexion dans l’onglet d’origine.",
+      "addNewServer": "Rejoindre un nouveau serveur",
       "approvalFailed": "La confirmation a échoué. Connectez-vous avec le compte et l’organisation Okou d’origine ou recommencez l’autorisation.",
       "authorizationError": "L’autorisation Discord n’a pas pu être finalisée. Réessayez.",
-      "authorizing": "Autorisation en cours…",
-      "browserConsent": "Terminez l’autorisation dans la fenêtre Discord. Cette page se mettra à jour automatiquement.",
       "chooseWorkspace": "Choisir un espace de travail",
       "connectDescription": "Connectez votre compte Discord pour discuter avec votre agent.",
       "connectedTitle": "Connecté à Discord",
-      "connectingTitle": "Connexion à Discord",
       "connectTitle": "Se connecter à Discord",
       "defaultWorkspace": "Espace de travail par défaut pour Discord",
       "description": "Mentionnez Okou sur un serveur ou envoyez un message privé au bot.",
       "disconnect": "Déconnecter Discord",
+      "installDescription": "Autorisez Okou dans Discord avec un compte pouvant gérer le serveur.",
+      "installTitle": "Ajouter Okou à un serveur",
       "invalidLink": "Ce lien de connexion Discord est invalide. Ouvrez un nouveau lien depuis Discord.",
-      "limitedContext": "Contexte limité : Okou peut ne pas recevoir les messages ordinaires des canaux. Mentionnez Okou et incluez les détails dont il a besoin.",
       "open": "Ouvrir Discord",
       "openInBrowser": "Ouvrir dans le navigateur",
       "pendingConsent": "Fermez cet onglet et relancez la connexion depuis l’onglet d’origine.",
@@ -6549,7 +6578,6 @@
     },
     "telegram": {
       "description": "Acheminer les messages Telegram vers les agents",
-      "openSettings": "Ouvrir les paramètres Telegram",
       "title": "Telegram"
     }
   }

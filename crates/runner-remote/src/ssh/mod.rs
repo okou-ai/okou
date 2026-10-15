@@ -302,6 +302,7 @@ impl SshRuntime {
                     .generation,
             );
             output.connection.connecting = true;
+            output.connection.created_at = Some(credential.created_at);
             let transport = sessions
                 .pool
                 .acquire(
@@ -354,6 +355,7 @@ impl SshRuntime {
         let credential = scope
             .wait(self.authority.resolve(run, connection))
             .await??;
+        observation.created_at = Some(credential.created_at);
         let (private_key, passphrase) = match credential.auth {
             CredentialAuth::PrivateKey {
                 private_key,
@@ -363,6 +365,7 @@ impl SshRuntime {
                 scope.check()?;
                 observation.generation = Some(credential.generation);
                 return Ok(PreparedCredential {
+                    created_at: credential.created_at,
                     host: credential.host,
                     port: credential.port,
                     username: credential.username,
@@ -392,6 +395,7 @@ impl SshRuntime {
             )?;
             worker_scope.check()?;
             Ok::<_, FailureReason>(PreparedCredential {
+                created_at: credential.created_at,
                 host: credential.host,
                 port: credential.port,
                 username: credential.username,

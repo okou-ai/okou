@@ -28,6 +28,11 @@ import {
 
 const expectedBindings = [
   {
+    rustModulePath: ["runners", "runs", "startup"],
+    rustTypeName: "Request",
+    direction: "request",
+  },
+  {
     rustModulePath: ["runners"],
     rustTypeName: "SandboxStartupPath",
     direction: "request",
@@ -96,6 +101,11 @@ const expectedBindings = [
       },
     ];
   }),
+  {
+    rustModulePath: ["runners", "vnc"],
+    rustTypeName: "ObservationRequest",
+    direction: "request",
+  },
   {
     rustModulePath: ["runners", "ssh"],
     rustTypeName: "ObservationRequest",

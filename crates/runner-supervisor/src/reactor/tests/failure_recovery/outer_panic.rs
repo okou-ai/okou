@@ -129,10 +129,6 @@ async fn outer_job_panic_after_handoff_keeps_successor_owned_sandbox() {
         .await
         .expect("successor should complete with the handed-off sandbox");
     assert_eq!(
-        successor_completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::Reused)
-    );
-    assert_eq!(
         successor_completion.sandbox_id, predecessor_completion.sandbox_id,
         "panic cleanup must not destroy the successor-owned sandbox"
     );

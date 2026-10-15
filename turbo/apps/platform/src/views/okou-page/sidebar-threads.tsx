@@ -55,10 +55,8 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  deleteChatThread$,
-  renameChatThread$,
-} from "../../signals/chat-page/chat-event.ts";
+import { deleteChatThread$ } from "../../signals/chat-page/chat-event.ts";
+import { renameChatThreadFromInput$ } from "../../signals/chat-page/chat-thread-rename.ts";
 import {
   createNewChatThread$,
   newChatThreadDisabled$,
@@ -566,6 +564,10 @@ function ChatThreadItemLink({
   const indicatorState = useLastResolved(signals.indicatorState$) ?? null;
   const isPinned = useGet(signals.pinned$);
   const select = useSet(signals.select$);
+  const inlineRenameEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
+  const renaming = useGet(signals.inlineRenaming$);
+  const startInlineRename = useSet(signals.startInlineRename$);
 
   return (
     <Link
@@ -581,6 +583,18 @@ function ChatThreadItemLink({
           e.preventDefault();
         }
       }}
+      onDoubleClick={
+        inlineRenameEnabled
+          ? (e) => {
+              // Modified clicks open tabs or the side pane; renaming on top
+              // of them would act twice for one gesture.
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+                return;
+              }
+              startInlineRename();
+            }
+          : undefined
+      }
       className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
@@ -593,6 +607,7 @@ function ChatThreadItemLink({
         className={cn(
           "flex min-w-0 items-center gap-2",
           touch ? "pr-12" : "pr-8",
+          renaming && "invisible",
         )}
       >
         <ChatThreadListPaneIcon signals={signals} />
@@ -608,10 +623,117 @@ function ChatThreadItemLink({
           state={indicatorState ?? (isPinned ? "pinned" : null)}
         />
       </span>
-      <span className="flex items-center pr-2 empty:hidden">
+      <span
+        className={cn(
+          "flex items-center pr-2 empty:hidden",
+          renaming && "invisible",
+        )}
+      >
         <ThreadNumberShortcutHint shortcutNumber={shortcutNumber} />
       </span>
     </Link>
+  );
+}
+
+function ChatThreadItemRename({
+  signals,
+  touch,
+}: {
+  signals: SidebarChatThreadItemSignals;
+  touch: boolean;
+}) {
+  const renaming = useGet(signals.inlineRenaming$);
+  return renaming ? (
+    <ChatThreadItemRenameForm signals={signals} touch={touch} />
+  ) : null;
+}
+
+/**
+ * The row's title, edited where it stands. It lies over the link, which stays
+ * mounted with its content hidden: the link keeps the row's background, and
+ * Enter or Escape can hand focus back to it the way a dialog returns focus to
+ * its trigger. The text keeps the title's x and weight, so entering the field
+ * moves nothing; the ring is the row's own keyboard focus ring.
+ */
+function ChatThreadItemRenameForm({
+  signals,
+  touch,
+}: {
+  signals: SidebarChatThreadItemSignals;
+  touch: boolean;
+}) {
+  const { t } = useTranslation();
+  const title = useGet(signals.title$);
+  const isHighlighted = useGet(signals.highlighted$);
+  const isUnread = useLastResolved(signals.unread$) ?? false;
+  const commitInlineRename = useSet(signals.commitInlineRename$);
+  const cancelInlineRename = useSet(signals.cancelInlineRename$);
+  const inlineRenameInputRef = useSet(signals.inlineRenameInputRef$);
+  // The blur that commits is often the press of a click that opens another
+  // chat, and that navigation aborts the page signal before the request can
+  // be sent.
+  const rootSignal = useGet(rootSignal$);
+
+  // Enter and Escape both hand focus back to the row, so leaving the field is
+  // the one place an edit is committed; Escape clears the edit first.
+  function returnFocusToRow(form: HTMLFormElement) {
+    form.parentElement
+      ?.querySelector<HTMLElement>("[data-sidebar-chat-thread-id]")
+      ?.focus();
+  }
+
+  return (
+    <form
+      className={cn(
+        "col-span-2 col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg text-sidebar-foreground ring-2 ring-inset ring-ring",
+        touch ? "h-14 pl-3 pr-12 text-base" : "h-8 pl-2 pr-8 text-sm",
+        (isHighlighted || isUnread) && "font-medium",
+      )}
+      onSubmit={(event) => {
+        event.preventDefault();
+        returnFocusToRow(event.currentTarget);
+      }}
+      onKeyDown={(event) => {
+        // The input method owns Enter and Escape while it composes. Safari can
+        // end composition before the confirming keydown, which keyCode 229
+        // still marks, so that Enter must not submit the half-typed title.
+        if (
+          event.nativeEvent.isComposing ||
+          event.nativeEvent.keyCode === 229
+        ) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+          }
+          return;
+        }
+        if (event.key === "Escape") {
+          cancelInlineRename();
+          returnFocusToRow(event.currentTarget);
+        }
+      }}
+    >
+      <ChatThreadListPaneIcon signals={signals} />
+      <input
+        ref={inlineRenameInputRef}
+        name="title"
+        type="text"
+        aria-label={t(($) => {
+          return $.chat.sidebar.rename;
+        })}
+        placeholder={t(($) => {
+          return $.chat.sidebar.titlePlaceholder;
+        })}
+        defaultValue={title ?? ""}
+        autoComplete="off"
+        className="min-w-0 flex-1 bg-transparent p-0 leading-5 text-[color:var(--nav-copy,inherit)] outline-none placeholder:text-muted-foreground"
+        onBlur={(event) => {
+          detach(
+            commitInlineRename(event.currentTarget.value, rootSignal),
+            Reason.DomCallback,
+          );
+        }}
+      />
+    </form>
   );
 }
 
@@ -633,6 +755,7 @@ export function ChatThreadItem({
         shortcutNumber={shortcutNumber}
         touch={touch}
       />
+      <ChatThreadItemRename signals={signals} touch={touch} />
       <div
         className={cn(
           "pointer-events-none relative col-start-1 row-start-1 flex items-center justify-center justify-self-end",
@@ -653,7 +776,7 @@ function ChatThreadRenameDialog() {
   const renameDialogInput = useGet(renameDialogInput$);
   const closeRenameChatThreadDialog = useSet(closeRenameChatThreadDialog$);
   const setRenameDialogInput = useSet(setRenameDialogInput$);
-  const renameChatThread = useSet(renameChatThread$);
+  const renameChatThreadFromInput = useSet(renameChatThreadFromInput$);
   const pageSignal = useGet(pageSignal$);
 
   function closeRenameDialog() {
@@ -664,13 +787,15 @@ function ChatThreadRenameDialog() {
     if (!renameDialogThreadId || !renameDialogInput.trim()) {
       return;
     }
-    const threadId = renameDialogThreadId;
-    const agentId = renameDialogAgentId;
-    const title = renameDialogInput.trim();
     detach(
-      (async () => {
-        await renameChatThread({ threadId, title, agentId }, pageSignal);
-      })(),
+      renameChatThreadFromInput(
+        {
+          threadId: renameDialogThreadId,
+          input: renameDialogInput,
+          agentId: renameDialogAgentId,
+        },
+        pageSignal,
+      ),
       Reason.DomCallback,
     );
     closeRenameDialog();

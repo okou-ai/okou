@@ -594,6 +594,17 @@ pub mod runners {
             }
         }
 
+        /// Run-authenticated actual sandbox startup reporting DTOs.
+        pub mod startup {
+            /// Actual settled resource reported by the Run's Runner.
+            #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            pub struct Request {
+                /// Canonical resource path after preparation and replacement settle.
+                pub sandbox_startup_path: crate::generated::types::runners::SandboxStartupPath,
+            }
+        }
+
         /// DTOs for steering prompts and run-targeted budgets into a running run.
         pub mod steerable_inputs {
             /// DTOs for reading the next steerable prompt or run-targeted budget.
@@ -706,6 +717,8 @@ pub mod runners {
             pub runner_identity: ObservationRequestRunnerIdentity,
             /// Configuration used, including successful TOFU advancement.
             pub expected_generation: i64,
+            /// Immutable creation instance at PostgreSQL microsecond precision.
+            pub expected_created_at: String,
             /// UTC observation time, ordered independently of report delivery.
             pub observed_at: String,
             /// Connection failure; null means verified host and authenticated user.
@@ -1487,6 +1500,114 @@ pub mod runners {
             pub run_id: String,
             /// Affected VNC connection UUID, or explicit null for every VNC connection in the Run.
             pub connection_id: Option<String>,
+        }
+
+        /// Immutable winning official Runner process.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ObservationRequestRunnerIdentity {
+            /// Runner UUID.
+            pub runner_id: String,
+            /// Winning process generation.
+            pub heartbeat_generation: i64,
+        }
+
+        /// Exact RFB transport snapshot returned by credential resolution.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum ObservationRequestExpectedTransport {
+            /// Expected direct RFB route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Expected verified saved SSH carrier for RFB.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact saved SSH UUID for the RFB route.
+                connection_id: String,
+                /// Resolved SSH configuration generation.
+                generation: i64,
+            },
+        }
+
+        /// Independently authorized exact KDC transport snapshot.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(tag = "type", rename_all_fields = "camelCase")]
+        pub enum ObservationRequestExpectedKdcTransport {
+            /// Exact saved public-network KDC route.
+            #[serde(rename = "direct")]
+            Direct,
+            /// Exact independently authorized SSH-to-loopback KDC route.
+            #[serde(rename = "ssh")]
+            Ssh {
+                /// Exact separately granted saved SSH UUID.
+                connection_id: String,
+                /// Current SSH generation, independently fenced from RFB.
+                generation: i64,
+            },
+        }
+
+        /// Secret-free connection evidence only.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum ObservationRequestFailureReason {
+            /// Resolved credentials could not be used.
+            #[serde(rename = "invalid_credential")]
+            InvalidCredential,
+            /// Destination rejected by network policy.
+            #[serde(rename = "unsafe_destination")]
+            UnsafeDestination,
+            /// Connection transport failed.
+            #[serde(rename = "network_failure")]
+            NetworkFailure,
+            /// Peer did not complete the selected protocol.
+            #[serde(rename = "protocol")]
+            Protocol,
+            /// Connection setup deadline expired.
+            #[serde(rename = "timed_out")]
+            TimedOut,
+            /// Peer disconnected during connection setup.
+            #[serde(rename = "disconnected")]
+            Disconnected,
+            /// Client authentication or server identity verification failed.
+            #[serde(rename = "authentication_failed")]
+            AuthenticationFailed,
+            /// Peer does not support the selected security profile.
+            #[serde(rename = "unsupported_profile")]
+            UnsupportedProfile,
+            /// Selected Kerberos credentials expired.
+            #[serde(rename = "kerberos_expired")]
+            KerberosExpired,
+            /// Selected Kerberos credentials cannot be renewed.
+            #[serde(rename = "kerberos_non_renewable")]
+            KerberosNonRenewable,
+            /// Selected Kerberos renewal limit was reached.
+            #[serde(rename = "kerberos_renewal_exhausted")]
+            KerberosRenewalExhausted,
+        }
+
+        /// Bounded evidence from one authorized connection attempt; never raw errors.
+        #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        pub struct ObservationRequest {
+            /// Exact saved VNC UUID.
+            pub connection_id: String,
+            /// Winning official process identity.
+            pub runner_identity: ObservationRequestRunnerIdentity,
+            /// Resolved VNC configuration generation.
+            pub expected_generation: i64,
+            /// Resolved RFB transport authority.
+            pub expected_transport: ObservationRequestExpectedTransport,
+            /// Independent online KDC transport, when applicable.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_kdc_transport: Option<ObservationRequestExpectedKdcTransport>,
+            /// Kerberos source revision, when applicable.
+            #[serde(default, skip_serializing_if = "Option::is_none")]
+            pub expected_credential_revision: Option<i64>,
+            /// Exact PostgreSQL creation instance, including microsecond precision.
+            pub expected_created_at: String,
+            /// UTC connection-result time, not report delivery time.
+            pub observed_at: String,
+            /// Allow-listed connection failure, or null for recovery.
+            pub failure_reason: Option<ObservationRequestFailureReason>,
         }
 
         /// Immutable winning official Runner process.
@@ -3126,70 +3247,6 @@ pub mod webhooks {
     pub mod agent {
         /// DTOs for atomically completing agent runs.
         pub mod complete {
-            /// Outcome of the sandbox reuse decision.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestSandboxReuseResult {
-                /// An idle sandbox was reused.
-                #[serde(rename = "reused")]
-                Reused,
-                /// Legacy outcome from the removed feature gate.
-                #[serde(rename = "featureDisabled")]
-                FeatureDisabled,
-                /// Legacy outcome for an unavailable reuse identity.
-                #[serde(rename = "noSessionId")]
-                NoSessionId,
-                /// The run had no sandbox reuse key.
-                #[serde(rename = "noReuseKey")]
-                NoReuseKey,
-                /// No matching idle sandbox was available.
-                #[serde(rename = "poolMiss")]
-                PoolMiss,
-                /// The idle sandbox profile did not match.
-                #[serde(rename = "profileMismatch")]
-                ProfileMismatch,
-                /// The idle sandbox device limits did not match.
-                #[serde(rename = "deviceLimitMismatch")]
-                DeviceLimitMismatch,
-                /// The selected idle sandbox could not be unparked.
-                #[serde(rename = "unparkFailed")]
-                UnparkFailed,
-            }
-
-            /// Final outcome of home reuse preparation.
-            #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-            pub enum RequestHomeReuseResult {
-                /// A cached home directory was reused.
-                #[serde(rename = "reused")]
-                Reused,
-                /// The home directory remained in a reused sandbox.
-                #[serde(rename = "sandboxReused")]
-                SandboxReused,
-                /// No matching home cache was available.
-                #[serde(rename = "cacheMiss")]
-                CacheMiss,
-                /// The run had no home reuse key.
-                #[serde(rename = "noReuseKey")]
-                NoReuseKey,
-                /// The home working directory was invalid.
-                #[serde(rename = "invalidWorkingDir")]
-                InvalidWorkingDir,
-                /// The cached home was locked by another run.
-                #[serde(rename = "lockBusy")]
-                LockBusy,
-                /// The cached home metadata was invalid.
-                #[serde(rename = "invalidMetadata")]
-                InvalidMetadata,
-                /// Home reuse was disabled by disk pressure.
-                #[serde(rename = "diskPressure")]
-                DiskPressure,
-                /// Home reuse was not configured.
-                #[serde(rename = "notConfigured")]
-                NotConfigured,
-                /// Home preparation fell back after sandbox setup.
-                #[serde(rename = "sandboxPrepareFallback")]
-                SandboxPrepareFallback,
-            }
-
             /// Reason a final Run output intentionally omits resumable CLI agent session history.
             #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
             pub enum RequestCompletionCliAgentSessionHistoryDisposition {
@@ -3199,6 +3256,9 @@ pub mod webhooks {
                 /// The native history was unavailable or unusable.
                 #[serde(rename = "unavailable")]
                 Unavailable,
+                /// Native history is retained only in the disposable sandbox/home.
+                #[serde(rename = "native_only")]
+                NativeOnly,
             }
 
             /// Policy used when a final Run output artifact root is missing.
@@ -3278,12 +3338,6 @@ pub mod webhooks {
                 /// Optional sandbox identifier used by the run.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub sandbox_id: Option<String>,
-                /// Optional outcome of the sandbox reuse decision.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub sandbox_reuse_result: Option<RequestSandboxReuseResult>,
-                /// Optional outcome of the home reuse decision.
-                #[serde(default, skip_serializing_if = "Option::is_none")]
-                pub home_reuse_result: Option<RequestHomeReuseResult>,
                 /// Native history and published file outputs saved with completion.
                 #[serde(default, skip_serializing_if = "Option::is_none")]
                 pub completion: Option<RequestCompletion>,

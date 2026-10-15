@@ -1,11 +1,12 @@
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { revokedChatEventIds } from "@okouai/api-contracts/contracts/chat-events";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsDiscordMessageContract } from "@okouai/api-contracts/contracts/integrations-discord-message";
+import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { integrationsDiscordMessageRoutes } from "../integrations-discord-message";
+import { integrationsDiscordRoutes } from "../integrations-discord";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -142,20 +143,14 @@ async function completeRun(args: {
       [200],
     );
   }
-  const history = `Discord conversation history ${args.runId}`;
-  const hash = await prepareRunnerSessionHistory(
-    context,
-    args.runId,
-    headers,
-    history,
-  );
+
   const completion = {
     runId: args.runId,
     exitCode: 0,
     completion: {
       cliAgentType: "claude-code" as const,
       cliAgentSessionId: `discord-session-${args.runId}`,
-      cliAgentSessionHistoryHash: hash,
+      cliAgentSessionHistoryDisposition: "native_only" as const,
     },
     ...(args.text === undefined ? {} : { lastEventSequence: 1 }),
   };
@@ -560,12 +555,6 @@ describe("canonical Discord terminal replies", () => {
         headers,
         [200],
       );
-      const hash = await prepareRunnerSessionHistory(
-        context,
-        started.runId,
-        headers,
-        `Discord conversation history ${started.runId}`,
-      );
       for (let attempt = 0; attempt < 2; attempt += 1) {
         await webhooks.requestAgentComplete(
           {
@@ -575,7 +564,7 @@ describe("canonical Discord terminal replies", () => {
             completion: {
               cliAgentType: "claude-code",
               cliAgentSessionId: `discord-session-${started.runId}`,
-              cliAgentSessionHistoryHash: hash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           headers,
@@ -1229,6 +1218,79 @@ describe("Discord processing status", () => {
       expect(typingRequests).toBe(0);
     },
   );
+
+  it("stops typing after binding revocation while permission reuse is warm", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    onTestFinished(async () => {
+      await completeRun({
+        runId: started.runId,
+        sandboxToken: claim.sandboxToken,
+        error: "Test-owned Discord run cleanup",
+      });
+      await webhooks.requestAgentHeartbeat(
+        { runId: started.runId },
+        { authorization: `Bearer ${claim.sandboxToken}` },
+        [404],
+      );
+      await flushWaitUntilForTest();
+    });
+    let channelReads = 0;
+    let typingRequests = 0;
+    started.provider.state.channelResponse = () => {
+      channelReads += 1;
+      return undefined;
+    };
+    started.provider.state.typingResponse = () => {
+      typingRequests += 1;
+      return undefined;
+    };
+    const typedBeforeRefresh = started.provider.typingChannels.length;
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    const reuseStartedAt = now();
+    const readsPerFullCheck = channelReads;
+    expect(readsPerFullCheck).toBeGreaterThan(0);
+    expect(typingRequests).toBe(1);
+    expect(started.provider.typingChannels).toHaveLength(
+      typedBeforeRefresh + 1,
+    );
+    expect(started.provider.typingChannels.at(-1)).toBe(started.channelId);
+
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    await heartbeat(started.runId, claim.sandboxToken);
+    expect(channelReads).toBe(readsPerFullCheck);
+    expect(typingRequests).toBe(2);
+    expect(started.provider.typingChannels).toHaveLength(
+      typedBeforeRefresh + 2,
+    );
+
+    await removePublicDiscordBinding(context, started.actor.fixture);
+    const status = await accept(
+      setupApp({ context, routes: integrationsDiscordRoutes })(
+        integrationsDiscordContract,
+      ).getStatus({ headers: { authorization: "Bearer clerk-session" } }),
+      [200],
+    );
+    expect(status.body).toMatchObject({
+      isAvailable: true,
+      isAdmin: true,
+      isConnected: false,
+      guildId: null,
+      discordUserId: null,
+    });
+    started.fixture.deleted = true;
+
+    mockNow(now() + TYPING_REFRESH_GAP_MS);
+    expect(now() - reuseStartedAt).toBeLessThan(TYPING_ACCESS_REUSE_MS);
+    await expect(
+      heartbeat(started.runId, claim.sandboxToken),
+    ).resolves.toStrictEqual({ ok: true, typingRefreshIntervalSeconds: 8 });
+    expect(typingRequests).toBe(2);
+    expect(started.provider.typingChannels).toHaveLength(
+      typedBeforeRefresh + 2,
+    );
+  });
 
   it("refreshes typing without repeating Discord permission reads inside the reuse window", async () => {
     const started = await startDiscordRun();

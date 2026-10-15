@@ -271,10 +271,11 @@ async function finish(
           ? {
               completion: {
                 cliAgentType: claim.cliAgentType,
-                cliAgentSessionId: `subscription-${runId}`,
-                cliAgentSessionHistoryHash: createHash("sha256")
-                  .update(`subscription history ${runId}`)
-                  .digest("hex"),
+                cliAgentSessionId:
+                  claim.cliAgentType === "pi"
+                    ? (claim.piSessionId ?? runId)
+                    : `subscription-${runId}`,
+                cliAgentSessionHistoryDisposition: "native_only",
               },
             }
           : { error: "Upstream run failed" }),
@@ -955,7 +956,7 @@ describe("personal subscription run identity", () => {
     "organization.deleted",
     "organizationMembership.deleted",
   ] as const)(
-    "keeps %s as a hard revocation for a retained subscription",
+    "%s stops the active Run from using a retained subscription",
     async (eventType) => {
       const f = await fixture("codex-oauth-token");
       const runId = await f.start();
@@ -984,6 +985,8 @@ describe("personal subscription run identity", () => {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
+      // Observe with the already-issued sandbox credential: terminal Run
+      // refusal does not require erasing the captured account or its token.
       const denied = await firewall.requestFirewallAuth(
         { authorization: `Bearer ${claim.sandboxToken}` },
         authBody(claim, f.type),
@@ -1522,17 +1525,7 @@ describe("personal priority credential and session boundaries", () => {
     const history = Buffer.from(`subscription history ${sent.runId}`);
     const hash = createHash("sha256").update(history).digest("hex");
     context.sessionHistoryBlobs.set(hash, history);
-    await createWebhookCallbackApi(context).requestAgentSessionHistoryPrepare(
-      {
-        runId: sent.runId,
-        hash,
-        rawSize: history.length,
-        encodedSize: history.length,
-        encoding: "identity",
-      },
-      { authorization: `Bearer ${first.sandboxToken}` },
-      [200],
-    );
+
     await finish(f.actor, sent.runId, first, "completed");
     let nextRunId: string | undefined;
     await flushWaitUntilForTest();
@@ -1564,6 +1557,8 @@ describe("personal priority credential and session boundaries", () => {
       `Bearer ${replacement.token}`,
     );
     expect(second.cliAgentType).toBe("codex");
-    expect(second.resumeSession?.sessionId).toBe(`subscription-${sent.runId}`);
+    expect(second.nativeContinuation?.sessionId).toBe(
+      `subscription-${sent.runId}`,
+    );
   });
 });

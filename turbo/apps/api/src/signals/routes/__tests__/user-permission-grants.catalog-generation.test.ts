@@ -29,11 +29,14 @@ function catalog(version: string, includeSlack: boolean) {
     structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
   );
   artifact.catalogVersion = version;
-  if (!includeSlack) {
-    artifact.connectors = artifact.connectors.filter((connector) => {
-      return connector.slug !== "slack";
-    });
-  }
+  // Retain a stable connector so the generation without Slack is still a valid,
+  // nonempty catalog, without republishing every unrelated connector.
+  artifact.connectors = artifact.connectors.filter((connector) => {
+    return (
+      connector.slug === "openai" ||
+      (includeSlack && connector.slug === "slack")
+    );
+  });
   return artifact;
 }
 

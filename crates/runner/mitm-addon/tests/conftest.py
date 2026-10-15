@@ -36,6 +36,7 @@ import firewall_auth_client
 import logging_utils
 import mitm_addon
 import platform_api
+import public_destination_body_admission
 import registry
 import run_usage
 import runner_flush_lifecycle
@@ -68,6 +69,7 @@ def _reset_module_state() -> Iterator[None]:
     firewall_auth_client.reset_transport_state_for_tests()
     aws_sigv4_hash_executor.reset_for_tests()
     aws_sigv4_body_admission.reset_for_tests()
+    public_destination_body_admission.reset_for_tests()
     builtin_connector_diagnostics.reset_cache_for_tests()
     registry.reset_cache_for_tests()
     run_usage.initialize(None)
@@ -93,6 +95,7 @@ def _reset_module_state() -> Iterator[None]:
     firewall_auth_client.reset_transport_state_for_tests()
     aws_sigv4_hash_executor.reset_for_tests()
     aws_sigv4_body_admission.reset_for_tests()
+    public_destination_body_admission.reset_for_tests()
     builtin_connector_diagnostics.reset_cache_for_tests()
     upstream_destination_binding.reset_for_tests()
     upstream_admission.reset_api_destination_cache_for_tests()

@@ -203,7 +203,6 @@ async fn run_finalizing_claim(
                 claimed,
                 cancellation,
                 *failure,
-                None,
                 pre_spawn_timing.finalizing_diagnostics(),
                 &ctx,
             )
@@ -226,7 +225,6 @@ async fn run_finalizing_claim(
                 ExecutionFailure::from_error(
                     "runner panicked while preparing a claimed finalizing successor",
                 ),
-                None,
                 pre_spawn_timing.finalizing_diagnostics(),
                 &ctx,
             )
@@ -269,7 +267,6 @@ async fn run_finalizing_claim(
                             ExecutionFailure::from_error(
                                 "finalizing handoff identity did not match claimed successor",
                             ),
-                            None,
                             pre_spawn_timing.finalizing_diagnostics(),
                             &ctx,
                         )
@@ -316,7 +313,6 @@ async fn run_finalizing_claim(
                     claimed,
                     cancellation,
                     ExecutionFailure::cancelled(),
-                    None,
                     pre_spawn_timing.finalizing_diagnostics(),
                     &ctx,
                 )
@@ -362,7 +358,7 @@ async fn run_finalizing_claim(
                 }
                 ReservedActivation::CannotStart {
                     budget_lease,
-                    reuse_result,
+                    reuse_result: _,
                     error,
                 } => {
                     drop(activation_transfer_guard.take());
@@ -375,7 +371,6 @@ async fn run_finalizing_claim(
                         claimed,
                         cancellation,
                         ExecutionFailure::from_error(error),
-                        Some(reuse_result),
                         pre_spawn_timing.finalizing_diagnostics(),
                         &ctx,
                     )
@@ -522,7 +517,6 @@ async fn complete_claimed_without_sandbox(
     claimed: ClaimedJob,
     cancellation: RunCancellationRegistration,
     failure: ExecutionFailure,
-    reuse_result: Option<SandboxReuseResult>,
     diagnostics: Option<FinalizingDiagnostics>,
     ctx: &SpawnContext,
 ) -> RunCancellationRegistration {
@@ -546,8 +540,6 @@ async fn complete_claimed_without_sandbox(
                 failure_reason: None,
                 error: Some(failure.error),
                 sandbox_id: None,
-                sandbox_reuse_result: reuse_result,
-                home_reuse_result: None,
             },
             completion_auth,
         )

@@ -14,10 +14,8 @@ import {
 import {
   context,
   findButton,
-  findLink,
   installRunChat,
   NEW_CHAT_PATH,
-  readyChat,
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 import { fillComposer } from "./chat-test-helpers.ts";
@@ -43,7 +41,6 @@ test.each([
       path: RUN_PATH,
       featureSwitches: { [FeatureSwitchKey.CodexExecution]: enabled },
     });
-    await readyChat();
     const panel = await openModelPanel(`GPT 6.1 Sol, ${effort}`);
     expect(
       within(panel).getByRole("slider", { name: "Effort" }),
@@ -66,17 +63,13 @@ test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot us
     return respond(200, { switches, effectiveSwitches: switches });
   });
   await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-  const piPanel = await openModelPanel("GPT 6.1 Sol, Max");
-  expect(
-    within(piPanel).getByRole("slider", { name: "Effort" }),
-  ).toHaveAttribute("aria-valuetext", "Max");
-  await closeModelPanel();
+  await expect(findButton("GPT 6.1 Sol, Max")).resolves.toBeInTheDocument();
 
   click(await findButton("Test User"));
   click(await screen.findByText("Lab"));
-  await screen.findByRole("heading", { name: "Lab" });
-  const row = screen.getByText("Codex execution (test only)").closest("li");
+  const row = (await screen.findByText("Codex execution (test only)")).closest(
+    "li",
+  );
   if (!(row instanceof HTMLElement)) {
     throw new Error("Codex execution test switch row was not found");
   }
@@ -86,12 +79,8 @@ test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot us
   await waitFor(() => {
     expect(toggle).toBeChecked();
   });
-  click(await findLink("Run conversation"));
-  await readyChat();
-  const codexPanel = await openModelPanel("GPT 6.1 Sol, Ultra");
-  expect(
-    within(codexPanel).getByRole("slider", { name: "Effort" }),
-  ).toHaveAttribute("aria-valuetext", "Ultra");
+  click(await screen.findByText("Run conversation"));
+  await expect(findButton("GPT 6.1 Sol, Ultra")).resolves.toBeInTheDocument();
 });
 
 test("does not expand the catalog's efforts when Codex execution is enabled", async () => {
@@ -118,7 +107,6 @@ test("does not expand the catalog's efforts when Codex execution is enabled", as
     path: RUN_PATH,
     featureSwitches: { [FeatureSwitchKey.CodexExecution]: true },
   });
-  await readyChat();
   const panel = await openModelPanel("GPT 6.1 Sol, Max");
   expect(within(panel).getByRole("slider", { name: "Effort" })).toHaveAttribute(
     "aria-valuetext",

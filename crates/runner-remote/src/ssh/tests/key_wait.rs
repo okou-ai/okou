@@ -42,7 +42,9 @@ async fn resolve_any_connection(h: &Harness) -> httpmock::Mock<'_> {
         .mock_async(|when, then| {
             when.method("POST")
                 .path(format!("/api/runners/runs/{}/ssh/resolve", h.run));
-            then.status(200).json_body(h.credential(true));
+            then.status(200)
+                .header("X-SSH-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(h.credential(true));
         })
         .await
 }

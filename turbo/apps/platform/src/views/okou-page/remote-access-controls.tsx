@@ -9,6 +9,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowLeft,
+  AlertTriangle,
   ChevronRight,
   Monitor,
   Network,
@@ -31,6 +32,7 @@ import { invalidateRemoteAccess$ } from "../../signals/remote-access-refresh.ts"
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import { LoadingSwitch } from "../components/loading-switch.tsx";
 import { Button } from "@okouai/ui/components/ui/button";
+import { cn } from "@okouai/ui/lib/utils";
 import {
   Popover,
   PopoverContent,
@@ -374,19 +376,16 @@ function VncHostChoiceRow({
   threadId,
   host,
   pendingRemoteAccess,
-  sshConnectionId,
+  sshConnectionIds,
   sshHosts,
 }: {
   threadId?: string;
   host: ThreadRemoteHostAccess;
   pendingRemoteAccess: ComposerSignals["pendingRemoteAccess"];
-  sshConnectionId: string | null;
+  sshConnectionIds: readonly string[];
   sshHosts: readonly ThreadRemoteHostAccess[];
 }) {
   const { t } = useTranslation();
-  const sshName = sshHosts.find((item) => {
-    return item.connectionId === sshConnectionId;
-  })?.displayName;
   return (
     <div>
       <RemoteHostChoiceRow
@@ -395,22 +394,59 @@ function VncHostChoiceRow({
         host={host}
         pendingRemoteAccess={pendingRemoteAccess}
       />
-      {sshConnectionId && (
-        <p className="px-9 pb-1 text-xs text-muted-foreground">
-          {t(
-            ($) => {
-              return $.chat.remoteAccess.requiresSsh;
-            },
-            {
-              name:
-                sshName ??
-                t(($) => {
-                  return $.chat.remoteAccess.unavailableSsh;
-                }),
-            },
-          )}
-        </p>
-      )}
+      {sshConnectionIds.map((connectionId) => {
+        const sshHost = sshHosts.find((item) => {
+          return item.connectionId === connectionId;
+        });
+        const needsSshAccess = host.enabled && sshHost?.enabled === false;
+        const name =
+          sshHost?.displayName ??
+          t(($) => {
+            return $.chat.remoteAccess.unavailableSsh;
+          });
+        return (
+          <p
+            key={connectionId}
+            role={needsSshAccess ? "status" : undefined}
+            className={cn(
+              "flex items-start gap-1.5 px-9 pb-1 text-xs",
+              needsSshAccess
+                ? "text-amber-700 dark:text-amber-400"
+                : "text-muted-foreground",
+            )}
+          >
+            {needsSshAccess && (
+              <AlertTriangle
+                size={14}
+                className="mt-0.5 shrink-0"
+                aria-hidden="true"
+              />
+            )}
+            <span className="min-w-0 break-words">
+              {needsSshAccess
+                ? t(
+                    ($) => {
+                      return $.chat.remoteAccess.sshDisabled;
+                    },
+                    { name },
+                  )
+                : sshHost?.enabled === true
+                  ? t(
+                      ($) => {
+                        return $.chat.remoteAccess.sshEnabled;
+                      },
+                      { name },
+                    )
+                  : t(
+                      ($) => {
+                        return $.chat.remoteAccess.requiresSsh;
+                      },
+                      { name },
+                    )}
+            </span>
+          </p>
+        );
+      })}
     </div>
   );
 }
@@ -646,13 +682,25 @@ function ThreadRemoteHostChoices({
             const sshConnectionId = configured
               ? vncSshConnectionId(configured)
               : null;
+            const sshConnectionIds = new Set<string>();
+            if (sshConnectionId) {
+              sshConnectionIds.add(sshConnectionId);
+            }
+            if (
+              configured?.security.type === "qemu_x509_gssapi" &&
+              configured.security.kdc?.transport.type === "ssh"
+            ) {
+              sshConnectionIds.add(
+                configured.security.kdc.transport.connectionId,
+              );
+            }
             return (
               <VncHostChoiceRow
                 key={host.connectionId}
                 threadId={threadId}
                 host={host}
                 pendingRemoteAccess={pendingRemoteAccess}
-                sshConnectionId={sshConnectionId}
+                sshConnectionIds={[...sshConnectionIds]}
                 sshHosts={sshHosts}
               />
             );

@@ -74,6 +74,7 @@ readonly COMPUTER_USE_COMMAND_NOTIFICATIONS_PATH=.github/rollback-floors/compute
 readonly COMPUTER_USE_HOST_SESSION_ONLY_PATH=turbo/packages/db/src/runtime/computer-use-host.ts
 readonly NATIVE_BRIEF_MEMBER_RUNTIME_PATH=turbo/packages/db/src/runtime/org-members-metadata.ts
 readonly SESSION_STORAGE_MOUNT_RUNTIME_PATH=turbo/packages/db/src/runtime/agent-session.ts
+readonly SESSION_CONVERSATION_RUNTIME_PATH=.github/rollback-floors/session-conversation-runtime
 readonly WORKFLOW_NAME_SCOPES_PREPARATION_PATH=turbo/packages/db/src/migrations/1375_workflow_name_scopes.sql
 readonly RETIRED_PREFERENCE_COLUMNS_DROP_PATH=turbo/packages/db/src/migrations/1274_drop_retired_voice_reasoning_collection_columns.sql
 readonly RETIRED_INTEGRATION_AGENT_TABLES_DROP_PATH=turbo/packages/db/src/migrations/1282_drop_retired_integration_agent_tables.sql
@@ -131,6 +132,15 @@ fi
 release_tags=$(git tag --points-at "$TARGET_COMMIT" | grep -E -- '-v[0-9]' || true)
 if [ -z "$release_tags" ]; then
   fail "Target commit has no release tags: ${TARGET_COMMIT}"
+fi
+
+# Native-only producers cannot roll back to Session-based handlers or deleters.
+# The main-owned marker becomes authoritative when this cutover PR merges.
+session_conversation_runtime_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SESSION_CONVERSATION_RUNTIME_PATH" | sed -n '1p')
+if [ -n "$session_conversation_runtime_commit" ] && \
+  ! git merge-base --is-ancestor "$session_conversation_runtime_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates native-only Session/Conversation retirement: ${session_conversation_runtime_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$CHAT_THREAD_PROVENANCE_REMOVAL_COMMIT" "$TARGET_COMMIT"; then

@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.8.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.21...runner-provider-v0.8.0) (2026-10-15)
+
+
+### Features
+
+* continue threads through retained native sandbox history ([#40048](https://github.com/okou-ai/okou/issues/40048)) ([2b6ff73](https://github.com/okou-ai/okou/commit/2b6ff735fcfb0d4f5baf5fd131bcc10ae8a325d3))
+* **runner:** record first-run context and actual home reuse ([#39955](https://github.com/okou-ai/okou/issues/39955)) ([f0577eb](https://github.com/okou-ai/okou/commit/f0577ebc54bdb82e28c225184a7a084080054afd))
+
+
+### Refactoring
+
+* retire legacy run reuse outcome metadata ([#40102](https://github.com/okou-ai/okou/issues/40102)) ([005af49](https://github.com/okou-ai/okou/commit/005af4965ced3ca60293140d6ede62ec5acaeaeb))
+
+## [0.7.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.20...runner-provider-v0.7.21) (2026-10-14)
+
+## [0.7.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.19...runner-provider-v0.7.20) (2026-10-14)
+
+## [0.7.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.18...runner-provider-v0.7.19) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
+## [0.7.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.17...runner-provider-v0.7.18) (2026-10-14)
+
 ## [0.7.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.7.16...runner-provider-v0.7.17) (2026-10-14)
 
 

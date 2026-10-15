@@ -5,6 +5,8 @@ export default defineConfig({
   test: {
     name: "api",
     globals: true,
+    // Bound concurrent PGlite initialization and V8 coverage resource use.
+    maxWorkers: 2,
     environment: "node",
     env: { ...apiTestEnvironment, TZ: "UTC" },
     globalSetup: ["./src/__tests__/global-setup.ts"],

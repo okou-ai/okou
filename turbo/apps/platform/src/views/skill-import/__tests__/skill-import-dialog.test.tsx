@@ -10,7 +10,6 @@ import {
   type WorkflowImportSource,
   type WorkflowSummary,
 } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -98,10 +97,8 @@ function mockSessions(): { readonly providers: string[] } {
   return { providers };
 }
 
-async function openWorkflowsPage(
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
-): Promise<void> {
-  await setupPage({ context, path: "/workflows", featureSwitches });
+async function openWorkflowsPage(): Promise<void> {
+  await setupPage({ context, path: "/workflows" });
   await screen.findByRole("heading", { name: "Workflows" });
 }
 
@@ -144,16 +141,14 @@ async function showFullPrompt(dialog: HTMLElement): Promise<HTMLElement> {
   return await within(dialog).findByRole("region", { name: PROMPT_LABEL });
 }
 
-test("Import skills sits between Browse official and Create in chat", async () => {
+test("Import skills sits before Create in chat", async () => {
   mockWorkflows();
   mockSessions();
 
-  await openWorkflowsPage({ [FeatureSwitchKey.OfficialWorkflows]: true });
+  await openWorkflowsPage();
 
-  const browse = screen.getByText("Browse Official").closest("a");
   const importSkills = getButtonNamed("Import skills");
   const createInChat = getButtonNamed("Create in chat");
-  expect(browse?.nextElementSibling).toBe(importSkills);
   expect(importSkills.nextElementSibling).toBe(createInChat);
 });
 

@@ -122,35 +122,15 @@
         "title": "未找到日志"
       },
       "runner": {
-        "cacheMiss": "没有缓存的主目录匹配该复用键。",
-        "deviceLimitMismatch": "空闲池中有对应条目，但它的设备限流状态不匹配。",
-        "diskPressure": "运行器磁盘空间紧张，已跳过主目录复用。",
         "environment": "环境",
-        "featureDisabled": "本次运行已禁用沙箱复用。",
         "framework": "框架",
         "generation": "代次",
-        "home": "主目录",
-        "homeNoReuseKey": "没有可用的主目录复用键。",
-        "homeReusedDescription": "主目录已从运行器缓存恢复。",
         "hostname": "主机名",
-        "invalidMetadata": "缓存的主目录元数据无效。",
-        "invalidWorkingDir": "请求的工作目录无法复用。",
-        "lockBusy": "另一次运行正在准备同一个主目录。",
-        "noReuseKey": "没有可用的复用键来匹配空闲沙箱。",
-        "noSessionId": "历史记录：无法获知沙箱未被复用的具体原因。",
-        "notConfigured": "本次运行未配置主目录复用。",
-        "notReused": "未复用",
-        "outcomeUnavailableDescription": "暂无更多详情。",
-        "poolMiss": "空闲池中没有匹配的沙箱。",
-        "profileMismatch": "空闲池中有对应条目，但它的配置不匹配。",
         "provisioning": "置备",
-        "reused": "已复用",
-        "reusedDescription": "沙箱已从空闲池中唤醒。",
         "runnerId": "运行器 ID",
-        "sandbox": "沙箱",
-        "sandboxPrepareFallback": "找到了缓存的主目录，但沙箱准备完成后无法使用。",
-        "sandboxReusedDescription": "主目录在复用的沙箱中保持可用。",
         "startup": "启动",
+        "startupBlank": "预备沙箱启动",
+        "startupBlankDescription": "使用预备好的空白沙箱与全新的主目录。",
         "startupCold": "冷启动",
         "startupColdDescription": "已准备全新的沙箱和工作区。",
         "startupHome": "主目录复用",
@@ -160,7 +140,6 @@
         "startupUnknown": "未知",
         "startupUnknownDescription": "暂无启动复用详情。",
         "unavailable": "不可用",
-        "unparkFailed": "唤醒失败，已置备全新的沙箱。",
         "version": "版本"
       },
       "steps": {
@@ -542,19 +521,25 @@
       "agentLoading": "智能体还在加载",
       "connect": "连接 Google Drive",
       "connectTooltip": "连接 Google Drive 后即可上传成果",
+      "conversionNotice": "创建可编辑的副本。格式可能发生变化，原文件将保留。",
+      "conversionUnconfirmed": "无法确认 Google 转换结果，请检查云端硬盘后再重试。",
       "noArtifacts": "没有可同步的成果",
+      "openDocs": "在 Google 文档中打开",
+      "openSheets": "在 Google 表格中打开",
+      "openSlides": "在 Google 幻灯片中打开",
       "partial_one": "已将 {{count}} 个文件中的 {{synced}} 个同步到 Google Drive",
       "partial_other": "已将 {{count}} 个文件中的 {{synced}} 个同步到 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已将 {{count}} 个文件同步到 Google Drive",
-      "syncedSlides": "已同步到 Google Slides",
       "syncFailed": "同步到 Google Drive 失败",
       "syncingArtifact": "正在同步成果…",
       "syncingFiles_one": "正在同步 {{count}} 个文件…",
       "syncingFiles_other": "正在同步 {{count}} 个文件…",
       "syncingNamed": "正在同步 {{filename}}…",
       "upload": "上传到 Google Drive",
+      "uploadDocs": "上传到 Google 文档",
+      "uploadSheets": "上传到 Google 表格",
       "uploadSlides": "上传到 Google Slides"
     },
     "kinds": {
@@ -571,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "演示文稿",
       "sharedConversation": "分享的对话",
+      "spreadsheet": "电子表格",
       "text": "文本",
       "video": "视频"
     },
@@ -686,7 +672,6 @@
       "use": "使用",
       "useThisTemplate": "使用这个模板",
       "visibility": {
-        "change": "修改",
         "changeLabel": "修改模板可见范围",
         "privateState": "只有你能看到和使用",
         "workspaceState": "这个工作区里的所有人都能使用"
@@ -1519,13 +1504,13 @@
       "viewAgentProfile": "查看智能体资料"
     },
     "agentSuggestions": {
-      "existingThread": "已有对话",
+      "continueChat": "继续聊天",
+      "dismiss": "忽略",
       "label": "建议",
-      "loadFailed": "无法加载建议。",
-      "newThread": "与 Okou 开始新对话",
-      "origin": "来自你的晨间简报",
-      "showAll_other": "查看全部 {{count}} 条",
-      "showLess": "收起"
+      "newChat": "新建聊天",
+      "next": "下一条建议",
+      "position": "{{current}} / {{total}}",
+      "previous": "上一条建议"
     },
     "attachments": {
       "attach": "添加附件",
@@ -1766,9 +1751,8 @@
       "threadSuggestions": "聊天会话",
       "useForFutureChats": "以后的对话都用这个",
       "workflows": {
-        "empty": "没有匹配的工作流",
         "loading": "正在加载工作流…",
-        "showAll": "显示全部工作流",
+        "showAllCount": "显示全部 {{total}} 个",
         "title": "工作流"
       }
     },
@@ -1938,15 +1922,6 @@
       "threads": "聊天",
       "title": "转发到"
     },
-    "homeTasks": {
-      "empty": "暂时没有推荐任务",
-      "existingThread": "继续聊天",
-      "exploreWorkflow": "探索工作流",
-      "heading": "从近期工作中提取",
-      "newTasksAvailable": "有新任务可查看",
-      "newThread": "新建聊天",
-      "reload": "重新加载任务"
-    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",
@@ -1990,6 +1965,7 @@
       "feishu": "飞书",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "打开聊天",
       "openChatIn": "在{{integration}}中打开聊天",
       "openDiscordMessage": "在 Discord 中打开原始消息",
@@ -2046,6 +2022,26 @@
       "removeQueuedMessage": "移除排队消息",
       "skipAutomationEvent": "跳过自动化事件"
     },
+    "relations": {
+      "communications": "消息",
+      "created": "由此创建",
+      "idle": "空闲",
+      "loadFailed": "加载失败",
+      "loading": "加载中…",
+      "messageUnavailable": "消息不可用",
+      "more": "更多",
+      "origin": "发起自",
+      "parallelHint": "试试多会话并行，少些等待。",
+      "queued": "排队中",
+      "received": "收到",
+      "refresh": "刷新",
+      "running": "运行中",
+      "sent": "发出",
+      "title": "关联会话",
+      "toggleMessages": "与 {{title}} 的消息往来",
+      "unavailable": "不可访问",
+      "untitled": "未命名"
+    },
     "remoteAccess": {
       "default": "默认",
       "defaultEnabled": "聊天默认启用",
@@ -2054,16 +2050,22 @@
       "loading": "正在加载远程访问…",
       "off": "关闭",
       "on": "开启",
-      "requiresSsh": "还需要访问 SSH 主机 {{name}}。",
+      "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重试",
+      "sshDisabled": "需开启 SSH：{{name}}",
+      "sshEnabled": "已开启 SSH：{{name}}",
       "title": "远程访问",
       "unavailableSsh": "不可用的 SSH 主机"
     },
     "resources": {
+      "collapse": "收起",
       "copyLink": "复制链接",
       "empty": "此聊天中还没有成果或链接",
+      "emptyLinks": "此聊天中暂无链接",
+      "expand": "展开",
       "links": "链接",
       "loadFailed": "无法加载聊天资源",
+      "loadingLinks": "正在加载链接",
       "retry": "重试",
       "title": "聊天资源",
       "viewAll": "查看全部"
@@ -2740,7 +2742,6 @@
         "workflow": "工作流"
       },
       "importedLoadFailed": "无法加载已上传的模板。",
-      "importedLoading": "正在加载已上传的模板…",
       "importedUnavailable": "已上传的模板暂时不可用。",
       "previewTemplate": "预览模板 {{title}}",
       "previewWebsite": "预览网站模板 {{title}}",
@@ -2823,10 +2824,18 @@
     "walletAction": {
       "approveButton": "审核",
       "approveTitle": "审核购买",
+      "authorized": "已授权",
+      "callbackFailed": "已授权，点击“继续”重试发送消息。",
+      "callbackPrompt": "Link 钱包授权已完成，请继续之前的任务。",
+      "checkFailed": "无法检查授权状态，请重试。",
       "connectButton": "授权",
       "connectTitle": "授权 Link 钱包",
       "continueButton": "继续",
-      "continueTitle": "继续 Link 钱包操作"
+      "continueTitle": "继续 Link 钱包操作",
+      "expired": "授权已过期",
+      "failed": "授权未完成",
+      "unavailable": "授权不可用",
+      "waiting": "等待授权"
     },
     "workflows": {
       "named": "工作流 {{title}}",
@@ -3434,13 +3443,15 @@
         "alreadyDescription": "你已经连接。在 Telegram 中发送消息，即可开始对话。",
         "alreadyDescriptionNamed": "你已连接到{{bot}}。在 Telegram 中发送消息，即可开始对话。",
         "alreadyTitle": "已连接到 Telegram",
-        "back": "返回 Telegram 设置",
+        "botNotConfigured": "Telegram 连接尚未配置好，请联系支持团队。",
         "checkingConnectionDescription": "我们正在检查你的 Telegram 连接，请稍候。",
         "checkingConnectionTitle": "正在检查连接…",
         "checkingSession": "我们正在验证你的 {{brandName}} 登录状态，请稍候。",
         "connectDescription": "把你的账号关联到这个 Telegram 机器人，就可以直接在 Telegram 里与你的智能体交流。",
+        "connectionCheckFailed": "暂时无法访问 Telegram 来检查连接，请稍后重试。",
         "connectTitle": "连接到 Telegram",
         "continue": "使用 Telegram 继续",
+        "domainNotVerified": "暂时无法验证此应用的 Telegram 登录。请重试；如果问题持续，请联系支持团队。",
         "errorFallback": "我们无法连接 Telegram。请从 Telegram 重试。",
         "invalidSignature": "此链接的签名无效。",
         "invalidTimestamp": "此链接的时间戳无效。",
@@ -3755,16 +3766,8 @@
       },
       "telegram": {
         "backToIntegrations": "返回集成",
-        "botFallback": "Telegram 机器人",
-        "disconnectAria": "断开{{bot}}的连接",
-        "documentTitle": "Telegram",
         "loadError": "无法加载 Telegram 设置。",
-        "moreOptions": "{{bot}}的更多选项",
-        "notConnected": "未连接",
-        "officialBot": "Telegram 官方机器人",
-        "officialDescription": "由 {{brandName}} 提供的官方机器人。",
-        "officialMissing": "缺少官方机器人配置。",
-        "pageDescription": "管理此工作区的机器人路由"
+        "officialMissing": "缺少官方机器人配置。"
       },
       "toasts": {
         "agentphoneConnected": "电话号码已连接",
@@ -3800,6 +3803,65 @@
     "toasts": {
       "connected": "{{connector}}已连接"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "此模板可作为协议起点。签署前，请根据项目与适用法律审阅条款。",
+    "back": "返回模板列表",
+    "categories": {
+      "all": "全部",
+      "business-record": "收据与报价",
+      "contract": "合同",
+      "creative-brief": "创意简报",
+      "guide": "手册与讲义",
+      "invoice": "发票",
+      "letter": "商务信函",
+      "report": "报告",
+      "resume": "简历",
+      "service-agreement": "服务协议"
+    },
+    "contents": {
+      "agreement": {
+        "content": "条款与责任",
+        "delivery": "审阅与签署",
+        "details": "期限与终止",
+        "overview": "签约主体与范围"
+      },
+      "brief": {
+        "content": "目标受众与核心信息",
+        "delivery": "时间安排与审核流程",
+        "details": "交付物与格式",
+        "overview": "项目概况与目标"
+      },
+      "general": {
+        "content": "适合填写内容的章节",
+        "delivery": "可编辑 Word 或 PDF 输出",
+        "details": "统一的页面版式",
+        "overview": "清晰的文档结构"
+      },
+      "invoice": {
+        "content": "服务明细与单价",
+        "delivery": "付款信息",
+        "details": "税额、合计与到期日",
+        "overview": "供应方与客户信息"
+      }
+    },
+    "filter": "文档分类",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文档"
+    },
+    "imageError": "预览暂不可用",
+    "included": "包含内容",
+    "nextPage": "下一页样张",
+    "openLarger": "查看大图",
+    "page": "第 {{page}} 页",
+    "preview": "预览 {{title}}",
+    "previousPage": "上一页样张",
+    "retry": "重试",
+    "samplePages": "样张页数：{{total}}",
+    "title": "文档",
+    "use": "使用模板",
+    "useNamed": "使用 {{title}}"
   },
   "global": {
     "actions": {
@@ -4506,17 +4568,9 @@
       "settings": "设置",
       "signOut": "退出登录",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩余用量",
-        "windows": {
-          "fiveHour": "5 小时",
-          "week": "周"
-        }
+        "usageRemaining": "{{provider}}{{window}}剩余用量"
       },
       "switchAccount": "切换账号",
       "userFallback": "用户"
@@ -4685,10 +4739,16 @@
       "personal": {
         "accountFallback": "账号 {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "消耗 Okou 积分",
         "autoDescription": "连接你的 Claude 或 ChatGPT 账号，即可使用更多模型。",
         "autoTitle": "使用更多模型",
+        "claudeGroup": "你的 Claude 套餐",
+        "claudePlans": "Pro 或 Max",
         "claudeTitle": "Claude",
+        "codexGroup": "你的 ChatGPT 套餐",
+        "codexPlans": "Plus、Pro 或 Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "连接",
         "connectAccount": "连接账号",
         "disconnectAccount": "断开账号连接",
         "disconnectDescription": "这会把账号从 Okou 中移除，但不会取消你在该服务商处的订阅。",
@@ -4696,7 +4756,9 @@
         "disconnectTitle": "断开{{account}}？",
         "loadError": "无法加载你的账号。",
         "loadingAccounts": "正在加载账号…",
+        "managePlans": "管理套餐",
         "noAccounts": "还没有连接任何账号。",
+        "ownPlan": "使用你自己的套餐",
         "reconnectAccount": "重新连接",
         "retry": "重试",
         "status": {
@@ -4890,26 +4952,22 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
-        "morningBriefEmail": {
-          "checkStatus": "检查投递状态",
-          "description": "使用 Morning Brief 模板向你的账号邮箱发送固定样例。不会运行 Agent，也不会改变早报计划。",
-          "reasons": {
-            "delivery-failed": "投递失败；此前的发送尝试仍可能已被邮件服务接受。",
-            "expired": "投递已过期；此前的发送尝试仍可能已被邮件服务接受。",
-            "no-email": "已跳过：你的账号没有邮箱地址。",
-            "suppressed": "已跳过：你的账号邮箱已被列入投递屏蔽名单。",
-            "unsubscribed": "已跳过：你的账号已退订邮件更新。"
-          },
-          "requestFailed": "请求未完成。重试会复用原请求，避免重复发送。",
-          "retry": "重试测试邮件",
-          "send": "发送测试邮件",
-          "sendAnother": "再发送一封测试邮件",
-          "sending": "正在发送…",
+        "morningBrief": {
+          "checkStatus": "查看运行状态",
+          "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
+          "openChat": "打开对话",
+          "requestFailed": "请求未完成。重试会沿用同一请求，避免重复运行。",
+          "retry": "重试晨间简报",
+          "run": "运行晨间简报",
+          "runAgain": "再次运行晨间简报",
+          "starting": "正在启动…",
           "status": {
-            "queued": "已排队。再次发送样例前，请检查投递状态。",
-            "sent": "邮件服务已接受。请检查收件箱和垃圾邮件；尚未确认实际到达。"
+            "completed": "晨间简报已完成。",
+            "failed": "晨间简报运行失败，请打开对话查看详情。",
+            "queued": "已加入队列，可打开对话查看进度。",
+            "running": "晨间简报正在运行。"
           },
-          "title": "Morning Brief 测试邮件"
+          "title": "晨间简报"
         },
         "openrouterPreset": {
           "description": "对整个组织后续新建的 Auto 和 Okou 1.0 内置模型运行生效，不影响已有运行。",
@@ -5319,7 +5377,6 @@
     "addressHelp": "使用已注册的 Tailnet 节点 IP、完整主机名或短名称。仍需 SSH 登录凭据和主机密钥验证。",
     "adoptHelp": "将此组织网络转为你的个人网络。其他所有者须重新绑定已保存的主机。",
     "changed": "此 Tailscale 网络已更改。保存草稿前，请核对最新设置。",
-    "cleanupHelp": "连接关闭后，临时节点可能仍保留在 Tailscale 中。服务提供方的清理时间没有保证。",
     "clientId": "OAuth 客户端 ID",
     "clientSecret": "OAuth 客户端密钥",
     "createNew": "创建 Tailscale 网络",
@@ -5328,6 +5385,24 @@
     "edit": "编辑 Tailscale",
     "failed": "无法保存 Tailscale 更改。请重试。",
     "forbidden": "你无法管理此 Tailscale 网络。组织网络需要管理员权限。",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "在 Trust credentials 中选择 Credential → OAuth。在 Keys → Auth Keys 下选择 Write 和 tag:okou。选择 Generate credential，将 Client ID 和 Client secret 填入下方字段。",
+      "policyHelp": "此规则允许 tag:okou 访问所有用户和设备的所有端口与协议。将它添加到现有 grants 中，保留其他策略。",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "在 Access controls → Visual editor → General access rules 中选择 Add rule，使用以下推荐值。",
+      "source": "Source",
+      "stepsLabel": "Tailscale 配置步骤",
+      "tags": "Tags",
+      "tagsHelp": "请选择目标设备所在的 tailnet。在 Access controls → Visual editor → Tags 中选择 Create tag，Tag name 填写 okou，并选择 Tag owners。下方注册标签填写 tag:okou。",
+      "title": "如何配置 Tailscale？",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "你的 SSH 主机仍在使用此网络。请先重新绑定或删除这些主机。",
     "invalid": "部分 Tailscale 设置无效。请检查字段后重试。",
     "loadFailed": "无法加载 Tailscale。请重试。",
@@ -5342,7 +5417,6 @@
     "rebindHelp": "选择或创建 Tailscale 网络以重新绑定此主机。SSH 登录凭据和受信任的主机密钥会保留。",
     "replace": "替换 OAuth 凭据",
     "select": "选择 Tailscale 网络",
-    "setupHelp": "使用仅允许这些标签的 OAuth 客户端。Tailnet 策略须允许 SSH 端口。保存不会测试连接或授权聊天访问。",
     "summary_other": "已配置 {{count}} 个 Tailscale",
     "tags": "注册标签",
     "tagsHelp": "用逗号分隔标签，例如 tag:okou",
@@ -5380,6 +5454,11 @@
     },
     "importHint": "可以导入文档、演示文稿或图片。",
     "loadFailed": "无法加载模板。",
+    "rename": {
+      "action": "重命名",
+      "cancel": "取消",
+      "save": "保存"
+    },
     "renameFailed": "无法重命名该模板。",
     "retry": "重试",
     "sharedBy": "由{{owner}}分享",
@@ -5451,6 +5530,24 @@
     "cancel": "取消",
     "close": "关闭",
     "configured": "已配置",
+    "connectionStatus": {
+      "attention_other": "{{count}} 台 VNC 主机需要处理",
+      "observedAt": "记录于 {{time}}",
+      "reasons": {
+        "authentication_failed": "身份验证或服务器身份校验失败。",
+        "disconnected": "服务器在连接尝试期间断开。",
+        "invalid_credential": "无法使用已保存的凭证。",
+        "kerberos_expired": "Kerberos 凭证已过期。",
+        "kerberos_non_renewable": "Kerberos 凭证无法续期。",
+        "kerberos_renewal_exhausted": "Kerberos 凭证已达到续期上限。",
+        "network_failure": "连接传输失败。",
+        "protocol": "服务器未完成所选连接协议。",
+        "timed_out": "连接尝试超时。",
+        "unsafe_destination": "网络策略拒绝了目标地址。",
+        "unsupported_profile": "服务器不支持所选安全配置。"
+      },
+      "unavailable": "无法获取 VNC 连接状态"
+    },
     "credential": {
       "add": "添加凭据",
       "appleDhFieldHelp": "每项 1–63 个 UTF-8 字节，不允许 NUL 字符。",
@@ -6285,68 +6382,6 @@
       "title": "工作流",
       "viewAutomations": "查看自动化"
     },
-    "official": {
-      "activeInstallationDescription": "这个官方工作流仍在正常运行，其托管内容保持只读。",
-      "activeInstallationTitle": "官方工作流",
-      "agent": "智能体",
-      "automationCount_one": "{{count}} 个自动化",
-      "automationCount_other": "{{count}} 个自动化",
-      "badge": "官方",
-      "browse": "浏览官方工作流",
-      "chooseValue": "选择一个值",
-      "copySucceededUninstallFailed": "副本已创建，但原来的官方工作流未能卸载。",
-      "description": "安装由 Okou 官方团队维护的托管工作流。",
-      "empty": "暂无可用的官方工作流。",
-      "includedAutomations": "包含的自动化",
-      "install": "安装",
-      "installDescription": "选择一个智能体，并填写所有必填参数。包含的自动化会一并安装。",
-      "installed": "官方工作流已安装",
-      "installedStatus": "已安装",
-      "installErrorDescription": "请检查智能体和参数值，然后重试。",
-      "installErrorTitle": "官方工作流安装失败",
-      "installTitle": "安装{{name}}",
-      "intendedOff": "目标为关闭",
-      "intendedOn": "目标为开启",
-      "loadErrorDescription": "这个目录可能暂时不可用，或未对你的账号开放。",
-      "loadErrorTitle": "官方工作流加载失败",
-      "no": "否",
-      "noParameters": "无需填写参数。",
-      "noResults": "没有匹配的官方工作流。",
-      "notFound": "未找到这个官方工作流。",
-      "parameterCount_one": "{{count}} 个参数",
-      "parameterCount_other": "{{count}} 个参数",
-      "parameterRequired": "{{key}}（必填）",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "重新配置",
-      "reconfigured": "官方工作流已重新配置",
-      "reconfigureDescription": "更新参数值，不会替换这个工作流或它的自动化。",
-      "reconfigureDialogDescription": "逐一检查托管的自动化并更新参数。",
-      "reconfigureErrorDescription": "请检查必填项，然后重试。",
-      "reconfigureErrorTitle": "官方工作流重新配置失败",
-      "reconfigureTitle": "安装参数",
-      "reconfigureUnavailable": "参数的权威信息暂时无法获取。",
-      "retiredBadge": "官方 · 已下线",
-      "retiredDefinitionDescription": "这个保留下来的定义仍可查看，但已无法安装。",
-      "retiredInstallationDescription": "这个定义已下线。在你卸载之前，已有的安装仍可正常运行，并保持只读。",
-      "retiredInstallationTitle": "官方工作流已下线",
-      "retiredTitle": "已下线的定义",
-      "retry": "重试",
-      "search": "搜索官方工作流",
-      "selectAgent": "选择智能体",
-      "statusCurrent": "最新",
-      "statusFailed": "失败",
-      "statusNeedsReconfiguration": "需要重新配置",
-      "statusReconciling": "同步中",
-      "title": "官方工作流",
-      "unavailableInstallationDescription": "已采用的定义暂时不可用。现有的运行控制项仍可使用。",
-      "unavailableInstallationTitle": "官方定义不可用",
-      "uninstall": "卸载",
-      "uninstallConfirm": "这会移除该官方工作流的安装及其所有自动化。此操作无法撤销。",
-      "uninstallDescription": "按托管流程移除这个官方工作流的安装。",
-      "uninstallTitle": "卸载官方工作流",
-      "viewAndInstall": "查看并安装",
-      "yes": "是"
-    },
     "skillImport": {
       "action": "导入技能",
       "description": "在你的技能所在的地方运行这段提示词。每个技能都会成为一个私有工作流。",
@@ -6366,7 +6401,6 @@
       "connect": "连接",
       "disconnect": "断开连接",
       "disconnecting": "正在断开…",
-      "manage": "管理",
       "moreOptions": "更多选项",
       "uninstall": "卸载",
       "uninstalling": "正在卸载…",
@@ -6375,22 +6409,19 @@
     "connected": "已连接",
     "connectedWithDetail": "已连接（{{detail}}）",
     "discord": {
-      "accountSetup": "通过 Discord 官方浏览器授权连接你的账号。",
-      "approvalConfirmed": "关闭此标签页，即可在原标签页中完成连接。",
+      "addNewServer": "加入新的服务器",
       "approvalFailed": "确认失败。请使用原先的 Okou 账号和组织登录，或重新发起授权。",
       "authorizationError": "无法完成 Discord 授权，请重试。",
-      "authorizing": "正在授权…",
-      "browserConsent": "在 Discord 窗口中完成授权，此页面会自动更新。",
       "chooseWorkspace": "选择工作区",
       "connectDescription": "连接 Discord 账号，与智能体聊天。",
       "connectedTitle": "已连接 Discord",
-      "connectingTitle": "正在连接 Discord",
       "connectTitle": "连接 Discord",
       "defaultWorkspace": "Discord 默认工作区",
       "description": "在服务器中提及 Okou，或给机器人发送私信。",
       "disconnect": "断开 Discord 连接",
+      "installDescription": "使用有服务器管理权限的账号，在 Discord 中授权 Okou。",
+      "installTitle": "将 Okou 添加到服务器",
       "invalidLink": "此 Discord 连接链接无效，请从 Discord 获取新链接。",
-      "limitedContext": "上下文受限：Okou 可能无法接收频道中的普通消息。请提及 Okou，并提供所需的详细信息。",
       "open": "打开 Discord",
       "openInBrowser": "在浏览器中打开",
       "pendingConsent": "请关闭此标签页，然后从原标签页重新开始连接。",
@@ -6437,7 +6468,6 @@
     },
     "telegram": {
       "description": "把 Telegram 消息转给智能体",
-      "openSettings": "打开 Telegram 设置",
       "title": "Telegram"
     }
   }

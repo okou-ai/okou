@@ -1,3 +1,4 @@
+import { chatRelations } from "@okouai/db/schema/chat-relation";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import { artifacts } from "@okouai/db/schema/artifact";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -730,6 +731,8 @@ function existingClientThreadCondition(args: {
 }
 
 interface CreateChatThreadArgs {
+  /** Only supplied from the authenticated agent token. */
+  readonly sourceRunId?: string;
   readonly userId: string;
   readonly orgId: string;
   readonly agentId: string;
@@ -783,15 +786,17 @@ function initialThreadWritePlan(
       thread.id,
       args.initialRemoteAccessOverrides ?? [],
     ),
-    created: chatThreadCreatedEventSql({
-      orgId: args.orgId,
-      eventId: args.eventId,
-      thread,
-    }),
-    welcome:
+    events: [
+      chatThreadCreatedEventSql({
+        orgId: args.orgId,
+        eventId: args.eventId,
+        thread,
+      }),
+      createdChatRelationSql(args, thread.id),
       args.initialAssistantMessage === undefined
         ? null
         : welcomeSeedStatement(thread.id, args.initialAssistantMessage),
+    ],
   };
 }
 
@@ -820,6 +825,28 @@ function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
     selections: args.connectorSelections ?? [],
     missingAccountPolicy: "omit" as const,
   };
+}
+
+function createdChatRelationSql(
+  args: CreateChatThreadArgs,
+  targetThreadId: string,
+) {
+  if (args.sourceRunId === undefined) {
+    return null;
+  }
+  return sql`
+    INSERT INTO ${chatRelations}
+      (org_id, user_id, type, source_chat_thread_id, target_chat_thread_id, source_run_id, created_at)
+    SELECT ${args.orgId}, ${args.userId}, 'created', ${chatThreads.id},
+      ${targetThreadId}, ${agentRuns.id}, ${nowDate()}
+    FROM ${agentRuns}
+    INNER JOIN ${chatThreads} ON ${chatThreads.id} = ${agentRuns.chatThreadId}
+    WHERE ${agentRuns.id} = ${args.sourceRunId}
+      AND ${agentRuns.userId} = ${args.userId}
+      AND ${agentRuns.orgId} = ${args.orgId}
+      AND ${chatThreads.userId} = ${args.userId}
+      AND ${chatThreads.id} <> ${targetThreadId}
+  `;
 }
 
 /** Initialization and the ordered created event commit together. */
@@ -943,11 +970,11 @@ export const createChatThread$ = command(
         await tx.insert(chatThreadVncAccessOverrides).values(remoteValues.vnc);
         signal.throwIfAborted();
       }
-      await tx.execute(initialWrites.created);
-      signal.throwIfAborted();
-      if (initialWrites.welcome !== null) {
-        await tx.execute(initialWrites.welcome);
-        signal.throwIfAborted();
+      for (const statement of initialWrites.events) {
+        if (statement !== null) {
+          await tx.execute(statement);
+          signal.throwIfAborted();
+        }
       }
       return createdThreadResult(createdThread);
     });

@@ -531,6 +531,9 @@ describe("custom connector URL diagnostics", () => {
 
     expect(requests).toStrictEqual([]);
     expect(error.mock.calls.flat().join("\n")).toContain(
+      "Failed to list custom connectors (HTTP 500)",
+    );
+    expect(error.mock.calls.flat().join("\n")).not.toContain(
       "Inventory lookup failed",
     );
     expect(error.mock.calls.flat().join("\n")).not.toContain(
@@ -603,7 +606,10 @@ describe("custom connector URL diagnostics", () => {
       }),
     );
     await expect(check()).rejects.toThrow("process.exit called");
-    expect(error.mock.calls.flat().join("\n")).toContain("Metadata failed");
+    expect(error.mock.calls.flat().join("\n")).toContain(
+      "Failed to get custom connector (HTTP 500)",
+    );
+    expect(error.mock.calls.flat().join("\n")).not.toContain("Metadata failed");
     expect(output()).not.toContain("unavailable or deleted");
   });
 

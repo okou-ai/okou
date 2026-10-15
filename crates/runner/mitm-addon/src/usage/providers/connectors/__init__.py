@@ -2,9 +2,9 @@
 
 Each supported billable connector has one coherent registration under this
 package. The registration combines a required usage reporter with optional
-focused response-inspection behavior. The capability implementations may live in
-separate modules. :func:`report_connector_usage` is the single entry point
-called by the addon response / error handlers; it applies the universal gates
+bounded request inspection and focused response inspection. The capability
+implementations may live in separate modules. :func:`report_connector_usage` is
+the single entry point called by the addon response / error handlers; it applies the universal gates
 (``run_id`` present, firewall flagged billable by the web layer, firewall has a
 registered handler) and delegates to the matching per-connector ``report_usage``
 function.
@@ -42,6 +42,7 @@ class _ConnectorResponseInspection(NamedTuple):
 class _ConnectorUsageRegistration(NamedTuple):
     report_usage: _ConnectorUsageHandler
     response_inspection: _ConnectorResponseInspection | None = None
+    needs_request_body_inspection: Callable[[http.HTTPFlow], bool] | None = None
 
 
 # Map firewall_name → one coherent connector usage registration. A reporter is
@@ -52,6 +53,7 @@ class _ConnectorUsageRegistration(NamedTuple):
 _REGISTRATIONS: dict[str, _ConnectorUsageRegistration] = {
     "x": _ConnectorUsageRegistration(
         report_usage=x.report_usage,
+        needs_request_body_inspection=x.needs_request_body_inspection,
         response_inspection=_ConnectorResponseInspection(
             create_parser=x.create_response_parser,
             needs_buffered_fallback=x.needs_response_buffer_fallback,
@@ -122,6 +124,16 @@ def report_connector_usage(flow: http.HTTPFlow, run_id: str) -> None:
 def has_connector_response_parser(firewall_name: str) -> bool:
     """Return whether a connector has response-body parser capability."""
     return _response_inspection(firewall_name) is not None
+
+
+def needs_connector_request_body_inspection(flow: http.HTTPFlow) -> bool:
+    """Select bounded request inspection without enabling diagnostic body capture."""
+    if not flow_metadata.is_firewall_billable(flow.metadata):
+        return False
+    registration = _REGISTRATIONS.get(flow_metadata.firewall_name(flow.metadata))
+    if registration is None or registration.needs_request_body_inspection is None:
+        return False
+    return registration.needs_request_body_inspection(flow)
 
 
 def create_connector_response_parser(flow: http.HTTPFlow) -> ConnectorResponseParser | None:

@@ -1,3 +1,4 @@
+import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { nowDate } from "../../lib/time";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -20,8 +21,6 @@ import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
-import { conversations } from "@okouai/db/schema/conversation";
 import { storages } from "@okouai/db/schema/storage";
 import { blobs } from "@okouai/db/schema/blob";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
@@ -50,7 +49,10 @@ const sourceRunColumns = Object.freeze({
   chatThreadId: agentRuns.chatThreadId,
   completedAt: agentRuns.completedAt,
   createdAt: agentRuns.createdAt,
-  sessionId: agentRuns.sessionId,
+  agentId: agentRuns.agentId,
+  framework: agentRuns.framework,
+  frameworkSessionId: agentRuns.frameworkSessionId,
+  legacyConversationHistoryHash: agentRuns.legacyConversationHistoryHash,
 });
 export type Run = Pick<
   typeof agentRuns.$inferSelect,
@@ -63,6 +65,8 @@ export interface PiMemoryStage1ThreadSource {
   readonly activityAt: Date;
   readonly piSessionId: string;
   readonly hash: string;
+  readonly sourceFormat: "pi-jsonl" | "chat-events-v1";
+  readonly sourceChatEventSeqId: number | null;
 }
 
 export function sourceArgs(run: Run) {
@@ -77,7 +81,8 @@ export function sourceArgs(run: Run) {
     generationEnabled:
       snapshot?.schemaVersion === 2
         ? snapshot.piMemoryGenerationEnabled
-        : snapshot?.schemaVersion === 3 && snapshot.framework === "pi",
+        : (snapshot?.schemaVersion === 3 || snapshot?.schemaVersion === 5) &&
+          snapshot.framework === "pi",
     triggerSource: run.triggerSource,
     chatThreadId: run.chatThreadId,
     completedAt: run.completedAt ?? run.createdAt,
@@ -155,6 +160,10 @@ export function piMemoryScheduleThreadSource(
     .select({
       id: chatThreads.id,
       activityAt: threadActivity.as("activity_at"),
+      lastChatEventSeqId:
+        sql`coalesce((select ${chatEventSequences.lastSeqId} from ${chatEventSequences} where ${eq(chatEventSequences.chatThreadId, chatThreads.id)}), 0)`
+          .mapWith(chatEventSequences.lastSeqId)
+          .as("last_chat_event_seq_id"),
     })
     .from(chatThreads)
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -200,24 +209,24 @@ export function piMemoryScheduleConversation(
 ) {
   return new QueryBuilder()
     .select({
-      piSessionId: conversations.cliAgentSessionId,
-      hash: conversations.cliAgentSessionHistoryHash,
+      piSessionId: agentRuns.frameworkSessionId,
+      hash: agentRuns.legacyConversationHistoryHash,
     })
-    .from(conversations)
-    .innerJoin(agentSessions, eq(agentSessions.id, latest.sessionId))
+    .from(agentRuns)
     .innerJoin(
       chatThreads,
       and(
         eq(chatThreads.id, threadId),
-        eq(chatThreads.agentId, agentSessions.agentId),
+        eq(chatThreads.agentId, agentRuns.agentId),
       ),
     )
     .where(
       and(
-        eq(conversations.runId, latest.id),
-        eq(conversations.cliAgentType, "pi"),
-        eq(agentSessions.userId, day.userId),
-        eq(agentSessions.orgId, day.orgId),
+        eq(agentRuns.id, latest.id),
+        eq(agentRuns.framework, "pi"),
+        eq(agentRuns.userId, day.userId),
+        eq(agentRuns.orgId, day.orgId),
+        eq(chatThreads.userId, day.userId),
       ),
     )
     .limit(1)
@@ -281,12 +290,11 @@ export function piMemoryScheduleProductThread(
   return new QueryBuilder()
     .select({ id: chatThreads.id })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
     .innerJoin(
       chatThreads,
       and(
         eq(chatThreads.id, agentRuns.chatThreadId),
-        eq(chatThreads.agentId, agentSessions.agentId),
+        eq(chatThreads.agentId, agentRuns.agentId),
       ),
     )
     .innerJoin(agents, eq(agents.id, chatThreads.agentId))
@@ -297,8 +305,6 @@ export function piMemoryScheduleProductThread(
         eq(agentRuns.orgId, args.orgId),
         eq(chatThreads.id, args.chatThreadId),
         eq(chatThreads.userId, args.userId),
-        eq(agentSessions.userId, args.userId),
-        eq(agentSessions.orgId, args.orgId),
         eq(agents.orgId, args.orgId),
       ),
     )
@@ -317,26 +323,6 @@ export function piMemoryScheduleAdmissionFeatures(
     .from(userFeatureSwitches)
     .where(userFeatureSwitchRowCondition(args.orgId, args.userId))
     .as("piMemoryScheduleAdmissionFeatures");
-}
-
-export function piMemoryScheduleAdmissionSource(
-  args: AdmitPiMemoryStage1CandidateArgs,
-) {
-  return new QueryBuilder()
-    .select({
-      piSessionId: conversations.cliAgentSessionId,
-      sourceHistoryHash: conversations.cliAgentSessionHistoryHash,
-    })
-    .from(conversations)
-    .innerJoin(blobs, eq(conversations.cliAgentSessionHistoryHash, blobs.hash))
-    .where(
-      and(
-        eq(conversations.runId, args.runId),
-        eq(conversations.cliAgentType, "pi"),
-      ),
-    )
-    .limit(1)
-    .as("piMemoryScheduleAdmissionSource");
 }
 
 export function piMemoryScheduleExistingStorage(
@@ -399,6 +385,8 @@ export function piMemoryScheduleCurrentCandidate(
 export type AdmissionSource = {
   readonly piSessionId: string;
   readonly sourceHistoryHash: string;
+  readonly sourceFormat: "pi-jsonl" | "chat-events-v1";
+  readonly sourceChatEventSeqId: number | null;
 };
 export function piMemoryCandidateInsertValues(
   args: AdmitPiMemoryStage1CandidateArgs,
@@ -412,6 +400,8 @@ export function piMemoryCandidateInsertValues(
     piSessionId: source.piSessionId,
     sourceRunId: args.runId,
     sourceHistoryHash: source.sourceHistoryHash,
+    sourceFormat: source.sourceFormat,
+    sourceChatEventSeqId: source.sourceChatEventSeqId,
     sourceCompletedAt: args.completedAt,
     eligibleAt: new Date(args.completedAt.getTime() + args.idleDelayMs),
     status: "pending" as const,
@@ -486,6 +476,8 @@ export function piMemoryCandidateReplacementPlan(
     values: {
       sourceRunId: candidate.sourceRunId,
       sourceHistoryHash: candidate.sourceHistoryHash,
+      sourceFormat: candidate.sourceFormat,
+      sourceChatEventSeqId: candidate.sourceChatEventSeqId,
       sourceCompletedAt: candidate.sourceCompletedAt,
       eligibleAt: candidate.eligibleAt,
       status: "pending" as const,
@@ -529,6 +521,8 @@ export function piMemoryScheduleSelectionValues(
     piSessionId: candidate.piSessionId,
     sourceRunId: source.run.id,
     sourceHistoryHash: source.hash,
+    sourceFormat: source.sourceFormat,
+    sourceChatEventSeqId: source.sourceChatEventSeqId,
     sourceCompletedAt: sourceArgs(source.run).completedAt,
     sourceActivityAt: source.activityAt,
   };
@@ -593,6 +587,7 @@ export interface SelectedDayInput {
   readonly request: Day;
   readonly currentTime: Date;
   readonly chosen: readonly string[];
+  readonly sources: readonly PiMemoryStage1ThreadSource[];
   readonly skips: Readonly<Record<string, number>>;
 }
 export function currentDay(day: Day | undefined): day is Day {
@@ -619,25 +614,21 @@ export function eligibleRun(
 }
 export function historyBacked(
   source:
-    { readonly piSessionId: string; readonly hash: string | null } | undefined,
-): source is { readonly piSessionId: string; readonly hash: string } {
-  return !!source?.hash;
-}
-export function admissionHistoryBacked(
-  source:
-    | {
-        readonly piSessionId: string;
-        readonly sourceHistoryHash: string | null;
-      }
+    | { readonly piSessionId: string | null; readonly hash: string | null }
     | undefined,
-): source is AdmissionSource {
-  return !!source?.sourceHistoryHash;
+): source is { readonly piSessionId: string; readonly hash: string } {
+  return !!source?.hash && !!source.piSessionId;
 }
 export function selectedSource(
   run: Run,
   threadId: string,
   thread: { readonly activityAt: Date },
-  source: { readonly piSessionId: string; readonly hash: string },
+  source: {
+    readonly piSessionId: string;
+    readonly hash: string;
+    readonly sourceFormat: "pi-jsonl" | "chat-events-v1";
+    readonly sourceChatEventSeqId: number | null;
+  },
 ): PiMemoryStage1ThreadSource {
   return {
     run,
@@ -645,6 +636,8 @@ export function selectedSource(
     activityAt: thread.activityAt,
     piSessionId: source.piSessionId,
     hash: source.hash,
+    sourceFormat: source.sourceFormat,
+    sourceChatEventSeqId: source.sourceChatEventSeqId,
   };
 }
 export function orderedEvidence(

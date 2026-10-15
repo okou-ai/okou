@@ -1,7 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   cleanup,
   fireEvent,
@@ -97,79 +96,91 @@ async function uploadedAudio(request: Request) {
   return await file.arrayBuffer();
 }
 
-test.each([false, true])(
-  "keeps forward suggestions consistent with the composer-anchored switch (%s)",
-  async (composerAnchored) => {
-    installVoiceBoundaries();
-    // A desktop window also matches the start page's centred breakpoint, which
-    // the forward dialog's composer must not follow.
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query === SIDEBAR_DESKTOP_MEDIA_QUERY ||
-        query === START_PAGE_CENTRED_MEDIA_QUERY
-      );
-    });
-    await setupPage({
-      context,
-      path: RUN_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.ComposerAnchoredSuggestions]: composerAnchored,
-      },
-    });
-    const originalComposer = await screen.findByRole("textbox", {
-      name: "Message",
-    });
-    const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
-    const editor = within(dialog).getByRole("textbox", {
-      name: "Message",
-    });
-    await fill(editor, "Forward draft /");
-    const menu = await screen.findByTestId("slash-workflow-menu");
-    const [first] = queryAllByRoleFast("button", menu);
-    expect(first).toHaveTextContent(
-      composerAnchored ? "Website" : "Presentation",
+async function prepareForwardSuggestions() {
+  installVoiceBoundaries();
+  // A desktop window also matches the start page's centred breakpoint, which
+  // the forward dialog's composer must not follow.
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === SIDEBAR_DESKTOP_MEDIA_QUERY ||
+      query === START_PAGE_CENTRED_MEDIA_QUERY
     );
-    const presentation = queryButton("Presentation", menu);
-    const user = userEvent.setup();
-    expect(presentation?.dataset.active === "true").toBe(!composerAnchored);
-    expect(
-      within(menu).queryAllByRole("region", { name: "Presentation" }),
-    ).toHaveLength(0);
-    if (composerAnchored) {
-      await user.keyboard("{ArrowUp}");
-    }
-    expect(presentation).toHaveAttribute("data-active", "true");
-    expect(
-      within(menu).queryAllByRole("region", { name: "Presentation" }),
-    ).toHaveLength(composerAnchored ? 1 : 0);
-    expect(
-      document.querySelectorAll('[data-slot="slash-template-flyout"]'),
-    ).toHaveLength(composerAnchored ? 0 : 1);
-    expect(editor).toHaveFocus();
-    await user.keyboard(composerAnchored ? "{ArrowUp}" : "{ArrowDown}");
-    expect(queryButton("Illustration", menu)).toHaveAttribute(
-      "data-active",
-      "true",
-    );
-    fireEvent.compositionStart(editor, { data: "中文" });
-    fireEvent.keyDown(editor, {
-      key: "Enter",
-      isComposing: true,
-      keyCode: 229,
-    });
-    expect(menu).toBeInTheDocument();
-    expect(editor).toHaveTextContent("Forward draft /");
-    fireEvent.compositionEnd(editor, { data: "中文" });
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-    });
-    expect(dialog).toBeInTheDocument();
-    expect(editor).toHaveTextContent("Forward draft /");
-    expect(editor).toHaveFocus();
-    expect(originalComposer).toHaveTextContent("Keep the existing notes.");
-  },
-);
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+  });
+  const originalComposer = await screen.findByRole("textbox", {
+    name: "Message",
+  });
+  const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
+  const editor = within(dialog).getByRole("textbox", {
+    name: "Message",
+  });
+  await fill(editor, "Forward draft /");
+  const menu = await screen.findByTestId("slash-workflow-menu");
+  const [first] = queryAllByRoleFast("button", menu);
+  expect(first).toHaveTextContent("Website");
+  expect(menu).toHaveAttribute("data-side", "top");
+  const presentation = queryButton("Presentation", menu);
+  const user = userEvent.setup({ delay: null });
+  expect(presentation).not.toHaveAttribute("data-active");
+  expect(
+    within(menu).queryAllByRole("region", { name: "Presentation" }),
+  ).toHaveLength(0);
+  return { originalComposer, dialog, editor, menu, presentation, user };
+}
+
+test("Keep forwarding suggestions isolated during preview navigation", async () => {
+  const { originalComposer, dialog, editor, menu, presentation, user } =
+    await prepareForwardSuggestions();
+  await user.keyboard("{ArrowUp}");
+  expect(presentation).toHaveAttribute("data-active", "true");
+  expect(
+    within(menu).queryAllByRole("region", { name: "Presentation" }),
+  ).toHaveLength(1);
+  expect(editor).toHaveFocus();
+  await user.keyboard("{ArrowUp}");
+  expect(queryButton("Illustration", menu)).toHaveAttribute(
+    "data-active",
+    "true",
+  );
+  expect(dialog).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveFocus();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
+
+test("Keep forwarding suggestions isolated during IME composition", async () => {
+  const { originalComposer, dialog, editor, menu } =
+    await prepareForwardSuggestions();
+  fireEvent.compositionStart(editor, { data: "中文" });
+  fireEvent.keyDown(editor, {
+    key: "Enter",
+    isComposing: true,
+    keyCode: 229,
+  });
+  expect(menu).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  fireEvent.compositionEnd(editor, { data: "中文" });
+  expect(dialog).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveFocus();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
+
+test("Keep forwarding suggestions isolated during dismissal", async () => {
+  const { originalComposer, dialog, editor, user } =
+    await prepareForwardSuggestions();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
+  });
+  expect(dialog).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Forward draft /");
+  expect(editor).toHaveFocus();
+  expect(originalComposer).toHaveTextContent("Keep the existing notes.");
+});
 
 describe("reuse an unfinished agent recording in the forward dialog without replacing it", () => {
   async function prepareRecording() {
@@ -233,9 +244,17 @@ describe("reuse an unfinished agent recording in the forward dialog without repl
       context: refreshedContext,
       path: RUN_PATH,
     });
-    const originalComposer = await screen.findByRole("textbox", {
-      name: "Message",
+    const originalComposer = await waitFor(() => {
+      const composer = document.querySelector<HTMLElement>(
+        '[role="textbox"][aria-label="Message"]',
+      );
+      expect(composer).toBeInTheDocument();
+      if (!composer) {
+        throw new Error("Expected the restored message composer");
+      }
+      return composer;
     });
+    expect(originalComposer).toHaveAccessibleName("Message");
     const dialog = await openForwardComposer(FORWARD_TARGET_NAME);
     await findEnabledButton("Retry", dialog);
     return { dialog, originalComposer };

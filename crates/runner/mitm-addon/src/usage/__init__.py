@@ -70,6 +70,7 @@ from .openai_responses import (
 from .providers.connectors import (
     create_connector_response_parser,
     has_connector_response_parser,
+    needs_connector_request_body_inspection,
     needs_connector_response_buffer_fallback,
     report_connector_usage,
 )
@@ -115,6 +116,7 @@ __all__ = [
     "log_ignored_model_provider_usage_source",
     "log_terminal_model_provider_usage_sources",
     "merge_openai_responses_usage_result",
+    "needs_connector_request_body_inspection",
     "needs_connector_response_buffer_fallback",
     "release_model_provider_usage_tiers",
     "report_connector_usage",

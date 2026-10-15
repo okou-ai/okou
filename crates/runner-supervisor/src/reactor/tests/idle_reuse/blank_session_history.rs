@@ -19,9 +19,8 @@ use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_resp
 use runner_host::paths::RunnerPaths;
 use runner_types::storage_manifest::{ArtifactEntry, StorageManifest};
 use runner_types::types::{
-    ExecutionContext, HomeReuseResult, ResumeSession, ResumeSessionHistory,
-    ResumeSessionHistoryEncoding, ResumeSessionHistoryRef, ResumeSessionHistoryRefKind,
-    SandboxReuseResult,
+    ExecutionContext, ResumeSession, ResumeSessionHistory, ResumeSessionHistoryEncoding,
+    ResumeSessionHistoryRef, ResumeSessionHistoryRefKind,
 };
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -82,10 +81,6 @@ async fn blank_storage_handoff_observes_pending_history_without_starting_restore
     let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
     assert_eq!(completion.exit_code, 0);
     assert_eq!(completion.sandbox_id, Some(blank_id));
-    assert_eq!(
-        completion.home_reuse_result,
-        Some(HomeReuseResult::NotConfigured)
-    );
     let writes = overrides.write_file_calls();
     assert_eq!(writes.len(), 1);
     assert_eq!(writes[0].content, HISTORY);
@@ -531,9 +526,16 @@ async fn home_history_staging_overlaps_storage_and_preserves_restore() {
         process_gate.release_one();
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completion.exit_code, 0);
-        assert_eq!(completion.reuse_result, Some(SandboxReuseResult::PoolMiss));
-        assert_eq!(completion.home_reuse_result, Some(HomeReuseResult::Reused));
         assert_ne!(completion.sandbox_id, Some(blank_id));
+        let launches = overrides.start_agent_process_calls();
+        assert_eq!(launches.len(), 1);
+        assert_eq!(
+            launches[0].env.iter().find_map(|(key, value)| {
+                (key == guest_contracts::env::CANONICAL_SANDBOX_STARTUP_PATH_ENV)
+                    .then_some(value.as_str())
+            }),
+            Some("home")
+        );
         // The one-response server and successful restore require one download;
         // a second materialization cannot obtain another history response.
         server.assert_finished().await;

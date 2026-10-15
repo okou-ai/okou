@@ -96,9 +96,6 @@ TELEGRAM_OFFICIAL_WEBHOOK_SECRET=op://Development/telegram/TELEGRAM_OFFICIAL_WEB
 # Required: OpenAI (voice-chat ephemeral token minting, STT, TTS)
 OPENAI_API_KEY=op://Development/openai/OPENAI_API_KEY
 
-# Optional: OpenRouter lightweight model calls
-OPENROUTER_API_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
-
 # Optional: managed OpenRouter key seeded for fixed Auto by `dev-seed`
 DEV_MODEL_OPENROUTER_KEY=op://Development/openrouter/Section_ak7dvythmldarvk4dodjs4ecyq/OPENROUTER_API_KEY
 

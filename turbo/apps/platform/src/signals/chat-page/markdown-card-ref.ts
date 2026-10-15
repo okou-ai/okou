@@ -9,7 +9,7 @@ import type { MailDraftSignals } from "./mail-draft.ts";
 import type { PermissionSignals } from "./permission-card-signals.ts";
 import type { PlanUpgradeSignals } from "./plan-upgrade-block.ts";
 import type { SubscriptionResetSignals } from "./subscription-reset-block.ts";
-import type { WalletActionDescriptor } from "./wallet-action-block.ts";
+import type { WalletActionSignals } from "./wallet-action-block.ts";
 
 /**
  * The signals behind one resource occurrence in an event's markdown tree.
@@ -38,7 +38,7 @@ export type MarkdownCardRef =
   | { readonly kind: "banking-action"; readonly signals: BankingSignals }
   | {
       readonly kind: "wallet-action";
-      readonly descriptor: WalletActionDescriptor;
+      readonly signals: WalletActionSignals;
     }
   | { readonly kind: "unavailable-action" }
   | {

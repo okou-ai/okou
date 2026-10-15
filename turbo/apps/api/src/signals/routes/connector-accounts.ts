@@ -9,18 +9,18 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { setResHeader$ } from "../context/hono";
 import { connectorOAuthCompletionReceipt } from "../services/connector-oauth-completion.service";
 import type { RouteEntry } from "../route-entry";
 import { bestEffort, settle } from "../utils";
 import {
+  connectorAccount,
   connectorAccountDeletionImpact,
-  getConnectorAccount,
+  connectorAccountSummaries,
+  connectorAccountsForTarget,
   isConnectorAccountDefaultConflict,
-  listConnectorAccountsByIds,
-  listConnectorAccountsForTarget,
-  listConnectorAccountSummaries,
+  connectorAccountsByIds,
   renameConnectorAccount$,
   setDefaultConnectorAccount$,
   setDefaultGoogleFormsAccount$,
@@ -49,29 +49,38 @@ const oauthCompletionScope$ = computed((get) => {
   const { attemptId } = get(
     pathParamsOf(connectorAccountsContract.oauthCompletion),
   );
-  return { orgId: auth.orgId, userId: auth.userId, attemptId };
+  const target = get(queryOf(connectorAccountsContract.oauthCompletion));
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    attemptId,
+    target: targetFromQuery(target),
+  };
 });
 
 const oauthCompletionReceipt$ = connectorOAuthCompletionReceipt(
   oauthCompletionScope$,
 );
 
+const oauthCompletionAccountScope$ = computed(async (get) => {
+  const scope = get(oauthCompletionScope$);
+  const completion = await get(oauthCompletionReceipt$);
+  return completion
+    ? { ...scope, connectionId: completion.connectionId }
+    : null;
+});
+const oauthCompletionAccount$ = connectorAccount(oauthCompletionAccountScope$);
+
 const oauthCompletionInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const scope = get(oauthCompletionScope$);
-    const target = get(queryOf(connectorAccountsContract.oauthCompletion));
+    get(oauthCompletionScope$);
     set(setResHeader$, "Cache-Control", "no-store");
     const completion = await get(oauthCompletionReceipt$);
     signal.throwIfAborted();
     if (!completion) {
       return notFound("OAuth completion not found");
     }
-    const account = await getConnectorAccount(get(db$), {
-      orgId: scope.orgId,
-      userId: scope.userId,
-      target: targetFromQuery(target),
-      connectionId: completion.connectionId,
-    });
+    const account = await get(oauthCompletionAccount$);
     signal.throwIfAborted();
     return account
       ? { status: 200 as const, body: completion }
@@ -79,19 +88,27 @@ const oauthCompletionInner$ = command(
   },
 );
 
-const inspectInner$ = computed(async (get) => {
+const inspectionScope$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
+  const body = await get(bodyResultOf(connectorAccountsContract.inspect));
+  return body.ok
+    ? {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        connectionIds: body.data.selections.map((selection) => {
+          return selection.connectionId;
+        }),
+      }
+    : null;
+});
+const inspectedAccounts$ = connectorAccountsByIds(inspectionScope$);
+
+const inspectInner$ = computed(async (get) => {
   const body = await get(bodyResultOf(connectorAccountsContract.inspect));
   if (!body.ok) {
     return body.response;
   }
-  const accounts = await listConnectorAccountsByIds(get(db$), {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    connectionIds: body.data.selections.map((selection) => {
-      return selection.connectionId;
-    }),
-  });
+  const accounts = await get(inspectedAccounts$);
   const accountsById = new Map(
     accounts.map((account) => {
       return [account.id, account];
@@ -126,16 +143,17 @@ const inspectInner$ = computed(async (get) => {
   };
 });
 
+const accountSummaries$ = connectorAccountSummaries(organizationAuthContext$);
+
 const summariesInner$ = computed(async (get) => {
-  const auth = get(organizationAuthContext$);
-  const summaries = await listConnectorAccountSummaries(get(db$), auth);
+  const summaries = await get(accountSummaries$);
   return { status: 200 as const, body: { summaries: [...summaries] } };
 });
 
-const connectionsInner$ = computed(async (get) => {
+const connectionsScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const query = get(queryOf(connectorAccountsContract.connections));
-  const result = await listConnectorAccountsForTarget(get(db$), {
+  return {
     orgId: auth.orgId,
     userId: auth.userId,
     target: targetFromQuery(query),
@@ -143,9 +161,14 @@ const connectionsInner$ = computed(async (get) => {
     ...(query.cursor ? { cursor: query.cursor } : {}),
     ...(query.search ? { search: query.search } : {}),
     ...(query.kind === "builtin" && query.includeScopeMismatch === "true"
-      ? { includeScopeMismatch: true }
+      ? { includeScopeMismatch: true as const }
       : {}),
-  });
+  };
+});
+const accountsForTarget$ = connectorAccountsForTarget(connectionsScope$);
+
+const connectionsInner$ = computed(async (get) => {
+  const result = await get(accountsForTarget$);
   if (result.kind === "invalid-cursor") {
     return badRequestMessage("Invalid connector account cursor");
   }
@@ -164,37 +187,60 @@ const connectionsInner$ = computed(async (get) => {
   };
 });
 
-const connectionInner$ = computed(async (get) => {
+const connectionScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.connection));
   const query = get(queryOf(connectorAccountsContract.connection));
-  const account = await getConnectorAccount(get(db$), {
+  return {
     orgId: auth.orgId,
     userId: auth.userId,
     target: targetFromQuery(query),
     connectionId: params.connectionId,
-  });
+  };
+});
+const account$ = connectorAccount(connectionScope$);
+
+const connectionInner$ = computed(async (get) => {
+  const account = await get(account$);
   return account
     ? { status: 200 as const, body: account }
     : notFound("Connector account not found");
 });
 
-const scopeDiffInner$ = computed(async (get) => {
+const scopeDiffScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.scopeDiff));
   const query = get(queryOf(connectorAccountsContract.scopeDiff));
-  const diff = await get(
-    builtinConnectorScopeDiff({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      connectorSlug: query.connectorSlug,
-      selection: { kind: "exact", connectorId: params.connectionId },
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    connectorSlug: query.connectorSlug,
+    selection: { kind: "exact" as const, connectorId: params.connectionId },
+  };
+});
+const scopeDiff$ = builtinConnectorScopeDiff(scopeDiffScope$);
+
+const scopeDiffInner$ = computed(async (get) => {
+  const diff = await get(scopeDiff$);
   return diff
     ? { status: 200 as const, body: diff }
     : notFound("Connector account not found");
 });
+
+const renameAccountScope$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const params = get(pathParamsOf(connectorAccountsContract.rename));
+  const body = await get(bodyResultOf(connectorAccountsContract.rename));
+  return body.ok
+    ? {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        target: body.data.target,
+        connectionId: params.connectionId,
+      }
+    : null;
+});
+const renameAccount$ = connectorAccount(renameAccountScope$);
 
 const renameInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
@@ -211,7 +257,7 @@ const renameInner$ = command(
       target: body.data.target,
       connectionId: params.connectionId,
     };
-    const existing = await getConnectorAccount(get(db$), request);
+    const existing = await get(renameAccount$);
     signal.throwIfAborted();
     if (!existing) {
       return notFound("Connector account not found");
@@ -234,6 +280,21 @@ const renameInner$ = command(
     };
   },
 );
+const defaultAccountScope$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const params = get(pathParamsOf(connectorAccountsContract.setDefault));
+  const body = await get(bodyResultOf(connectorAccountsContract.setDefault));
+  return body.ok
+    ? {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        target: body.data.target,
+        connectionId: params.connectionId,
+      }
+    : null;
+});
+const defaultAccount$ = connectorAccount(defaultAccountScope$);
+
 const setDefaultInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
     const auth = get(organizationAuthContext$);
@@ -249,7 +310,7 @@ const setDefaultInner$ = command(
       target: body.data.target,
       connectionId: params.connectionId,
     };
-    const existing = await getConnectorAccount(get(db$), request);
+    const existing = await get(defaultAccount$);
     signal.throwIfAborted();
     if (!existing) {
       return notFound("Connector account not found");
@@ -330,28 +391,50 @@ const setDefaultInner$ = command(
   },
 );
 
-const deletionImpactInner$ = computed(async (get) => {
+const deletionImpactScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(connectorAccountsContract.deletionImpact));
   const query = get(queryOf(connectorAccountsContract.deletionImpact));
-  const request = {
+  return {
     orgId: auth.orgId,
     userId: auth.userId,
     target: targetFromQuery(query),
     connectionId: params.connectionId,
   };
-  if (!(await getConnectorAccount(get(db$), request))) {
+});
+const deletionImpactAccount$ = connectorAccount(deletionImpactScope$);
+const accountDeletionImpact$ =
+  connectorAccountDeletionImpact(deletionImpactScope$);
+
+const deletionImpactInner$ = computed(async (get) => {
+  const request = get(deletionImpactScope$);
+  if (!(await get(deletionImpactAccount$))) {
     return notFound("Connector account not found");
   }
-  const impact = await get(connectorAccountDeletionImpact(request));
+  const impact = await get(accountDeletionImpact$);
   if (!impact) {
     return notFound("Connector account not found");
   }
   return {
     status: 200 as const,
-    body: { connectionId: params.connectionId, ...impact },
+    body: { connectionId: request.connectionId, ...impact },
   };
 });
+
+const deleteAccountScope$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const params = get(pathParamsOf(connectorAccountsContract.delete));
+  const body = await get(bodyResultOf(connectorAccountsContract.delete));
+  return body.ok
+    ? {
+        orgId: auth.orgId,
+        userId: auth.userId,
+        target: body.data.target,
+        connectionId: params.connectionId,
+      }
+    : null;
+});
+const deleteAccount$ = connectorAccount(deleteAccountScope$);
 
 const deleteInner$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<unknown> => {
@@ -362,13 +445,7 @@ const deleteInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const request = {
-      orgId: auth.orgId,
-      userId: auth.userId,
-      target: body.data.target,
-      connectionId: params.connectionId,
-    };
-    if (!(await getConnectorAccount(get(db$), request))) {
+    if (!(await get(deleteAccount$))) {
       return notFound("Connector account not found");
     }
     const deletion =

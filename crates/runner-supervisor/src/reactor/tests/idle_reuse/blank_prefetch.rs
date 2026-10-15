@@ -5,7 +5,7 @@ use super::super::support::{
 };
 use super::blank_session_history::history_context;
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer, http_response};
-use runner_types::types::{FirewallEntry, SandboxReuseResult};
+use runner_types::types::FirewallEntry;
 use sandbox::{SandboxError, SandboxOperation, SandboxOperationTimeoutStage};
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 use tokio::sync::oneshot;
@@ -87,10 +87,6 @@ async fn blank_prefetch_recovery_preserves_history_identity_budget_and_one_compl
         let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completion.exit_code, if cancelled { 137 } else { 0 });
         assert_eq!(completion.sandbox_id, Some(blank_id));
-        assert_eq!(
-            completion.reuse_result,
-            Some(SandboxReuseResult::NoReuseKey)
-        );
         assert_eq!(overrides.start_process_calls().len(), 1);
         assert_eq!(
             overrides.start_agent_process_calls().len(),

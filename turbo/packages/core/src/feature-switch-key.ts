@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  RemoteControlCliManagement = "remoteControlCliManagement",
   TailscaleAccess = "tailscaleAccess",
   Dummy = "_dummy",
   AhrefsConnector = "ahrefsConnector",
@@ -32,7 +33,6 @@ export enum FeatureSwitchKey {
   LinkWallet = "linkWallet",
   Lab = "_lab",
   StripeInvoicePaidWorkflowAutomations = "stripeInvoicePaidWorkflowAutomations",
-  OfficialWorkflows = "officialWorkflows",
   TestOauthConnector = "_testOauthConnector",
   FreshdeskConnector = "freshdeskConnector",
   StabilityAiConnector = "stabilityAiConnector",
@@ -42,6 +42,7 @@ export enum FeatureSwitchKey {
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ChatResourcePanel = "chatResourcePanel",
+  ChatRelations = "chatRelations",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
@@ -53,13 +54,14 @@ export enum FeatureSwitchKey {
   ChatHomeCompliance = "chatHomeCompliance",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
-  ComposerAnchoredSuggestions = "composerAnchoredSuggestions",
+  ChatThreadInlineRename = "chatThreadInlineRename",
   CustomTemplates = "customTemplates",
+  BuiltinDocumentTemplates = "builtinDocumentTemplates",
   PresentationConvert = "presentationConvert",
   DeliveryFormatGuidance = "deliveryFormatGuidance",
   GoogleSlidesConversion = "googleSlidesConversion",
+  GoogleDocsSheetsConversion = "googleDocsSheetsConversion",
   BrowserNativeInput = "browserNativeInput",
-  HomeTaskRecommendations = "homeTaskRecommendations",
   AgentSuggestion = "agentSuggestion",
   SubscriptionLinkingEntry = "subscriptionLinkingEntry",
 }

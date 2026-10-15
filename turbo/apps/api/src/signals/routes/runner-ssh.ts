@@ -77,6 +77,9 @@ const resolveSsh$ = command(async ({ get, set }, signal: AbortSignal) => {
   const selected = await get(resolveConnection$);
   signal.throwIfAborted();
   const result = await set(resolveRunnerSsh$, selected, signal);
+  if (result.outcome !== "unavailable" && selected !== null) {
+    set(setResHeader$, "X-SSH-Connection-Created-At", selected.createdAt);
+  }
   return { status: 200 as const, body: result };
 });
 

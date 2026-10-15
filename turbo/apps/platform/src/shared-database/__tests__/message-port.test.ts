@@ -181,8 +181,8 @@ function initializeWorker(
       appVersion: WORKER_APP_VERSION,
       identity: workerIdentity,
       apiBaseUrl: location.origin,
-      getToken: (signal) => {
-        return workerStore.set(requestTokenFromTabs$, signal);
+      getToken: (diagnostic, signal) => {
+        return workerStore.set(requestTokenFromTabs$, diagnostic, signal);
       },
       oauthApiBaseUrl: location.origin,
       onForceUpgrade: vi.fn<() => void>(),
@@ -219,6 +219,14 @@ function connectProtocolTransport(
   };
 }
 
+function authLifecycleTelemetry() {
+  return axiomTelemetry.ingest.mock.calls.flatMap(([, events]) => {
+    return events.filter((event) => {
+      return event.name === "auth.lifecycle";
+    });
+  });
+}
+
 // Observe the external Axiom payload through real token bridge round trips.
 function tokenRequestTelemetry() {
   return axiomTelemetry.ingest.mock.calls.flatMap(([dataset, events]) => {
@@ -230,6 +238,7 @@ function tokenRequestTelemetry() {
 }
 
 async function prepareTokenTelemetryRequest(ownerSignal = context.signal) {
+  mockNow(new Date("2026-10-14T02:00:00Z"), context.signal);
   axiomTelemetry.ingest.mockReset();
   vi.stubEnv("VITE_AXIOM_CLIENT_TELEMETRY_TOKEN", "xaat-test-ingest-token");
   context.signal.addEventListener(
@@ -322,7 +331,41 @@ test("Report a pending token request before its response and correlate success w
   expectTokenRequestTelemetry(events, requestId, "success");
   expect(events[0]).toHaveProperty("duration", 0);
   expect(events[1]).toHaveProperty("duration", 25_000_000);
-  const payload = JSON.stringify(events);
+  const milestones = authLifecycleTelemetry();
+  for (const stage of [
+    "tab_token_requested",
+    "tab_token_received",
+    "tab_token_read_finished",
+    "tab_token_reply",
+    "worker_token_received",
+    "worker_token_selected",
+  ]) {
+    expect(milestones).toContainEqual(
+      expect.objectContaining({
+        "attributes.custom": expect.objectContaining({
+          "okou.auth.stage": stage,
+          "okou.auth.token_attempt_id": requestId,
+        }),
+      }),
+    );
+  }
+  const sent = milestones.find((event) => {
+    const attrs = event["attributes.custom"];
+    return (
+      typeof attrs === "object" &&
+      attrs !== null &&
+      "okou.auth.stage" in attrs &&
+      attrs["okou.auth.stage"] === "http_send_invoked"
+    );
+  });
+  expect(sent).toMatchObject({
+    "attributes.custom": {
+      "okou.auth.operation_id": expect.any(String),
+      "okou.auth.token_attempt_id": requestId,
+      "okou.auth.http_request_id": expect.any(String),
+    },
+  });
+  const payload = JSON.stringify([...events, ...milestones]);
   expect(payload).not.toContain(credential);
   expect(payload).not.toContain(identity().userId);
   expect(payload).not.toContain(identity().orgId);
@@ -381,7 +424,10 @@ test.each([
     axiomTelemetry.ingest.mockImplementation((_dataset, events) => {
       if (
         events.some((event) => {
-          return event.name === "shared_database.token_request";
+          return (
+            event.name === "shared_database.token_request" ||
+            event.name === "auth.lifecycle"
+          );
         })
       ) {
         throw new DOMException("Telemetry SDK unavailable", sdkErrorName);

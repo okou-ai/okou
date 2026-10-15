@@ -607,6 +607,15 @@ async fn execute(
                         apply_workload_resource_limit(&mut failure_diagnostic, hard_limit);
                     if contained {
                         log_info!(LOG_TAG, "{message} oom_classification=contained_tool_oom");
+                    } else if let Some(classification) = evidence
+                        .as_ref()
+                        .and_then(guest_contracts::oom_evidence::OomEvidence::classification)
+                    {
+                        log_warn!(
+                            LOG_TAG,
+                            "{message} oom_classification={}",
+                            classification.as_str()
+                        );
                     } else {
                         log_warn!(LOG_TAG, "{message}");
                     }
@@ -969,8 +978,6 @@ async fn complete_execution(
             http,
             &config.run_id,
             &config.sandbox_id,
-            &config.sandbox_reuse_result,
-            &config.home_reuse_result,
             state.last_event_sequence,
         )
         .await;

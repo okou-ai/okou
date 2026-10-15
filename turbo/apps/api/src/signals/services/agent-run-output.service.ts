@@ -1,3 +1,4 @@
+import { runNativeThreadBinding } from "./run-native-session.service";
 import { createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
@@ -8,7 +9,10 @@ import {
   type RunResult,
   runResultSchema,
 } from "@okouai/api-contracts/contracts/runs";
-import { RESUME_SESSION_HISTORY_MAX_BYTES } from "@okouai/api-contracts/contracts/runners";
+import {
+  RESUME_SESSION_HISTORY_MAX_BYTES,
+  nativeContinuationSchema,
+} from "@okouai/api-contracts/contracts/runners";
 import {
   runCompletionMetadataSchema,
   webhookSessionHistoryPrepareContract,
@@ -27,17 +31,15 @@ import {
   maintenanceOutputResultVersion,
 } from "./pi-memory-phase2-result";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
+import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { blobs } from "@okouai/db/schema/blob";
-import { conversations } from "@okouai/db/schema/conversation";
 import type { PersistedStorageMount } from "@okouai/db/types";
 import { command, computed } from "ccstate";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { badRequestMessage, notFound } from "../../lib/error";
-import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+
 import type { Tx } from "../../lib/db-types";
 import type { SandboxAuth } from "../../types/auth";
 import { db$, writeDb$, type Db } from "../external/db";
@@ -96,12 +98,18 @@ type AgentRunOutputPreparation =
     };
 
 interface RunOutputContext {
-  readonly agentSessionConversationId: string | null;
   readonly chatThreadId: string | null;
   readonly launchSnapshot: typeof agentRuns.$inferSelect.launchSnapshot;
   readonly status: RunStatus;
   readonly storageMounts: typeof agentRuns.$inferSelect.storageMounts;
-  readonly sessionId: string;
+  readonly id: string;
+  readonly agentId: string | null;
+  readonly createdAt: Date;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly framework: string | null;
+  readonly frameworkSessionId: string | null;
+  readonly legacyConversationHistoryHash: string | null;
   readonly existingOutput: ExistingRunOutput | undefined;
 }
 
@@ -117,8 +125,6 @@ interface PreparedSessionHistoryBlob {
 }
 
 type SessionHistoryBlobReadDb = Pick<Db, "select">;
-
-const L = logger("webhooks:agent:session-history");
 
 class PiHistoryValidationError extends Error {}
 
@@ -166,44 +172,45 @@ function resolvedOutputMounts(args: {
   });
 }
 
+const outputRunColumns = {
+  id: agentRuns.id,
+  agentId: agentRuns.agentId,
+  createdAt: agentRuns.createdAt,
+  userId: agentRuns.userId,
+  orgId: agentRuns.orgId,
+  chatThreadId: agentRuns.chatThreadId,
+  launchSnapshot: agentRuns.launchSnapshot,
+  status: agentRuns.status,
+  storageMounts: agentRuns.storageMounts,
+  framework: agentRuns.framework,
+  frameworkSessionId: agentRuns.frameworkSessionId,
+  legacyConversationHistoryHash: agentRuns.legacyConversationHistoryHash,
+} as const;
+
 function createInitialRunOutputContext(runId: string, userId: string) {
   return computed(async (get): Promise<RunOutputContext | undefined> => {
-    const db = get(db$);
-    const [run] = await db
-      .select({
-        agentSessionConversationId: agentSessions.conversationId,
-        chatThreadId: agentRuns.chatThreadId,
-        launchSnapshot: agentRuns.launchSnapshot,
-        status: agentRuns.status,
-        storageMounts: agentRuns.storageMounts,
-        sessionId: agentRuns.sessionId,
-        result: agentRuns.result,
-        conversation: {
-          conversationId: conversations.id,
-          historyHash: conversations.cliAgentSessionHistoryHash,
-          sessionId: conversations.cliAgentSessionId,
-          type: conversations.cliAgentType,
-        },
-      })
+    const [run] = await get(db$)
+      .select({ ...outputRunColumns, result: agentRuns.result })
       .from(agentRuns)
-      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-      .leftJoin(conversations, eq(conversations.runId, agentRuns.id))
       .where(and(eq(agentRuns.id, runId), eq(agentRuns.userId, userId)))
       .limit(1);
-
     if (!run) {
       return undefined;
     }
-    const { conversation, result, ...context } = run;
+    const { result, ...context } = run;
     return {
       ...context,
       status: runStatusSchema.parse(run.status),
       existingOutput:
-        conversation &&
         ["completed", "failed", "cancelled"].includes(run.status) &&
         run.chatThreadId === null &&
         run.launchSnapshot?.framework === "pi"
-          ? parseExistingRunOutput({ ...conversation, result })
+          ? parseExistingRunOutput({
+              historyHash: run.legacyConversationHistoryHash,
+              sessionId: run.frameworkSessionId,
+              type: run.framework,
+              result,
+            })
           : undefined,
     };
   });
@@ -214,33 +221,24 @@ async function lockRunOutputContext(
   input: AgentRunOutputInput,
 ): Promise<RunOutputContext | undefined> {
   const [run] = await tx
-    .select({
-      agentSessionConversationId: agentSessions.conversationId,
-      chatThreadId: agentRuns.chatThreadId,
-      launchSnapshot: agentRuns.launchSnapshot,
-      status: agentRuns.status,
-      storageMounts: agentRuns.storageMounts,
-      sessionId: agentRuns.sessionId,
-    })
+    .select(outputRunColumns)
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
     .where(
       and(
         eq(agentRuns.id, input.body.runId),
         eq(agentRuns.userId, input.auth.userId),
+        eq(agentRuns.orgId, input.auth.orgId),
       ),
     )
     .for("update", { of: agentRuns })
     .limit(1);
-
-  if (!run) {
-    return undefined;
-  }
-  return {
-    ...run,
-    status: runStatusSchema.parse(run.status),
-    existingOutput: undefined,
-  };
+  return run
+    ? {
+        ...run,
+        status: runStatusSchema.parse(run.status),
+        existingOutput: undefined,
+      }
+    : undefined;
 }
 
 async function decodePiHistory(args: {
@@ -475,16 +473,18 @@ async function loadSessionHistoryBlobMetadata(
   hash: string,
 ): Promise<SessionHistoryBlobMetadata | undefined> {
   const [blob] = await db
-    .select({
-      rawSize: blobs.rawSize,
-      encoding: blobs.encoding,
-      encodedSize: blobs.encodedSize,
-    })
+    .select(historyBlobMetadata)
     .from(blobs)
     .where(eq(blobs.hash, hash))
     .limit(1);
   return blob;
 }
+
+const historyBlobMetadata = {
+  rawSize: blobs.rawSize,
+  encoding: blobs.encoding,
+  encodedSize: blobs.encodedSize,
+} as const;
 
 const ensureSessionHistoryBlobMetadata$ = command(
   async (
@@ -500,7 +500,10 @@ const ensureSessionHistoryBlobMetadata$ = command(
     const { body, auth } = input;
     const run = db.$with("history_upload_run").as(
       db
-        .select({ status: agentRuns.status })
+        .select({
+          status: agentRuns.status,
+          launchSnapshot: agentRuns.launchSnapshot,
+        })
         .from(agentRuns)
         .where(
           and(eq(agentRuns.id, body.runId), eq(agentRuns.userId, auth.userId)),
@@ -528,26 +531,26 @@ const ensureSessionHistoryBlobMetadata$ = command(
             })
             .from(run)
             .where(
-              inArray(
-                run.status,
-                runStatusSchema.options.filter((status) => {
-                  return status !== "timeout";
-                }),
+              and(
+                sql`coalesce(${run.launchSnapshot}->>'schemaVersion', '') <> '5'`,
+                inArray(
+                  run.status,
+                  runStatusSchema.options.filter((status) => {
+                    return status !== "timeout";
+                  }),
+                ),
               ),
             ),
         )
         .onConflictDoNothing()
-        .returning({
-          rawSize: blobs.rawSize,
-          encoding: blobs.encoding,
-          encodedSize: blobs.encodedSize,
-        }),
+        .returning(historyBlobMetadata),
     );
     // Admission and the first metadata write share one statement snapshot.
     const [admission] = await db
       .with(run, inserted)
       .select({
         status: run.status,
+        launchSnapshot: run.launchSnapshot,
         blob: {
           rawSize: inserted.rawSize,
           encoding: inserted.encoding,
@@ -561,6 +564,9 @@ const ensureSessionHistoryBlobMetadata$ = command(
       return { kind: "not-found" } as const;
     }
     const status = runStatusSchema.parse(admission.status);
+    if (admission.launchSnapshot?.schemaVersion === 5) {
+      return { kind: "native-only" } as const;
+    }
     if (status === "timeout") {
       return { kind: "timeout", status } as const;
     }
@@ -569,11 +575,7 @@ const ensureSessionHistoryBlobMetadata$ = command(
     if (!blob) {
       // A competing insert can be invisible to the admission statement's snapshot.
       [blob] = await db
-        .select({
-          rawSize: blobs.rawSize,
-          encoding: blobs.encoding,
-          encodedSize: blobs.encodedSize,
-        })
+        .select(historyBlobMetadata)
         .from(blobs)
         .where(eq(blobs.hash, body.hash))
         .limit(1);
@@ -591,20 +593,12 @@ const ensureSessionHistoryBlobMetadata$ = command(
           encodedSize: body.encodedSize,
         })
         .where(and(eq(blobs.hash, body.hash), eq(blobs.rawSize, 0)))
-        .returning({
-          rawSize: blobs.rawSize,
-          encoding: blobs.encoding,
-          encodedSize: blobs.encodedSize,
-        });
+        .returning(historyBlobMetadata);
       signal.throwIfAborted();
       blob = updatedBlob;
       if (!blob) {
         [blob] = await db
-          .select({
-            rawSize: blobs.rawSize,
-            encoding: blobs.encoding,
-            encodedSize: blobs.encodedSize,
-          })
+          .select(historyBlobMetadata)
           .from(blobs)
           .where(eq(blobs.hash, body.hash))
           .limit(1);
@@ -645,6 +639,11 @@ export const prepareSessionHistoryUpload$ = command(
 
     if (admission.kind === "not-found") {
       return notFound("Agent run not found");
+    }
+    if (admission.kind === "native-only") {
+      return badRequestMessage(
+        "Native-only Runs do not publish history archives",
+      );
     }
     if (admission.kind === "timeout") {
       return badRequestMessage(runOutputStateError(admission.status));
@@ -790,7 +789,6 @@ function runOutputStateError(status: RunStatus): string {
 }
 
 interface ExistingRunOutput {
-  readonly conversationId: string;
   readonly historyHash: string | null;
   readonly sessionId: string | null;
   readonly result?: RunResult;
@@ -822,15 +820,13 @@ async function loadExistingRunOutput(
 ): Promise<ExistingRunOutput | undefined> {
   const [existing] = await tx
     .select({
-      conversationId: conversations.id,
-      historyHash: conversations.cliAgentSessionHistoryHash,
-      sessionId: conversations.cliAgentSessionId,
+      historyHash: agentRuns.legacyConversationHistoryHash,
+      sessionId: agentRuns.frameworkSessionId,
       result: agentRuns.result,
-      type: conversations.cliAgentType,
+      type: agentRuns.framework,
     })
-    .from(conversations)
-    .innerJoin(agentRuns, eq(agentRuns.id, conversations.runId))
-    .where(eq(conversations.runId, runId))
+    .from(agentRuns)
+    .where(and(eq(agentRuns.id, runId), isNotNull(agentRuns.result)))
     .limit(1);
   // Pre-transition terminal callbacks must drain before cutover. Historical
   // results remain readable, but cannot supply absent exact output evidence.
@@ -855,13 +851,15 @@ function storageOutputs(
 
 function buildRunResult(
   run: RunOutputContext,
-  conversationId: string,
+  body: AgentRunOutputBody,
   mounts: readonly PersistedStorageMount[],
 ): RunResult {
   const projection = projectRunStorage(mounts);
+  const framework = run.launchSnapshot?.framework;
   return {
-    agentSessionId: run.sessionId,
-    conversationId,
+    ...(framework !== undefined && framework === body.cliAgentType
+      ? { framework, frameworkSessionId: body.cliAgentSessionId }
+      : {}),
     storageOutputs: storageOutputs(mounts),
     ...(projection.artifactVersions
       ? { artifact: projection.artifactVersions }
@@ -912,8 +910,7 @@ async function admitPiHistory(
     isDeepStrictEqual(
       existing.result.storageOutputs,
       storageOutputs(storageMounts),
-    ) &&
-    (active || run.agentSessionConversationId === existing.conversationId);
+    );
   if (!exactRetry) {
     return {
       kind: "error",
@@ -934,67 +931,24 @@ async function persistAgentRunOutput(
   body: AgentRunOutputBody,
   options: {
     storageMounts: PersistedStorageMount[];
-    deferSessionPromotion: boolean;
   },
   signal: AbortSignal,
 ) {
-  const { deferSessionPromotion, storageMounts } = options;
+  const { storageMounts } = options;
   const historyHash = body.cliAgentSessionHistoryHash;
-  const [existingConversation] = await tx
-    .select({ historyHash: conversations.cliAgentSessionHistoryHash })
-    .from(conversations)
-    .where(eq(conversations.runId, body.runId))
-    .limit(1);
-  signal.throwIfAborted();
-  const previousHistoryHash = existingConversation?.historyHash ?? null;
+  const previousHistoryHash = run.legacyConversationHistoryHash;
   const historyChanged = previousHistoryHash !== (historyHash ?? null);
 
   if (historyHash !== undefined && historyChanged) {
-    await tx
-      .insert(blobs)
-      .values({
-        hash: historyHash,
-        rawSize: 0,
-        encoding: SESSION_HISTORY_ENCODING_IDENTITY,
-        encodedSize: 0,
-        refCount: 1,
-      })
-      .onConflictDoUpdate({
-        target: blobs.hash,
-        set: { refCount: sql`${blobs.refCount} + 1` },
-      });
+    const [retained] = await tx
+      .update(blobs)
+      .set({ refCount: sql`${blobs.refCount} + 1` })
+      .where(eq(blobs.hash, historyHash))
+      .returning({ hash: blobs.hash });
+    if (!retained) {
+      throw new Error("Run history blob is unavailable");
+    }
     signal.throwIfAborted();
-  }
-
-  const historyFields =
-    historyHash === undefined
-      ? {
-          cliAgentSessionHistory: null,
-          cliAgentSessionHistoryHash: null,
-        }
-      : { cliAgentSessionHistoryHash: historyHash };
-
-  const [conversation] = await tx
-    .insert(conversations)
-    .values({
-      runId: body.runId,
-      cliAgentType: body.cliAgentType,
-      cliAgentSessionId: body.cliAgentSessionId,
-      ...historyFields,
-    })
-    .onConflictDoUpdate({
-      target: conversations.runId,
-      set: {
-        cliAgentType: body.cliAgentType,
-        cliAgentSessionId: body.cliAgentSessionId,
-        ...historyFields,
-      },
-    })
-    .returning({ id: conversations.id });
-  signal.throwIfAborted();
-
-  if (!conversation) {
-    throw new Error("Failed to upsert conversation record");
   }
 
   await tx
@@ -1008,35 +962,27 @@ async function persistAgentRunOutput(
   signal.throwIfAborted();
 
   if (previousHistoryHash !== null && historyChanged) {
-    await tx
+    const [released] = await tx
       .update(blobs)
-      .set({ refCount: sql`greatest(${blobs.refCount} - 1, 0)` })
-      .where(eq(blobs.hash, previousHistoryHash));
-    signal.throwIfAborted();
-  }
-
-  const result = buildRunResult(run, conversation.id, storageMounts);
-
-  if (!deferSessionPromotion) {
-    const [agentSession] = await tx
-      .update(agentSessions)
-      .set({
-        conversationId: conversation.id,
-        updatedAt: nowDate(),
-      })
-      .where(eq(agentSessions.id, run.sessionId))
-      .returning({ id: agentSessions.id });
-    signal.throwIfAborted();
-
-    if (!agentSession) {
-      return notFound("AgentSession not found");
+      .set({ refCount: sql`${blobs.refCount} - 1` })
+      .where(and(eq(blobs.hash, previousHistoryHash), gte(blobs.refCount, 1)))
+      .returning({ hash: blobs.hash });
+    if (!released) {
+      throw new Error("Run history blob has no retained reference");
     }
+    signal.throwIfAborted();
   }
-
-  L.debug("Native history and Run outputs saved", {
-    runId: body.runId,
-    conversationId: conversation.id,
+  const binding = runNativeThreadBinding({
+    run,
+    owner: { userId: run.userId, orgId: run.orgId },
+    framework: body.cliAgentType,
+    sessionId: body.cliAgentSessionId,
   });
+  if (binding) {
+    await tx.update(chatThreads).set(binding.values).where(binding.condition);
+  }
+  const result = buildRunResult(run, body, storageMounts);
+
   return runOutputSuccessResponse(result);
 }
 
@@ -1101,8 +1047,6 @@ function finalizedMaintenanceOutput(
     existing.type !== body.cliAgentType ||
     existing.sessionId !== body.cliAgentSessionId ||
     existing.historyHash !== null ||
-    existing.conversationId !== run.agentSessionConversationId ||
-    existing.result.agentSessionId !== run.sessionId ||
     !isDeepStrictEqual(
       existing.result.storageOutputs,
       storageOutputs(
@@ -1139,7 +1083,8 @@ function privateMaintenanceIdentityMatches(
     isPiHistoryRun(run) &&
     input.body.cliAgentSessionId === input.body.runId &&
     input.body.cliAgentSessionHistoryHash === undefined &&
-    input.body.cliAgentSessionHistoryDisposition === "unavailable"
+    input.body.cliAgentSessionHistoryDisposition ===
+      (run.launchSnapshot?.schemaVersion === 5 ? "native_only" : "unavailable")
   );
 }
 
@@ -1247,7 +1192,7 @@ function piValidationMatchesRun(
   return (
     prepared.piValidation !== undefined &&
     prepared.piValidation.chatThreadId === run.chatThreadId &&
-    prepared.piValidation.runSessionId === run.sessionId
+    prepared.piValidation.runSessionId === run.id
   );
 }
 
@@ -1285,23 +1230,73 @@ function isTerminalPrivatePiRun(run: RunOutputContext): boolean {
 
 function restoreTerminalPrivateOutput(
   run: RunOutputContext,
-  existing:
-    | (NonNullable<Parameters<typeof parseExistingRunOutput>[0]> & {
-        readonly agentSessionConversationId: string | null;
-      })
-    | undefined,
+  existing: ExistingRunOutput | undefined,
 ): RunOutputContext | string {
   if (!existing) {
     return run.status === "completed"
       ? "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output"
       : run;
   }
-  const { agentSessionConversationId, ...output } = existing;
+  if (
+    existing.result !== undefined &&
+    !(
+      (existing.result.framework === existing.type &&
+        existing.result.frameworkSessionId === existing.sessionId) ||
+      // Remove after late legacy terminal receipts are projected and outgoing
+      // API/finalizers drain, before #37970's physical contraction.
+      (run.launchSnapshot?.schemaVersion !== 5 &&
+        existing.result.framework === undefined &&
+        existing.result.frameworkSessionId === undefined &&
+        existing.result.agentSessionId !== undefined &&
+        existing.result.conversationId !== undefined)
+    )
+  ) {
+    return "[RUN_OUTPUT_ALREADY_COMMITTED] Final output does not exactly match the committed Run output";
+  }
   return {
     ...run,
-    agentSessionConversationId,
-    existingOutput: parseExistingRunOutput(output),
+    existingOutput: existing,
   };
+}
+
+function capturedNativeOutputError(
+  run: RunOutputContext,
+  body: AgentRunOutputBody,
+): string | undefined {
+  if (
+    run.launchSnapshot?.schemaVersion === 5 &&
+    (body.cliAgentSessionHistoryDisposition !== "native_only" ||
+      !nativeContinuationSchema.shape.sessionId.safeParse(
+        body.cliAgentSessionId,
+      ).success ||
+      (run.launchSnapshot.framework === "pi" &&
+        body.cliAgentSessionId !== (run.chatThreadId ?? run.id)) ||
+      body.cliAgentType !== run.launchSnapshot.framework)
+  ) {
+    return "Native Run output does not match its captured Framework identity";
+  }
+}
+
+function nativeRunIdentityChanged(
+  run: RunOutputContext,
+  body: AgentRunOutputBody,
+): boolean {
+  return (
+    run.launchSnapshot?.schemaVersion === 5 &&
+    run.frameworkSessionId !== null &&
+    run.frameworkSessionId !== body.cliAgentSessionId
+  );
+}
+
+function legacyPiOutputRequiresHistoryValidation(
+  run: RunOutputContext,
+  hasMaintenanceOutput: boolean,
+): boolean {
+  return (
+    isPiHistoryRun(run) &&
+    !hasMaintenanceOutput &&
+    run.launchSnapshot?.schemaVersion !== 5
+  );
 }
 
 export async function persistAgentRunOutputsInTransaction(
@@ -1317,22 +1312,8 @@ export async function persistAgentRunOutputsInTransaction(
   }
 
   if (isTerminalPrivatePiRun(run)) {
-    // Read the completed Run's output and session pointer together after the
-    // existing Run lock. Both identities must describe the same completion.
-    const [existing] = await tx
-      .select({
-        agentSessionConversationId: agentSessions.conversationId,
-        conversationId: conversations.id,
-        historyHash: conversations.cliAgentSessionHistoryHash,
-        sessionId: conversations.cliAgentSessionId,
-        result: agentRuns.result,
-        type: conversations.cliAgentType,
-      })
-      .from(conversations)
-      .innerJoin(agentRuns, eq(agentRuns.id, conversations.runId))
-      .innerJoin(agentSessions, eq(agentSessions.id, agentRuns.sessionId))
-      .where(eq(conversations.runId, input.body.runId))
-      .limit(1);
+    // Read native identity and exact committed output from the same locked Run.
+    const existing = await loadExistingRunOutput(tx, input.body.runId);
     signal.throwIfAborted();
     const terminalRun = restoreTerminalPrivateOutput(run, existing);
     if (typeof terminalRun === "string") {
@@ -1361,6 +1342,10 @@ export async function persistAgentRunOutputsInTransaction(
       ? { ...mount, version: maintenance.versionId }
       : mount;
   });
+  const nativeError = capturedNativeOutputError(run, input.body);
+  if (nativeError) {
+    return badRequestMessage(nativeError);
+  }
   const typeError = piHistoryTypeError(run, input.body);
   if (typeError) {
     return badRequestMessage(typeError);
@@ -1389,7 +1374,12 @@ export async function persistAgentRunOutputsInTransaction(
       );
     }
   }
-  if (piRun && !maintenance) {
+  if (nativeRunIdentityChanged(run, input.body)) {
+    return badRequestMessage(
+      "Native Run output does not match its captured Framework identity",
+    );
+  }
+  if (legacyPiOutputRequiresHistoryValidation(run, !!maintenance)) {
     const admission = await admitPiHistory(tx, run, input.body, storageMounts);
     signal.throwIfAborted();
     if (admission.kind === "error") {
@@ -1411,7 +1401,6 @@ export async function persistAgentRunOutputsInTransaction(
     input.body,
     {
       storageMounts,
-      deferSessionPromotion: piRun && !maintenance,
     },
     signal,
   );
@@ -1445,6 +1434,7 @@ export function createAgentRunOutputOperations(runId: string, userId: string) {
       }
       const piNeedsValidation =
         isPiHistoryRun(run) &&
+        run.launchSnapshot?.schemaVersion !== 5 &&
         !maintenance &&
         isActivePiHistoryStatus(run.status);
       if (piNeedsValidation) {
@@ -1460,7 +1450,7 @@ export function createAgentRunOutputOperations(runId: string, userId: string) {
           ? {
               piValidation: {
                 chatThreadId: run.chatThreadId,
-                runSessionId: run.sessionId,
+                runSessionId: run.id,
               },
             }
           : {},

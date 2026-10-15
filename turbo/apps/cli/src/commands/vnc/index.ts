@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { createVncHostCommand } from "./host";
+import { createVncCredentialCommand } from "./credential";
 import { outputVncCommandError, outputVncOutcome } from "./output";
 import type { VncMethod } from "./protocol";
 import { invokeVncRpc } from "./rpc";
@@ -146,7 +147,7 @@ export function createVncCommand() {
     .addHelpText(
       "after",
       `
-Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. Ask the owner to rebind the underlying SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. Read the relevant subcommand's --help. Credentials and trust configuration stay with the saved host; commands accept no endpoint, password or insecure override.
+Start with okou vnc host list --json and use an exact current ID only when availability.status=ready; blocked needs_rebind IDs are diagnostic only. Ask the owner to rebind the underlying SSH host to permitted Cloudflare Access or explicitly choose Direct in SSH settings. Read the relevant subcommand's --help. Execution uses saved credentials and trust configuration, with no endpoint, password or insecure override. Manage owned configuration with host list --scope configured and credential commands (connector:read/write); management does not grant VNC execution access. Supply credential-bearing JSON only through --input <file|->.
 
 Choose session start --mode shared or --mode exclusive explicitly. Shared viewers can interfere; exclusive requests may disconnect other viewers or be refused/overridden by the server. Neither mode provides an Okou-wide control lock.
 
@@ -155,6 +156,7 @@ Take a screenshot with --output <file> --json before coordinate input. Reuse its
 VNC requires the host to be enabled for this chat (an SSH-backed host also needs its SSH host enabled), an enabled VNC feature and a supporting Runner. Ready means configured to attempt, not connectivity-tested. Ask the owner to check saved host diagnostics if connection or authentication fails.`,
     )
     .addCommand(createVncHostCommand())
+    .addCommand(createVncCredentialCommand())
     .addCommand(createSessionCommand());
 
   vnc.addCommand(

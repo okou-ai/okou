@@ -354,7 +354,7 @@ fn dispatch_started(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Re
                     }
                 }
             }
-            ConnectionState::Closed => None,
+            ConnectionState::Closed(_) => None,
         }
     };
 
@@ -419,7 +419,7 @@ fn dispatch_agent_ready(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io
                     }
                 }
             }
-            ConnectionState::Closed => None,
+            ConnectionState::Closed(_) => None,
         }
     };
 
@@ -449,7 +449,7 @@ pub(in crate::exec_operation) fn dispatch_result(
                     .take_terminal_exec_operation(msg.seq)?
                     .map(|terminal| (terminal, decoded))
             }
-            ConnectionState::Connected { .. } | ConnectionState::Closed => None,
+            ConnectionState::Connected { .. } | ConnectionState::Closed(_) => None,
         }
     }) else {
         return Ok(());
@@ -478,7 +478,7 @@ fn dispatch_control_result(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) ->
             ConnectionState::Connected { operations, .. } => {
                 operations.take_pending_control(msg.seq)
             }
-            ConnectionState::Closed => None,
+            ConnectionState::Closed(_) => None,
         }
     }) else {
         return Ok(());
@@ -534,7 +534,7 @@ fn dispatch_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> io::Resu
                     .take_terminal_exec_operation(msg.seq)?
                     .map(|terminal| (terminal, err))
             }
-            ConnectionState::Connected { .. } | ConnectionState::Closed => None,
+            ConnectionState::Connected { .. } | ConnectionState::Closed(_) => None,
         }
     }) else {
         return dispatch_control_error(shared, msg);
@@ -555,7 +555,7 @@ fn dispatch_control_error(shared: &Arc<Shared>, msg: BorrowedRawMessage<'_>) -> 
             ConnectionState::Connected { operations, .. } => {
                 operations.take_pending_control(msg.seq)
             }
-            ConnectionState::Closed => None,
+            ConnectionState::Closed(_) => None,
         }
     }) else {
         return Ok(false);

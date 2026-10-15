@@ -216,6 +216,7 @@ pub mod home_cache_history;
 pub mod http;
 pub mod masker;
 pub mod metrics;
+mod native_continuation;
 mod nofollow_fs;
 pub mod paths;
 mod provider_failure;

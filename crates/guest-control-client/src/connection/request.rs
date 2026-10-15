@@ -507,7 +507,7 @@ fn mark_pending_normal_operation_possible_guest_write(
             };
             mark_pending_normal_operation_possible_guest_write_started(normal_operation)
         }
-        ConnectionState::Closed => Err(io::Error::new(
+        ConnectionState::Closed(_) => Err(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "connection closed",
         )),
@@ -731,6 +731,9 @@ impl GuestControlClient {
     /// Returns the request error if the guest cannot be reached or does not
     /// acknowledge before the deadline. An unexpected response type or a
     /// non-empty acknowledgement returns [`io::ErrorKind::InvalidData`].
+    /// When initial request registration finds an already-closed transport,
+    /// the error's source is [`crate::ConnectionClosedAtAdmission`], retaining
+    /// the first close facts. Failures after registration do not use that marker.
     pub async fn shutdown(&self, timeout: Duration) -> io::Result<()> {
         self.lifecycle_request(
             MSG_SHUTDOWN,

@@ -4,13 +4,15 @@ import type {
   ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
+import { and, eq } from "drizzle-orm";
 
 import {
   invalidateCodexResetCreditExpiry,
   prepareCodexResetCreditExpiryRead,
 } from "./codex-reset-credit-expiry.service";
 import { logger } from "../../lib/log";
-import { type Db, writeDb$ } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { publishPersonalModelProvidersChangedSafely } from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { tapError } from "../utils";
@@ -27,7 +29,7 @@ import type {
   SubscriptionUsageMetadata,
   SubscriptionUsageWindowMetadata,
 } from "./model-provider-subscription-usage.types";
-import { personalModelProviderAccountById } from "./model-provider-account.service";
+import { personalSubscriptionAccountAccessCondition } from "./model-provider-account.service";
 import { personalSubscriptionAccountIdentity } from "./personal-subscription-recovery.service";
 
 const L = logger("model-provider-subscription-usage.service");
@@ -110,168 +112,171 @@ function withSubscriptionMetadata(
   };
 }
 
-async function refreshCodexProvider(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly provider: ModelProviderResponse;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly expectedAccountIdentity?: string;
-  },
-  signal: AbortSignal,
-): Promise<ModelProviderResponse> {
-  const readResetCreditExpiry = prepareCodexResetCreditExpiryRead(
-    { orgId: args.orgId, userId: args.userId },
-    args.provider.modelProviderId ? args.provider.id : null,
-  );
-  const accountMetadata = {
-    sourceType: "model-provider" as const,
-    sourceUserId: args.userId,
-    ...(args.provider.modelProviderId ? { sourceId: args.provider.id } : {}),
-    metadataKey: args.provider.type,
-  };
-  const accessTokenResult =
-    await resolveCurrentPersonalSubscriptionBundleForApi(
+interface RefreshProviderArgs {
+  readonly orgId: string;
+  readonly userId: string;
+  readonly provider: ModelProviderResponse;
+  readonly featureSwitchContext: FeatureSwitchContext;
+  readonly expectedAccountIdentity?: string;
+}
+
+const refreshCodexProvider$ = command(
+  async (
+    { set },
+    args: RefreshProviderArgs,
+    signal: AbortSignal,
+  ): Promise<ModelProviderResponse> => {
+    const readResetCreditExpiry = prepareCodexResetCreditExpiryRead(
+      { orgId: args.orgId, userId: args.userId },
+      args.provider.modelProviderId ? args.provider.id : null,
+    );
+    const accountMetadata = {
+      sourceType: "model-provider" as const,
+      sourceUserId: args.userId,
+      ...(args.provider.modelProviderId ? { sourceId: args.provider.id } : {}),
+      metadataKey: args.provider.type,
+    };
+    const accessTokenResult =
+      await resolveCurrentPersonalSubscriptionBundleForApi(
+        {
+          db: set(writeDb$),
+          orgId: args.orgId,
+          userId: args.userId,
+          key: "CHATGPT_ACCESS_TOKEN",
+          providerKey: args.provider.type,
+          metadata: accountMetadata,
+          featureSwitchContext: args.featureSwitchContext,
+        },
+        signal,
+      );
+    signal.throwIfAborted();
+    if (accessTokenResult.status === "unavailable") {
+      return accessTokenResult.reconnectState
+        ? {
+            ...args.provider,
+            needsReconnect: accessTokenResult.reconnectState.needsReconnect,
+            lastRefreshErrorCode:
+              accessTokenResult.reconnectState.lastRefreshErrorCode,
+          }
+        : args.provider;
+    }
+
+    const accountId = accessTokenResult.values.get("CHATGPT_ACCOUNT_ID");
+    const idToken = accessTokenResult.values.get("CHATGPT_ID_TOKEN");
+    const accessToken = accessTokenResult.values.get("CHATGPT_ACCESS_TOKEN");
+    if (!accountId || !accessToken) {
+      return args.provider;
+    }
+    if (
+      args.expectedAccountIdentity &&
+      personalSubscriptionAccountIdentity({
+        type: args.provider.type,
+        externalAccountId: accountId,
+        accountEmail: null,
+        workspaceName: null,
+      }) !== args.expectedAccountIdentity
+    ) {
+      return args.provider;
+    }
+
+    const metadata = await fetchCodexUsageMetadata(
       {
-        db: args.db,
+        accessToken,
+        accountId,
+        idToken,
+        readResetCreditExpiry,
+      },
+      signal,
+    );
+
+    return withSubscriptionMetadata(args.provider, metadata);
+  },
+);
+
+const refreshClaudeCodeProvider$ = command(
+  async (
+    { get, set },
+    args: RefreshProviderArgs,
+    signal: AbortSignal,
+  ): Promise<ModelProviderResponse> => {
+    const bundle = await resolveCurrentPersonalSubscriptionBundleForApi(
+      {
+        db: set(writeDb$),
         orgId: args.orgId,
         userId: args.userId,
-        key: "CHATGPT_ACCESS_TOKEN",
+        key: CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
         providerKey: args.provider.type,
-        metadata: accountMetadata,
+        metadata: {
+          sourceType: "model-provider",
+          sourceUserId: args.userId,
+          metadataKey: args.provider.type,
+          ...(args.provider.modelProviderId
+            ? { sourceId: args.provider.id }
+            : {}),
+        },
         featureSwitchContext: args.featureSwitchContext,
       },
       signal,
     );
-  signal.throwIfAborted();
-  if (accessTokenResult.status === "unavailable") {
-    return accessTokenResult.reconnectState
-      ? {
-          ...args.provider,
-          needsReconnect: accessTokenResult.reconnectState.needsReconnect,
-          lastRefreshErrorCode:
-            accessTokenResult.reconnectState.lastRefreshErrorCode,
-        }
-      : args.provider;
-  }
-
-  const accountId = accessTokenResult.values.get("CHATGPT_ACCOUNT_ID");
-  const idToken = accessTokenResult.values.get("CHATGPT_ID_TOKEN");
-  const accessToken = accessTokenResult.values.get("CHATGPT_ACCESS_TOKEN");
-  if (!accountId || !accessToken) {
-    return args.provider;
-  }
-  if (
-    args.expectedAccountIdentity &&
-    personalSubscriptionAccountIdentity({
-      type: args.provider.type,
-      externalAccountId: accountId,
-      accountEmail: null,
-      workspaceName: null,
-    }) !== args.expectedAccountIdentity
-  ) {
-    return args.provider;
-  }
-
-  const metadata = await fetchCodexUsageMetadata(
-    {
-      accessToken,
-      accountId,
-      idToken,
-      readResetCreditExpiry,
-    },
-    signal,
-  );
-
-  return withSubscriptionMetadata(args.provider, metadata);
-}
-
-async function refreshClaudeCodeProvider(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly provider: ModelProviderResponse;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly expectedAccountIdentity?: string;
-  },
-  signal: AbortSignal,
-): Promise<ModelProviderResponse> {
-  const bundle = await resolveCurrentPersonalSubscriptionBundleForApi(
-    {
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      key: CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME,
-      providerKey: args.provider.type,
-      metadata: {
-        sourceType: "model-provider",
-        sourceUserId: args.userId,
-        metadataKey: args.provider.type,
-        ...(args.provider.modelProviderId
-          ? { sourceId: args.provider.id }
-          : {}),
-      },
-      featureSwitchContext: args.featureSwitchContext,
-    },
-    signal,
-  );
-  const accessToken =
-    bundle.status === "available"
-      ? bundle.values.get(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)
-      : undefined;
-  if (!accessToken) {
-    return args.provider;
-  }
-  if (args.expectedAccountIdentity) {
-    const account = await personalModelProviderAccountById({
-      db: args.db,
-      orgId: args.orgId,
-      userId: args.userId,
-      id: args.provider.id,
-    });
-    if (
-      !account ||
-      personalSubscriptionAccountIdentity(account) !==
-        args.expectedAccountIdentity
-    ) {
+    const accessToken =
+      bundle.status === "available"
+        ? bundle.values.get(CLAUDE_CODE_OAUTH_TOKEN_SECRET_NAME)
+        : undefined;
+    if (!accessToken) {
       return args.provider;
     }
-  }
+    if (args.expectedAccountIdentity) {
+      const [account] = await get(db$)
+        .select()
+        .from(modelProviderAccounts)
+        .where(
+          and(
+            eq(modelProviderAccounts.id, args.provider.id),
+            personalSubscriptionAccountAccessCondition(),
+            eq(modelProviderAccounts.orgId, args.orgId),
+            eq(modelProviderAccounts.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      if (
+        !account ||
+        personalSubscriptionAccountIdentity(account) !==
+          args.expectedAccountIdentity
+      ) {
+        return args.provider;
+      }
+    }
 
-  const metadata = await fetchClaudeCodeSubscriptionMetadata(
-    {
-      accessToken,
-    },
-    signal,
-  );
+    const metadata = await fetchClaudeCodeSubscriptionMetadata(
+      {
+        accessToken,
+      },
+      signal,
+    );
 
-  return withSubscriptionMetadata(args.provider, metadata);
-}
-
-async function refreshProvider(
-  args: {
-    readonly db: Db;
-    readonly orgId: string;
-    readonly userId: string;
-    readonly provider: ModelProviderResponse;
-    readonly featureSwitchContext: FeatureSwitchContext;
-    readonly expectedAccountIdentity?: string;
+    return withSubscriptionMetadata(args.provider, metadata);
   },
-  signal: AbortSignal,
-): Promise<ModelProviderResponse> {
-  if (args.provider.type === "codex-oauth-token") {
-    return await refreshCodexProvider(args, signal);
-  }
-  if (args.provider.needsReconnect) {
+);
+
+const refreshProvider$ = command(
+  async (
+    { set },
+    args: RefreshProviderArgs,
+    signal: AbortSignal,
+  ): Promise<ModelProviderResponse> => {
+    if (args.provider.type === "codex-oauth-token") {
+      return await set(refreshCodexProvider$, args, signal);
+    }
+    if (args.provider.needsReconnect) {
+      return args.provider;
+    }
+    if (args.provider.type === "claude-code-oauth-token") {
+      return await set(refreshClaudeCodeProvider$, args, signal);
+    }
     return args.provider;
-  }
-  if (args.provider.type === "claude-code-oauth-token") {
-    return await refreshClaudeCodeProvider(args, signal);
-  }
-  return args.provider;
-}
+  },
+);
 
 export const refreshPersonalModelProviderSubscriptionUsage$ = command(
   async (
@@ -288,7 +293,6 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
       return args.result;
     }
 
-    const database = set(writeDb$);
     const featureSwitchContext = await get(
       userFeatureSwitchContext(args.orgId, args.userId),
     );
@@ -298,9 +302,9 @@ export const refreshPersonalModelProviderSubscriptionUsage$ = command(
       args.result.modelProviders.map(async (provider) => {
         return (
           (await tapError(
-            refreshProvider(
+            set(
+              refreshProvider$,
               {
-                db: database,
                 orgId: args.orgId,
                 userId: args.userId,
                 provider,

@@ -74,7 +74,7 @@ export function createClaimedVncApi(context: TestContext) {
       // Negative membership/KMS assertions finish before restoring cleanup prerequisites.
       api.authenticate(value);
       useSecretKmsProbe();
-      await runs.requestCancelRun(actor, runId, [200]);
+      await runs.requestCancelRun(actor, runId, [200, 404]);
     });
     const runnerIdentity = {
       runnerId: randomUUID(),
@@ -94,6 +94,7 @@ export function createClaimedVncApi(context: TestContext) {
         body: {
           runnerIdentity,
           capabilities: { piModelConfigGenerations: [1, 2, 3] },
+          nativeContinuationSupported: true,
         },
       }),
       [200],

@@ -89,9 +89,11 @@ async function prepareLiteralPlusMarkdownChat() {
   return { chat, rows };
 }
 
-test("Opening Instructions preserves literal plus signs through streamed revisions", async () => {
+test("Opening Instructions preserves literal plus signs in an unfinished streamed reply", async () => {
   const { chat, rows } = await prepareLiteralPlusMarkdownChat();
-  await expect(screen.findByText("++Plain message++")).resolves.toBeVisible();
+  await expect(
+    screen.findByText("++Plain message++"),
+  ).resolves.toBeInTheDocument();
   rows.push(
     chat.outputMessage("**Streaming:** ++Reply", {
       id: "streamed-markdown",
@@ -115,6 +117,31 @@ test("Opening Instructions preserves literal plus signs through streamed revisio
       "++Reply+",
     );
   });
+  expect(
+    markdownFrameFor(screen.getByText("Streaming:")).querySelector("u"),
+  ).toBeNull();
+  expect(screen.queryByText("Try again")).not.toBeInTheDocument();
+});
+
+test("Opening Instructions preserves rich Markdown when a streamed reply completes", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const rows = [
+    chat.outputMessage("++Plain message++", { seqId: 1 }),
+    chat.outputMessage("**Streaming:** ++Reply+", {
+      id: "streamed-markdown",
+      runEventId: "streamed-markdown",
+      seqId: 2,
+    }),
+  ];
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+  await openInstructionsThenChat();
+  const streaming = await screen.findByText("Streaming:");
+  expect(streaming.tagName).toBe("STRONG");
+  expect(markdownFrameFor(streaming)).toHaveTextContent("++Reply+");
   rows[1] = chat.outputMessage(
     [
       "**Streaming:** ++Reply++",
@@ -131,11 +158,11 @@ test("Opening Instructions preserves literal plus signs through streamed revisio
     {
       id: "streamed-markdown",
       runEventId: "streamed-markdown",
-      seqId: 4,
+      seqId: 3,
       sequenceNumber: 2,
     },
   );
-  rows.push(chat.runCompleted({ seqId: 5, sequenceNumber: 3 }));
+  rows.push(chat.runCompleted({ seqId: 4, sequenceNumber: 3 }));
   context.mocks.ably.trigger(chat.realtimeTopic);
   await screen.findByText("Checked task");
   const frame = markdownFrameFor(screen.getByText("Streaming:"));

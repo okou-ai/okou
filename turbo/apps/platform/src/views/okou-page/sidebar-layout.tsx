@@ -4,6 +4,7 @@ import { chatLayout } from "../../signals/chat-page/chat-layout.ts";
 import {
   activeThreadSidebar$,
   activeThreadSidebarFullscreen$,
+  syncActiveImageLayout$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ChatThreadSidebarShell } from "./chat-thread-sidebar-shell.tsx";
 import type { ReactNode } from "react";
@@ -431,11 +432,13 @@ function ChatWorkspace({
 }) {
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
+  const syncImageLayout = useSet(syncActiveImageLayout$);
   return (
     <ChatThreadSidebarShell
       layout={chatLayout}
       animateEntry={active?.animateEntry ?? true}
       open={active !== null}
+      onSidebarLayoutCommit={syncImageLayout}
       sidebar={<ChatThreadSidebarPane />}
       workspace={{ beside, header, footer, pwaNavigation, fullscreen }}
     >

@@ -1,5 +1,5 @@
 // Okou CLI entry point - standalone binary for Okou platform commands
-// (no-op CLI release marker refreshed for production delivery on 2026-10-14)
+// (no-op CLI release marker refreshed for production delivery at 2026-10-14T13:45:46+08:00)
 // Sentry must be initialized before any other imports
 import "./instrument.js";
 import { Command } from "commander";
@@ -44,9 +44,10 @@ const COMMAND_CAPABILITY_MAP: Record<
   agent: "agent:read",
   workflow: "agent:read",
   connector: ["connector:read", "connector:write"],
+  "remote-control": ["connector:read", "connector:write"],
   mcp: "connector:read",
-  ssh: ["ssh:read", "ssh:write"],
-  vnc: ["vnc:read", "vnc:write"],
+  ssh: ["ssh:read", "ssh:write", "connector:read", "connector:write"],
+  vnc: ["vnc:read", "vnc:write", "connector:read", "connector:write"],
   run: "run-usage:read",
   mail: "connector:read",
   notify: "notify:write",
@@ -97,7 +98,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   wallet: "wallet:write",
 };
 
-const RUN_ONLY_COMMANDS = new Set(["mcp", "ssh", "vnc", "run", "suggestion"]);
+const RUN_ONLY_COMMANDS = new Set(["mcp", "run", "suggestion"]);
 
 const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
   {
@@ -191,6 +192,14 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Check third-party service connections (GitHub, Slack, etc.)",
     load: async () => {
       return (await import("./commands/connector")).connectorCommand;
+    },
+  },
+  {
+    name: "remote-control",
+    description:
+      "Manage Cloudflare Access and Tailscale private-network configurations",
+    load: async () => {
+      return (await import("./commands/remote-control")).remoteControlCommand;
     },
   },
   {

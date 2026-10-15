@@ -1,25 +1,26 @@
 import { command } from "ccstate";
 import { agents } from "@okouai/db/schema/agent";
 import { blobs } from "@okouai/db/schema/blob";
-import { conversations } from "@okouai/db/schema/conversation";
+import {
+  deleteRunHistoriesSql,
+  deletedRunHistorySchema,
+} from "@okouai/db/operations/run-history-deletion";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, count, eq, gt, sql } from "drizzle-orm";
+import { and, asc, eq, gt, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
 import { storages } from "@okouai/db/schema/storage";
-import { parseRawRows } from "../../lib/db-raw-rows";
+import { executeRawRows, parseRawRows } from "../../lib/db-raw-rows";
 import {
   agentDeletionAdmissionPlan,
   agentDeletionIdentityCondition,
   agentDeletionAutomationCondition,
   agentDeletionThreadSequencesSql,
   agentInstructionDeletionCondition,
-  agentConversationDeletionCondition,
   agentInstructionStoragesSql,
   deletedInstructionStorageSchema,
-  deletedConversationReferences,
   conversationReferenceBatches,
   conversationBlobLockCondition,
   conversationBlobReleaseValues,
@@ -34,7 +35,10 @@ import { settle } from "../utils";
 import { agentPublicationFenceDeletionSql } from "./agent-lifecycle.service";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
-import { logCommittedConversationDeletion } from "./conversation-history-deletion.service";
+import {
+  deletedRunHistoryReferences,
+  logCommittedConversationDeletion,
+} from "./conversation-history-deletion.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 
 const log = logger("api:agent-deletion");
@@ -99,29 +103,22 @@ const deleteAgentRows$ = command(
         .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
         .where(agentDeletionAutomationCondition(args));
       signal.throwIfAborted();
-      let removed = deletedConversationReferences([]);
-      if (lifecycle.runIds.length > 0) {
-        const deleted = tx
-          .$with("removed_conversations")
-          .as(
-            tx
-              .delete(conversations)
-              .where(agentConversationDeletionCondition(lifecycle.runIds))
-              .returning({ hash: conversations.cliAgentSessionHistoryHash }),
-          );
-        const deletion = await settle(
-          tx
-            .with(deleted)
-            .select({ hash: deleted.hash, references: count() })
-            .from(deleted)
-            .groupBy(deleted.hash),
-        );
-        signal.throwIfAborted();
-        if (!deletion.ok) {
-          throw conversationDeletionDatabaseError(deletion.error);
-        }
-        removed = deletedConversationReferences(deletion.value);
+      const deletion = await settle(
+        executeRawRows(
+          tx,
+          deleteRunHistoriesSql(lifecycle.runIds),
+          deletedRunHistorySchema,
+        ),
+      );
+      signal.throwIfAborted();
+      if (!deletion.ok) {
+        throw conversationDeletionDatabaseError(deletion.error);
       }
+      const deleted = deletion.value;
+      if (deleted.length !== lifecycle.runIds.length) {
+        throw new Error("Conversation deletion lost a locked run");
+      }
+      const removed = deletedRunHistoryReferences(deleted);
       // Storage publication and lifecycle deletion prelock parents in UUID order.
       const instructions = parseRawRows(
         deletedInstructionStorageSchema,

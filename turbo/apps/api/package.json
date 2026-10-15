@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "1.733.0",
+  "version": "1.738.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -40,6 +40,7 @@
     "@opentelemetry/semantic-conventions": "^1.43.0",
     "@sentry/node": "^10.73.0",
     "@slack/web-api": "^7.13.0",
+    "@stripe/link-sdk": "^0.13.2",
     "@t3-oss/env-core": "^0.13.11",
     "@vercel/functions": "^3.4.4",
     "@vercel/oidc": "^3.2.1",
@@ -52,9 +53,11 @@
     "ably": "^2.28.0",
     "archiver": "^8.0.0",
     "ccstate": "^6.0.0",
+    "cfb": "^1.2.2",
     "croner": "^9.1.0",
     "drizzle-orm": "^0.45.2",
     "entities": "7.0.1",
+    "fflate": "^0.8.3",
     "google-auth-library": "^10.9.0",
     "gpt-tokenizer": "^3.4.0",
     "hash-wasm": "4.12.0",

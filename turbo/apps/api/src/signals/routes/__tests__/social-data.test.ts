@@ -55,7 +55,6 @@ async function seedActor() {
     throw new Error("Social tests require an organization");
   }
   const scenario = createPublicBillingScenario(context);
-  scenario.own({ ...actor, orgId: actor.orgId });
   let restoreSetup: (() => void) | undefined;
   scenario.releaseBeforeDrain(() => {
     restoreSetup?.();

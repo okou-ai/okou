@@ -49,7 +49,7 @@ impl BlankPoolReplenisher {
             self.cancel_if_inactive(request.mode);
             return Ok(false);
         }
-        if !self.attempt_requested || self.task.is_some() || self.optional.is_some() {
+        if !self.attempt_requested || self.preparation.is_some() || self.optional.is_some() {
             return Ok(false);
         }
         if request.preparation_bytes == 0
@@ -122,7 +122,6 @@ impl BlankPoolReplenisher {
             pre_spawn: Some(pre_spawn),
         };
         self.attempt_requested = false;
-        self.task_cancel = Some(cancel.clone());
         self.diagnostics.preparing(cancel);
         self.optional = Some(result.clone());
         request.tracker.spawn_cleanup(
@@ -242,7 +241,6 @@ impl BlankPoolReplenisher {
         }
         if slot.payload.is_none() {
             self.optional = None;
-            self.task_cancel = None;
             self.attempt_requested = true;
             self.diagnostics.ready();
         }
@@ -262,7 +260,6 @@ impl BlankPoolReplenisher {
         retire_result(&mut slot, tracker).await?;
         if slot.payload.is_none() {
             self.optional = None;
-            self.task_cancel = None;
         }
         Ok(())
     }

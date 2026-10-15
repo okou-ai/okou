@@ -76,11 +76,7 @@ describe("thread-bound Pi Automation execution", () => {
       cliAgentType: "claude-code",
     });
     await flushWaitUntilForTest();
-    const legacySessionId = await readCompletedRunSessionId(
-      context,
-      actor,
-      legacyRunId,
-    );
+    await readCompletedRunSessionId(context, actor, legacyRunId);
 
     await configureSubscriptionPiModel(actor);
     await chat.updateThreadModelSelection(actor, threadId, "gpt-6-luna");
@@ -116,7 +112,7 @@ describe("thread-bound Pi Automation execution", () => {
     await expectThreadPiTerminal(actor, threadId, piRunId);
     await expect(
       readCompletedRunSessionId(context, actor, piRunId),
-    ).resolves.toBe(legacySessionId);
+    ).resolves.toBe(threadId);
 
     const user = await sendChatRun(actor, {
       agentId,
@@ -140,7 +136,7 @@ describe("thread-bound Pi Automation execution", () => {
     await expectThreadPiTerminal(actor, threadId, user.runId);
     await expect(
       readCompletedRunSessionId(context, actor, user.runId),
-    ).resolves.toBe(legacySessionId);
+    ).resolves.toBe(threadId);
   }, 90_000);
 });
 

@@ -540,12 +540,11 @@ export interface DraftSignals {
   readInput$: Command<string, []>;
   setInput$: Command<void, [string]>;
   appendInput$: Command<void, [string]>;
-  prependRecommendation$: Command<void, [string]>;
   prependComposerDraft$: Command<Promise<void>, [ComposerDraft, AbortSignal]>;
-  recommendationHandoff$: Computed<{
+  composerDraftHandoff$: Computed<{
     readonly needsRemoteMerge: boolean;
   } | null>;
-  finishRecommendationHandoff$: Command<
+  finishComposerDraftHandoff$: Command<
     Promise<boolean>,
     [RestoredDraftState | null, AbortSignal]
   >;
@@ -592,7 +591,6 @@ interface DraftSeed {
 export interface DraftInputSyncTarget {
   syncInput(value: string): void;
   syncUserMessage(value: UserMessageDocument | null): void;
-  prependInput(value: string): void;
 }
 
 /**
@@ -729,9 +727,6 @@ function createDraftInputSignals() {
     return get(internalInput$) !== undefined;
   });
   const internalInputSyncTarget$ = state<DraftInputSyncTarget | null>(null);
-  const hasMountedSyncTarget$ = computed((get) => {
-    return get(internalInputSyncTarget$) !== null;
-  });
   const input$ = computed((get) => {
     return get(internalInput$) ?? "";
   });
@@ -772,15 +767,6 @@ function createDraftInputSignals() {
     const separator = base.length > 0 && !base.endsWith(" ") ? " " : "";
     set(setInput$, `${base}${separator}${text}`);
   });
-  const prependInput$ = command(({ get, set }, value: string) => {
-    const text = value.trim();
-    if (!text) {
-      return;
-    }
-    const base = get(internalInput$) ?? "";
-    get(internalInputSyncTarget$)?.prependInput(text);
-    set(internalInput$, base.trim().length > 0 ? `${text}\n\n${base}` : text);
-  });
   return {
     hasLocalInput$,
     input$,
@@ -788,9 +774,7 @@ function createDraftInputSignals() {
     readInput$,
     setInput$,
     appendInput$,
-    prependInput$,
     setInputSyncTarget$,
-    hasMountedSyncTarget$,
     syncUserMessage$,
   };
 }
@@ -961,7 +945,7 @@ function createDraftLifecycleSignals({
   return { clear$, seed$ };
 }
 
-function mergeRecommendationDocument(
+function mergeComposerDraftDocument(
   localDocument: UserMessageDocument,
   restored: RestoredDraftState,
 ): UserMessageDocument | null {
@@ -994,7 +978,7 @@ function createComposerDraftPrepend(
     clear$: Command<void, []>;
     seed$: Command<Promise<boolean>, [DraftSeed, AbortSignal]>;
   },
-  recommendationHandoffState$: State<{
+  composerDraftHandoffState$: State<{
     readonly needsRemoteMerge: boolean;
   } | null>,
 ) {
@@ -1023,8 +1007,8 @@ function createComposerDraftPrepend(
       if (content === null) {
         throw new Error("Invalid suggestion composer document");
       }
-      const prior = get(recommendationHandoffState$);
-      set(recommendationHandoffState$, {
+      const prior = get(composerDraftHandoffState$);
+      set(composerDraftHandoffState$, {
         needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
       });
       await set(
@@ -1044,7 +1028,7 @@ function createComposerDraftPrepend(
   );
 }
 
-function createRecommendationHandoffSignals({
+function createComposerDraftHandoffSignals({
   draftInput,
   draftDocument,
   internalGenerationTemplate$,
@@ -1059,44 +1043,15 @@ function createRecommendationHandoffSignals({
   clear$: Command<void, []>;
   seed$: Command<Promise<boolean>, [DraftSeed, AbortSignal]>;
 }) {
-  const recommendationHandoffState$ = state<{
+  const composerDraftHandoffState$ = state<{
     readonly needsRemoteMerge: boolean;
   } | null>(null);
-  const recommendationHandoff$ = computed((get) => {
-    return get(recommendationHandoffState$);
+  const composerDraftHandoff$ = computed((get) => {
+    return get(composerDraftHandoffState$);
   });
-  const clearWithRecommendationHandoff$ = command(({ set }) => {
+  const clearWithComposerDraftHandoff$ = command(({ set }) => {
     set(clear$);
-    set(recommendationHandoffState$, null);
-  });
-  const prependRecommendation$ = command(({ get, set }, value: string) => {
-    const text = value.trim();
-    if (!text) {
-      return;
-    }
-    const hadLocalDraft =
-      get(draftInput.hasLocalInput$) ||
-      get(internalGenerationTemplate$) !== undefined ||
-      get(internalAttachments$).length > 0;
-    const currentDocument =
-      set(draftDocument.readEditorDocument$)?.toMessageDocument() ??
-      set(draftDocument.peekRestoredUserMessage$);
-    if (currentDocument && !get(draftInput.hasMountedSyncTarget$)) {
-      // An unmounted editor can still hold a structured draft. Keep its
-      // mentions and template parts when the recommendation is prefixed.
-      set(draftDocument.setRestoredUserMessage$, {
-        version: 1,
-        parts: [
-          { type: "text", text: `${text}\n\n` },
-          ...currentDocument.parts,
-        ],
-      });
-    }
-    set(draftInput.prependInput$, text);
-    const prior = get(recommendationHandoffState$);
-    set(recommendationHandoffState$, {
-      needsRemoteMerge: prior?.needsRemoteMerge ?? !hadLocalDraft,
-    });
+    set(composerDraftHandoffState$, null);
   });
   const prependComposerDraft$ = createComposerDraftPrepend(
     {
@@ -1107,21 +1062,21 @@ function createRecommendationHandoffSignals({
       clear$,
       seed$,
     },
-    recommendationHandoffState$,
+    composerDraftHandoffState$,
   );
-  const finishRecommendationHandoff$ = command(
+  const finishComposerDraftHandoff$ = command(
     async (
       { get, set },
       restored: RestoredDraftState | null,
       signal: AbortSignal,
     ): Promise<boolean> => {
-      const handoff = get(recommendationHandoffState$);
+      const handoff = get(composerDraftHandoffState$);
       if (!handoff) {
         return false;
       }
       // Claim before awaiting attachment reconciliation so concurrent page
       // setup and click handlers cannot merge the same remote draft twice.
-      set(recommendationHandoffState$, null);
+      set(composerDraftHandoffState$, null);
       return await onRejection(
         async () => {
           if (handoff.needsRemoteMerge && restored) {
@@ -1131,7 +1086,7 @@ function createRecommendationHandoffSignals({
                 version: 1 as const,
                 parts: [{ type: "text" as const, text: localInput }],
               };
-            const mergedDocument = mergeRecommendationDocument(
+            const mergedDocument = mergeComposerDraftDocument(
               localDocument,
               restored,
             );
@@ -1158,8 +1113,8 @@ function createRecommendationHandoffSignals({
           return true;
         },
         () => {
-          if (get(recommendationHandoffState$) === null) {
-            set(recommendationHandoffState$, handoff);
+          if (get(composerDraftHandoffState$) === null) {
+            set(composerDraftHandoffState$, handoff);
           }
         },
       );
@@ -1167,11 +1122,10 @@ function createRecommendationHandoffSignals({
   );
 
   return {
-    recommendationHandoff$,
-    clearWithRecommendationHandoff$,
-    prependRecommendation$,
+    composerDraftHandoff$,
+    clearWithComposerDraftHandoff$,
     prependComposerDraft$,
-    finishRecommendationHandoff$,
+    finishComposerDraftHandoff$,
   };
 }
 
@@ -1275,12 +1229,11 @@ export function createDraftSignals(): DraftSignals {
   });
 
   const {
-    recommendationHandoff$,
-    clearWithRecommendationHandoff$,
-    prependRecommendation$,
+    composerDraftHandoff$,
+    clearWithComposerDraftHandoff$,
     prependComposerDraft$,
-    finishRecommendationHandoff$,
-  } = createRecommendationHandoffSignals({
+    finishComposerDraftHandoff$,
+  } = createComposerDraftHandoffSignals({
     draftInput,
     draftDocument,
     internalGenerationTemplate$,
@@ -1291,10 +1244,9 @@ export function createDraftSignals(): DraftSignals {
 
   return {
     ...draftInput,
-    prependRecommendation$,
     prependComposerDraft$,
-    recommendationHandoff$,
-    finishRecommendationHandoff$,
+    composerDraftHandoff$,
+    finishComposerDraftHandoff$,
     takeRestoredUserMessage$: draftDocument.takeRestoredUserMessage$,
     readEditorDocument$: draftDocument.readEditorDocument$,
     setEditorDocument$: draftDocument.setEditorDocument$,
@@ -1307,7 +1259,7 @@ export function createDraftSignals(): DraftSignals {
     removeAttachment$,
     dragOver$,
     setDragOver$,
-    clear$: clearWithRecommendationHandoff$,
+    clear$: clearWithComposerDraftHandoff$,
     seed$,
   };
 }

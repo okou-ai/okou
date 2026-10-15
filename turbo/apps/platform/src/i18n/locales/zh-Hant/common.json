@@ -122,35 +122,15 @@
         "title": "未找到日誌"
       },
       "runner": {
-        "cacheMiss": "沒有快取的主目錄匹配該複用鍵。",
-        "deviceLimitMismatch": "空閒池中有對應條目，但它的裝置限流狀態不匹配。",
-        "diskPressure": "執行器磁碟空間緊張，已跳過主目錄複用。",
         "environment": "環境",
-        "featureDisabled": "本次執行已禁用沙箱複用。",
         "framework": "框架",
         "generation": "代次",
-        "home": "主目錄",
-        "homeNoReuseKey": "沒有可用的主目錄複用鍵。",
-        "homeReusedDescription": "主目錄已從執行器快取恢復。",
         "hostname": "主機名",
-        "invalidMetadata": "快取的主目錄後設資料無效。",
-        "invalidWorkingDir": "請求的工作目錄無法複用。",
-        "lockBusy": "另一次執行正在準備同一個主目錄。",
-        "noReuseKey": "沒有可用的複用鍵來匹配空閒沙箱。",
-        "noSessionId": "歷史記錄：無法獲知沙箱未被複用的具體原因。",
-        "notConfigured": "本次執行未配置主目錄複用。",
-        "notReused": "未複用",
-        "outcomeUnavailableDescription": "暫無更多詳情。",
-        "poolMiss": "空閒池中沒有匹配的沙箱。",
-        "profileMismatch": "空閒池中有對應條目，但它的配置不匹配。",
         "provisioning": "置備",
-        "reused": "已複用",
-        "reusedDescription": "沙箱已從空閒池中喚醒。",
         "runnerId": "執行器 ID",
-        "sandbox": "沙箱",
-        "sandboxPrepareFallback": "找到了快取的主目錄，但沙箱準備完成後無法使用。",
-        "sandboxReusedDescription": "主目錄在複用的沙箱中保持可用。",
         "startup": "啟動",
+        "startupBlank": "預備沙箱啟動",
+        "startupBlankDescription": "使用預備好的空白沙箱與全新的主目錄。",
         "startupCold": "冷啟動",
         "startupColdDescription": "已準備全新的沙箱和工作區。",
         "startupHome": "主目錄複用",
@@ -160,7 +140,6 @@
         "startupUnknown": "未知",
         "startupUnknownDescription": "暫無啟動複用詳情。",
         "unavailable": "不可用",
-        "unparkFailed": "喚醒失敗，已置備全新的沙箱。",
         "version": "版本"
       },
       "steps": {
@@ -542,19 +521,25 @@
       "agentLoading": "智能體還在載入",
       "connect": "連線 Google Drive",
       "connectTooltip": "連線 Google Drive 後即可上傳成果",
+      "conversionNotice": "建立可編輯的副本。格式可能有所變更，原始檔案會保留。",
+      "conversionUnconfirmed": "無法確認 Google 轉換結果，請檢查雲端硬碟後再重試。",
       "noArtifacts": "沒有可同步的成果",
+      "openDocs": "在 Google 文件中開啟",
+      "openSheets": "在 Google 試算表中開啟",
+      "openSlides": "在 Google 簡報中開啟",
       "partial_one": "已將 {{count}} 個檔案中的 {{synced}} 個同步到 Google Drive",
       "partial_other": "已將 {{count}} 個檔案中的 {{synced}} 個同步到 Google Drive",
       "synced": "已同步到 Google Drive",
       "syncedFiles_one": "已同步到 Google Drive",
       "syncedFiles_other": "已將 {{count}} 個檔案同步到 Google Drive",
-      "syncedSlides": "已同步到 Google Slides",
       "syncFailed": "同步到 Google Drive 失敗",
       "syncingArtifact": "正在同步成果…",
       "syncingFiles_one": "正在同步 {{count}} 個檔案…",
       "syncingFiles_other": "正在同步 {{count}} 個檔案…",
       "syncingNamed": "正在同步 {{filename}}…",
       "upload": "上傳到 Google Drive",
+      "uploadDocs": "上傳至 Google 文件",
+      "uploadSheets": "上傳至 Google 試算表",
       "uploadSlides": "上傳到 Google Slides"
     },
     "kinds": {
@@ -571,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "簡報",
       "sharedConversation": "分享的對話",
+      "spreadsheet": "試算表",
       "text": "文字",
       "video": "影片"
     },
@@ -686,7 +672,6 @@
       "use": "使用",
       "useThisTemplate": "使用這個模板",
       "visibility": {
-        "change": "修改",
         "changeLabel": "修改模板可見範圍",
         "privateState": "只有你能看到和使用",
         "workspaceState": "這個工作區裡的所有人都能使用"
@@ -1519,13 +1504,13 @@
       "viewAgentProfile": "檢視智能體資料"
     },
     "agentSuggestions": {
-      "existingThread": "現有對話",
+      "continueChat": "繼續聊天",
+      "dismiss": "忽略",
       "label": "建議",
-      "loadFailed": "無法載入建議。",
-      "newThread": "與 Okou 開始新對話",
-      "origin": "來自你的晨間簡報",
-      "showAll_other": "查看全部 {{count}} 則",
-      "showLess": "收合"
+      "newChat": "新建聊天",
+      "next": "下一則建議",
+      "position": "{{current}} / {{total}}",
+      "previous": "上一則建議"
     },
     "attachments": {
       "attach": "新增附件",
@@ -1766,9 +1751,8 @@
       "threadSuggestions": "聊天會話",
       "useForFutureChats": "以後的對話都用這個",
       "workflows": {
-        "empty": "沒有匹配的工作流",
         "loading": "正在載入工作流…",
-        "showAll": "顯示全部工作流程",
+        "showAllCount": "顯示全部 {{total}} 個",
         "title": "工作流"
       }
     },
@@ -1938,15 +1922,6 @@
       "threads": "聊天",
       "title": "轉發到"
     },
-    "homeTasks": {
-      "empty": "暫時沒有推薦任務",
-      "existingThread": "繼續聊天",
-      "exploreWorkflow": "探索工作流程",
-      "heading": "從近期工作中提取",
-      "newTasksAvailable": "有新任務可查看",
-      "newThread": "新增聊天",
-      "reload": "重新載入任務"
-    },
     "mail": {
       "bcc": "密送",
       "cc": "抄送",
@@ -1990,6 +1965,7 @@
       "feishu": "飛書",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "開啟聊天",
       "openChatIn": "在{{integration}}中開啟聊天",
       "openDiscordMessage": "在 Discord 中開啟原始訊息",
@@ -2046,6 +2022,26 @@
       "removeQueuedMessage": "移除排隊訊息",
       "skipAutomationEvent": "跳過自動化事件"
     },
+    "relations": {
+      "communications": "訊息",
+      "created": "由此建立",
+      "idle": "閒置",
+      "loadFailed": "載入失敗",
+      "loading": "載入中…",
+      "messageUnavailable": "訊息無法取得",
+      "more": "更多",
+      "origin": "發起自",
+      "parallelHint": "試試多個對話並行，少些等待。",
+      "queued": "排隊中",
+      "received": "收到",
+      "refresh": "重新整理",
+      "running": "執行中",
+      "sent": "傳送",
+      "title": "關聯對話",
+      "toggleMessages": "與 {{title}} 的訊息往來",
+      "unavailable": "無法存取",
+      "untitled": "未命名"
+    },
     "remoteAccess": {
       "default": "預設",
       "defaultEnabled": "聊天預設啟用",
@@ -2054,16 +2050,22 @@
       "loading": "正在載入遠端存取…",
       "off": "關閉",
       "on": "開啟",
-      "requiresSsh": "還需要存取 SSH 主機 {{name}}。",
+      "requiresSsh": "需要 SSH：{{name}}",
       "retry": "重試",
+      "sshDisabled": "需開啟 SSH：{{name}}",
+      "sshEnabled": "已開啟 SSH：{{name}}",
       "title": "遠端存取",
       "unavailableSsh": "無法使用的 SSH 主機"
     },
     "resources": {
+      "collapse": "收合",
       "copyLink": "複製連結",
       "empty": "此聊天中還沒有成果或連結",
+      "emptyLinks": "此聊天中暫無連結",
+      "expand": "展開",
       "links": "連結",
       "loadFailed": "無法載入聊天資源",
+      "loadingLinks": "正在載入連結",
       "retry": "重試",
       "title": "聊天資源",
       "viewAll": "查看全部"
@@ -2740,7 +2742,6 @@
         "workflow": "工作流"
       },
       "importedLoadFailed": "無法載入已上傳的模板。",
-      "importedLoading": "正在載入已上傳的模板…",
       "importedUnavailable": "已上傳的模板暫時不可用。",
       "previewTemplate": "預覽模板 {{title}}",
       "previewWebsite": "預覽網站模板 {{title}}",
@@ -2823,10 +2824,18 @@
     "walletAction": {
       "approveButton": "審核",
       "approveTitle": "審核購買",
+      "authorized": "已授權",
+      "callbackFailed": "已授權，點擊「繼續」重試傳送訊息。",
+      "callbackPrompt": "Link 錢包授權已完成，請繼續先前的任務。",
+      "checkFailed": "無法檢查授權狀態，請重試。",
       "connectButton": "授權",
       "connectTitle": "授權 Link 錢包",
       "continueButton": "繼續",
-      "continueTitle": "繼續 Link 錢包操作"
+      "continueTitle": "繼續 Link 錢包操作",
+      "expired": "授權已過期",
+      "failed": "授權未完成",
+      "unavailable": "授權無法使用",
+      "waiting": "等待授權"
     },
     "workflows": {
       "named": "工作流 {{title}}",
@@ -3434,13 +3443,15 @@
         "alreadyDescription": "你已經連線。在 Telegram 中傳送訊息，即可開始對話。",
         "alreadyDescriptionNamed": "你已連線到{{bot}}。在 Telegram 中傳送訊息，即可開始對話。",
         "alreadyTitle": "已連線到 Telegram",
-        "back": "返回 Telegram 設定",
+        "botNotConfigured": "Telegram 連線尚未設定完成，請聯絡支援團隊。",
         "checkingConnectionDescription": "我們正在檢查你的 Telegram 連線，請稍候。",
         "checkingConnectionTitle": "正在檢查連線…",
         "checkingSession": "我們正在驗證你的 {{brandName}} 登入狀態，請稍候。",
         "connectDescription": "把你的帳號關聯到這個 Telegram 機器人，就可以直接在 Telegram 裡與你的智能體交流。",
+        "connectionCheckFailed": "暫時無法存取 Telegram 以檢查連線，請稍後重試。",
         "connectTitle": "連線到 Telegram",
         "continue": "使用 Telegram 繼續",
+        "domainNotVerified": "暫時無法驗證此應用程式的 Telegram 登入。請重試；如果問題持續，請聯絡支援團隊。",
         "errorFallback": "我們無法連線 Telegram。請從 Telegram 重試。",
         "invalidSignature": "此連結的簽名無效。",
         "invalidTimestamp": "此連結的時間戳無效。",
@@ -3755,16 +3766,8 @@
       },
       "telegram": {
         "backToIntegrations": "返回整合",
-        "botFallback": "Telegram 機器人",
-        "disconnectAria": "斷開{{bot}}的連線",
-        "documentTitle": "Telegram",
         "loadError": "無法載入 Telegram 設定。",
-        "moreOptions": "{{bot}}的更多選項",
-        "notConnected": "未連線",
-        "officialBot": "Telegram 官方機器人",
-        "officialDescription": "由 {{brandName}} 提供的官方機器人。",
-        "officialMissing": "缺少官方機器人配置。",
-        "pageDescription": "管理此工作區的機器人路由"
+        "officialMissing": "缺少官方機器人配置。"
       },
       "toasts": {
         "agentphoneConnected": "電話號碼已連線",
@@ -3800,6 +3803,65 @@
     "toasts": {
       "connected": "{{connector}}已連線"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "此範本可作為協議起點。簽署前，請根據專案與適用法律審閱條款。",
+    "back": "返回範本清單",
+    "categories": {
+      "all": "全部",
+      "business-record": "收據與報價",
+      "contract": "合約",
+      "creative-brief": "創意簡報",
+      "guide": "手冊與講義",
+      "invoice": "發票",
+      "letter": "商務信函",
+      "report": "報告",
+      "resume": "履歷",
+      "service-agreement": "服務協議"
+    },
+    "contents": {
+      "agreement": {
+        "content": "條款與責任",
+        "delivery": "審閱與簽署",
+        "details": "期限與終止",
+        "overview": "簽約主體與範圍"
+      },
+      "brief": {
+        "content": "目標受眾與核心訊息",
+        "delivery": "時程與審核流程",
+        "details": "交付項目與格式",
+        "overview": "專案概況與目標"
+      },
+      "general": {
+        "content": "適合填寫內容的章節",
+        "delivery": "可編輯 Word 或 PDF 輸出",
+        "details": "一致的頁面版式",
+        "overview": "清晰的文件結構"
+      },
+      "invoice": {
+        "content": "服務明細與單價",
+        "delivery": "付款資訊",
+        "details": "稅額、合計與到期日",
+        "overview": "供應方與客戶資訊"
+      }
+    },
+    "filter": "文件分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文件"
+    },
+    "imageError": "預覽暫時無法使用",
+    "included": "包含內容",
+    "nextPage": "下一頁樣張",
+    "openLarger": "查看大圖",
+    "page": "第 {{page}} 頁",
+    "preview": "預覽 {{title}}",
+    "previousPage": "上一頁樣張",
+    "retry": "重試",
+    "samplePages": "樣張頁數：{{total}}",
+    "title": "文件",
+    "use": "使用範本",
+    "useNamed": "使用 {{title}}"
   },
   "global": {
     "actions": {
@@ -4506,17 +4568,9 @@
       "settings": "設定",
       "signOut": "退出登入",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
-        "usageRemaining": "{{provider}}{{window}}剩餘用量",
-        "windows": {
-          "fiveHour": "5 小時",
-          "week": "周"
-        }
+        "usageRemaining": "{{provider}}{{window}}剩餘用量"
       },
       "switchAccount": "切換帳號",
       "userFallback": "使用者"
@@ -4685,10 +4739,16 @@
       "personal": {
         "accountFallback": "帳號 {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "消耗 Okou 點數",
         "autoDescription": "連接你的 Claude 或 ChatGPT 帳號，即可使用更多模型。",
         "autoTitle": "使用更多模型",
+        "claudeGroup": "你的 Claude 方案",
+        "claudePlans": "Pro 或 Max",
         "claudeTitle": "Claude",
+        "codexGroup": "你的 ChatGPT 方案",
+        "codexPlans": "Plus、Pro 或 Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "連接",
         "connectAccount": "連接帳號",
         "disconnectAccount": "斷開帳號連線",
         "disconnectDescription": "這會把帳號從 Okou 中移除，但不會取消你在該服務商處的訂閱。",
@@ -4696,7 +4756,9 @@
         "disconnectTitle": "斷開{{account}}？",
         "loadError": "無法載入你的帳號。",
         "loadingAccounts": "正在載入帳號…",
+        "managePlans": "管理方案",
         "noAccounts": "還沒有連線任何帳號。",
+        "ownPlan": "使用你自己的方案",
         "reconnectAccount": "重新連線",
         "retry": "重試",
         "status": {
@@ -4890,26 +4952,22 @@
           "title": "IndexedDB 儲存",
           "unavailable": "IndexedDB 儲存不可用。"
         },
-        "morningBriefEmail": {
-          "checkStatus": "檢查投遞狀態",
-          "description": "使用 Morning Brief 範本向你的帳號信箱發送固定範例。不會執行 Agent，也不會變更早報排程。",
-          "reasons": {
-            "delivery-failed": "投遞失敗；先前的發送嘗試仍可能已被郵件服務接受。",
-            "expired": "投遞已過期；先前的發送嘗試仍可能已被郵件服務接受。",
-            "no-email": "已略過：你的帳號沒有信箱地址。",
-            "suppressed": "已略過：你的帳號信箱已列入投遞封鎖名單。",
-            "unsubscribed": "已略過：你的帳號已取消訂閱郵件更新。"
-          },
-          "requestFailed": "請求未完成。重試會重用原請求，避免重複發送。",
-          "retry": "重試測試郵件",
-          "send": "發送測試郵件",
-          "sendAnother": "再發送一封測試郵件",
-          "sending": "正在發送…",
+        "morningBrief": {
+          "checkStatus": "查看執行狀態",
+          "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
+          "openChat": "開啟對話",
+          "requestFailed": "請求未完成。重試會沿用同一請求，避免重複執行。",
+          "retry": "重試晨間簡報",
+          "run": "執行晨間簡報",
+          "runAgain": "再次執行晨間簡報",
+          "starting": "正在啟動…",
           "status": {
-            "queued": "已排隊。再次發送範例前，請檢查投遞狀態。",
-            "sent": "郵件服務已接受。請檢查收件匣和垃圾郵件；尚未確認實際送達。"
+            "completed": "晨間簡報已完成。",
+            "failed": "晨間簡報執行失敗，請開啟對話查看詳情。",
+            "queued": "已加入佇列，可開啟對話查看進度。",
+            "running": "晨間簡報正在執行。"
           },
-          "title": "Morning Brief 測試郵件"
+          "title": "晨間簡報"
         },
         "openrouterPreset": {
           "description": "對整個組織後續新建的 Auto 和 Okou 1.0 內建模型執行生效，不影響既有執行。",
@@ -5319,7 +5377,6 @@
     "addressHelp": "使用已註冊的 Tailnet 節點 IP、完整主機名稱或簡稱。仍需 SSH 登入憑證及主機金鑰驗證。",
     "adoptHelp": "將此組織網路改為你的個人網路。其他擁有者須重新綁定已儲存的主機。",
     "changed": "此 Tailscale 網路已變更。儲存草稿前，請確認最新設定。",
-    "cleanupHelp": "連線關閉後，暫時節點可能仍留在 Tailscale。服務提供者的清理時間並無保證。",
     "clientId": "OAuth 用戶端 ID",
     "clientSecret": "OAuth 用戶端密鑰",
     "createNew": "建立 Tailscale 網路",
@@ -5328,6 +5385,24 @@
     "edit": "編輯 Tailscale",
     "failed": "無法儲存 Tailscale 變更。請重試。",
     "forbidden": "你無法管理此 Tailscale 網路。組織網路需要管理員權限。",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "在 Trust credentials 選擇 Credential → OAuth。在 Keys → Auth Keys 下選擇 Write 和 tag:okou。選擇 Generate credential，將 Client ID 和 Client secret 填入下方欄位。",
+      "policyHelp": "此規則允許 tag:okou 存取所有使用者和裝置的所有連接埠與通訊協定。將它加入現有 grants，保留其他政策。",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "在 Access controls → Visual editor → General access rules 選擇 Add rule，使用以下建議值。",
+      "source": "Source",
+      "stepsLabel": "Tailscale 設定步驟",
+      "tags": "Tags",
+      "tagsHelp": "請選擇目標裝置所在的 tailnet。在 Access controls → Visual editor → Tags 選擇 Create tag，Tag name 填寫 okou，並選擇 Tag owners。下方註冊標籤填寫 tag:okou。",
+      "title": "如何設定 Tailscale？",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "你的 SSH 主機仍使用此網路。請先重新綁定或刪除這些主機。",
     "invalid": "部分 Tailscale 設定無效。請檢查欄位後重試。",
     "loadFailed": "無法載入 Tailscale。請重試。",
@@ -5342,7 +5417,6 @@
     "rebindHelp": "選取或建立 Tailscale 網路以重新綁定此主機。SSH 登入憑證及受信任的主機金鑰會保留。",
     "replace": "更換 OAuth 憑證",
     "select": "選取 Tailscale 網路",
-    "setupHelp": "使用僅允許這些標籤的 OAuth 用戶端。Tailnet 原則須允許 SSH 連接埠。儲存不會測試連線或授權聊天存取。",
     "summary_other": "已配置 {{count}} 個 Tailscale",
     "tags": "註冊標籤",
     "tagsHelp": "以逗號分隔標籤，例如 tag:okou",
@@ -5380,6 +5454,11 @@
     },
     "importHint": "可以匯入文件、簡報或圖片。",
     "loadFailed": "無法載入模板。",
+    "rename": {
+      "action": "重新命名",
+      "cancel": "取消",
+      "save": "儲存"
+    },
     "renameFailed": "無法重新命名該模板。",
     "retry": "重試",
     "sharedBy": "由{{owner}}分享",
@@ -5451,6 +5530,24 @@
     "cancel": "取消",
     "close": "關閉",
     "configured": "已配置",
+    "connectionStatus": {
+      "attention_other": "{{count}} 臺 VNC 主機需要處理",
+      "observedAt": "記錄於 {{time}}",
+      "reasons": {
+        "authentication_failed": "身分驗證或伺服器身分校驗失敗。",
+        "disconnected": "伺服器在連線嘗試期間中斷。",
+        "invalid_credential": "無法使用已儲存的憑證。",
+        "kerberos_expired": "Kerberos 憑證已過期。",
+        "kerberos_non_renewable": "Kerberos 憑證無法續期。",
+        "kerberos_renewal_exhausted": "Kerberos 憑證已達續期上限。",
+        "network_failure": "連線傳輸失敗。",
+        "protocol": "伺服器未完成所選連線協定。",
+        "timed_out": "連線嘗試逾時。",
+        "unsafe_destination": "網路原則拒絕了目標位址。",
+        "unsupported_profile": "伺服器不支援所選安全設定。"
+      },
+      "unavailable": "無法獲取 VNC 連線狀態"
+    },
     "credential": {
       "add": "新增憑據",
       "appleDhFieldHelp": "每項 1–63 個 UTF-8 位元組，不允許 NUL 字元。",
@@ -6285,68 +6382,6 @@
       "title": "工作流",
       "viewAutomations": "檢視自動化"
     },
-    "official": {
-      "activeInstallationDescription": "這個官方工作流仍在正常執行，其託管內容保持只讀。",
-      "activeInstallationTitle": "官方工作流",
-      "agent": "智能體",
-      "automationCount_one": "{{count}} 個自動化",
-      "automationCount_other": "{{count}} 個自動化",
-      "badge": "官方",
-      "browse": "瀏覽官方工作流",
-      "chooseValue": "選擇一個值",
-      "copySucceededUninstallFailed": "副本已建立，但原來的官方工作流未能解除安裝。",
-      "description": "安裝由 Okou 官方團隊維護的託管工作流。",
-      "empty": "暫無可用的官方工作流。",
-      "includedAutomations": "包含的自動化",
-      "install": "安裝",
-      "installDescription": "選擇一個智能體，並填寫所有必填參數。包含的自動化會一併安裝。",
-      "installed": "官方工作流已安裝",
-      "installedStatus": "已安裝",
-      "installErrorDescription": "請檢查智能體和參數值，然後重試。",
-      "installErrorTitle": "官方工作流安裝失敗",
-      "installTitle": "安裝{{name}}",
-      "intendedOff": "目標為關閉",
-      "intendedOn": "目標為開啟",
-      "loadErrorDescription": "這個目錄可能暫時不可用，或未對你的帳號開放。",
-      "loadErrorTitle": "官方工作流載入失敗",
-      "no": "否",
-      "noParameters": "無需填寫參數。",
-      "noResults": "沒有匹配的官方工作流。",
-      "notFound": "未找到這個官方工作流。",
-      "parameterCount_one": "{{count}} 個參數",
-      "parameterCount_other": "{{count}} 個參數",
-      "parameterRequired": "{{key}}（必填）",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "重新配置",
-      "reconfigured": "官方工作流已重新配置",
-      "reconfigureDescription": "更新參數值，不會替換這個工作流或它的自動化。",
-      "reconfigureDialogDescription": "逐一檢查託管的自動化並更新參數。",
-      "reconfigureErrorDescription": "請檢查必填項，然後重試。",
-      "reconfigureErrorTitle": "官方工作流重新配置失敗",
-      "reconfigureTitle": "安裝參數",
-      "reconfigureUnavailable": "參數的權威資訊暫時無法獲取。",
-      "retiredBadge": "官方 · 已下線",
-      "retiredDefinitionDescription": "這個保留下來的定義仍可檢視，但已無法安裝。",
-      "retiredInstallationDescription": "這個定義已下線。在你解除安裝之前，已有的安裝仍可正常執行，並保持只讀。",
-      "retiredInstallationTitle": "官方工作流已下線",
-      "retiredTitle": "已下線的定義",
-      "retry": "重試",
-      "search": "搜尋官方工作流",
-      "selectAgent": "選擇智能體",
-      "statusCurrent": "最新",
-      "statusFailed": "失敗",
-      "statusNeedsReconfiguration": "需要重新配置",
-      "statusReconciling": "同步中",
-      "title": "官方工作流",
-      "unavailableInstallationDescription": "已採用的定義暫時不可用。現有的執行控制項仍可使用。",
-      "unavailableInstallationTitle": "官方定義不可用",
-      "uninstall": "解除安裝",
-      "uninstallConfirm": "這會移除該官方工作流的安裝及其所有自動化。此操作無法撤銷。",
-      "uninstallDescription": "按託管流程移除這個官方工作流的安裝。",
-      "uninstallTitle": "解除安裝官方工作流",
-      "viewAndInstall": "檢視並安裝",
-      "yes": "是"
-    },
     "skillImport": {
       "action": "匯入技能",
       "description": "在你的技能所在的地方執行這段提示詞。每個技能都會成為一個私人工作流程。",
@@ -6366,7 +6401,6 @@
       "connect": "連線",
       "disconnect": "斷開連線",
       "disconnecting": "正在斷開…",
-      "manage": "管理",
       "moreOptions": "更多選項",
       "uninstall": "解除安裝",
       "uninstalling": "正在解除安裝…",
@@ -6375,22 +6409,19 @@
     "connected": "已連線",
     "connectedWithDetail": "已連線（{{detail}}）",
     "discord": {
-      "accountSetup": "透過 Discord 官方瀏覽器授權連接你的帳號。",
-      "approvalConfirmed": "關閉此分頁，即可在原分頁中完成連接。",
+      "addNewServer": "加入新的伺服器",
       "approvalFailed": "確認失敗。請使用原先的 Okou 帳號和組織登入，或重新發起授權。",
       "authorizationError": "無法完成 Discord 授權，請重試。",
-      "authorizing": "正在授權…",
-      "browserConsent": "在 Discord 視窗中完成授權，此頁面會自動更新。",
       "chooseWorkspace": "選擇工作區",
       "connectDescription": "連接 Discord 帳號，與智慧代理聊天。",
       "connectedTitle": "已連接 Discord",
-      "connectingTitle": "正在連接 Discord",
       "connectTitle": "連接 Discord",
       "defaultWorkspace": "Discord 預設工作區",
       "description": "在伺服器中提及 Okou，或傳送私人訊息給機器人。",
       "disconnect": "中斷 Discord 連線",
+      "installDescription": "使用具有伺服器管理權限的帳號，在 Discord 中授權 Okou。",
+      "installTitle": "將 Okou 新增至伺服器",
       "invalidLink": "此 Discord 連接連結無效，請從 Discord 取得新連結。",
-      "limitedContext": "上下文受限：Okou 可能無法接收頻道中的一般訊息。請提及 Okou，並提供所需的詳細資訊。",
       "open": "開啟 Discord",
       "openInBrowser": "在瀏覽器中開啟",
       "pendingConsent": "請關閉此分頁，然後從原分頁重新開始連接。",
@@ -6437,7 +6468,6 @@
     },
     "telegram": {
       "description": "把 Telegram 訊息轉給智能體",
-      "openSettings": "開啟 Telegram 設定",
       "title": "Telegram"
     }
   }

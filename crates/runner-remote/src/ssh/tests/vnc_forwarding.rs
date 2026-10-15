@@ -28,7 +28,7 @@ async fn desktop(
     h.api.mock_async(|when, then| {
         when.method("POST").path(format!("/api/runners/runs/{}/vnc/resolve", h.run))
             .json_body_includes(json!({"connectionId":connection}).to_string());
-        then.status(200).json_body(json!({
+            then.status(200).header("X-VNC-Connection-Created-At", super::harness::CREATED_AT).json_body(json!({
             "outcome":"resolved_transport","host":"desktop.internal","port":5900,"generation":11,
             "serverName":"vnc.example.test","transport":{"type":"ssh","connectionId":CONNECTION,"generation":7},
             "authentication":{"method":"vnc_password","password":" secret "},
@@ -261,20 +261,22 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
                         }),
                         true,
                     ));
-                then.status(200).json_body(json!({
-                    "outcome": "resolved_transport",
-                    "host": "desktop.internal",
-                    "port": 5900,
-                    "generation": 11,
-                    "serverName": server_name,
-                    "transport": {
-                        "type": "ssh",
-                        "connectionId": CONNECTION,
-                        "generation": 7
-                    },
-                    "authentication": authentication,
-                    "security": security
-                }));
+                then.status(200)
+                    .header("X-VNC-Connection-Created-At", super::harness::CREATED_AT)
+                    .json_body(json!({
+                        "outcome": "resolved_transport",
+                        "host": "desktop.internal",
+                        "port": 5900,
+                        "generation": 11,
+                        "serverName": server_name,
+                        "transport": {
+                            "type": "ssh",
+                            "connectionId": CONNECTION,
+                            "generation": 7
+                        },
+                        "authentication": authentication,
+                        "security": security
+                    }));
             })
             .await;
         let vnc_check = harness
@@ -397,7 +399,7 @@ async fn vnc_uses_the_shared_generation_bound_ssh_transport_for_all_supported_pr
             pin.assert_calls_async(1).await;
         }
         vnc_resolve.assert_calls_async(1).await;
-        vnc_check.assert_calls_async(2).await;
+        vnc_check.assert_calls_async(1).await;
         harness.shutdown().await;
     }
 }

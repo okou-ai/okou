@@ -179,18 +179,7 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
       });
       await webhooks.requestClerkWebhook("{}", {}, [200]);
       await flushWaitUntilForTest();
-      if (fixture.defaultAgentId) {
-        await bdd.requestReadAgent(
-          fixture.actor,
-          fixture.defaultAgentId,
-          [404],
-        );
-      }
-      expect(
-        (await reads.requestListLogs(fixture.actor, { limit: 50 }, [200])).body
-          .data,
-      ).toStrictEqual([]);
-      // Immutable billing history retains its unique organization provenance.
+      // Clerk deletion stops active work without purging UUID-owned resources.
     }
   });
 

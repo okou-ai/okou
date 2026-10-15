@@ -122,35 +122,15 @@
         "title": "Log tidak ditemukan"
       },
       "runner": {
-        "cacheMiss": "Tidak ada direktori home dalam cache yang cocok dengan kunci penggunaan ulang.",
-        "deviceLimitMismatch": "Entri pool idle ada, tetapi status rate limiter perangkatnya tidak cocok.",
-        "diskPressure": "Penggunaan ulang direktori home dilewati karena runner mengalami tekanan disk.",
         "environment": "Lingkungan",
-        "featureDisabled": "Penggunaan ulang sandbox dinonaktifkan untuk run ini.",
         "framework": "Framework",
         "generation": "Generasi",
-        "home": "Direktori home",
-        "homeNoReuseKey": "Tidak ada kunci penggunaan ulang direktori home yang tersedia.",
-        "homeReusedDescription": "Direktori home dipulihkan dari cache runner.",
         "hostname": "Nama host",
-        "invalidMetadata": "Metadata direktori home dalam cache tidak valid.",
-        "invalidWorkingDir": "Direktori kerja yang diminta tidak dapat digunakan ulang.",
-        "lockBusy": "Run lain sedang menyiapkan direktori home yang sama.",
-        "noReuseKey": "Tidak ada kunci penggunaan ulang yang tersedia untuk mencocokkan sandbox idle.",
-        "noSessionId": "Hasil lama: alasan pasti sandbox tidak digunakan ulang tidak tersedia.",
-        "notConfigured": "Penggunaan ulang direktori home tidak dikonfigurasi untuk run ini.",
-        "notReused": "Tidak digunakan ulang",
-        "outcomeUnavailableDescription": "Detail tambahan tidak tersedia.",
-        "poolMiss": "Tidak ada sandbox yang cocok ditemukan di pool idle.",
-        "profileMismatch": "Entri pool idle ada, tetapi profilnya tidak cocok.",
         "provisioning": "Menyiapkan",
-        "reused": "Digunakan ulang",
-        "reusedDescription": "Sandbox dibuka kembali dari pool idle.",
         "runnerId": "ID runner",
-        "sandbox": "Sandbox",
-        "sandboxPrepareFallback": "Direktori home dalam cache ditemukan, tetapi tidak dapat digunakan setelah persiapan sandbox.",
-        "sandboxReusedDescription": "Direktori home tetap tersedia di sandbox yang digunakan ulang.",
         "startup": "Startup",
+        "startupBlank": "Mulai dari sandbox kosong",
+        "startupBlankDescription": "Sandbox yang sudah disiapkan dimulai dengan direktori home baru.",
         "startupCold": "Cold start",
         "startupColdDescription": "Sandbox dan workspace baru disiapkan.",
         "startupHome": "Penggunaan ulang direktori home",
@@ -160,7 +140,6 @@
         "startupUnknown": "Tidak diketahui",
         "startupUnknownDescription": "Detail penggunaan kembali saat startup tidak tersedia.",
         "unavailable": "Tidak tersedia",
-        "unparkFailed": "Percobaan membuka kembali gagal; sandbox baru disediakan.",
         "version": "Versi"
       },
       "steps": {
@@ -542,19 +521,25 @@
       "agentLoading": "Agen masih memuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
+      "conversionNotice": "Membuat salinan yang dapat diedit. Format dapat berubah; file asli tetap disimpan.",
+      "conversionUnconfirmed": "Konversi Google tidak dapat dikonfirmasi. Periksa Drive sebelum mencoba lagi.",
       "noArtifacts": "Tidak ada artefak untuk disinkronkan",
+      "openDocs": "Buka di Google Docs",
+      "openSheets": "Buka di Google Sheets",
+      "openSlides": "Buka di Google Slides",
       "partial_one": "Tersinkron {{synced}} dari {{count}} file ke Google Drive",
       "partial_other": "Tersinkron {{synced}} dari {{count}} file ke Google Drive",
       "synced": "Tersinkron ke Google Drive",
       "syncedFiles_one": "Tersinkron ke Google Drive",
       "syncedFiles_other": "Tersinkron {{count}} file ke Google Drive",
-      "syncedSlides": "Tersinkron ke Google Slides",
       "syncFailed": "Gagal menyinkronkan ke Google Drive",
       "syncingArtifact": "Menyinkronkan artefak...",
       "syncingFiles_one": "Menyinkronkan {{count}} file...",
       "syncingFiles_other": "Menyinkronkan {{count}} file...",
       "syncingNamed": "Menyinkronkan {{filename}}...",
       "upload": "Unggah ke Google Drive",
+      "uploadDocs": "Unggah ke Google Docs",
+      "uploadSheets": "Unggah ke Google Sheets",
       "uploadSlides": "Unggah ke Google Slides"
     },
     "kinds": {
@@ -571,6 +556,7 @@
       "markdown": "Markdown",
       "presentation": "Presentasi",
       "sharedConversation": "Percakapan yang dibagikan",
+      "spreadsheet": "Lembar kerja",
       "text": "Teks",
       "video": "Video"
     },
@@ -686,7 +672,6 @@
       "use": "Gunakan",
       "useThisTemplate": "Gunakan template ini",
       "visibility": {
-        "change": "Ubah",
         "changeLabel": "Ubah visibilitas templat",
         "privateState": "Hanya Anda yang dapat melihat dan menggunakannya",
         "workspaceState": "Siapa pun di ruang kerja ini dapat menggunakannya"
@@ -1519,13 +1504,13 @@
       "viewAgentProfile": "Lihat profil agen"
     },
     "agentSuggestions": {
-      "existingThread": "Percakapan yang ada",
+      "continueChat": "Lanjutkan chat",
+      "dismiss": "Abaikan",
       "label": "Saran",
-      "loadFailed": "Saran tidak dapat dimuat.",
-      "newThread": "Percakapan baru dengan Okou",
-      "origin": "Dari ringkasan pagimu",
-      "showAll_other": "Lihat semua ({{count}})",
-      "showLess": "Tampilkan lebih sedikit"
+      "newChat": "Chat baru",
+      "next": "Saran berikutnya",
+      "position": "{{current}} dari {{total}}",
+      "previous": "Saran sebelumnya"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -1766,9 +1751,8 @@
       "threadSuggestions": "Thread chat",
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
       "workflows": {
-        "empty": "Tidak ada alur kerja yang cocok",
         "loading": "Memuat alur kerja...",
-        "showAll": "Tampilkan semua alur kerja",
+        "showAllCount": "Tampilkan semua {{total}}",
         "title": "Alur kerja"
       }
     },
@@ -1938,15 +1922,6 @@
       "threads": "Chat",
       "title": "Teruskan ke"
     },
-    "homeTasks": {
-      "empty": "Belum ada saran tugas",
-      "existingThread": "Lanjutkan chat",
-      "exploreWorkflow": "Jelajahi alur kerja",
-      "heading": "Diambil dari pekerjaan terbaru Anda",
-      "newTasksAvailable": "Tugas baru tersedia",
-      "newThread": "Chat baru",
-      "reload": "Muat ulang tugas"
-    },
     "mail": {
       "bcc": "bcc",
       "cc": "cc",
@@ -1990,6 +1965,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "Buka chat",
       "openChatIn": "Buka chat di {{integration}}",
       "openDiscordMessage": "Buka pesan asli di Discord",
@@ -2046,6 +2022,26 @@
       "removeQueuedMessage": "Hapus pesan dalam antrean",
       "skipAutomationEvent": "Lewati peristiwa otomatisasi"
     },
+    "relations": {
+      "communications": "Pesan",
+      "created": "Dibuat",
+      "idle": "Tidak aktif",
+      "loadFailed": "Gagal memuat",
+      "loading": "Memuat…",
+      "messageUnavailable": "Pesan tidak tersedia",
+      "more": "Lainnya",
+      "origin": "Dari",
+      "parallelHint": "Coba chat paralel. Kurangi menunggu.",
+      "queued": "Dalam antrean",
+      "received": "Diterima",
+      "refresh": "Muat ulang",
+      "running": "Berjalan",
+      "sent": "Dikirim",
+      "title": "Chat terkait",
+      "toggleMessages": "Pesan dengan {{title}}",
+      "unavailable": "Tidak tersedia",
+      "untitled": "Tanpa judul"
+    },
     "remoteAccess": {
       "default": "Default",
       "defaultEnabled": "Aktif secara default untuk chat",
@@ -2054,16 +2050,22 @@
       "loading": "Memuat akses jarak jauh…",
       "off": "Nonaktif",
       "on": "Aktif",
-      "requiresSsh": "Juga memerlukan akses ke host SSH {{name}}.",
+      "requiresSsh": "Memerlukan SSH: {{name}}",
       "retry": "Coba lagi",
+      "sshDisabled": "Aktifkan SSH: {{name}}",
+      "sshEnabled": "SSH aktif: {{name}}",
       "title": "Akses jarak jauh",
       "unavailableSsh": "host SSH tidak tersedia"
     },
     "resources": {
+      "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "empty": "Chat ini belum memiliki artefak atau tautan",
+      "emptyLinks": "Belum ada tautan di chat ini",
+      "expand": "Perluas",
       "links": "Tautan",
       "loadFailed": "Tidak dapat memuat sumber daya",
+      "loadingLinks": "Memuat tautan",
       "retry": "Coba lagi",
       "title": "Sumber daya chat",
       "viewAll": "Lihat semua"
@@ -2740,7 +2742,6 @@
         "workflow": "Alur kerja"
       },
       "importedLoadFailed": "Tidak dapat memuat templat yang diunggah.",
-      "importedLoading": "Memuat templat yang diunggah…",
       "importedUnavailable": "Templat yang diunggah untuk sementara tidak tersedia.",
       "previewTemplate": "Pratinjau template {{title}}",
       "previewWebsite": "Pratinjau template situs web {{title}}",
@@ -2823,10 +2824,18 @@
     "walletAction": {
       "approveButton": "Tinjau",
       "approveTitle": "Tinjau pembelian",
+      "authorized": "Diizinkan",
+      "callbackFailed": "Sudah diizinkan. Pilih Lanjutkan untuk mencoba mengirim pesan lagi.",
+      "callbackPrompt": "Otorisasi dompet Link selesai. Lanjutkan tugas sebelumnya.",
+      "checkFailed": "Tidak dapat memeriksa otorisasi. Coba lagi.",
       "connectButton": "Izinkan",
       "connectTitle": "Izinkan dompet Link",
       "continueButton": "Lanjutkan",
-      "continueTitle": "Lanjutkan di Link"
+      "continueTitle": "Lanjutkan di Link",
+      "expired": "Otorisasi kedaluwarsa",
+      "failed": "Otorisasi belum selesai",
+      "unavailable": "Otorisasi tidak tersedia",
+      "waiting": "Menunggu otorisasi"
     },
     "workflows": {
       "named": "Alur kerja {{title}}",
@@ -3434,13 +3443,15 @@
         "alreadyDescription": "Anda sudah tersambung. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyDescriptionNamed": "Anda sudah tersambung ke {{bot}}. Kirim pesan di Telegram untuk mulai mengobrol.",
         "alreadyTitle": "Sudah tersambung ke Telegram",
-        "back": "Kembali ke pengaturan Telegram",
+        "botNotConfigured": "Koneksi Telegram belum dikonfigurasi. Silakan hubungi dukungan.",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi Telegram Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
         "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
+        "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi. Silakan coba lagi sebentar lagi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
+        "domainNotVerified": "Login Telegram untuk aplikasi ini tidak dapat diverifikasi. Coba lagi, atau hubungi dukungan jika masalah berlanjut.",
         "errorFallback": "Kami tidak dapat menghubungkan Telegram. Coba lagi dari Telegram.",
         "invalidSignature": "Tanda tangan pada tautan ini tidak valid.",
         "invalidTimestamp": "Stempel waktu pada tautan ini tidak valid.",
@@ -3755,16 +3766,8 @@
       },
       "telegram": {
         "backToIntegrations": "Kembali ke integrasi",
-        "botFallback": "Bot Telegram",
-        "disconnectAria": "Putuskan sambungan {{bot}}",
-        "documentTitle": "Telegram",
         "loadError": "Tidak dapat memuat setelan Telegram.",
-        "moreOptions": "Opsi lainnya untuk {{bot}}",
-        "notConnected": "Tidak terhubung",
-        "officialBot": "Bot Telegram resmi",
-        "officialDescription": "Bot resmi yang disediakan oleh {{brandName}}.",
-        "officialMissing": "Konfigurasi bot resmi tidak ada.",
-        "pageDescription": "Kelola perutean bot untuk ruang kerja ini"
+        "officialMissing": "Konfigurasi bot resmi tidak ada."
       },
       "toasts": {
         "agentphoneConnected": "Nomor telepon terhubung",
@@ -3800,6 +3803,65 @@
     "toasts": {
       "connected": "{{connector}} terhubung"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",
+    "back": "Kembali ke templat",
+    "categories": {
+      "all": "Semua",
+      "business-record": "Catatan bisnis",
+      "contract": "Kontrak",
+      "creative-brief": "Brief kreatif",
+      "guide": "Panduan",
+      "invoice": "Faktur",
+      "letter": "Surat",
+      "report": "Laporan",
+      "resume": "CV",
+      "service-agreement": "Perjanjian layanan"
+    },
+    "contents": {
+      "agreement": {
+        "content": "Ketentuan dan tanggung jawab",
+        "delivery": "Peninjauan dan tanda tangan",
+        "details": "Jangka waktu dan pengakhiran",
+        "overview": "Para pihak dan ruang lingkup"
+      },
+      "brief": {
+        "content": "Audiens dan pesan utama",
+        "delivery": "Jadwal dan proses peninjauan",
+        "details": "Hasil kerja dan format",
+        "overview": "Gambaran dan tujuan proyek"
+      },
+      "general": {
+        "content": "Bagian untuk konten Anda",
+        "delivery": "Word yang dapat diedit atau PDF",
+        "details": "Tata letak halaman yang konsisten",
+        "overview": "Struktur dokumen yang jelas"
+      },
+      "invoice": {
+        "content": "Rincian layanan dan tarif",
+        "delivery": "Detail pembayaran",
+        "details": "Pajak, total, dan jatuh tempo",
+        "overview": "Detail penyedia dan klien"
+      }
+    },
+    "filter": "Kategori dokumen",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Dokumen Word"
+    },
+    "imageError": "Pratinjau tidak tersedia",
+    "included": "Isi yang disertakan",
+    "nextPage": "Halaman contoh berikutnya",
+    "openLarger": "Buka pratinjau lebih besar",
+    "page": "Halaman {{page}}",
+    "preview": "Pratinjau {{title}}",
+    "previousPage": "Halaman contoh sebelumnya",
+    "retry": "Coba lagi",
+    "samplePages": "Halaman contoh: {{total}}",
+    "title": "Dokumen",
+    "use": "Gunakan templat",
+    "useNamed": "Gunakan {{title}}"
   },
   "global": {
     "actions": {
@@ -4506,17 +4568,9 @@
       "settings": "Setelan",
       "signOut": "Keluar",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
-        "usageRemaining": "Sisa {{provider}} {{window}}",
-        "windows": {
-          "fiveHour": "5 jam",
-          "week": "minggu"
-        }
+        "usageRemaining": "Sisa {{provider}} {{window}}"
       },
       "switchAccount": "Ganti akun",
       "userFallback": "Pengguna"
@@ -4685,10 +4739,16 @@
       "personal": {
         "accountFallback": "Akun {{number}}",
         "activeAccount": "Aktif",
+        "autoCredits": "Memakai kredit Okou",
         "autoDescription": "Hubungkan akun Claude atau ChatGPT Anda untuk menggunakan lebih banyak model.",
         "autoTitle": "Gunakan lebih banyak model",
+        "claudeGroup": "Paket Claude Anda",
+        "claudePlans": "Pro atau Max",
         "claudeTitle": "Claude",
+        "codexGroup": "Paket ChatGPT Anda",
+        "codexPlans": "Plus, Pro, atau Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "Hubungkan",
         "connectAccount": "Hubungkan akun",
         "disconnectAccount": "Putuskan akun",
         "disconnectDescription": "Ini menghapus akun dari Okou. Langganan Anda dengan penyedia tidak akan dibatalkan.",
@@ -4696,7 +4756,9 @@
         "disconnectTitle": "Putuskan {{account}}?",
         "loadError": "Akun Anda tidak dapat dimuat.",
         "loadingAccounts": "Memuat akun…",
+        "managePlans": "Kelola paket",
         "noAccounts": "Belum ada akun terhubung.",
+        "ownPlan": "Jalankan dengan paket Anda sendiri",
         "reconnectAccount": "Hubungkan ulang",
         "retry": "Coba lagi",
         "status": {
@@ -4890,26 +4952,22 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
-        "morningBriefEmail": {
-          "checkStatus": "Periksa status pengiriman",
-          "description": "Kirim contoh tetap ke email akun Anda dengan templat Morning Brief. Ini tidak menjalankan Agent atau mengubah jadwal Anda.",
-          "reasons": {
-            "delivery-failed": "Pengiriman gagal. Percobaan sebelumnya mungkin telah diterima penyedia.",
-            "expired": "Pengiriman kedaluwarsa. Percobaan sebelumnya mungkin telah diterima penyedia.",
-            "no-email": "Dilewati: akun Anda tidak memiliki alamat email.",
-            "suppressed": "Dilewati: pengiriman ke email akun Anda diblokir.",
-            "unsubscribed": "Dilewati: akun Anda berhenti berlangganan pembaruan email."
-          },
-          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama untuk mencegah email duplikat.",
-          "retry": "Coba lagi email uji",
-          "send": "Kirim email uji",
-          "sendAnother": "Kirim email uji lain",
-          "sending": "Mengirim…",
+        "morningBrief": {
+          "checkStatus": "Periksa status",
+          "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",
+          "openChat": "Buka percakapan",
+          "requestFailed": "Permintaan belum selesai. Percobaan ulang memakai permintaan yang sama agar tidak dijalankan dua kali.",
+          "retry": "Coba lagi",
+          "run": "Jalankan ringkasan",
+          "runAgain": "Jalankan lagi",
+          "starting": "Memulai…",
           "status": {
-            "queued": "Dalam antrean pengiriman. Periksa status sebelum mengirim contoh lain.",
-            "sent": "Diterima penyedia email. Periksa kotak masuk dan spam; kedatangan di kotak masuk belum dikonfirmasi."
+            "completed": "Ringkasan selesai.",
+            "failed": "Ringkasan gagal. Buka percakapan untuk detailnya.",
+            "queued": "Dalam antrean. Buka percakapan untuk mengikuti ringkasan ini.",
+            "running": "Ringkasan sedang berjalan."
           },
-          "title": "Email uji Morning Brief"
+          "title": "Ringkasan pagi"
         },
         "openrouterPreset": {
           "description": "Berlaku untuk eksekusi Auto dan Okou 1.0 bawaan yang baru di seluruh organisasi. Eksekusi yang sudah ada tidak berubah.",
@@ -5319,7 +5377,6 @@
     "addressHelp": "Gunakan IP, nama host lengkap, atau nama singkat peer tailnet yang terdaftar. Login SSH dan verifikasi kunci host tetap diperlukan.",
     "adoptHelp": "Jadikan jaringan organisasi ini sebagai jaringan pribadi Anda. Pemilik lain harus menghubungkan ulang host tersimpan mereka.",
     "changed": "Jaringan Tailscale ini berubah. Periksa pengaturan terbaru sebelum menyimpan draf.",
-    "cleanupHelp": "Node sementara dapat tetap ada di Tailscale setelah koneksi ditutup. Waktu pembersihan penyedia tidak dijamin.",
     "clientId": "ID klien OAuth",
     "clientSecret": "Rahasia klien OAuth",
     "createNew": "Buat jaringan Tailscale",
@@ -5328,6 +5385,24 @@
     "edit": "Edit Tailscale",
     "failed": "Perubahan Tailscale tidak dapat disimpan. Coba lagi.",
     "forbidden": "Anda tidak dapat mengelola jaringan Tailscale ini. Jaringan organisasi memerlukan admin.",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "Di Trust credentials, pilih Credential → OAuth. Pada Keys → Auth Keys, pilih Write dan tag:okou. Pilih Generate credential lalu salin Client ID dan Client secret ke kolom di bawah.",
+      "policyHelp": "Aturan ini mengizinkan tag:okou mengakses semua pengguna dan perangkat pada semua port dan protokol. Tambahkan ke grants yang sudah ada dan pertahankan kebijakan lainnya.",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "Di Access controls → Visual editor → General access rules, pilih Add rule dan gunakan nilai yang disarankan berikut.",
+      "source": "Source",
+      "stepsLabel": "Langkah penyiapan Tailscale",
+      "tags": "Tags",
+      "tagsHelp": "Gunakan tailnet perangkat tujuan. Di Access controls → Visual editor → Tags, pilih Create tag. Isi Tag name dengan okou dan pilih Tag owners. Masukkan tag:okou pada tag pendaftaran di bawah.",
+      "title": "Bagaimana cara mengonfigurasi Tailscale?",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "Host SSH Anda masih memakai jaringan ini. Hubungkan ulang atau hapus host tersebut terlebih dahulu.",
     "invalid": "Sebagian pengaturan Tailscale tidak valid. Periksa kolom lalu coba lagi.",
     "loadFailed": "Tailscale tidak dapat dimuat. Coba lagi.",
@@ -5342,7 +5417,6 @@
     "rebindHelp": "Pilih atau buat jaringan Tailscale untuk menghubungkan ulang host ini. Login SSH dan kunci host tepercaya tetap dipertahankan.",
     "replace": "Ganti kredensial OAuth",
     "select": "Pilih jaringan Tailscale",
-    "setupHelp": "Gunakan klien OAuth yang dibatasi pada tag ini. Kebijakan tailnet harus mengizinkan port SSH. Menyimpan tidak menguji koneksi atau memberi akses chat.",
     "summary_other": "{{count}} Tailscale telah diatur",
     "tags": "Tag pendaftaran",
     "tagsHelp": "Pisahkan tag dengan koma, misalnya tag:okou",
@@ -5380,6 +5454,11 @@
     },
     "importHint": "Impor dokumen, presentasi, atau gambar.",
     "loadFailed": "Tidak dapat memuat templat.",
+    "rename": {
+      "action": "Ubah nama",
+      "cancel": "Batal",
+      "save": "Simpan"
+    },
     "renameFailed": "Tidak dapat mengganti nama templat.",
     "retry": "Coba lagi",
     "sharedBy": "Dibagikan oleh {{owner}}",
@@ -5451,6 +5530,24 @@
     "cancel": "Batal",
     "close": "Tutup",
     "configured": "Terkonfigurasi",
+    "connectionStatus": {
+      "attention_other": "{{count}} host VNC perlu diperhatikan",
+      "observedAt": "Diamati {{time}}",
+      "reasons": {
+        "authentication_failed": "Autentikasi atau verifikasi identitas server gagal.",
+        "disconnected": "Server terputus selama percobaan koneksi.",
+        "invalid_credential": "Kredensial tersimpan tidak dapat digunakan.",
+        "kerberos_expired": "Kredensial Kerberos telah kedaluwarsa.",
+        "kerberos_non_renewable": "Kredensial Kerberos tidak dapat diperbarui.",
+        "kerberos_renewal_exhausted": "Batas pembaruan kredensial Kerberos telah tercapai.",
+        "network_failure": "Transport koneksi gagal.",
+        "protocol": "Server tidak menyelesaikan protokol koneksi yang dipilih.",
+        "timed_out": "Percobaan koneksi kehabisan waktu.",
+        "unsafe_destination": "Tujuan ditolak oleh kebijakan jaringan.",
+        "unsupported_profile": "Server tidak mendukung profil keamanan yang dipilih."
+      },
+      "unavailable": "Status koneksi VNC tidak tersedia"
+    },
     "credential": {
       "add": "Tambah kredensial",
       "appleDhFieldHelp": "Setiap kolom harus berisi 1–63 byte UTF-8. NUL tidak diizinkan.",
@@ -6285,68 +6382,6 @@
       "title": "Alur kerja",
       "viewAutomations": "Lihat otomatisasi"
     },
-    "official": {
-      "activeInstallationDescription": "Workflow Resmi ini tetap beroperasi dan konten terkelolanya tetap hanya-baca.",
-      "activeInstallationTitle": "Workflow Resmi",
-      "agent": "Agen",
-      "automationCount_one": "{{count}} automasi",
-      "automationCount_other": "{{count}} automasi",
-      "badge": "Resmi",
-      "browse": "Jelajahi yang Resmi",
-      "chooseValue": "Pilih nilai",
-      "copySucceededUninstallFailed": "Salinan sudah siap, tetapi Workflow Resmi asli tidak dapat dihapus instalasinya.",
-      "description": "Instal workflow terkelola yang dipelihara oleh Okou Official Team.",
-      "empty": "Tidak ada Workflow Resmi yang tersedia.",
-      "includedAutomations": "Automasi yang disertakan",
-      "install": "Instal",
-      "installDescription": "Pilih Agen dan lengkapi setiap parameter wajib. Semua automasi yang disertakan akan diinstal.",
-      "installed": "Workflow Resmi telah diinstal",
-      "installedStatus": "Terinstal",
-      "installErrorDescription": "Periksa Agen dan nilai parameter, lalu coba lagi.",
-      "installErrorTitle": "Workflow Resmi tidak dapat diinstal",
-      "installTitle": "Instal {{name}}",
-      "intendedOff": "seharusnya nonaktif",
-      "intendedOn": "seharusnya aktif",
-      "loadErrorDescription": "Katalog ini mungkin tidak tersedia atau belum diaktifkan untuk akun Anda.",
-      "loadErrorTitle": "Workflow Resmi tidak dapat dimuat",
-      "no": "Tidak",
-      "noParameters": "Tidak ada parameter yang diperlukan.",
-      "noResults": "Tidak ada Workflow Resmi yang cocok dengan pencarian Anda.",
-      "notFound": "Workflow Resmi ini tidak ditemukan.",
-      "parameterCount_one": "{{count}} parameter",
-      "parameterCount_other": "{{count}} parameter",
-      "parameterRequired": "{{key}} (wajib)",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "Konfigurasi ulang",
-      "reconfigured": "Workflow Resmi dikonfigurasi ulang",
-      "reconfigureDescription": "Perbarui parameter bertipe tanpa mengganti Workflow ini atau automasinya.",
-      "reconfigureDialogDescription": "Tinjau setiap automasi terkelola dan perbarui parameternya.",
-      "reconfigureErrorDescription": "Tinjau nilai yang wajib, lalu coba lagi.",
-      "reconfigureErrorTitle": "Workflow Resmi tidak dapat dikonfigurasi ulang",
-      "reconfigureTitle": "Parameter instalasi",
-      "reconfigureUnavailable": "Metadata parameter otoritatif untuk sementara tidak tersedia.",
-      "retiredBadge": "Resmi · Dipensiunkan",
-      "retiredDefinitionDescription": "Definisi yang dipertahankan ini dapat dilihat, tetapi tidak dapat diinstal lagi.",
-      "retiredInstallationDescription": "Definisi ini telah dipensiunkan. Instalasi Anda yang ada tetap beroperasi dan hanya-baca hingga Anda menghapus instalasinya.",
-      "retiredInstallationTitle": "Workflow Resmi dipensiunkan",
-      "retiredTitle": "Definisi dipensiunkan",
-      "retry": "Coba lagi",
-      "search": "Cari Workflow Resmi",
-      "selectAgent": "Pilih Agen",
-      "statusCurrent": "Terkini",
-      "statusFailed": "Gagal",
-      "statusNeedsReconfiguration": "Perlu konfigurasi ulang",
-      "statusReconciling": "Menyelaraskan",
-      "title": "Workflow Resmi",
-      "unavailableInstallationDescription": "Definisi yang diterima untuk sementara tidak tersedia. Kontrol operasional yang ada tetap tersedia.",
-      "unavailableInstallationTitle": "Definisi Resmi tidak tersedia",
-      "uninstall": "Hapus instalasi",
-      "uninstallConfirm": "Tindakan ini menghapus instalasi Resmi dan semua automasinya. Tindakan ini tidak dapat dibatalkan.",
-      "uninstallDescription": "Hapus instalasi Workflow Resmi ini melalui siklus hidup terkelolanya.",
-      "uninstallTitle": "Hapus instalasi Workflow Resmi",
-      "viewAndInstall": "Lihat dan instal",
-      "yes": "Ya"
-    },
     "skillImport": {
       "action": "Impor skill",
       "description": "Jalankan prompt ini di tempat skill Anda berada. Setiap skill menjadi alur kerja pribadi.",
@@ -6366,7 +6401,6 @@
       "connect": "Hubungkan",
       "disconnect": "Putuskan koneksi",
       "disconnecting": "Memutuskan koneksi…",
-      "manage": "Kelola",
       "moreOptions": "Opsi lainnya",
       "uninstall": "Copot pemasangan",
       "uninstalling": "Mencopot pemasangan…",
@@ -6375,22 +6409,19 @@
     "connected": "Terhubung",
     "connectedWithDetail": "Terhubung ({{detail}})",
     "discord": {
-      "accountSetup": "Hubungkan akun Discord Anda melalui persetujuan resmi di browser.",
-      "approvalConfirmed": "Tutup tab ini untuk menyelesaikan koneksi di tab awal.",
+      "addNewServer": "Gabung ke server baru",
       "approvalFailed": "Konfirmasi gagal. Masuk dengan akun dan organisasi Okou semula atau mulai ulang otorisasi.",
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan. Coba lagi.",
-      "authorizing": "Mengotorisasi…",
-      "browserConsent": "Selesaikan otorisasi di jendela Discord. Halaman ini akan diperbarui secara otomatis.",
       "chooseWorkspace": "Pilih ruang kerja",
       "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
       "connectedTitle": "Terhubung ke Discord",
-      "connectingTitle": "Menghubungkan ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
       "description": "Tandai Okou di server atau kirim pesan langsung ke bot.",
       "disconnect": "Putuskan koneksi Discord",
+      "installDescription": "Izinkan Okou di Discord menggunakan akun yang dapat mengelola server.",
+      "installTitle": "Tambahkan Okou ke server",
       "invalidLink": "Tautan koneksi Discord ini tidak valid. Buka tautan baru dari Discord.",
-      "limitedContext": "Konteks terbatas: Okou mungkin tidak menerima pesan biasa di kanal. Tandai Okou dan sertakan detail yang dibutuhkannya.",
       "open": "Buka Discord",
       "openInBrowser": "Buka di browser",
       "pendingConsent": "Tutup tab ini dan mulai ulang koneksi dari tab awal.",
@@ -6437,7 +6468,6 @@
     },
     "telegram": {
       "description": "Rutekan pesan Telegram ke agen",
-      "openSettings": "Buka pengaturan Telegram",
       "title": "Telegram"
     }
   }

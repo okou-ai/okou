@@ -244,9 +244,21 @@ export const openCustomTemplateKind$ = computed((get) => {
   return get(internalOpenTemplate$)?.kind ?? null;
 });
 
+const internalOpenPageIndex$ = state(0);
+
+/** The page an open deck shows on its stage; every opening starts at page 1. */
+export const openCustomTemplatePageIndex$ = computed((get) => {
+  return get(internalOpenPageIndex$);
+});
+
+export const selectCustomTemplatePage$ = command(({ set }, index: number) => {
+  set(internalOpenPageIndex$, index);
+});
+
 export const openCustomTemplate$ = command(
   ({ set }, template: OpenCustomTemplate) => {
     set(internalOpenTemplate$, template);
+    set(internalOpenPageIndex$, 0);
   },
 );
 
@@ -315,6 +327,50 @@ export const updateCustomTemplate$ = command(
       }
       return new Map(changes).set(id, { id, title, visibility, updatedAt });
     });
+  },
+);
+
+/**
+ * A rename the member asked for from a card's menu. Image templates have no
+ * detail page to rename in, so the menu asks here and the picker shows one
+ * small dialog for it. The title is captured with the request, so the field
+ * starts from the name the member saw.
+ */
+interface CustomTemplateRenameRequest {
+  readonly id: string;
+  readonly title: string;
+}
+
+const internalPendingRename$ = state<CustomTemplateRenameRequest | null>(null);
+
+export const pendingCustomTemplateRename$ = computed((get) => {
+  return get(internalPendingRename$);
+});
+
+export const requestRenameCustomTemplate$ = command(
+  ({ set }, request: CustomTemplateRenameRequest) => {
+    set(internalPendingRename$, request);
+  },
+);
+
+export const cancelRenameCustomTemplate$ = command(({ set }) => {
+  set(internalPendingRename$, null);
+});
+
+/** Saves the name, then closes the dialog; a failure keeps it open. */
+export const renameCustomTemplate$ = command(
+  async (
+    { set },
+    args: { readonly templateId: string; readonly title: string },
+    signal: AbortSignal,
+  ) => {
+    await set(
+      updateCustomTemplate$,
+      { templateId: args.templateId, body: { title: args.title } },
+      signal,
+    );
+    signal.throwIfAborted();
+    set(internalPendingRename$, null);
   },
 );
 

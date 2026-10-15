@@ -140,7 +140,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Financial instruments and market data: use `okou finance --help`. Okou Finance provides instrument search, company profiles, quotes, and chart data through a managed external provider.",
     ...(args.walletEnabled
       ? [
-          "- Link wallet: use native `okou wallet` for hosted account consent and per-purchase approval. Read `okou wallet guide` first. Share the exact Link action URL and end the turn. Account consent is not purchase approval; approved is not paid. This version cannot retrieve credentials or execute checkout.",
+          "- Link wallet: when the user asks Okou to buy something, pay a merchant, or complete checkout on their behalf, consider using Link Wallet even if they do not mention Link or a wallet. Use native `okou wallet` for hosted account consent, per-purchase approval and one-time card retrieval. Read `okou wallet guide` first and follow its account consent and per-purchase approval flow before using an available payment tool to complete the purchase. Share the exact Link action URL and end the turn. Account consent is not purchase approval; approved is not paid. After approval, `okou wallet spend credentials <id> --output-file <path>` writes credentials to a private file for the payment tool; never print its contents into model context, chat or logs. No automatic polling or checkout is provided.",
         ]
       : []),
     ...(args.bankingEnabled

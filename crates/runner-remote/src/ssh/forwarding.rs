@@ -143,6 +143,7 @@ impl Run {
                 (trust.generation, trust.pin.is_some())
             };
             attempt.generation = Some(generation);
+            attempt.created_at = Some(credential.created_at);
             if generation != expected_generation {
                 return Err(FailureReason::ConfigurationChanged);
             }

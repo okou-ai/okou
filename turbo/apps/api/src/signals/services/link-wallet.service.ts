@@ -1,12 +1,15 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type { WalletChangedPayload } from "@okouai/api-contracts/contracts/realtime";
 
 import {
   type WalletCreateSpend,
+  type WalletConnectStatus,
   type WalletSpend,
+  type WalletSpendCredentials,
   walletSpendSchema,
+  walletSpendCredentialsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import {
   linkWalletConnections,
   linkWalletOAuthAttempts,
@@ -20,6 +23,8 @@ import { now, nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
+import { onRejection } from "../utils";
 import {
   decryptStoredSecretValue,
   encryptStoredSecretValue,
@@ -33,9 +38,14 @@ import {
   linkWalletConfig,
   linkWalletRedirectUri,
   requestLinkApproval,
+  retrieveLinkSpendCredentials,
   revokeLinkToken,
   type LinkSpend,
 } from "./link-wallet-provider.service";
+import {
+  recordWalletConnectionUsage,
+  recordWalletSpendUsage,
+} from "./link-wallet-usage";
 
 export interface WalletOwner {
   readonly orgId: string;
@@ -75,12 +85,12 @@ export const walletRunOwner$ = computed(async (get): Promise<WalletOwner> => {
   const db = get(db$);
   const [run] = await db
     .select({
-      agentId: agentSessions.agentId,
+      agentId: agentRuns.agentId,
       triggerSource: agentRuns.triggerSource,
       status: agentRuns.status,
     })
     .from(agentRuns)
-    .innerJoin(agentSessions, eq(agentRuns.sessionId, agentSessions.id))
+
     .where(
       and(
         eq(agentRuns.id, auth.runId),
@@ -124,6 +134,55 @@ export const walletStatus$ = computed(async (get) => {
   };
 });
 
+export const walletConnectStatus$ = command(
+  async (
+    { get },
+    owner: WalletOwner,
+    state: string,
+  ): Promise<WalletConnectStatus> => {
+    const db = get(db$);
+    const [attempt] = await db
+      .select({
+        id: linkWalletOAuthAttempts.id,
+        status: linkWalletOAuthAttempts.status,
+        expiresAt: linkWalletOAuthAttempts.expiresAt,
+        authorizationId: linkWalletConnections.authorizationId,
+        revokedAt: linkWalletConnections.revokedAt,
+      })
+      .from(linkWalletOAuthAttempts)
+      .leftJoin(
+        linkWalletConnections,
+        and(
+          connectionOwner(owner),
+          isNotNull(linkWalletConnections.encryptedCredentials),
+        ),
+      )
+      .where(
+        and(
+          eq(linkWalletOAuthAttempts.stateHash, hash(state)),
+          eq(linkWalletOAuthAttempts.orgId, owner.orgId),
+          eq(linkWalletOAuthAttempts.userId, owner.userId),
+          eq(linkWalletOAuthAttempts.agentId, owner.agentId),
+        ),
+      )
+      .limit(1);
+    if (!attempt) {
+      return { status: "unavailable" };
+    }
+    if (attempt.status === "completed") {
+      return attempt.authorizationId === attempt.id && !attempt.revokedAt
+        ? { status: "authorized", authorizationId: attempt.id }
+        : { status: "unavailable" };
+    }
+    if (attempt.status === "failed") {
+      return { status: "failed" };
+    }
+    return {
+      status: attempt.expiresAt.getTime() <= now() ? "expired" : "pending",
+    };
+  },
+);
+
 export const startWalletOAuth$ = command(
   async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
     const config = linkWalletConfig();
@@ -133,7 +192,9 @@ export const startWalletOAuth$ = command(
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
     signal.throwIfAborted();
     const db = set(writeDb$);
+    const authorizationId = randomUUID();
     await db.insert(linkWalletOAuthAttempts).values({
+      id: authorizationId,
       ...owner,
       stateHash: hash(state),
       encryptedVerifier,
@@ -153,6 +214,7 @@ export const startWalletOAuth$ = command(
     })) {
       url.searchParams.set(key, value);
     }
+    recordWalletConnectionUsage(owner, authorizationId, "connection_started");
     return { url: url.toString(), expiresAt: expiresAt.toISOString() };
   },
 );
@@ -192,25 +254,62 @@ export const completeWalletOAuth$ = command(
       );
     }
     if (input.error || !input.code) {
+      await set(failWalletOAuth$, attempt);
+      signal.throwIfAborted();
       return {
         status: "error" as const,
         message: "Link wallet authorization was not completed",
       };
     }
-    const verifier = await decryptStoredSecretValue(attempt.encryptedVerifier);
-    signal.throwIfAborted();
-    const token = await linkTokenRequest(
-      {
-        grant_type: "authorization_code",
-        code: input.code,
-        code_verifier: verifier,
-        redirect_uri: linkWalletRedirectUri(),
+    const code = input.code;
+    const result = await onRejection(
+      (async () => {
+        const verifier = await decryptStoredSecretValue(
+          attempt.encryptedVerifier,
+        );
+        signal.throwIfAborted();
+        const token = await linkTokenRequest(
+          {
+            grant_type: "authorization_code",
+            code,
+            code_verifier: verifier,
+            redirect_uri: linkWalletRedirectUri(),
+          },
+          signal,
+        );
+        return await set(publishWalletOAuth$, { attempt, token });
+      })(),
+      async () => {
+        await set(failWalletOAuth$, attempt);
       },
-      signal,
     );
-    const result = await set(publishWalletOAuth$, { attempt, token });
     signal.throwIfAborted();
     return result;
+  },
+);
+
+async function publishWalletChanged(owner: WalletOwner): Promise<void> {
+  await publishUserSignal([owner.userId], "wallet:changed", {
+    agentId: owner.agentId,
+  } satisfies WalletChangedPayload);
+}
+
+const failWalletOAuth$ = command(
+  async ({ set }, attempt: typeof linkWalletOAuthAttempts.$inferSelect) => {
+    const [failed] = await set(writeDb$)
+      .update(linkWalletOAuthAttempts)
+      .set({ status: "failed", encryptedVerifier: "" })
+      .where(
+        and(
+          eq(linkWalletOAuthAttempts.id, attempt.id),
+          eq(linkWalletOAuthAttempts.status, "exchanging"),
+        ),
+      )
+      .returning({ id: linkWalletOAuthAttempts.id });
+    if (failed) {
+      recordWalletConnectionUsage(attempt, attempt.id, "connection_failed");
+      await publishWalletChanged(attempt);
+    }
   },
 );
 
@@ -243,7 +342,8 @@ const publishWalletOAuth$ = command(
       z.object({ id: z.uuid() }),
       await db.execute(sql`
       WITH authorized AS (
-        DELETE FROM ${linkWalletOAuthAttempts}
+        UPDATE ${linkWalletOAuthAttempts}
+        SET status = 'completed', encrypted_verifier = ''
         WHERE id = ${attempt.id} AND status = 'exchanging'
           AND expires_at > ${nowDate()}
         RETURNING org_id, user_id, agent_id, id
@@ -266,6 +366,8 @@ const publishWalletOAuth$ = command(
         "Wallet authorization was canceled or expired; connect again",
       );
     }
+    recordWalletConnectionUsage(attempt, attempt.id, "connection_completed");
+    await publishWalletChanged(attempt);
     return { status: "success" as const, username: null };
   },
 );
@@ -442,10 +544,9 @@ const revokeWalletConnection$ = command(
   },
 );
 
-export const disconnectWallet$ = command(
-  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
-    const db = set(writeDb$);
-    await db
+const cancelWalletOAuthAttempts$ = command(
+  async ({ set }, owner: WalletOwner) => {
+    await set(writeDb$)
       .delete(linkWalletOAuthAttempts)
       .where(
         and(
@@ -454,6 +555,14 @@ export const disconnectWallet$ = command(
           eq(linkWalletOAuthAttempts.agentId, owner.agentId),
         ),
       );
+    await publishWalletChanged(owner);
+  },
+);
+
+export const disconnectWallet$ = command(
+  async ({ set }, owner: WalletOwner, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    await set(cancelWalletOAuthAttempts$, owner);
     signal.throwIfAborted();
     // Disable locally before provider I/O, retaining encrypted material solely so
     // a failed provider revocation can be retried through this same endpoint.
@@ -476,6 +585,11 @@ export const disconnectWallet$ = command(
         encryptedCredentials: connection.encryptedCredentials,
       });
       signal.throwIfAborted();
+      recordWalletConnectionUsage(
+        owner,
+        connection.authorizationId,
+        "connection_revoked",
+      );
     }
     return { disconnected: true as const };
   },
@@ -509,7 +623,7 @@ function publicSpend(row: Spend, remote?: LinkSpend): WalletSpend {
     : null;
   const nextAction =
     state === "approved"
-      ? "secure_checkout_unavailable"
+      ? "retrieve_credentials"
       : state === "succeeded"
         ? "verify_order"
         : state === "submitted"
@@ -559,6 +673,7 @@ const saveProviderSpend$ = command(
         "Spend request not found",
       );
     }
+    recordWalletSpendUsage(saved, "spend_status_observed", remote.status);
     return saved;
   },
 );
@@ -592,6 +707,9 @@ export const createWalletSpend$ = command(
       })
       .returning();
     signal.throwIfAborted();
+    if (created) {
+      recordWalletSpendUsage(created, "spend_requested", "creating");
+    }
     const [existing] = created
       ? [created]
       : await db
@@ -630,8 +748,7 @@ export const createWalletSpend$ = command(
     const remote = await linkSpendRequest(
       access.token,
       {
-        path: "",
-        method: "POST",
+        operation: "spend_create",
         intentId: existing.intentId,
         body: {
           idempotency_key: `okou_wallet_${existing.id}`,
@@ -643,7 +760,6 @@ export const createWalletSpend$ = command(
           credential_type: "card",
           request_approval: true,
           test: existing.test,
-          expires_at: Math.floor(existing.expiresAt.getTime() / 1000),
           totals: [
             { type: "total", display_text: "Total", amount: existing.amount },
           ],
@@ -680,14 +796,8 @@ export const createWalletSpend$ = command(
   },
 );
 
-export const getWalletSpend$ = command(
-  async (
-    { set },
-    owner: WalletOwner,
-    id: string,
-    cancel: boolean,
-    signal: AbortSignal,
-  ): Promise<WalletSpend> => {
+const walletSpendAccess$ = command(
+  async ({ set }, owner: WalletOwner, id: string, signal: AbortSignal) => {
     const db = set(writeDb$);
     const [row] = await db
       .select()
@@ -711,9 +821,118 @@ export const getWalletSpend$ = command(
         "This purchase belongs to an earlier wallet authorization; do not retry payment",
       );
     }
+    return { row, access };
+  },
+);
+
+export const getWalletSpend$ = command(
+  async (
+    { set },
+    owner: WalletOwner,
+    id: string,
+    cancel: boolean,
+    signal: AbortSignal,
+  ): Promise<WalletSpend> => {
+    const { row, access } = await set(walletSpendAccess$, owner, id, signal);
     return await set(readProviderSpend$, row, access, cancel, signal);
   },
 );
+
+export const getWalletSpendCredentials$ = command(
+  async (
+    { set },
+    owner: WalletOwner,
+    id: string,
+    signal: AbortSignal,
+  ): Promise<WalletSpendCredentials> => {
+    const { row, access } = await set(walletSpendAccess$, owner, id, signal);
+    if (!row.providerSpendId) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_SPEND_NOT_APPROVED",
+        "The purchase is still being created; check its existing status before retrieving credentials",
+      );
+    }
+    const approved = await linkSpendRequest(
+      access.token,
+      {
+        operation: "spend_read",
+        id: row.providerSpendId,
+        intentId: row.intentId,
+      },
+      signal,
+    );
+    await set(saveProviderSpend$, row, approved);
+    signal.throwIfAborted();
+    requireApproved(approved);
+
+    const result = await retrieveLinkSpendCredentials(
+      access.token,
+      row.providerSpendId,
+      row.intentId,
+      signal,
+    );
+    const saved = await set(saveProviderSpend$, row, result.spend);
+    signal.throwIfAborted();
+    requireApproved(result.spend);
+    if (!result.card) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_CREDENTIALS_UNAVAILABLE",
+        "Link has not made card credentials available for this approved purchase; check the same request before retrying",
+      );
+    }
+    if (result.card.validUntil && Date.parse(result.card.validUntil) <= now()) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_CREDENTIALS_EXPIRED",
+        "The payment credentials have expired; obtain a new purchase approval",
+      );
+    }
+    // A disconnect or replacement consent during provider I/O must not release
+    // credentials from the old grant. Card data is never stored in our database.
+    const [current] = await set(writeDb$)
+      .select({ id: linkWalletConnections.id })
+      .from(linkWalletConnections)
+      .where(
+        and(
+          connectionOwner(owner),
+          eq(linkWalletConnections.authorizationId, row.authorizationId),
+          isNull(linkWalletConnections.revokedAt),
+          isNotNull(linkWalletConnections.encryptedCredentials),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (!current) {
+      throw new LinkWalletError(
+        409,
+        "WALLET_AUTHORIZATION_CHANGED",
+        "Wallet authorization changed while retrieving credentials; check wallet status before continuing",
+      );
+    }
+    const credentials = walletSpendCredentialsSchema.parse({
+      spend: publicSpend(saved, result.spend),
+      card: result.card,
+    });
+    recordWalletSpendUsage(
+      saved,
+      "credentials_retrieved",
+      credentials.spend.status,
+    );
+    return credentials;
+  },
+);
+
+function requireApproved(spend: LinkSpend): void {
+  if (spend.status !== "approved") {
+    throw new LinkWalletError(
+      409,
+      "WALLET_SPEND_NOT_APPROVED",
+      `Payment credentials require an approved purchase; current Link status: ${spend.status}. Check the existing request before continuing`,
+    );
+  }
+}
 
 const readProviderSpend$ = command(
   async (
@@ -730,8 +949,8 @@ const readProviderSpend$ = command(
     let remote = await linkSpendRequest(
       access.token,
       {
-        path: `/${encodeURIComponent(row.providerSpendId)}`,
-        method: "GET",
+        operation: "spend_read",
+        id: row.providerSpendId,
         intentId: row.intentId,
       },
       signal,
@@ -750,8 +969,8 @@ const readProviderSpend$ = command(
       remote = await linkSpendRequest(
         access.token,
         {
-          path: `/${encodeURIComponent(row.providerSpendId)}/cancel`,
-          method: "POST",
+          operation: "spend_cancel",
+          id: row.providerSpendId,
           intentId: row.intentId,
         },
         signal,

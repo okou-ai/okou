@@ -1,10 +1,14 @@
-import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
-  CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-  type ChatEventCursor,
-} from "@okouai/api-contracts/contracts/chat-event-schema-version";
+  ownedThread,
+  currentSnapshotPointer$,
+  chatEventRowFromDbRow,
+  isCurrentChatEventSnapshotObjectKey,
+  isLegacyChatEventSnapshotObjectKey,
+} from "./chat-event-row-read.service";
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import { command, computed, type Computed } from "ccstate";
-import { and, asc, eq, exists, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { chatEventSnapshots } from "@okouai/db/schema/chat-event-snapshot";
@@ -12,35 +16,14 @@ import { chatEventSequences } from "@okouai/db/schema/chat-event-sequence";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 
 import { env } from "../../lib/env";
-import { db$, type ReadonlyDb } from "../external/db";
+import { db$ } from "../external/db";
 import { generatePresignedGetUrl } from "../external/s3";
-import {
-  chatEventRowFromDbRow,
-  isCurrentChatEventSnapshotObjectKey,
-  isLegacyChatEventSnapshotObjectKey,
-  refreshChatEventSnapshotThread$,
-} from "./cron-snapshot-chat-events.service";
+import { refreshChatEventSnapshotThread$ } from "./cron-snapshot-chat-events.service";
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 
 const SNAPSHOT_URL_TTL_SECONDS = PRESIGNED_URL_TTL_SECONDS;
 /** Cursor that reads a thread from its very first event. */
 const THREAD_START_SEQ_ID = 0;
-
-const chatEventRowSelection = {
-  id: chatEvents.id,
-  chatThreadId: chatEvents.chatThreadId,
-  runId: chatEvents.runId,
-  revokesEventId: chatEvents.revokesEventId,
-  eventType: chatEvents.eventType,
-  payload: chatEvents.payload,
-  failureReason: chatEvents.failureReason,
-  contextType: chatEvents.contextType,
-  contextId: chatEvents.contextId,
-  runEventSequenceNumber: chatEvents.runEventSequenceNumber,
-  runEventId: chatEvents.runEventId,
-  seqId: chatEvents.seqId,
-  createdAt: chatEvents.createdAt,
-} as const;
 
 type ChatEventSnapshotDownload =
   | { readonly kind: "thread-not-found" }
@@ -52,181 +35,6 @@ type ChatEventSnapshotDownload =
       readonly lastEventId: string | null;
       readonly lastSeqId: number;
     };
-
-type ChatEventRowsPage =
-  | { readonly kind: "thread-not-found" }
-  | { readonly kind: "expired" }
-  | {
-      readonly kind: "ok";
-      readonly rows: readonly ChatEventRow[];
-      readonly cursor: ChatEventCursor;
-      readonly hasMore: boolean;
-    };
-
-interface ChatEventRowsBaseArgs {
-  readonly threadId: string;
-  readonly userId: string;
-  readonly orgId?: string;
-  readonly limit: number;
-}
-
-type ChatEventRowsArgs = ChatEventRowsBaseArgs &
-  (
-    | { readonly sinceSeqId: 0; readonly sinceEventId?: never }
-    | {
-        readonly sinceSeqId: number;
-        readonly sinceEventId: string;
-      }
-  );
-
-const ownedThread = (threadId: string, userId: string, orgId?: string) => {
-  return and(
-    eq(chatThreads.id, threadId),
-    eq(chatThreads.userId, userId),
-    orgId === undefined
-      ? undefined
-      : exists(sql`(SELECT 1 FROM ${agents}
-      WHERE ${eq(agents.id, chatThreads.agentId)} AND ${eq(agents.orgId, orgId)})`),
-  );
-};
-
-interface SnapshotPointer {
-  readonly objectKey: string;
-  readonly lastEventId: string | null;
-  readonly lastSeqId: number;
-}
-
-async function currentSnapshotPointer(
-  db: ReadonlyDb,
-  threadId: string,
-): Promise<SnapshotPointer | null> {
-  const [pointer] = await db
-    .select({
-      objectKey: chatEventSnapshots.objectKey,
-      lastEventId: chatEventSnapshots.terminalEventId,
-      lastSeqId: chatEventSnapshots.terminalSeqId,
-    })
-    .from(chatEventSnapshots)
-    .where(
-      and(
-        eq(chatEventSnapshots.chatThreadId, threadId),
-        eq(
-          chatEventSnapshots.archiveSchemaVersion,
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .limit(1);
-  if (pointer === undefined) {
-    return null;
-  }
-  if (
-    pointer.lastSeqId === null ||
-    !(
-      (pointer.lastSeqId === THREAD_START_SEQ_ID &&
-        pointer.lastEventId === null) ||
-      (pointer.lastSeqId > THREAD_START_SEQ_ID && pointer.lastEventId !== null)
-    )
-  ) {
-    throw new Error("Current Chat Event Snapshot cursor is incomplete");
-  }
-  return { ...pointer, lastSeqId: pointer.lastSeqId };
-}
-
-function cursorMatches(
-  cursor: { readonly lastEventId: string | null; readonly lastSeqId: number },
-  args: ChatEventRowsArgs,
-): boolean {
-  return (
-    cursor.lastSeqId === args.sinceSeqId &&
-    cursor.lastEventId ===
-      (args.sinceSeqId === THREAD_START_SEQ_ID ? null : args.sinceEventId)
-  );
-}
-
-interface CurrentSnapshotCursor {
-  readonly lastEventId: string | null;
-  readonly lastSeqId: number | null;
-  readonly physicalLastSeqId: number;
-}
-
-async function currentSnapshotCursor(
-  db: ReadonlyDb,
-  args: ChatEventRowsArgs,
-): Promise<CurrentSnapshotCursor | undefined> {
-  const [snapshot] = await db
-    .select({
-      lastEventId: chatEventSnapshots.terminalEventId,
-      lastSeqId: chatEventSnapshots.terminalSeqId,
-      physicalLastSeqId: chatEventSnapshots.lastSeqId,
-    })
-    .from(chatEventSnapshots)
-    .where(
-      and(
-        eq(chatEventSnapshots.chatThreadId, args.threadId),
-        eq(
-          chatEventSnapshots.archiveSchemaVersion,
-          CURRENT_CHAT_EVENT_SCHEMA_VERSION,
-        ),
-      ),
-    )
-    .limit(1);
-  return snapshot;
-}
-
-function currentSnapshotContinuation(
-  current: CurrentSnapshotCursor | undefined,
-  args: ChatEventRowsArgs,
-): number | undefined {
-  if (
-    current === undefined ||
-    current.lastSeqId === null ||
-    !cursorMatches(
-      { lastEventId: current.lastEventId, lastSeqId: current.lastSeqId },
-      args,
-    )
-  ) {
-    return undefined;
-  }
-  return current.physicalLastSeqId;
-}
-
-async function cursorContinuationSeqId(
-  db: ReadonlyDb,
-  args: ChatEventRowsArgs,
-): Promise<number | null> {
-  const currentSnapshot = await currentSnapshotCursor(db, args);
-  const currentContinuation = currentSnapshotContinuation(
-    currentSnapshot,
-    args,
-  );
-  if (currentContinuation !== undefined) {
-    return currentContinuation;
-  }
-  // The cold-start cursor precedes every event, so it owns no row. It is
-  // valid only while nothing has ever been archived; once any Snapshot exists
-  // the client must start from that Snapshot's paired cursor.
-  if (
-    args.sinceSeqId === THREAD_START_SEQ_ID &&
-    currentSnapshot === undefined
-  ) {
-    return THREAD_START_SEQ_ID;
-  }
-  if (args.sinceSeqId === THREAD_START_SEQ_ID) {
-    return null;
-  }
-  const [physicalCursorRow] = await db
-    .select({ id: chatEvents.id })
-    .from(chatEvents)
-    .where(
-      and(
-        eq(chatEvents.chatThreadId, args.threadId),
-        eq(chatEvents.seqId, args.sinceSeqId),
-      ),
-    )
-    .limit(1);
-  return physicalCursorRow?.id === args.sinceEventId ? args.sinceSeqId : null;
-}
 
 interface ChatEventBatchSnapshotCursor {
   readonly lastEventId: string | null;
@@ -413,7 +221,21 @@ export function catchUpChatThreadEvents(args: {
       continuations.length === 0
         ? []
         : await db
-            .select(chatEventRowSelection)
+            .select({
+              id: chatEvents.id,
+              chatThreadId: chatEvents.chatThreadId,
+              runId: chatEvents.runId,
+              revokesEventId: chatEvents.revokesEventId,
+              eventType: chatEvents.eventType,
+              payload: chatEvents.payload,
+              failureReason: chatEvents.failureReason,
+              contextType: chatEvents.contextType,
+              contextId: chatEvents.contextId,
+              runEventSequenceNumber: chatEvents.runEventSequenceNumber,
+              runEventId: chatEvents.runEventId,
+              seqId: chatEvents.seqId,
+              createdAt: chatEvents.createdAt,
+            })
             .from(chatEvents)
             .where(
               or(
@@ -465,7 +287,7 @@ export function chatThreadEventSnapshot(args: {
         return { kind: "thread-not-found" } as const;
       }
 
-      let pointer = await currentSnapshotPointer(db, args.threadId);
+      let pointer = await set(currentSnapshotPointer$, args.threadId);
       signal.throwIfAborted();
       if (pointer === null) {
         return { kind: "snapshot-not-found" };
@@ -477,7 +299,7 @@ export function chatThreadEventSnapshot(args: {
           );
         }
         await set(refreshChatEventSnapshotThread$, args.threadId, signal);
-        pointer = await currentSnapshotPointer(db, args.threadId);
+        pointer = await set(currentSnapshotPointer$, args.threadId);
         signal.throwIfAborted();
         if (
           pointer === null ||
@@ -513,62 +335,3 @@ export function chatThreadEventSnapshot(args: {
  * Snapshot. `sinceSeqId: 0` remains the cold start for a thread that has never
  * had a Snapshot.
  */
-export function chatThreadEventRows(
-  args: ChatEventRowsArgs,
-): Computed<Promise<ChatEventRowsPage>> {
-  return computed(async (get) => {
-    const db = get(db$);
-    const [owned] = await db
-      .select({ id: chatThreads.id })
-      .from(chatThreads)
-      .where(ownedThread(args.threadId, args.userId, args.orgId))
-      .limit(1);
-    if (!owned) {
-      return { kind: "thread-not-found" } as const;
-    }
-    const continuationSeqId = await cursorContinuationSeqId(db, args);
-    if (continuationSeqId === null) {
-      return { kind: "expired" } as const;
-    }
-
-    const physicalRows = await db
-      .select(chatEventRowSelection)
-      .from(chatEvents)
-      .where(
-        and(
-          eq(chatEvents.chatThreadId, args.threadId),
-          gt(chatEvents.seqId, continuationSeqId),
-        ),
-      )
-      .orderBy(asc(chatEvents.seqId))
-      .limit(args.limit);
-
-    const rows = physicalRows.map(chatEventRowFromDbRow);
-    const cursorLast = rows.at(-1);
-    const priorCursor: ChatEventCursor =
-      args.sinceSeqId === THREAD_START_SEQ_ID
-        ? { lastEventId: null, lastSeqId: THREAD_START_SEQ_ID }
-        : "sinceEventId" in args && args.sinceEventId !== undefined
-          ? {
-              lastEventId: args.sinceEventId,
-              lastSeqId: args.sinceSeqId,
-            }
-          : (() => {
-              throw new Error("Positive Chat Event cursor is missing its ID");
-            })();
-    const cursor: ChatEventCursor =
-      cursorLast === undefined
-        ? priorCursor
-        : {
-            lastEventId: cursorLast.id,
-            lastSeqId: cursorLast.seqId,
-          };
-
-    return {
-      kind: "ok",
-      rows,
-      cursor,
-      hasMore: physicalRows.length === args.limit,
-    } as const;
-  });
-}

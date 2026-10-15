@@ -1,6 +1,6 @@
 {
   "name": "@okouai/ui",
-  "version": "1.15.2",
+  "version": "1.15.3",
   "type": "module",
   "private": true,
   "exports": {
@@ -46,6 +46,7 @@
     "lucide-react": "1.49.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "react-zoom-pan-pinch": "4.0.3",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.0.2"
   }

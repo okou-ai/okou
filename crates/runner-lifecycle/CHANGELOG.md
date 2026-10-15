@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.6...runner-lifecycle-v0.13.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+## [0.12.6](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.5...runner-lifecycle-v0.12.6) (2026-10-14)
+
+## [0.12.5](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.4...runner-lifecycle-v0.12.5) (2026-10-14)
+
+## [0.12.4](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.3...runner-lifecycle-v0.12.4) (2026-10-14)
+
+## [0.12.3](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.2...runner-lifecycle-v0.12.3) (2026-10-14)
+
 ## [0.12.2](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.1...runner-lifecycle-v0.12.2) (2026-10-14)
 
 ## [0.12.1](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.12.0...runner-lifecycle-v0.12.1) (2026-10-14)

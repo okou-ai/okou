@@ -1,6 +1,10 @@
 import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 
+import {
+  recordAuthDiagnostic,
+  type AuthDiagnosticContext,
+} from "../lib/auth-diagnostics.ts";
 import { logger } from "../signals/log.ts";
 import { rootSignal$ } from "../signals/root-signal.ts";
 import {
@@ -284,13 +288,17 @@ export const registerConnection$ = command(
 function requestConnectionToken(
   getToken: SharedDatabaseTokenProvider,
   connectionSignal: AbortSignal,
+  diagnostic: AuthDiagnosticContext,
   signal: AbortSignal,
 ): Promise<string | null> {
   const providerSignal = AbortSignal.any([signal, connectionSignal]);
   return onRejection(
     () => {
       providerSignal.throwIfAborted();
-      return waitForOperation(getToken(providerSignal), providerSignal);
+      return waitForOperation(
+        getToken(diagnostic, providerSignal),
+        providerSignal,
+      );
     },
     (error) => {
       signal.throwIfAborted();
@@ -306,7 +314,11 @@ function requestConnectionToken(
 }
 
 export const requestTokenFromTabs$ = command(
-  async ({ get, set }, callerSignal?: AbortSignal): Promise<string | null> => {
+  async (
+    { get, set },
+    diagnostic: AuthDiagnosticContext | undefined,
+    callerSignal?: AbortSignal,
+  ): Promise<string | null> => {
     const signal = callerSignal
       ? AbortSignal.any([get(rootSignal$), callerSignal])
       : get(rootSignal$);
@@ -316,6 +328,12 @@ export const requestTokenFromTabs$ = command(
       ? get(connectionsState$).get(lastConnectionId)
       : undefined;
     if (preferred) {
+      const attempt: AuthDiagnosticContext = {
+        ...diagnostic,
+        tokenAttemptId: undefined,
+        connectionId: lastConnectionId ?? undefined,
+        phase: "preferred",
+      };
       const result = await settle(
         raceWithCancellation<string | null>(
           [
@@ -323,6 +341,7 @@ export const requestTokenFromTabs$ = command(
               return requestConnectionToken(
                 preferred.getToken,
                 preferred.signal,
+                attempt,
                 attemptSignal,
               );
             },
@@ -339,6 +358,14 @@ export const requestTokenFromTabs$ = command(
       );
       signal.throwIfAborted();
       if (result.ok && result.value) {
+        if (diagnostic) {
+          diagnostic.tokenAttemptId = attempt.tokenAttemptId;
+        }
+        recordAuthDiagnostic({
+          stage: "worker_token_selected",
+          context: attempt,
+          token: result.value,
+        });
         return result.value;
       }
       if (!result.ok && !preferred.signal.aborted) {
@@ -354,12 +381,20 @@ export const requestTokenFromTabs$ = command(
     // Each request owns its race, so a late loser cannot change the preference.
     const attempts = [];
     for (const [connectionId, connection] of connections) {
+      const attempt: AuthDiagnosticContext = {
+        ...diagnostic,
+        tokenAttemptId: undefined,
+        connectionId,
+        phase: "broadcast",
+      };
       attempts.push(async (attemptSignal: AbortSignal) => {
         return {
           connectionId,
+          diagnostic: attempt,
           token: await requestConnectionToken(
             connection.getToken,
             connection.signal,
+            attempt,
             attemptSignal,
           ),
         };
@@ -370,6 +405,14 @@ export const requestTokenFromTabs$ = command(
     if (get(connectionsState$).has(response.connectionId)) {
       set(lastTokenConnectionIdState$, response.connectionId);
     }
+    if (diagnostic) {
+      diagnostic.tokenAttemptId = response.diagnostic.tokenAttemptId;
+    }
+    recordAuthDiagnostic({
+      stage: "worker_token_selected",
+      context: response.diagnostic,
+      token: response.token,
+    });
     return response.token;
   },
 );

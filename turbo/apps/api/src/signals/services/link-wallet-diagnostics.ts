@@ -11,6 +11,7 @@ export type LinkOperation =
   | "oauth_revoke"
   | "spend_create"
   | "spend_read"
+  | "spend_credentials"
   | "spend_cancel"
   | "spend_approval";
 
@@ -25,7 +26,6 @@ export interface LinkRequestDiagnostic {
     currency: "usd";
     test: boolean;
     contextLength: number;
-    expiresAt: number;
   };
 }
 
@@ -229,6 +229,8 @@ const providerParameters: readonly string[] = Object.freeze([
   "token_type",
   "id",
   "status",
+  "created_at",
+  "updated_at",
   "approval_url",
   "approval_link",
   "status_details",
@@ -238,6 +240,21 @@ const providerParameters: readonly string[] = Object.freeze([
   "action_url",
   "error",
   "duplicate_spend_request",
+  "card",
+  "brand",
+  "number",
+  "cvc",
+  "exp_month",
+  "exp_year",
+  "billing_address",
+  "name",
+  "line1",
+  "line2",
+  "city",
+  "state",
+  "postal_code",
+  "country",
+  "valid_until",
 ]);
 
 function safeParameter(value: unknown): string | null {
@@ -337,7 +354,10 @@ export function linkFailureDiagnostic(
     readonly body?: unknown;
     readonly providerText?: string;
     readonly responseBodyRead?: string;
-    readonly issues?: readonly z.core.$ZodIssue[];
+    readonly issues?: readonly {
+      readonly path: readonly PropertyKey[];
+      readonly code: string;
+    }[];
     readonly transportReason?: "timeout" | "network" | "cancelled";
     readonly transportError?: unknown;
     readonly scopes?: {

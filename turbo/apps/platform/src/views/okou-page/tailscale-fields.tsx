@@ -10,6 +10,7 @@ import {
   replaceTailscaleCredentials$,
   tailscaleReplaceCredentials$,
 } from "../../signals/tailscale.ts";
+import { TailscaleSetupGuide } from "./tailscale-setup-guide.tsx";
 
 function TailscaleCredentials() {
   const { t } = useTranslation();
@@ -75,6 +76,7 @@ export function TailscaleFields({
           defaultValue={config?.name}
         />
       </label>
+      {config === null && <TailscaleSetupGuide />}
       <label className="grid gap-2">
         {t(($) => {
           return $.tailscale.tags;
@@ -108,16 +110,6 @@ export function TailscaleFields({
         </label>
       )}
       {(!config || replace) && <TailscaleCredentials />}
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.tailscale.setupHelp;
-        })}
-      </p>
-      <p className="text-sm text-muted-foreground">
-        {t(($) => {
-          return $.tailscale.cleanupHelp;
-        })}
-      </p>
     </div>
   );
 }

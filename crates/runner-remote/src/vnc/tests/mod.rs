@@ -1,9 +1,12 @@
+mod authority_cache;
 mod boundaries;
 mod delivery;
+mod diagnostics;
 mod harness;
 mod list;
 mod list_lifecycle;
 mod notifications;
+mod observations;
 pub(crate) mod peer;
 mod rsa_aes;
 
@@ -107,7 +110,7 @@ async fn dispatcher_streams_fresh_png_and_geometry_then_balanced_input_and_close
         json!([])
     );
     resolve.assert_calls_async(1).await;
-    check.assert_calls_async(5).await;
+    check.assert_calls_async(1).await;
     h.run.shutdown().await;
 }
 
@@ -312,7 +315,7 @@ async fn malformed_or_cross_paired_credentials_fail_before_dns_or_connect() {
 }
 
 #[tokio::test]
-async fn denied_changed_and_failed_authority_close_before_any_input() {
+async fn denied_changed_and_failed_authority_admission_closes_before_any_input() {
     for (outcome, status, reason) in [
         ("unavailable", 200, "unavailable"),
         ("configuration_changed", 200, "configuration_changed"),
@@ -320,19 +323,10 @@ async fn denied_changed_and_failed_authority_close_before_any_input() {
     ] {
         let mut h = Harness::new().await;
         let resolve = h.resolve().await;
-        let allowed = h.check("valid", 200).await;
-        let session = h.start("shared").await.session();
-        mode(&h, 1).await;
-        allowed.delete_async().await;
         let denied = h.check(outcome, status).await;
-        let reply = h
-            .run
-            .request(
-                "vnc.input",
-                json!({"sessionId":session,"input":{"type":"text","text":"a"}}),
-            )
-            .await;
-        assert_eq!(reply.result()["outcome"], "not_started");
+        let reply = h.start("shared").await;
+        mode(&h, 1).await;
+        assert_eq!(reply.result()["outcome"], "failed");
         assert_eq!(reply.result()["reason"], reason);
         assert!(
             !serde_json::to_string(&reply.controls)

@@ -13,10 +13,23 @@ import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { once } from "node:events";
 import { type SpawnOptions } from "node:child_process";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { z } from "zod";
 
 import { createSubagentCommand } from "../index";
+import {
+  buildProcessEntry,
+  disposePreparedProcessEntry,
+} from "../../../test/fixtures/build-process-entry";
 
 const helper = vi.hoisted(() => {
   return { root: "", mode: "normal" };
@@ -187,12 +200,24 @@ describe("okou subagent", () => {
   let pending: Array<(request: ProviderRequest) => void>;
   const log = vi.spyOn(console, "log").mockImplementation(() => {});
   const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
+  let compiled: Awaited<ReturnType<typeof buildProcessEntry>>;
+  let preparation: ReturnType<typeof buildProcessEntry> | undefined;
+  beforeAll(async () => {
+    preparation = buildProcessEntry(fixture);
+    compiled = await preparation;
+  });
+  afterAll(async () => {
+    await disposePreparedProcessEntry(preparation);
+  });
 
   async function run(...args: string[]): Promise<string[]> {
     log.mockClear();
     await createSubagentCommand({
       entry,
-      execArgv: ["--import", import.meta.resolve("tsx")],
+      execArgv:
+        entry === compiled.entry
+          ? []
+          : ["--import", import.meta.resolve("tsx")],
     }).parseAsync(["node", "okou", ...args]);
     return log.mock.calls.map((call) => {
       return String(call[0]);
@@ -209,7 +234,7 @@ describe("okou subagent", () => {
   }
 
   beforeEach(async () => {
-    entry = fixture;
+    entry = compiled.entry;
     root = await mkdtemp(join(tmpdir(), "okou-subagent-"));
     helper.root = join(root, "guest-tasks");
     helper.mode = "normal";

@@ -7,11 +7,23 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 
 import { RunnerWssApi } from "./runner-wss-api";
 import { RunnerWssClient } from "./runner-wss-client";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import {
+  decodeSandboxChannelFrame,
+  encodeSandboxChannelFrame,
+  type SandboxChannelMessage,
+} from "@okouai/api-contracts/contracts/sandbox-channel";
+import { sandboxDiagnosticsEchoSchema } from "@okouai/api-contracts/contracts/sandbox-channel-diagnostics";
+import {
+  sandboxFsListParamsSchema,
+  sandboxFsListCloseParamsSchema,
+} from "@okouai/api-contracts/contracts/sandbox-channel-fs";
+import { probeHomeFiles } from "./runner-wss-files";
 
 const RUN = "11111111-1111-4111-8111-111111111111";
 const RUNNER = "22222222-2222-4222-8222-222222222222";
@@ -24,6 +36,8 @@ async function peer(
     corruptEcho?: boolean;
     acceptReplay?: boolean;
     extraFrame?: boolean;
+    filesystem?: boolean;
+    corruptListing?: boolean;
   } = {},
 ) {
   const directory = await mkdtemp(join(tmpdir(), "wss-node-peer-"));
@@ -58,6 +72,27 @@ async function peer(
       socket.on("close", () => sockets.delete(socket));
       let admitted = false;
       let echoes = 0;
+      let ready = false;
+      const cursors = new Map<string, { listingId: string; offset: number }>();
+      const reverse = new Map<
+        string,
+        Extract<SandboxChannelMessage, { type: "request" }>
+      >();
+      const emit = (message: SandboxChannelMessage) =>
+        socket.send(Buffer.from(encodeSandboxChannelFrame(message)), {
+          binary: true,
+        });
+      const result = (requestId: string, payload: unknown) => {
+        emit({
+          schemaVersion: 1,
+          type: "response",
+          id: randomUUID(),
+          requestId,
+          result: payload,
+        });
+        if (++echoes === 12 && options.extraFrame)
+          socket.send(Buffer.from([99]), { binary: true });
+      };
       socket.on("message", (data, binary) => {
         if (!admitted) {
           assert.equal(binary, false);
@@ -83,11 +118,156 @@ async function peer(
           return;
         }
         assert.equal(binary, true);
-        socket.send(options.corruptEcho ? Buffer.from([99]) : data, {
-          binary: true,
-        });
-        if (++echoes === 6 && options.extraFrame)
-          socket.send(Buffer.from([99]), { binary: true });
+        const frame = Buffer.isBuffer(data)
+          ? data
+          : Array.isArray(data)
+            ? Buffer.concat(data)
+            : Buffer.from(data);
+        const message = decodeSandboxChannelFrame(new Uint8Array(frame).buffer);
+        if (message.type === "hello" && !ready) {
+          ready = true;
+          emit({
+            schemaVersion: 1,
+            type: "response",
+            id: randomUUID(),
+            requestId: message.id,
+            result: {
+              categories: {
+                diagnostics: 1,
+                ...(options.filesystem ? { fs: 1 } : {}),
+              },
+            },
+          });
+          // Deliberately send the first business frame in the same callback.
+          emit({
+            schemaVersion: 1,
+            type: "event",
+            id: randomUUID(),
+            category: "diagnostics",
+            categoryVersion: 1,
+            event: "notice",
+            data: { message: "ready" },
+          });
+          return;
+        }
+        assert.ok(ready);
+        if (message.type === "event") return;
+        if (message.type === "response") {
+          const pending = reverse.get(message.requestId);
+          assert.ok(pending);
+          reverse.delete(message.requestId);
+          const parsed = sandboxDiagnosticsEchoSchema.parse(message.result);
+          result(
+            pending.id,
+            options.corruptEcho ? { payload: "invalid" } : parsed,
+          );
+          return;
+        }
+        assert.ok(message.type === "request");
+        if (message.category === "fs") {
+          const fail = (code: string) =>
+            emit({
+              schemaVersion: 1,
+              type: "response",
+              id: randomUUID(),
+              requestId: message.id,
+              error: { code },
+            });
+          const token = (name: string) =>
+            Buffer.from(name).toString("base64url");
+          const entry = (
+            name: string,
+            kind: "directory" | "file" | "symlink",
+          ) => ({ nameToken: token(name), displayName: name, kind });
+          if (message.operation === "list.close") {
+            const params = sandboxFsListCloseParamsSchema.parse(message.params);
+            if (!cursors.delete(params.cursor)) fail("cursor_expired");
+            else result(message.id, {});
+            return;
+          }
+          if (message.operation !== "list") {
+            fail("unknown_operation");
+            return;
+          }
+          const parsed = sandboxFsListParamsSchema.safeParse(message.params);
+          if (!parsed.success) {
+            fail("invalid_params");
+            return;
+          }
+          const params = parsed.data;
+          if (params.path?.length === 0) {
+            result(message.id, {
+              listingId: randomUUID(),
+              entries: [entry("wss-home-fixture", "directory")],
+              nextCursor: null,
+            });
+            return;
+          }
+          if (params.path?.[1] === token("nested")) {
+            result(message.id, {
+              listingId: randomUUID(),
+              entries: [entry("leaf", "file")],
+              nextCursor: null,
+            });
+            return;
+          }
+          if (params.path?.[1] === token("outside")) {
+            fail("link_not_expandable");
+            return;
+          }
+          const cursor = params.cursor ?? randomUUID();
+          const state = params.cursor
+            ? cursors.get(cursor)
+            : { listingId: randomUUID(), offset: 0 };
+          if (!state) {
+            fail("cursor_expired");
+            return;
+          }
+          const entries = [
+            entry("nested", "directory"),
+            entry(".hidden", "file"),
+            entry("outside", "symlink"),
+            ...Array.from({ length: 270 }, (_, index) =>
+              entry(`file-${index}`, "file"),
+            ),
+          ];
+          const rows = entries.slice(state.offset, state.offset + 128);
+          state.offset += rows.length;
+          const next = state.offset < entries.length ? cursor : null;
+          if (next) cursors.set(cursor, state);
+          else cursors.delete(cursor);
+          result(message.id, {
+            listingId:
+              options.corruptListing && params.cursor
+                ? randomUUID()
+                : state.listingId,
+            entries: rows,
+            nextCursor: next,
+          });
+          return;
+        }
+        assert.equal(message.category, "diagnostics");
+        assert.equal(message.categoryVersion, 1);
+        const params = sandboxDiagnosticsEchoSchema.parse(message.params);
+        if (message.operation === "echo")
+          result(
+            message.id,
+            options.corruptEcho ? { payload: "invalid" } : params,
+          );
+        else {
+          assert.equal(message.operation, "peer.echo");
+          const id = randomUUID();
+          reverse.set(id, message);
+          emit({
+            schemaVersion: 1,
+            type: "request",
+            id,
+            category: "diagnostics",
+            categoryVersion: 1,
+            operation: "echo",
+            params,
+          });
+        }
       });
     });
     await new Promise<void>((resolve) =>
@@ -117,8 +297,8 @@ async function peer(
   }
 }
 
-test("corrupt Guest echo fails the protocol verdict", async () => {
-  const fixture = await peer({ corruptEcho: true });
+test("current Guest schema supports reverse RPC, immediate notice and post-replay use", async () => {
+  const fixture = await peer();
   const client = new RunnerWssClient(
     RUN,
     fixture.ticket,
@@ -127,7 +307,14 @@ test("corrupt Guest echo fails the protocol verdict", async () => {
   );
   try {
     await client.connect();
-    await assert.rejects(client.echo(), /Opaque Guest echo mismatch/);
+    await assert.rejects(
+      client.list({ path: [] }),
+      /Filesystem role unavailable/,
+    );
+    await client.diagnostics();
+    await client.rejectReplay();
+    await client.diagnostics();
+    assert.deepEqual(client.receipts, { reverseCalls: 12, noticesReceived: 1 });
   } finally {
     try {
       await client.close();
@@ -137,7 +324,59 @@ test("corrupt Guest echo fails the protocol verdict", async () => {
   }
 });
 
-test("extra Guest frames after the awaited echo remain a failure", async () => {
+test("filesystem probe preserves page ownership, closes cursors and rejects stale listing identity", async () => {
+  for (const corruptListing of [false, true]) {
+    const fixture = await peer({ filesystem: true, corruptListing });
+    const client = new RunnerWssClient(
+      RUN,
+      fixture.ticket,
+      undefined,
+      fixture.ca,
+    );
+    try {
+      await client.connect();
+      if (corruptListing)
+        await assert.rejects(
+          probeHomeFiles(client, "wss-home-fixture"),
+          /Continuation must keep listing identity/,
+        );
+      else {
+        const receipt = await probeHomeFiles(client, "wss-home-fixture");
+        assert.equal(receipt.directoryPages, 3);
+        assert.equal(receipt.cursorRelease, true);
+        await client.diagnostics();
+      }
+    } finally {
+      try {
+        await client.close();
+      } finally {
+        await fixture.close();
+      }
+    }
+  }
+});
+
+test("corrupt Guest diagnostics fails the protocol verdict", async () => {
+  const fixture = await peer({ corruptEcho: true });
+  const client = new RunnerWssClient(
+    RUN,
+    fixture.ticket,
+    undefined,
+    fixture.ca,
+  );
+  try {
+    await client.connect();
+    await assert.rejects(client.diagnostics(), /Invalid sandbox channel/);
+  } finally {
+    try {
+      await client.close();
+    } finally {
+      await fixture.close();
+    }
+  }
+});
+
+test("extra invalid Guest frames after awaited diagnostics remain a failure", async () => {
   const fixture = await peer({ extraFrame: true });
   const client = new RunnerWssClient(
     RUN,
@@ -148,9 +387,9 @@ test("extra Guest frames after the awaited echo remain a failure", async () => {
   try {
     await client.connect();
     await assert.rejects(async () => {
-      await client.echo();
-      await client.echo();
-    }, /Opaque Guest echo mismatch/);
+      await client.diagnostics();
+      await client.diagnostics();
+    }, /Invalid sandbox channel/);
   } finally {
     try {
       await client.close();
@@ -170,7 +409,7 @@ test("acknowledged replay fails even if the peer immediately closes", async () =
   );
   try {
     await client.connect();
-    await client.echo();
+    await client.diagnostics();
     await assert.rejects(client.rejectReplay(), /Replayed ticket was admitted/);
   } finally {
     try {

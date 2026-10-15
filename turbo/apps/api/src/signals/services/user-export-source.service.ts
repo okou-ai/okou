@@ -48,7 +48,7 @@ import { clerk$, createClerkReadContext } from "../external/clerk";
 import { listAllUserOrganizationMemberships } from "../external/clerk-organization-lists";
 import { db$ } from "../external/db";
 import { readUserExportAgentInstructions$ } from "./user-export-agent-instructions.service";
-import { chatEventRowFromDbRow } from "./cron-snapshot-chat-events.service";
+import { chatEventRowFromDbRow } from "./chat-event-row-read.service";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 import {
   readAcceptedOfficialWorkflowCatalog$,

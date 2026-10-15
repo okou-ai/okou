@@ -108,15 +108,17 @@ async fn mac_classic_password_starts_only_over_verified_ssh_loopback() {
                     }),
                     true,
                 ));
-            then.status(200).json_body(json!({
-                "outcome": "resolved_apple_vnc_password",
-                "host": "127.0.0.1",
-                "port": 5900,
-                "generation": 11,
-                "transport": {"type":"ssh","connectionId":CONNECTION,"generation":7},
-                "authentication": {"method":"vnc_password","password":" secret "},
-                "security": {"type":"apple_vnc_password"}
-            }));
+            then.status(200)
+                .header("X-VNC-Connection-Created-At", super::harness::CREATED_AT)
+                .json_body(json!({
+                    "outcome": "resolved_apple_vnc_password",
+                    "host": "127.0.0.1",
+                    "port": 5900,
+                    "generation": 11,
+                    "transport": {"type":"ssh","connectionId":CONNECTION,"generation":7},
+                    "authentication": {"method":"vnc_password","password":" secret "},
+                    "security": {"type":"apple_vnc_password"}
+                }));
         })
         .await;
     let vnc_check = harness

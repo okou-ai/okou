@@ -11,6 +11,7 @@ pub async fn exercise(
     tracker: &IdleDestroyTracker,
     operations: &HostMemoryOperations,
     inputs: &fixture::Inputs,
+    proof: Option<&Arc<evidence::Case>>,
 ) -> TestResult<()> {
     let owner = IdlePressureOwner::spawn(IdlePressureConfig {
         pool: pool.clone(),
@@ -54,6 +55,27 @@ pub async fn exercise(
     completion.map_err(io::Error::other)??;
     if stopped.producer_lost || stopped.decision.wave_inflight {
         return Err(io::Error::other("native pressure shutdown remains unresolved").into());
+    }
+    if let Some(proof) = proof {
+        let report = stopped
+            .last_wave
+            .as_ref()
+            .ok_or_else(|| io::Error::other("native pressure lost its original resolved wave"))?;
+        proof.pressure_witness(
+            "wave_completed",
+            serde_json::json!({
+                "selected": report.selected,
+                "completed": report.completed,
+                "uncertain": report.uncertain,
+                "not_started": report.not_started.len(),
+                "skipped": report.skipped,
+                "status_error": report.status_error.is_some(),
+                "resolved": report.is_resolved(),
+                "producer_lost": stopped.producer_lost,
+                "wave_inflight": stopped.decision.wave_inflight,
+                "stopped": stopped.stopped,
+            }),
+        )?;
     }
     Ok(())
 }

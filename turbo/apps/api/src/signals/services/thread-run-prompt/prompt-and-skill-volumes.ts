@@ -13,7 +13,6 @@ import { createAgentPhoneThreadPrompt } from "./agentphone";
 import { createAutomationThreadPrompt } from "./automation";
 import { createComputerUsePrompt } from "./computer-use";
 import { createDiscordThreadPrompt } from "./discord";
-import { createMorningBriefSuggestionsPrompt } from "./morning-brief-suggestions";
 import { createFeishuThreadPrompt } from "./feishu";
 import { createRotatedPrompt } from "./rotated";
 import { createRuntimePrompt } from "./runtime";
@@ -137,16 +136,13 @@ export function createPromptAndSkillVolumesSignals(
     agent$,
     memberMetadata$,
     featureSwitches$,
-    memberRoutes$,
     authorizedConnectors$,
     selectedImageModel$,
   } = sources;
   const workflowSkills$ = computed((get) => {
     return get(threadContext.workflowSkills$);
   });
-  const modelCatalog$ = computed((get) => {
-    return get(bootstrap.modelCatalog$);
-  });
+
   const cloudBrowserEnabled$ = computed(async (get) => {
     const thread = (await get(pickedEvent$))?.thread;
     if (!thread) {
@@ -164,24 +160,12 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
     cloudBrowserEnabled$,
   );
-  const morningBriefSuggestions$ = createMorningBriefSuggestionsPrompt(
-    pickedEvent$,
-    agent$,
-    featureSwitches$,
-    threadContext.automationTarget$,
-  );
   const userPrompt$ = createUserPrompt(memberMetadata$);
   const computerUsePrompt$ = createComputerUsePrompt(
     pickedEvent$,
     threadContext.computerUseHostGrant$,
   );
-  const rotatedPrompt$ = createRotatedPrompt(
-    pickedEvent$,
-    threadContext.session$,
-    memberRoutes$,
-    modelCatalog$,
-    featureSwitches$,
-  );
+  const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
   const connectors$ = createConnectorsContext(authorizedConnectors$);
   const runtimePrompt$ = createRuntimePrompt(selectedImageModel$);
   const systemSkills$ = createSystemSkillsContext();
@@ -200,7 +184,6 @@ export function createPromptAndSkillVolumesSignals(
       continuation,
       templates,
       agent,
-      morningBriefSuggestions,
       user,
       computerUse,
       connectors,
@@ -212,7 +195,6 @@ export function createPromptAndSkillVolumesSignals(
       automation ? null : get(rotatedPrompt$),
       automation ? null : get(threadContext.templates$),
       get(agentPrompt$),
-      get(morningBriefSuggestions$),
       get(userPrompt$),
       get(computerUsePrompt$),
       get(connectors$),
@@ -237,7 +219,6 @@ export function createPromptAndSkillVolumesSignals(
     const combined = mergeRunPromptAndSkills([
       agent,
       integration,
-      morningBriefSuggestions,
       ...(continuation ? [continuation] : []),
       ...(templates ? [templates] : []),
       user,

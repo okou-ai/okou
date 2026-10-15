@@ -789,10 +789,33 @@ mod tests {
         }
         assert_eq!(sample.incidents, cleanup.incidents);
         assert_eq!(sample.incidents[0].kernel_events.len(), 1);
+
+        let mut tasks = Fixture::new();
+        let task =
+            "/vm0-exec/exec-281-10-3/workload/tools/task-00000000-0000-0000-0000-000000000001";
+        let nested = format!("{task}/tools/task-00000000-0000-0000-0000-000000000002");
+        let single_tool = format!("{task}/tools/tool-95");
+        let nested_tool = format!("{nested}/tools/tool-269");
+        for (sequence, time, constraint, trigger, victim) in [
+            (10, 2000, "CONSTRAINT_NONE", "/", single_tool.as_str()),
+            (
+                11,
+                3000,
+                "CONSTRAINT_MEMCG",
+                nested.as_str(),
+                nested_tool.as_str(),
+            ),
+        ] {
+            tasks.record(&format!("6,{sequence},{time},-;oom-kill:constraint={constraint},oom_memcg={trigger},task_memcg={victim},task=node,pid=999999,uid=1000\n"));
+            tasks.monitor.capture(CaptureReason::Sample);
+        }
+        let tasks = tasks.monitor.capture(CaptureReason::Cleanup);
+        assert_eq!(tasks.incidents.len(), 2);
         let generated = serde_json::json!({
             "initial": stable(initial),
             "sample": stable(sample),
             "cleanup": stable(cleanup),
+            "tasks": stable(tasks),
         });
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/fixtures/oom-evidence-collector.json");

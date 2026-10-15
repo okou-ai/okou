@@ -6,8 +6,6 @@ use super::super::support::{
     wait_status_idle_empty_with_active_run, wait_status_idle_reuse_keys_and_active_runs,
 };
 
-use runner_types::types::SandboxReuseResult;
-
 // -----------------------------------------------------------------------
 // Test 9: idle pool park/take is gated on reuse-key availability.
 // -----------------------------------------------------------------------
@@ -165,10 +163,6 @@ async fn job_without_cli_session_parks_and_reuses_by_reuse_key() {
         .await
         .expect("second job should complete");
     assert_eq!(second_completion.exit_code, 0);
-    assert_eq!(
-        second_completion.reuse_result,
-        Some(SandboxReuseResult::Reused),
-    );
     assert_eq!(second_completion.sandbox_id, Some(sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
 
@@ -423,6 +417,10 @@ async fn sequential_same_reuse_key_cycle() {
         .wait_completion(id1, Duration::from_secs(5))
         .await;
     assert!(c1.is_some(), "job 1 should complete");
+    let original_sandbox_id = c1
+        .unwrap()
+        .sandbox_id
+        .expect("job 1 should report its sandbox");
     wait_idle_pool_reuse_keys(&idle_pool, &["sess-seq"], Duration::from_secs(5)).await;
     assert_eq!(
         idle_pool.lock().await.len(),
@@ -443,11 +441,7 @@ async fn sequential_same_reuse_key_cycle() {
         .wait_completion(id2, Duration::from_secs(5))
         .await;
     assert!(c2.is_some(), "job 2 should complete");
-    assert_eq!(
-        c2.unwrap().reuse_result,
-        Some(SandboxReuseResult::Reused),
-        "job 2 should reuse the first job's parked sandbox",
-    );
+    assert_eq!(c2.unwrap().sandbox_id, Some(original_sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &["sess-seq"], Duration::from_secs(5)).await;
 
     assert_eq!(
@@ -475,28 +469,26 @@ async fn same_thread_reuses_sandbox_across_provider_session_change() {
     let mut first_context = context_with_session(first_run_id, "provider-session-a");
     first_context.reuse_key = Some(reuse_key.into());
     push_job(&env, first_run_id, "vm0/default", Some(first_context));
-    assert!(
-        env.handle
-            .wait_completion(first_run_id, Duration::from_secs(5))
-            .await
-            .is_some()
-    );
+    let first = env
+        .handle
+        .wait_completion(first_run_id, Duration::from_secs(5))
+        .await
+        .expect("first job should complete");
+    let original_sandbox_id = first
+        .sandbox_id
+        .expect("first job should report its sandbox");
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
 
     let second_run_id = RunId::new_v4();
     let mut second_context = context_with_session(second_run_id, "provider-session-b");
     second_context.reuse_key = Some(reuse_key.into());
     push_job(&env, second_run_id, "vm0/default", Some(second_context));
-    let completion = env
+    let second = env
         .handle
         .wait_completion(second_run_id, Duration::from_secs(5))
         .await
         .expect("second job should complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::Reused),
-        "the thread reuse key should select the first job's parked sandbox"
-    );
+    assert_eq!(second.sandbox_id, Some(original_sandbox_id));
     wait_idle_pool_reuse_keys(&idle_pool, &[reuse_key], Duration::from_secs(5)).await;
 
     shutdown(&env, run_handle).await;

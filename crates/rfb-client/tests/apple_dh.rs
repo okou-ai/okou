@@ -8,8 +8,8 @@ use crypto_bigint::{
 };
 use md5::{Digest, Md5};
 use rfb_client::{
-    AppleDhCredentials, AuthenticationStage, Error, Input, InputOutcome, Key, Session, SharingMode,
-    authenticate_apple_dh,
+    AppleDhCredentials, AppleDhParameterCheck, AuthenticationStage, Error, Input, InputOutcome,
+    Key, Session, SharingMode, authenticate_apple_dh,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt, DuplexStream, duplex},
@@ -70,7 +70,14 @@ async fn assert_invalid_dh_public_value(server_public: [u8; KEY_BYTES]) {
         tokio::time::timeout(Duration::from_secs(5), async { tokio::join!(peer, caller) })
             .await
             .unwrap();
-    assert!(matches!(result, Err(Error::InvalidAppleDhParameters)));
+    assert!(matches!(
+        result,
+        Err(Error::InvalidAppleDhParameters {
+            check: AppleDhParameterCheck::ServerPublicRange,
+            generator: Some(5),
+            key_bytes: Some(512),
+        })
+    ));
 }
 
 #[tokio::test]
@@ -228,7 +235,14 @@ async fn oversized_dh_is_rejected_before_peer_material_is_read() {
         assert_eq!(server.read(&mut byte).await.unwrap(), 0);
     });
     let result = authenticate_apple_dh(client, credentials(), deadline()).await;
-    assert!(matches!(result, Err(Error::InvalidAppleDhParameters)));
+    assert!(matches!(
+        result,
+        Err(Error::InvalidAppleDhParameters {
+            check: AppleDhParameterCheck::KeyLength,
+            generator: Some(5),
+            key_bytes: Some(513),
+        })
+    ));
     peer.await.unwrap();
 }
 
@@ -252,22 +266,80 @@ async fn dh_public_upper_bound_p_is_rejected_without_credential_bytes() {
 
 #[tokio::test]
 async fn invalid_dh_modulus_is_rejected_without_credential_bytes() {
-    let (client, mut server) = duplex(2048);
-    let peer = tokio::spawn(async move {
-        negotiate(&mut server, &[30]).await;
-        assert_eq!(server.read_u8().await.unwrap(), 30);
-        server.write_u16(5).await.unwrap();
-        server.write_u16(KEY_BYTES as u16).await.unwrap();
-        let mut even_modulus = synthetic_modulus();
-        even_modulus[KEY_BYTES - 1] = 0xfe;
-        server.write_all(&even_modulus).await.unwrap();
-        server.write_all(&[5; KEY_BYTES]).await.unwrap();
-        let mut byte = [0; 1];
-        assert_eq!(server.read(&mut byte).await.unwrap(), 0);
-    });
-    let result = authenticate_apple_dh(client, credentials(), deadline()).await;
-    assert!(matches!(result, Err(Error::InvalidAppleDhParameters)));
-    peer.await.unwrap();
+    for check in [
+        AppleDhParameterCheck::ModulusParity,
+        AppleDhParameterCheck::ModulusWidth,
+    ] {
+        let mut modulus = synthetic_modulus();
+        if check == AppleDhParameterCheck::ModulusParity {
+            modulus[KEY_BYTES - 1] = 0xfe;
+        } else {
+            modulus[0] = 0x01;
+        }
+        let (client, mut server) = duplex(2048);
+        let peer = tokio::spawn(async move {
+            negotiate(&mut server, &[30]).await;
+            assert_eq!(server.read_u8().await.unwrap(), 30);
+            server.write_u16(5).await.unwrap();
+            server.write_u16(KEY_BYTES as u16).await.unwrap();
+            server.write_all(&modulus).await.unwrap();
+            server.write_all(&[5; KEY_BYTES]).await.unwrap();
+            let mut byte = [0; 1];
+            assert_eq!(server.read(&mut byte).await.unwrap(), 0);
+        });
+        let result = authenticate_apple_dh(client, credentials(), deadline()).await;
+        match result {
+            Err(
+                error @ Error::InvalidAppleDhParameters {
+                    check: actual,
+                    generator: Some(5),
+                    key_bytes: Some(512),
+                },
+            ) => {
+                assert_eq!(actual, check);
+                assert_eq!(error.diagnostic_code(), "invalid_apple_dh_parameters");
+                assert!(!format!("{error:?}").contains("test-password"));
+            }
+            _ => panic!("expected bounded modulus rejection diagnostics"),
+        }
+        peer.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn rejected_dh_header_retains_public_values_and_never_sends_credentials() {
+    for (generator, key_bytes, expected) in [
+        (1, 512, AppleDhParameterCheck::Generator),
+        (5, 128, AppleDhParameterCheck::KeyLength),
+        (5, 257, AppleDhParameterCheck::KeyLength),
+    ] {
+        let (client, mut server) = duplex(64);
+        let peer = tokio::spawn(async move {
+            negotiate(&mut server, &[30]).await;
+            assert_eq!(server.read_u8().await.unwrap(), 30);
+            server.write_u16(generator).await.unwrap();
+            server.write_u16(key_bytes).await.unwrap();
+            let mut byte = [0; 1];
+            assert_eq!(server.read(&mut byte).await.unwrap(), 0);
+        });
+        let result = authenticate_apple_dh(client, credentials(), deadline()).await;
+        match result {
+            Err(
+                error @ Error::InvalidAppleDhParameters {
+                    check,
+                    generator: actual_generator,
+                    key_bytes: actual_key_bytes,
+                },
+            ) => {
+                assert_eq!(check, expected);
+                assert_eq!(actual_generator, Some(generator));
+                assert_eq!(actual_key_bytes, Some(key_bytes));
+                assert_eq!(error.diagnostic_code(), "invalid_apple_dh_parameters");
+            }
+            _ => panic!("expected bounded header rejection diagnostics"),
+        }
+        peer.await.unwrap();
+    }
 }
 
 #[tokio::test]

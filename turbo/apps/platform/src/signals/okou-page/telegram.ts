@@ -10,34 +10,6 @@ import { setAblyLoop$ } from "../realtime.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const internalReload$ = state(0);
-const internalTelegramFailedAvatarKeys$ = state<Record<string, boolean>>({});
-const internalTelegramUnlinkingBotId$ = state<string | null>(null);
-
-export const telegramFailedAvatarKeys$ = computed((get) => {
-  return get(internalTelegramFailedAvatarKeys$);
-});
-
-export const telegramUnlinkingBotId$ = computed((get) => {
-  return get(internalTelegramUnlinkingBotId$);
-});
-
-export const markTelegramAvatarFailed$ = command(
-  ({ set }, avatarKey: string) => {
-    set(internalTelegramFailedAvatarKeys$, (previous) => {
-      return { ...previous, [avatarKey]: true };
-    });
-  },
-);
-
-export const setTelegramUnlinkingBotId$ = command(
-  ({ set }, value: string | null) => {
-    set(internalTelegramUnlinkingBotId$, value);
-  },
-);
-
-export const resetTelegramSettingsUi$ = command(({ set }) => {
-  set(internalTelegramUnlinkingBotId$, null);
-});
 
 export const telegramBots$ = computed(async (get): Promise<TelegramBot[]> => {
   get(internalReload$);
@@ -57,7 +29,7 @@ const onTelegramChanged$ = command(({ set }) => {
   return false;
 });
 
-export const startTelegramSettingsRealtime$ = command(
+export const watchTelegramConnection$ = command(
   ({ set }, signal: AbortSignal) => {
     set(
       setAblyLoop$,

@@ -30,6 +30,17 @@ use runner_types::ids::RunId;
 
 pub(super) const CONNECTION: &str = "9f0128ce-dd11-4234-b1ac-a0c33353a112";
 const TOKEN: &str = "vm0_official_vnc-test";
+pub(super) const CREATED_AT: &str = "2026-09-01T00:00:00.123456Z";
+
+pub(super) fn resolved_response(body: &str) -> Vec<u8> {
+    let mut response = crate::test_fixtures::raw_http::json_response("200 OK", body);
+    let end = response.iter().position(|byte| *byte == b'\n').unwrap() + 1;
+    response.splice(
+        end..end,
+        format!("X-VNC-Connection-Created-At: {CREATED_AT}\r\n").bytes(),
+    );
+    response
+}
 
 fn supported_profiles() -> Value {
     crate::test_fixtures::vnc::supported_profiles(false)
@@ -203,11 +214,15 @@ impl TestRun {
     }
 
     pub(super) async fn open_stream(&self, cancel_after_data: bool) -> DuplexStream {
-        self.open_options(cancel_after_data, false).await
+        self.open_options(cancel_after_data, false, 64 * 1024).await
     }
 
     pub(super) async fn open_failing_output(&self) -> DuplexStream {
-        self.open_options(false, true).await
+        self.open_options(false, true, 64 * 1024).await
+    }
+
+    pub(super) async fn open_sized(&self, capacity: usize) -> DuplexStream {
+        self.open_options(false, false, capacity).await
     }
 
     pub(super) async fn accept_socket(&self, host: UnixStream) {
@@ -228,8 +243,13 @@ impl TestRun {
             .unwrap();
     }
 
-    async fn open_options(&self, cancel_after_data: bool, fail_output: bool) -> DuplexStream {
-        let (guest, host) = tokio::io::duplex(64 * 1024);
+    async fn open_options(
+        &self,
+        cancel_after_data: bool,
+        fail_output: bool,
+        capacity: usize,
+    ) -> DuplexStream {
+        let (guest, host) = tokio::io::duplex(capacity);
         self.incoming
             .send(sandbox::AcceptedGuestRpc {
                 sandbox_id: "vnc-assigned-sandbox".into(),
@@ -385,7 +405,7 @@ impl Harness {
             when
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .is_true(optional_kerberos_request(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
-            then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
+            then.status(200).header("X-VNC-Connection-Created-At", CREATED_AT).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"vnc_password","password":" secret "},
                 "security":{"type":"x509_vnc","trust":{"mode":"custom_ca","caBundle":self.peer.ca}}}));
@@ -398,7 +418,7 @@ impl Harness {
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .is_true(optional_kerberos_request(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
-            then.status(200).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
+            then.status(200).header("X-VNC-Connection-Created-At", CREATED_AT).json_body(json!({"outcome":"resolved_transport","host":"vnc.example.test","port":5900,"generation":7,
                 "serverName":"vnc.example.test","transport":{"type":"direct"},
                 "authentication":{"method":"username_password","username":PLAIN_USERNAME,"password":PLAIN_PASSWORD},
                 "security":{"type":"x509_plain","trust":{"mode":"custom_ca","caBundle":self.peer.ca}}}));
@@ -406,17 +426,32 @@ impl Harness {
     }
 
     pub(super) async fn resolve_response(&self, response: Value) -> Mock<'_> {
+        self.resolve_response_with_created_at(response, Some(CREATED_AT))
+            .await
+    }
+
+    pub(super) async fn resolve_response_with_created_at(
+        &self,
+        response: Value,
+        created_at: Option<&str>,
+    ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST")
                 .path_matches(r"^/api/runners/runs/[^/]+/vnc/resolve$")
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .is_true(optional_kerberos_request(json!({"connectionId":CONNECTION,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"supportedProfiles":supported_profiles()})));
-            then.status(200).json_body(response);
+            let then = then.status(200);
+            let then = if let Some(created_at) = created_at {
+                then.header("X-VNC-Connection-Created-At", created_at)
+            } else {
+                then
+            };
+            then.json_body(response);
         }).await
     }
 
     pub(super) async fn check(&self, outcome: &str, status: u16) -> Mock<'_> {
-        self.check_delayed(outcome, status, Duration::ZERO).await
+        self.check_connection(CONNECTION, outcome, status).await
     }
 
     pub(super) async fn check_connection(
@@ -425,32 +460,11 @@ impl Harness {
         outcome: &str,
         status: u16,
     ) -> Mock<'_> {
-        self.check_connection_delayed(connection, outcome, status, Duration::ZERO)
-            .await
-    }
-
-    pub(super) async fn check_delayed(
-        &self,
-        outcome: &str,
-        status: u16,
-        delay: Duration,
-    ) -> Mock<'_> {
-        self.check_connection_delayed(CONNECTION, outcome, status, delay)
-            .await
-    }
-
-    async fn check_connection_delayed(
-        &self,
-        connection: &str,
-        outcome: &str,
-        status: u16,
-        delay: Duration,
-    ) -> Mock<'_> {
         self.api.mock_async(|when, then| {
             when.method("POST").path_matches(r"^/api/runners/runs/[^/]+/vnc/check$")
                 .header("authorization", format!("Bearer {TOKEN}"))
                 .json_body(json!({"connectionId":connection,"runnerIdentity":{"runnerId":self.identity.runner_id(),"heartbeatGeneration":27},"expectedGeneration":7,"expectedTransport":{"type":"direct"}}));
-            then.status(status).delay(delay).json_body(json!({"outcome":outcome}));
+            then.status(status).json_body(json!({"outcome":outcome}));
         }).await
     }
 

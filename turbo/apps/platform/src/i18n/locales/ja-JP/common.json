@@ -122,35 +122,15 @@
         "title": "ログが見つかりません"
       },
       "runner": {
-        "cacheMiss": "再利用キーに一致するキャッシュ済みホームディレクトリがありませんでした。",
-        "deviceLimitMismatch": "アイドル プール エントリは存在しますが、そのデバイス レート リミッタの状態が一致しません。",
-        "diskPressure": "ランナーのディスク使用量が逼迫していたため、ホームディレクトリの再利用をスキップしました。",
         "environment": "環境",
-        "featureDisabled": "この実行ではサンドボックスの再利用が無効になっています。",
         "framework": "フレームワーク",
         "generation": "世代",
-        "home": "ホームディレクトリ",
-        "homeNoReuseKey": "ホームディレクトリの再利用キーがありませんでした。",
-        "homeReusedDescription": "ホームディレクトリがランナーのキャッシュから復元されました。",
         "hostname": "ホスト名",
-        "invalidMetadata": "キャッシュ済みホームディレクトリのメタデータが無効でした。",
-        "invalidWorkingDir": "指定された作業ディレクトリを再利用できませんでした。",
-        "lockBusy": "別の実行が同じホームディレクトリを準備していました。",
-        "noReuseKey": "アイドル状態のサンドボックスと照合するための再利用キーがありませんでした。",
-        "noSessionId": "従来の結果です。サンドボックスが再利用されなかった正確な理由は確認できません。",
-        "notConfigured": "この実行ではホームディレクトリの再利用が構成されていませんでした。",
-        "notReused": "再利用されない",
-        "outcomeUnavailableDescription": "追加の詳細は利用できません。",
-        "poolMiss": "アイドル状態のプールに一致するサンドボックスが見つかりません。",
-        "profileMismatch": "アイドル プール エントリは存在しますが、そのプロファイルが一致しません。",
         "provisioning": "プロビジョニング中",
-        "reused": "再利用",
-        "reusedDescription": "サンドボックスがアイドル状態のプールからパーク解除されました。",
         "runnerId": "ランナー ID",
-        "sandbox": "サンドボックス",
-        "sandboxPrepareFallback": "キャッシュ済みホームディレクトリが見つかりましたが、サンドボックスの準備後に使用できませんでした。",
-        "sandboxReusedDescription": "ホームディレクトリは再利用されたサンドボックス内で引き続き利用できました。",
         "startup": "起動",
+        "startupBlank": "空のサンドボックスから起動",
+        "startupBlankDescription": "準備済みのサンドボックスが新しいホームディレクトリで起動しました。",
         "startupCold": "コールドスタート",
         "startupColdDescription": "新しいサンドボックスとワークスペースが準備されました。",
         "startupHome": "ホームディレクトリの再利用",
@@ -160,7 +140,6 @@
         "startupUnknown": "不明",
         "startupUnknownDescription": "起動時の再利用に関する詳細は利用できません。",
         "unavailable": "利用不可",
-        "unparkFailed": "パーク解除の試行は失敗しました。新しいサンドボックスがプロビジョニングされました。",
         "version": "バージョン"
       },
       "steps": {
@@ -542,19 +521,25 @@
       "agentLoading": "エージェントを読み込み中",
       "connect": "Google Drive を接続します",
       "connectTooltip": "Google Drive を接続してアーティファクトをアップロードする",
+      "conversionNotice": "編集可能なコピーを作成します。書式が変わる場合があります。元のファイルは保持されます。",
+      "conversionUnconfirmed": "Google での変換結果を確認できませんでした。再試行する前にドライブを確認してください。",
       "noArtifacts": "同期するアーティファクトがありません",
+      "openDocs": "Google ドキュメントで開く",
+      "openSheets": "Google スプレッドシートで開く",
+      "openSlides": "Google スライドで開く",
       "partial_one": "{{count}} ファイルの {{synced}} を Google Drive に同期しました",
       "partial_other": "{{count}} ファイルの {{synced}} を Google Drive に同期しました",
       "synced": "Google Drive に同期されました",
       "syncedFiles_one": "Google Drive に同期されました",
       "syncedFiles_other": "{{count}} ファイルを Google Drive に同期しました",
-      "syncedSlides": "Google Slides に同期されました",
       "syncFailed": "Google Drive との同期に失敗しました",
       "syncingArtifact": "アーティファクトを同期中...",
       "syncingFiles_one": "{{count}} ファイルを同期しています...",
       "syncingFiles_other": "{{count}} ファイルを同期しています...",
       "syncingNamed": "{{filename}} を同期しています...",
       "upload": "Google Drive にアップロード",
+      "uploadDocs": "Google ドキュメントにアップロード",
+      "uploadSheets": "Google スプレッドシートにアップロード",
       "uploadSlides": "Google Slides にアップロード"
     },
     "kinds": {
@@ -571,6 +556,7 @@
       "markdown": "マークダウン",
       "presentation": "プレゼンテーション",
       "sharedConversation": "共有された会話",
+      "spreadsheet": "スプレッドシート",
       "text": "テキスト",
       "video": "ビデオ"
     },
@@ -686,7 +672,6 @@
       "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
-        "change": "変更",
         "changeLabel": "テンプレートの公開範囲を変更",
         "privateState": "自分だけが表示・使用できます",
         "workspaceState": "このワークスペースの全員が使用できます"
@@ -1519,13 +1504,13 @@
       "viewAgentProfile": "エージェントのプロフィールを表示する"
     },
     "agentSuggestions": {
-      "existingThread": "既存の会話",
+      "continueChat": "チャットを続ける",
+      "dismiss": "非表示にする",
       "label": "提案",
-      "loadFailed": "提案を読み込めませんでした。",
-      "newThread": "Okou と新しい会話",
-      "origin": "モーニングブリーフから",
-      "showAll_other": "全 {{count}} 件を表示",
-      "showLess": "表示を減らす"
+      "newChat": "新しいチャット",
+      "next": "次の提案",
+      "position": "{{current}} / {{total}}",
+      "previous": "前の提案"
     },
     "attachments": {
       "attach": "添付する",
@@ -1766,9 +1751,8 @@
       "threadSuggestions": "チャットスレッド",
       "useForFutureChats": "今後のチャットでも使用",
       "workflows": {
-        "empty": "一致するワークフローがありません",
         "loading": "ワークフローを読み込んでいます...",
-        "showAll": "すべてのワークフローを表示",
+        "showAllCount": "すべて表示（{{total}}）",
         "title": "ワークフロー"
       }
     },
@@ -1938,15 +1922,6 @@
       "threads": "チャット",
       "title": "転送先"
     },
-    "homeTasks": {
-      "empty": "おすすめのタスクはまだありません",
-      "existingThread": "チャットを続ける",
-      "exploreWorkflow": "ワークフローを検討",
-      "heading": "最近の作業から選んだタスク",
-      "newTasksAvailable": "新しいタスクがあります",
-      "newThread": "新しいチャット",
-      "reload": "タスクを再読み込み"
-    },
     "mail": {
       "bcc": "BCC",
       "cc": "cc",
@@ -1990,6 +1965,7 @@
       "feishu": "Feishu",
       "github": "GitHub",
       "lark": "Lark",
+      "mcp": "MCP",
       "openChat": "オープンチャット",
       "openChatIn": "{{integration}}でチャットを開く",
       "openDiscordMessage": "Discord で元のメッセージを開く",
@@ -2046,6 +2022,26 @@
       "removeQueuedMessage": "キューに入れられたメッセージを削除する",
       "skipAutomationEvent": "オートメーションイベントをスキップする"
     },
+    "relations": {
+      "communications": "メッセージ",
+      "created": "作成したチャット",
+      "idle": "待機",
+      "loadFailed": "読み込み失敗",
+      "loading": "読み込み中…",
+      "messageUnavailable": "メッセージ取得不可",
+      "more": "もっと見る",
+      "origin": "開始元",
+      "parallelHint": "複数のチャットで並行作業。待ち時間を短く。",
+      "queued": "待機中",
+      "received": "受信",
+      "refresh": "更新",
+      "running": "実行中",
+      "sent": "送信",
+      "title": "関連チャット",
+      "toggleMessages": "{{title}} とのメッセージ",
+      "unavailable": "アクセス不可",
+      "untitled": "無題"
+    },
     "remoteAccess": {
       "default": "既定",
       "defaultEnabled": "チャットで既定で有効",
@@ -2054,16 +2050,22 @@
       "loading": "リモートアクセスを読み込み中…",
       "off": "オフ",
       "on": "オン",
-      "requiresSsh": "SSH ホスト {{name}} へのアクセスも必要です。",
+      "requiresSsh": "SSH が必要：{{name}}",
       "retry": "再試行",
+      "sshDisabled": "SSH をオンに：{{name}}",
+      "sshEnabled": "SSH 有効：{{name}}",
       "title": "リモートアクセス",
       "unavailableSsh": "利用できない SSH ホスト"
     },
     "resources": {
+      "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "empty": "このチャットにはまだアーティファクトやリンクがありません",
+      "emptyLinks": "このチャットにはまだリンクがありません",
+      "expand": "展開",
       "links": "リンク",
       "loadFailed": "リソースを読み込めませんでした",
+      "loadingLinks": "リンクを読み込み中",
       "retry": "再試行",
       "title": "チャットのリソース",
       "viewAll": "すべて表示"
@@ -2740,7 +2742,6 @@
         "workflow": "ワークフロー"
       },
       "importedLoadFailed": "アップロード済みテンプレートを読み込めませんでした。",
-      "importedLoading": "アップロード済みテンプレートを読み込み中…",
       "importedUnavailable": "アップロード済みテンプレートは一時的に利用できません。",
       "previewTemplate": "プレビュー テンプレート {{title}}",
       "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
@@ -2823,10 +2824,18 @@
     "walletAction": {
       "approveButton": "確認",
       "approveTitle": "購入内容を確認",
+      "authorized": "認証済み",
+      "callbackFailed": "認証済みです。「続ける」でメッセージの送信を再試行してください。",
+      "callbackPrompt": "Link ウォレットの認証が完了しました。前のタスクを続けてください。",
+      "checkFailed": "認証状態を確認できません。もう一度お試しください。",
       "connectButton": "認証",
       "connectTitle": "Link ウォレットを認証",
       "continueButton": "続ける",
-      "continueTitle": "Link で続ける"
+      "continueTitle": "Link で続ける",
+      "expired": "認証の有効期限切れ",
+      "failed": "認証が未完了",
+      "unavailable": "認証を利用できません",
+      "waiting": "認証を待機中"
     },
     "workflows": {
       "named": "ワークフロー {{title}}",
@@ -3434,13 +3443,15 @@
         "alreadyDescription": "すでに接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyDescriptionNamed": "すでに {{bot}} に接続されています。 Telegram でメッセージを送信してチャットを開始してください。",
         "alreadyTitle": "すでに Telegram に接続されています",
-        "back": "Telegram 設定に戻る",
+        "botNotConfigured": "Telegram 接続はまだ設定されていません。サポートにお問い合わせください。",
         "checkingConnectionDescription": "Telegram 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
         "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
+        "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。しばらくしてからもう一度お試しください。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
+        "domainNotVerified": "このアプリの Telegram ログインを確認できませんでした。もう一度お試しください。問題が続く場合はサポートにお問い合わせください。",
         "errorFallback": "Telegram に接続できませんでした。 Telegram から再試行してください。",
         "invalidSignature": "このリンクの署名は無効です。",
         "invalidTimestamp": "このリンクのタイムスタンプは無効です。",
@@ -3755,16 +3766,8 @@
       },
       "telegram": {
         "backToIntegrations": "統合に戻る",
-        "botFallback": "Telegram ボット",
-        "disconnectAria": "{{bot}} を切断します",
-        "documentTitle": "Telegram",
         "loadError": "Telegram 設定を読み込めませんでした。",
-        "moreOptions": "{{bot}} のその他のオプション",
-        "notConnected": "接続されていません",
-        "officialBot": "Telegram 公式ボット",
-        "officialDescription": "{{brandName}} が提供する公式 bot。",
-        "officialMissing": "公式ボット設定がありません。",
-        "pageDescription": "このワークスペースのボット ルーティングを管理する"
+        "officialMissing": "公式ボット設定がありません。"
       },
       "toasts": {
         "agentphoneConnected": "電話番号が接続されました",
@@ -3800,6 +3803,65 @@
     "toasts": {
       "connected": "{{connector}} が接続されました"
     }
+  },
+  "documentTemplates": {
+    "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",
+    "back": "テンプレートに戻る",
+    "categories": {
+      "all": "すべて",
+      "business-record": "業務記録",
+      "contract": "契約書",
+      "creative-brief": "制作ブリーフ",
+      "guide": "ガイド",
+      "invoice": "請求書",
+      "letter": "書簡",
+      "report": "レポート",
+      "resume": "履歴書",
+      "service-agreement": "業務委託契約"
+    },
+    "contents": {
+      "agreement": {
+        "content": "条件と責任",
+        "delivery": "確認と署名",
+        "details": "期間と解約",
+        "overview": "当事者と範囲"
+      },
+      "brief": {
+        "content": "対象者と主要メッセージ",
+        "delivery": "スケジュールと確認手順",
+        "details": "成果物と形式",
+        "overview": "プロジェクト概要と目標"
+      },
+      "general": {
+        "content": "内容を記入するセクション",
+        "delivery": "編集可能な Word または PDF",
+        "details": "統一されたページレイアウト",
+        "overview": "明確な文書構成"
+      },
+      "invoice": {
+        "content": "サービスと単価の明細",
+        "delivery": "支払情報",
+        "details": "税額、合計、支払期限",
+        "overview": "提供者と顧客の情報"
+      }
+    },
+    "filter": "文書の分類",
+    "formats": {
+      "pdf": "PDF",
+      "word": "Word 文書"
+    },
+    "imageError": "プレビューを表示できません",
+    "included": "含まれる内容",
+    "nextPage": "次のサンプルページ",
+    "openLarger": "大きいプレビューを開く",
+    "page": "{{page}} ページ",
+    "preview": "{{title}} をプレビュー",
+    "previousPage": "前のサンプルページ",
+    "retry": "再試行",
+    "samplePages": "サンプルページ数：{{total}}",
+    "title": "ドキュメント",
+    "use": "テンプレートを使用",
+    "useNamed": "{{title}} を使用"
   },
   "global": {
     "actions": {
@@ -4506,17 +4568,9 @@
       "settings": "設定",
       "signOut": "サインアウト",
       "subscriptions": {
-        "providers": {
-          "claudeCode": "Claude Code",
-          "codex": "Codex"
-        },
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
-        "usageRemaining": "{{provider}} {{window}} 残り",
-        "windows": {
-          "fiveHour": "5時間",
-          "week": "週"
-        }
+        "usageRemaining": "{{provider}} {{window}} 残り"
       },
       "switchAccount": "アカウントを切り替える",
       "userFallback": "ユーザー"
@@ -4685,10 +4739,16 @@
       "personal": {
         "accountFallback": "アカウント {{number}}",
         "activeAccount": "使用中",
+        "autoCredits": "Okouクレジットを使用",
         "autoDescription": "Claude または ChatGPT アカウントを接続すると、より多くのモデルを使えます。",
         "autoTitle": "より多くのモデルを使う",
+        "claudeGroup": "Claudeのプラン",
+        "claudePlans": "Pro、Max",
         "claudeTitle": "Claude",
+        "codexGroup": "ChatGPTのプラン",
+        "codexPlans": "Plus、Pro、Business",
         "codexTitle": "ChatGPT (Codex)",
+        "connect": "接続",
         "connectAccount": "アカウントを接続",
         "disconnectAccount": "アカウントの接続を解除",
         "disconnectDescription": "このアカウントをOkouから削除します。プロバイダーとのサブスクリプションは解約されません。",
@@ -4696,7 +4756,9 @@
         "disconnectTitle": "{{account}}の接続を解除しますか？",
         "loadError": "アカウントを読み込めませんでした。",
         "loadingAccounts": "アカウントを読み込み中…",
+        "managePlans": "プランを管理",
         "noAccounts": "接続済みのアカウントはありません。",
+        "ownPlan": "自分のプランで実行",
         "reconnectAccount": "再接続",
         "retry": "再試行",
         "status": {
@@ -4890,26 +4952,22 @@
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
         },
-        "morningBriefEmail": {
-          "checkStatus": "配信状況を確認",
-          "description": "Morning Brief のテンプレートを使い、固定のサンプルをアカウントのメールアドレスに送信します。Agent の実行や配信スケジュールの変更は行いません。",
-          "reasons": {
-            "delivery-failed": "配信に失敗しました。以前の送信がメールサービスに受け付けられている可能性があります。",
-            "expired": "配信期限が切れました。以前の送信がメールサービスに受け付けられている可能性があります。",
-            "no-email": "送信をスキップしました。アカウントにメールアドレスがありません。",
-            "suppressed": "送信をスキップしました。アカウントのメールアドレスへの配信は抑制されています。",
-            "unsubscribed": "送信をスキップしました。アカウントはメール更新の配信を停止しています。"
-          },
-          "requestFailed": "リクエストが完了しませんでした。再試行では同じリクエストを使い、重複送信を防ぎます。",
-          "retry": "テストメールを再試行",
-          "send": "テストメールを送信",
-          "sendAnother": "別のテストメールを送信",
-          "sending": "送信中…",
+        "morningBrief": {
+          "checkStatus": "実行状況を確認",
+          "description": "アカウントで有効なワークフローを使って一度実行します。提案の更新や実際のメール送信が行われる場合があります。毎日のスケジュールは変わりません。",
+          "openChat": "会話を開く",
+          "requestFailed": "リクエストが完了しませんでした。再試行では同じリクエストを使い、重複実行を防ぎます。",
+          "retry": "再試行",
+          "run": "ブリーフを実行",
+          "runAgain": "もう一度実行",
+          "starting": "開始中…",
           "status": {
-            "queued": "配信待ちです。別のサンプルを送信する前に状況を確認してください。",
-            "sent": "メールサービスが受け付けました。受信トレイと迷惑メールをご確認ください。受信トレイへの到着は未確認です。"
+            "completed": "完了しました。",
+            "failed": "実行に失敗しました。会話で詳細を確認してください。",
+            "queued": "キューに追加しました。会話で進捗を確認できます。",
+            "running": "実行中です。"
           },
-          "title": "Morning Brief テストメール"
+          "title": "モーニングブリーフ"
         },
         "openrouterPreset": {
           "description": "組織全体の新しい Auto および組み込み Okou 1.0 の実行に適用されます。既存の実行は変更されません。",
@@ -5319,7 +5377,6 @@
     "addressHelp": "登録された Tailnet ピアの IP、完全なホスト名、または短い名前を使用してください。SSH ログインとホスト鍵の検証は別途必要です。",
     "adoptHelp": "組織のネットワークを自分の個人用ネットワークに変更します。他の所有者は保存済みホストを再関連付けする必要があります。",
     "changed": "Tailscale ネットワークが変更されました。下書きの保存前に最新の設定を確認してください。",
-    "cleanupHelp": "接続終了後も一時ノードが Tailscale に残る場合があります。提供元による削除時刻は保証されません。",
     "clientId": "OAuth クライアント ID",
     "clientSecret": "OAuth クライアントシークレット",
     "createNew": "Tailscale ネットワークを作成",
@@ -5328,6 +5385,24 @@
     "edit": "Tailscale を編集",
     "failed": "Tailscale の変更を保存できませんでした。再試行してください。",
     "forbidden": "この Tailscale ネットワークは管理できません。組織のネットワークには管理者権限が必要です。",
+    "guide": {
+      "accessControls": "Access controls",
+      "allPortsAndProtocols": "All ports and protocols",
+      "allUsersAndDevices": "All users and devices",
+      "destination": "Destination",
+      "oauth": "OAuth",
+      "oauthHelp": "Trust credentials で Credential → OAuth を選択します。Keys → Auth Keys で Write と tag:okou を選び、Generate credential を選択して Client ID と Client secret を下の欄へコピーします。",
+      "policyHelp": "このルールは tag:okou からすべてのユーザーとデバイスへの全ポート・プロトコルでのアクセスを許可します。既存の grants に追加し、ほかのポリシーは保持してください。",
+      "portAndProtocol": "Port and protocol",
+      "rules": "General access rules",
+      "rulesHelp": "Access controls → Visual editor → General access rules で Add rule を選び、以下の推奨値を使ってください。",
+      "source": "Source",
+      "stepsLabel": "Tailscale の設定手順",
+      "tags": "Tags",
+      "tagsHelp": "対象デバイスの tailnet を使ってください。Access controls → Visual editor → Tags で Create tag を選び、Tag name に okou を入力して Tag owners を選択します。下の登録タグには tag:okou を入力します。",
+      "title": "Tailscale を設定するには？",
+      "trustCredentials": "Trust credentials"
+    },
     "inUse": "SSH ホストがこのネットワークを使用中です。先に再関連付けまたは削除してください。",
     "invalid": "Tailscale の設定に無効な項目があります。確認して再試行してください。",
     "loadFailed": "Tailscale を読み込めませんでした。再試行してください。",
@@ -5342,7 +5417,6 @@
     "rebindHelp": "Tailscale ネットワークを選択または作成してホストを再関連付けします。SSH ログインと信頼済みホスト鍵は維持されます。",
     "replace": "OAuth 認証情報を変更",
     "select": "Tailscale ネットワークを選択",
-    "setupHelp": "これらのタグに限定した OAuth クライアントを使用してください。Tailnet のポリシーで SSH ポートを許可する必要があります。保存時に接続テストやチャットへのアクセス許可は行いません。",
     "summary_other": "{{count}} 件の Tailscale を設定済み",
     "tags": "登録タグ",
     "tagsHelp": "タグはカンマで区切ってください。例: tag:okou",
@@ -5380,6 +5454,11 @@
     },
     "importHint": "ドキュメント、プレゼンテーション、画像をインポートできます。",
     "loadFailed": "テンプレートを読み込めませんでした。",
+    "rename": {
+      "action": "名前の変更",
+      "cancel": "キャンセル",
+      "save": "保存"
+    },
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "retry": "再試行",
     "sharedBy": "{{owner}} が共有",
@@ -5451,6 +5530,24 @@
     "cancel": "キャンセル",
     "close": "閉じる",
     "configured": "設定済み",
+    "connectionStatus": {
+      "attention_other": "{{count}} 個の VNC ホストで対応が必要です",
+      "observedAt": "記録日時 {{time}}",
+      "reasons": {
+        "authentication_failed": "認証またはサーバーの識別情報の検証に失敗しました。",
+        "disconnected": "接続試行中にサーバーが切断しました。",
+        "invalid_credential": "保存済みの認証情報を使用できませんでした。",
+        "kerberos_expired": "Kerberos 認証情報の有効期限が切れました。",
+        "kerberos_non_renewable": "Kerberos 認証情報を更新できません。",
+        "kerberos_renewal_exhausted": "Kerberos 認証情報の更新上限に達しました。",
+        "network_failure": "接続の通信に失敗しました。",
+        "protocol": "サーバーが選択した接続プロトコルを完了しませんでした。",
+        "timed_out": "接続試行がタイムアウトしました。",
+        "unsafe_destination": "ネットワークポリシーにより接続先が拒否されました。",
+        "unsupported_profile": "サーバーは選択したセキュリティ設定に対応していません。"
+      },
+      "unavailable": "VNC 接続の状態を取得できません"
+    },
     "credential": {
       "add": "認証情報を追加",
       "appleDhFieldHelp": "各項目は UTF-8 で 1～63 バイトです。NUL は使用できません。",
@@ -6285,68 +6382,6 @@
       "title": "ワークフロー",
       "viewAutomations": "オートメーションを表示する"
     },
-    "official": {
-      "activeInstallationDescription": "この公式ワークフローは引き続き動作し、管理対象コンテンツは読み取り専用のままです。",
-      "activeInstallationTitle": "公式ワークフロー",
-      "agent": "エージェント",
-      "automationCount_one": "{{count}} 件の自動化",
-      "automationCount_other": "{{count}} 件の自動化",
-      "badge": "公式",
-      "browse": "公式を探す",
-      "chooseValue": "値を選択",
-      "copySucceededUninstallFailed": "コピーは準備できましたが、元の公式ワークフローをアンインストールできませんでした。",
-      "description": "Okou Official Team が管理・保守するワークフローをインストールします。",
-      "empty": "利用可能な公式ワークフローはありません。",
-      "includedAutomations": "含まれる自動化",
-      "install": "インストール",
-      "installDescription": "エージェントを選択し、必須パラメーターをすべて入力してください。含まれるすべての自動化がインストールされます。",
-      "installed": "公式ワークフローをインストールしました",
-      "installedStatus": "インストール済み",
-      "installErrorDescription": "エージェントとパラメーター値を確認して、もう一度お試しください。",
-      "installErrorTitle": "公式ワークフローをインストールできませんでした",
-      "installTitle": "{{name}} をインストール",
-      "intendedOff": "オフに設定",
-      "intendedOn": "オンに設定",
-      "loadErrorDescription": "このカタログは利用できないか、アカウントで有効になっていない可能性があります。",
-      "loadErrorTitle": "公式ワークフローを読み込めませんでした",
-      "no": "いいえ",
-      "noParameters": "必要なパラメーターはありません。",
-      "noResults": "検索に一致する公式ワークフローはありません。",
-      "notFound": "この公式ワークフローは見つかりませんでした。",
-      "parameterCount_one": "{{count}} 個のパラメーター",
-      "parameterCount_other": "{{count}} 個のパラメーター",
-      "parameterRequired": "{{key}}（必須）",
-      "reconciliationState": "{{state}} · {{intended}}",
-      "reconfigure": "再構成",
-      "reconfigured": "公式ワークフローを再構成しました",
-      "reconfigureDescription": "このワークフローや自動化を置き換えずに、型付きパラメーターを更新します。",
-      "reconfigureDialogDescription": "管理対象の自動化をすべて確認し、パラメーターを更新してください。",
-      "reconfigureErrorDescription": "必須の値を確認して、もう一度お試しください。",
-      "reconfigureErrorTitle": "公式ワークフローを再構成できませんでした",
-      "reconfigureTitle": "インストールパラメーター",
-      "reconfigureUnavailable": "正規のパラメーターメタデータは一時的に利用できません。",
-      "retiredBadge": "公式 · 廃止",
-      "retiredDefinitionDescription": "保持されているこの定義は表示できますが、新たにインストールすることはできません。",
-      "retiredInstallationDescription": "この定義は廃止されています。既存のインストールは、アンインストールするまで動作し、読み取り専用のままです。",
-      "retiredInstallationTitle": "廃止された公式ワークフロー",
-      "retiredTitle": "廃止された定義",
-      "retry": "もう一度試す",
-      "search": "公式ワークフローを検索",
-      "selectAgent": "エージェントを選択",
-      "statusCurrent": "最新",
-      "statusFailed": "失敗",
-      "statusNeedsReconfiguration": "再構成が必要",
-      "statusReconciling": "同期中",
-      "title": "公式ワークフロー",
-      "unavailableInstallationDescription": "承認済みの定義は一時的に利用できません。既存の操作コントロールは引き続き利用できます。",
-      "unavailableInstallationTitle": "公式定義を利用できません",
-      "uninstall": "アンインストール",
-      "uninstallConfirm": "公式インストールとそのすべての自動化を削除します。この操作は元に戻せません。",
-      "uninstallDescription": "管理されたライフサイクルを通じて、この公式ワークフローのインストールを削除します。",
-      "uninstallTitle": "公式ワークフローをアンインストール",
-      "viewAndInstall": "表示してインストール",
-      "yes": "はい"
-    },
     "skillImport": {
       "action": "スキルをインポート",
       "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",
@@ -6366,7 +6401,6 @@
       "connect": "接続する",
       "disconnect": "切断する",
       "disconnecting": "切断中…",
-      "manage": "管理",
       "moreOptions": "その他のオプション",
       "uninstall": "アンインストール",
       "uninstalling": "アンインストール中…",
@@ -6375,22 +6409,19 @@
     "connected": "接続済み",
     "connectedWithDetail": "接続されました ({{detail}})",
     "discord": {
-      "accountSetup": "Discord の公式ブラウザー認証でアカウントを接続してください。",
-      "approvalConfirmed": "このタブを閉じると、元のタブで接続が完了します。",
+      "addNewServer": "新しいサーバーに参加",
       "approvalFailed": "確認できませんでした。元の Okou アカウントと組織でログインするか、認証をやり直してください。",
       "authorizationError": "Discord の認証を完了できませんでした。もう一度お試しください。",
-      "authorizing": "認証中…",
-      "browserConsent": "Discord のウィンドウで認証を完了してください。このページは自動的に更新されます。",
       "chooseWorkspace": "ワークスペースを選択",
       "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
       "connectedTitle": "Discord に接続済み",
-      "connectingTitle": "Discord に接続中",
       "connectTitle": "Discord に接続",
       "defaultWorkspace": "Discord の既定のワークスペース",
       "description": "サーバーで Okou にメンションするか、ボットにダイレクトメッセージを送信してください。",
       "disconnect": "Discord の接続を解除",
+      "installDescription": "サーバーを管理できるアカウントで Discord にログインし、Okou を承認してください。",
+      "installTitle": "Okou をサーバーに追加",
       "invalidLink": "この Discord 接続リンクは無効です。Discord から新しいリンクを開いてください。",
-      "limitedContext": "コンテキストの制限: Okou は通常のチャンネルメッセージを受信できない場合があります。Okou にメンションし、必要な詳細情報を含めてください。",
       "open": "Discord を開く",
       "openInBrowser": "ブラウザーで開く",
       "pendingConsent": "このタブを閉じて、元のタブから接続をやり直してください。",
@@ -6437,7 +6468,6 @@
     },
     "telegram": {
       "description": "Telegram メッセージをエージェントにルーティングする",
-      "openSettings": "Telegram 設定を開く",
       "title": "Telegram"
     }
   }

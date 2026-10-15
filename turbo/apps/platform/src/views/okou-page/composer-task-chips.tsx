@@ -1,5 +1,6 @@
-import { useGet, useSet, useLoadable } from "ccstate-react";
+import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { Tabs as TabsPrimitive } from "@base-ui/react/tabs";
 import {
   ArrowRight,
   ChartNoAxesCombined,
@@ -10,7 +11,7 @@ import {
   Route,
   Lightbulb,
 } from "lucide-react";
-import { Button, Tabs, TabsList, TabsTrigger, TabsContent } from "@okouai/ui";
+import { Button, Tabs, TabsList, TabsContent } from "@okouai/ui";
 import {
   agentSuggestionsEnabled$,
   visibleAgentSuggestions$,
@@ -486,17 +487,20 @@ function ComposerTaskTabs({
       <TabsList className="mx-auto h-auto flex-wrap gap-2 bg-transparent p-0">
         {tasks.map((task) => {
           const Icon = TASK_ICONS[task];
+          // Keep the Button's chip geometry; the styled TabsTrigger supplies
+          // segmented-control sizing that overrides its height and radius.
           return (
-            <TabsTrigger
+            <TabsPrimitive.Tab
               key={task}
               value={task}
+              className="data-active:bg-segment-selected data-active:shadow-segment-selected"
               render={
                 <Button type="button" variant="outline" className={TASK_CHIP} />
               }
             >
               <Icon size={16} className="text-muted-foreground" aria-hidden />
               {labels[task]}
-            </TabsTrigger>
+            </TabsPrimitive.Tab>
           );
         })}
       </TabsList>
@@ -520,9 +524,12 @@ export function ComposerTaskChips({
   const suggestions = useLoadable(agentSuggestionsEnabled$);
   const suggestionsEnabled =
     suggestions.state === "hasData" && suggestions.data;
-  const items = useLoadable(visibleAgentSuggestions$);
+  // Suggestions joins the row only once the pool has resolved with items. A
+  // pending or failed read would add a tab and a placeholder that vanish again
+  // whenever the pool turns out empty; a refresh keeps the last resolved pool.
+  const items = useLastLoadable(visibleAgentSuggestions$);
   const showSuggestions =
-    suggestionsEnabled && (items.state !== "hasData" || items.data.length > 0);
+    suggestionsEnabled && items.state === "hasData" && items.data.length > 0;
   const current = useGet(signals.taskChips.task$);
   const selected =
     current === "suggestions" && !showSuggestions

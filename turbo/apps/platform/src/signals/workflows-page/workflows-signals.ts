@@ -34,7 +34,6 @@ import {
   type WorkflowUpdateRequest,
   type WorkflowAutomationUpdateRequest,
 } from "@okouai/api-contracts/contracts/workflows";
-import { MORNING_BRIEF_OFFICIAL_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
@@ -754,12 +753,11 @@ export const reloadWorkflows$ = command(({ set }) => {
   set(reloadWorkflowData$);
 });
 
-export function isMorningBriefWorkflow(
+/** Official Workflows are system-managed and never listed as user Workflows. */
+function isOfficialWorkflow(
   workflow: Pick<WorkflowSummary, "official">,
 ): boolean {
-  return (
-    workflow.official?.definitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
-  );
+  return workflow.official !== null;
 }
 
 /** The current agent detail route's visible workflows. */
@@ -773,7 +771,7 @@ export const currentAgentVisibleWorkflows$ = computed(
     const client = get(apiClient$)(workflowsCollectionContract);
     const result = await accept(client.list({ query: { agentId } }), [200]);
     return result.body.filter((workflow) => {
-      return !isMorningBriefWorkflow(workflow);
+      return !isOfficialWorkflow(workflow);
     });
   },
 );
@@ -786,7 +784,7 @@ export const allVisibleWorkflows$ = computed(
     const result = await accept(client.list({ query: {} }), [200]);
     return result.body
       .filter((workflow) => {
-        return !isMorningBriefWorkflow(workflow);
+        return !isOfficialWorkflow(workflow);
       })
       .sort((a, b) => {
         if (a.visibility !== b.visibility) {
@@ -810,7 +808,7 @@ export const allWorkflowAutomationEntries$ = computed(
     );
     return automationResult.body
       .filter((entry) => {
-        return !isMorningBriefWorkflow(entry.workflow);
+        return !isOfficialWorkflow(entry.workflow);
       })
       .sort((a, b) => {
         if (a.automation.enabled !== b.automation.enabled) {

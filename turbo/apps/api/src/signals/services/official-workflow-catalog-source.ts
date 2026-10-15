@@ -1,9 +1,11 @@
+import { INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
   type OfficialWorkflowSourceCatalog,
+  type OfficialWorkflowSourceDefinition,
 } from "@okouai/api-contracts/contracts/official-workflow-catalog";
 
-const MORNING_BRIEF_INSTRUCTION = `# Morning Brief
+const MORNING_BRIEF_CONTEXT_INSTRUCTION = `# Morning Brief
 
 Prepare a concise Markdown briefing that helps the user start the day with the most important current work.
 
@@ -23,7 +25,12 @@ If a source, connector, thread, or capability is unavailable, say that it was un
 
 Prepare the briefing as concise Markdown and return it in the Chat. Choose short headings and bullets based on the information actually found instead of following a fixed schema. Prioritize time-sensitive commitments, decisions, blockers, conflicts, and clear next actions; include source names and dates or times when useful.
 
-## Decide whether to email the briefing
+`;
+
+// The `--idempotency-key morning-brief` retry covers Runner rootfs CLIs that
+// still require the flag. Remove it, together with the contract's ignored
+// Morning Brief key, after Runners with those CLIs have drained.
+const MORNING_BRIEF_DELIVERY_INSTRUCTION = `## Decide whether to email the briefing
 
 You own the email decision. Send only when the verified briefing contains useful information worth notifying the user about, such as an upcoming commitment, a decision or request needing attention, a blocker, a conflict, or a clear next action. A completed run, an empty briefing, routine noise, or unavailable sources alone are not reasons to send. When there is nothing useful to notify, skip email and leave the briefing and coverage information in the Chat.
 
@@ -31,17 +38,67 @@ Use only \`okou notify mail --kind morning-brief\` to send to the user's account
 
 ## Send once per automation event
 
-Read the server-provided Automation identity block in this run's prompt. Use its exact \`automationId\` and \`automationEventId\` to form the idempotency key \`morning-brief:<automationId>:<automationEventId>\`. This identity comes from Okou, not from the external event payload. Never use the current clock, only a calendar date, or a Run ID: retries of one event must reuse its key, while separate manual requests must remain distinct even when they share a timestamp.
-
-If the Automation identity block or either ID is missing, do not invent a key or send a new notification; report the missing context in the Chat. If a resumed event already submitted a notification, retain its original key and exact subject and body instead of deriving a replacement key from the current prompt.
+Okou sends at most one Morning Brief email per automation event and derives its idempotency key from this run's event. Do not pass \`--idempotency-key\`, and do not construct a key from the prompt, the clock, a date, or a Run ID. If the command is rejected only because \`--idempotency-key\` is required, rerun it unchanged except for \`--idempotency-key morning-brief\`; Okou ignores that value for Morning Brief.
 
 Save the final briefing to a UTF-8 Markdown file, within the CLI's 8000-character body limit. Choose a concise subject within its 180-character limit, then call:
 
-\`okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --idempotency-key "<event-key>" --json\`
+\`okou notify mail --kind morning-brief --subject "Morning Brief" --file brief.md --json\`
 
-Preserve the exact subject, file contents, and event key for retries. A \`queued\` receipt means delivery was accepted into the outbox; the delivery service owns provider retries, so do not submit another notification or wait for inbox delivery. \`sent\` means the provider accepted it, not that the user read or received it. Use \`okou notify get <notification-id> --json\` when you need the receipt's current status. Respect \`skipped\` and \`failed\` receipts without choosing a new key to force another attempt. After a transport timeout, retry only the same key and exact content, or query the receipt if its ID is known. On a content conflict, do not change the key or regenerate the briefing to resend; report the unresolved delivery state in the Chat. If the original content cannot be recovered, do not start a new notification for this event.
+Preserve the exact subject and file contents for retries. A \`queued\` receipt means delivery was accepted into the outbox; the delivery service owns provider retries, so do not submit another notification or wait for inbox delivery. \`sent\` means the provider accepted it, not that the user read or received it. Use \`okou notify get <notification-id> --json\` when you need the receipt's current status. Respect \`skipped\` and \`failed\` receipts without trying to force another attempt. After a transport timeout, retry only with the exact same subject and content, or query the receipt if its ID is known. A conflict means this event already has a notification with different content; do not regenerate the briefing to resend, and report the unresolved delivery state in the Chat.
 
 Do not read application database tables or use internal application APIs, signed input or output URLs, or callback endpoints.`;
+
+const MORNING_BRIEF_SUGGESTION_INSTRUCTION = `## Curate next-step suggestions
+
+Before completing the briefing or making its email decision, run \`okou suggestion list --json\` to inspect the user's active suggestions and recent consumed/removed identities. Only Okou, the primary Agent, manages this user-owned pool. Retain useful actions, update changed content or priority, withdraw obsolete actions, and create verified new actions. There may be zero to ten active suggestions; do not fill a quota or replace the pool by calendar date. Larger integer priorities appear first, with no requirement for consecutive or unique values.
+
+Use \`okou suggestion create --file suggestion.json --json\`, \`okou suggestion update <id> --file changes.json --json\`, and \`okou suggestion delete <id> --json\`. A creation file contains a stable UUID \`id\`, concise \`title\` and \`rationale\`, integer \`priority\`, nullable \`threadId\`, and \`draft\` in the normal saved composer format: \`{ "draftUserMessage": { "version": 1, "parts": [{ "type": "text", "text": "A self-contained next-step prompt" }] }, "draftAttachments": null }\`. Existing authorized conversations use their exact thread ID; new conversations use null and are handled by Okou. Include verified background and source references in the draft. Do not modify the user's live composer or execute suggested work.
+
+Preserve the same UUID and exact creation file after an uncertain result. A consumed/removed identity is terminal; do not replay it to restore an item. A genuinely new next action needs a new UUID. If the pool is full, explicitly decide which item to withdraw before creating another. If the command or capability is unavailable, explicitly report that suggestion curation was unavailable and why; continue producing the useful briefing and its normal email decision without another publication channel. Otherwise, complete this phase even when no new suggestions are warranted, and briefly report whether existing suggestions were retained, updated, removed, or new ones published.`;
+
+const MORNING_BRIEF_INSTRUCTION =
+  MORNING_BRIEF_CONTEXT_INSTRUCTION + MORNING_BRIEF_DELIVERY_INSTRUCTION;
+
+// Temporary AgentSuggestion rollout (#39591): at GA, include the curation phase
+// in MORNING_BRIEF_INSTRUCTION, switch installations back to morning-brief,
+// retire internal-test-morning-brief, and remove the rollout selection code.
+// Retain immutable revisions needed by captured and historical Runs.
+const INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION = [
+  MORNING_BRIEF_CONTEXT_INSTRUCTION.trimEnd(),
+  MORNING_BRIEF_SUGGESTION_INSTRUCTION,
+  MORNING_BRIEF_DELIVERY_INSTRUCTION,
+].join("\n\n");
+
+function morningBriefDefinition(
+  name: string,
+  instruction: string,
+): OfficialWorkflowSourceDefinition {
+  return {
+    name,
+    lifecycle: "active",
+    workflow: {
+      displayName: "Morning Brief",
+      description:
+        "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and unread Chat priorities.",
+      instruction,
+      files: [],
+    },
+    blueprints: [
+      {
+        key: "daily-delivery",
+        parameters: [],
+        desiredState: {
+          kind: "schedule",
+          schedule: {
+            type: "cron",
+            cronExpression: "0 7 * * *",
+          },
+        },
+      },
+    ],
+    presentation: { category: "productivity" },
+  };
+}
 
 /**
  * The sole deployed source candidate. Every Definition uses the same validated
@@ -51,31 +108,11 @@ export const OFFICIAL_WORKFLOW_SOURCE_CATALOG: OfficialWorkflowSourceCatalog =
   Object.freeze<OfficialWorkflowSourceCatalog>({
     schemaVersion: OFFICIAL_WORKFLOW_CATALOG_PUBLICATION_SCHEMA_VERSION,
     definitions: [
-      {
-        name: "morning-brief",
-        lifecycle: "active",
-        workflow: {
-          displayName: "Morning Brief",
-          description:
-            "Summarize today's email, GitHub, calendar, connected Slack activity from the past 24 hours, and unread Chat priorities.",
-          instruction: MORNING_BRIEF_INSTRUCTION,
-          files: [],
-        },
-        blueprints: [
-          {
-            key: "daily-delivery",
-            parameters: [],
-            desiredState: {
-              kind: "schedule",
-              schedule: {
-                type: "cron",
-                cronExpression: "0 7 * * *",
-              },
-            },
-          },
-        ],
-        presentation: { category: "productivity" },
-      },
+      morningBriefDefinition("morning-brief", MORNING_BRIEF_INSTRUCTION),
+      morningBriefDefinition(
+        INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME,
+        INTERNAL_TEST_MORNING_BRIEF_INSTRUCTION,
+      ),
       {
         name: "connector-doctor",
         lifecycle: "retired",

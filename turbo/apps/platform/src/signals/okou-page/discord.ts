@@ -8,16 +8,8 @@ import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
-import { searchParams$ } from "../route.ts";
-import { resetSignal, waitLoopUntil, withCleanup } from "../utils.ts";
-
-export const discordAuthorizationFailed$ = computed((get) => {
-  return get(searchParams$).get("discord") === "error";
-});
-
-export const discordAuthorizationPending$ = computed((get) => {
-  return get(searchParams$).get("discord") === "pending";
-});
+import { resetSignal, settle, waitLoopUntil, withCleanup } from "../utils.ts";
+import { createDiscordOauthResultNotifier } from "./discord-oauth-message.ts";
 
 const reloadVersion$ = state(0);
 
@@ -42,7 +34,7 @@ const reloadDiscordOrg$ = command(({ set }) => {
 
 // Mutations stay pending until the card has the refreshed status, so the
 // previous server choice or connection never reappears after a save.
-const refreshDiscordOrg$ = command(
+export const refreshDiscordOrg$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(reloadDiscordOrg$);
     await get(discordOrgData$);
@@ -63,34 +55,40 @@ export class DiscordPopupBlockedError extends Error {
 
 const resetDiscordAuthorization$ = resetSignal();
 
+export interface DiscordAuthorizationOptions {
+  readonly guildId?: string;
+  readonly flow?: "install" | "connect";
+}
+
 export const startDiscordAuthorization$ = command(
-  async ({ get, set }, guildId: string | null, signal: AbortSignal) => {
+  async (
+    { get, set },
+    options: DiscordAuthorizationOptions,
+    signal: AbortSignal,
+  ) => {
     signal.throwIfAborted();
     if (!get(featureSwitch$)[FeatureSwitchKey.DiscordIntegration]) {
       return;
     }
     const flowSignal = set(resetDiscordAuthorization$, signal);
-    const standalone =
-      window.matchMedia?.("(display-mode: standalone)").matches ?? false;
     // Preserve the click's browser activation before awaiting authenticated HTTP.
-    const popup = window.open(
-      "about:blank",
-      "_blank",
-      standalone ? undefined : "width=600,height=700",
-    );
+    const popup = window.open("about:blank", "_blank");
     if (!popup) {
       throw new DiscordPopupBlockedError();
     }
     const closePopup = () => {
       popup.close();
     };
+    let resultAvailable = false;
+    let resultNotifier:
+      ReturnType<typeof createDiscordOauthResultNotifier> | undefined;
     flowSignal.addEventListener("abort", closePopup, { once: true });
     return await withCleanup(
       (async () => {
         const client = get(apiClient$)(discordOauthContract);
         const result = await accept(
           client.start({
-            body: guildId ? { guildId } : {},
+            body: options,
             fetchOptions: { signal: flowSignal, credentials: "include" },
           }),
           [200],
@@ -108,31 +106,63 @@ export const startDiscordAuthorization$ = command(
             "Discord authorization did not return an attempt state",
           );
         }
-        popup.location.href = result.body.authorizationUrl;
-        await waitLoopUntil(
-          () => {
-            return popup.closed;
-          },
-          250,
+        resultNotifier = createDiscordOauthResultNotifier(
+          popup,
+          attemptState,
           flowSignal,
-          { retryTransientErrors: false, testIntervalMs: 10 },
+          () => {
+            flowSignal.removeEventListener("abort", closePopup);
+          },
         );
-        flowSignal.throwIfAborted();
+        popup.location.href = result.body.authorizationUrl;
         // Callback verification alone cannot bind an account. Complete under
         // the current authenticated owner with the original browser's proof.
-        await accept(
-          client.complete({
-            body: { state: attemptState, completionToken },
-            fetchOptions: { signal: flowSignal, credentials: "include" },
-          }),
-          [200],
+        // Approval-required is the API's pending state, not a failed attempt.
+        const completed = await settle(
+          waitLoopUntil(
+            async () => {
+              const completion = await accept(
+                client.complete({
+                  body: { state: attemptState, completionToken },
+                  fetchOptions: { signal: flowSignal, credentials: "include" },
+                }),
+                [200, 409],
+                flowSignal,
+              );
+              flowSignal.throwIfAborted();
+              if (
+                completion.status === 409 &&
+                completion.body.error.code ===
+                  "DISCORD_OAUTH_APPROVAL_REQUIRED" &&
+                !popup.closed
+              ) {
+                return false;
+              }
+              await accept(Promise.resolve(completion), [200], flowSignal);
+              return true;
+            },
+            1000,
+            flowSignal,
+            { retryTransientErrors: false, testIntervalMs: 10 },
+          ),
           flowSignal,
         );
+        flowSignal.throwIfAborted();
+        // Let the consent page show either result in place. A document navigation
+        // would restart App bootstrap and flash its skeleton a second time.
+        resultAvailable = true;
+        resultNotifier.notify(completed.ok ? "connected" : "error");
+        if (!completed.ok) {
+          throw completed.error;
+        }
         await set(refreshDiscordOrg$, flowSignal);
       })(),
       () => {
-        flowSignal.removeEventListener("abort", closePopup);
-        closePopup();
+        if (!resultAvailable) {
+          flowSignal.removeEventListener("abort", closePopup);
+          resultNotifier?.dispose();
+          closePopup();
+        }
       },
     );
   },

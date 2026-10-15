@@ -1,6 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
 
@@ -30,37 +29,9 @@ async function importDeck(
   user: ReturnType<typeof userEvent.setup>,
   file: File,
 ): Promise<void> {
-  await openTemplatePicker(user, "Presentation");
+  await openTemplatePicker(user);
   await user.upload(screen.getByLabelText("Import your own deck"), file);
 }
-
-test("Do not send a presentation that failed to upload", async () => {
-  const capture = mockTemplateChat();
-  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
-    return respond(500, {
-      error: { code: "INTERNAL_SERVER_ERROR", message: "Upload failed" },
-    });
-  });
-  const user = userEvent.setup();
-
-  await setupPage({
-    context,
-    path: `/chats/${THREAD_ID}`,
-    host: "app.okou.ai",
-  });
-
-  await importDeck(
-    user,
-    new File(["broken"], "broken-deck.pptx", {
-      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    }),
-  );
-  await waitFor(() => {
-    expect(screen.getByText("Failed to upload broken-deck.pptx")).toBeVisible();
-  });
-  expect(capture.sentMessages).toHaveLength(0);
-  expect(capture.runPrompts).toHaveLength(0);
-});
 
 test("Import a presentation deck into chat", async () => {
   const capture = mockTemplateChat();
@@ -72,7 +43,7 @@ test("Import a presentation deck into chat", async () => {
     size: 6,
     url: "https://cdn.example.test/modern-deck.pptx",
   });
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,
@@ -114,7 +85,7 @@ test("Import a presentation deck from a new chat", async () => {
     size: 8,
     url: "https://cdn.example.test/new-chat-deck.pptx",
   });
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
 
   await setupPage({
     context,

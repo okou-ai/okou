@@ -139,7 +139,7 @@ use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_provider::{ClaimedJob, JobCandidate};
 use runner_provider::{RunCancellationRegistration, RunCancellationRegistry};
 use runner_types::ids::RunId;
-use runner_types::types::{CompleteRequest, SandboxReuseResult};
+use runner_types::types::CompleteRequest;
 
 pub(super) struct DiscoveredJob {
     pub(super) candidate: JobCandidate,
@@ -357,7 +357,7 @@ pub(super) async fn handle_admitted_job(
             cancellation,
             resource,
             job_home_disk_mb,
-            ClaimedFailureDiagnostics::without_timing(None),
+            ClaimedFailureDiagnostics::without_timing(),
             crate::executor::ExecutionFailure::cancelled(),
             &mut ctx,
         )
@@ -385,7 +385,7 @@ pub(super) async fn handle_admitted_job(
             cancellation,
             resource,
             job_home_disk_mb,
-            ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
+            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
             crate::executor::ExecutionFailure::from_error(error),
             &mut ctx,
         )
@@ -443,10 +443,7 @@ pub(super) async fn handle_admitted_job(
                     let completion = complete_claimed_failure(
                         claimed,
                         cancellation,
-                        ClaimedFailureDiagnostics::from_timing(
-                            Some(failure.reuse_result),
-                            &pre_spawn_timing,
-                        ),
+                        ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                         crate::executor::ExecutionFailure::from_error(failure.error),
                         ctx.spawn_ctx,
                     )
@@ -475,7 +472,7 @@ pub(super) async fn handle_admitted_job(
                     cancellation,
                     SandboxAdmittedResource::Reusable(reservation),
                     job_home_disk_mb,
-                    ClaimedFailureDiagnostics::from_timing(None, &pre_spawn_timing),
+                    ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                     crate::executor::ExecutionFailure::cancelled(),
                     &mut ctx,
                 )
@@ -512,7 +509,7 @@ pub(super) async fn handle_admitted_job(
                 ),
                 ReservedActivation::CannotStart {
                     budget_lease,
-                    reuse_result,
+                    reuse_result: _,
                     error,
                 } => {
                     drop(transfer_guard);
@@ -523,10 +520,7 @@ pub(super) async fn handle_admitted_job(
                             cancellation,
                             SandboxAdmittedResource::Fresh(budget_lease),
                             job_home_disk_mb,
-                            ClaimedFailureDiagnostics::from_timing(
-                                Some(reuse_result),
-                                &pre_spawn_timing,
-                            ),
+                            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                             failure,
                             &mut ctx,
                         )
@@ -535,10 +529,7 @@ pub(super) async fn handle_admitted_job(
                         let completion = complete_claimed_failure(
                             claimed,
                             cancellation,
-                            ClaimedFailureDiagnostics::from_timing(
-                                Some(reuse_result),
-                                &pre_spawn_timing,
-                            ),
+                            ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                             failure,
                             ctx.spawn_ctx,
                         )
@@ -582,12 +573,12 @@ pub(super) async fn handle_admitted_job(
                 ),
                 ExactActivation::Cancelled {
                     resource,
-                    reuse_result,
+                    reuse_result: _,
                 } => {
                     let completion = complete_claimed_failure(
                         claimed,
                         cancellation,
-                        ClaimedFailureDiagnostics::from_timing(reuse_result, &pre_spawn_timing),
+                        ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                         crate::executor::ExecutionFailure::cancelled(),
                         ctx.spawn_ctx,
                     )
@@ -601,7 +592,7 @@ pub(super) async fn handle_admitted_job(
                 }
                 ExactActivation::CannotStart {
                     budget_lease,
-                    reuse_result,
+                    reuse_result: _,
                     error,
                 } => {
                     complete_claimed_without_sandbox(
@@ -609,10 +600,7 @@ pub(super) async fn handle_admitted_job(
                         cancellation,
                         SandboxAdmittedResource::Fresh(budget_lease),
                         job_home_disk_mb,
-                        ClaimedFailureDiagnostics::from_timing(
-                            Some(reuse_result),
-                            &pre_spawn_timing,
-                        ),
+                        ClaimedFailureDiagnostics::from_timing(&pre_spawn_timing),
                         crate::executor::ExecutionFailure::from_error(error),
                         &mut ctx,
                     )
@@ -796,7 +784,6 @@ pub(super) async fn recover_unconsumed_admission(
         claimed,
         cancellation,
         ClaimedFailureDiagnostics {
-            reuse_result: None,
             blank_pool_selection,
         },
         crate::executor::ExecutionFailure::cancelled(),
@@ -848,24 +835,18 @@ async fn complete_claimed_without_sandbox(
 
 #[derive(Clone, Copy)]
 struct ClaimedFailureDiagnostics {
-    reuse_result: Option<SandboxReuseResult>,
     blank_pool_selection: Option<BlankPoolSelection>,
 }
 
 impl ClaimedFailureDiagnostics {
-    const fn without_timing(reuse_result: Option<SandboxReuseResult>) -> Self {
+    const fn without_timing() -> Self {
         Self {
-            reuse_result,
             blank_pool_selection: None,
         }
     }
 
-    fn from_timing(
-        reuse_result: Option<SandboxReuseResult>,
-        timing: &RunnerPreSpawnTiming,
-    ) -> Self {
+    fn from_timing(timing: &RunnerPreSpawnTiming) -> Self {
         Self {
-            reuse_result,
             blank_pool_selection: timing.blank_pool_selection(),
         }
     }
@@ -907,8 +888,6 @@ async fn complete_claimed_failure(
                 failure_reason: None,
                 error: Some(failure.error),
                 sandbox_id: None,
-                sandbox_reuse_result: diagnostics.reuse_result,
-                home_reuse_result: None,
             },
             completion_auth,
         )

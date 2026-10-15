@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -6,9 +7,9 @@ import {
   CircleCheck,
   EllipsisVertical,
   Download,
-  Settings,
 } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
+import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -50,9 +51,12 @@ import {
   connectGithubInstallation$,
   githubIntegrationData$,
 } from "../../signals/okou-page/github.ts";
+import {
+  disconnectTelegramAccount$,
+  telegramBots$,
+} from "../../signals/okou-page/telegram.ts";
+import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Link } from "../router/link.tsx";
-import { ROUTES } from "../../signals/route-paths.ts";
 import { openFreshOAuth } from "../../lib/oauth-window.ts";
 import { AgentPhoneCard } from "./agentphone-card.tsx";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -66,18 +70,12 @@ import {
 } from "./discord-authorization-actions.tsx";
 import {
   discordOrgData$,
-  discordAuthorizationPending$,
   disconnectDiscordOrg$,
   selectDiscordDmBinding$,
 } from "../../signals/okou-page/discord.ts";
-import {
-  approveDiscordAuthorization$,
-  discordApprovalAvailable$,
-  discordApprovalRequest$,
-  discordApprovalSucceeded$,
-} from "../../signals/okou-page/discord-oauth-approval.ts";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
+import { connectDiscordFromWorks$ } from "../../signals/okou-page/discord-connect-signals.ts";
 
 const slackIconImg = settingsIconAssetUrl("slack");
 const teamsIconImg = settingsIconAssetUrl("teams");
@@ -112,6 +110,78 @@ function ConnectedIndicator({
             })}
       </span>
     </span>
+  );
+}
+
+function ProviderCardMenu({
+  children,
+  disabled = false,
+  moreOptionsLabel,
+  disconnectLabel,
+  uninstallLabel,
+  onDisconnect,
+  onUninstall,
+  disconnecting,
+}: {
+  children?: ReactNode;
+  disabled?: boolean;
+  moreOptionsLabel: string;
+  disconnectLabel: string;
+  uninstallLabel?: string;
+  onDisconnect?: () => void;
+  onUninstall?: () => void;
+  disconnecting: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            showTooltip
+            type="button"
+            variant="quiet"
+            size="icon-xs"
+            className="shrink-0"
+            aria-label={moreOptionsLabel}
+          >
+            <EllipsisVertical size={16} />
+          </Button>
+        }
+      />
+      <PopoverContent align="end" className="flex flex-col gap-0.5 w-40 p-2">
+        {children}
+        {onDisconnect && (
+          <button
+            type="button"
+            aria-label={disconnectLabel}
+            disabled={disabled || disconnecting}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+            onClick={onDisconnect}
+          >
+            {disconnecting
+              ? t(($) => {
+                  return $.works.actions.disconnecting;
+                })
+              : t(($) => {
+                  return $.works.actions.disconnect;
+                })}
+          </button>
+        )}
+        {onUninstall && (
+          <button
+            type="button"
+            aria-label={uninstallLabel}
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
+            onClick={onUninstall}
+          >
+            {t(($) => {
+              return $.works.actions.uninstall;
+            })}
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -189,56 +259,14 @@ function ProviderCardActions({
         </Button>
       )}
       {isInstalled && (isConnected || isAdmin) && (
-        <Popover>
-          <PopoverTrigger
-            render={
-              <Button
-                showTooltip
-                type="button"
-                variant="quiet"
-                size="icon-xs"
-                className="shrink-0"
-                aria-label={moreOptionsLabel}
-              >
-                <EllipsisVertical size={16} />
-              </Button>
-            }
-          />
-          <PopoverContent
-            align="end"
-            className="flex flex-col gap-0.5 w-40 p-2"
-          >
-            {isConnected && (
-              <button
-                type="button"
-                aria-label={disconnectLabel}
-                disabled={disconnecting}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
-                onClick={onDisconnect}
-              >
-                {disconnecting
-                  ? t(($) => {
-                      return $.works.actions.disconnecting;
-                    })
-                  : t(($) => {
-                      return $.works.actions.disconnect;
-                    })}
-              </button>
-            )}
-            {isAdmin && (
-              <button
-                type="button"
-                aria-label={uninstallLabel}
-                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left text-destructive hover:bg-state-hover hover:text-accent-foreground transition-colors"
-                onClick={onUninstall}
-              >
-                {t(($) => {
-                  return $.works.actions.uninstall;
-                })}
-              </button>
-            )}
-          </PopoverContent>
-        </Popover>
+        <ProviderCardMenu
+          moreOptionsLabel={moreOptionsLabel}
+          disconnectLabel={disconnectLabel}
+          uninstallLabel={uninstallLabel}
+          disconnecting={disconnecting}
+          onDisconnect={isConnected ? onDisconnect : undefined}
+          onUninstall={isAdmin ? onUninstall : undefined}
+        />
       )}
     </>
   );
@@ -521,68 +549,6 @@ function DiscordDmSelection({
   );
 }
 
-function DiscordApprovalPanel() {
-  const { t } = useTranslation();
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  const loadable = useLoadable(discordApprovalRequest$);
-  const approve = useSet(approveDiscordAuthorization$);
-  const pageSignal = useGet(pageSignal$);
-  if (!available && !approved) {
-    return null;
-  }
-  return (
-    <div className="space-y-2 px-4 pb-3">
-      {loadable.state !== "hasError" ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          {approved
-            ? t(($) => {
-                return $.works.discord.approvalConfirmed;
-              })
-            : t(($) => {
-                return $.works.discord.authorizing;
-              })}
-        </p>
-      ) : null}
-      {available && loadable.state === "hasError" ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            detach(approve(pageSignal), Reason.DomCallback);
-          }}
-        >
-          {t(($) => {
-            return $.works.discord.retry;
-          })}
-        </Button>
-      ) : null}
-      {loadable.state === "hasError" ? (
-        <p role="alert" className="text-sm text-destructive">
-          {t(($) => {
-            return $.works.discord.approvalFailed;
-          })}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
-function DiscordAuthorizationPendingNotice() {
-  const { t } = useTranslation();
-  const pending = useGet(discordAuthorizationPending$);
-  const available = useGet(discordApprovalAvailable$);
-  const approved = useGet(discordApprovalSucceeded$);
-  return pending && !available && !approved ? (
-    <p role="status" className="px-4 pb-3 text-sm text-muted-foreground">
-      {t(($) => {
-        return $.works.discord.pendingConsent;
-      })}
-    </p>
-  ) : null;
-}
-
 function DiscordCardDescription({ data }: { data: DiscordOrgStatus | null }) {
   const { t } = useTranslation();
   return (
@@ -603,6 +569,7 @@ function DiscordCard() {
   });
   const status = useLastLoadable(discordOrgData$);
   const [disconnectState, disconnect] = useLoadableSet(disconnectDiscordOrg$);
+  const [installation, install] = useLoadableSet(connectDiscordFromWorks$);
   const [selectionState, selectBinding] = useLoadableSet(
     selectDiscordDmBinding$,
   );
@@ -629,32 +596,45 @@ function DiscordCard() {
             disabled={disconnectState.state === "loading"}
           />
           {data?.isConnected ? (
-            <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row sm:items-center">
+            <>
               <ConnectedIndicator testId="discord-connected-indicator" />
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={disconnectState.state === "loading"}
-                onClick={() => {
+              <ProviderCardMenu
+                moreOptionsLabel={t(($) => {
+                  return $.works.actions.moreOptions;
+                })}
+                disconnectLabel={t(($) => {
+                  return $.works.discord.disconnect;
+                })}
+                disconnecting={disconnectState.state === "loading"}
+                disabled={installation.state === "loading"}
+                onDisconnect={() => {
                   detach(disconnect(pageSignal), Reason.DomCallback);
                 }}
               >
-                {t(($) => {
-                  return $.works.discord.disconnect;
-                })}
-              </Button>
-            </div>
+                {data.isAvailable ? (
+                  <button
+                    type="button"
+                    disabled={
+                      disconnectState.state === "loading" ||
+                      installation.state === "loading"
+                    }
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-left hover:bg-state-hover hover:text-accent-foreground transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                    onClick={() => {
+                      detach(
+                        install({ flow: "install" }, pageSignal),
+                        Reason.DomCallback,
+                      );
+                    }}
+                  >
+                    {t(($) => {
+                      return $.works.discord.addNewServer;
+                    })}
+                  </button>
+                ) : null}
+              </ProviderCardMenu>
+            </>
           ) : null}
         </div>
-        <DiscordApprovalPanel />
-        <DiscordAuthorizationPendingNotice />
-        {data?.isConnected && data.contextMode === "mentions_only" ? (
-          <p className="border-t border-border px-4 py-3 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.discord.limitedContext;
-            })}
-          </p>
-        ) : null}
         {data?.isConnected && data.dmBindings.length > 1 ? (
           <DiscordDmSelection
             data={data}
@@ -897,16 +877,33 @@ function GithubCard() {
 
 function TelegramCard() {
   const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const botsLoadable = useLastLoadable(telegramBots$);
+  const bot =
+    botsLoadable.state === "hasData"
+      ? botsLoadable.data.find((entry) => {
+          return entry.id === OFFICIAL_TELEGRAM_BOT_ID;
+        })
+      : undefined;
+  const [connectLoadable, connect] = useLoadableSet(authorizeTelegramBot$);
+  const [disconnectLoadable, disconnect] = useLoadableSet(
+    disconnectTelegramAccount$,
+  );
+  const connecting = connectLoadable.state === "loading";
+  const disconnecting = disconnectLoadable.state === "loading";
+  const loading = botsLoadable.state === "loading";
+  const configured = bot && bot.official?.configured !== false;
+  const connectedUser = bot?.connectedUser;
+  const username = connectedUser?.telegramUsername?.trim().replace(/^@+/, "");
+  const connectedDetail = username
+    ? `@${username}`
+    : connectedUser?.telegramDisplayName?.trim() ||
+      connectedUser?.telegramUserId;
+
   return (
-    <Link
-      pathname={ROUTES.settingsTelegram}
+    <div
       data-slot="integration-card"
-      className={surfaceVariants({
-        className: "flex flex-col text-inherit no-underline",
-      })}
-      aria-label={t(($) => {
-        return $.works.telegram.openSettings;
-      })}
+      className={surfaceVariants({ className: "flex flex-col" })}
     >
       <div className="flex items-center gap-4 p-4">
         <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
@@ -920,20 +917,91 @@ function TelegramCard() {
               })}
             </div>
           </div>
-          <div className="truncate text-sm text-muted-foreground">
-            {t(($) => {
-              return $.works.telegram.description;
-            })}
+          <div className="text-sm text-muted-foreground">
+            {botsLoadable.state === "hasError"
+              ? t(($) => {
+                  return $.connectors.providerSettings.telegram.loadError;
+                })
+              : !loading && !configured
+                ? t(($) => {
+                    return $.connectors.providerSettings.telegram
+                      .officialMissing;
+                  })
+                : t(($) => {
+                    return $.works.telegram.description;
+                  })}
           </div>
         </div>
-        <span className="shrink-0 inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-secondary-foreground">
-          <Settings size={14} />
-          {t(($) => {
-            return $.works.actions.manage;
-          })}
-        </span>
+        {bot?.isConnected ? (
+          <>
+            <ConnectedIndicator
+              testId="telegram-connected-indicator"
+              connectedDetail={connectedDetail}
+            />
+            <Popover>
+              <PopoverTrigger
+                render={
+                  <Button
+                    showTooltip
+                    type="button"
+                    variant="quiet"
+                    size="icon-xs"
+                    className="shrink-0"
+                    aria-label={t(($) => {
+                      return $.works.actions.moreOptions;
+                    })}
+                  >
+                    <EllipsisVertical size={16} />
+                  </Button>
+                }
+              />
+              <PopoverContent
+                align="end"
+                className="flex w-40 flex-col gap-0.5 p-2"
+              >
+                <button
+                  type="button"
+                  disabled={disconnecting}
+                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+                  onClick={() => {
+                    detach(
+                      disconnect(OFFICIAL_TELEGRAM_BOT_ID, pageSignal),
+                      Reason.DomCallback,
+                    );
+                  }}
+                >
+                  {disconnecting
+                    ? t(($) => {
+                        return $.works.actions.disconnecting;
+                      })
+                    : t(($) => {
+                        return $.works.actions.disconnect;
+                      })}
+                </button>
+              </PopoverContent>
+            </Popover>
+          </>
+        ) : (
+          <Button
+            data-testid="telegram-connect-button"
+            variant="outline"
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 rounded-lg"
+            disabled={loading || !configured || connecting}
+            onClick={() => {
+              detach(
+                connect(OFFICIAL_TELEGRAM_BOT_ID, "works", pageSignal),
+                Reason.DomCallback,
+              );
+            }}
+          >
+            {t(($) => {
+              return $.works.actions.connect;
+            })}
+          </Button>
+        )}
       </div>
-    </Link>
+    </div>
   );
 }
 

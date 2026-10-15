@@ -325,7 +325,6 @@ describe("retained chat input observation", () => {
       const agent = await bdd.createAgent(f.actor, {
         displayName: "Rejected input",
       });
-      f.registerAgent(agent.agentId);
       await f.activateWithoutCredits();
       await f.suspend(0);
       const eventId = randomUUID();

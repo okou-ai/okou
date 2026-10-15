@@ -2,6 +2,7 @@ import type { PersonalSubscriptionProviderType } from "@okouai/api-contracts/con
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed } from "ccstate";
 import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
+import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { personalModelProviders$ } from "../external/personal-model-providers.ts";
 import { setSidebarExpanded$ } from "./nav.ts";
@@ -10,7 +11,20 @@ import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-
 import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth.ts";
 
 export type SubscriptionLinkingSource =
-  "composer_model_slot" | "account_menu" | "me_page";
+  "composer_model_slot" | "composer_model_panel" | "account_menu" | "me_page";
+
+/** Both subscriptions, in the order every entry lists them. */
+export const SUBSCRIPTION_PROVIDERS: readonly PersonalSubscriptionProviderType[] =
+  ["codex-oauth-token", "claude-code-oauth-token"];
+
+export interface SubscriptionPlanStatus {
+  readonly type: PersonalSubscriptionProviderType;
+  readonly linked: boolean;
+  /** The tighter usage window of the active account, when it is reported. */
+  readonly remainingPercent: number | null;
+  /** Which window `remainingPercent` belongs to, so the caption can name it. */
+  readonly limitingWindow: "fiveHour" | "week" | null;
+}
 
 export const subscriptionLinkingEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry];
@@ -22,6 +36,34 @@ export const subscriptionLinkingUnlinked$ = computed(async (get) => {
   }
   const { modelProviders } = await get(personalModelProviders$);
   return modelProviders.length === 0;
+});
+
+/**
+ * Each subscription, linked or not, so the model panel can keep an entry for
+ * the one still missing instead of reading as if only one can be linked.
+ */
+export const subscriptionPlanStatuses$ = computed(async (get) => {
+  if (!get(subscriptionLinkingEnabled$)) {
+    return null;
+  }
+  const { modelProviders } = await get(personalModelProviders$);
+  return SUBSCRIPTION_PROVIDERS.map((type): SubscriptionPlanStatus => {
+    const accounts = modelProviders.filter((account) => {
+      return account.type === type;
+    });
+    const active = accounts.find((account) => {
+      return account.isActive !== false;
+    });
+    const limiting = limitingSubscriptionUsageWindow(active?.subscriptionUsage);
+    const remainingPercent = limiting?.remainingPercent ?? null;
+    return {
+      type,
+      linked: accounts.length > 0,
+      remainingPercent,
+      limitingWindow:
+        limiting !== null && remainingPercent !== null ? limiting.kind : null,
+    };
+  });
 });
 
 export const trackSubscriptionLinkingOpened$ = command(
@@ -52,11 +94,15 @@ export const connectSubscriptionLinkingProvider$ = command(
   },
 );
 
-/** Me has no submenu, so it opens Models, which lists both providers. */
+/** Me and the model panel's Manage plans open Models, which lists both. */
 export const openSubscriptionLinkingSettings$ = command(
-  async ({ set }, signal: AbortSignal) => {
+  async (
+    { set },
+    source: "me_page" | "composer_model_panel",
+    signal: AbortSignal,
+  ) => {
     set(setSidebarExpanded$, false);
-    captureSubscriptionLinkingEvent("entry_clicked", "me_page");
+    captureSubscriptionLinkingEvent("entry_clicked", source);
     await set(openSettingsDialogAt$, "model", signal);
   },
 );

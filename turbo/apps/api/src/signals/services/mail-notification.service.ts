@@ -6,13 +6,15 @@ import type {
 } from "@okouai/api-contracts/contracts/notifications";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
+import { chatAutomationContext } from "@okouai/db/schema/chat-automation-context";
+import { chatEvents } from "@okouai/db/schema/chat-event";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import { users } from "@okouai/db/schema/user";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command, computed } from "ccstate";
-import { and, count, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   conflict,
   notConfigured,
@@ -67,12 +69,15 @@ function activeRunScope(owner: Owner & { readonly runId: string }) {
   );
 }
 
-function replay(receipt: Receipt, payloadHash: string) {
-  return receipt.payloadHash === payloadHash
-    ? { status: 200 as const, body: response(receipt, true) }
-    : conflict(
-        "This idempotency key already has different content. Reuse the original content or choose a new key for an intentional new notification.",
-      );
+function replay(receipt: Receipt, body: NotifyMailBody, payloadHash: string) {
+  if (receipt.payloadHash === payloadHash) {
+    return { status: 200 as const, body: response(receipt, true) };
+  }
+  return conflict(
+    body.kind === "morning-brief"
+      ? "This Morning Brief automation event already has a notification with different content. Okou sends at most one Morning Brief email per event; retry only with the original subject and body."
+      : "This idempotency key already has different content. Reuse the original content or choose a new key for an intentional new notification.",
+  );
 }
 
 function notificationTemplate(
@@ -130,20 +135,57 @@ function notificationAdmissionReadPlan() {
 }
 
 interface NotificationDelivery {
+  readonly idempotencyKey: string;
   readonly payloadHash: string;
   readonly email: string | null;
 }
+
+const MORNING_BRIEF_SOURCE_REQUIRED =
+  "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.";
+
+/**
+ * Okou sends one Morning Brief email per automation event. The key comes from
+ * the event that started this Run rather than from the agent, whose context
+ * can lose the prompt's identity before it decides to send.
+ */
+const morningBriefNotificationKey$ = command(
+  async ({ set }, runId: string, signal: AbortSignal) => {
+    const [event] = await set(writeDb$)
+      .select({
+        automationId: chatAutomationContext.automationId,
+        automationEventId: chatAutomationContext.id,
+      })
+      .from(chatEvents)
+      .innerJoin(
+        chatAutomationContext,
+        eq(chatAutomationContext.id, chatEvents.contextId),
+      )
+      .where(
+        and(
+          eq(chatEvents.runId, runId),
+          eq(chatEvents.eventType, "input.prompt"),
+          eq(chatEvents.contextType, "automation"),
+        ),
+      )
+      .orderBy(asc(chatEvents.seqId))
+      .limit(1);
+    signal.throwIfAborted();
+    return event
+      ? `morning-brief:${event.automationId}:${event.automationEventId}`
+      : null;
+  },
+);
 
 const commitMailNotification$ = command(
   async (
     { set },
     owner: Owner & { readonly runId: string },
     body: NotifyMailBody,
-    { payloadHash, email }: NotificationDelivery,
+    { idempotencyKey, payloadHash, email }: NotificationDelivery,
     signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
-    const keyScope = notificationKeyScope(owner, body.idempotencyKey);
+    const keyScope = notificationKeyScope(owner, idempotencyKey);
     const runScope = activeRunScope(owner);
     const plan = notificationAdmissionReadPlan();
     // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0176; new non-billing transactions are prohibited.
@@ -176,7 +218,7 @@ const commitMailNotification$ = command(
         .where(keyScope)
         .limit(1);
       if (winner) {
-        return replay(winner, payloadHash);
+        return replay(winner, body, payloadHash);
       }
       if (body.kind === "morning-brief") {
         const [source] = activeRun.workflowAutomationId
@@ -189,9 +231,7 @@ const commitMailNotification$ = command(
           : [];
         signal.throwIfAborted();
         if (!isMorningBriefNotificationSource(owner, activeRun, source)) {
-          return resourceUnavailable(
-            "morning-brief notifications require a run from your official Morning Brief automation. Use --kind notification for ordinary updates.",
-          );
+          return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
         }
       }
       const [suppression] = email
@@ -223,7 +263,7 @@ const commitMailNotification$ = command(
           orgId: owner.orgId,
           userId: owner.userId,
           sourceRunId: owner.runId,
-          idempotencyKey: body.idempotencyKey,
+          idempotencyKey,
           payloadHash,
           outboxId,
           status: reason ? "skipped" : "queued",
@@ -246,7 +286,7 @@ const commitMailNotification$ = command(
         if (!concurrent) {
           throw new Error("Mail notification claim missing after conflict");
         }
-        return replay(concurrent, payloadHash);
+        return replay(concurrent, body, payloadHash);
       }
       if (outboxId && email) {
         await tx.insert(emailOutbox).values({
@@ -275,8 +315,15 @@ export const queueMailNotification$ = command(
     body: NotifyMailBody,
     signal: AbortSignal,
   ) => {
+    const idempotencyKey =
+      body.kind === "morning-brief"
+        ? await set(morningBriefNotificationKey$, owner.runId, signal)
+        : body.idempotencyKey;
+    if (idempotencyKey === null) {
+      return resourceUnavailable(MORNING_BRIEF_SOURCE_REQUIRED);
+    }
     const db = set(writeDb$);
-    const keyScope = notificationKeyScope(owner, body.idempotencyKey);
+    const keyScope = notificationKeyScope(owner, idempotencyKey);
     // The default purpose keeps its established byte encoding. An explicit
     // Morning Brief purpose adds a discriminator, so changing kind conflicts.
     const payloadHash = createHash("sha256")
@@ -296,7 +343,7 @@ export const queueMailNotification$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (existing) {
-      return replay(existing, payloadHash);
+      return replay(existing, body, payloadHash);
     }
 
     const runScope = activeRunScope(owner);
@@ -316,7 +363,7 @@ export const queueMailNotification$ = command(
       commitMailNotification$,
       owner,
       body,
-      { payloadHash, email: subscription.email },
+      { idempotencyKey, payloadHash, email: subscription.email },
       signal,
     );
   },
@@ -342,18 +389,11 @@ export function mailNotification(owner: Owner, id: string) {
 }
 
 export const eraseMailNotifications$ = command(
-  async (
-    { set },
-    owner: { readonly userId?: string; readonly orgId?: string },
-    signal: AbortSignal,
-  ) => {
-    if (!owner.userId && !owner.orgId) {
-      throw new Error("Mail notification erasure requires an owner");
-    }
+  async ({ set }, owner: Owner, signal: AbortSignal) => {
     const db = set(writeDb$);
     const scope = and(
-      owner.userId ? eq(mailNotifications.userId, owner.userId) : undefined,
-      owner.orgId ? eq(mailNotifications.orgId, owner.orgId) : undefined,
+      eq(mailNotifications.userId, owner.userId),
+      eq(mailNotifications.orgId, owner.orgId),
     );
     const erasedOutbox = db.$with("erased_email_outbox").as(
       db

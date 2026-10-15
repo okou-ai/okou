@@ -7,12 +7,13 @@ import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { initSlackOrg$, watchSlackConnection$ } from "../okou-page/slack.ts";
 import { watchDiscordConnection$ } from "../okou-page/discord.ts";
-import {
-  approveDiscordAuthorization$,
-  ownDiscordApprovalRoute$,
-} from "../okou-page/discord-oauth-approval.ts";
+import { ownDiscordApprovalRoute$ } from "../okou-page/discord-oauth-approval.ts";
 import { watchTeamsConnection$ } from "../okou-page/teams.ts";
 import { watchGithubIntegration$ } from "../okou-page/github.ts";
+import {
+  reloadTelegramBots$,
+  watchTelegramConnection$,
+} from "../okou-page/telegram.ts";
 import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
@@ -60,8 +61,8 @@ export const setupWorksPage$ = command(
         discordStatus === "error" ||
         discordStatus === "connected")
     ) {
-      // The API still returns to /works for already-open App versions. Keep
-      // the captured approval proof in memory while showing the dedicated page.
+      // OAuth callbacks land in the separate authorization tab. The original
+      // Works tab has no callback marker and keeps its card in place.
       set(
         replacePathSilently$,
         ROUTES.settingsDiscord,
@@ -73,6 +74,7 @@ export const setupWorksPage$ = command(
     }
     set(ownDiscordApprovalRoute$, signal);
     set(setAgentPhoneConnectDialogOpen$, false);
+    set(reloadTelegramBots$);
     set(updatePage$, createElement(WorksPage), "sidebar");
     set(
       updateDocumentTitle$,
@@ -88,11 +90,11 @@ export const setupWorksPage$ = command(
       set(watchTeamsConnection$, signal),
       set(watchDiscordConnection$, signal),
       set(watchGithubIntegration$, signal),
+      set(watchTelegramConnection$, signal),
       set(watchAgentPhoneConnection$, signal),
     ]);
     signal.throwIfAborted();
 
     await set(hideAppSkeleton$, signal);
-    await set(approveDiscordAuthorization$, signal);
   },
 );

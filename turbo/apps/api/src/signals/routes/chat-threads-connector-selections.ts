@@ -5,12 +5,12 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { bestEffort } from "../utils";
 import {
   clearChatThreadConnectorSelection,
-  listChatThreadConnectorSelections,
+  connectorSelectionsForChatThread,
   updateChatThreadConnectorSelection$,
 } from "../services/chat-thread-connector-selection.service";
 import { reconcileGmailWatchesForUser$ } from "../services/gmail-automation-watch.service";
@@ -19,14 +19,19 @@ import { reconcileGoogleFormsWatchesForUser$ } from "../services/google-forms-au
 import { reconcileGoogleMeetSubscriptionsForUser$ } from "../services/google-meet-automation-watch.service";
 import type { RouteEntry } from "../route-entry";
 
-const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
+const selectionScope$ = computed((get) => {
   const auth = get(organizationAuthContext$);
   const params = get(pathParamsOf(chatThreadConnectorSelectionContract.get));
-  const result = await listChatThreadConnectorSelections(get(db$), {
+  return {
     orgId: auth.orgId,
     userId: auth.userId,
     chatThreadId: params.id,
-  });
+  };
+});
+const selections$ = connectorSelectionsForChatThread(selectionScope$);
+
+const getSelectionsInner$ = computed(async (get): Promise<unknown> => {
+  const result = await get(selections$);
   if (!result) {
     return notFound("Chat thread not found");
   }

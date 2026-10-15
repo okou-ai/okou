@@ -1,6 +1,5 @@
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 
 import { http, HttpResponse } from "msw";
@@ -93,9 +92,6 @@ describe("GitHub file integration routes", () => {
     const owner = publicRunOwner(context, fixture.actor, {
       restoreEnvironment: () => {
         restoreAccepted();
-      },
-      afterRuns: () => {
-        return deletePublicWorkspace(context, fixture.actor);
       },
     });
     return await owner.run(async () => {

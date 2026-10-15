@@ -64,7 +64,7 @@ EOF
     assert_success
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0) and
+        (.result.frameworkSessionId | type == "string" and length > 0) and
         .source.providerType == "claude-code-oauth-token" and
         .source.runtimeProviderType == "claude-code-oauth-token" and
         .source.model == "claude-sonnet-5-5" and
@@ -120,7 +120,7 @@ EOF
     ((elapsed < 90))
     run jq -e '
         .status == "completed" and
-        (.result.agentSessionId | type == "string" and length > 0)
+        (.result.frameworkSessionId | type == "string" and length > 0)
     ' <<<"$output"
     echo "$output"
     assert_success

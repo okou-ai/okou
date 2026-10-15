@@ -1,3 +1,4 @@
+import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -100,7 +101,6 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-  BrandSlack,
   ElapsedTime,
   LazySpinner,
   ThinkingMessages,
@@ -167,9 +167,7 @@ import {
   PreviewableAudioAttachmentChip,
   PreviewableFileAttachmentChip,
 } from "./attachment-chips.tsx";
-import { DiscordMark } from "./components/discord-mark.tsx";
 import { McpMark } from "./components/mcp-mark.tsx";
-import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import { classifyChatAttachment } from "../../signals/chat-page/parse-body-blocks.ts";
 import type {
   ArtifactKind,
@@ -6683,6 +6681,11 @@ function generationTemplateTypeLabel(
     return null;
   }
   switch (generationTemplateKind(value)) {
+    case "document": {
+      return i18n.t(($) => {
+        return $.documentTemplates.title;
+      });
+    }
     case "avatar": {
       return i18n.t(($) => {
         return $.artifacts.templates.avatar;
@@ -6723,15 +6726,6 @@ function generationTemplateTypeLabel(
     }
   }
 }
-
-const annotationIconImgs = {
-  feishu: settingsIconAssetUrl("lark"),
-  lark: settingsIconAssetUrl("lark"),
-  teams: settingsIconAssetUrl("teams"),
-  telegram: settingsIconAssetUrl("telegram"),
-  github: settingsIconAssetUrl("github"),
-  agentphone: settingsIconAssetUrl("imessage"),
-} as const;
 
 function MessageAnnotation({
   renderPart,
@@ -6806,103 +6800,6 @@ function MessageAnnotation({
   );
 }
 
-// Discord permalinks always point at discord.com; any other destination is
-// shown as an unlinked source instead of an off-site link.
-const DISCORD_MESSAGE_URL =
-  /^https:\/\/discord\.com\/channels\/(?:\d+|@me)\/\d+\/\d+$/u;
-
-function sourceMessageHref(
-  part: Extract<
-    UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
-  >["part"],
-): string | undefined {
-  if (part.kind === "discord" && !DISCORD_MESSAGE_URL.test(part.href ?? "")) {
-    return undefined;
-  }
-  return part.href;
-}
-
-function sourceMessageLinkText(
-  t: TFunction<"common">,
-  part: Extract<
-    UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
-  >["part"],
-) {
-  const opensChat =
-    part.kind === "feishu" ||
-    part.kind === "lark" ||
-    (part.kind === "telegram" &&
-      /^https:\/\/t\.me\/[a-z\d_]+$/iu.test(part.href ?? "")) ||
-    (part.kind === "teams" &&
-      part.href?.startsWith("https://teams.microsoft.com/l/chat/") === true);
-  const openLabel =
-    part.kind === "agentphone"
-      ? t(($) => {
-          return $.chat.origins.openMessages;
-        })
-      : opensChat
-        ? t(($) => {
-            return $.chat.origins.openChat;
-          })
-        : t(($) => {
-            return $.chat.origins.openMessage;
-          });
-  return { opensChat, openLabel };
-}
-
-function sourceMessageLabel(
-  t: TFunction<"common">,
-  kind: Extract<
-    UserMessageAnnotationRenderPart,
-    { type: "source"; kind: "external" }
-  >["part"]["kind"],
-): string {
-  switch (kind) {
-    case "discord": {
-      return t(($) => {
-        return $.chat.origins.discord;
-      });
-    }
-    case "slack": {
-      return t(($) => {
-        return $.chat.origins.slack;
-      });
-    }
-    case "feishu": {
-      return t(($) => {
-        return $.chat.origins.feishu;
-      });
-    }
-    case "lark": {
-      return t(($) => {
-        return $.chat.origins.lark;
-      });
-    }
-    case "teams": {
-      return t(($) => {
-        return $.chat.origins.teams;
-      });
-    }
-    case "telegram": {
-      return t(($) => {
-        return $.chat.origins.telegram;
-      });
-    }
-    case "github": {
-      return t(($) => {
-        return $.chat.origins.github;
-      });
-    }
-    case "agentphone": {
-      return t(($) => {
-        return $.chat.origins.agentphone;
-      });
-    }
-  }
-}
-
 function SourceMessageAnnotation({
   renderPart,
   className,
@@ -6913,7 +6810,6 @@ function SourceMessageAnnotation({
   >;
   className: string;
 }) {
-  const { t } = useTranslation();
   if (renderPart.kind === "agent") {
     return (
       <AgentRunSourceMessageAnnotation
@@ -6923,88 +6819,11 @@ function SourceMessageAnnotation({
       />
     );
   }
-  const { part } = renderPart;
-  // Historical messages used "feishu" for both platforms; their link can
-  // identify Lark. New messages already carry the canonical source kind.
-  const sourceKind =
-    part.kind === "feishu" &&
-    part.href?.startsWith("https://applink.larksuite.com/") === true
-      ? "lark"
-      : part.kind;
-  const sourceLabel = sourceMessageLabel(t, sourceKind);
-  const href = sourceMessageHref(part);
-  const { opensChat, openLabel } = sourceMessageLinkText(t, part);
-  const ariaLabel =
-    opensChat && sourceKind !== "feishu" && sourceKind !== "lark"
-      ? t(
-          ($) => {
-            return $.chat.origins.openChatIn;
-          },
-          { integration: sourceLabel },
-        )
-      : sourceKind === "slack"
-        ? t(($) => {
-            return $.chat.origins.openSlackMessage;
-          })
-        : sourceKind === "discord"
-          ? t(($) => {
-              return $.chat.origins.openDiscordMessage;
-            })
-          : sourceKind === "feishu" || sourceKind === "lark"
-            ? t(($) => {
-                return $.chat.origins[
-                  sourceKind === "lark" ? "openLarkChat" : "openFeishuChat"
-                ];
-              })
-            : sourceKind === "teams"
-              ? t(($) => {
-                  return $.chat.origins.openTeamsMessage;
-                })
-              : sourceKind === "telegram"
-                ? t(($) => {
-                    return $.chat.origins.openTelegramMessage;
-                  })
-                : sourceKind === "github"
-                  ? t(($) => {
-                      return $.chat.origins.openGithubMessage;
-                    })
-                  : openLabel;
-  const content = (
-    <>
-      {sourceKind === "slack" ? (
-        <BrandSlack size={15} className="shrink-0" />
-      ) : sourceKind === "discord" ? (
-        <DiscordMark size={15} />
-      ) : (
-        <img
-          src={annotationIconImgs[sourceKind]}
-          alt=""
-          className="size-[15px] shrink-0 object-contain"
-        />
-      )}
-      <span className="shrink-0">{sourceLabel}</span>
-      {href ? (
-        <>
-          <span className="shrink-0">·</span>
-          <span className="min-w-0 truncate">{openLabel}</span>
-          <ArrowUpRight size={12} className="shrink-0" />
-        </>
-      ) : null}
-    </>
-  );
-  if (!href) {
-    return <div className={className}>{content}</div>;
-  }
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      aria-label={ariaLabel}
-      className={`${className} transition-colors hover:bg-state-hover hover:text-foreground`}
-    >
-      {content}
-    </a>
+    <ExternalSourceMessageAnnotation
+      part={renderPart.part}
+      className={className}
+    />
   );
 }
 

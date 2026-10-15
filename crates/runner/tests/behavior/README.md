@@ -5,12 +5,12 @@ provisioned metal host. Driver/remote-worker pairs and the agent-ready benchmark
 belong to this suite; `runner-behavior-durable.sh` owns staging, bounded systemd
 execution, reconnectable status and cleanup. Keep scenario logic with its owner.
 
-The home-cache promotion scenario pins its committed entry through the changed
-rootfs build and restore Runner startup. Before checkout, it acquires the shared
-routine-GC and capacity locks with bounded waits, then releases the entry pin.
-The restore submit has a 60-second deadline; success, failure and cleanup release
-the GC locks before service teardown. This protects restoration assertions from
-concurrent collectors on the shared native host.
+Required Crates lanes cover native execution, process containment, memory
+reclaim, cancellation, keep-alive and upgrade behavior. Cache publication,
+checkout, contention and rootfs-independent reuse are covered by the isolated
+real-file/flock [Rust cache tests](../../../runner-lifecycle/src/home_image_cache/tests/)
+and [finalization tests](../../../runner-supervisor/src/sandbox_finalization.rs).
+These tests use temporary cache roots rather than the shared metal-host cache.
 
 Run a driver from the repository root, for example:
 
@@ -26,14 +26,29 @@ and the complete leak/reuse/CPU lifecycle together. The lifecycle program owns
 its active pressure submit; the coordinator stops the Runner after success or a
 scenario failure. Support programs are checksum-verified before durable execution.
 
-Run agent-ready measurement separately with
+Home-cache restoration and Agent-ready measurements are **manual verification**,
+outside required per-PR CI. Different PRs can share a metal host and its global
+cache capacity/GC locks. Optional publication may correctly skip under contention,
+and the restoration fixture itself holds those locks across its restore submit.
+Use a provisioned host reserved for these commands, without concurrent CI or
+other cache-mutating workloads.
+
+Run `bash crates/runner/tests/behavior/runner-behavior-home-cache-promotion.sh`
+to verify live-writer rejection, freeze-based publication and Guest home contents
+across a changed rootfs and Runner restart. It pins the committed entry through
+the rootfs build and Runner startup, then acquires the routine-GC and capacity
+locks before releasing the entry pin. The restore submit has a 60-second deadline;
+success, failure and cleanup release GC locks before service teardown. This
+native Guest filesystem integration is additional evidence beyond ordinary Rust
+tests and is not asserted by required CI on every PR.
+
+Run Agent-ready measurement with
 `bash crates/runner/tests/behavior/runner-behavior-agent-ready.sh`. It owns a
 separate fixture and captured systemd invocation and calls the existing benchmark
 worker. `AGENT_READY_BENCHMARK_SAMPLES` defaults to one (six submissions across
 fresh, home-cache and exact reuse); explicit measurement runs may select 1–100.
 Missing/invalid durations, incorrect reuse and failed home promotion fail the
 command. Timing summaries are observations, not a performance-regression gate.
-The existing Crates lane c runs both entry points with the same pinned inputs.
 
 The Crates behavior lanes provide `METAL_USER`, `HOST`, `BIN_DIR`, `JOB_REF`,
 immutable rootfs/snapshot hashes, the official Runner token environment, and

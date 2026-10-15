@@ -18,7 +18,8 @@ import {
 } from "../../signals/okou-page/discord-oauth-approval.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
-import { searchParams$ } from "../../signals/route.ts";
+import { pathname$, searchParams$ } from "../../signals/route.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { DiscordMark } from "./components/discord-mark.tsx";
 import {
@@ -75,7 +76,6 @@ function PageContent() {
 
 function DiscordApprovalState() {
   const { t } = useTranslation();
-  const approved = useGet(discordApprovalSucceeded$);
   const request = useLoadable(discordApprovalRequest$);
   const approve = useSet(approveDiscordAuthorization$);
   const pageSignal = useGet(pageSignal$);
@@ -109,21 +109,7 @@ function DiscordApprovalState() {
   }
   return (
     <>
-      <ConnectStatusMark state="loading" idle={<DiscordMark size={40} />} />
-      <CenterText
-        title={t(($) => {
-          return $.works.discord.connectingTitle;
-        })}
-        body={
-          approved
-            ? t(($) => {
-                return $.works.discord.approvalConfirmed;
-              })
-            : t(($) => {
-                return $.connectors.providerConnect.common.verifying;
-              })
-        }
-      />
+      <ConnectCheckingState />
       <SettingsBackLink />
     </>
   );
@@ -133,6 +119,7 @@ function DiscordConnectionState() {
   const { t } = useTranslation();
   const status = useLastLoadable(discordOrgData$);
   const guildId = useGet(searchParams$).get("guild_id");
+  const installing = useGet(pathname$) === ROUTES.settingsDiscordInstall;
   const [authorization, connect] = useLoadableSet(connectDiscordAccount$);
   const pageSignal = useGet(pageSignal$);
   const connecting = authorization.state === "loading";
@@ -172,14 +159,15 @@ function DiscordConnectionState() {
     );
   }
   // A callback URL is presentation metadata, not evidence of a connection.
-  if (data?.isConnected) {
+  // An existing account connection does not prove this installation completed.
+  if (data?.isConnected && !installing) {
     return <DiscordSuccessState data={data} guildId={guildId} />;
   }
   return (
     <>
-      <DiscordConnectIntro data={data} connecting={connecting} />
+      <DiscordConnectIntro data={data} installing={installing} />
       <ConnectErrorAlert error={error} />
-      {data && canAuthorizeDiscord(data) ? (
+      {data && (installing ? data.isAvailable : canAuthorizeDiscord(data)) ? (
         <ConnectSubmitButton
           connecting={connecting}
           spinnerClassName="animate-spin mr-2"
@@ -188,12 +176,25 @@ function DiscordConnectionState() {
               ? t(($) => {
                   return $.works.discord.retry;
                 })
-              : t(($) => {
-                  return $.works.actions.connect;
-                })
+              : installing
+                ? t(($) => {
+                    return $.works.discord.addNewServer;
+                  })
+                : t(($) => {
+                    return $.works.actions.connect;
+                  })
           }
           onConnect={() => {
-            detach(connect(guildId, pageSignal), Reason.DomCallback);
+            detach(
+              connect(
+                {
+                  ...(guildId ? { guildId } : {}),
+                  ...(installing ? { flow: "install" } : {}),
+                },
+                pageSignal,
+              ),
+              Reason.DomCallback,
+            );
           }}
         />
       ) : null}
@@ -204,37 +205,39 @@ function DiscordConnectionState() {
 
 function DiscordConnectIntro({
   data,
-  connecting,
+  installing,
 }: {
   data: DiscordOrgStatus | null;
-  connecting: boolean;
+  installing: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <>
       <ConnectStatusMark idle={<DiscordMark size={40} />} />
       <CenterText
-        title={t(($) => {
-          return $.works.discord.connectTitle;
-        })}
+        title={
+          installing
+            ? t(($) => {
+                return $.works.discord.installTitle;
+              })
+            : t(($) => {
+                return $.works.discord.connectTitle;
+              })
+        }
         body={
-          connecting ? (
-            <span role="status">
-              {t(($) => {
-                return $.works.discord.browserConsent;
-              })}
-            </span>
-          ) : data?.isAvailable ? (
-            t(($) => {
-              return $.works.discord.connectDescription;
-            })
-          ) : data ? (
-            discordDescription(data)
-          ) : (
-            t(($) => {
-              return $.works.discord.unconfigured;
-            })
-          )
+          data?.isAvailable
+            ? installing
+              ? t(($) => {
+                  return $.works.discord.installDescription;
+                })
+              : t(($) => {
+                  return $.works.discord.connectDescription;
+                })
+            : data
+              ? discordDescription(data)
+              : t(($) => {
+                  return $.works.discord.unconfigured;
+                })
         }
       />
     </>

@@ -1,5 +1,4 @@
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { agentSessions } from "@okouai/db/runtime/agent-session";
 import { chatThreadSshAccessOverrides } from "@okouai/db/schema/chat-thread-ssh-access-override";
 import { chatThreadVncAccessOverrides } from "@okouai/db/schema/chat-thread-vnc-access-override";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -19,7 +18,7 @@ export function runThreadExists() {
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentSessions.agentId),
+          eq(chatThreads.agentId, agentRuns.agentId),
         ),
       ),
   );
@@ -47,7 +46,7 @@ export function runThreadSshAccess(
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentSessions.agentId),
+          eq(chatThreads.agentId, agentRuns.agentId),
           sql`coalesce(${chatThreadSshAccessOverrides.enabled}, ${host.defaultEnabledForChats}) = true`,
         ),
       ),
@@ -71,7 +70,7 @@ export function runThreadVncAccess() {
         and(
           eq(chatThreads.id, agentRuns.chatThreadId),
           eq(chatThreads.userId, agentRuns.userId),
-          eq(chatThreads.agentId, agentSessions.agentId),
+          eq(chatThreads.agentId, agentRuns.agentId),
           sql`coalesce(${chatThreadVncAccessOverrides.enabled}, ${vncConnections.defaultEnabledForChats}) = true`,
         ),
       ),

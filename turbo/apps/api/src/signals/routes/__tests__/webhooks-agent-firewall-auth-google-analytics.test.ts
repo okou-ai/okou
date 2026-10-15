@@ -37,7 +37,6 @@ async function setupAnalyticsFirewall(publicFixture: PublicFirewallFixture) {
     description: "Exercises Analytics refresh and reconnect.",
     visibility: "private",
   });
-  publicFixture.registerAgent(agent.agentId);
   const run = await runs.createThreadRun(actor, {
     agentId: agent.agentId,
     prompt: "resolve Analytics firewall auth",

@@ -14,12 +14,10 @@ import { SlackFileFetchError } from "../../external/slack-file-fetcher";
 import { integrationsSlackRoutes } from "../integrations-slack";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createRouteMocks } from "./helpers/route-test";
 import { createPublicSlackOrgApi } from "./helpers/slack-public-install";
 import { settleIncludingAbort } from "../../utils";
@@ -109,7 +107,6 @@ async function readSlackStatus(
 }
 
 function createDeleteFixture() {
-  const actors: ApiTestUser[] = [];
   const installations: string[] = [];
   let accepted = captureConnectorExternalState(context);
   let previous: (() => void) | undefined;
@@ -131,31 +128,6 @@ function createDeleteFixture() {
           return slackOrgs.uninstallWorkspace(teamId);
         });
       }
-      const workspaces = new Map(
-        actors
-          .filter((actor) => {
-            return actor.orgId !== null;
-          })
-          .map((actor) => {
-            return [actor.orgId, actor];
-          }),
-      );
-      for (const actor of workspaces.values()) {
-        await cleanup(() => {
-          return deletePublicWorkspace(context, actor);
-        });
-      }
-      for (const actor of actors) {
-        await cleanup(async () => {
-          const webhooks = createWebhookCallbackApi(context);
-          webhooks.configureClerkWebhookSecret();
-          webhooks.verifyNextClerkWebhook({
-            type: "user.deleted",
-            data: { id: actor.userId },
-          });
-          await webhooks.requestClerkWebhook("{}", {}, [200]);
-        });
-      }
       await cleanup(flushWaitUntilForTest);
       if (errors.length > 0) {
         throw new AggregateError(errors, "Slack DELETE fixture cleanup failed");
@@ -170,9 +142,7 @@ function createDeleteFixture() {
     },
   );
   function user(options: Parameters<typeof bdd.user>[0] = {}) {
-    const actor = bdd.user(options);
-    actors.push(actor);
-    return actor;
+    return bdd.user(options);
   }
   function run<T>(operation: () => Promise<T>): Promise<T> {
     return owner.run(async () => {
@@ -626,123 +596,138 @@ async function expectErrorResponse(
 }
 
 describe("GET /api/integrations/slack/download-file", () => {
-  it("selects each request's installation across users and organizations", async () => {
-    const scenario = createPublicComputerUseScenario(context);
-    const first = scenario.user({ orgRole: "org:admin" });
-    const member = scenario.user({ orgId: first.orgId, orgRole: "org:member" });
-    const second = scenario.user({ orgRole: "org:admin" });
-    const missing = scenario.user({ orgRole: "org:admin" });
-    await scenario.run(async () => {
-      for (const actor of [first, member, second, missing]) {
-        await scenario.prepareActor(actor);
-      }
-      const a = await slackOrgs.installOrg({
-        actor: first,
-        withConnection: true,
-      });
-      scenario.beforeWorkspaceCleanup(() => {
-        return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
-      });
-      const b = await slackOrgs.installOrg({
-        actor: second,
-        withConnection: true,
-      });
-      scenario.beforeWorkspaceCleanup(() => {
-        return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
-      });
-      await flushWaitUntilForTest();
-      const requests = [
-        { actor: first, installation: a },
-        { actor: member, installation: a },
-        { actor: second, installation: b },
-        { actor: missing, installation: undefined },
-        { actor: first, installation: a },
-      ];
-      const infoRequests: {
-        authorization: string | null;
-        file: string | null;
-      }[] = [];
-      server.use(
-        http.get("https://slack.com/api/files.info", ({ request }) => {
-          const fileId = new URL(request.url).searchParams.get("file");
-          infoRequests.push({
-            authorization: request.headers.get("authorization"),
-            file: fileId,
-          });
-          return HttpResponse.json({
-            ok: true,
-            file: defaultSlackFile({
-              id: fileId ?? "",
-              name: `${fileId}.txt`,
-              mimetype: "text/plain",
-              url_private_download: `https://files.slack.com/files-pri/${fileId}/download.txt`,
-            }),
-          });
-        }),
+  it.each([
+    "users in the same organization",
+    "organizations",
+    "an uninstalled organization",
+  ])(
+    "selects each request's installation across %s and restores the first",
+    async (boundary) => {
+      const scenario = createPublicComputerUseScenario(context);
+      const first = scenario.user({ orgRole: "org:admin" });
+      const other = scenario.user(
+        boundary === "users in the same organization"
+          ? { orgId: first.orgId, orgRole: "org:member" }
+          : { orgRole: "org:admin" },
       );
-      for (const [index, request] of requests.entries()) {
-        const claim = await scenario.claim(request.actor);
+      await scenario.run(async () => {
+        for (const actor of [first, other]) {
+          await scenario.prepareActor(actor);
+        }
+        const a = await slackOrgs.installOrg({
+          actor: first,
+          withConnection: true,
+        });
+        scenario.beforeWorkspaceCleanup(() => {
+          return slackOrgs.uninstallWorkspace(a.slackWorkspaceId);
+        });
+        const b =
+          boundary === "organizations"
+            ? await slackOrgs.installOrg({
+                actor: other,
+                withConnection: true,
+              })
+            : undefined;
+        if (b) {
+          scenario.beforeWorkspaceCleanup(() => {
+            return slackOrgs.uninstallWorkspace(b.slackWorkspaceId);
+          });
+        }
         await flushWaitUntilForTest();
-        context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+        const requests = [
+          { actor: first, installation: a },
           {
-            data: [
-              {
-                role: request.actor.orgRole,
-                organization: { id: request.actor.orgId },
-                publicUserData: { userId: request.actor.userId },
-              },
-            ],
+            actor: other,
+            installation: boundary === "users in the same organization" ? a : b,
           },
-        );
-        const fileId = `F_GRAPH_${String(index)}`;
-        const bytes = `file ${String(index)}`;
-        context.mocks.slack.fetchFile.mockResolvedValue(
-          new Response(bytes, {
-            headers: {
-              "Content-Type": "text/plain",
-              "Content-Length": String(bytes.length),
-            },
+          { actor: first, installation: a },
+        ];
+        const infoRequests: {
+          authorization: string | null;
+          file: string | null;
+        }[] = [];
+        server.use(
+          http.get("https://slack.com/api/files.info", ({ request }) => {
+            const fileId = new URL(request.url).searchParams.get("file");
+            infoRequests.push({
+              authorization: request.headers.get("authorization"),
+              file: fileId,
+            });
+            return HttpResponse.json({
+              ok: true,
+              file: defaultSlackFile({
+                id: fileId ?? "",
+                name: `${fileId}.txt`,
+                mimetype: "text/plain",
+                url_private_download: `https://files.slack.com/files-pri/${fileId}/download.txt`,
+              }),
+            });
           }),
         );
-        const infos = infoRequests.length;
-        const fetches = context.mocks.slack.fetchFile.mock.calls.length;
-        const response = await requestDownloadFile(
-          `?file_id=${fileId}`,
-          `Bearer ${claim.token}`,
-        );
-        if (!request.installation) {
-          await expectErrorResponse(response, 404, "NOT_FOUND");
-          expect(infoRequests.slice(infos)).toStrictEqual([]);
+        for (const [index, request] of requests.entries()) {
+          const claim = await scenario.claim(request.actor);
+          await flushWaitUntilForTest();
+          context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue(
+            {
+              data: [
+                {
+                  role: request.actor.orgRole,
+                  organization: { id: request.actor.orgId },
+                  publicUserData: { userId: request.actor.userId },
+                },
+              ],
+            },
+          );
+          const fileId = `F_GRAPH_${String(index)}`;
+          const bytes = `file ${String(index)}`;
+          context.mocks.slack.fetchFile.mockResolvedValue(
+            new Response(bytes, {
+              headers: {
+                "Content-Type": "text/plain",
+                "Content-Length": String(bytes.length),
+              },
+            }),
+          );
+          const infos = infoRequests.length;
+          const fetches = context.mocks.slack.fetchFile.mock.calls.length;
+          const response = await requestDownloadFile(
+            `?file_id=${fileId}`,
+            `Bearer ${claim.token}`,
+          );
+          if (!request.installation) {
+            await expectErrorResponse(response, 404, "NOT_FOUND");
+            expect(infoRequests.slice(infos)).toStrictEqual([]);
+            expect(
+              context.mocks.slack.fetchFile.mock.calls.slice(fetches),
+            ).toStrictEqual([]);
+            continue;
+          }
+          expect(response.status).toBe(200);
+          await expect(response.text()).resolves.toBe(bytes);
+          expect(response.headers.get("content-type")).toBe("text/plain");
+          expect(response.headers.get("content-length")).toBe(
+            String(bytes.length),
+          );
+          expect(response.headers.get("x-file-name")).toBe(`${fileId}.txt`);
+          expect(response.headers.get("x-file-mimetype")).toBe("text/plain");
+          expect(infoRequests.slice(infos)).toStrictEqual([
+            {
+              authorization: `Bearer ${request.installation.botToken}`,
+              file: fileId,
+            },
+          ]);
           expect(
             context.mocks.slack.fetchFile.mock.calls.slice(fetches),
-          ).toStrictEqual([]);
-          continue;
+          ).toStrictEqual([
+            [
+              `https://files.slack.com/files-pri/${fileId}/download.txt`,
+              request.installation.botToken,
+            ],
+          ]);
         }
-        expect(response.status).toBe(200);
-        await expect(response.text()).resolves.toBe(bytes);
-        expect(response.headers.get("content-type")).toBe("text/plain");
-        expect(response.headers.get("content-length")).toBe(
-          String(bytes.length),
-        );
-        expect(response.headers.get("x-file-name")).toBe(`${fileId}.txt`);
-        expect(response.headers.get("x-file-mimetype")).toBe("text/plain");
-        expect(infoRequests.slice(infos)).toStrictEqual([
-          {
-            authorization: `Bearer ${request.installation.botToken}`,
-            file: fileId,
-          },
-        ]);
-        expect(
-          context.mocks.slack.fetchFile.mock.calls.slice(fetches),
-        ).toStrictEqual([
-          [
-            `https://files.slack.com/files-pri/${fileId}/download.txt`,
-            request.installation.botToken,
-          ],
-        ]);
-      }
-    });
-  });
+      });
+    },
+  );
 
   const mocks = createRouteMocks(context);
 

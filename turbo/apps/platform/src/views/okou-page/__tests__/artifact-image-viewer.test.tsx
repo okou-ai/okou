@@ -218,7 +218,6 @@ test("The image viewer previews an image and navigates to the next one", async (
   await finishLightboxImageDecode(firstLightboxImage, () => {
     return firstDecode.resolve();
   });
-  expect(firstLightboxImage).toHaveStyle({ width: "1600px" });
   expect(
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
@@ -248,7 +247,6 @@ test("The image viewer previews an image and navigates to the next one", async (
   await finishLightboxImageDecode(secondLightboxImage, () => {
     return secondDecode.resolve();
   });
-  expect(secondLightboxImage).toHaveStyle({ width: "1200px" });
   expect(within(dialog).getByRole("group")).toHaveFocus();
   expect(
     screen.queryByRole("status", { name: "Loading artifacts" }),

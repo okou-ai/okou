@@ -24,7 +24,7 @@ interface OperationTimingAttrs {
 
 interface SandboxOperationAttrs extends OperationTimingAttrs {
   readonly sandboxType: "runner" | "docker" | "chat";
-  readonly runId: string;
+  readonly runId?: string;
 }
 
 interface UnlinkedOperationAttrs extends OperationTimingAttrs {
@@ -129,7 +129,10 @@ function recordOperationTimings(
       success: attrs.success,
       ...("operationDomain" in attrs
         ? { operation_domain: attrs.operationDomain }
-        : { sandbox_type: attrs.sandboxType, run_id: attrs.runId }),
+        : {
+            sandbox_type: attrs.sandboxType,
+            ...(attrs.runId === undefined ? {} : { run_id: attrs.runId }),
+          }),
       ...attrs.dimensions,
     };
   });

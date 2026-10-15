@@ -1,45 +1,17 @@
-import { MemoryPiSession } from "@okouai/pi-agent-runtime/node";
 import { describe, expect, it } from "vitest";
-
 import { testContext } from "../../../__tests__/test-context";
-import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { prepareRunnerSessionHistory } from "./helpers/runner-session-history";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 
 const context = testContext();
 const { api, webhooks, configureSubscriptionPiModel, cancelChatRun } =
   createChatEventsFixture(context);
 
-function appendAssistant(
-  session: MemoryPiSession,
-  text: string,
-  stopReason: "stop" | "error",
-): void {
-  session.appendMessage({
-    role: "assistant",
-    content: text ? [{ type: "text", text }] : [],
-    api: "openai-responses",
-    provider: "openai-codex",
-    model: "gpt-6-luna",
-    usage: {
-      input: 0,
-      output: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      totalTokens: 0,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-    },
-    stopReason,
-    timestamp: now(),
-  });
-}
-
-describe("Pi failed native history completion", () => {
+describe("Pi failed native continuation", () => {
   it.each(["empty", "partial"] as const)(
-    "retains %s error leaves without advancing canonical continuation",
+    "retains the actual native identity after a failed %s answer",
     async (content) => {
       mockSecretKmsHttp();
       const {
@@ -60,26 +32,6 @@ describe("Pi failed native history completion", () => {
         model,
       });
       const firstClaim = await claimChatRun(runnerGroup, first.runId);
-      expect(firstClaim.claim.cliAgentType).toBe("pi");
-      expect(firstClaim.claim.piSessionId).toBe(first.threadId);
-      const session = MemoryPiSession.create({
-        cwd: "/home/user/workspace",
-        id: first.threadId,
-      });
-      session.appendMessage({
-        role: "user",
-        content: "complete the first turn",
-        timestamp: now(),
-      });
-      appendAssistant(session, "completed first turn", "stop");
-      const completedHash = await own(() => {
-        return prepareRunnerSessionHistory(
-          context,
-          first.runId,
-          firstClaim.sandboxHeaders,
-          session.toJsonl(),
-        );
-      });
       await own(() => {
         return webhooks.requestAgentComplete(
           {
@@ -88,7 +40,7 @@ describe("Pi failed native history completion", () => {
             completion: {
               cliAgentType: "pi",
               cliAgentSessionId: first.threadId,
-              cliAgentSessionHistoryHash: completedHash,
+              cliAgentSessionHistoryDisposition: "native_only",
             },
           },
           firstClaim.sandboxHeaders,
@@ -96,46 +48,48 @@ describe("Pi failed native history completion", () => {
         );
       });
       await own(flushWaitUntilForTest);
-      const completedRun = await own(() => {
-        return api.readRun(actor, first.runId);
-      });
-      expect(completedRun.status).toBe("completed");
-      expect(completedRun.result?.conversationId).toStrictEqual(
-        expect.any(String),
-      );
-
       const failed = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
         prompt: "continue the task",
+        model,
       });
       const failedClaim = await claimChatRun(runnerGroup, failed.runId);
-      session.appendMessage({
-        role: "user",
-        content: "continue the task",
-        timestamp: now(),
-      });
-      appendAssistant(
-        session,
-        content === "empty" ? "" : "partial failed answer",
-        "error",
-      );
-      const failedHash = await own(() => {
-        return prepareRunnerSessionHistory(
-          context,
-          failed.runId,
+      const events = [
+        {
+          type: "system" as const,
+          subtype: "init",
+          session_id: first.threadId,
+          sequenceNumber: 0,
+        },
+        ...(content === "partial"
+          ? [
+              {
+                type: "assistant" as const,
+                sequenceNumber: 1,
+                message: {
+                  content: [{ type: "text", text: "partial failed answer" }],
+                },
+              },
+            ]
+          : []),
+      ];
+      await own(() => {
+        return webhooks.requestAgentEvents(
+          { runId: failed.runId, events },
           failedClaim.sandboxHeaders,
-          session.toJsonl(),
+          [200],
         );
       });
       const completion = {
         runId: failed.runId,
         exitCode: 1,
         error: "Codex request failed",
+        lastEventSequence: events.length - 1,
         completion: {
           cliAgentType: "pi",
-          cliAgentSessionId: failed.threadId,
-          cliAgentSessionHistoryHash: failedHash,
+          cliAgentSessionId: first.threadId,
+          cliAgentSessionHistoryDisposition: "native_only",
         },
       } as const;
       const response = await own(() => {
@@ -150,34 +104,37 @@ describe("Pi failed native history completion", () => {
       const retained = await own(() => {
         return api.readRun(actor, failed.runId);
       });
-      expect(retained.status).toBe("failed");
-      expect(retained.error).toBe("Codex request failed");
-      expect(retained.result?.conversationId).toStrictEqual(expect.any(String));
-      expect(retained.result?.conversationId).not.toBe(
-        completedRun.result?.conversationId,
-      );
-
-      const retry = await own(() => {
+      expect(retained).toMatchObject({
+        status: "failed",
+        error: "Codex request failed",
+        result: { framework: "pi", frameworkSessionId: first.threadId },
+      });
+      expect(retained.result).not.toHaveProperty("conversationId");
+      await own(() => {
         return webhooks.requestAgentComplete(
           completion,
           failedClaim.sandboxHeaders,
           [200],
         );
       });
-      expect(retry.body).toStrictEqual(response.body);
-      const retried = await own(() => {
-        return api.readRun(actor, failed.runId);
-      });
-      expect(retried.result).toStrictEqual(retained.result);
+      expect(
+        (
+          await own(() => {
+            return api.readRun(actor, failed.runId);
+          })
+        ).result,
+      ).toStrictEqual(retained.result);
       const next = await sendChatRun(actor, {
         agentId,
         threadId: first.threadId,
-        prompt: "resume from the completed native history",
+        prompt: "continue with the retained native context",
+        model,
       });
       const nextClaim = await claimChatRun(runnerGroup, next.runId);
-      expect(nextClaim.claim.resumeSession).toMatchObject({
+      expect(nextClaim.claim.resumeSession).toBeNull();
+      expect(nextClaim.claim.nativeContinuation).toMatchObject({
         sessionId: first.threadId,
-        historyRef: { kind: "blob", hash: completedHash },
+        generationRunId: failed.runId,
       });
       await own(() => {
         return cancelChatRun(actor, next.runId, nextClaim.sandboxHeaders);

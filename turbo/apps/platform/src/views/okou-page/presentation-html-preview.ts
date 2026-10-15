@@ -855,6 +855,34 @@ function appendAdditionalHeadStyle(
   previewDoc.head.append(style);
 }
 
+const PREVIEW_THEME_STYLE_ATTRIBUTE = "data-okou-preview-theme";
+
+/**
+ * Restyles a preview document already on screen with a theme's CSS.
+ *
+ * The theme is a block of custom properties on `:root`, appended last in the
+ * head like `additionalHeadStyle`. Rewriting that one style in the live
+ * document repaints the slide in place; rebuilding the document instead
+ * reloads the frame, and while it loads the static default-theme image under
+ * it shows through.
+ */
+export function applyPresentationPreviewThemeStyle(
+  previewDoc: Document,
+  styleText: string,
+): void {
+  const current = previewDoc.head.querySelector(
+    `style[${PREVIEW_THEME_STYLE_ATTRIBUTE}]`,
+  );
+  if (current?.textContent === styleText) {
+    return;
+  }
+  const style = previewDoc.createElement("style");
+  style.setAttribute(PREVIEW_THEME_STYLE_ATTRIBUTE, "");
+  style.textContent = styleText;
+  previewDoc.head.append(style);
+  current?.remove();
+}
+
 function annotatePresentationEditableElements(
   slide: Element,
   slideId: string,

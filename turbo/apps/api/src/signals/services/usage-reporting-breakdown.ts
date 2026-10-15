@@ -41,14 +41,7 @@ export function usageBreakdownKindExpr(usage: FinalizedUsageRelation) {
     END`.mapWith(usageRecordKindDecoder);
 }
 
-/**
- * Runtime-preset model observations keep their captured billing identity,
- * including after Run deletion. Legacy model observations keep the selected
- * model display projection; future selected Auto never replaces the billing
- * provider with `auto`. Only reporting changes, not stored keys or settled
- * amounts. Other usage keeps its own provider.
- * Callers must left join `agent_runs` on the usage row's `run_id`.
- */
+/** Reporting uses the ledger's captured provider, independently of Run history. */
 export function usageDisplayProviderExpr(usage: FinalizedUsageRelation) {
   return modelUsageDisplayProviderSql(usage).mapWith(pgTextDecoder);
 }

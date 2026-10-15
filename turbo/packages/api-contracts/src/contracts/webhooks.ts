@@ -327,14 +327,6 @@ export const webhookBuiltInGenerationFalContract = c.router({
   },
 });
 
-const currentSandboxReuseMissSchema = z.enum([
-  "noReuseKey",
-  "poolMiss",
-  "profileMismatch",
-  "deviceLimitMismatch",
-  "unparkFailed",
-]);
-
 /**
  * Artifact snapshots schema — canonical
  * `Array<{name, version, mountPath, missingRootPolicy?}>` form. Legacy
@@ -355,7 +347,7 @@ const runCompletionMetadataShape = {
   cliAgentSessionId: z.string().min(1, "cliAgentSessionId is required"),
   cliAgentSessionHistoryHash: sha256HexSchema.optional(),
   cliAgentSessionHistoryDisposition: z
-    .enum(["discarded_oversized", "unavailable"])
+    .enum(["discarded_oversized", "unavailable", "native_only"])
     .optional(),
   // Versions of the run's authorized writeback mounts after publication.
   artifactSnapshots: artifactSnapshotsSchema.optional(),
@@ -385,41 +377,18 @@ export const runCompletionMetadataSchema = z
   .strict()
   .superRefine(requireCompletionHistory);
 
-const webhookCompleteBodySchema = z
-  .object({
-    runId: z.string().min(1, "runId is required"),
-    exitCode: z.number(),
-    error: z.string().optional(),
-    failureReason: runFailureReasonTokenSchema.optional(),
-    lastEventSequence: eventSequenceNumberSchema.optional(),
-    // Sandbox id the run executed against. Optional because a run that fails
-    // before sandbox creation has no sandbox. Persisted to agent_runs.sandbox_id;
-    // the 255-char cap matches the DB column (defense in depth).
-    sandboxId: z.string().max(255).optional(),
-    sandboxReuseResult: sandboxReuseResultSchema.optional(),
-    homeReuseResult: homeReuseResultSchema.optional(),
-    completion: runCompletionMetadataSchema.optional(),
-  })
-  .superRefine((body, context) => {
-    const homeResult = body.homeReuseResult;
-    if (homeResult === undefined) {
-      return;
-    }
-    const sandboxResult = body.sandboxReuseResult;
-    const coherentSandboxReuse =
-      sandboxResult === "reused" && homeResult === "sandboxReused";
-    const coherentSandboxMiss =
-      sandboxResult !== undefined &&
-      currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
-      homeResult !== "sandboxReused";
-    if (!coherentSandboxReuse && !coherentSandboxMiss) {
-      context.addIssue({
-        code: "custom",
-        path: ["homeReuseResult"],
-        message: "home reuse result does not match sandbox reuse result",
-      });
-    }
-  });
+const webhookCompleteBodySchema = z.object({
+  runId: z.string().min(1, "runId is required"),
+  exitCode: z.number(),
+  error: z.string().optional(),
+  failureReason: runFailureReasonTokenSchema.optional(),
+  lastEventSequence: eventSequenceNumberSchema.optional(),
+  // Sandbox id the run executed against. Optional because a run that fails
+  // before sandbox creation has no sandbox. Persisted to agent_runs.sandbox_id;
+  // the 255-char cap matches the DB column (defense in depth).
+  sandboxId: z.string().max(255).optional(),
+  completion: runCompletionMetadataSchema.optional(),
+});
 
 /**
  * Agent event schema for webhook events
@@ -1153,6 +1122,15 @@ const sandboxOperationSchema = z.object({
     .enum(["paired", "unavailable", "inconsistent"])
     .optional(),
   runner_startup_path: runnerStartupPathSchema.optional(),
+  is_first_run: z.boolean().optional(),
+  reuse_key: z.string().optional(),
+  run_id: z.uuid().optional(),
+  cache_key: z.string().max(4096).optional(),
+  profile_name: z.string().max(4096).optional(),
+  image_generation: z.string().max(4096).optional(),
+  allocated_bytes: z.number().int().nonnegative().optional(),
+  handoff_path: z.string().max(64).optional(),
+  home_reuse_result: homeReuseResultSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:
     runnerPreSpawnConcurrencyBucketSchema.optional(),
@@ -1228,14 +1206,15 @@ const sandboxOperationSchema = z.object({
 export const webhookTelemetryContract = c.router({
   /**
    * POST /api/webhooks/agent/telemetry
-   * Receive telemetry data (system log, metrics, network logs, and sandbox operations) from sandbox
+   * Receive sandbox telemetry or authenticated Runner operation-only batches.
+   * Runless requests cannot carry system logs, metrics, network logs or OOM evidence.
    */
   send: {
     method: "POST",
     path: "/api/webhooks/agent/telemetry",
     headers: authHeadersSchema,
     body: z.object({
-      runId: z.string().min(1, "runId is required"),
+      runId: z.string().min(1, "runId is required").optional(),
       runnerHostname: runnerHostnameSchema.optional(),
       runnerVersion: runnerVersionSchema.optional(),
       systemLog: z.string().optional(),
@@ -1248,7 +1227,7 @@ export const webhookTelemetryContract = c.router({
     responses: {
       200: z.object({
         success: z.boolean(),
-        id: z.string(),
+        id: z.string().optional(),
         oomEvidenceVersion: z.literal(1).optional(),
       }),
       400: apiErrorSchema,

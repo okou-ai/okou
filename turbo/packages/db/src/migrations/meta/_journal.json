@@ -2199,6 +2199,62 @@
       "when": 1791948420937,
       "tag": "1391_discord_account_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 1392,
+      "version": "7",
+      "when": 1791950634555,
+      "tag": "1392_remove_home_task_recommendations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1393,
+      "version": "7",
+      "when": 1791955160525,
+      "tag": "1393_prepare_run_history_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 1394,
+      "version": "7",
+      "when": 1791956917341,
+      "tag": "1394_morning_brief_rollout_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 1395,
+      "version": "7",
+      "when": 1791959568300,
+      "tag": "1395_chat_relations",
+      "breakpoints": true
+    },
+    {
+      "idx": 1396,
+      "version": "7",
+      "when": 1791964464267,
+      "tag": "1396_remote_connection_observation_instances",
+      "breakpoints": true
+    },
+    {
+      "idx": 1397,
+      "version": "7",
+      "when": 1791968972629,
+      "tag": "1397_detach_storage_lineage_from_run_retention",
+      "breakpoints": true
+    },
+    {
+      "idx": 1398,
+      "version": "7",
+      "when": 1791971626628,
+      "tag": "1398_persist_sandbox_startup_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 1399,
+      "version": "7",
+      "when": 1791974038062,
+      "tag": "1399_retire_session_conversation_runtime",
+      "breakpoints": true
     }
   ]
 }

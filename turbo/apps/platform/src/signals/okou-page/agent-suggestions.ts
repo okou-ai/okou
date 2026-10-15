@@ -29,23 +29,28 @@ export const agentSuggestionsEnabled$ = computed(async (get) => {
 });
 const revision$ = state(0);
 const consumedIds$ = state<readonly string[]>([]);
-const expanded$ = state(false);
-export const agentSuggestionsExpanded$ = computed((get) => {
-  return get(expanded$);
+// The panel shows one suggestion at a time. A position rather than an id, so
+// consuming the card on screen brings up the one after it, and consuming the
+// last one falls back to the one before.
+const index$ = state(0);
+export const agentSuggestionIndex$ = computed((get) => {
+  return get(index$);
 });
-export const toggleAgentSuggestionsExpanded$ = command(({ set }) => {
-  set(expanded$, (expanded) => {
-    return !expanded;
-  });
+export const showAgentSuggestion$ = command(({ set }, index: number) => {
+  set(index$, index);
 });
 const agentSuggestions$ = computed(async (get) => {
   get(revision$);
   if (!(await get(agentSuggestionsEnabled$))) {
     return [];
   }
+  // Suggestions are an optional entry on the home page, so a failed read
+  // hides the tab instead of raising a toast over the composer.
   const result = await accept(
     get(apiClient$)(suggestionsContract).list({}),
     [200, 403],
+    undefined,
+    { showErrorToast: false },
   );
   return result.status === 200 ? result.body.suggestions : [];
 });
@@ -61,7 +66,7 @@ const reload$ = command(({ set }) => {
   });
 });
 export const enterAgentSuggestions$ = command(({ set }) => {
-  set(expanded$, false);
+  set(index$, 0);
   set(consumedIds$, []);
   set(reload$);
 });
@@ -82,16 +87,21 @@ export const subscribeAgentSuggestions$ = command(
     );
   },
 );
-export const startAgentSuggestion$ = command(
+/**
+ * Hides the suggestion at once and consumes it on the server. Dismissing a
+ * suggestion is this alone; starting one goes on to open its draft. Resolves to
+ * the consumed suggestion, or to null when it was already consumed here or
+ * elsewhere.
+ */
+export const consumeAgentSuggestion$ = command(
   async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
     signal.throwIfAborted();
     if (get(consumedIds$).includes(item.id)) {
-      return;
+      return null;
     }
     set(consumedIds$, (ids) => {
       return [...ids, item.id];
     });
-    const handoffSignal = get(rootSignal$);
     const result = await accept(
       get(apiClient$)(suggestionsContract).consume({
         params: { id: item.id },
@@ -102,11 +112,16 @@ export const startAgentSuggestion$ = command(
     );
     signal.throwIfAborted();
     set(reload$);
-    if (result.status !== 200) {
+    return result.status === 200 ? result.body : null;
+  },
+);
+export const startAgentSuggestion$ = command(
+  async ({ get, set }, item: Suggestion, signal: AbortSignal) => {
+    const handoffSignal = get(rootSignal$);
+    const selected = await set(consumeAgentSuggestion$, item, signal);
+    if (selected === null) {
       return;
     }
-    signal.throwIfAborted();
-    const selected = result.body;
     // Draft reconciliation and persistence survive the navigation they initiate.
     if (selected.threadId !== null) {
       const draft = set(ensureDraft$, selected.threadId);

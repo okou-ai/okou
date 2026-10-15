@@ -1,5 +1,6 @@
 import { RunnerWssApi, type OwnedWssRun } from "./runner-wss-api";
-import { FRAME_SIZES, RunnerWssClient } from "./runner-wss-client";
+import { ECHO_SIZES, RunnerWssClient } from "./runner-wss-client";
+import { probeHomeFiles } from "./runner-wss-files";
 
 async function main(): Promise<void> {
   if (required("E2E_RUNNER_PROFILE") !== "mock-codex")
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
   let failed = false;
   let failureApiStatus: number | undefined;
   let cleanupFailures = 0;
+  let filesystem: Awaited<ReturnType<typeof probeHomeFiles>> | undefined;
   try {
     const model = required("E2E_MOCK_CODEX_MODEL");
     await api.verifyMockProfile(model);
@@ -37,12 +39,14 @@ async function main(): Promise<void> {
     client = new RunnerWssClient(run.runId, ticket, signal);
     phase = "admission";
     await client.connect();
-    phase = "echo";
-    await client.echo();
     phase = "replay";
     await client.rejectReplay();
-    phase = "retained-echo";
-    await client.echo();
+    phase = "diagnostics";
+    await client.diagnostics();
+    phase = "filesystem";
+    filesystem = await probeHomeFiles(client, run.homeFixture);
+    phase = "retained-diagnostics";
+    await client.diagnostics();
     client.assertHealthy();
   } catch {
     failed = true;
@@ -60,7 +64,7 @@ async function main(): Promise<void> {
       cleanupFailures += 1;
     }
   }
-  if (failed || cleanupFailures || !run) {
+  if (failed || cleanupFailures || !run || !client) {
     console.error(
       JSON.stringify({
         result: "FAIL",
@@ -76,7 +80,10 @@ async function main(): Promise<void> {
     JSON.stringify({
       result: "PASS",
       tlsVerification: true,
-      frameSizes: FRAME_SIZES,
+      schemaVersion: 1,
+      echoSizes: ECHO_SIZES,
+      ...client.receipts,
+      ...filesystem,
       replayRejectedBeforeExpiry: true,
       runId: run.runId,
       runnerId: run.runnerId,

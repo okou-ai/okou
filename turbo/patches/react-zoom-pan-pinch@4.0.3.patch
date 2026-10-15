@@ -1,0 +1,83 @@
+diff --git a/dist/index.cjs.js b/dist/index.cjs.js
+index 3ef5f7484081353a5be94b653378f2a16344bd5f..b483c981fa11a766bc54ddd39e1c9549085adf1e 100644
+--- a/dist/index.cjs.js
++++ b/dist/index.cjs.js
+@@ -936,7 +936,7 @@ function resetTransformations(contextInstance, animationTime, animationType, onR
+         targetPositionX = centered.positionX;
+         targetPositionY = centered.positionY;
+     }
+-    var newBounds = calculateBounds(contextInstance, initialTransformation.scale);
++    var newBounds = handleCalculateBounds(contextInstance, initialTransformation.scale);
+     var boundedPositions = getMouseBoundedPosition(targetPositionX, targetPositionY, newBounds, limitToBounds, 0, 0, wrapperComponent);
+     var newState = {
+         scale: initialTransformation.scale,
+@@ -1048,6 +1048,7 @@ var centerView = function (contextInstance) {
+         var state = contextInstance.state, wrapperComponent = contextInstance.wrapperComponent, contentComponent = contextInstance.contentComponent;
+         if (wrapperComponent && contentComponent) {
+             var targetState = getCenterPosition(scale || state.scale, wrapperComponent, contentComponent);
++            handleCalculateBounds(contextInstance, targetState.scale);
+             animate(contextInstance, targetState, animationTime, animationType);
+         }
+     };
+diff --git a/dist/index.esm.js b/dist/index.esm.js
+index 91b90b46a29b2c6966ce1f64d7d8ef4caf44c469..b6bc3b2e9d7a022fe0bcbf99f9f9dc7f33e93ff4 100644
+--- a/dist/index.esm.js
++++ b/dist/index.esm.js
+@@ -934,7 +934,7 @@ function resetTransformations(contextInstance, animationTime, animationType, onR
+         targetPositionX = centered.positionX;
+         targetPositionY = centered.positionY;
+     }
+-    var newBounds = calculateBounds(contextInstance, initialTransformation.scale);
++    var newBounds = handleCalculateBounds(contextInstance, initialTransformation.scale);
+     var boundedPositions = getMouseBoundedPosition(targetPositionX, targetPositionY, newBounds, limitToBounds, 0, 0, wrapperComponent);
+     var newState = {
+         scale: initialTransformation.scale,
+@@ -1046,6 +1046,7 @@ var centerView = function (contextInstance) {
+         var state = contextInstance.state, wrapperComponent = contextInstance.wrapperComponent, contentComponent = contextInstance.contentComponent;
+         if (wrapperComponent && contentComponent) {
+             var targetState = getCenterPosition(scale || state.scale, wrapperComponent, contentComponent);
++            handleCalculateBounds(contextInstance, targetState.scale);
+             animate(contextInstance, targetState, animationTime, animationType);
+         }
+     };
+diff --git a/src/core/handlers/handlers.logic.ts b/src/core/handlers/handlers.logic.ts
+index 8b52673373c9082a42291cd1417f369f884bf4e8..ee424b1b5757fe6aecba7929788d09e931aa59ef 100644
+--- a/src/core/handlers/handlers.logic.ts
++++ b/src/core/handlers/handlers.logic.ts
+@@ -7,6 +7,7 @@ import {
+ import { animations } from "../animations/animations.constants";
+ import { animate, handleCancelAnimation } from "../animations/animations.utils";
+ import { getCenterPosition } from "../../utils";
++import { handleCalculateBounds } from "../bounds/bounds.utils";
+ 
+ export const zoomIn =
+   (contextInstance: ReactZoomPanPinchContext) =>
+@@ -88,6 +89,7 @@ export const centerView =
+         contentComponent,
+       );
+ 
++      handleCalculateBounds(contextInstance, targetState.scale);
+       animate(contextInstance, targetState, animationTime, animationType);
+     }
+   };
+diff --git a/src/core/handlers/handlers.utils.ts b/src/core/handlers/handlers.utils.ts
+index 0174c4829b41633fa699f51282046bf0743002be..67b73d0ce67c6a4766cd41d6f4e76ecd66a20635 100644
+--- a/src/core/handlers/handlers.utils.ts
++++ b/src/core/handlers/handlers.utils.ts
+@@ -12,6 +12,7 @@ import {
+ } from "../../utils";
+ import {
+   calculateBounds,
++  handleCalculateBounds,
+   getMouseBoundedPosition,
+ } from "../bounds/bounds.utils";
+ 
+@@ -121,7 +122,7 @@ export function resetTransformations(
+     targetPositionY = centered.positionY;
+   }
+ 
+-  const newBounds = calculateBounds(
++  const newBounds = handleCalculateBounds(
+     contextInstance,
+     initialTransformation.scale,
+   );

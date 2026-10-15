@@ -260,7 +260,7 @@ describe("CHAT-02: queued chat thread picks", () => {
       runOfInput(actor, first.threadId, second.clientEventId),
     ).resolves.toBeUndefined();
     const resumed = await claimChatRun(runnerGroup, picked.runId);
-    expect(resumed.claim.resumeSession?.sessionId).toBe(
+    expect(resumed.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${first.runId}`,
     );
 
@@ -271,7 +271,7 @@ describe("CHAT-02: queued chat thread picks", () => {
     const next = await second.launchedRun();
     expect(next.runId).not.toBe(picked.runId);
     const nextClaim = await claimChatRun(runnerGroup, next.runId);
-    expect(nextClaim.claim.resumeSession?.sessionId).toBe(
+    expect(nextClaim.claim.nativeContinuation?.sessionId).toBe(
       `bdd-cli-${picked.runId}`,
     );
     await cancelChatRun(actor, next.runId);

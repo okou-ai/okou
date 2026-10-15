@@ -17,6 +17,7 @@ import { parseAvatarTemplateStylePresetId } from "./avatar-template";
 export type GenerationTemplateKind =
   | "avatar"
   | "custom"
+  | "document"
   | "illustration"
   | "presentation"
   | "video"

@@ -1,9 +1,7 @@
 import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
-import { prepareSessionHistoryBytes } from "./helpers/prepared-session-history";
 import { okouTokenFromClaim } from "./helpers/chat-events-fixture";
-import { deletePublicWorkspace } from "./helpers/public-workspace-cleanup";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 /* oxlint-disable jest/no-export -- Each test entrypoint imports one deterministic group from this shared case registry. */
 import {
@@ -898,11 +896,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
         });
       }
     }
-    for (const actor of organizations.values()) {
-      await settle(() => {
-        return deletePublicWorkspace(context, actor);
-      });
-    }
     if (errors.length === 1) {
       throw errors[0];
     }
@@ -1519,18 +1512,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     readonly assistantText?: string;
   }): Promise<void> {
     const headers = { authorization: `Bearer ${args.sandboxToken}` };
-    const historyHash = await own(() => {
-      return prepareSessionHistoryBytes(
-        context,
-        args.runId,
-        headers,
-        Buffer.from(args.history),
-        (restore) => {
-          retainedHistory = restore;
-          accepted = captureExternalState();
-        },
-      );
-    });
     retainedHistory = undefined;
     if (args.assistantText !== undefined) {
       const assistantEvent = {
@@ -1564,7 +1545,7 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
           completion: {
             cliAgentType: "claude-code",
             cliAgentSessionId: args.sessionId,
-            cliAgentSessionHistoryHash: historyHash,
+            cliAgentSessionHistoryDisposition: "native_only",
           },
           ...(args.assistantText === undefined ? {} : { lastEventSequence: 0 }),
         },
@@ -6046,13 +6027,16 @@ export function registerFeishuIntegrationTests(
             }),
           }),
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(claim.appendSystemPrompt).not.toContain(
           `# ${provider.name} Run Context`,
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(claim.nativeContinuation?.recoveryPrompt).toContain(
+          "okou chat messages --output-dir threads",
+        );
+        expect(claim.appendSystemPrompt).not.toContain(
           "User: start the Feishu DM session",
         );
-        expect(claim.appendSystemPrompt).toContain(
+        expect(claim.appendSystemPrompt).not.toContain(
           "Assistant: Initial Feishu DM answer",
         );
         await own(() => {
@@ -6504,7 +6488,9 @@ export function registerFeishuIntegrationTests(
         expect(secondClaim.appendSystemPrompt).toContain(
           "Scope: Group mention",
         );
-        expect(secondClaim.resumeSession?.sessionId).toBe(firstCliSessionId);
+        expect(secondClaim.nativeContinuation?.sessionId).toBe(
+          firstCliSessionId,
+        );
       });
 
       it("ignores unmentioned group messages, app messages and system notifications", async () => {
@@ -6993,7 +6979,7 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const followUpClaim = await claimRun(followUpRun.id);
-      expect(followUpClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      expect(followUpClaim.nativeContinuation?.sessionId).toBe(mainSessionId);
       await completeRunSession({
         runId: followUpRun.id,
         sandboxToken: followUpClaim.sandboxToken,
@@ -7133,7 +7119,9 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const quotedReplyClaim = await claimRun(quotedReplyRun.id);
-      expect(quotedReplyClaim.resumeSession?.sessionId).toBe(mainSessionId);
+      expect(quotedReplyClaim.nativeContinuation?.sessionId).toBe(
+        mainSessionId,
+      );
       await completeRunSession({
         runId: quotedReplyRun.id,
         sandboxToken: quotedReplyClaim.sandboxToken,
@@ -7246,7 +7234,7 @@ export function registerSharedFeishuConversationTests(): void {
           return runsApi.heartbeatRunner(runnerGroup);
         });
         const mainDmClaim = await claimRun(mainDmRun.id);
-        expect(mainDmClaim.resumeSession?.sessionId).toBe(mainSessionId);
+        expect(mainDmClaim.nativeContinuation?.sessionId).toBe(mainSessionId);
         await own(() => {
           return runsApi.requestCancelRun(actor, mainDmRun.id, [200]);
         });
@@ -7365,7 +7353,7 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const threadFollowUpClaim = await claimRun(threadFollowUpRun.id);
-      expect(threadFollowUpClaim.resumeSession?.sessionId).toBe(
+      expect(threadFollowUpClaim.nativeContinuation?.sessionId).toBe(
         threadSessionId,
       );
       await own(() => {
@@ -7849,7 +7837,7 @@ export function registerSharedFeishuConversationTests(): void {
         return runsApi.heartbeatRunner(runnerGroup);
       });
       const groupFollowUpClaim = await claimRun(groupFollowUp.id);
-      expect(groupFollowUpClaim.resumeSession?.sessionId).toBe(
+      expect(groupFollowUpClaim.nativeContinuation?.sessionId).toBe(
         groupCliSessionId,
       );
       await own(() => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
-import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "../../turbo/packages/api-contracts/src/contracts/chat-event-schema-version";
+import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const TERMINAL = new Set(["completed", "failed", "cancelled", "timeout"]);
@@ -11,6 +11,7 @@ export interface OwnedWssRun {
   readonly runnerId: string;
   readonly hostname: string;
   readonly expectedUrl: string;
+  readonly homeFixture: string;
 }
 
 export interface WssTicket {
@@ -102,7 +103,9 @@ export class RunnerWssApi {
     if (!this.agentId) throw new Error("Owned agent unavailable");
     const clientEventId = randomUUID();
     const ready = `WSS_READY_${clientEventId}`;
-    const prompt = `@shell-checkpoint@\nprintf ${ready}\n@continue@\nset -eu\nsleep 300\nprintf WSS_WORK_FINISHED`;
+    const homeFixture = `wss-home-${clientEventId}`;
+    const fixture = `/home/user/${homeFixture}`;
+    const prompt = `@shell-checkpoint@\nset -eu\nmkdir -p '${fixture}/nested'\ntouch '${fixture}/.hidden' '${fixture}/nested/leaf'\nln -s / '${fixture}/outside'\ni=0; while [ "$i" -lt 270 ]; do touch "${fixture}/file-$i"; i=$((i+1)); done\nprintf ${ready}\n@continue@\nset -eu\ntrap 'rm -rf -- "${fixture}"' EXIT HUP INT TERM\nsleep 300\nprintf WSS_WORK_FINISHED`;
     const sent = object(
       await this.request(
         "/api/chat/events",
@@ -195,6 +198,7 @@ export class RunnerWssApi {
       runnerId,
       hostname,
       expectedUrl: `wss://${hostname}:443/ws/${runnerId}`,
+      homeFixture,
     };
   }
 

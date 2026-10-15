@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.22...runner-storage-v0.5.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record home outcomes through sandbox operations ([#40086](https://github.com/okou-ai/okou/issues/40086)) ([4118750](https://github.com/okou-ai/okou/commit/4118750fb48f30654288719da44c30ae8dc08a68))
+
+## [0.4.22](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.21...runner-storage-v0.4.22) (2026-10-14)
+
+## [0.4.21](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.20...runner-storage-v0.4.21) (2026-10-14)
+
+## [0.4.20](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.19...runner-storage-v0.4.20) (2026-10-14)
+
+
+### Refactoring
+
+* **rust:** share raw http fixtures across runner domains ([#40010](https://github.com/okou-ai/okou/issues/40010)) ([bc8950d](https://github.com/okou-ai/okou/commit/bc8950d2cb9217419e0fce358dccf2d028b25076))
+
+## [0.4.19](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.18...runner-storage-v0.4.19) (2026-10-14)
+
+## [0.4.18](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.17...runner-storage-v0.4.18) (2026-10-14)
+
 ## [0.4.17](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.16...runner-storage-v0.4.17) (2026-10-14)
 
 ## [0.4.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.4.15...runner-storage-v0.4.16) (2026-10-14)

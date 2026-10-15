@@ -3,7 +3,10 @@ import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-br
 
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
-import { notifyMailBodySchema } from "@okouai/api-contracts/contracts/notifications";
+import {
+  notifyMailSubjectSchema,
+  notifyMailTextSchema,
+} from "@okouai/api-contracts/contracts/notifications";
 import {
   renderAgentMorningBriefEmail,
   renderAgentNotificationEmail,
@@ -93,8 +96,8 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       template: z.literal("agent-morning-brief"),
       props: z
         .object({
-          subject: notifyMailBodySchema.shape.subject,
-          text: notifyMailBodySchema.shape.text,
+          subject: notifyMailSubjectSchema,
+          text: notifyMailTextSchema,
           runUrl: z.url().max(1024),
           manageUrl: z.url().max(1024),
         })
@@ -106,8 +109,8 @@ const emailTemplateSchema = z.discriminatedUnion("template", [
       template: z.literal("agent-notification"),
       props: z
         .object({
-          subject: notifyMailBodySchema.shape.subject,
-          text: notifyMailBodySchema.shape.text,
+          subject: notifyMailSubjectSchema,
+          text: notifyMailTextSchema,
           runUrl: z.url().max(1024),
         })
         .strict(),
@@ -715,7 +718,7 @@ const completeOutboxItem$ = command(
                 db.select({ id: completedOutbox.id }).from(completedOutbox),
               ),
               // Finish the outbox winner before taking receipt row locks,
-              // matching cleanup and erasure order.
+              // matching expiry cleanup order.
               gte(db.select({ count: count() }).from(completedOutbox), 0),
             ),
           )
@@ -835,7 +838,7 @@ export const cleanupExpiredEmailOutbox$ = command(
               db.select({ id: expiredOutbox.id }).from(expiredOutbox),
             ),
             // Exhaust the outbox DELETE before locking receipts, matching
-            // completion and erasure order rather than relying on CTE order.
+            // completion order rather than relying on CTE order.
             gte(db.select({ count: count() }).from(expiredOutbox), 0),
           ),
         )

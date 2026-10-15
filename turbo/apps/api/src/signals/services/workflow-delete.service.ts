@@ -19,8 +19,6 @@ import { and, eq } from "drizzle-orm";
 import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { reconcileAutomationEventWatches$ } from "./automation-event-watch-lifecycle.service";
-import { acceptedOfficialWorkflowCatalogReadPlan } from "./official-workflow-catalog-read.service";
-import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { storagePublicationGenerations } from "@okouai/db/schema/storage-publication-fence";
 import { purgeDeletedStoragePrefix$ } from "./storage-prefix-purge.service";
 
@@ -29,7 +27,6 @@ interface DeleteWorkflowInput {
   readonly workflowId: string;
   readonly allowOfficialInstallationDeletion?: boolean;
   readonly requiredOfficialInstallationState?: "installing";
-  readonly serializeOfficialLifecycle?: boolean;
 }
 
 interface DeleteOrphanedWorkflowVolumeInput {
@@ -139,13 +136,6 @@ const deleteWorkflowRows$ = command(
         return { deleted: false as const };
       }
 
-      if (args.serializeOfficialLifecycle === true) {
-        await tx
-          .select({ authority: officialWorkflowCatalogState.authority })
-          .from(officialWorkflowCatalogState)
-          .where(acceptedOfficialWorkflowCatalogReadPlan().condition)
-          .for("share");
-      }
       const [agent] = await tx
         .select({ id: agents.id })
         .from(agents)

@@ -122,6 +122,16 @@ impl ParkedIdleCandidateBuilder {
         self
     }
 
+    pub fn with_restored_session_identity(mut self, identity: RestoredSessionIdentity) -> Self {
+        self.restored_session_identity = Some(identity);
+        self
+    }
+
+    pub fn with_storage_fingerprints(mut self, fingerprints: StorageFingerprints) -> Self {
+        self.storage_fingerprints = fingerprints;
+        self
+    }
+
     pub fn build(self) -> ParkedIdleCandidate {
         let Self {
             sandbox,

@@ -9,6 +9,9 @@ use tokio::fs;
 use tracing::{info, warn};
 
 use crate::error::{LifecycleError, LifecycleResult};
+use runner_host::home_observation::{
+    HomeObservation, HomeObservationKind, HomeObservationLocalDetails, HomeObservationOutcome,
+};
 use runner_types::types::MAX_HELD_HOME_STATES;
 
 use super::HomeImageCache;
@@ -23,6 +26,7 @@ use super::types::{CacheBudget, FsStats};
 
 pub(super) struct GcCandidate {
     pub(super) cache_key: String,
+    image_generation: String,
     pub(super) allocated_bytes: u64,
     file_dev: u64,
     file_ino: u64,
@@ -97,7 +101,35 @@ pub(super) fn gc_budget_satisfied(
                 >= budget.min_free_bytes)
 }
 
+fn removal_observation(
+    key: &str,
+    generation: Option<&str>,
+    allocated: u64,
+    outcome: HomeObservationOutcome,
+    reason: &str,
+) -> HomeObservation {
+    let mut observation = HomeObservation::new(HomeObservationKind::Removal, outcome);
+    observation.cache_key = Some(key.to_owned());
+    observation.image_generation = generation.map(str::to_owned);
+    observation.allocated_bytes = Some(allocated);
+    observation.reason = Some(reason.to_owned());
+    observation
+}
+
 impl HomeImageCache {
+    fn observe_removal(
+        &self,
+        key: &str,
+        generation: Option<&str>,
+        allocated: u64,
+        outcome: HomeObservationOutcome,
+        reason: &str,
+    ) {
+        self.observe_home(removal_observation(
+            key, generation, allocated, outcome, reason,
+        ));
+    }
+
     pub(super) async fn total_cache_allocated_bytes(&self) -> LifecycleResult<u64> {
         super::fs::measured_entry_bytes(self.home_image_cache_dir()).await
     }
@@ -266,13 +298,22 @@ impl HomeImageCache {
                     error = %e,
                     "failed to delete home image cache entry"
                 );
+                self.observe_removal(
+                    &refreshed.cache_key,
+                    Some(&refreshed.image_generation),
+                    refreshed.allocated_bytes,
+                    HomeObservationOutcome::Failed,
+                    "cache_budget",
+                );
                 drop(lock);
                 continue;
             } else {
-                info!(
-                    cache_key = candidate.cache_key,
-                    allocated_bytes = refreshed.allocated_bytes,
-                    "deleted home image cache entry"
+                self.observe_removal(
+                    &refreshed.cache_key,
+                    Some(&refreshed.image_generation),
+                    refreshed.allocated_bytes,
+                    HomeObservationOutcome::Deleted,
+                    "cache_budget",
                 );
             }
             total = total.saturating_sub(refreshed.allocated_bytes);
@@ -338,26 +379,36 @@ impl HomeImageCache {
             Ok(metadata) => metadata,
             Err(LifecycleError::Internal(error)) => {
                 return self
-                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Unusable(error))
+                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Unusable(error), None)
                     .await;
             }
             Err(LifecycleError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
                 return self
-                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale, None)
                     .await;
             }
             Err(error) => return Err(error),
         };
         let Some(current) = entry.paths.image(&metadata.image_generation) else {
             return self
-                .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                .gc_whole_cache_entry(
+                    entry,
+                    dry_run,
+                    GcWholeEntryReason::Stale,
+                    Some(&metadata.image_generation),
+                )
                 .await;
         };
         let current_metadata = match fs::symlink_metadata(&current).await {
             Ok(metadata) => metadata,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return self
-                    .gc_whole_cache_entry(entry, dry_run, GcWholeEntryReason::Stale)
+                    .gc_whole_cache_entry(
+                        entry,
+                        dry_run,
+                        GcWholeEntryReason::Stale,
+                        Some(&metadata.image_generation),
+                    )
                     .await;
             }
             Err(e) => return Err(with_path(e, "symlink_metadata", &current).into()),
@@ -368,6 +419,7 @@ impl HomeImageCache {
                     entry,
                     dry_run,
                     GcWholeEntryReason::Unusable(error.to_string()),
+                    Some(&metadata.image_generation),
                 )
                 .await;
         }
@@ -381,6 +433,7 @@ impl HomeImageCache {
                 &entry.paths,
                 current_metadata,
                 metadata.last_used_at,
+                metadata.image_generation,
             )
             .await;
         Ok(GcEntryInventory {
@@ -394,6 +447,7 @@ impl HomeImageCache {
         entry: &GcCacheEntry,
         dry_run: bool,
         reason: GcWholeEntryReason,
+        image_generation: Option<&str>,
     ) -> LifecycleResult<GcEntryInventory> {
         let allocated = super::fs::measured_entry_bytes(entry.paths.entry_dir()).await?;
         if dry_run {
@@ -418,39 +472,57 @@ impl HomeImageCache {
 
         match fs::remove_dir_all(entry.paths.entry_dir()).await {
             Ok(()) => {
-                match &reason {
-                    GcWholeEntryReason::Stale => info!(
-                        cache_key = entry.cache_key,
-                        allocated_bytes = allocated,
-                        "deleted stale home image cache entry"
+                self.observe_home_with_local_details(
+                    removal_observation(
+                        &entry.cache_key,
+                        image_generation,
+                        allocated,
+                        HomeObservationOutcome::Deleted,
+                        match &reason {
+                            GcWholeEntryReason::Stale => "stale_entry",
+                            GcWholeEntryReason::Unusable(_) => "unusable_entry",
+                        },
                     ),
-                    GcWholeEntryReason::Unusable(reason) => info!(
-                        cache_key = entry.cache_key,
-                        reason,
-                        allocated_bytes = allocated,
-                        "deleted unusable home image cache entry"
-                    ),
-                }
+                    HomeObservationLocalDetails {
+                        detail: match &reason {
+                            GcWholeEntryReason::Stale => None,
+                            GcWholeEntryReason::Unusable(reason) => Some(reason),
+                        },
+                        path: None,
+                    },
+                );
                 return Ok(GcEntryInventory {
                     pre_cleanup_freed_bytes: allocated,
                     candidate: None,
                 });
             }
-            Err(e) => match &reason {
-                GcWholeEntryReason::Stale => warn!(
-                    cache_key = entry.cache_key,
-                    path = %entry.paths.entry_dir().display(),
-                    error = %e,
-                    "failed to delete stale home image cache entry"
-                ),
-                GcWholeEntryReason::Unusable(reason) => warn!(
-                    cache_key = entry.cache_key,
-                    reason,
-                    path = %entry.paths.entry_dir().display(),
-                    error = %e,
-                    "failed to delete unusable home image cache entry"
-                ),
-            },
+            Err(e) => {
+                self.observe_removal(
+                    &entry.cache_key,
+                    image_generation,
+                    allocated,
+                    HomeObservationOutcome::Failed,
+                    match &reason {
+                        GcWholeEntryReason::Stale => "stale_entry",
+                        GcWholeEntryReason::Unusable(_) => "unusable_entry",
+                    },
+                );
+                match &reason {
+                    GcWholeEntryReason::Stale => warn!(
+                        cache_key = entry.cache_key,
+                        path = %entry.paths.entry_dir().display(),
+                        error = %e,
+                        "failed to delete stale home image cache entry"
+                    ),
+                    GcWholeEntryReason::Unusable(reason) => warn!(
+                        cache_key = entry.cache_key,
+                        reason,
+                        path = %entry.paths.entry_dir().display(),
+                        error = %e,
+                        "failed to delete unusable home image cache entry"
+                    ),
+                }
+            }
         }
 
         let pre_cleanup_freed_bytes = self.gc_temporary_paths(entry, false, None).await?;
@@ -568,12 +640,25 @@ impl HomeImageCache {
                 );
             } else {
                 match remove_home_cache_path_if_exists(&path).await {
-                    Ok(true) => info!(
-                        cache_key = entry.cache_key,
-                        path = %path.display(),
-                        allocated_bytes = allocated,
-                        "deleted temporary home image cache path"
-                    ),
+                    Ok(true) => {
+                        self.observe_home_with_local_details(
+                            removal_observation(
+                                &entry.cache_key,
+                                super::entry::image_generation(file_name),
+                                allocated,
+                                HomeObservationOutcome::Deleted,
+                                if orphan {
+                                    "orphan_generation"
+                                } else {
+                                    "temporary_path"
+                                },
+                            ),
+                            HomeObservationLocalDetails {
+                                detail: None,
+                                path: Some(&path),
+                            },
+                        );
+                    }
                     Ok(false) => continue,
                     Err(e) => {
                         warn!(
@@ -581,6 +666,17 @@ impl HomeImageCache {
                             path = %path.display(),
                             error = %e,
                             "failed to delete temporary home image cache path"
+                        );
+                        self.observe_removal(
+                            &entry.cache_key,
+                            super::entry::image_generation(file_name),
+                            allocated,
+                            HomeObservationOutcome::Failed,
+                            if orphan {
+                                "orphan_generation"
+                            } else {
+                                "temporary_path"
+                            },
                         );
                         continue;
                     }
@@ -614,12 +710,14 @@ impl HomeImageCache {
         paths: &CacheEntryPaths,
         file_metadata: std::fs::Metadata,
         last_used_at: String,
+        image_generation: String,
     ) -> Option<GcCandidate> {
         let total = super::fs::measured_entry_bytes(paths.entry_dir())
             .await
             .ok()?;
         Some(GcCandidate {
             cache_key,
+            image_generation,
             allocated_bytes: total,
             file_dev: file_metadata.dev(),
             file_ino: file_metadata.ino(),
@@ -642,6 +740,7 @@ impl HomeImageCache {
             &entry.paths,
             file_metadata,
             metadata.last_used_at,
+            metadata.image_generation,
         )
         .await
     }

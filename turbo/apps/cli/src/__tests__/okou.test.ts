@@ -54,6 +54,7 @@ describe("Okou CLI program", () => {
       "model",
       "agent",
       "connector",
+      "remote-control",
       "mcp",
       "ssh",
       "vnc",
@@ -128,8 +129,8 @@ describe("Okou CLI program", () => {
     expect(canonicalCommandNames).not.toContain("__agent-loop");
   });
 
-  it("should have exactly 51 canonical commands", () => {
-    expect(canonicalCommandNames).toHaveLength(51);
+  it("should have exactly 52 canonical commands", () => {
+    expect(canonicalCommandNames).toHaveLength(52);
     expect(canonicalCommandNames).toContain("subscription");
   });
 });
@@ -204,13 +205,16 @@ describe("Okou CLI lazy command loading", () => {
     },
   );
 
-  it.each([[], ["ssh:read"], ["ssh:write"]])(
-    "shows SSH only with an eligible Run capability: %j",
+  it.each([
+    [],
+    ["ssh:read"],
+    ["ssh:write"],
+    ["connector:read"],
+    ["connector:write"],
+  ])(
+    "shows SSH with an execution or management Run capability: %j",
     (...capabilities) => {
-      vi.stubEnv(
-        "OKOU_TOKEN",
-        capabilities.length ? buildOkouToken(capabilities) : "",
-      );
+      vi.stubEnv("OKOU_TOKEN", buildOkouToken(capabilities));
       const cli = new Command("okou");
       registerCommands(cli);
       expect(cli.helpInformation().includes("ssh")).toBe(

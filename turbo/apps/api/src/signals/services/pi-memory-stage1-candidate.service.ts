@@ -15,10 +15,9 @@ import {
 } from "./pi-memory-stage1-selection-plan";
 
 import { piMemoryStage1WatermarkPlan } from "./pi-memory-stage1-watermark.service";
-import { and, asc, eq, gt, gte, inArray, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 
 import { MEMORY_ARTIFACT_NAME } from "@okouai/core/storage-names";
-import { blobs } from "@okouai/db/schema/blob";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { piMemoryStage1Candidates } from "@okouai/db/schema/pi-memory-stage1-candidate";
 import { storages } from "@okouai/db/schema/storage";
@@ -47,82 +46,6 @@ export async function lockPiMemoryCandidateStorage(
       ),
     )
     .for("no key update");
-}
-
-async function releaseCandidateReferences(
-  tx: Tx,
-  hashes: readonly string[],
-): Promise<void> {
-  const counts = new Map<string, number>();
-  for (const hash of hashes) {
-    counts.set(hash, (counts.get(hash) ?? 0) + 1);
-  }
-  for (const [hash, count] of [...counts].sort(([a], [b]) => {
-    return a.localeCompare(b);
-  })) {
-    const [released] = await tx
-      .update(blobs)
-      .set({ refCount: sql`${blobs.refCount} - ${count}` })
-      .where(and(eq(blobs.hash, hash), gte(blobs.refCount, count)))
-      .returning({ hash: blobs.hash });
-    if (!released) {
-      throw new Error(
-        "Pi memory candidate source blob has no retained reference",
-      );
-    }
-  }
-}
-
-/** Lock parents before children, including standalone candidate retention cleanup. */
-export async function deletePiMemoryStage1Candidates(
-  tx: Tx,
-  storageIds: readonly string[],
-): Promise<number> {
-  if (storageIds.length === 0) {
-    return 0;
-  }
-  await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(inArray(storages.id, [...storageIds]))
-    .orderBy(asc(storages.id))
-    .for("no key update");
-  const deleted = await tx
-    .delete(piMemoryStage1Candidates)
-    .where(inArray(piMemoryStage1Candidates.memoryStorageId, [...storageIds]))
-    .returning({ hash: piMemoryStage1Candidates.sourceHistoryHash });
-  await releaseCandidateReferences(
-    tx,
-    deleted.map((row) => {
-      return row.hash;
-    }),
-  );
-  return deleted.length;
-}
-
-/** The caller owns the transaction; never put external Clerk/S3 work in it. */
-export async function deleteStoragesWithPiMemoryCandidates(
-  tx: Tx,
-  condition: SQL,
-): Promise<number> {
-  const parents = await tx
-    .select({ id: storages.id })
-    .from(storages)
-    .where(condition)
-    .orderBy(asc(storages.id))
-    .for("update");
-  const ids = parents.map((row) => {
-    return row.id;
-  });
-  if (ids.length === 0) {
-    return 0;
-  }
-  await deletePiMemoryStage1Candidates(tx, ids);
-  const deleted = await tx
-    .delete(storages)
-    .where(inArray(storages.id, ids))
-    .returning({ id: storages.id });
-  return deleted.length;
 }
 
 export type PiMemoryStage1CommitResult =

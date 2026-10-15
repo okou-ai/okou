@@ -1,6 +1,6 @@
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -32,13 +32,19 @@ import {
 const context = testContext();
 
 async function messageComposer(): Promise<HTMLElement> {
-  return await screen.findByRole("textbox", { name: "Message" });
+  const composer = await waitFor(currentMessageComposer);
+  expect(composer).toHaveAccessibleName("Message");
+  return composer;
 }
 
 function currentMessageComposer(): HTMLElement {
-  const composer = document.querySelector<HTMLElement>(
-    '[role="textbox"][aria-label="Message"]',
-  );
+  const composer = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[role="textbox"][aria-label="Message"]',
+    ),
+  ).find((candidate) => {
+    return !candidate.closest('[aria-hidden="true"], [hidden], [inert]');
+  });
   if (!composer) {
     throw new Error("Expected the message composer");
   }

@@ -19,3 +19,18 @@ pub async fn from_stream(stream: UnixStream, timeout: Duration) -> io::Result<Gu
     })?;
     GuestControlClient::from_stream(stream, deadline).await
 }
+
+/// Run the production handshake with explicit sandbox diagnostic attribution.
+pub async fn from_stream_for_sandbox(
+    stream: UnixStream,
+    timeout: Duration,
+    sandbox_id: &str,
+) -> io::Result<GuestControlClient> {
+    let deadline = Instant::now().checked_add(timeout).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "guest connection timeout overflowed",
+        )
+    })?;
+    GuestControlClient::from_stream_for_sandbox(stream, deadline, sandbox_id).await
+}

@@ -151,16 +151,9 @@ function createIncompleteRoundAnchors(
     const db = get(db$);
     const anchors = [undefined, sql`incomplete_frontier.seq_id`].map(
       (beforeSeq) => {
-        const isSuccessfulRun = sql`COALESCE(
-    ${and(
-      sql`${agentRuns.result} ? 'agentSessionId'`,
-      eq(
-        sql`jsonb_typeof(${agentRuns.result}->'agentSessionId')`,
-        sql`'string'`,
-      ),
-    )},
-    FALSE
-  )`.mapWith(pgBooleanDecoder);
+        const isSuccessfulRun = eq(agentRuns.status, "completed").mapWith(
+          pgBooleanDecoder,
+        );
         // Grouping prevents PostgreSQL's MIN/MAX optimization from seeking forward
         // through unrelated older runs in the thread-sequence index.
         // Keep eligibility in this run-keyed lookup too: joining runs in the outer
