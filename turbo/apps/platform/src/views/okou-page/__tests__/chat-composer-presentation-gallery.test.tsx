@@ -12,7 +12,6 @@ import {
   agentDraftContract,
   type AgentDraftRequest,
 } from "@okouai/api-contracts/contracts/agent-draft";
-import { composerInlineTemplates } from "./chat-composer-test-helpers.ts";
 import {
   AGENT_ID,
   context,
@@ -60,9 +59,8 @@ async function openPresentationThemePreview() {
     host: "app.okou.ai",
   });
 
-  await expectInlineTemplate(template.title);
-  const inline = composerInlineTemplates()[0];
-  const edit = inline && queryAllByRoleFast("button", inline)[0];
+  const inline = await expectInlineTemplate(template.title);
+  const edit = queryAllByRoleFast("button", inline)[0];
   if (!edit) {
     throw new Error("The saved presentation template has no edit control");
   }

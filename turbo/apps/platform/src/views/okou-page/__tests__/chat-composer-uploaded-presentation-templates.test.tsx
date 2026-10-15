@@ -44,8 +44,19 @@ const UPLOADED_TEMPLATE_NOW_MS = 1_785_542_400_000;
 // to order provider events; assert loading and recovery through the page below.
 function observeTemplateSubscriptions() {
   const messages = vi.spyOn(MessagePort.prototype, "postMessage");
+  const hasType = (message: unknown, type: string): boolean => {
+    return (
+      typeof message === "object" &&
+      message !== null &&
+      "type" in message &&
+      message.type === type
+    );
+  };
   const subscriptions = () => {
     return messages.mock.calls.flatMap(([message]) => {
+      if (!hasType(message, "realtime-subscribe")) {
+        return [];
+      }
       const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
       return parsed.success &&
         parsed.data.type === "realtime-subscribe" &&
@@ -57,6 +68,9 @@ function observeTemplateSubscriptions() {
   const releasedScopes = () => {
     const released = new Set(
       messages.mock.calls.flatMap(([message]) => {
+        if (!hasType(message, "realtime-unsubscribe")) {
+          return [];
+        }
         const parsed = sharedDatabaseClientMessageSchema.safeParse(message);
         return parsed.success && parsed.data.type === "realtime-unsubscribe"
           ? [parsed.data.subscriptionId]
@@ -82,6 +96,9 @@ function observeTemplateSubscriptions() {
         expect(request).toBeDefined();
         expect(
           messages.mock.calls.some(([message]) => {
+            if (!hasType(message, "realtime-subscribed")) {
+              return false;
+            }
             const parsed = sharedDatabaseWorkerMessageSchema.safeParse(message);
             return (
               parsed.success &&

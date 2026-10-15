@@ -2,6 +2,7 @@ import type {
   GenerationTemplateRequest,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import {
   presentationTemplatesContract,
   type PresentationTemplateCatalogEntry,
@@ -49,6 +50,14 @@ export function mockTemplateChat(options?: {
 
   mockAgent();
   mockPersonalModelRoutes();
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(404, {
+      error: {
+        code: "BROWSER_NOT_FOUND",
+        message: "Managed browser not found",
+      },
+    });
+  });
   mockBillingCapabilities(
     { restrictedBuiltInModels: false },
     options?.tier ?? "pro",

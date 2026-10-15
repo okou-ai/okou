@@ -90,7 +90,7 @@ async function finishLightboxImageDecode(
   });
 }
 
-test("The image viewer previews an image and navigates to the next one", async () => {
+async function openImageViewer(deferFirstDecode: boolean) {
   const firstImageUrl =
     "https://cdn.vm7.io/artifacts/test/body-image-split-navigation/first.png";
   const secondImageUrl =
@@ -118,7 +118,7 @@ test("The image viewer previews an image and navigates to the next one", async (
     this: HTMLImageElement,
   ) {
     if (this.src === firstImageUrl) {
-      return firstDecode.promise;
+      return deferFirstDecode ? firstDecode.promise : Promise.resolve();
     }
     if (this.src === secondImageUrl) {
       return secondDecode.promise;
@@ -209,6 +209,18 @@ test("The image viewer previews an image and navigates to the next one", async (
     ).toHaveFocus();
   });
   const firstLightboxImage = getLightboxImage();
+  return {
+    dialog,
+    firstLightboxImage,
+    firstDecode,
+    secondUrlReady,
+    secondDecode,
+    secondImageUrl,
+  };
+}
+
+test("The image viewer waits for the preview image to decode", async () => {
+  const { firstLightboxImage, firstDecode } = await openImageViewer(true);
   expect(firstLightboxImage).not.toBeVisible();
   expect(
     screen.getByRole("status", { name: "Loading artifacts" }),
@@ -222,6 +234,20 @@ test("The image viewer previews an image and navigates to the next one", async (
     screen.queryByRole("status", { name: "Loading artifacts" }),
   ).toBeNull();
   expect(queryButtonByName("Previous image artifact")).toBeUndefined();
+  expect(getButtonByName("Next image artifact")).toBeEnabled();
+});
+
+test("The image viewer resolves and decodes the next image during keyboard navigation", async () => {
+  const {
+    dialog,
+    firstLightboxImage,
+    secondUrlReady,
+    secondDecode,
+    secondImageUrl,
+  } = await openImageViewer(false);
+  await waitFor(() => {
+    expect(firstLightboxImage).toBeVisible();
+  });
   expect(getButtonByName("Next image artifact")).toBeEnabled();
   await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
   await waitFor(() => {

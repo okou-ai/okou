@@ -1593,63 +1593,72 @@ test("Closing the input dialog refreshes an action completed in another tab", as
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
-test("Leaving an open dialog clears sensitive drafts and discards its deferred return refresh", async () => {
-  installCapabilityChat({
-    events: completedConversation(`[Enter details](${browserInputUrl()})`),
-  });
-  context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
-    // A read for the abandoned card must not acquire the new route's lifetime.
-    expect(window.location.pathname).toBe(RUN_PATH);
-    return respond(200, browserInputAction("pending"));
-  });
-  context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
-    return respond(200, browserInputAction("pending"));
-  });
-  await setupPage({
-    context,
-    path: "/connectors",
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
-  });
-  click(
+test.each([
+  { label: "Password", value: "synthetic-password" },
+  { label: "Verification code", value: "123456" },
+])(
+  "Leaving an open dialog clears the $label draft and discards its deferred return refresh",
+  async ({ label, value }) => {
+    installCapabilityChat({
+      events: completedConversation(`[Enter details](${browserInputUrl()})`),
+    });
+    context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
+      // A read for the abandoned card must not acquire the new route's lifetime.
+      expect(window.location.pathname).toBe(RUN_PATH);
+      return respond(200, browserInputAction("pending"));
+    });
+    context.mocks.api(browserUserActionsContract.preflight, ({ respond }) => {
+      return respond(200, browserInputAction("pending"));
+    });
+    await setupPage({
+      context,
+      path: "/connectors",
+      host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
+    });
+    click(
+      await waitFor(() => {
+        return linkByName("Capability conversation");
+      }),
+    );
+    await readyChat();
+    click(await findButton("Enter information"));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Sign in to download invoices",
+    });
+    await within(dialog).findByLabelText("Account email");
+    const input = within(dialog).getByLabelText(label);
+    await fill(input, value);
+    expect(input).toHaveValue(value);
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    act(() => {
+      window.history.back();
+    });
     await waitFor(() => {
-      return linkByName("Capability conversation");
-    }),
-  );
-  await readyChat();
-  click(await findButton("Enter information"));
-  const dialog = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  await within(dialog).findByLabelText("Account email");
-  await fill(within(dialog).getByLabelText("Password"), "synthetic-password");
-  await fill(within(dialog).getByLabelText("Verification code"), "123456");
-  act(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  act(() => {
-    window.history.back();
-  });
-  await waitFor(() => {
-    expect(window.location.pathname).toBe("/connectors");
-    expect(dialog).not.toBeInTheDocument();
-  });
-  expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
-  expect(screen.queryByDisplayValue("123456")).toBeNull();
-  click(
-    await waitFor(() => {
-      return linkByName("Capability conversation");
-    }),
-  );
-  await readyChat();
-  click(await findButton("Enter information"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "Sign in to download invoices",
-  });
-  expect(within(reopened).getByLabelText("Password")).toHaveValue("");
-  expect(within(reopened).getByLabelText("Verification code")).toHaveValue("");
-});
+      expect(window.location.pathname).toBe("/connectors");
+      expect(dialog).not.toBeInTheDocument();
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByDisplayValue("synthetic-password")).toBeNull();
+    expect(screen.queryByDisplayValue("123456")).toBeNull();
+    click(
+      await waitFor(() => {
+        return linkByName("Capability conversation");
+      }),
+    );
+    await readyChat();
+    click(await findButton("Enter information"));
+    const reopened = await screen.findByRole("dialog", {
+      name: "Sign in to download invoices",
+    });
+    expect(within(reopened).getByLabelText("Password")).toHaveValue("");
+    expect(within(reopened).getByLabelText("Verification code")).toHaveValue(
+      "",
+    );
+  },
+);
 
 test("A freshly mounted transcript card reads accepted Browser callback delivery", async () => {
   installCapabilityChat({

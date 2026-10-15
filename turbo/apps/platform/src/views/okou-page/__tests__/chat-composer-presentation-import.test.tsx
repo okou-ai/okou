@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { expect, test } from "vitest";
@@ -29,8 +29,11 @@ async function importDeck(
   user: ReturnType<typeof userEvent.setup>,
   file: File,
 ): Promise<void> {
-  await openTemplatePicker(user);
-  await user.upload(screen.getByLabelText("Import your own deck"), file);
+  const picker = await openTemplatePicker(user);
+  await user.upload(
+    within(picker).getByLabelText("Import your own deck"),
+    file,
+  );
 }
 
 test("Import a presentation deck into chat", async () => {
