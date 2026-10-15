@@ -14,7 +14,7 @@ import { resetSignal, settle, waitForOperation } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
-import { slackOrgData$ } from "./slack.ts";
+import { reloadSlackOrg$, slackOrgData$ } from "./slack.ts";
 
 export type GetStartedQuestStatus = "todo" | "inReview" | "done" | "rejected";
 export interface GetStartedQuest {
@@ -65,6 +65,7 @@ const reloadGetStarted$ = command(({ set }) => {
 });
 export const setGetStartedMenuOpen$ = command(({ set }, open: boolean) => {
   if (open) {
+    set(reloadSlackOrg$);
     set(reloadGetStarted$);
   }
 });
@@ -370,6 +371,14 @@ const refreshGetStartedFromRealtime$ = command(
   },
 );
 
+const refreshGetStartedFromSlack$ = command(
+  ({ set }, signal: AbortSignal): Promise<boolean> => {
+    signal.throwIfAborted();
+    set(reloadSlackOrg$);
+    return set(refreshGetStartedFromRealtime$, signal);
+  },
+);
+
 /** An authenticated app daemon; reward availability never delays route readiness. */
 export const setupGetStartedRewards$ = command(
   ({ set }, signal: AbortSignal): void => {
@@ -378,6 +387,14 @@ export const setupGetStartedRewards$ = command(
       {
         topic: GET_STARTED_REWARDS_CHANGED_EVENT,
         loopCommand$: refreshGetStartedFromRealtime$,
+      },
+      signal,
+    );
+    set(
+      setAblyLoop$,
+      {
+        topic: "slack:changed",
+        loopCommand$: refreshGetStartedFromSlack$,
       },
       signal,
     );

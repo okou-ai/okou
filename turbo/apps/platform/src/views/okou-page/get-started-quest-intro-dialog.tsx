@@ -1,5 +1,6 @@
 import type { GetStartedQuestKey } from "@okouai/api-contracts/contracts/get-started";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import type { ReactNode } from "react";
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
@@ -35,7 +36,6 @@ import {
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
 import { defaultBuiltinConnectorAccountOptions } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
-import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { QuestConnectorPicker } from "./get-started-connector-picker.tsx";
 import { QuestWorkflowPicker } from "./get-started-workflow-picker.tsx";
@@ -263,28 +263,13 @@ function ConnectorIntro({
 }
 
 /**
- * Slack, with the install itself on the confirm button.
- *
- * The step used to hand the reader to the integrations list and leave them to
- * find Slack in it, which is a page of other people's logos between them and
- * the thing the row asked for. The status this dialog reads already carries the
- * workspace's install URL, so confirming starts the authorization the way the
- * connector step does — the same reason that one shows the catalog rather than
- * a link to it.
- *
- * The URL is read while the dialog is open and spent inside the click, because
- * a `window.open` that waits on a request first is no longer a user gesture.
- * Without one, confirm falls back to the list.
+ * Open Slack's connection page in the click so the chat and draft stay here.
+ * That page reads authenticated status and owns install, account-linking and
+ * admin choices; this action does not depend on a cached install URL.
  */
 function SlackIntro({ onClose, reward }: IntroProps) {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const slackLoadable = useLastLoadable(slackOrgData$);
-  const slack = slackLoadable.state === "hasData" ? slackLoadable.data : null;
-  const installUrl =
-    slack && slack.isAdmin && slack.isInstalled !== true
-      ? (slack.installUrl ?? null)
-      : null;
   const confirmLabel = t(($) => {
     return $.chat.agentPage.getStarted.intro.slack.confirm;
   });
@@ -304,22 +289,16 @@ function SlackIntro({ onClose, reward }: IntroProps) {
       secondaryLabel={useLaterLabel()}
       onSecondary={onClose}
       confirm={
-        installUrl === null ? (
-          <IntroLink pathname={ROUTES.works} onClose={onClose}>
-            {confirmLabel}
-          </IntroLink>
-        ) : (
-          <Button
-            type="button"
-            onClick={() => {
-              openFreshOAuth(installUrl);
-              onClose();
-            }}
-            data-testid="quest-intro-confirm"
-          >
-            {confirmLabel}
-          </Button>
-        )
+        <Button
+          type="button"
+          onClick={() => {
+            openFreshOAuth(INTEGRATION_SETTINGS_PATHS.slack);
+            onClose();
+          }}
+          data-testid="quest-intro-confirm"
+        >
+          {confirmLabel}
+        </Button>
       }
     >
       <IntroNote>
