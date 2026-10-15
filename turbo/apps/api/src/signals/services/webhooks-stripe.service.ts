@@ -4535,10 +4535,10 @@ export const handleStripeWebhookEvent$ = command(
 
 const paidPlanOrgIdForSubscriptionOwned$ = command(
   async function paidPlanOrgIdForSubscriptionOwned(
-    { set },
+    { get },
     subscriptionId: string,
   ): Promise<string | null> {
-    const db = set(writeDb$);
+    const db = get(db$);
 
     const [row] = await db
       .select({ orgId: orgMetadata.orgId, tier: orgMetadata.tier })

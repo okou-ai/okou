@@ -50,7 +50,7 @@ import {
 } from "./context-rowset";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, rawSqlReadDb$, writeDb$, type Db } from "../external/db";
 import {
   getStripeClient,
   type StripeClient,
@@ -3753,8 +3753,8 @@ type UpgradeInvoiceCommitArgs = {
   readonly prorationPeriod: UsagePackPeriod;
 };
 const prepareUpgradeInvoicePublication$ = command(
-  async ({ set }, args: UpgradeInvoiceCommitArgs) => {
-    const db = set(writeDb$);
+  async ({ get }, args: UpgradeInvoiceCommitArgs) => {
+    const db = get(rawSqlReadDb$);
     const positive = args.purchasedCredits > 0 || args.bonusCredits > 0;
     let grantCreatedAt: string | null = null;
     if (positive) {
