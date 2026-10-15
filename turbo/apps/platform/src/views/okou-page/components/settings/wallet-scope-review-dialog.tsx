@@ -1,4 +1,5 @@
 import type { WalletConnectionStatus } from "@okouai/api-contracts/contracts/wallet";
+import type { ReactNode } from "react";
 import {
   Button,
   Dialog,
@@ -6,22 +7,26 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@okouai/ui";
 import { Wallet } from "lucide-react";
+import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { walletScopeReviewReturnFocus$ } from "../../../../signals/okou-page/settings/wallet.ts";
 import { ScopeReviewContent } from "./scope-review-modal.tsx";
 
 export function WalletScopeReviewDialog({
   change,
   disabled,
   onReconnect,
+  children,
 }: {
   readonly change: NonNullable<WalletConnectionStatus["scopeChange"]>;
   readonly disabled: boolean;
   readonly onReconnect: () => void;
+  readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const returnFocus = useGet(walletScopeReviewReturnFocus$);
   const description =
     change.reason === "workspace_scope_changed"
       ? t(($) => {
@@ -34,12 +39,14 @@ export function WalletScopeReviewDialog({
         : undefined;
   return (
     <Dialog>
-      <DialogTrigger render={<Button disabled={disabled} />}>
-        {t(($) => {
-          return $.connectors.card.reviewPermissions;
-        })}
-      </DialogTrigger>
-      <DialogContent maxWidth="md" aria-describedby={undefined}>
+      {children}
+      <DialogContent
+        maxWidth="md"
+        aria-describedby={undefined}
+        finalFocus={() => {
+          return returnFocus ?? true;
+        }}
+      >
         <DialogHeader>
           <div className="flex items-center gap-3">
             <Wallet size={20} aria-hidden="true" />

@@ -5172,6 +5172,31 @@
       "retry": "Riprova",
       "scope": "Il tuo portafoglio Link, condiviso dai tuoi agenti in questo spazio di lavoro.",
       "title": "Portafoglio",
+      "transactions": {
+        "description": "Le tue richieste di acquisto Link in questo spazio, con l’ultimo stato ricevuto da Okou.",
+        "empty": "Nessuna transazione Link",
+        "loadError": "Impossibile caricare le transazioni. Riprova.",
+        "loading": "Caricamento delle transazioni",
+        "next": "Successiva",
+        "page": "Pagina {{value}}",
+        "previous": "Precedente",
+        "refresh": "Aggiorna transazioni",
+        "status": {
+          "approved": "Approvata, in attesa di pagamento",
+          "canceled": "Annullata",
+          "created": "Creata",
+          "creating": "Creazione in corso",
+          "denied": "Rifiutata",
+          "expired": "Scaduta",
+          "failed": "Non riuscita",
+          "pending_approval": "In attesa di approvazione",
+          "requires_action": "Azione richiesta",
+          "submitted": "Pagamento in corso",
+          "succeeded": "Pagamento riuscito"
+        },
+        "test": "Test",
+        "title": "Transazioni Link"
+      },
       "workspaceScopeChanged": "Ora il tuo portafoglio Link può essere usato da tutti i tuoi agenti in questo spazio di lavoro. Ricollegalo per approvare la modifica."
     },
     "workspace": {

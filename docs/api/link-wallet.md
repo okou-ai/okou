@@ -16,6 +16,20 @@ changed permissions and reuses the connector permission-review dialog before
 reconnecting. Agent-scoped grants require explicit approval of workspace/user
 sharing. Grants without a permission snapshot require a fresh review.
 
+Connected wallets use the same status indicator as Works. Reconnect and Disconnect
+live in the connection's actions menu; changed permissions also retain a visible
+Review permissions action.
+
+`GET /api/wallet/transactions` lists the current user's Okou purchase requests in
+the current workspace, across their agents, through session authentication. The
+list includes merchant, amount, currency, test mode, creation time, and the last
+status received by Okou. It does not fetch all activity from the user's Link
+account or poll the provider. Approval links, credentials, and other users'
+requests are excluded. History remains visible after disconnecting, and an
+approved request is distinguished from a successful payment. Pagination uses an
+owner-scoped cursor ordered by creation time and ID, newest first, with 20 rows by
+default and at most 100 per page. Responses are not cacheable.
+
 Migration `1401_link_wallet_scope_snapshots` adds nullable request-snapshot fields
 to OAuth attempts and connections. Capture the requested scopes when consent starts
 and copy that exact snapshot on callback; token refresh must preserve it. This

@@ -5083,6 +5083,31 @@
       "retry": "重試",
       "scope": "你的 Link 錢包，由你在此工作區的所有 Agent 共用。",
       "title": "錢包",
+      "transactions": {
+        "description": "你在此工作區發起的 Link 購買請求，以及 Okou 收到的最新狀態。",
+        "empty": "尚無 Link 交易紀錄",
+        "loadError": "無法載入交易紀錄，請重試。",
+        "loading": "正在載入交易紀錄",
+        "next": "下一頁",
+        "page": "第 {{value}} 頁",
+        "previous": "上一頁",
+        "refresh": "重新整理交易紀錄",
+        "status": {
+          "approved": "已核准，待付款",
+          "canceled": "已取消",
+          "created": "已建立",
+          "creating": "建立中",
+          "denied": "已拒絕",
+          "expired": "已過期",
+          "failed": "失敗",
+          "pending_approval": "等待核准",
+          "requires_action": "需要操作",
+          "submitted": "付款處理中",
+          "succeeded": "付款成功"
+        },
+        "test": "測試",
+        "title": "Link 交易紀錄"
+      },
       "workspaceScopeChanged": "你的 Link 錢包現在可供此工作區內你的所有 Agent 使用。請重新連線以確認此變更。"
     },
     "workspace": {

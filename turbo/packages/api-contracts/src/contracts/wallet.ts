@@ -79,6 +79,19 @@ export const walletSpendSchema = z.object({
 export type WalletCreateSpend = z.infer<typeof walletCreateSpendSchema>;
 export type WalletSpend = z.infer<typeof walletSpendSchema>;
 
+// A history entry deliberately excludes approval links and payment credentials.
+export const walletTransactionSchema = walletSpendSchema
+  .pick({
+    id: true,
+    status: true,
+    amount: true,
+    currency: true,
+    merchantName: true,
+    test: true,
+  })
+  .extend({ createdAt: z.iso.datetime() });
+export type WalletTransaction = z.infer<typeof walletTransactionSchema>;
+
 export const walletCardSchema = z.object({
   brand: z.string().regex(/^[a-zA-Z_-]{1,32}$/),
   number: z.string().regex(/^\d{12,19}$/),
@@ -245,6 +258,24 @@ export const walletCallbackContract = c.router({
 });
 
 export const walletUserContract = c.router({
+  transactions: {
+    method: "GET",
+    path: "/api/wallet/transactions",
+    headers: authHeadersSchema,
+    query: z.object({
+      cursor: z.uuid().optional(),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+    }),
+    responses: {
+      200: z.object({
+        transactions: z.array(walletTransactionSchema),
+        nextCursor: z.uuid().nullable(),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+  },
   status: {
     ...walletContract.status,
     path: "/api/wallet/connection",

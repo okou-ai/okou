@@ -14,6 +14,7 @@ import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import { userFeatureSwitchOverrides } from "../services/feature-switches.service";
 import { LinkWalletError } from "../services/link-wallet-provider.service";
+import { walletTransactions$ } from "../services/link-wallet-transactions.service";
 import {
   completeWalletOAuth$,
   createWalletSpend$,
@@ -141,6 +142,17 @@ const userStatus$ = command(async ({ get }, signal: AbortSignal) => {
   const result = await settle(get(walletSettingsStatus$), signal);
   signal.throwIfAborted();
   return walletResponse(result);
+});
+const userTransactions$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const enabled = await settle(get(walletEnabled$), signal);
+  signal.throwIfAborted();
+  if (!enabled.ok) {
+    return walletError(enabled.error);
+  }
+  const body = await get(walletTransactions$);
+  signal.throwIfAborted();
+  return { status: 200 as const, body };
 });
 const userConnect$ = command(async ({ get, set }, signal: AbortSignal) => {
   const enabled = await settle(get(walletEnabled$), signal);
@@ -278,6 +290,10 @@ const userAuth = {
 } as const;
 
 export const walletRoutes: readonly RouteEntry[] = [
+  {
+    route: walletUserContract.transactions,
+    handler: authRoute(userAuth, userTransactions$),
+  },
   {
     route: walletUserContract.status,
     handler: authRoute(userAuth, userStatus$),

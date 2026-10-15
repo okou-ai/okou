@@ -5083,6 +5083,31 @@
       "retry": "Coba lagi",
       "scope": "Dompet Link Anda, digunakan bersama oleh agen Anda di ruang kerja ini.",
       "title": "Dompet",
+      "transactions": {
+        "description": "Permintaan pembelian Link Anda di ruang kerja ini, dengan status terbaru yang diterima Okou.",
+        "empty": "Belum ada transaksi Link",
+        "loadError": "Tidak dapat memuat transaksi. Coba lagi.",
+        "loading": "Memuat transaksi",
+        "next": "Berikutnya",
+        "page": "Halaman {{value}}",
+        "previous": "Sebelumnya",
+        "refresh": "Muat ulang transaksi",
+        "status": {
+          "approved": "Disetujui, menunggu pembayaran",
+          "canceled": "Dibatalkan",
+          "created": "Dibuat",
+          "creating": "Sedang dibuat",
+          "denied": "Ditolak",
+          "expired": "Kedaluwarsa",
+          "failed": "Gagal",
+          "pending_approval": "Menunggu persetujuan",
+          "requires_action": "Perlu tindakan",
+          "submitted": "Pembayaran diproses",
+          "succeeded": "Pembayaran berhasil"
+        },
+        "test": "Uji coba",
+        "title": "Transaksi Link"
+      },
       "workspaceScopeChanged": "Dompet Link Anda kini dapat digunakan oleh semua agen Anda di ruang kerja ini. Hubungkan kembali untuk menyetujui perubahan ini."
     },
     "workspace": {

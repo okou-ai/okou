@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, expect, test } from "vitest";
 import {
   walletUserContract,
   type WalletConnectionStatus,
+  type WalletTransaction,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -27,6 +28,33 @@ async function button(text: string) {
     return result;
   });
 }
+
+async function menuItem(text: string) {
+  const card = screen.getByRole("region", { name: "Link" });
+  const trigger = queryAllByRoleFast("button", card).find((element) => {
+    return element.getAttribute("aria-label") === "More options";
+  });
+  if (!trigger) {
+    throw new Error("Missing wallet menu");
+  }
+  click(trigger);
+  const menu = await screen.findByRole("menu");
+  return await waitFor(() => {
+    const item = queryAllByRoleFast("menuitem", menu).find((element) => {
+      return element.textContent?.trim() === text;
+    });
+    if (!item) {
+      throw new Error(`Missing menu item: ${text}`);
+    }
+    return item;
+  });
+}
+
+beforeEach(() => {
+  context.mocks.api(walletUserContract.transactions, ({ respond }) => {
+    return respond(200, { transactions: [], nextCursor: null });
+  });
+});
 
 async function openWallet(
   featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
@@ -100,7 +128,15 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   expect(popup.opener).toBeNull();
   connected = true;
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
-  click(await button("Disconnect"));
+  await screen.findByText("Connected");
+  expect(
+    queryAllByRoleFast("button").some((element) => {
+      return ["Reconnect", "Disconnect"].includes(
+        element.textContent?.trim() ?? "",
+      );
+    }),
+  ).toBeFalsy();
+  click(await menuItem("Disconnect"));
   await waitFor(() => {
     return expect(disconnects).toBe(1);
   });
@@ -111,6 +147,9 @@ test.each([FeatureSwitchKey.LinkWallet, FeatureSwitchKey.WalletSettings])(
   "hides Wallet and its deep link without fetching or subscribing when %s is disabled",
   async (feature) => {
     context.mocks.api(walletUserContract.status, ({ never }) => {
+      return never();
+    });
+    context.mocks.api(walletUserContract.transactions, ({ never }) => {
       return never();
     });
     await openWallet({ [feature]: false });
@@ -135,7 +174,11 @@ test("updates the wallet after a workspace notification", async () => {
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_other" });
   connected = true;
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
-  await expect(button("Disconnect")).resolves.toBeEnabled();
+  await screen.findByText("Connected");
+  await expect(menuItem("Disconnect")).resolves.not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
 
 test.each([false, true])(
@@ -150,11 +193,13 @@ test.each([false, true])(
     });
     await openWallet();
     const label = connected ? "Reconnect" : "Connect";
-    click(await button(label));
+    click(await (connected ? menuItem(label) : button(label)));
     await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
       "Couldn’t complete the action.",
     );
-    await expect(button(label)).resolves.toBeEnabled();
+    const retry = await (connected ? menuItem(label) : button(label));
+    expect(retry).toBeEnabled();
+    expect(retry).not.toHaveAttribute("aria-disabled", "true");
   },
 );
 
@@ -178,11 +223,14 @@ test("reconnects an existing wallet without disconnecting it first", async () =>
     return never();
   });
   await openWallet();
-  click(await button("Reconnect"));
+  click(await menuItem("Reconnect"));
   await waitFor(() => {
     expect(popup.location.href).toBe(authorizationUrl);
   });
-  await expect(button("Disconnect")).resolves.toBeEnabled();
+  await expect(menuItem("Disconnect")).resolves.not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
 });
 
 test("reviews changed scopes and keeps the warning until new consent completes", async () => {
@@ -236,8 +284,10 @@ test("reviews changed scopes and keeps the warning until new consent completes",
   expect(screen.getByText("Update permissions")).toBeVisible();
   status = connection(true);
   context.mocks.ably.trigger("wallet:changed", { orgId: "org_1" });
-  await expect(button("Reconnect")).resolves.toBeEnabled();
-  expect(screen.queryByText("Update permissions")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.queryByText("Update permissions")).not.toBeInTheDocument();
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+  });
 });
 
 test.each([
@@ -285,8 +335,15 @@ test("offers reconnect for an expired authorization instead of a first-time conn
   });
   await openWallet();
   await screen.findByText("Reconnect required");
-  await expect(button("Reconnect")).resolves.toBeEnabled();
-  await expect(button("Disconnect")).resolves.toBeEnabled();
+  await expect(menuItem("Reconnect")).resolves.not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(
+    queryAllByRoleFast("menuitem").some((item) => {
+      return item.textContent?.trim() === "Disconnect";
+    }),
+  ).toBeTruthy();
 });
 
 test("offers Disconnect for a previously unfinished provider revocation", async () => {
@@ -299,6 +356,119 @@ test("offers Disconnect for a previously unfinished provider revocation", async 
     return respond(200, { disconnected: true });
   });
   await openWallet();
-  click(await button("Disconnect"));
+  click(await menuItem("Disconnect"));
   await expect(button("Connect")).resolves.toBeEnabled();
+});
+
+function transaction(
+  overrides: Partial<WalletTransaction> = {},
+): WalletTransaction {
+  return {
+    id: "00000000-0000-4000-8000-000000000001",
+    merchantName: "Example Books",
+    amount: 3500,
+    currency: "usd",
+    status: "approved",
+    test: false,
+    createdAt: "2026-10-15T03:00:00Z",
+    ...overrides,
+  };
+}
+
+test("shows purchase amounts and distinct approval/payment states, paginates, and retains history when disconnected", async () => {
+  const first = transaction();
+  const second = transaction({
+    id: "00000000-0000-4000-8000-000000000002",
+    merchantName: "Example Stationery",
+    status: "succeeded",
+    test: true,
+  });
+  context.mocks.api(walletUserContract.status, ({ respond }) => {
+    return respond(200, connection(false));
+  });
+  context.mocks.api(walletUserContract.transactions, ({ query, respond }) => {
+    return respond(
+      200,
+      query.cursor
+        ? { transactions: [second], nextCursor: null }
+        : { transactions: [first], nextCursor: first.id },
+    );
+  });
+  await openWallet();
+  const list = await screen.findByRole("region", { name: "Link transactions" });
+  await within(list).findByText("Example Books");
+  expect(within(list).getByText("$35.00")).toBeInTheDocument();
+  expect(
+    within(list).getByText("Approved, awaiting payment"),
+  ).toBeInTheDocument();
+  await expect(button("Connect")).resolves.toBeEnabled();
+  click(await button("Next"));
+  await within(list).findByText("Example Stationery");
+  expect(within(list).getByText("Payment succeeded")).toBeInTheDocument();
+  expect(within(list).getByText("Test")).toBeInTheDocument();
+  expect(within(list).queryByText("Example Books")).not.toBeInTheDocument();
+  await expect(button("Next")).resolves.toBeDisabled();
+  click(await button("Previous"));
+  await within(list).findByText("Example Books");
+  expect(
+    within(list).queryByText("Example Stationery"),
+  ).not.toBeInTheDocument();
+});
+
+test("shows a transaction error separately from connection status and retries to an empty list", async () => {
+  let fail = true;
+  context.mocks.api(walletUserContract.status, ({ respond }) => {
+    return respond(200, connection(true));
+  });
+  context.mocks.api(walletUserContract.transactions, ({ respond }) => {
+    return fail
+      ? respond(403, { error: { code: "FORBIDDEN", message: "Unavailable" } })
+      : respond(200, { transactions: [], nextCursor: null });
+  });
+  await openWallet();
+  const list = await screen.findByRole("region", { name: "Link transactions" });
+  await within(list).findByText("Couldn’t load transactions. Try again.");
+  expect(screen.getByText("Connected")).toBeInTheDocument();
+  expect(
+    within(list).queryByText("No Link transactions yet"),
+  ).not.toBeInTheDocument();
+  fail = false;
+  click(await button("Retry"));
+  await within(list).findByText("No Link transactions yet");
+});
+
+test("opens scope review from the reconnect menu without starting consent immediately", async () => {
+  const opened = context.mocks.browser.open(context.mocks.browser.authWindow());
+  context.mocks.api(walletUserContract.status, ({ respond }) => {
+    return respond(200, {
+      ...connection(true),
+      connectionStatus: "scope-mismatch",
+      scopeChange: {
+        reason: "permissions_changed",
+        addedScopes: ["userinfo:read"],
+        removedScopes: [],
+        currentScopes: ["userinfo:read"],
+        storedScopes: [],
+      },
+    });
+  });
+  await openWallet();
+  await screen.findByText("Update permissions");
+  click(await menuItem("Reconnect"));
+  await screen.findByRole("dialog", { name: "Link permissions update" });
+  expect(screen.getByText("userinfo:read")).toBeInTheDocument();
+  expect(opened.calls).toHaveLength(0);
+  click(await button("Close"));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: "Link permissions update" }),
+    ).not.toBeInTheDocument();
+  });
+  expect(screen.getByText("Update permissions")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(document.activeElement).toHaveAttribute(
+      "aria-label",
+      "More options",
+    );
+  });
 });

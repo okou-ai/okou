@@ -10,7 +10,7 @@ import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { setAblyPayloadLoop$ } from "../../realtime.ts";
 import { generateRouterPath } from "../../route.ts";
 import { ROUTES } from "../../route-paths.ts";
-import { withCleanup } from "../../utils.ts";
+import { onRef, withCleanup } from "../../utils.ts";
 
 export const walletSettingsEnabled$ = computed((get) => {
   const features = get(featureSwitch$);
@@ -21,6 +21,63 @@ export const walletSettingsEnabled$ = computed((get) => {
 });
 
 const version$ = state(0);
+const actionsElement$ = state<HTMLElement | null>(null);
+const scopeReviewReturnFocus$ = state<HTMLElement | null>(null);
+export const walletActionsRef$ = onRef(
+  command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+    set(actionsElement$, element);
+    signal.addEventListener("abort", () => {
+      set(actionsElement$, null);
+      set(scopeReviewReturnFocus$, null);
+    });
+  }),
+);
+export const prepareWalletScopeReview$ = command(
+  ({ get, set }, trigger: HTMLElement | "menu") => {
+    set(
+      scopeReviewReturnFocus$,
+      trigger === "menu" ? get(actionsElement$) : trigger,
+    );
+  },
+);
+export const walletScopeReviewReturnFocus$ = computed((get) => {
+  return get(scopeReviewReturnFocus$);
+});
+const transactionsVersion$ = state(0);
+const transactionCursors$ = state<string[]>([]);
+export const walletTransactionPage$ = computed((get) => {
+  return get(transactionCursors$).length + 1;
+});
+export const walletTransactions$ = computed(async (get) => {
+  get(transactionsVersion$);
+  if (!get(walletSettingsEnabled$)) {
+    return null;
+  }
+  const cursor = get(transactionCursors$).at(-1);
+  const result = await accept(
+    get(apiClient$)(walletUserContract).transactions({
+      query: { cursor, limit: 20 },
+    }),
+    [200],
+  );
+  return result.body;
+});
+export const refreshWalletTransactions$ = command(({ set }) => {
+  set(transactionCursors$, []);
+  set(transactionsVersion$, (version) => {
+    return version + 1;
+  });
+});
+export const nextWalletTransactionPage$ = command(({ set }, cursor: string) => {
+  set(transactionCursors$, (cursors) => {
+    return [...cursors, cursor];
+  });
+});
+export const previousWalletTransactionPage$ = command(({ set }) => {
+  set(transactionCursors$, (cursors) => {
+    return cursors.slice(0, -1);
+  });
+});
 export const walletConnection$ = computed(async (get) => {
   get(version$);
   const result = await accept(
@@ -30,6 +87,7 @@ export const walletConnection$ = computed(async (get) => {
   return result.body;
 });
 export const refreshWalletConnection$ = command(({ set }) => {
+  set(refreshWalletTransactions$);
   set(version$, (version) => {
     return version + 1;
   });

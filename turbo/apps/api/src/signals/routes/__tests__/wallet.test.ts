@@ -914,9 +914,17 @@ test("shares a workspace wallet across agents while isolating purchase approvals
   );
   await connect(fixture);
   const input = purchase();
-  spendProvider(input);
+  const provider = spendProvider(input);
   const created = await accept(
     client().createSpend({ headers: fixture.headers, body: input }),
+    [200],
+  );
+  provider.approve();
+  await accept(
+    client().getSpend({
+      headers: fixture.headers,
+      params: { id: created.body.id },
+    }),
     [200],
   );
   const otherAgent = await carrier(true, fixture.actor);
@@ -941,14 +949,101 @@ test("shares a workspace wallet across agents while isolating purchase approvals
   );
   const secondPurchase = purchase();
   spendProvider(secondPurchase);
-  await accept(
+  const second = await accept(
     client().createSpend({ headers: otherAgent.headers, body: secondPurchase }),
     [200],
   );
+  const firstPage = await accept(
+    userClient().transactions({ headers: sessionHeaders, query: { limit: 1 } }),
+    [200],
+  );
+  expect(firstPage.headers.get("cache-control")).toBe("no-store");
+  expect(firstPage.body.transactions).toStrictEqual([
+    {
+      id: second.body.id,
+      merchantName: secondPurchase.merchantName,
+      amount: secondPurchase.amount,
+      currency: "usd",
+      status: "pending_approval",
+      test: true,
+      createdAt: expect.any(String),
+    },
+  ]);
+  expect(firstPage.body.nextCursor).toBe(second.body.id);
+  // A new request between pages must not duplicate or displace earlier entries.
+  const newestPurchase = purchase();
+  spendProvider(newestPurchase);
+  await accept(
+    client().createSpend({ headers: otherAgent.headers, body: newestPurchase }),
+    [200],
+  );
+  const secondPage = await accept(
+    userClient().transactions({
+      headers: sessionHeaders,
+      query: { cursor: second.body.id, limit: 1 },
+    }),
+    [200],
+  );
+  expect(secondPage.body.transactions).toStrictEqual([
+    {
+      id: created.body.id,
+      merchantName: input.merchantName,
+      amount: input.amount,
+      currency: "usd",
+      status: "approved",
+      test: true,
+      createdAt: expect.any(String),
+    },
+  ]);
+  expect(secondPage.body.nextCursor).toBeNull();
+  const bdd = createBddApi(context);
+  for (const peer of [
+    bdd.user({ orgId: fixture.actor.orgId }),
+    bdd.user({ userId: fixture.actor.userId }),
+  ]) {
+    mocks.clerk.session(peer.userId, peer.orgId, peer.orgRole);
+    for (const cursor of [undefined, second.body.id]) {
+      const isolated = await accept(
+        userClient().transactions({
+          headers: sessionHeaders,
+          query: { cursor },
+        }),
+        [200],
+      );
+      expect(isolated.body).toStrictEqual({
+        transactions: [],
+        nextCursor: null,
+      });
+    }
+  }
+  mocks.clerk.session(fixture.actor.userId, fixture.actor.orgId);
+  await accept(
+    userClient().transactions({ headers: fixture.headers, query: {} }),
+    [403],
+  );
+  for (const query of [{ limit: 0 }, { limit: 101 }, { cursor: "invalid" }]) {
+    await accept(
+      userClient().transactions({ headers: sessionHeaders, query }),
+      [400],
+    );
+  }
+  const missing = await accept(
+    userClient().transactions({
+      headers: sessionHeaders,
+      query: { cursor: randomUUID() },
+    }),
+    [200],
+  );
+  expect(missing.body).toStrictEqual({ transactions: [], nextCursor: null });
   await accept(
     userClient().disconnect({ headers: sessionHeaders, body: {} }),
     [200],
   );
+  const history = await accept(
+    userClient().transactions({ headers: sessionHeaders, query: {} }),
+    [200],
+  );
+  expect(history.body.transactions).toHaveLength(3);
   for (const headers of [fixture.headers, otherAgent.headers]) {
     expect(
       (await accept(client().status({ headers }), [200])).body.connected,
@@ -2104,5 +2199,6 @@ test("gates session wallet management and rejects run tokens on settings endpoin
     expect(denied.status).toBe(403);
     await accept(userClient().connect({ headers, body: {} }), [403]);
     await accept(userClient().disconnect({ headers, body: {} }), [403]);
+    await accept(userClient().transactions({ headers, query: {} }), [403]);
   }
 });

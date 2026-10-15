@@ -5083,6 +5083,31 @@
       "retry": "再試行",
       "scope": "このワークスペース内のあなたのエージェントで共有する Link ウォレット。",
       "title": "ウォレット",
+      "transactions": {
+        "description": "このワークスペースでの Link 購入リクエストと、Okou が受信した最新のステータス。",
+        "empty": "Link の取引履歴はまだありません",
+        "loadError": "取引履歴を読み込めませんでした。もう一度お試しください。",
+        "loading": "取引履歴を読み込み中",
+        "next": "次へ",
+        "page": "{{value}} ページ",
+        "previous": "前へ",
+        "refresh": "取引履歴を更新",
+        "status": {
+          "approved": "承認済み・支払い待ち",
+          "canceled": "キャンセル済み",
+          "created": "作成済み",
+          "creating": "作成中",
+          "denied": "拒否済み",
+          "expired": "期限切れ",
+          "failed": "失敗",
+          "pending_approval": "承認待ち",
+          "requires_action": "操作が必要",
+          "submitted": "支払い処理中",
+          "succeeded": "支払い成功"
+        },
+        "test": "テスト",
+        "title": "Link の取引履歴"
+      },
       "workspaceScopeChanged": "Link ウォレットが、このワークスペース内のすべてのエージェントで使えるようになります。再接続して、この変更を承認してください。"
     },
     "workspace": {

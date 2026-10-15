@@ -5172,6 +5172,31 @@
       "retry": "Tentar novamente",
       "scope": "Sua carteira Link, compartilhada pelos seus agentes neste espaço de trabalho.",
       "title": "Carteira",
+      "transactions": {
+        "description": "Suas solicitações de compra do Link neste espaço, com o último status recebido pelo Okou.",
+        "empty": "Nenhuma transação do Link ainda",
+        "loadError": "Não foi possível carregar as transações. Tente novamente.",
+        "loading": "Carregando transações",
+        "next": "Próxima",
+        "page": "Página {{value}}",
+        "previous": "Anterior",
+        "refresh": "Atualizar transações",
+        "status": {
+          "approved": "Aprovada, aguardando pagamento",
+          "canceled": "Cancelada",
+          "created": "Criada",
+          "creating": "Criando",
+          "denied": "Recusada",
+          "expired": "Expirada",
+          "failed": "Falhou",
+          "pending_approval": "Aguardando aprovação",
+          "requires_action": "Ação necessária",
+          "submitted": "Processando pagamento",
+          "succeeded": "Pagamento concluído"
+        },
+        "test": "Teste",
+        "title": "Transações do Link"
+      },
       "workspaceScopeChanged": "Sua carteira Link agora pode ser usada por todos os seus agentes neste espaço de trabalho. Reconecte para aprovar essa mudança."
     },
     "workspace": {

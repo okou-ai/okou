@@ -5172,6 +5172,31 @@
       "retry": "Réessayer",
       "scope": "Ton portefeuille Link, partagé par tes agents dans cet espace de travail.",
       "title": "Portefeuille",
+      "transactions": {
+        "description": "Vos demandes d’achat Link dans cet espace, avec le dernier statut reçu par Okou.",
+        "empty": "Aucune transaction Link pour le moment",
+        "loadError": "Impossible de charger les transactions. Réessayez.",
+        "loading": "Chargement des transactions",
+        "next": "Suivant",
+        "page": "Page {{value}}",
+        "previous": "Précédent",
+        "refresh": "Actualiser les transactions",
+        "status": {
+          "approved": "Approuvée, paiement en attente",
+          "canceled": "Annulée",
+          "created": "Créée",
+          "creating": "Création en cours",
+          "denied": "Refusée",
+          "expired": "Expirée",
+          "failed": "Échec",
+          "pending_approval": "En attente d’approbation",
+          "requires_action": "Action requise",
+          "submitted": "Paiement en cours",
+          "succeeded": "Paiement réussi"
+        },
+        "test": "Test",
+        "title": "Transactions Link"
+      },
       "workspaceScopeChanged": "Votre portefeuille Link peut désormais être utilisé par tous vos agents dans cet espace de travail. Reconnectez-le pour approuver ce changement."
     },
     "workspace": {

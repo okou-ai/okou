@@ -5104,6 +5104,31 @@
       "retry": "Erneut versuchen",
       "scope": "Dein Link-Wallet für alle deine Agenten in diesem Workspace.",
       "title": "Wallet",
+      "transactions": {
+        "description": "Deine Link-Kaufanfragen in diesem Workspace mit dem zuletzt von Okou empfangenen Status.",
+        "empty": "Noch keine Link-Transaktionen",
+        "loadError": "Transaktionen konnten nicht geladen werden. Versuche es erneut.",
+        "loading": "Transaktionen werden geladen",
+        "next": "Weiter",
+        "page": "Seite {{value}}",
+        "previous": "Zurück",
+        "refresh": "Transaktionen aktualisieren",
+        "status": {
+          "approved": "Genehmigt, Zahlung ausstehend",
+          "canceled": "Storniert",
+          "created": "Erstellt",
+          "creating": "Wird erstellt",
+          "denied": "Abgelehnt",
+          "expired": "Abgelaufen",
+          "failed": "Fehlgeschlagen",
+          "pending_approval": "Genehmigung ausstehend",
+          "requires_action": "Aktion erforderlich",
+          "submitted": "Zahlung wird verarbeitet",
+          "succeeded": "Zahlung erfolgreich"
+        },
+        "test": "Test",
+        "title": "Link-Transaktionen"
+      },
       "workspaceScopeChanged": "Dein Link-Wallet kann jetzt von all deinen Agenten in diesem Workspace genutzt werden. Verbinde es erneut, um diese Änderung zu bestätigen."
     },
     "workspace": {
