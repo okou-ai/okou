@@ -46,6 +46,7 @@ import type {
 } from "./workflow-automation-context.service";
 import {
   appendCanonicalChatEventsSql,
+  type ChatEventRelationSource,
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 
@@ -948,8 +949,14 @@ export function chatEventContextInsertSql(
 export function chatEventInsertSql(
   values: AppendChatEvent,
   conflict: InsertChatEventConflict = "none",
+  relationSource?: ChatEventRelationSource,
 ): SQL {
-  return appendCanonicalChatEventsSql([prepareChatEvent(values).row], conflict);
+  return appendCanonicalChatEventsSql(
+    [prepareChatEvent(values).row],
+    conflict,
+    undefined,
+    relationSource,
+  );
 }
 
 /** Empty batches reserve nothing and return no rows. */
@@ -1004,6 +1011,7 @@ export function requireChatEventReplacementTarget(
 export function chatEventReplacementInsertSql(
   target: LoadedChatEventReplacementTarget,
   replacement: NewChatEvent,
+  relationSource?: ChatEventRelationSource,
 ): SQL {
   if (target.chatThreadId !== replacement.chatThreadId) {
     throw new Error("Cannot revoke a chat event from another thread");
@@ -1053,5 +1061,10 @@ export function chatEventReplacementInsertSql(
     },
     displayContext: undefined,
   };
-  return appendCanonicalChatEventsSql([prepared.row], "any");
+  return appendCanonicalChatEventsSql(
+    [prepared.row],
+    "any",
+    undefined,
+    relationSource,
+  );
 }

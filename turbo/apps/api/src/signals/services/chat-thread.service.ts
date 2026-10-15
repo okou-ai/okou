@@ -792,7 +792,6 @@ function initialThreadWritePlan(
         eventId: args.eventId,
         thread,
       }),
-      createdChatRelationSql(args, thread.id),
       args.initialAssistantMessage === undefined
         ? null
         : welcomeSeedStatement(thread.id, args.initialAssistantMessage),
@@ -827,26 +826,38 @@ function initialConnectorSelectionInput(args: CreateChatThreadArgs) {
   };
 }
 
-function createdChatRelationSql(
-  args: CreateChatThreadArgs,
-  targetThreadId: string,
-) {
+const createdChatThreadSelection = Object.freeze({
+  id: chatThreads.id,
+  userId: chatThreads.userId,
+  title: chatThreads.title,
+  selectedModel: chatThreads.selectedModel,
+  modelSettings: chatThreads.modelSettings,
+  codexServiceTier: chatThreads.codexServiceTier,
+  computerUseHostId: chatThreads.computerUseHostId,
+  cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
+  createdAt: chatThreads.createdAt,
+});
+
+/** The winning thread INSERT supplies the target; replays cannot invent a parent. */
+function createdChatRelationCtes(args: CreateChatThreadArgs) {
   if (args.sourceRunId === undefined) {
-    return null;
+    return [];
   }
-  return sql`
+  return [
+    new QueryBuilder().$with("created_chat_relation", {}).as(sql`
     INSERT INTO ${chatRelations}
       (org_id, user_id, type, source_chat_thread_id, target_chat_thread_id, source_run_id, created_at)
     SELECT ${args.orgId}, ${args.userId}, 'created', ${chatThreads.id},
-      ${targetThreadId}, ${agentRuns.id}, ${nowDate()}
-    FROM ${agentRuns}
+      created_chat_thread.id, ${agentRuns.id}, ${sql.param(nowDate(), chatRelations.createdAt)}
+    FROM created_chat_thread
+    INNER JOIN ${agentRuns} ON ${eq(agentRuns.id, args.sourceRunId)}
     INNER JOIN ${chatThreads} ON ${chatThreads.id} = ${agentRuns.chatThreadId}
-    WHERE ${agentRuns.id} = ${args.sourceRunId}
-      AND ${agentRuns.userId} = ${args.userId}
+    WHERE ${agentRuns.userId} = ${args.userId}
       AND ${agentRuns.orgId} = ${args.orgId}
       AND ${chatThreads.userId} = ${args.userId}
-      AND ${chatThreads.id} <> ${targetThreadId}
-  `;
+      AND ${chatThreads.id} <> created_chat_thread.id
+  `),
+  ];
 }
 
 /** Initialization and the ordered created event commit together. */
@@ -903,22 +914,21 @@ export const createChatThread$ = command(
         };
       }
       const createdThreadPlan = ordinaryChatThreadInsertPlan(args);
+      const createdThreadWrite = tx.$with("created_chat_thread").as(
+        tx
+          .insert(chatThreads)
+          .values(createdThreadPlan.values)
+          .onConflictDoNothing()
+          .returning({ ...createdChatThreadSelection }),
+      );
       const [createdThreadRow] = await tx
-        .with(...createdThreadPlan.defaults)
-        .insert(chatThreads)
-        .values(createdThreadPlan.values)
-        .onConflictDoNothing()
-        .returning({
-          id: chatThreads.id,
-          userId: chatThreads.userId,
-          title: chatThreads.title,
-          selectedModel: chatThreads.selectedModel,
-          modelSettings: chatThreads.modelSettings,
-          codexServiceTier: chatThreads.codexServiceTier,
-          computerUseHostId: chatThreads.computerUseHostId,
-          cloudBrowserEnabled: chatThreads.cloudBrowserEnabled,
-          createdAt: chatThreads.createdAt,
-        });
+        .with(
+          ...createdThreadPlan.defaults,
+          createdThreadWrite,
+          ...createdChatRelationCtes(args),
+        )
+        .select()
+        .from(createdThreadWrite);
       signal.throwIfAborted();
       const createdThread = createdThreadRow
         ? createdChatThreadFromRow(
