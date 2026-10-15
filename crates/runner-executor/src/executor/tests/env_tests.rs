@@ -1013,7 +1013,6 @@ fn non_pi_execution_contexts_do_not_require_pi_resources() {
 fn pi_execution_context_preserves_additive_launch_fields_in_run_payload() {
     let mut ctx = pi_context_for_test();
     ctx.pi_launch_config.as_mut().unwrap()["futureLaunchField"] = json!("launch-root");
-    ctx.pi_installed_cli_requirement = Some(json!({ "minCliVersion": "9.352.7" }));
     ctx.pi_model_config.as_mut().unwrap()["catalogModel"] = json!("gpt-6-luna");
     let sandbox_id = SandboxId::new_v4().to_string();
     let payload = validate_execution_context_before_sandbox(&ctx, "http://localhost", &sandbox_id)
@@ -1028,9 +1027,6 @@ fn pi_execution_context_preserves_additive_launch_fields_in_run_payload() {
     let launch: serde_json::Value = serde_json::from_str(&payload.pi_launch_config).unwrap();
     assert_eq!(launch["schemaVersion"], 2);
     assert_eq!(launch["futureLaunchField"], "launch-root");
-    let requirement: serde_json::Value =
-        serde_json::from_str(&payload.pi_installed_cli_requirement).unwrap();
-    assert_eq!(requirement["minCliVersion"], "9.352.7");
     let model: serde_json::Value = serde_json::from_str(&payload.pi_model_config).unwrap();
     assert_eq!(model["provider"], "openrouter");
     assert_eq!(model["catalogModel"], "gpt-6-luna");

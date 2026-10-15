@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  piInstalledCliRequirementSchema,
   releaseVersionSchema,
   runnerInstalledVersionsSchema,
   runnersJobClaimContract,
@@ -13,38 +11,6 @@ describe("release versions", () => {
     expect(releaseVersionSchema.safeParse("9.368.2").success).toBe(true);
     for (const invalid of ["9.368", "v9.368.2", "9.368.2-rc.1", "latest", ""]) {
       expect(releaseVersionSchema.safeParse(invalid).success).toBe(false);
-    }
-    expect(
-      releaseVersionSchema.safeParse(PI_SANDBOX_INSTALLED_CLI_MIN_VERSION)
-        .success,
-    ).toBe(true);
-  });
-});
-
-describe("Pi installed-CLI requirement", () => {
-  const requirement = {
-    requiredPiAgentRuntimeVersion: "1.36.0",
-    minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-    requiredPiSessionConstructionDigest: "c".repeat(64),
-  } as const;
-
-  it("carries the exact runtime version, the CLI floor and the parity digest", () => {
-    expect(piInstalledCliRequirementSchema.parse(requirement)).toStrictEqual(
-      requirement,
-    );
-    expect(
-      piInstalledCliRequirementSchema.safeParse({
-        ...requirement,
-        requiredPiAgentRuntimeVersion: "1.36",
-      }).success,
-    ).toBe(false);
-    for (const invalid of ["C".repeat(64), "c".repeat(63), ""]) {
-      expect(
-        piInstalledCliRequirementSchema.safeParse({
-          ...requirement,
-          requiredPiSessionConstructionDigest: invalid,
-        }).success,
-      ).toBe(false);
     }
   });
 });

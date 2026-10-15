@@ -25,9 +25,9 @@ async fn pi_cancellation_reaps_child_with_stalled_steer_write()
     std::fs::create_dir_all(&bin_dir)?;
     let child_pid_path = tmp.path().join("pi-child.pid");
     let steer_started_path = tmp.path().join("pi-steer-started");
-    let npx = bin_dir.join("npx");
+    let okou = bin_dir.join("okou");
     std::fs::write(
-        &npx,
+        &okou,
         r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
@@ -50,9 +50,9 @@ while :; do
 done
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&okou, permissions)?;
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), RUN_ID)?;
     unsafe {
@@ -87,10 +87,6 @@ done
         common::set_user_env_file_env_for_test(
             &runtime_dir,
             &HashMap::from([
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
                 (
                     "PI_CHILD_PID_PATH".to_string(),
                     child_pid_path.to_string_lossy().into_owned(),

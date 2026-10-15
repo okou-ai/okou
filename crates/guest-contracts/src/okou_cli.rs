@@ -1,10 +1,8 @@
 //! Okou CLI installed in the runner rootfs at build time.
 //!
 //! The runner build writes the installed manifest into the rootfs and keeps a
-//! sidecar copy next to the rootfs image. The guest agent reads the in-rootfs
-//! manifest to decide whether the installed CLI matches the launch config the
-//! API captured; the runner reads the sidecar to advertise the same versions
-//! when it claims a job. Both sides must agree on these names and shapes.
+//! sidecar copy next to the rootfs image. Pi launches the installed executable;
+//! the runner reads the sidecar to advertise its versions when it claims a job.
 
 use serde::{Deserialize, Serialize};
 
@@ -33,39 +31,6 @@ pub struct OkouCliVersions {
     pub pi_sdk: String,
 }
 
-/// Identity of the code-determined session construction bundled into one CLI.
-///
-/// `@okouai/pi-agent-runtime` computes the digest at build time over the
-/// system prompt template and ordered tool schemas for fixed inputs, and the
-/// CLI artifact manifest records it as `sessionConstruction.digest`. Unlike
-/// the runtime version, the digest does not move on dependency-only release
-/// bumps.
-///
-/// The captured `piInstalledCliRequirement` selects the installed-CLI parity
-/// key. When it carries `requiredPiSessionConstructionDigest`, the guest
-/// requires an identical installed digest; a missing or mismatched digest
-/// selects the run's captured `CLI_PKG_URL` through `npx`, without falling
-/// back to runtime-version matching. When the requirement omits the digest,
-/// parity uses an exact `requiredPiAgentRuntimeVersion` match, even if the
-/// installed bundle carries a digest. Both installed paths also require the
-/// installed CLI version to be at or above the captured `minCliVersion`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OkouCliSessionConstruction {
-    /// Lowercase hex SHA-256.
-    pub digest: String,
-}
-
-impl OkouCliSessionConstruction {
-    /// Whether `value` is a well-formed digest (64 lowercase hex digits).
-    pub fn is_valid_digest(value: &str) -> bool {
-        value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
-    }
-}
-
 /// Identity of the installed package tarball.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,17 +53,6 @@ pub struct InstalledOkouCli {
     pub package: OkouCliInstalledPackage,
     /// Absolute path of the bundle entrypoint inside the rootfs.
     pub entrypoint: String,
-    /// Session construction bundled into the installed CLI, when the artifact
-    /// manifest recorded one. Absent for bundles built before the digest
-    /// existed. The captured requirement chooses parity, not this field's
-    /// presence: a required digest must match this value; a missing or
-    /// mismatched value selects the captured `npx` package without a
-    /// runtime-version fallback. A requirement without a digest uses exact
-    /// runtime-version matching, whether this field is present or absent.
-    /// Both installed paths require the installed CLI version to be at or
-    /// above the captured `minCliVersion`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_construction: Option<OkouCliSessionConstruction>,
 }
 
 /// Failure to accept an installed manifest.

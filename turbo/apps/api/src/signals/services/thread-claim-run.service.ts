@@ -2,8 +2,6 @@ import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
   PI_MEMORY_ROOT,
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  type PiInstalledCliRequirement,
   type PiLaunchConfig,
   type PiMemoryRecallSelection,
   piMemoryRecallSelectionSchema,
@@ -279,10 +277,6 @@ import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
 
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import type { PersistedStorageMount } from "@okouai/db/types";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
 import { command, type Command, computed, type Computed, state } from "ccstate";
 import {
   and,
@@ -6106,16 +6100,6 @@ function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-/**
- * The installed CLI must have this session construction and meet the CLI
- * floor; otherwise the guest uses the commit-addressed package.
- */
-const PI_INSTALLED_CLI_REQUIREMENT = {
-  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
-} as const satisfies PiInstalledCliRequirement;
-
 function storedExecutionContextWithPiResources(
   context: StoredExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
@@ -6131,7 +6115,6 @@ function storedExecutionContextWithPiResources(
     piSessionId: resources.sessionId,
     piLaunchConfig: resources.launchConfig,
     piModelConfig: resources.modelConfig,
-    piInstalledCliRequirement: PI_INSTALLED_CLI_REQUIREMENT,
   };
 }
 

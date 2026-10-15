@@ -3,9 +3,7 @@ import { getModelProviderFirewall } from "@okouai/api-contracts/contracts/model-
 import {
   DEFAULT_PROFILE,
   PI_MEMORY_ROOT,
-  PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
-  type PiInstalledCliRequirement,
   type PiLaunchConfig,
   type PiModelConfig,
   type StoredExecutionContext,
@@ -86,10 +84,6 @@ import { piMemoryPhase2Jobs } from "@okouai/db/runtime/pi-memory-phase2-job";
 import { storages } from "@okouai/db/schema/storage";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { runnerJobQueue } from "@okouai/db/schema/runner-job-queue";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
 import { env, optionalEnv } from "../../lib/env";
 import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
 import { getDatasetName, ingestToAxiom } from "../external/axiom";
@@ -1036,17 +1030,6 @@ function maintenanceModelEnvironment(args: {
   );
 }
 
-/** Credentials a native Pi configuration must never receive ambiently. */
-/**
- * The installed CLI must have this session construction and meet the CLI
- * floor; otherwise the guest uses the commit-addressed package.
- */
-const MAINTENANCE_PI_CLI_REQUIREMENT = {
-  requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-  minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-  requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
-} as const satisfies PiInstalledCliRequirement;
-
 /** The Pi session and launch configuration of one maintenance run. */
 interface MaintenancePiLaunch {
   readonly modelConfig: PiModelConfig;
@@ -1133,7 +1116,6 @@ function buildMaintenanceExecutionContext(
     piSessionId: args.pi.sessionId,
     piLaunchConfig: { schemaVersion: 2, maintenance: args.pi.maintenance },
     piModelConfig: args.pi.modelConfig,
-    piInstalledCliRequirement: MAINTENANCE_PI_CLI_REQUIREMENT,
   };
   return {
     context,

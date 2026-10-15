@@ -427,7 +427,7 @@ async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_
         std::fs::create_dir(&bin)?;
         let capture = home.path().join("pi-launch.json");
         executable(
-            &bin.join("npx"),
+            &bin.join("okou"),
             &format!(
                 "#!/bin/sh\nset -eu\ncat \"$OKOU_PI_LAUNCH_PAYLOAD_FILE\" > {}\nIFS= read -r state\nprintf '%s\\n' '{}' | sed \"s/__RUN__/$OKOU_RUN_ID/g\"\nIFS= read -r prompt\nprintf '{{\"id\":\"%s:pi:initial-prompt\",\"type\":\"response\",\"command\":\"prompt\",\"success\":true}}\\n' \"$OKOU_RUN_ID\"\nprintf '%s\\n' '{{\"type\":\"agent_settled\"}}'\ncat >/dev/null\n",
                 quote_shell_arg(&capture.to_string_lossy()),
@@ -439,16 +439,10 @@ async fn pi_keeps_matching_history_and_quarantines_corrupt_history_before_fresh_
             home.path(),
             &server,
             "pi",
-            &bin.join("npx"),
+            &bin.join("okou"),
             native(requested, case != "first"),
             &id,
-            HashMap::from([
-                ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
-                (
-                    "CLI_PKG_URL".into(),
-                    "https://example.invalid/current-okou-cli.tgz".into(),
-                ),
-            ]),
+            HashMap::from([("PATH".into(), format!("{}:/usr/bin:/bin", bin.display()))]),
         )?;
         for original in [&path, &duplicate] {
             files.0.push(original.with_file_name(format!(

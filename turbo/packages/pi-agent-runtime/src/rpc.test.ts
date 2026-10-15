@@ -373,7 +373,7 @@ describe("Pi native pending-tool continuation", () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-okou-resume-"));
     temporaryDirectories.push(directory);
     const sessionFile = join(directory, "handoff.jsonl");
-    const command = 'npx --yes --package="${CLI_PKG_URL}" okou --help';
+    const command = "okou --help";
     const memory = MemoryPiSession.create({
       cwd: "/home/user/workspace",
       id: SESSION_ID,

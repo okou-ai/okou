@@ -101,10 +101,9 @@ try:
     manifest = fields(json.loads(
         raw.decode("utf-8"), object_pairs_hook=JsonObject,
         parse_int=JsonInteger, parse_constant=invalid_constant
-    ), ("version", "package", "versions", "sessionConstruction"))
+    ), ("version", "package", "versions"))
     package = fields(manifest["package"], ("path", "sha256", "size"))
     versions = fields(manifest["versions"], ("cli", "piAgentRuntime", "piSdk"))
-    session = fields(manifest["sessionConstruction"], ("digest",))
     if (
         not isinstance(manifest["version"], JsonInteger) or manifest["version"].token != "1"
         or package["path"] != "package.tgz" or package["sha256"] != sys.argv[2]
@@ -112,8 +111,6 @@ try:
         or not release_version(versions["cli"])
         or not release_version(versions["piAgentRuntime"])
         or not isinstance(versions["piSdk"], str)
-        or not isinstance(session["digest"], str)
-        or re.fullmatch(r"[0-9a-f]{64}", session["digest"]) is None
     ):
         raise ValueError("invalid CLI build identity")
     sdk = versions["piSdk"].split("+okou.")
@@ -124,7 +121,7 @@ except (OSError, ValueError, KeyError, RecursionError):
 
 # Schema/path are fixed and package SHA/size are bound to the actual bytes.
 # Keep their validation above, but hash only the independent compiled identity.
-identity = {"versions": versions, "sessionConstruction": session}
+identity = {"versions": versions}
 print(json.dumps(identity, sort_keys=True, separators=(",", ":")))
 PY
   ); then
@@ -137,8 +134,7 @@ binary_input_digest=$(
     printf '%s\0%s\0' "$RUNNER_BINARY_INPUT_SCHEMA_VERSION" "$target"
     "${SCRIPT_DIR}/context.sh" inventory "$REPO_ROOT" "$revision" || exit 1
     if [ -n "$cli_package" ]; then
-      # Package identity contributes only its actual SHA; independent version
-      # and session constants remain hashed alongside it.
+      # Package identity contributes its actual SHA and compiled versions.
       printf 'bundled-cli\0%s\0%s\0' "$cli_sha256" "$cli_identity"
     else
       printf 'local-build-without-cli\0'

@@ -678,9 +678,9 @@ async fn deliver_pi_rpc(
     let session = String::from_utf8(session)?;
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");
-    let npx = bin.join("npx");
-    std::fs::write(&npx, include_str!("fixtures/pi_rpc_delivery.py"))?;
-    std::fs::set_permissions(&npx, std::fs::Permissions::from_mode(0o700))?;
+    let okou = bin.join("okou");
+    std::fs::write(&okou, include_str!("fixtures/pi_rpc_delivery.py"))?;
+    std::fs::set_permissions(&okou, std::fs::Permissions::from_mode(0o700))?;
     let run_id = "00000000-0000-4000-8000-000000000124";
     let paths = GuestPaths::from_home(tmp.path(), run_id)?;
     let payload_path = common::write_run_payload_file_for_test(
@@ -710,10 +710,6 @@ async fn deliver_pi_rpc(
     })?;
     config.user_env.extend([
         ("PATH".into(), format!("{}:/usr/bin:/bin", bin.display())),
-        (
-            "CLI_PKG_URL".into(),
-            "https://example.invalid/cli.tgz".into(),
-        ),
         (
             "PI_EVENTS_PATH".into(),
             events_path.to_string_lossy().into_owned(),

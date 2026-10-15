@@ -48,9 +48,9 @@ use crate::error::{
 };
 use crate::http::{ApiRequestBuilder, HttpClient};
 use crate::run_cancellation::RunCancellationRegistry;
-use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 #[cfg(test)]
-use guest_contracts::okou_cli::{OkouCliInstalledPackage, OkouCliSessionConstruction};
+use guest_contracts::okou_cli::OkouCliInstalledPackage;
+use guest_contracts::okou_cli::{InstalledOkouCli, OkouCliVersions};
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 use runner_types::ids::RunId;
 use runner_types::types::{
@@ -74,28 +74,7 @@ struct ClaimRequestBody<'a> {
     /// Versions of the Okou CLI installed in this runner's rootfs. Older APIs
     /// strip the field; a runner without an installed CLI omits it.
     #[serde(skip_serializing_if = "Option::is_none")]
-    installed_versions: Option<ClaimInstalledVersions<'a>>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClaimInstalledVersions<'a> {
-    #[serde(flatten)]
-    versions: &'a OkouCliVersions,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pi_session_construction_digest: Option<&'a str>,
-}
-
-impl<'a> From<&'a InstalledOkouCli> for ClaimInstalledVersions<'a> {
-    fn from(installed: &'a InstalledOkouCli) -> Self {
-        Self {
-            versions: &installed.versions,
-            pi_session_construction_digest: installed
-                .session_construction
-                .as_ref()
-                .map(|session| session.digest.as_str()),
-        }
-    }
+    installed_versions: Option<&'a OkouCliVersions>,
 }
 
 #[derive(Serialize)]
@@ -1819,7 +1798,7 @@ fn claim_request_body<'a>(
     ClaimRequestBody {
         runner_identity,
         runner_hostname,
-        installed_versions: installed_okou_cli.map(ClaimInstalledVersions::from),
+        installed_versions: installed_okou_cli.map(|installed| &installed.versions),
         capabilities: RunnerClaimCapabilities {
             pi_model_config_generations: [
                 PI_MODEL_CONFIG_CURRENT_GENERATION,
@@ -3677,7 +3656,7 @@ mod tests {
             "a runner without an installed CLI must omit installedVersions"
         );
 
-        let legacy_installed = InstalledOkouCli {
+        let installed = InstalledOkouCli {
             schema_version: 1,
             versions: OkouCliVersions {
                 cli: "9.353.0".to_string(),
@@ -3689,13 +3668,12 @@ mod tests {
                 size: 7,
             },
             entrypoint: InstalledOkouCli::entrypoint_for("9.353.0"),
-            session_construction: None,
         };
         let advertised = serde_json::to_value(claim_request_body(
             &candidate,
             &runner_identity,
             None,
-            Some(&legacy_installed),
+            Some(&installed),
         ))
         .unwrap();
         assert_eq!(
@@ -3704,29 +3682,6 @@ mod tests {
                 "cli": "9.353.0",
                 "piAgentRuntime": "1.36.0",
                 "piSdk": "0.86.1+okou.0123456789ab"
-            })
-        );
-
-        let installed_with_digest = InstalledOkouCli {
-            session_construction: Some(OkouCliSessionConstruction {
-                digest: "d".repeat(64),
-            }),
-            ..legacy_installed
-        };
-        let advertised = serde_json::to_value(claim_request_body(
-            &candidate,
-            &runner_identity,
-            None,
-            Some(&installed_with_digest),
-        ))
-        .unwrap();
-        assert_eq!(
-            advertised["installedVersions"],
-            serde_json::json!({
-                "cli": "9.353.0",
-                "piAgentRuntime": "1.36.0",
-                "piSdk": "0.86.1+okou.0123456789ab",
-                "piSessionConstructionDigest": "d".repeat(64)
             })
         );
     }

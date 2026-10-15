@@ -53,9 +53,9 @@ async fn run_settlement_case(
             .collect::<String>(),
     )?;
 
-    let npx = bin_dir.join("npx");
+    let okou = bin_dir.join("okou");
     std::fs::write(
-        &npx,
+        &okou,
         r#"#!/bin/sh
 set -eu
 IFS= read -r state_command
@@ -77,9 +77,9 @@ if IFS= read -r unexpected; then
 fi
 "#,
     )?;
-    let mut permissions = std::fs::metadata(&npx)?.permissions();
+    let mut permissions = std::fs::metadata(&okou)?.permissions();
     permissions.set_mode(0o700);
-    std::fs::set_permissions(&npx, permissions)?;
+    std::fs::set_permissions(&okou, permissions)?;
 
     let runtime_dir = guest_contracts::runtime_paths::run_dir_for_home(tmp.path(), run_id)?;
     unsafe {
@@ -111,16 +111,10 @@ fi
         )?;
         common::set_user_env_file_env_for_test(
             &runtime_dir,
-            &HashMap::from([
-                (
-                    "CLI_PKG_URL".to_string(),
-                    "https://example.invalid/current-okou-cli.tgz".to_string(),
-                ),
-                (
-                    "PI_ASSISTANT_EVENT_PATH".to_string(),
-                    assistant_event_path.to_string_lossy().into_owned(),
-                ),
-            ]),
+            &HashMap::from([(
+                "PI_ASSISTANT_EVENT_PATH".to_string(),
+                assistant_event_path.to_string_lossy().into_owned(),
+            )]),
         )?;
     }
     common::ensure_canonical_workspace_for_test()?;

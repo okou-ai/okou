@@ -1,9 +1,4 @@
 import { publicChatActor } from "./helpers/public-chat-actor";
-import { PI_SANDBOX_INSTALLED_CLI_MIN_VERSION } from "@okouai/api-contracts/contracts/runners";
-import {
-  PI_AGENT_RUNTIME_VERSION,
-  PI_SESSION_CONSTRUCTION_DIGEST,
-} from "@okouai/pi-agent-runtime";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
 import { mockEnv } from "../../../lib/env";
@@ -55,11 +50,6 @@ describe("CHAT-02: model-first routing", () => {
     expect(claimed.claim.resumeSession).toBeNull();
     expect(claimed.claim.piSessionId).toBe(run.threadId);
     expect(claimed.claim.piLaunchConfig).toMatchObject({ schemaVersion: 2 });
-    expect(claimed.claim.piInstalledCliRequirement).toStrictEqual({
-      requiredPiAgentRuntimeVersion: PI_AGENT_RUNTIME_VERSION,
-      minCliVersion: PI_SANDBOX_INSTALLED_CLI_MIN_VERSION,
-      requiredPiSessionConstructionDigest: PI_SESSION_CONSTRUCTION_DIGEST,
-    });
     await own(async () => {
       return await cancelChatRun(actor, run.runId, claimed.sandboxHeaders);
     });

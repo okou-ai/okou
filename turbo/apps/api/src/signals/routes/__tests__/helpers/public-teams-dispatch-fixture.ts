@@ -14,7 +14,6 @@ import { createBddApi, type ApiTestUser } from "./api-bdd";
 import { createRunReadsApi } from "./api-bdd-run-reads";
 import { createRunsApi } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
-import { configureNativeCliArtifact } from "./chat-events-fixture";
 import { deleteFeatureSwitchesForUser } from "./feature-switches";
 import { createFixtureOperationOwner } from "./fixture-operation-owner";
 import { createRouteMocks } from "./route-test";
@@ -214,7 +213,6 @@ export function createPublicTeamsDispatchFixture(context: TestContext) {
       }
       if (options.paidNative) {
         runs.configureRunnerGroup();
-        configureNativeCliArtifact();
         await runs.grantProEntitlement(fixture.actor, {
           customerId: fixture.customerId,
           subscriptionId: fixture.subscriptionId,

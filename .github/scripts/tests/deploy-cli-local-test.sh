@@ -49,8 +49,7 @@ cat >"${test_root}/turbo/apps/cli/dist/package.json" <<'EOF'
   "okouBuildIdentity": {
     "schemaVersion": 1,
     "piAgentRuntime": "1.36.0",
-    "piSdk": "0.86.1+okou.0123456789ab",
-    "sessionConstruction": {"digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}
+    "piSdk": "0.86.1+okou.0123456789ab"
   }
 }
 EOF
@@ -76,8 +75,6 @@ cat >"${test_root}/turbo/packages/pi-agent-runtime/package.json" <<'EOF'
 EOF
 printf 'patch fixture\n' \
   >"${test_root}/turbo/patches/@earendil-works__pi-coding-agent@0.86.1.patch"
-jq -n '{digest: ("c" * 64)}' \
-  >"${test_root}/turbo/packages/pi-agent-runtime/session-construction-digest.json"
 
 cat >"${test_root}/bin/git" <<'EOF'
 #!/usr/bin/env bash
