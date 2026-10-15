@@ -7,8 +7,15 @@ const EMU_PER_POINT = 12_700;
 const MAX_EXPANDED_BYTES = 100 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES = 10_000;
 
-function numberAttribute(tag: string, name: string): number | undefined {
-  const value = new RegExp(`\\b${name}="(-?\\d+)"`, "u").exec(tag)?.[1];
+function numberAttribute(
+  tag: string,
+  name: "x" | "y" | "cx" | "rot",
+): number | undefined {
+  const value = [...tag.matchAll(/\b(x|y|cx|rot)="(-?\d+)"/gu)].find(
+    (match) => {
+      return match[1] === name;
+    },
+  )?.[2];
   if (value === undefined) {
     return undefined;
   }
