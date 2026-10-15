@@ -6,7 +6,8 @@ use super::{
 };
 use crate::test_fixtures::remote_inventory;
 use serde_json::json;
-use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::Ordering};
+use tokio::sync::Semaphore;
 
 #[tokio::test]
 async fn vnc_credential_parse_failure_retains_identity_and_recreated_hosts_cannot_read_it() {
@@ -99,13 +100,20 @@ async fn vnc_failed_start_remains_queryable_after_success_and_session_removal() 
     h.peer.refuse.store(false, Ordering::SeqCst);
     let session = h.start("shared").await.session();
     mode(&h, 1).await;
-    assert_eq!(
+    *h.peer.capture_gate.lock().await = Some(Arc::new(Semaphore::new(0)));
+    let capture = h.run.request("vnc.capture", json!({"sessionId":session}));
+    let close = async {
+        assert!(matches!(h.peer.event().await, super::peer::Event::Capture));
         h.run
             .request("vnc.session.close", json!({"sessionId":session}))
             .await
-            .result()["outcome"],
-        "closed"
-    );
+    };
+    let (capture, close) = tokio::join!(capture, close);
+    assert_eq!(capture.result()["reason"], "cancelled");
+    assert_eq!(close.result()["outcome"], "closed");
+    closed(&h).await;
+    let latest = h.run.passive("vnc.diagnose", json!({})).await;
+    assert_eq!(latest["report"], original["report"]);
     let retained = h
         .run
         .passive(
@@ -115,7 +123,7 @@ async fn vnc_failed_start_remains_queryable_after_success_and_session_removal() 
         .await;
     assert_eq!(retained["report"], original["report"]);
     resolve.assert_calls_async(2).await;
-    inventory.assert_calls_async(2).await;
+    inventory.assert_calls_async(3).await;
     h.run.shutdown().await;
 }
 

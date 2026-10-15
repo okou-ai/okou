@@ -114,13 +114,21 @@ pub(super) struct Session {
     pub(super) engine: tokio::sync::Mutex<Engine>,
     diagnostics: Option<crate::diagnostics::Handle>,
     identity: crate::diagnostics::Identity,
-    terminal: Mutex<Option<Failure>>,
+    diagnostic_terminal: Mutex<bool>,
     dependency: Option<crate::diagnostics::Dependency>,
     native: Option<crate::diagnostics::NativeSource>,
     diagnostic_active: Arc<AtomicBool>,
 }
 
 impl Session {
+    pub(super) fn close(&self) {
+        // Latch intentional close before its cancellation can become failure evidence.
+        *self
+            .diagnostic_terminal
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = true;
+        self.retire();
+    }
     pub(super) fn retire(&self) {
         self.diagnostic_active.store(false, Ordering::Release);
         self.cancel.cancel();
@@ -133,11 +141,14 @@ impl Session {
             return;
         }
         self.diagnostic_active.store(false, Ordering::Release);
-        let mut terminal = self.terminal.lock().unwrap_or_else(|p| p.into_inner());
-        if terminal.is_some() {
+        let mut terminal = self
+            .diagnostic_terminal
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if *terminal {
             return;
         }
-        *terminal = Some(failure);
+        *terminal = true;
         if let Some(diagnostics) = &self.diagnostics {
             diagnostics.record(crate::diagnostics::Record {
                 protocol: crate::diagnostics::Protocol::Vnc,
@@ -611,7 +622,7 @@ impl Run {
                 engine: tokio::sync::Mutex::new(engine),
                 diagnostics: self.diagnostics.get().cloned(),
                 identity: evidence.identity.clone(),
-                terminal: Mutex::new(None),
+                diagnostic_terminal: Mutex::new(false),
                 dependency: ssh_dependency,
                 native,
                 diagnostic_active,

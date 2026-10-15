@@ -184,7 +184,7 @@ impl Run {
                     let params = parse::<protocol::SessionId>(raw)?;
                     let session = self.lookup(params.session_id)?;
                     if request.method == "vnc.session.close" {
-                        session.retire();
+                        session.close();
                         scope.wait(session.closed.cancelled()).await?;
                         Ok(json!({"outcome":"closed"}))
                     } else {
