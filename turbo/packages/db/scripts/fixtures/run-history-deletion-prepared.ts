@@ -1,13 +1,25 @@
 // Frozen deletion preparation from #39931 (fbeb04cd067359c20138eabd9010edbbb2ca1374).
 // Physical table mappings preserve the exact outgoing SQL after runtime retirement.
 import { eq, inArray, isNull, sql } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { pgTable, QueryBuilder, uuid, varchar } from "drizzle-orm/pg-core";
 import { z } from "zod";
-import {
-  agentRuns,
-  agentSessions,
-  conversations,
-} from "../../src/schema/agent-run-session-conversation";
+import { agentRunColumns } from "../../src/columns/agent-run";
+
+// Historical mappings belong to this preparation-only fixture, not the schema.
+const agentRuns = pgTable("agent_runs", {
+  ...agentRunColumns(),
+  sessionId: uuid("session_id"),
+});
+const agentSessions = pgTable("agent_sessions", {
+  id: uuid("id"),
+  agentId: uuid("agent_id"),
+});
+const conversations = pgTable("conversations", {
+  runId: uuid("run_id"),
+  cliAgentSessionHistoryHash: varchar("cli_agent_session_history_hash", {
+    length: 64,
+  }),
+});
 
 /**
  * Dual membership for deletion admission, not permission or owner authority.

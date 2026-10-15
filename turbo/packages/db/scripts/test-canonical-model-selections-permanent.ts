@@ -10,7 +10,6 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
   const org = `selection-${randomUUID()}`;
   const thread = randomUUID();
   const input = randomUUID();
-  const session = randomUUID();
   const run = randomUUID();
   try {
     const defaults = await db.query(
@@ -109,13 +108,9 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
       /chat_events_model_annotation_check/,
     );
     await db.query(
-      `INSERT INTO agent_sessions (id,user_id,org_id) VALUES ($1,$2,$3)`,
-      [session, user, org],
-    );
-    await db.query(
-      `INSERT INTO agent_runs (id,session_id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,model_provider,launch_snapshot)
-      VALUES ($1,$2,$3,$4,'failed','unresolved','chat',0,'built-in','{"schemaVersion":1,"framework":"pi","runnerProfile":"vm0/default"}')`,
-      [run, session, user, org],
+      `INSERT INTO agent_runs (id,user_id,org_id,status,prompt,trigger_source,autonomy_budget,model_provider,launch_snapshot)
+      VALUES ($1,$2,$3,'failed','unresolved','chat',0,'built-in','{"schemaVersion":1,"framework":"pi","runnerProfile":"vm0/default"}')`,
+      [run, user, org],
     );
     await assert.rejects(
       db.query(`UPDATE agent_runs SET status='running' WHERE id=$1`, [run]),
@@ -227,7 +222,6 @@ export async function validateCanonicalModelSelections(databaseUrl: string) {
     );
   } finally {
     await db.query(`DELETE FROM agent_runs WHERE id=$1`, [run]);
-    await db.query(`DELETE FROM agent_sessions WHERE id=$1`, [session]);
     await db.query(
       `DELETE FROM chat_thread_events WHERE user_id=$1 AND org_id=$2`,
       [user, org],
