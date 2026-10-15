@@ -329,6 +329,17 @@ crates/guest-agent/
     integration.rs     # Integration tests
 ```
 
+Guest-agent's [integration layout](../../crates/guest-agent/tests/README.md)
+groups cases with explicit configuration and independent resources into domain
+targets. Retain separate executables for process environment/cwd, global log
+sinks, signals and resource-limit fixtures, including transitive setup helpers.
+Ordinary Cargo can execute cases concurrently in one binary; nextest's separate
+case processes do not replace that isolation contract. Existing guarded-child
+parents may share a target only when their child remains exact, ignored and
+guarded. After moving a case, update its module-qualified self-spawn filter and
+any source-relative fixture include, then compare case ownership and ignored
+policy before and after the move.
+
 ### Inline Tests (`#[cfg(test)]`)
 
 For testing module-internal logic that isn't exposed publicly:

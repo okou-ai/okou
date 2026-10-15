@@ -1,0 +1,5 @@
+mod codex_model_catalog_setup;
+mod codex_setup_fail_closed;
+mod codex_setup_no_auth_reconcile;
+mod codex_setup_oauth_validation;
+mod codex_startup_telemetry;
