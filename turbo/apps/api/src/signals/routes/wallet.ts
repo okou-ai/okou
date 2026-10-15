@@ -53,8 +53,8 @@ const agentOwner$ = computed(async (get) => {
   return await get(walletRunOwner$);
 });
 
-// Previously issued run tokens have wallet:write but no wallet:read.
-// Keep those reads valid while allowing future read-only run tokens.
+// Payment-capable runs may also inspect their wallet. Read access alone never
+// authorizes payment operations, which continue to require wallet:write.
 const readOwner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
   if (

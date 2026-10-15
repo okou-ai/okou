@@ -69,6 +69,9 @@ export const linkTokenSchema = z.object({
   token_type: z.literal("Bearer"),
 });
 
+// Persisted credentials from the preceding API omit scope/readOnly. Require
+// them after old writers are neither serving nor rollback targets AND existing
+// credentials have refreshed, reauthorized or been invalidated; cleanup #40206.
 export const linkCredentialsSchema = z.object({
   accessToken: z.string().min(1),
   refreshToken: z.string().min(1),

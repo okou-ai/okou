@@ -24,6 +24,8 @@ export function walletAuthorization(credentials?: Credentials) {
   ];
   // Legacy credentials were accepted only after validating the payment scope.
   // They establish no financial-data or profile grant until refreshed.
+  // Remove once old API writers/rollback targets and unrefreshed credentials
+  // are gone, together with linkCredentialsSchema's tolerance; cleanup #40206.
   const payments =
     Boolean(credentials && credentials.scope === undefined) ||
     scopes.includes("payment_methods.agentic");

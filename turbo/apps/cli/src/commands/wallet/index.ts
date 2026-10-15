@@ -216,10 +216,16 @@ export const walletCommand = new Command("wallet")
       .action(
         withErrorHandler(async (options: JsonOptions) => {
           const value = await walletStatus();
+          const nextAction =
+            value.connected &&
+            value.authorization &&
+            !value.authorization.capabilities.payments
+              ? "read_wallet"
+              : value.nextAction;
           console.log(
             options.json
               ? JSON.stringify(value)
-              : `Link wallet: ${value.connected ? "connected" : "not connected"}. Next: ${value.nextAction}. Checkout unavailable.`,
+              : `Link wallet: ${value.connected ? "connected" : "not connected"}. Next: ${nextAction}. Checkout unavailable.`,
           );
           if (!options.json && value.authorization) {
             console.log(

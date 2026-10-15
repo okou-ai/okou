@@ -1937,7 +1937,10 @@ test("reads Link transactions with explicit financial consent and keeps a read-o
   expect(
     (await accept(client().status({ headers: fixture.headers }), [200])).body,
   ).toMatchObject({
-    nextAction: "read_wallet",
+    connected: true,
+    // Captured CLI builds parse only connect/create_spend; reads are additive.
+    nextAction: "connect",
+    checkoutAvailable: false,
     authorization: {
       known: true,
       sourceActions: ["read_link_transactions"],

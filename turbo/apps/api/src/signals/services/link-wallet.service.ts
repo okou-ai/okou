@@ -68,7 +68,9 @@ import {
   type WalletPermission,
 } from "./link-wallet-grants";
 
-const READ_ONLY_OAUTH_STATE_PREFIX = "read-only.";
+// Public consent-mode marker, followed by 256 random bits. Hash and verify the
+// entire value so callers cannot strip or change the requested consent mode.
+const READ_ONLY_CONSENT_MARKER = "read-only.";
 
 export interface WalletOwner {
   readonly orgId: string;
@@ -161,11 +163,9 @@ export const walletStatus$ = computed(async (get) => {
   const authorization = walletAuthorization(credentials);
   return {
     connected,
-    nextAction: !connected
-      ? ("connect" as const)
-      : authorization.capabilities.payments
-        ? ("create_spend" as const)
-        : ("read_wallet" as const),
+    nextAction: authorization.capabilities.payments
+      ? ("create_spend" as const)
+      : ("connect" as const),
     checkoutAvailable: false as const,
     authorization,
   };
@@ -254,7 +254,7 @@ export const startWalletOAuth$ = command(
     const readOnly = !scopes.has("payment_methods.agentic");
     // The prefix is authenticated by the stored hash of the full one-time state.
     // Legacy base64url states cannot contain a dot; their PKCE format is unchanged.
-    const state = `${readOnly ? READ_ONLY_OAUTH_STATE_PREFIX : ""}${randomBytes(32).toString("base64url")}`;
+    const state = `${readOnly ? READ_ONLY_CONSENT_MARKER : ""}${randomBytes(32).toString("base64url")}`;
     const verifier = randomBytes(48).toString("base64url");
     const expiresAt = new Date(now() + 30 * 60_000);
     const encryptedVerifier = await encryptStoredSecretValue(verifier);
@@ -341,7 +341,7 @@ export const completeWalletOAuth$ = command(
         const verifier = await decryptStoredSecretValue(
           attempt.encryptedVerifier,
         );
-        const readOnly = input.state.startsWith(READ_ONLY_OAUTH_STATE_PREFIX);
+        const readOnly = input.state.startsWith(READ_ONLY_CONSENT_MARKER);
         signal.throwIfAborted();
         const token = await linkTokenRequest(
           {
@@ -533,7 +533,9 @@ const refreshWalletConnection$ = command(
       expiresAt: now() + refreshed.expires_in * 1000,
       scope: refreshed.scope,
       authorizationDetails: refreshed.authorization_details,
-      readOnly: input.readOnly,
+      // Legacy credentials came from payment consent; persist the missing marker
+      // on refresh until the old-writer/data retirement gates in #40206 close.
+      readOnly: input.readOnly ?? false,
     };
     const encryptedCredentials = await encryptStoredSecretValue(
       JSON.stringify(credentials),
@@ -612,6 +614,9 @@ const walletAccess$ = command(
     const credentials = linkCredentialsSchema.parse(
       JSON.parse(plaintext) as unknown,
     );
+    // Old encrypted credentials lack scope metadata. Until old writers/rollback
+    // targets and those credentials are gone, refresh before provider reads.
+    // Remove this metadata branch with the legacy schema handling in #40206.
     if (
       credentials.expiresAt > now() + 60_000 &&
       (credentials.scope !== undefined ||

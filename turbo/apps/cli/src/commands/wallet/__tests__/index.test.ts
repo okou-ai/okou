@@ -116,6 +116,44 @@ describe("okou wallet", () => {
       }),
     );
   });
+  it.each([true, false])(
+    "reports read-only access while retaining the compatible status response (json=%s)",
+    async (json) => {
+      const status = {
+        connected: true,
+        nextAction: "connect",
+        checkoutAvailable: false,
+        authorization: {
+          known: true,
+          scopes: ["userinfo:read"],
+          sourceActions: ["read_link_transactions"],
+          capabilities: {
+            payments: false,
+            spendHistory: true,
+            paymentMethods: false,
+            userInfo: true,
+            transactions: true,
+          },
+          missingPermissions: ["payment_methods.agentic"],
+        },
+      };
+      server.use(
+        http.get(`${origin}/api/wallet/status`, () => {
+          return HttpResponse.json(status);
+        }),
+      );
+      await run(json ? ["status", "--json"] : ["status"]);
+      if (json) {
+        expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual(
+          status,
+        );
+      } else {
+        expect(output).toHaveBeenCalledWith(
+          "Link wallet: connected. Next: read_wallet. Checkout unavailable.",
+        );
+      }
+    },
+  );
   it("preserves the full Link consent URL and ends the turn", async () => {
     const url =
       "https://login.link.com/auth?client_id=example&state=keep-me&code_challenge=keep-me-too";
