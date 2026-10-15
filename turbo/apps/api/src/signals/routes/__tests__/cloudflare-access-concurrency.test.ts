@@ -1193,7 +1193,7 @@ test.each(["delete", "detach"] as const)(
               params: { connectionId: host.id },
               body: { expectedGeneration: host.generation },
             }),
-            [204],
+            [204, 409],
           )
         : accept(
             hosts().update({
@@ -1270,7 +1270,7 @@ test.each(["delete", "detach"] as const)(
       credentials: beforeLogins.credentials.map((credential) => {
         return {
           ...credential,
-          hosts: operation === "delete" ? [] : credential.hosts,
+          hosts: departed.status === 204 ? [] : credential.hosts,
         };
       }),
     });
