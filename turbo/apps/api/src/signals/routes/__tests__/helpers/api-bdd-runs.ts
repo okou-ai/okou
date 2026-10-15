@@ -601,6 +601,8 @@ export function createRunsApi(context: TestContext) {
       readonly customerId: string;
       readonly subscriptionId: string;
       readonly invoiceId: string;
+      readonly defaultAgentId: string;
+      readonly credits: number;
     }> {
       const run =
         options.run ??
@@ -782,7 +784,14 @@ export function createRunsApi(context: TestContext) {
         );
       }
 
-      return { customerId, subscriptionId, invoiceId };
+      // Reuse facts already observed through billing and onboarding responses.
+      return {
+        customerId,
+        subscriptionId,
+        invoiceId,
+        defaultAgentId: onboarding.defaultAgentId,
+        credits: billingStatus.body.credits,
+      };
     },
 
     /** Start an Agent run through the real Thread entrypoint (chat send + pick). */

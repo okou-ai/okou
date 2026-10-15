@@ -523,7 +523,11 @@ async function createClaimedImageRun(
   chat.api.acceptTelemetryIngest();
   mockOptionalEnv("OPENROUTER_API_KEY", undefined);
   chat.chatCallbacks.disableVapid();
-  const { customerId } = await run(() => {
+  const {
+    customerId,
+    defaultAgentId: agentId,
+    credits: startingCredits,
+  } = await run(() => {
     return chat.api.grantProEntitlement(actor, {
       onExternalStateReady: (restore) => {
         restoreSetupExternalState = restore;
@@ -558,40 +562,19 @@ async function createClaimedImageRun(
     );
   });
   // Normal Pro activation grants 20,000 credits before an optional purchase.
-  await expect(
-    run(() => {
-      return orgCredits(fixture);
-    }),
-  ).resolves.toBe(20_000);
+  expect(startingCredits).toBe(20_000);
   const initialCredits = 20_000 + credits;
-  // Use the genuine agent created by paid onboarding. An optional credit
-  // purchase is independent of this read; settle both before cleanup.
-  const [agent, purchase] = await Promise.allSettled([
-    run(() => {
-      return chat.bdd.readOnboardingStatus(actor);
-    }),
-    credits === 0
-      ? Promise.resolve()
-      : run(() => {
-          return purchaseToolCredits(context, actor, {
-            credits,
-            customerId,
-            invoiceId: `in_image_${randomUUID()}`,
-            onExternalStateReady: (restore) => {
-              restoreSetupExternalState = restore;
-            },
-          });
-        }),
-  ] as const);
-  if (agent.status === "rejected") {
-    throw agent.reason;
-  }
-  if (purchase.status === "rejected") {
-    throw purchase.reason;
-  }
-  const agentId = agent.value.defaultAgentId;
-  if (!agentId) {
-    throw new Error("Expected paid onboarding to create the image Run's agent");
+  if (credits !== 0) {
+    await run(() => {
+      return purchaseToolCredits(context, actor, {
+        credits,
+        customerId,
+        invoiceId: `in_image_${randomUUID()}`,
+        onExternalStateReady: (restore) => {
+          restoreSetupExternalState = restore;
+        },
+      });
+    });
   }
   restoreSetupExternalState = undefined;
   if (credits !== 0) {
