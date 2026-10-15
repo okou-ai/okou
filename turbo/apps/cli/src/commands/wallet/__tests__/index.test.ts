@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Command } from "commander";
 import {
   access,
   mkdtemp,
@@ -48,6 +49,25 @@ beforeEach(async () => {
   vi.stubEnv("OKOU_API_BACKEND_URL", origin);
   vi.stubEnv("OKOU_TOKEN", "test-token");
   tempDir = await mkdtemp(join(tmpdir(), "okou-wallet-test-"));
+  const reset = (command: Command) => {
+    for (const option of [
+      "json",
+      "readOnly",
+      "transactions",
+      "startDate",
+      "endDate",
+      "startingAfter",
+      "limit",
+      "status",
+      "mode",
+      "category",
+      "origin",
+    ]) {
+      command.setOptionValue(option, undefined);
+    }
+    command.commands.forEach(reset);
+  };
+  reset(walletCommand);
   const credentials = walletCommand.commands
     .find((command) => {
       return command.name() === "spend";
@@ -96,6 +116,44 @@ describe("okou wallet", () => {
       }),
     );
   });
+  it.each([true, false])(
+    "reports read-only access while retaining the compatible status response (json=%s)",
+    async (json) => {
+      const status = {
+        connected: true,
+        nextAction: "connect",
+        checkoutAvailable: false,
+        authorization: {
+          known: true,
+          scopes: ["userinfo:read"],
+          sourceActions: ["read_link_transactions"],
+          capabilities: {
+            payments: false,
+            spendHistory: true,
+            paymentMethods: false,
+            userInfo: true,
+            transactions: true,
+          },
+          missingPermissions: ["payment_methods.agentic"],
+        },
+      };
+      server.use(
+        http.get(`${origin}/api/wallet/status`, () => {
+          return HttpResponse.json(status);
+        }),
+      );
+      await run(json ? ["status", "--json"] : ["status"]);
+      if (json) {
+        expect(JSON.parse(String(output.mock.calls[0]?.[0]))).toStrictEqual(
+          status,
+        );
+      } else {
+        expect(output).toHaveBeenCalledWith(
+          "Link wallet: connected. Next: read_wallet. Checkout unavailable.",
+        );
+      }
+    },
+  );
   it("preserves the full Link consent URL and ends the turn", async () => {
     const url =
       "https://login.link.com/auth?client_id=example&state=keep-me&code_challenge=keep-me-too";
@@ -178,6 +236,200 @@ describe("okou wallet", () => {
     await run(["spend", "get", id]);
     expect(output).toHaveBeenCalledWith(
       `Approved is not paid. Retrieve the one-time card with: okou wallet spend credentials ${id} --output-file <private-json-path>`,
+    );
+  });
+
+  it("requests read-only consent and preserves its exact hosted action URL", async () => {
+    const url = new URL(
+      "https://login.link.com/auth?client_id=fixture&state=keep%2Fexact&scope=userinfo%3Aread",
+    );
+    url.searchParams.set(
+      "authorization_details",
+      JSON.stringify([{ type: "source", actions: ["read_link_transactions"] }]),
+    );
+    let body: unknown;
+    server.use(
+      http.post(`${origin}/api/wallet/connect`, async ({ request }) => {
+        body = await request.json();
+        return HttpResponse.json({
+          url: url.toString(),
+          expiresAt: spend.expiresAt,
+        });
+      }),
+    );
+    await run(["connect", "--read-only"]);
+    expect(body).toStrictEqual({ readOnly: true });
+    expect(output).toHaveBeenCalledWith(url.toString());
+  });
+
+  it("refuses a payment consent URL from an older server that ignores read-only input", async () => {
+    const url =
+      "https://login.link.com/auth?scope=payment_methods.agentic&state=fixture";
+    server.use(
+      http.post(`${origin}/api/wallet/connect`, () => {
+        return HttpResponse.json({ url, expiresAt: spend.expiresAt });
+      }),
+    );
+    await expect(run(["connect", "--read-only"])).rejects.toThrow(
+      "process.exit called",
+    );
+    expect(output).not.toHaveBeenCalledWith(url);
+    expect(JSON.stringify(errors.mock.calls)).toContain(
+      "does not support the requested read authorization",
+    );
+  });
+
+  it("passes transaction filters and cursors and prints a single JSON result", async () => {
+    let query: Record<string, string> = {};
+    const page = {
+      data: [
+        {
+          id: "txn_second",
+          sourceId: null,
+          amount: -3000,
+          currency: "usd",
+          date: "2026-10-14",
+          description: "Example Books",
+          origin: "link",
+          category: "shopping",
+          status: "posted",
+        },
+      ],
+      hasMore: true,
+      nextCursor: "txn_second",
+    };
+    server.use(
+      http.get(`${origin}/api/wallet/transactions`, ({ request }) => {
+        query = Object.fromEntries(new URL(request.url).searchParams);
+        return HttpResponse.json(page);
+      }),
+    );
+    await run([
+      "transactions",
+      "list",
+      "--start-date",
+      "2026-10-01",
+      "--end-date",
+      "2026-10-15",
+      "--limit",
+      "1",
+      "--starting-after",
+      "txn_first",
+      "--category",
+      "shopping",
+      "--origin",
+      "link",
+      "--json",
+    ]);
+    expect(query).toStrictEqual({
+      startDate: "2026-10-01",
+      endDate: "2026-10-15",
+      limit: "1",
+      startingAfter: "txn_first",
+      category: "shopping",
+      origin: "link",
+    });
+    expect(output.mock.calls).toStrictEqual([[JSON.stringify(page)]]);
+  });
+
+  it.each([
+    ["--origin", "external_connection"],
+    ["--limit", "0"],
+    ["--start-date", "2026-02-30"],
+    ["--start-date", "2026-10-15", "--end-date", "2026-10-01"],
+  ])(
+    "rejects unsupported transaction query %j before making a request",
+    async (...args) => {
+      let requested = false;
+      server.use(
+        http.get(`${origin}/api/wallet/transactions`, () => {
+          requested = true;
+          return HttpResponse.json({
+            data: [],
+            hasMore: false,
+            nextCursor: null,
+          });
+        }),
+      );
+      await expect(run(["transactions", "list", ...args])).rejects.toThrow(
+        "process.exit called",
+      );
+      expect(requested).toBe(false);
+    },
+  );
+
+  it("shows recorded spend pagination without treating approval budgets as settled spending", async () => {
+    const page = {
+      data: [
+        {
+          id,
+          status: "approved",
+          amount: 3500,
+          currency: "usd",
+          merchantName: "Example Books",
+          test: true,
+          createdAt: "2026-10-14T00:00:00.000Z",
+          statusSource: "recorded",
+          canRefresh: true,
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    };
+    let query: Record<string, string> = {};
+    server.use(
+      http.get(`${origin}/api/wallet/spend`, ({ request }) => {
+        query = Object.fromEntries(new URL(request.url).searchParams);
+        return HttpResponse.json(page);
+      }),
+    );
+    await run(["spend", "list", "--mode", "test", "--status", "approved"]);
+    expect(query).toStrictEqual({ mode: "test", status: "approved" });
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining("not settled spending"),
+    );
+  });
+
+  it("reads saved method metadata and filters unexpected credentials", async () => {
+    const method = {
+      id: "pm_fixture",
+      type: "card",
+      name: "Visa",
+      isDefault: true,
+      card: { brand: "visa", last4: "4242", expMonth: 12, expYear: 2030 },
+    };
+    server.use(
+      http.get(`${origin}/api/wallet/payment-methods/pm_fixture`, () => {
+        return HttpResponse.json({
+          ...method,
+          card: { ...method.card, number: "private-pan", cvc: "private-cvc" },
+          access_token: "private-token",
+        });
+      }),
+    );
+    await run(["payment-methods", "get", "pm_fixture", "--json"]);
+    expect(output.mock.calls).toStrictEqual([[JSON.stringify(method)]]);
+  });
+
+  it("preserves verification URLs and nullable limits in user info", async () => {
+    const actionUrl = "https://app.link.com/verify?session=keep%2Fexact";
+    server.use(
+      http.get(`${origin}/api/wallet/user-info`, () => {
+        return HttpResponse.json({
+          name: "Wallet User",
+          spendLimits: {
+            perTransaction: { limit: 5000 },
+            daily: { limit: null, used: 3500, remaining: null },
+            thirtyDay: { limit: null, used: 3500, remaining: null },
+          },
+          verification: { status: "identity_verification", actionUrl },
+        });
+      }),
+    );
+    await run(["user-info", "get"]);
+    expect(output).toHaveBeenCalledWith(actionUrl);
+    expect(output).toHaveBeenCalledWith(
+      expect.stringContaining("null means unlimited"),
     );
   });
 

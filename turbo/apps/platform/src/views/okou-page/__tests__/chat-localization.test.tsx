@@ -187,6 +187,9 @@ async function changeLanguage(next: LanguageChoice): Promise<void> {
   await waitFor(() => {
     expect(document.documentElement).toHaveAttribute("lang", next.locale);
   });
+}
+
+async function closeSettings(): Promise<void> {
   click(
     await findAction(
       "button",
@@ -211,7 +214,7 @@ function composerEditor(): HTMLElement {
   return editor;
 }
 
-test("Changing language preserves the open conversation and draft", async () => {
+async function openLocalizedChatWithDraft() {
   const title = "Planejamento semanal";
   const draft = "Rascunho ainda não enviado";
 
@@ -224,24 +227,37 @@ test("Changing language preserves the open conversation and draft", async () => 
     context,
     path: `/chats/${THREAD_ID}?settings=preference`,
   });
-
-  const titleCopies = await screen.findAllByText(title);
-  const visibleTitle = titleCopies.find((element) => {
-    return element.closest("header") !== null;
+  await waitFor(() => {
+    expect(document.documentElement).toHaveAttribute("lang", portuguese.locale);
   });
-  expect(visibleTitle).toBeInTheDocument();
-  const originalComposer = composerEditor();
-  expect(originalComposer).toHaveTextContent(draft);
-  const originalUrl = pathname();
+
+  return { title, draft };
+}
+
+test("Changing language preserves the conversation while Settings stays open", async () => {
+  const { title } = await openLocalizedChatWithDraft();
+  await screen.findByText(title, { selector: "header *" });
+  const originalUrl = `${pathname()}${search()}`;
 
   await changeLanguage(english);
 
-  const translatedComposer = composerEditor();
   expect(`${pathname()}${search()}`).toBe(originalUrl);
-  expect(translatedComposer).toHaveTextContent(draft);
-  const translatedTitleCopies = screen.getAllByText(title);
-  const translatedVisibleTitle = translatedTitleCopies.find((element) => {
-    return element.closest("header") !== null;
+  expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+  expect(screen.getByText(title, { selector: "header *" })).toBeInTheDocument();
+});
+
+test("Closing translated Settings preserves the conversation and unsent draft", async () => {
+  const { title, draft } = await openLocalizedChatWithDraft();
+  await screen.findByText(title, { selector: "header *" });
+  const originalPath = pathname();
+  await waitFor(() => {
+    expect(composerEditor()).toHaveTextContent(draft);
   });
-  expect(translatedVisibleTitle).toBeInTheDocument();
+
+  await changeLanguage(english);
+  await closeSettings();
+
+  expect(`${pathname()}${search()}`).toBe(originalPath);
+  expect(screen.getByText(title, { selector: "header *" })).toBeInTheDocument();
+  expect(composerEditor()).toHaveTextContent(draft);
 });

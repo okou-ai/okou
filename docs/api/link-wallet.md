@@ -20,7 +20,7 @@ Connected wallets use the same status indicator as Works. Reconnect and Disconne
 live in the connection's actions menu; changed permissions also retain a visible
 Review permissions action.
 
-`GET /api/wallet/transactions` lists the current user's Okou purchase requests in
+`GET /api/wallet/purchases` lists the current user's Okou purchase requests in
 the current workspace, across their agents, through session authentication. The
 list includes merchant, amount, currency, test mode, creation time, and the last
 status received by Okou. It does not fetch all activity from the user's Link

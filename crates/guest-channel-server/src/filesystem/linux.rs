@@ -1,5 +1,5 @@
 use std::{
-    ffi::CString,
+    ffi::{CStr, CString},
     fs::File,
     io,
     os::fd::{AsRawFd, FromRawFd, RawFd},
@@ -44,7 +44,7 @@ fn error(errno: i32) -> Error {
     }
 }
 
-fn open(parent: RawFd, path: &CString, resolve: u64, scope: &mut Scope<'_>) -> Result<File, Error> {
+fn open(parent: RawFd, path: &CStr, resolve: u64, scope: &mut Scope<'_>) -> Result<File, Error> {
     let how = OpenHow {
         flags: (libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) as u64,
         mode: 0,
@@ -106,8 +106,7 @@ fn open(parent: RawFd, path: &CString, resolve: u64, scope: &mut Scope<'_>) -> R
 
 pub(super) fn capture(path: &Path, scope: &mut Scope<'_>) -> Result<File, Error> {
     let path = CString::new(path.as_os_str().as_bytes()).map_err(|_| Error::Unavailable)?;
-    // Home is itself a mount. Establish it before applying the descendant
-    // no-cross-mount policy, while rejecting symlinks in every ancestor.
+    // Capture the fixed Guest root without following any symlink ancestor.
     open(libc::AT_FDCWD, &path, NO_SYMLINKS | NO_MAGICLINKS, scope).map_err(|_| Error::Unavailable)
 }
 
@@ -151,30 +150,41 @@ pub(super) fn path(tokens: &[String]) -> Result<Vec<u8>, Error> {
     Ok(path)
 }
 
-/// Reopen each prefix from the captured root with the complete policy. Prefix
-/// stamps also detect an ancestor move/replacement while a child fd stays live.
+/// Walk from the captured Guest root and stamp every prefix. Only the fixed
+/// canonical home transition may cross a mount; its descendants cannot.
 pub(super) fn resolve(
     root: &File,
     path: &[u8],
     scope: &mut Scope<'_>,
 ) -> Result<(File, Vec<Stamp>), Error> {
     let mut stamps = vec![stamp(root, scope)?];
-    let mut prefixes = Vec::new();
-    for (index, byte) in path.iter().enumerate() {
-        if *byte == b'/' {
-            prefixes.push(path.get(..index).ok_or(Error::Unavailable)?);
-        }
-    }
-    prefixes.push(if path.is_empty() { b"." } else { path });
-    let mut directory = None;
-    for prefix in prefixes {
-        let prefix = CString::new(prefix).map_err(|_| Error::OutsideHome)?;
-        let file = open(
+    if path.is_empty() {
+        let directory = open(
             root.as_raw_fd(),
-            &prefix,
+            c".",
             BENEATH | NO_SYMLINKS | NO_MAGICLINKS | NO_XDEV,
             scope,
         )?;
+        stamps.push(stamp(&directory, scope)?);
+        return Ok((directory, stamps));
+    }
+    let home = guest_contracts::home_mount::HOME_DIR
+        .trim_start_matches('/')
+        .as_bytes();
+    let mut prefix = Vec::new();
+    let mut directory = None;
+    for component in path.split(|byte| *byte == b'/') {
+        if !prefix.is_empty() {
+            prefix.push(b'/');
+        }
+        prefix.extend_from_slice(component);
+        let name = CString::new(component).map_err(|_| Error::OutsideHome)?;
+        let parent = directory.as_ref().unwrap_or(root);
+        let mut policy = BENEATH | NO_SYMLINKS | NO_MAGICLINKS;
+        if prefix != home {
+            policy |= NO_XDEV;
+        }
+        let file = open(parent.as_raw_fd(), &name, policy, scope)?;
         stamps.push(stamp(&file, scope)?);
         directory = Some(file);
     }

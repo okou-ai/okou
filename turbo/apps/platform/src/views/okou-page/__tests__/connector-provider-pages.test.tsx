@@ -69,7 +69,7 @@ function telegramStatus(): MockTelegramBotStatus {
   };
 }
 
-function telegramConnectPath(signature = "b".repeat(64)): string {
+function telegramConnectPath(path: string, signature = "b".repeat(64)): string {
   const params = new URLSearchParams({
     bot: TELEGRAM_BOT_ID,
     tgUser: "99001",
@@ -78,7 +78,7 @@ function telegramConnectPath(signature = "b".repeat(64)): string {
     ts: "1700000000",
     sig: signature,
   });
-  return `/telegram/connect?${params.toString()}`;
+  return `${path}?${params.toString()}`;
 }
 
 function feishuConnectorStatus(): PublicConnectorCatalogStatusItem {
@@ -368,72 +368,83 @@ test("Slack Connect offers an OAuth-verified account switch", async () => {
   });
 });
 
-test("An invalid Telegram connection link is rejected", async () => {
-  await setupPage({ context, path: telegramConnectPath("invalid") });
+test.each(["/telegram/connect", "/settings/telegram"])(
+  "An invalid Telegram connection link is rejected at %s",
+  async (path) => {
+    await setupPage({ context, path: telegramConnectPath(path, "invalid") });
 
-  await expect(
-    screen.findByRole("heading", { name: "Connect link is invalid" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText("The signature on this link is not valid."),
-  ).toBeInTheDocument();
-  expect(
-    queryAllByRoleFast("button").some((candidate) => {
-      return candidate.textContent?.trim() === "Connect";
-    }),
-  ).toBeFalsy();
-});
+    await expect(
+      screen.findByRole("heading", { name: "Connect link is invalid" }),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText("The signature on this link is not valid."),
+    ).toBeInTheDocument();
+    expect(
+      queryAllByRoleFast("button").some((candidate) => {
+        return candidate.textContent?.trim() === "Connect";
+      }),
+    ).toBeFalsy();
+  },
+);
 
-test("A user links their account to the official Telegram bot", async () => {
-  let linkedBody: unknown;
-  context.mocks.data.telegramIntegration({ statuses: [telegramStatus()] });
-  context.mocks.api(integrationsTelegramContract.link, ({ body, respond }) => {
-    linkedBody = body;
-    return respond(200, {
-      botUsername: "agent_bot",
-      telegramUserId: "99001",
+test.each(["/telegram/connect", "/settings/telegram"])(
+  "A user links their account to the official Telegram bot at %s",
+  async (path) => {
+    let linkedBody: unknown;
+    context.mocks.data.telegramIntegration({ statuses: [telegramStatus()] });
+    context.mocks.api(
+      integrationsTelegramContract.link,
+      ({ body, respond }) => {
+        linkedBody = body;
+        return respond(200, {
+          botUsername: "agent_bot",
+          telegramUserId: "99001",
+        });
+      },
+    );
+    const locationAssign = context.mocks.browser.locationAssign();
+
+    await setupPage({ context, path: telegramConnectPath(path) });
+
+    await expect(
+      screen.findByText("Connect to Telegram"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Link your account to this Telegram bot so you can interact with your agent directly from Telegram.",
+      ),
+    ).toBeInTheDocument();
+
+    click(getAction("button", "Connect"));
+
+    await expect(
+      screen.findByText("Connected to Telegram!"),
+    ).resolves.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "You're connected to @agent_bot. Send a message in Telegram to start chatting.",
+      ),
+    ).toBeInTheDocument();
+    expect(getAction("button", "Open Telegram")).toBeInTheDocument();
+    expect(getAction("link", "Back to integrations")).toHaveAttribute(
+      "href",
+      "/works",
+    );
+    expect(locationAssign.calls).toStrictEqual([
+      "tg://resolve?domain=agent_bot",
+    ]);
+    expect(linkedBody).toStrictEqual({
+      telegramBotId: TELEGRAM_BOT_ID,
+      connectSignature: {
+        telegramUserId: "99001",
+        telegramUsername: "alice",
+        telegramDisplayName: "Alice Tester",
+        timestamp: 1_700_000_000,
+        signature: "b".repeat(64),
+      },
     });
-  });
-  const locationAssign = context.mocks.browser.locationAssign();
-
-  await setupPage({ context, path: telegramConnectPath() });
-
-  await expect(
-    screen.findByText("Connect to Telegram"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Link your account to this Telegram bot so you can interact with your agent directly from Telegram.",
-    ),
-  ).toBeInTheDocument();
-
-  click(getAction("button", "Connect"));
-
-  await expect(
-    screen.findByText("Connected to Telegram!"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "You're connected to @agent_bot. Send a message in Telegram to start chatting.",
-    ),
-  ).toBeInTheDocument();
-  expect(getAction("button", "Open Telegram")).toBeInTheDocument();
-  expect(getAction("link", "Back to integrations")).toHaveAttribute(
-    "href",
-    "/works",
-  );
-  expect(locationAssign.calls).toStrictEqual(["tg://resolve?domain=agent_bot"]);
-  expect(linkedBody).toStrictEqual({
-    telegramBotId: TELEGRAM_BOT_ID,
-    connectSignature: {
-      telegramUserId: "99001",
-      telegramUsername: "alice",
-      telegramDisplayName: "Alice Tester",
-      timestamp: 1_700_000_000,
-      signature: "b".repeat(64),
-    },
-  });
-});
+  },
+);
 
 test("A successful Feishu callback opens the connected bot", async () => {
   const redirectUrl =

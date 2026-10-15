@@ -6,26 +6,33 @@ import { connectors } from "@okouai/db/schema/connector";
 import { and, eq, inArray } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { immutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
+import { createImmutableConnectorRuntimeSelection } from "./connector-catalog-entries.service";
 import { nowDate } from "../../lib/time";
 import { getConnectorRuntimeConnector } from "./connector-catalog-runtime.service";
 import { builtinConnectorCredentialStatusWithMethod } from "./connector-credential-status.service";
 import { builtinConnectorCredentialStorageIsCompatible } from "./builtin-connector-credential-access.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
-import { loadCurrentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
+import { currentCustomConnectorStoredValues } from "./custom-connector-credential-access.service";
 import {
   normaliseCustomConnectorRow,
   serialiseCustomConnector,
 } from "./custom-connector.service";
 
-function builtinMcpConnectors(args: {
+interface RunMcpConnectorScope {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;
-  readonly sourceIds: Readonly<Record<string, string>>;
-}): Computed<Promise<readonly McpConnector[]>> {
-  return computed(async (get) => {
-    if (Object.keys(args.sourceIds).length === 0) {
+  readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+  readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
+}
+
+function builtinMcpConnectors(
+  scope$: Computed<Promise<RunMcpConnectorScope>>,
+): Computed<Promise<readonly McpConnector[]>> {
+  const admitted$ = computed(async (get) => {
+    const args = await get(scope$);
+    const sourceIds = args.builtinConnectorSourceIds ?? {};
+    if (Object.keys(sourceIds).length === 0) {
       return [];
     }
     const rows = await get(db$)
@@ -45,7 +52,7 @@ function builtinMcpConnectors(args: {
         and(
           eq(connectors.orgId, args.orgId),
           eq(connectors.userId, args.userId),
-          inArray(connectors.id, Object.values(args.sourceIds)),
+          inArray(connectors.id, Object.values(sourceIds)),
         ),
       )
       .where(
@@ -55,23 +62,31 @@ function builtinMcpConnectors(args: {
           eq(agentRuns.userId, args.userId),
         ),
       );
-    const admitted = rows.flatMap((row) => {
-      return row.slug !== null && args.sourceIds[row.slug] === row.id
+    return rows.flatMap((row) => {
+      return row.slug !== null && sourceIds[row.slug] === row.id
         ? [{ ...row, slug: row.slug }]
         : [];
     });
-    if (admitted.length === 0) {
+  });
+  const catalogRequest$ = computed(async (get) => {
+    const admitted = await get(admitted$);
+    return admitted.length === 0
+      ? null
+      : {
+          requestedConnectorSlugs: admitted.map((row) => {
+            return row.slug;
+          }),
+        };
+  });
+  const catalog$ = createImmutableConnectorRuntimeSelection(catalogRequest$);
+  return computed(async (get) => {
+    const snapshot = await get(catalog$);
+    if (!snapshot) {
       return [];
     }
+    const admitted = await get(admitted$);
     // An admitted account whose connector left the catalog is omitted below,
     // as if it had never been authorized.
-    const snapshot = await get(
-      immutableConnectorRuntimeSelection({
-        requestedConnectorSlugs: admitted.map((row) => {
-          return row.slug;
-        }),
-      }),
-    );
     return admitted.flatMap((row): McpConnector[] => {
       const connector = getConnectorRuntimeConnector(snapshot, row.slug);
       const mcp = connector?.catalogConnector.mcp;
@@ -113,29 +128,30 @@ function builtinMcpConnectors(args: {
   });
 }
 
-export function runMcpConnectorList(args: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly runId: string;
-  readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
-  readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
-}): Computed<Promise<readonly McpConnector[]>> {
-  return computed(async (get): Promise<readonly McpConnector[]> => {
-    const db = get(db$);
-    const builtin = await get(
-      builtinMcpConnectors({
-        ...args,
-        sourceIds: args.builtinConnectorSourceIds ?? {},
-      }),
-    );
+export function runMcpConnectorList(
+  scope$: Computed<Promise<RunMcpConnectorScope>>,
+): Computed<Promise<readonly McpConnector[]>> {
+  const builtin$ = builtinMcpConnectors(scope$);
+  const customScope$ = computed(async (get) => {
+    const args = await get(scope$);
     const memberConnectorIdsByCustomConnectorId = new Map(
       Object.entries(args.customConnectorSourceIds ?? {}),
     );
-    const connectorIds = [...memberConnectorIdsByCustomConnectorId.keys()];
+    return {
+      orgId: args.orgId,
+      userId: args.userId,
+      runId: args.runId,
+      memberConnectorIdsByCustomConnectorId,
+      connectorIds: [...memberConnectorIdsByCustomConnectorId.keys()],
+    };
+  });
+  const customDefinitions$ = computed(async (get) => {
+    const args = await get(customScope$);
+    const { connectorIds } = args;
     if (connectorIds.length === 0) {
-      return builtin;
+      return [];
     }
-    const rows = await db
+    return await get(db$)
       .select({ connector: customConnectorDefinitionSelection() })
       .from(agentRuns)
 
@@ -156,7 +172,10 @@ export function runMcpConnectorList(args: {
         ),
       )
       .orderBy(orgCustomConnectors.slug);
-
+  });
+  const storageScope$ = computed(async (get) => {
+    const args = await get(customScope$);
+    const rows = await get(customDefinitions$);
     const definitions = rows.flatMap(({ connector }) => {
       return connector.authMode === "none"
         ? []
@@ -168,13 +187,25 @@ export function runMcpConnectorList(args: {
             },
           ];
     });
-    const storage = await loadCurrentCustomConnectorStoredValues(db, {
+    return {
       orgId: args.orgId,
       userId: args.userId,
       definitions,
-      memberConnectorIdsByCustomConnectorId,
-    });
+      memberConnectorIdsByCustomConnectorId:
+        args.memberConnectorIdsByCustomConnectorId,
+    };
+  });
+  const storage$ = currentCustomConnectorStoredValues(storageScope$);
 
+  return computed(async (get): Promise<readonly McpConnector[]> => {
+    const builtin = await get(builtin$);
+    const { connectorIds, memberConnectorIdsByCustomConnectorId } =
+      await get(customScope$);
+    if (connectorIds.length === 0) {
+      return builtin;
+    }
+    const rows = await get(customDefinitions$);
+    const storage = await get(storage$);
     const custom = rows.map(({ connector }): McpConnector => {
       const connectionId = memberConnectorIdsByCustomConnectorId.get(
         connector.id,

@@ -13,7 +13,6 @@ import {
 import { createBddApi, expectApiError } from "./helpers/api-bdd";
 import { manualHttpCustomConnectorCreateBody } from "./helpers/api-bdd-connectors";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 
 /*
@@ -42,13 +41,6 @@ function shortId(): string {
 
 function slug(prefix: string): string {
   return `${prefix}-${shortId()}`;
-}
-
-function requiredOrgId(actor: ApiTestUser): string {
-  if (!actor.orgId) {
-    throw new Error("Expected an organization-scoped actor");
-  }
-  return actor.orgId;
 }
 
 async function onboardAdmin(
@@ -82,10 +74,8 @@ async function onboardAdmin(
 }
 
 async function withOwnedInvitationOrg(
-  admin: ApiTestUser,
   scenario: () => Promise<void>,
 ): Promise<void> {
-  const orgId = requiredOrgId(admin);
   const storageBucket = env("R2_USER_STORAGES_BUCKET_NAME");
   const kmsKeyId = env("SECRETS_KMS_KEY_ID");
   const owner = createFixtureOperationOwner(async () => {
@@ -97,26 +87,6 @@ async function withOwnedInvitationOrg(
     });
     context.mocks.ably.publish.mockResolvedValue(undefined);
     await flushWaitUntilForTest();
-
-    const webhooks = createWebhookCallbackApi(context);
-    webhooks.configureStripeBillingEnv();
-    context.mocks.stripe.subscriptions.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    context.mocks.stripe.invoices.list.mockResolvedValue({
-      data: [],
-      has_more: false,
-    });
-    webhooks.configureClerkWebhookSecret();
-    webhooks.verifyNextClerkWebhook({
-      type: "organization.deleted",
-      data: { id: orgId },
-    });
-    await webhooks.requestClerkWebhook("{}", {}, [200]);
-    await flushWaitUntilForTest();
-    // Clerk deletion stops active work; UUID-owned history, agents, billing and
-    // invitation completion receipts remain retained.
   });
   await owner.run(scenario);
 }
@@ -314,7 +284,7 @@ describe("ORG-01 and ORG-02", () => {
   it("projects direct invitation redirects to Okou", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const admin = api.user();
-    await withOwnedInvitationOrg(admin, async () => {
+    await withOwnedInvitationOrg(async () => {
       await onboardAdmin(admin);
 
       const inviteEmail = `okou-invite-${shortId()}@example.test`;
@@ -337,7 +307,7 @@ describe("ORG-01 and ORG-02", () => {
 
   it("reads, updates, lists, invites, changes membership, handles requests, and leaves orgs through APIs", async () => {
     const admin = api.user();
-    await withOwnedInvitationOrg(admin, async () => {
+    await withOwnedInvitationOrg(async () => {
       const member = api.user({
         orgId: admin.orgId,
         orgRole: "org:member",

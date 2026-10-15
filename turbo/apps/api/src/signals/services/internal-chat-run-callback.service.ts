@@ -2,7 +2,7 @@ import { chatEventCommandResultSchema } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import type { ReasoningEffort } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { v5 as uuidv5 } from "uuid";
-import type { ChatThreadSessionResolution } from "./chat-session-continuity.service";
+import type { ChatThreadContinuation } from "./chat-session-continuity.service";
 
 import {
   serializeChatFollowupsContent,
@@ -360,7 +360,7 @@ interface ChatRunInfo {
 }
 
 export interface CreateQueuedChatRunInput {
-  readonly threadSessionResolution?: ChatThreadSessionResolution;
+  readonly threadContinuation?: ChatThreadContinuation;
   readonly featureSwitchContext?: FeatureSwitchContext;
   readonly orgId: string;
   readonly userId: string;

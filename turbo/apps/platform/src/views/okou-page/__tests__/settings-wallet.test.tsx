@@ -3,7 +3,7 @@ import { beforeEach, expect, test } from "vitest";
 import {
   walletUserContract,
   type WalletConnectionStatus,
-  type WalletTransaction,
+  type WalletPurchaseHistoryEntry,
 } from "@okouai/api-contracts/contracts/wallet";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -361,8 +361,8 @@ test("offers Disconnect for a previously unfinished provider revocation", async 
 });
 
 function transaction(
-  overrides: Partial<WalletTransaction> = {},
-): WalletTransaction {
+  overrides: Partial<WalletPurchaseHistoryEntry> = {},
+): WalletPurchaseHistoryEntry {
   return {
     id: "00000000-0000-4000-8000-000000000001",
     merchantName: "Example Books",

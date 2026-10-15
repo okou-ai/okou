@@ -42,6 +42,144 @@ export const walletCreateSpendSchema = z.object({
   test: z.boolean().default(false),
 });
 
+export const walletConnectSchema = z
+  .object({
+    readOnly: z.boolean().optional(),
+    transactions: z.boolean().optional(),
+  })
+  .strict();
+export type WalletConnect = z.infer<typeof walletConnectSchema>;
+
+export const walletAuthorizationDetailsSchema = z.array(
+  z.object({
+    type: z.string(),
+    actions: z.array(z.string()),
+  }),
+);
+
+const walletPaymentSchema = z.object({
+  outcome: z.string(),
+  amount: z.number().int().safe(),
+  currency: z.string(),
+  code: z.string().nullable().optional(),
+  declineCode: z.string().nullable().optional(),
+  created: z.number().nullable().optional(),
+  refund: z
+    .object({
+      amount: z.number().int().safe(),
+      currency: z.string(),
+      state: z.string(),
+      created: z.number(),
+    })
+    .nullable()
+    .optional(),
+});
+
+const walletDateFilters = {
+  startDate: z.iso.date().optional(),
+  endDate: z.iso.date().optional(),
+};
+function orderedDates(value: { startDate?: string; endDate?: string }) {
+  return !value.startDate || !value.endDate || value.startDate <= value.endDate;
+}
+export const walletSpendListQuerySchema = z
+  .object({
+    ...walletDateFilters,
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    startingAfter: z.uuid().optional(),
+    status: walletSpendStatusSchema.optional(),
+    mode: z.enum(["all", "live", "test"]).optional(),
+  })
+  .strict()
+  .refine(orderedDates, "startDate must not be after endDate");
+export type WalletSpendListQuery = z.infer<typeof walletSpendListQuerySchema>;
+
+const walletProviderIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,256}$/);
+export const walletTransactionsQuerySchema = z
+  .object({
+    ...walletDateFilters,
+    origin: z.literal("link").optional(),
+    category: z.string().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    startingAfter: walletProviderIdSchema.optional(),
+  })
+  .strict()
+  .refine(orderedDates, "startDate must not be after endDate");
+export type WalletTransactionsQuery = z.infer<
+  typeof walletTransactionsQuerySchema
+>;
+
+export const walletTransactionSchema = z.object({
+  id: walletProviderIdSchema,
+  sourceId: z.string().nullable(),
+  amount: z.number().int().safe(),
+  currency: z.string(),
+  date: z.iso.date(),
+  description: z.string(),
+  origin: z.literal("link"),
+  category: z.string().nullable(),
+  status: z.string(),
+});
+
+export const walletPaymentMethodSchema = z.object({
+  id: walletProviderIdSchema,
+  type: z.string(),
+  name: z.string(),
+  nickname: z.string().nullable().optional(),
+  isDefault: z.boolean(),
+  card: z
+    .object({
+      brand: z.string(),
+      last4: z.string().regex(/^\d{4}$/),
+      expMonth: z.number().int().min(1).max(12),
+      expYear: z.number().int(),
+    })
+    .nullable()
+    .optional(),
+  bankAccount: z
+    .object({
+      last4: z.string().regex(/^\d{4}$/),
+      bankName: z.string().nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  capabilities: z
+    .record(
+      z.string(),
+      z.object({
+        eligible: z.boolean(),
+        ineligibilityReasons: z.array(z.string()),
+      }),
+    )
+    .nullable()
+    .optional(),
+});
+
+const walletLimitSchema = z.object({
+  limit: z.number().int().nullable(),
+  used: z.number().int().optional(),
+  remaining: z.number().int().nullable().optional(),
+});
+export const walletUserInfoSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().nullable().optional(),
+  email: z.string().nullable().optional(),
+  defaultCurrency: z.string().optional(),
+  spendLimits: z
+    .object({
+      perTransaction: walletLimitSchema,
+      daily: walletLimitSchema,
+      thirtyDay: walletLimitSchema,
+    })
+    .optional(),
+  verification: z
+    .object({
+      status: z.string(),
+      actionUrl: z.url().nullable(),
+    })
+    .optional(),
+});
+
 export const walletSpendSchema = z.object({
   id: z.uuid(),
   intentId: z.uuid(),
@@ -52,6 +190,11 @@ export const walletSpendSchema = z.object({
   merchantUrl: z.url(),
   context: z.string(),
   test: z.boolean(),
+  // New CLI -> old API: require after pre-#40198 APIs are neither serving nor
+  // retained for rollback; remove the tolerance and its tests in #40206.
+  createdAt: z.iso.datetime().optional(),
+  payment: walletPaymentSchema.nullable().optional(),
+  paymentHistory: z.array(walletPaymentSchema).optional(),
   approvalUrl: z.url().nullable(),
   expiresAt: z.iso.datetime(),
   nextAction: z.enum([
@@ -80,7 +223,7 @@ export type WalletCreateSpend = z.infer<typeof walletCreateSpendSchema>;
 export type WalletSpend = z.infer<typeof walletSpendSchema>;
 
 // A history entry deliberately excludes approval links and payment credentials.
-export const walletTransactionSchema = walletSpendSchema
+export const walletPurchaseHistoryEntrySchema = walletSpendSchema
   .pick({
     id: true,
     status: true,
@@ -90,7 +233,9 @@ export const walletTransactionSchema = walletSpendSchema
     test: true,
   })
   .extend({ createdAt: z.iso.datetime() });
-export type WalletTransaction = z.infer<typeof walletTransactionSchema>;
+export type WalletPurchaseHistoryEntry = z.infer<
+  typeof walletPurchaseHistoryEntrySchema
+>;
 
 export const walletCardSchema = z.object({
   brand: z.string().regex(/^[a-zA-Z_-]{1,32}$/),
@@ -143,7 +288,26 @@ export const walletContract = c.router({
     responses: {
       200: z.object({
         connected: z.boolean(),
+        // Purchase readiness retains the enum understood by captured CLI builds.
+        // Read availability is expressed by the additive authorization fields.
         nextAction: z.enum(["connect", "create_spend"]),
+        // New CLI -> old API: require after pre-#40198 APIs are neither serving
+        // nor retained for rollback; cleanup #40206 includes the CLI branch/tests.
+        authorization: z
+          .object({
+            known: z.boolean(),
+            scopes: z.array(z.string()),
+            sourceActions: z.array(z.string()),
+            capabilities: z.object({
+              payments: z.boolean(),
+              spendHistory: z.boolean(),
+              paymentMethods: z.boolean(),
+              userInfo: z.boolean(),
+              transactions: z.boolean(),
+            }),
+            missingPermissions: z.array(z.string()),
+          })
+          .optional(),
         checkoutAvailable: z.literal(false),
       }),
       400: apiErrorSchema,
@@ -159,7 +323,7 @@ export const walletContract = c.router({
     method: "POST",
     path: "/api/wallet/connect",
     headers: authHeadersSchema,
-    body: z.object({}),
+    body: walletConnectSchema,
     responses: {
       200: z.object({ url: z.url(), expiresAt: z.iso.datetime() }),
       400: apiErrorSchema,
@@ -201,6 +365,107 @@ export const walletContract = c.router({
     pathParams: spendParams,
     query: z.object({}).strict(),
     responses: walletSpendResponses,
+  },
+  listSpends: {
+    method: "GET",
+    path: "/api/wallet/spend",
+    headers: authHeadersSchema,
+    query: walletSpendListQuerySchema,
+    responses: {
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+      200: z.object({
+        data: z.array(
+          z.object({
+            id: z.uuid(),
+            status: walletSpendStatusSchema,
+            amount: z.number().int(),
+            currency: z.literal("usd"),
+            merchantName: z.string(),
+            test: z.boolean(),
+            createdAt: z.iso.datetime(),
+            statusSource: z.literal("recorded"),
+            canRefresh: z.boolean(),
+          }),
+        ),
+        hasMore: z.boolean(),
+        nextCursor: z.uuid().nullable(),
+      }),
+    },
+  },
+  transactions: {
+    method: "GET",
+    path: "/api/wallet/transactions",
+    headers: authHeadersSchema,
+    query: walletTransactionsQuerySchema,
+    responses: {
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+      200: z.object({
+        data: z.array(walletTransactionSchema),
+        hasMore: z.boolean().nullable(),
+        nextCursor: walletProviderIdSchema.nullable(),
+      }),
+    },
+  },
+  paymentMethods: {
+    method: "GET",
+    path: "/api/wallet/payment-methods",
+    headers: authHeadersSchema,
+    query: z.object({}).strict(),
+    responses: {
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+      200: z.object({ data: z.array(walletPaymentMethodSchema) }),
+    },
+  },
+  paymentMethod: {
+    method: "GET",
+    path: "/api/wallet/payment-methods/:id",
+    headers: authHeadersSchema,
+    pathParams: z.object({ id: walletProviderIdSchema }),
+    query: z.object({}).strict(),
+    responses: {
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+      200: walletPaymentMethodSchema,
+    },
+  },
+  userInfo: {
+    method: "GET",
+    path: "/api/wallet/user-info",
+    headers: authHeadersSchema,
+    query: z.object({}).strict(),
+    responses: {
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      502: apiErrorSchema,
+      503: apiErrorSchema,
+      200: walletUserInfoSchema,
+    },
   },
   cancelSpend: {
     method: "POST",
@@ -260,7 +525,7 @@ export const walletCallbackContract = c.router({
 export const walletUserContract = c.router({
   transactions: {
     method: "GET",
-    path: "/api/wallet/transactions",
+    path: "/api/wallet/purchases",
     headers: authHeadersSchema,
     query: z.object({
       cursor: z.uuid().optional(),
@@ -268,7 +533,7 @@ export const walletUserContract = c.router({
     }),
     responses: {
       200: z.object({
-        transactions: z.array(walletTransactionSchema),
+        transactions: z.array(walletPurchaseHistoryEntrySchema),
         nextCursor: z.uuid().nullable(),
       }),
       400: apiErrorSchema,

@@ -38,21 +38,6 @@ async function setupComposer() {
   return findComposerEditor();
 }
 
-async function selectCreation() {
-  const user = userEvent.setup({ delay: null });
-  const editor = await screen.findByRole("textbox", { name: "Message" });
-  click(editor);
-  await user.paste("/");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  click(button("Illustration", menu));
-  const dialog = await screen.findByRole("dialog");
-  click(within(dialog).getByLabelText("Close"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  });
-  await screen.findByLabelText("Remove Image");
-}
-
 test("Explicit image creation shows the notice and stays blocked while image generation is off", async () => {
   const capture = mockTemplateChat();
   context.mocks.api(paidToolsContract.get, ({ respond }) => {
@@ -132,7 +117,8 @@ test("A failed preference read blocks explicit creation but ordinary chat remain
     });
   });
   const editor = await setupComposer();
-  await selectCreation();
+  click(button("Image", screen.getByRole("group", { name: "Choose a task" })));
+  await screen.findByLabelText("Remove Image");
   await fill(editor, "Explain the launch plan");
   click(button("Send"));
   await screen.findByText("Tool settings are temporarily unavailable");

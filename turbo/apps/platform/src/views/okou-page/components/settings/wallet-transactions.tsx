@@ -1,4 +1,4 @@
-import type { WalletTransaction } from "@okouai/api-contracts/contracts/wallet";
+import type { WalletPurchaseHistoryEntry } from "@okouai/api-contracts/contracts/wallet";
 import { Badge, Button, cn } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { useGet, useLoadable, useSet } from "ccstate-react";
@@ -17,7 +17,7 @@ import {
 function TransactionStatus({
   status,
 }: {
-  readonly status: WalletTransaction["status"];
+  readonly status: WalletPurchaseHistoryEntry["status"];
 }) {
   const { t } = useTranslation();
   const labels = {
@@ -73,7 +73,7 @@ function TransactionStatus({
 function TransactionRow({
   transaction,
 }: {
-  readonly transaction: WalletTransaction;
+  readonly transaction: WalletPurchaseHistoryEntry;
 }) {
   const { t } = useTranslation();
   return (

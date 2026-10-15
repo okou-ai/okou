@@ -1,19 +1,24 @@
 import { createStore } from "ccstate";
 import { http, HttpResponse } from "msw";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   integrationsTelegramMessageContract,
   integrationsTelegramUploadCompleteContract,
   integrationsTelegramUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import {
+  integrationsTelegramContract,
+  OFFICIAL_TELEGRAM_BOT_ID,
+} from "@okouai/api-contracts/contracts/integrations-telegram";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, optionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { integrationsTelegramRoutes } from "../integrations-telegram";
 import { integrationsTelegramMessageRoutes } from "../integrations-telegram-message";
 import { integrationsTelegramUploadCompleteRoutes } from "../integrations-telegram-upload-complete";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
@@ -149,7 +154,146 @@ describe("POST /api/integrations/telegram/message", () => {
   });
 });
 
+function publicMessageActors() {
+  const firstTelegramId = randomInt(1, 2 ** 48) * 2;
+  const telegramIds = [firstTelegramId, firstTelegramId + 1] as const;
+  expect(telegramIds.every(Number.isSafeInteger)).toBeTruthy();
+  expect(telegramIds[0]).not.toBe(telegramIds[1]);
+  const appUrl = "https://telegram-message.test";
+  const telegramPosts: string[] = [];
+  mockEnv("APP_URL", appUrl);
+  mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", OFFICIAL_BOT_TOKEN);
+  mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "official_okou_bot");
+  mockEnv("TELEGRAM_OFFICIAL_WEBHOOK_SECRET", "official-message-test-secret");
+  const apiBase =
+    optionalEnv("TELEGRAM_API_URL") || "https://api.telegram.org/bot";
+  server.use(
+    http.head("https://oauth.telegram.org/auth", ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      expect(query.get("bot_id")).toBe("987654");
+      expect(query.get("origin")).toBe(new URL(appUrl).origin);
+      return new HttpResponse(null, { headers: { "content-length": "0" } });
+    }),
+    http.post(
+      `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
+      async ({ request }) => {
+        const body = z
+          .object({ chat_id: z.string() })
+          .parse(await request.json());
+        telegramPosts.push(body.chat_id);
+        return HttpResponse.json({
+          ok: true,
+          result: {
+            message_id: 100 + telegramPosts.length,
+            chat: { id: Number(body.chat_id) },
+          },
+        });
+      },
+    ),
+  );
+  const a = {
+    ...createPublicTelegramActor(context),
+    telegramUserId: String(telegramIds[0]),
+  };
+  const b = {
+    ...createPublicTelegramActor(context),
+    telegramUserId: String(telegramIds[1]),
+  };
+  expect(a.userId).not.toBe(b.userId);
+  expect(a.orgId).not.toBe(b.orgId);
+  return { a, b, telegramPosts };
+}
+
 describe("official Telegram self delivery", () => {
+  it("rejects an unlinked public actor without sending through another actor's link", async () => {
+    const { a, b, telegramPosts } = publicMessageActors();
+    await a.onboard();
+    await b.onboard();
+    await a.link(a.telegramUserId);
+    const statusClient = setupApp({
+      context,
+      routes: integrationsTelegramRoutes,
+    })(integrationsTelegramContract);
+    const messageClient = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+
+    await b.run(async () => {
+      b.session();
+      const status = await accept(
+        statusClient.getLinkStatus({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { botId: OFFICIAL_TELEGRAM_BOT_ID },
+        }),
+        [200],
+      );
+      expect(status.body).toMatchObject({ linked: false });
+      b.session();
+      const response = await accept(
+        messageClient.sendMessage({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            botId: OFFICIAL_TELEGRAM_BOT_ID,
+            chatId: "me",
+            text: "Hello B",
+          },
+        }),
+        [404],
+      );
+      expect(response.body).toStrictEqual({
+        error: {
+          message:
+            "No Telegram account linked to the current user. Link Telegram first.",
+          code: "NOT_FOUND",
+        },
+      });
+      expect(telegramPosts).toStrictEqual([]);
+    });
+  });
+
+  it("resolves serial public self messages for distinct actors in A-B-A order", async () => {
+    const { a, b, telegramPosts } = publicMessageActors();
+    const telegramA = a.telegramUserId;
+    const telegramB = b.telegramUserId;
+    await a.onboard();
+    await b.onboard();
+    await a.link(telegramA);
+    await b.link(telegramB);
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const requests = [
+      { actor: a, telegramUserId: telegramA, messageId: 101 },
+      { actor: b, telegramUserId: telegramB, messageId: 102 },
+      { actor: a, telegramUserId: telegramA, messageId: 103 },
+    ];
+    for (const { actor, telegramUserId, messageId } of requests) {
+      await actor.run(async () => {
+        actor.session();
+        const response = await accept(
+          client.sendMessage({
+            headers: { authorization: "Bearer clerk-session" },
+            body: {
+              botId: OFFICIAL_TELEGRAM_BOT_ID,
+              chatId: "me",
+              text: "Hello self",
+            },
+          }),
+          [200],
+        );
+        expect(Number.isInteger(response.body.messageId)).toBeTruthy();
+        expect(response.body).toStrictEqual({
+          ok: true,
+          messageId,
+          chatId: telegramUserId,
+        });
+      });
+    }
+    expect(telegramPosts).toStrictEqual([telegramA, telegramB, telegramA]);
+  });
+
   it("resolves chatId 'me' through the caller's official link in the current org", async () => {
     const sender = officialSender();
     await sender.run(async () => {

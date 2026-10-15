@@ -34,7 +34,13 @@ export function parseWalletActionUrl(
     url.searchParams
       .get("scope")
       ?.split(/\s+/u)
-      .includes("payment_methods.agentic")
+      .some((scope) => {
+        return (
+          scope === "payment_methods.agentic" ||
+          scope === "userinfo:read" ||
+          scope === "financial_insights.transactions.read"
+        );
+      })
   ) {
     action = "connect";
   } else if (url.hostname === "app.link.com") {

@@ -2,12 +2,27 @@ import assert from "node:assert/strict";
 import type { RunnerWssClient } from "./runner-wss-client";
 
 const token = (name: string) => Buffer.from(name).toString("base64url");
+const homePath = [token("home"), token("user")];
 
 /** Real owned home fixtures, through the existing admitted channel. */
 export async function probeHomeFiles(client: RunnerWssClient, fixture: string) {
   let cursor: string | null = null;
   try {
-    let home = await client.list({ path: [] });
+    for (const [path, name] of [
+      [[], "home"],
+      [[token("home")], "user"],
+    ] as const) {
+      const page = await client.list({ path });
+      assert.ok(
+        page.entries.some(
+          (entry) =>
+            entry.nameToken === token(name) && entry.kind === "directory",
+        ),
+        "Actual root and home ancestors must be browsable",
+      );
+      if (page.nextCursor) await client.closeCursor(page.nextCursor);
+    }
+    let home = await client.list({ path: homePath });
     const homeListing = home.listingId;
     let found = false;
     for (let pages = 0; pages < 32; pages += 1) {
@@ -24,7 +39,7 @@ export async function probeHomeFiles(client: RunnerWssClient, fixture: string) {
     if (cursor) await client.closeCursor(cursor);
     cursor = null;
 
-    let page = await client.list({ path: [token(fixture)] });
+    let page = await client.list({ path: [...homePath, token(fixture)] });
     const listing = page.listingId;
     const names = new Set<string>();
     let pages = 0;
@@ -53,20 +68,22 @@ export async function probeHomeFiles(client: RunnerWssClient, fixture: string) {
     assert.equal(names.size, 273, "Every owned entry must survive pagination");
     assert.ok(pages >= 3 && names.has(token(".hidden")));
     const nested = await client.list({
-      path: [token(fixture), token("nested")],
+      path: [...homePath, token(fixture), token("nested")],
     });
     assert.equal(nested.nextCursor, null);
     assert.equal(nested.entries.length, 1);
     assert.equal(nested.entries[0]?.nameToken, token("leaf"));
     await client.rejectFs(
       "list",
-      { path: [token(fixture), token("outside")] },
+      { path: [...homePath, token(fixture), token("outside")] },
       "link_not_expandable",
     );
     await client.rejectFs("unknown", { path: [] }, "unknown_operation");
     await client.rejectFs("list", { path: [token("..")] }, "invalid_params");
 
-    const abandoned = await client.list({ path: [token(fixture)] });
+    const abandoned = await client.list({
+      path: [...homePath, token(fixture)],
+    });
     cursor = abandoned.nextCursor;
     assert.ok(cursor, "Paging must expose an owned continuation");
     const closed = cursor;
@@ -75,7 +92,9 @@ export async function probeHomeFiles(client: RunnerWssClient, fixture: string) {
     await client.rejectFs("list", { cursor: closed }, "cursor_expired");
     client.assertHealthy();
     return {
-      filesystemVersion: 1,
+      filesystemVersion: 2,
+      actualRoot: true,
+      actualHomeAncestor: true,
       actualHome: true,
       directoryPages: pages,
       nestedDirectory: true,

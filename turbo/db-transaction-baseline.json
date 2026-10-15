@@ -672,11 +672,6 @@
       "owner": "persistInvitation$"
     },
     {
-      "id": "TX-0279",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "refundPurchase$"
-    },
-    {
       "id": "TX-0281",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "activateAcceptedPurchase$"
@@ -770,11 +765,6 @@
       "id": "TX-0327",
       "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
       "owner": "publishConcurrencyInvoice$"
-    },
-    {
-      "id": "TX-0328",
-      "file": "turbo/apps/api/src/signals/services/webhooks-stripe.service.ts",
-      "owner": "publishConcurrencySubscription$"
     },
     {
       "id": "TX-0329",

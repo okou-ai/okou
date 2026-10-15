@@ -19,6 +19,7 @@ import { webhooksStripeRoutes } from "../webhooks-stripe";
 import { postSubscriptionInvoicePaid } from "./helpers/stripe-billing-webhook";
 
 import { createBillingCheckoutFixture } from "./helpers/billing-checkout-fixture";
+import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 
 const {
   context,
@@ -2348,6 +2349,105 @@ describe("POST /api/billing/concurrency-checkout", () => {
         }),
       ]);
     }
+  });
+
+  it.each(["missing subscription", "removed concurrency item"])(
+    "ends existing concurrency when Stripe reports a %s",
+    async (missing) => {
+      const fixture = await createConcurrencySubscriptionOrg({
+        subscriptionId: `sub_${randomUUID()}`,
+        slots: 2,
+        periodEnd: new Date("2099-05-20T00:00:00Z"),
+      });
+      const before = await readBillingStatus(fixture);
+      const subscription = {
+        id: fixture.subscriptionId,
+        customer: fixture.customerId,
+        status: "active",
+        cancel_at_period_end: false,
+        metadata: { purpose: "concurrency_subscription" },
+        items: { data: [] },
+      };
+      if (missing === "missing subscription") {
+        context.mocks.stripe.subscriptions.retrieve.mockRejectedValue(
+          new StripeSDK.errors.StripeInvalidRequestError({
+            type: "invalid_request_error",
+            code: "resource_missing",
+            message: `No such subscription: ${fixture.subscriptionId}`,
+          }),
+        );
+      } else {
+        context.mocks.stripe.subscriptions.retrieve.mockResolvedValue(
+          subscription,
+        );
+      }
+
+      await postArchivedSharedEvent(
+        "customer.subscription.updated",
+        subscription,
+      );
+
+      const after = await readBillingStatus(fixture);
+      expect(after.concurrencySubscriptions).toStrictEqual([]);
+      expect(after.tier).toBe(before.tier);
+      expect(after.credits).toBe(before.credits);
+    },
+  );
+
+  it("preserves a newer concurrency cancellation when an earlier Stripe reconciliation finishes late", async () => {
+    mockNow(new Date("2035-05-01T00:00:00Z"));
+    const periodEnd = new Date("2035-06-01T00:00:00Z");
+    const fixture = await createConcurrencySubscriptionOrg({
+      subscriptionId: `sub_${randomUUID()}`,
+      slots: 2,
+      periodEnd,
+    });
+    const subscription = {
+      id: fixture.subscriptionId,
+      customer: fixture.customerId,
+      status: "active",
+      cancel_at_period_end: false,
+      schedule: null,
+      metadata: { purpose: "concurrency_subscription" },
+      items: {
+        data: [
+          {
+            price: { id: TEST_PRICE_CONCURRENCY },
+            quantity: 2,
+            current_period_end: Math.floor(periodEnd.getTime() / 1000),
+          },
+        ],
+      },
+    };
+    const canceling = { ...subscription, cancel_at_period_end: true };
+    context.mocks.stripe.subscriptions.retrieve
+      .mockResolvedValue(canceling)
+      .mockImplementationOnce(async () => {
+        await postArchivedSharedEvent(
+          "customer.subscription.updated",
+          canceling,
+        );
+        return subscription;
+      });
+    const event = {
+      type: "customer.subscription.updated",
+      data: { object: subscription },
+    };
+    const response = await createWebhookCallbackApi(context).postStripeEvent(
+      event,
+      [500],
+    );
+    expect(response.status).toBe(500);
+
+    const status = await readBillingStatus(fixture);
+    expect(status.concurrencySubscriptions).toStrictEqual([
+      expect.objectContaining({
+        id: fixture.subscriptionId,
+        quantity: 2,
+        cancelAtPeriodEnd: true,
+        currentPeriodEnd: periodEnd.toISOString(),
+      }),
+    ]);
   });
 
   it("ends Plan and concurrency state when the shared subscription is deleted", async () => {

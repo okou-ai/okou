@@ -14,6 +14,8 @@ import { bridgeConnected$ } from "./shared-database-bridge-state.ts";
 import { detach, onDomEventFn, Reason, resetSignal } from "./utils.ts";
 import { logger } from "./log.ts";
 import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
+import { redactProofUrl } from "../lib/redact-proof-url.ts";
+import { isIntegrationAuthContinuation } from "./integration-continuation.ts";
 import { pwaNavigationEnabled$ } from "./okou-page/pwa-navigation.ts";
 import {
   pwaPageTransitionDirection,
@@ -426,10 +428,11 @@ export const setupAuthPageWrapper = (
       const signInUrl = new URL(
         clerk.buildSignInUrl({ redirectUrl: location.href }),
       );
+      const redirectUrl = signInUrl.searchParams.get("redirect_url");
       L.info("redirect unauthenticated user to app sign-in", {
-        currentUrl: location.href,
-        signInUrl: signInUrl.toString(),
-        redirectUrl: signInUrl.searchParams.get("redirect_url"),
+        currentUrl: redactProofUrl(location.href),
+        signInUrl: redactProofUrl(signInUrl.toString()),
+        redirectUrl: redirectUrl ? redactProofUrl(redirectUrl) : redirectUrl,
       });
       window.location.href = signInUrl.toString();
       return;
@@ -444,6 +447,11 @@ export const setupAuthPageWrapper = (
       );
       window.location.href = resolveAppAuthUrl(
         "/sign-in/tasks/choose-organization",
+        {
+          redirectUrl: isIntegrationAuthContinuation(new URL(location.href))
+            ? location.href
+            : undefined,
+        },
       );
       return;
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.13.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.13.0...runner-executor-v0.13.1) (2026-10-15)
+
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.12.0...runner-executor-v0.13.0) (2026-10-15)
+
+
+### Features
+
+* **runner:** record cache routing and inventory outcomes ([#40171](https://github.com/okou-ai/okou/issues/40171)) ([8d94f8f](https://github.com/okou-ai/okou/commit/8d94f8f0b601173b3fe6cb5431f48cb916959226))
+
 ## [0.12.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.11.0...runner-executor-v0.12.0) (2026-10-15)
 
 

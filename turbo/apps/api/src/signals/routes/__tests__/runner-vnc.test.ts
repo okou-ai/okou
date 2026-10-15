@@ -15,7 +15,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { createDeferredPromise, onRejection } from "../../utils";
+import { createDeferredPromise, joinAll, onRejection } from "../../utils";
 import { runnerVncRoutes } from "../runner-vnc";
 import { runnersRoutes } from "../runners";
 import { chatRemoteAccessRoutes } from "../chat-remote-access";
@@ -1114,6 +1114,97 @@ describe("private Runner VNC authority", () => {
       api.resolve(f, { supportedProfiles: [...vncProfiles] }),
     ).resolves.toStrictEqual({ outcome: "unavailable" });
     expect((await check(f, 2)).body).toStrictEqual({ outcome: "unavailable" });
+  });
+
+  it("rejects a delayed stale credential rotation without changing shared hosts or the Runner secret", async () => {
+    const f = await claimedFixture();
+    await accept(
+      api.connections().create({
+        headers: vncSessionHeaders,
+        body: {
+          ...vncConnectionBody(),
+          displayName: "Shared desktop",
+          credential: { id: f.credentialId },
+        },
+      }),
+      [201],
+    );
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    useSecretKmsProbe(async (request) => {
+      entered.resolve();
+      await release.promise;
+      return {
+        keyId: request.keyId,
+        plaintext: Buffer.from("0123456789abcdef0123456789abcdef"),
+        encryptedDataKey: Buffer.from("test-wrapped-key"),
+      };
+    });
+    const params = { credentialId: f.credentialId };
+    const delayed = accept(
+      api.credentials().update({
+        headers: vncSessionHeaders,
+        params,
+        body: {
+          expectedRevision: 1,
+          name: "Stale rotation",
+          authentication: { method: "vnc_password", password: "stale" },
+        },
+      }),
+      [409],
+    );
+    const [rejected, committed] = await joinAll([
+      delayed,
+      (async () => {
+        await entered.promise;
+        const renamed = await accept(
+          api.credentials().update({
+            headers: vncSessionHeaders,
+            params,
+            body: { expectedRevision: 1, name: "Reviewed rename" },
+          }),
+          [200],
+        );
+        expect(renamed.body.revision).toBe(2);
+        return {
+          credentials: (
+            await accept(
+              api.credentials().list({ headers: vncSessionHeaders }),
+              [200],
+            )
+          ).body,
+          hosts: (
+            await accept(
+              api.connections().list({ headers: vncSessionHeaders }),
+              [200],
+            )
+          ).body,
+        };
+      })().finally(() => {
+        release.resolve();
+      }),
+    ]);
+    expect(rejected.body.error.code).toBe("VNC_CREDENTIAL_REVISION_CONFLICT");
+    expect(
+      (
+        await accept(
+          api.credentials().list({ headers: vncSessionHeaders }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(committed.credentials);
+    expect(
+      (
+        await accept(
+          api.connections().list({ headers: vncSessionHeaders }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(committed.hosts);
+    await expect(api.resolved(f)).resolves.toMatchObject({
+      authentication: { method: "vnc_password", password: vncPassword },
+      generation: 1,
+    });
   });
 
   it("preserves the exact VNC secret only in the no-store Runner handoff", async () => {

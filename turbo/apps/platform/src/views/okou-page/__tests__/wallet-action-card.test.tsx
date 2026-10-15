@@ -316,6 +316,21 @@ test("wallet authorization and purchase links show cards with the exact provider
   expect(screen.getByText("Waiting for your review")).toBeVisible();
 });
 
+test("read-only wallet consent renders an authorization card with the exact destination", async () => {
+  const url = new URL(CONNECT_URL);
+  url.searchParams.set("scope", "userinfo:read");
+  url.searchParams.set(
+    "authorization_details",
+    JSON.stringify([{ type: "source", actions: ["read_link_transactions"] }]),
+  );
+  await openChat(url.toString());
+  await screen.findByText("Authorize Link wallet");
+  const links = actionLinks();
+  expect(links).toHaveLength(1);
+  expect(links[0]).toHaveAttribute("href", url.toString());
+  expect(links[0]).toHaveTextContent("Authorize");
+});
+
 test("wallet follow-up actions keep provider URLs without inferring payment or approval state", async () => {
   const urls = [
     "https://app.link.com/verify?session=exact%2Fverification",

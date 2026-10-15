@@ -151,7 +151,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
         let id = uuid::Uuid::new_v4().to_string();
         send(
             channel,
-            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1,"fs":1}}),
+            json!({"schemaVersion":1,"type":"hello","id":id,"categories":{"diagnostics":1,"fs":2}}),
         )
         .await?;
         match receive(channel).await? {
@@ -170,7 +170,7 @@ async fn hello(channel: &mut Channel) -> TestResult<()> {
                     .get("categories")
                     .and_then(|value| value.get("fs"))
                     .and_then(Value::as_u64)
-                    == Some(1) => {}
+                    == Some(2) => {}
             _ => return Err(io::Error::other("packaged Guest hello mismatch").into()),
         }
         match receive(channel).await? {

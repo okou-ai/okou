@@ -8,11 +8,10 @@ import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
-  capturedChatThreadSessionSnapshot,
-  type ChatThreadSessionResolution,
-  chatThreadSessionIdentity,
-  createChatThreadSessionRead,
-  resolveChatThreadSessionSnapshot,
+  capturedChatThreadContinuationSnapshot,
+  type ChatThreadContinuation,
+  createChatThreadContinuationRead,
+  resolveChatThreadContinuation,
 } from "./chat-session-continuity.service";
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 import { createDiscordThreadContext } from "./discord-thread-prompt-context.service";
@@ -56,13 +55,12 @@ type ThreadModels = ReturnType<typeof createThreadModelSignals>;
 
 /** Read-only facts for one picked event, shared by admission and prompting. */
 export interface ThreadContext extends ThreadWorkflowContext {
-  readonly sessionRead$: ReturnType<typeof createChatThreadSessionRead>;
-  /** Reuse or rotation of the thread's session for this run's model route. */
-  readonly threadSession$: Computed<
-    Promise<ChatThreadSessionResolution | null>
+  readonly continuationRead$: ReturnType<
+    typeof createChatThreadContinuationRead
   >;
-  readonly session$: Computed<
-    Promise<ReturnType<typeof chatThreadSessionIdentity>>
+  /** Whether this run resumes the thread's native session, and its binding. */
+  readonly threadContinuation$: Computed<
+    Promise<ChatThreadContinuation | null>
   >;
   readonly computerUseHostGrant$: Computed<
     Promise<{ readonly hostId: string; readonly displayName: string } | null>
@@ -106,10 +104,11 @@ export function createThreadContext(
   const thread$ = computed(async (get) => {
     return (await get(pickedEvent$))?.thread ?? null;
   });
-  const sessionRead$ = createChatThreadSessionRead(pickedEvent$, orgId, userId);
-  const session$ = computed(async (get) => {
-    return chatThreadSessionIdentity(await get(sessionRead$));
-  });
+  const continuationRead$ = createChatThreadContinuationRead(
+    pickedEvent$,
+    orgId,
+    userId,
+  );
   const slackContext$ = createSlackThreadContext(pickedEvent$, orgId);
   const feishuContext$ = createFeishuThreadContext(
     pickedEvent$,
@@ -135,10 +134,10 @@ export function createThreadContext(
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);
   const model = createThreadModelSignals(bootstrap, pickedEvent$);
-  const threadSession$ = createThreadSession(
+  const threadContinuation$ = createThreadContinuation(
     bootstrap,
     pickedEvent$,
-    sessionRead$,
+    continuationRead$,
     model.subscriptionSelection$,
   );
   const connectorSourceId$ = createConnectorSourceId(
@@ -153,9 +152,8 @@ export function createThreadContext(
     model.dispatchTiming$,
   );
   return {
-    sessionRead$,
-    threadSession$,
-    session$,
+    continuationRead$,
+    threadContinuation$,
     computerUseHostGrant$,
     slackContext$,
     feishuContext$,
@@ -274,30 +272,32 @@ function createRunIds() {
   });
 }
 
-function createThreadSession(
+function createThreadContinuation(
   bootstrap: AgentRunContextSignals,
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  sessionRead$: ReturnType<typeof createChatThreadSessionRead>,
+  continuationRead$: ReturnType<typeof createChatThreadContinuationRead>,
   selection$: ThreadModels["subscriptionSelection$"],
 ) {
-  return computed(async (get): Promise<ChatThreadSessionResolution | null> => {
+  return computed(async (get): Promise<ChatThreadContinuation | null> => {
     const [event, selection] = await Promise.all([
       get(pickedEvent$),
       get(selection$),
     ]);
     if (!event) {
-      throw new Error("Chat thread not found while resolving session binding");
+      throw new Error(
+        "Chat thread not found while resolving native continuation",
+      );
     }
-    // A rejected model selection never reaches session binding.
+    // A rejected model selection never reaches native continuation.
     if ("status" in selection) {
       return null;
     }
     const [read, agent] = await Promise.all([
-      get(sessionRead$),
+      get(continuationRead$),
       get(bootstrap.agent$),
     ]);
-    return resolveChatThreadSessionSnapshot(
-      capturedChatThreadSessionSnapshot(event.thread, read, agent),
+    return resolveChatThreadContinuation(
+      capturedChatThreadContinuationSnapshot(event.thread, read, agent),
       {
         route: {
           selectedModel: selection.selectedModelOverride,

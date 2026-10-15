@@ -1890,7 +1890,7 @@ export function registerFeishuIntegrationTests(
         });
       });
 
-      it("uses the public callback origin and accepts plaintext URL verification without an Encrypt Key", async () => {
+      it("uses the public callback origin and rotates plaintext verification credentials", async () => {
         const callbackOrigin = "https://tunnel-feishu.okou.test";
         mockEnv("FEISHU_CALLBACK_BASE_URL", callbackOrigin);
         const appId = `cli_${randomUUID()}`;
@@ -1932,6 +1932,10 @@ export function registerFeishuIntegrationTests(
           throw new Error("Expected Feishu setup to return a callback URL");
         }
         expect(new URL(callbackUrl).origin).toBe(callbackOrigin);
+        const installationId = requireValue(
+          configured.body.installationId,
+          "Expected setup to return an installation ID",
+        );
 
         const response = await own(() => {
           return postEvent(
@@ -1953,6 +1957,133 @@ export function registerFeishuIntegrationTests(
           "feishu:changed",
           null,
         );
+
+        const customConnectorClient = setupApp({
+          context,
+          routes: customConnectorsRoutes,
+        })(customConnectorsContract);
+        const initialConnectors = await own(() => {
+          return accept(
+            customConnectorClient.list({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        const initialConnector = requireValue(
+          initialConnectors.body.connectors[0],
+          "Expected a managed connector after setup",
+        );
+        server.use(
+          http.post(
+            `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
+            () => {
+              return new HttpResponse(null, { status: 503 });
+            },
+          ),
+        );
+        const unchanged = await own(() => {
+          return accept(
+            client.setup({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                appId,
+                appSecret: APP_SECRET,
+                verificationToken: VERIFICATION_TOKEN,
+                installationId,
+              },
+            }),
+            [200],
+          );
+        });
+        expect(unchanged.body).toMatchObject({
+          installationId,
+          callbackUrl,
+          callbackVerified: true,
+        });
+
+        server.use(
+          http.post(
+            `${provider.apiOrigin}/open-apis/auth/v3/tenant_access_token/internal`,
+            () => {
+              return HttpResponse.json({
+                code: 0,
+                tenant_access_token: "rotated-tenant-access-token",
+                expire: 7200,
+              });
+            },
+          ),
+        );
+        const replacementToken = "replacement-verification-token";
+        const changed = await own(() => {
+          return accept(
+            client.setup({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                appId,
+                appSecret: APP_SECRET,
+                verificationToken: replacementToken,
+                installationId,
+              },
+            }),
+            [200],
+          );
+        });
+        expect(changed.body).toMatchObject({
+          installationId,
+          callbackUrl,
+          callbackVerified: false,
+        });
+        const stale = await own(() => {
+          return postEvent(
+            callbackUrl,
+            {
+              type: "url_verification",
+              challenge: "stale-callback",
+              token: VERIFICATION_TOKEN,
+            },
+            { signed: false },
+          );
+        });
+        expect(stale.status).toBe(401);
+        const reverified = await own(() => {
+          return postEvent(
+            callbackUrl,
+            {
+              type: "url_verification",
+              challenge: "rotated-callback",
+              token: replacementToken,
+            },
+            { signed: false },
+          );
+        });
+        expect(reverified.status).toBe(200);
+        await expect(reverified.json()).resolves.toStrictEqual({
+          challenge: "rotated-callback",
+        });
+        const status = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(status.body.callbackVerified).toBeTruthy();
+        const currentConnectors = await own(() => {
+          return accept(
+            customConnectorClient.list({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(currentConnectors.body.connectors).toStrictEqual([
+          expect.objectContaining({
+            id: initialConnector.id,
+            storageVersion: initialConnector.storageVersion,
+          }),
+        ]);
 
         await own(() => {
           return accept(
@@ -2071,6 +2202,57 @@ export function registerFeishuIntegrationTests(
         if (!installation) {
           throw new Error("Expected one Feishu installation");
         }
+        const missingTarget = await own(() => {
+          return accept(
+            client.setup({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                appId: firstAppId,
+                appSecret: APP_SECRET,
+                verificationToken: VERIFICATION_TOKEN,
+                installationId: randomUUID(),
+              },
+            }),
+            [409],
+          );
+        });
+        expect(missingTarget.body.error.message).toBe(
+          `This ${provider.name} App ID is already registered in Okou`,
+        );
+        const mismatch = await own(() => {
+          return accept(
+            client.setup({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                appId: secondAppId,
+                appSecret: APP_SECRET,
+                verificationToken: VERIFICATION_TOKEN,
+                installationId: installation.id,
+              },
+            }),
+            [409],
+          );
+        });
+        expect(mismatch.body.error.message).toContain(
+          "cannot be changed to a different App ID",
+        );
+        const replay = await own(() => {
+          return accept(
+            client.setup({
+              headers: { authorization: "Bearer clerk-session" },
+              body: {
+                appId: firstAppId,
+                appSecret: APP_SECRET,
+                verificationToken: VERIFICATION_TOKEN,
+                installationId: installation.id,
+              },
+            }),
+            [200],
+          );
+        });
+        expect(replay.body.installations).toMatchObject([
+          { id: installation.id, appId: firstAppId },
+        ]);
         await own(() => {
           return accept(
             client.removeInstallation({
@@ -4186,7 +4368,33 @@ export function registerFeishuIntegrationTests(
           signal: context.signal,
           routes: feishuBrowserConnectRoutes,
         });
-        fixtureState.failedSendTargets.push("ou_feishu_user");
+        let rejectedWelcomeIdempotencyKey: string | undefined;
+        server.use(
+          http.post(
+            `${provider.apiOrigin}/open-apis/im/v1/messages`,
+            async ({ request }) => {
+              const body = await request.json();
+              if (
+                typeof body !== "object" ||
+                body === null ||
+                !("uuid" in body) ||
+                typeof body.uuid !== "string" ||
+                !("receive_id" in body) ||
+                body.receive_id !== "ou_feishu_user"
+              ) {
+                throw new Error(
+                  "Expected an idempotent connect welcome request",
+                );
+              }
+              rejectedWelcomeIdempotencyKey = body.uuid;
+              return HttpResponse.json({
+                code: 1,
+                msg: "temporary message failure",
+              });
+            },
+            { once: true },
+          ),
+        );
         context.mocks.ably.publish.mockClear();
         const connectResponse = await own(() => {
           return connectApp.request("/api/feishu/connect", {
@@ -4305,6 +4513,29 @@ export function registerFeishuIntegrationTests(
         });
         expect(welcome?.msgType).toBe("interactive");
         expect(welcome ? messageContent(welcome) : "").toContain("Okou");
+        expect(welcome?.idempotencyKey).toBe(
+          requireValue(
+            rejectedWelcomeIdempotencyKey,
+            "Expected the provider to reject the first welcome",
+          ),
+        );
+        const reconnectedStatus = await own(() => {
+          return accept(
+            client.getStatus({
+              headers: { authorization: "Bearer clerk-session" },
+            }),
+            [200],
+          );
+        });
+        expect(reconnectedStatus.body.installations).toContainEqual(
+          expect.objectContaining({
+            id: fixture.installationId,
+            appId,
+            defaultAgentId,
+            isConnected: true,
+            connectedUserName: "Feishu User",
+          }),
+        );
       });
     }
 

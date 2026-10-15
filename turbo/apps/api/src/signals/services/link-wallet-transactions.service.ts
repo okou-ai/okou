@@ -1,5 +1,5 @@
 import {
-  walletTransactionSchema,
+  walletPurchaseHistoryEntrySchema,
   walletUserContract,
 } from "@okouai/api-contracts/contracts/wallet";
 import { linkWalletSpends } from "@okouai/db/schema/link-wallet";
@@ -47,7 +47,7 @@ export const walletTransactions$ = computed(async (get) => {
   const page = rows.slice(0, limit);
   return {
     transactions: page.map((row) => {
-      return walletTransactionSchema.parse({
+      return walletPurchaseHistoryEntrySchema.parse({
         ...row,
         createdAt: row.createdAt.toISOString(),
       });

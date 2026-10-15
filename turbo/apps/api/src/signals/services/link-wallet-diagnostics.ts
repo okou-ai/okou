@@ -13,7 +13,11 @@ export type LinkOperation =
   | "spend_read"
   | "spend_credentials"
   | "spend_cancel"
-  | "spend_approval";
+  | "spend_approval"
+  | "transactions_read"
+  | "payment_methods_read"
+  | "payment_method_read"
+  | "user_info_read";
 
 export interface LinkRequestDiagnostic {
   readonly diagnosticId: string;

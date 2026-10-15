@@ -16,7 +16,6 @@ import {
   context,
   installCapabilityChat,
   quoteSelectedPassage,
-  readyChat,
   RUN_PATH,
   selectPassage,
   waitForSend,
@@ -123,7 +122,6 @@ test("Keep inline feedback tied to the source email", async () => {
 
   await setupPage({ locale: "en-US", context, path: RUN_PATH });
 
-  await readyChat();
   await openMailDetails();
   const comment = "Rewrite this as a clear scheduling request.";
   const sent = await sendMailFeedback(sends, comment);
