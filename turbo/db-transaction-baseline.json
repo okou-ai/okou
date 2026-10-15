@@ -662,11 +662,6 @@
       "owner": "insertPendingInvitationPurchase$"
     },
     {
-      "id": "TX-0275",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistSuccessfulPayment$"
-    },
-    {
       "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$"
