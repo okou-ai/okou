@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.51.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.50.1...sandbox-firecracker-v0.51.0) (2026-10-15)
+
+
+### Features
+
+* add a live sandbox files sidebar with directory navigation ([#40112](https://github.com/okou-ai/okou/issues/40112)) ([b1a320c](https://github.com/okou-ai/okou/commit/b1a320ca71c1ddafd5e867157db868dc31d88fce))
+
 ## [0.50.1](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.50.0...sandbox-firecracker-v0.50.1) (2026-10-15)
 
 ## [0.50.0](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.49.2...sandbox-firecracker-v0.50.0) (2026-10-15)
