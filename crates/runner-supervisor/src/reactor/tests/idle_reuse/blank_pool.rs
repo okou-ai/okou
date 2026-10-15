@@ -2,7 +2,7 @@ use super::super::super::*;
 use super::super::support::{
     TestParkedIdleCandidateSpec, context_with_session, minimal_context, mock_run_config,
     mock_run_config_with_overrides, push_job, seed_home_cache_state, seed_idle_pool_with_timing,
-    shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len,
+    shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len, wait_status_mode,
 };
 use super::blank_session_history::history_context;
 
@@ -387,6 +387,49 @@ async fn blank_unpark_failure_falls_back_without_changing_cold_attribution() {
 
     shutdown(&env, run_handle).await;
     history_mock.assert_calls_async(1).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn shutdown_joins_blank_start_and_destroy_before_releasing_budget() {
+    let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
+    let calls = Arc::clone(&overrides);
+    let start_gate = sandbox_mock::MockLifecycleGate::new();
+    let destroy_gate = sandbox_mock::MockLifecycleGate::new();
+    overrides.set_start_lifecycle_gate(start_gate.clone());
+    overrides.set_destroy_lifecycle_gate(destroy_gate.clone());
+    let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
+    let budget = Arc::clone(&config.capacity.budget);
+    let idle_pool = Arc::clone(&config.shared.idle_pool);
+    let run_handle = tokio::spawn(run(config));
+
+    start_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("blank start should enter before stopping");
+    env.trigger_stopping().await;
+    wait_status_mode(
+        &env._temp_dir.path().join("status.json"),
+        "stopping",
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(calls.destroy_call_count(), 0);
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+
+    start_gate.release_one();
+    destroy_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("stopping should destroy the joined blank");
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+    assert!(!run_handle.is_finished());
+    assert_eq!(calls.blank_park_call_count(), 0);
+
+    destroy_gate.release_one();
+    shutdown(&env, run_handle).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    assert!(idle_pool.lock().await.is_empty());
+    assert_eq!(calls.destroy_call_count(), 1);
 }
 
 #[tokio::test(start_paused = true)]
