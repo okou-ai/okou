@@ -613,6 +613,23 @@ function ThreeColumnChatListToggle({
 }
 
 function LabeledNavRail() {
+  // Navigation subscriptions belong to the frame. These independently reactive
+  // menus keep their element identity when only the navigation changes.
+  return (
+    <LabeledNavRailFrame
+      workspaceSwitcher={<OrgSwitcherCompact />}
+      accountMenu={<AccountDropdownContainer collapsed />}
+    />
+  );
+}
+
+function LabeledNavRailFrame({
+  workspaceSwitcher,
+  accountMenu,
+}: {
+  readonly workspaceSwitcher: ReactNode;
+  readonly accountMenu: ReactNode;
+}) {
   const chatListHidden = useGet(sidebarOff$);
   const activeId = useGet(activeRoute$);
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
@@ -646,9 +663,7 @@ function LabeledNavRail() {
   ];
   return (
     <aside data-testid="labeled-nav-rail" className={RAIL_FRAME}>
-      <div className="mb-3 shrink-0">
-        <OrgSwitcherCompact />
-      </div>
+      <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
       {chatListHidden && (
         <div className="mb-3 shrink-0">
           <ShortcutTooltipGroup
@@ -697,7 +712,7 @@ function LabeledNavRail() {
         })}
       </nav>
       <div className="flex w-full shrink-0 flex-col items-center gap-2 px-1.5 pt-1">
-        <AccountDropdownContainer collapsed />
+        {accountMenu}
       </div>
     </aside>
   );
