@@ -83,6 +83,7 @@ jq -e '
   ([$lane_a, $lane_b, $lane_c, $lane_d] |
     all(.[]; .needs == ["runner-test-prepare"])) and
   $host_cpu.env.TARGET_TRIPLE == "${{ needs.runner-test-prepare.outputs.target }}" and
+  $host_cpu.env.HOST_CPU_TEST_MODE == "placement" and
   any($host_cpu_build.steps[]?;
     .run == "bash .github/scripts/runner/runner-native-test-artifact.sh build"
   ) and

@@ -213,14 +213,16 @@ fi
   echo "systemd-run did not receive AllowedCPUs" >&2
   exit 1
 }
+expected_test=${MOCK_EXPECTED_TEST:-real_firecracker_guests_have_managed_host_cpu_placement}
 case " $* " in
-  *" --ignored --test-threads=1 --nocapture ") ;;
+  *" --ignored --exact $expected_test --test-threads=1 --nocapture ") ;;
   *)
     echo "host CPU fairness test arguments changed" >&2
     exit 1
     ;;
 esac
 printf '%s\n' "$selected_cpu" >"${MOCK_CASE_DIR}/child-cpu"
+printf '%s\n' "$expected_test" >"${MOCK_CASE_DIR}/child-test"
 printf '%s\n' "$unit" >>"${MOCK_CASE_DIR}/native-invocations"
 
 if [ -n "${MOCK_CHILD_ENTER_FIFO:-}" ]; then
@@ -232,7 +234,20 @@ echo "native fairness result: ${MOCK_NATIVE_STATUS:-0}"
 exit "${MOCK_NATIVE_STATUS:-0}"
 FAKE_SYSTEMD_RUN
 
-printf '#!/usr/bin/env bash\nexit 0\n' >"$test_bin"
+cat >"$test_bin" <<'FAKE_TEST_BIN'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$#" -eq 4 ] && [ "$1" = --list ] && [ "$2" = --ignored ] && [ "$3" = --exact ]
+case "$4" in
+  real_firecracker_guests_have_managed_host_cpu_placement|real_firecracker_guests_receive_weighted_host_cpu_service) ;;
+  *) exit 91 ;;
+esac
+if [ "${MOCK_NATIVE_TEST_MISSING:-0}" = 1 ]; then
+  echo '0 tests, 0 benchmarks'
+else
+  printf '%s: test\n\n1 test, 0 benchmarks\n' "$4"
+fi
+FAKE_TEST_BIN
 chmod +x "$test_bin" "${fake_bin}"/*
 
 prepare_case() {
@@ -286,6 +301,9 @@ run_invocation() {
     MOCK_CHILD_RELEASE_FIFO="${MOCK_CHILD_RELEASE_FIFO:-}" \
     MOCK_SSH_FAILURES="${MOCK_SSH_FAILURES:-0}" \
     MOCK_NATIVE_STATUS="${MOCK_NATIVE_STATUS:-0}" \
+    MOCK_NATIVE_TEST_MISSING="${MOCK_NATIVE_TEST_MISSING:-0}" \
+    MOCK_EXPECTED_TEST="${MOCK_EXPECTED_TEST:-real_firecracker_guests_have_managed_host_cpu_placement}" \
+    HOST_CPU_TEST_MODE="${HOST_CPU_TEST_MODE:-}" \
     METAL_USER=test-user \
     HOST=test-host \
     JOB_REF="$job_ref" \
@@ -568,11 +586,61 @@ test_durable_recovery() (
     "recovered test retained interim CPU lock"
 )
 
+test_native_selection() (
+  local mode=$1 expected_test=$2
+  local case_root="${tmp_dir}/selection-${mode:-default}"
+  prepare_case "$case_root"
+  HOST_CPU_TEST_MODE="$mode" MOCK_EXPECTED_TEST="$expected_test" \
+    run_invocation "$case_root" invocation selection 107 >"${case_root}/output" 2>&1 || {
+    cat "${case_root}/output" >&2
+    fail "native selection failed for ${mode:-default}"
+  }
+  [ "$(cat "${case_root}/invocation/child-test")" = "$expected_test" ] ||
+    fail "wrong native test ran for ${mode:-default}"
+  [ "$(wc -l <"${case_root}/invocation/native-invocations")" -eq 1 ] ||
+    fail "native selection did not execute exactly once"
+)
+
+test_invalid_mode() (
+  local case_root="${tmp_dir}/invalid-mode" status=0
+  prepare_case "$case_root"
+  HOST_CPU_TEST_MODE=invalid run_invocation "$case_root" invocation invalid 108 \
+    >"${case_root}/output" 2>&1 || status=$?
+  [ "$status" -eq 2 ] || fail "invalid mode did not fail validation"
+  if [ -e "${case_root}/invocation/upload" ] || [ -e "${case_root}/invocation/stage-count" ]; then
+    fail "invalid mode contacted the host"
+  fi
+
+  status=0
+  bash "${fairness_script%.sh}-remote.sh" unused execution "$rootfs_hash" invalid \
+    >"${case_root}/remote-output" 2>&1 || status=$?
+  [ "$status" -eq 2 ] || fail "remote invalid mode did not fail validation"
+  grep -Fq 'host CPU test mode must be placement or measurement' "${case_root}/remote-output" ||
+    fail "remote invalid mode did not report its validation error"
+)
+
+test_missing_native_case() (
+  local case_root="${tmp_dir}/missing-case" status=0
+  prepare_case "$case_root"
+  MOCK_NATIVE_TEST_MISSING=1 run_invocation "$case_root" invocation missing 109 \
+    >"${case_root}/output" 2>&1 || status=$?
+  [ "$status" -eq 1 ] || fail "missing native case did not fail"
+  grep -Fq 'selected host CPU test is missing:' "${case_root}/output" ||
+    fail "missing native case was not reported"
+  [ ! -e "${case_root}/invocation/native-invocations" ] ||
+    fail "missing native case started a delegated workload"
+)
+
 test_pre_r5c_holder
 test_interim_holder_and_partial_release
 test_repaired_holder
 test_all_busy_failure
 test_durable_recovery 0
 test_durable_recovery 37
+test_native_selection '' real_firecracker_guests_have_managed_host_cpu_placement
+test_native_selection placement real_firecracker_guests_have_managed_host_cpu_placement
+test_native_selection measurement real_firecracker_guests_receive_weighted_host_cpu_service
+test_invalid_mode
+test_missing_native_case
 
 echo "runner-behavior-host-cpu-fairness-test: ok"
