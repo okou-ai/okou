@@ -29,7 +29,7 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 type SubscriptionUsage = AccountMenuSubscriptionUsage;
 type SubscriptionUsageWindow = AccountMenuSubscriptionUsageWindow;
 
-/** Below this much left, a window turns amber, breathes and shows its reset. */
+/** Below this much left, a window turns coral, breathes and shows its reset. */
 const LOW_REMAINING_PERCENT = 20;
 /** At or below this much left, the breathing doubles its rate. */
 const CRITICAL_REMAINING_PERCENT = 5;
@@ -340,10 +340,12 @@ function AccountMenuSubscriptionUsageBar({
 }
 
 /**
- * The fill and what is left are two pieces with a 2px gap between them. An
- * exhausted window keeps no fill; instead the time already waited drifts in as
- * a stripe, so the meter shows the plan coming back rather than only that it
- * ran out.
+ * The fill and what is left are two pieces with a 2px gap between them. The
+ * healthy gradient spans the whole track rather than the fill, so its
+ * background is sized to the track: a fuller bar reveals the warmer end, and
+ * using some of the plan takes that colour away with it. An exhausted window
+ * keeps no fill; instead the time already waited drifts in as a stripe, so the
+ * meter shows the plan coming back rather than only that it ran out.
  */
 function UsageMeterFill({
   remainingPercent,
@@ -373,7 +375,10 @@ function UsageMeterFill({
     <>
       <span
         className={cn("block h-full rounded-full", fillClassName)}
-        style={{ width: `${String(remainingPercent)}%` }}
+        style={{
+          width: `${String(remainingPercent)}%`,
+          backgroundSize: `${String(10_000 / remainingPercent)}% 100%`,
+        }}
       />
       {remainingPercent < 100 && (
         <span className="block h-full min-w-1 flex-1 rounded-full bg-segment-track" />
@@ -403,8 +408,10 @@ function formatUsagePercent(value: number | null): string | null {
 }
 
 /**
- * A healthy window recedes in the neutral ramp; colour is reserved for the two
- * moments that ask the user to act: running low, and running out.
+ * A healthy window carries the brand: amber warming to orange along the track,
+ * interpolated in OKLCH so it never passes through grey. Running low switches
+ * to the deeper destructive coral and breathes; running out keeps only the
+ * destructive number beside the recharge stripe.
  */
 function usageTone(remainingPercent: number | null): {
   readonly fillClassName: string;
@@ -420,10 +427,13 @@ function usageTone(remainingPercent: number | null): {
     return {
       fillClassName:
         remainingPercent <= CRITICAL_REMAINING_PERCENT
-          ? "bg-primary motion-safe:animate-usage-meter-breathe-fast"
-          : "bg-primary motion-safe:animate-usage-meter-breathe",
-      textClassName: "text-brand-text",
+          ? "bg-destructive motion-safe:animate-usage-meter-breathe-fast"
+          : "bg-destructive motion-safe:animate-usage-meter-breathe",
+      textClassName: "text-destructive",
     };
   }
-  return { fillClassName: "bg-gray-800", textClassName: "text-foreground" };
+  return {
+    fillClassName: "bg-linear-to-r/oklch from-primary-300 to-interrupt",
+    textClassName: "text-foreground",
+  };
 }
