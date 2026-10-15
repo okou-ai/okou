@@ -54,7 +54,9 @@ export const requireWechatSendAccess$ = command(
     signal: AbortSignal,
   ) => {
     const access = await set(requireWechatConnection$, args, signal);
-    if (access.kind === "denied") return access;
+    if (access.kind === "denied") {
+      return access;
+    }
     const { connection } = access;
     if (
       connection.status !== "active" ||
@@ -82,19 +84,22 @@ export const requireWechatSendAccess$ = command(
       .orderBy(desc(chatWechatContext.createdAt), desc(chatWechatContext.id))
       .limit(1);
     signal.throwIfAborted();
-    if (!context)
+    if (!context) {
       return {
         kind: "denied",
         response: notFound(
           "Send a message to Okou in WeChat before using message send.",
         ),
       } as const;
+    }
     const token = await decryptStoredSecretValue(connection.tokenCiphertext);
     signal.throwIfAborted();
     const contextToken = await decryptStoredSecretValue(context.ciphertext);
     signal.throwIfAborted();
     const live = await set(requireWechatConnection$, args, signal);
-    if (live.kind === "denied") return live;
+    if (live.kind === "denied") {
+      return live;
+    }
     if (
       live.connection.generation !== connection.generation ||
       live.connection.status !== "active"

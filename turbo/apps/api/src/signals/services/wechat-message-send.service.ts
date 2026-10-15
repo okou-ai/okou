@@ -16,6 +16,72 @@ import {
 } from "./wechat-access.service";
 import { wechatEventId } from "./wechat-message-identity";
 
+interface ExistingReceiptArgs {
+  readonly id: string;
+  readonly channelId: string;
+  readonly text: string;
+  readonly requestHash: string;
+}
+const existingReceipt$ = command(
+  async ({ set }, args: ExistingReceiptArgs, signal: AbortSignal) => {
+    const db = set(writeDb$);
+    const { id } = args;
+    const [existing] = await db
+      .select({
+        content: wechatMessages.content,
+        requestHash: wechatMessages.requestHash,
+        status: wechatMessages.status,
+        providerMessageId: wechatMessages.providerMessageId,
+      })
+      .from(wechatMessages)
+      .where(
+        and(
+          eq(wechatMessages.id, id),
+          eq(wechatMessages.connectionId, args.channelId),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    if (
+      !existing ||
+      existing.content !== args.text ||
+      existing.requestHash !== args.requestHash
+    ) {
+      return {
+        kind: "denied",
+        response: conflict("This operation ID was used for another message."),
+      } as const;
+    }
+    if (existing.status !== "sent") {
+      return {
+        kind: "denied",
+        response: {
+          ...conflict(
+            "WeChat has not confirmed this message. It was not sent again. Check history before starting another operation.",
+          ),
+          body: {
+            error: {
+              code: "WECHAT_DELIVERY_UNKNOWN",
+              message:
+                "WeChat has not confirmed this message. It was not sent again.",
+              uncertainMessageId: id,
+            },
+          },
+        },
+      } as const;
+    }
+    return {
+      kind: "sent",
+      message: {
+        id,
+        channelId: args.channelId,
+        providerMessageId: existing.providerMessageId,
+        url: null,
+      } satisfies WechatReceipt,
+    } as const;
+  },
+);
+
 export const sendArchivedWechatText$ = command(
   async (
     { set },
@@ -30,7 +96,9 @@ export const sendArchivedWechatText$ = command(
     signal: AbortSignal,
   ) => {
     const access = await set(requireWechatSendAccess$, args, signal);
-    if (access.kind === "denied") return access;
+    if (access.kind === "denied") {
+      return access;
+    }
     const db = set(writeDb$);
     // Identity survives reconnects: repeating an operation cannot resend earlier chunks.
     const id = wechatEventId(
@@ -54,59 +122,7 @@ export const sendArchivedWechatText$ = command(
       .returning({ id: wechatMessages.id });
     signal.throwIfAborted();
     if (!claimed) {
-      const [existing] = await db
-        .select({
-          content: wechatMessages.content,
-          requestHash: wechatMessages.requestHash,
-          status: wechatMessages.status,
-          providerMessageId: wechatMessages.providerMessageId,
-        })
-        .from(wechatMessages)
-        .where(
-          and(
-            eq(wechatMessages.id, id),
-            eq(wechatMessages.connectionId, args.channelId),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (
-        !existing ||
-        existing.content !== args.text ||
-        existing.requestHash !== args.requestHash
-      ) {
-        return {
-          kind: "denied",
-          response: conflict("This operation ID was used for another message."),
-        } as const;
-      }
-      if (existing.status !== "sent") {
-        return {
-          kind: "denied",
-          response: {
-            ...conflict(
-              "WeChat has not confirmed this message. It was not sent again. Check history before starting another operation.",
-            ),
-            body: {
-              error: {
-                code: "WECHAT_DELIVERY_UNKNOWN",
-                message:
-                  "WeChat has not confirmed this message. It was not sent again.",
-                uncertainMessageId: id,
-              },
-            },
-          },
-        } as const;
-      }
-      return {
-        kind: "sent",
-        message: {
-          id,
-          channelId: args.channelId,
-          providerMessageId: existing.providerMessageId,
-          url: null,
-        } satisfies WechatReceipt,
-      } as const;
+      return await set(existingReceipt$, { ...args, id }, signal);
     }
     // An ambiguous transport outcome leaves the durable claim in unknown state.
     const live = await set(
@@ -114,7 +130,9 @@ export const sendArchivedWechatText$ = command(
       { ...args, generation: access.connection.generation },
       signal,
     );
-    if (live.kind === "denied") return live;
+    if (live.kind === "denied") {
+      return live;
+    }
     const result = await settle(
       sendWechatText(
         {

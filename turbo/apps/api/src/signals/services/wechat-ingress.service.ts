@@ -191,6 +191,21 @@ function wechatMessagePrompt(
     .join("\n")
     .trim();
 }
+function quotedWechatText(message: WechatMessage) {
+  return (
+    (message.item_list ?? [])
+      .map((item) => {
+        return (
+          item.ref_msg?.message_item?.text_item?.text ??
+          item.ref_msg?.title ??
+          ""
+        );
+      })
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 12_000) || null
+  );
+}
 export const receiveWechatMessage$ = command(
   async (
     { set },
@@ -230,18 +245,7 @@ export const receiveWechatMessage$ = command(
       signal,
     );
 
-    const quotedText =
-      (message.item_list ?? [])
-        .map((item) => {
-          return (
-            item.ref_msg?.message_item?.text_item?.text ??
-            item.ref_msg?.title ??
-            ""
-          );
-        })
-        .filter(Boolean)
-        .join("\n")
-        .slice(0, 12_000) || null;
+    const quotedText = quotedWechatText(message);
     const context = {
       connectionId: connection.id,
       generation: connection.generation,

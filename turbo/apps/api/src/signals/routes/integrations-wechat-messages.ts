@@ -19,10 +19,11 @@ import type { RouteEntry } from "../route-entry";
 
 const channels$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  if (!(await set(wechatEnabled$, auth.orgId, auth.userId, signal)))
+  if (!(await set(wechatEnabled$, auth.orgId, auth.userId, signal))) {
     return resourceUnavailable(
       "WeChat is not available for this workspace member.",
     );
+  }
   const channels = await set(writeDb$)
     .select({ id: wechatConnections.id, status: wechatConnections.status })
     .from(wechatConnections)
@@ -54,7 +55,9 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
     { ...auth, channelId: query.channelId },
     signal,
   );
-  if (access.kind === "denied") return access.response;
+  if (access.kind === "denied") {
+    return access.response;
+  }
   const db = set(writeDb$);
   let before: bigint | undefined;
   if (query.before !== undefined) {
@@ -69,10 +72,11 @@ const history$ = command(async ({ get, set }, signal: AbortSignal) => {
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!cursor)
+    if (!cursor) {
       return notFound(
         "This history cursor is unavailable in the requested conversation.",
       );
+    }
     before = cursor.sequence;
   }
   const rows = await db
@@ -123,7 +127,9 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
   const parsed = await get(bodyResultOf(contract.sendMessage));
   signal.throwIfAborted();
-  if (!parsed.ok) return parsed.response;
+  if (!parsed.ok) {
+    return parsed.response;
+  }
   const body = parsed.data;
   const labels = await get(integrationMessageSendLabels$);
   signal.throwIfAborted();
@@ -150,13 +156,14 @@ const send$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       signal,
     );
-    if (result.kind === "denied")
+    if (result.kind === "denied") {
       return {
         ...result.response,
         body: {
           error: { ...result.response.body.error, deliveredMessages: messages },
         },
       };
+    }
     messages.push(result.message);
   }
   return {

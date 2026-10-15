@@ -161,7 +161,9 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
     { ...auth, channelId: query.channelId },
     signal,
   );
-  if (access.kind === "denied") return access.response;
+  if (access.kind === "denied") {
+    return access.response;
+  }
   const [row] = await set(writeDb$)
     .select({
       ciphertext: wechatMessages.mediaCiphertext,
@@ -179,17 +181,20 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
   const attachment = row?.attachments.find((file) => {
     return file.id === query.attachmentId;
   });
-  if (!row?.ciphertext || !attachment)
+  if (!row?.ciphertext || !attachment) {
     return notFound("This WeChat attachment is unavailable.");
+  }
   const items = z
     .array(wechatItemSchema)
     .parse(JSON.parse(await decryptStoredSecretValue(row.ciphertext)));
   signal.throwIfAborted();
   const item = items[Number(query.attachmentId)];
-  if (!item) return notFound("This WeChat attachment is unavailable.");
+  if (!item) {
+    return notFound("This WeChat attachment is unavailable.");
+  }
   const downloaded = await settle(downloadWechatMedia(item, signal), signal);
   signal.throwIfAborted();
-  if (!downloaded.ok)
+  if (!downloaded.ok) {
     return {
       status: 502,
       body: {
@@ -200,12 +205,15 @@ const download$ = command(async ({ get, set }, signal: AbortSignal) => {
         },
       },
     } as const;
+  }
   const live = await set(
     requireWechatConnection$,
     { ...auth, channelId: query.channelId },
     signal,
   );
-  if (live.kind === "denied") return live.response;
+  if (live.kind === "denied") {
+    return live.response;
+  }
   return new Response(downloaded.value, {
     headers: {
       "Content-Type": "application/octet-stream",

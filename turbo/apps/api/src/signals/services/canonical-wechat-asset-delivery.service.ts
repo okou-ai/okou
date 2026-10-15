@@ -84,7 +84,9 @@ const readDelivery$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
     if (
       row.destination.provider !== "wechat" ||
       row.providerState?.provider !== "wechat" ||
@@ -93,8 +95,9 @@ const readDelivery$ = command(
       row.size === null ||
       !row.checksum ||
       !row.storageKey
-    )
+    ) {
       throw new Error("WeChat delivery metadata is incomplete");
+    }
     return {
       ...row,
       destination: row.destination,
@@ -124,14 +127,17 @@ type Delivery = Pick<
 };
 
 function response(args: Identity, row: Delivery) {
-  if (!row.url || row.materializationStatus !== "ready")
+  if (!row.url || row.materializationStatus !== "ready") {
     return {
       ok: false,
       response: badRequestMessage("Publish the file before WeChat delivery."),
     } as const;
+  }
   let delivery: WechatUploadCompleteResponse["delivery"];
   if (row.status === "delivered") {
-    if (!row.externalId) throw new Error("WeChat file delivery has no receipt");
+    if (!row.externalId) {
+      throw new Error("WeChat file delivery has no receipt");
+    }
     delivery = {
       status: "delivered",
       channelId: row.destination.channelId,
@@ -139,14 +145,17 @@ function response(args: Identity, row: Delivery) {
       permalink: null,
     };
   } else if (row.status === "failed") {
-    if (!row.lastError)
+    if (!row.lastError) {
       throw new Error("WeChat file delivery has no failure reason");
+    }
     delivery = {
       status: "failed",
       message: row.lastError.message,
       retryable: row.lastError.retryable,
     };
-  } else delivery = { status: "pending" };
+  } else {
+    delivery = { status: "pending" };
+  }
   return {
     ok: true,
     assetId: args.assetId,
@@ -179,8 +188,9 @@ function fileFailure(error: unknown) {
 }
 const fileBytes$ = command(
   async ({ get }, row: Delivery, signal: AbortSignal) => {
-    if (row.size < 1 || row.size > MAX_WECHAT_FILE_SIZE_BYTES)
+    if (row.size < 1 || row.size > MAX_WECHAT_FILE_SIZE_BYTES) {
       throw new InvalidWechatFileError("WeChat file exceeds 10 MiB");
+    }
     const bytes = await get(
       downloadS3BufferWithMaxBytes(
         artifactStorageBucket(row.metadata),
@@ -193,17 +203,20 @@ const fileBytes$ = command(
     if (
       bytes.byteLength !== row.size ||
       createHash("sha256").update(bytes).digest("hex") !== row.checksum
-    )
+    ) {
       throw new InvalidWechatFileError(
         "Uploaded bytes do not match the declared checksum and size",
       );
+    }
     return bytes;
   },
 );
 export const materializeCanonicalWechatAsset$ = command(
   async ({ set }, args: Identity, signal: AbortSignal) => {
     const row = await set(readDelivery$, args, signal);
-    if (!row) return unavailable();
+    if (!row) {
+      return unavailable();
+    }
     const access = await set(
       requireWechatSendAccess$,
       {
@@ -213,24 +226,63 @@ export const materializeCanonicalWechatAsset$ = command(
       },
       signal,
     );
-    if (access.kind === "denied")
+    if (access.kind === "denied") {
       return { ok: false, response: access.response } as const;
+    }
     if (row.materializationStatus !== "ready") {
       const checked = await settle(set(fileBytes$, row, signal), signal);
-      if (!checked.ok) return fileFailure(checked.error);
+      if (!checked.ok) {
+        return fileFailure(checked.error);
+      }
     }
     const materialized = await set(
       materializeCanonicalPublishedAsset$,
       args,
       signal,
     );
-    if (!materialized.ok)
+    if (!materialized.ok) {
       return {
         ok: false,
         response: badRequestMessage(materialized.message),
       } as const;
+    }
     const current = await set(readDelivery$, args, signal);
     return current ? response(args, current) : unavailable();
+  },
+);
+
+const recordFileReceipt$ = command(
+  async (
+    { set },
+    row: Delivery,
+    id: string,
+    providerMessageId: string | null,
+    signal: AbortSignal,
+  ) => {
+    const db = set(writeDb$);
+    const archiveReceipt = db
+      .update(wechatMessages)
+      .set({ status: "sent", providerMessageId: providerMessageId })
+      .where(eq(wechatMessages.id, id))
+      .returning({ id: wechatMessages.id });
+    const deliveryReceipt = db
+      .update(canonicalAssetDeliveries)
+      .set({
+        status: "delivered",
+        externalId: id,
+        lastError: null,
+        updatedAt: nowDate(),
+      })
+      .where(
+        and(
+          eq(canonicalAssetDeliveries.id, row.id),
+          eq(canonicalAssetDeliveries.providerState, row.providerState),
+        ),
+      );
+    await db.execute(
+      sql`WITH receipt AS (${archiveReceipt.getSQL()}) ${deliveryReceipt.getSQL()}`,
+    );
+    signal.throwIfAborted();
   },
 );
 
@@ -251,8 +303,9 @@ const deliverFile$ = command(
       },
       signal,
     );
-    if (access.kind === "denied")
+    if (access.kind === "denied") {
       throw new Error(access.response.body.error.message);
+    }
     const uploaded = await uploadWechatMedia(
       {
         baseUrl: access.connection.baseUrl,
@@ -282,8 +335,9 @@ const deliverFile$ = command(
         },
         signal,
       );
-      if (caption.kind === "denied")
+      if (caption.kind === "denied") {
         throw new Error(caption.response.body.error.message);
+      }
     }
     const id = wechatEventId(
       row.destination.channelId,
@@ -329,8 +383,9 @@ const deliverFile$ = command(
       },
       signal,
     );
-    if (live.kind === "denied")
+    if (live.kind === "denied") {
       throw new Error(live.response.body.error.message);
+    }
     const receipt = await sendWechatMedia(
       {
         baseUrl: live.connection.baseUrl,
@@ -342,36 +397,16 @@ const deliverFile$ = command(
       },
       signal,
     );
-    const archiveReceipt = db
-      .update(wechatMessages)
-      .set({ status: "sent", providerMessageId: receipt.message_id ?? null })
-      .where(eq(wechatMessages.id, id))
-      .returning({ id: wechatMessages.id });
-    const deliveryReceipt = db
-      .update(canonicalAssetDeliveries)
-      .set({
-        status: "delivered",
-        externalId: id,
-        lastError: null,
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(canonicalAssetDeliveries.id, row.id),
-          eq(canonicalAssetDeliveries.providerState, row.providerState),
-        ),
-      );
-    await db.execute(
-      sql`WITH receipt AS (${archiveReceipt.getSQL()}) ${deliveryReceipt.getSQL()}`,
-    );
-    signal.throwIfAborted();
+    await set(recordFileReceipt$, row, id, receipt.message_id ?? null, signal);
   },
 );
 
 export const completeCanonicalWechatDelivery$ = command(
   async ({ set }, args: Identity, signal: AbortSignal) => {
     const row = await set(readDelivery$, args, signal);
-    if (!row) return unavailable();
+    if (!row) {
+      return unavailable();
+    }
     const access = await set(
       requireWechatSendAccess$,
       {
@@ -381,16 +416,20 @@ export const completeCanonicalWechatDelivery$ = command(
       },
       signal,
     );
-    if (access.kind === "denied")
+    if (access.kind === "denied") {
       return { ok: false, response: access.response } as const;
+    }
     if (
       row.materializationStatus !== "ready" ||
       row.status !== "pending" ||
       row.providerState.attempt !== null
-    )
+    ) {
       return response(args, row);
+    }
     const checked = await settle(set(fileBytes$, row, signal), signal);
-    if (!checked.ok) return fileFailure(checked.error);
+    if (!checked.ok) {
+      return fileFailure(checked.error);
+    }
     const bytes = checked.value;
     const providerState = {
       provider: "wechat",

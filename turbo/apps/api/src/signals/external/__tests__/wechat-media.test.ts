@@ -27,7 +27,7 @@ describe("WeChat media wire boundary", () => {
       ).toString("base64");
       server.use(
         http.get(`${cdn}/download`, ({ request }) => {
-          expect(request.headers.has("authorization")).toBe(false);
+          expect(request.headers.has("authorization")).toBeFalsy();
           expect(
             new URL(request.url).searchParams.get("encrypted_query_param"),
           ).toBe("private-query");
@@ -157,8 +157,10 @@ describe("WeChat media wire boundary", () => {
           return HttpResponse.json({ ret: 0, upload_param: "upload-query" });
         }),
         http.post(`${cdn}/upload`, async ({ request }) => {
-          expect(request.headers.has("authorization")).toBe(false);
-          if (!key) throw new Error("Expected upload encryption key");
+          expect(request.headers.has("authorization")).toBeFalsy();
+          if (!key) {
+            throw new Error("Expected upload encryption key");
+          }
           const decipher = createDecipheriv("aes-128-ecb", key, null);
           expect(
             Buffer.concat([
