@@ -1,10 +1,11 @@
 use base64::Engine;
 use russh::keys::{Algorithm, EcdsaCurve, ssh_key};
 use serde_json::json;
+use std::sync::atomic::Ordering;
 
 use super::{
     harness::{Harness, Reply, key, params},
-    terminal,
+    output, terminal,
 };
 
 fn pem(label: &str, bytes: &[u8]) -> String {
@@ -30,13 +31,15 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
         Algorithm::Rsa { hash: None },
     ] {
         let key = key(algorithm.clone());
-        let h = Harness::with_keys(Reply::default(), key.clone(), key.clone()).await;
+        let mut h = Harness::with_keys(Reply::default(), key.clone(), key.clone()).await;
         let mut encodings = vec![
             (
+                "OpenSSH",
                 key.to_openssh(ssh_key::LineEnding::LF).unwrap().to_string(),
                 None,
             ),
             (
+                "PKCS8",
                 pem(
                     "PRIVATE KEY",
                     &russh::keys::pkcs8::encode_pkcs8(&key).unwrap(),
@@ -44,6 +47,7 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
                 None,
             ),
             (
+                "encrypted PKCS8",
                 pem(
                     "ENCRYPTED PRIVATE KEY",
                     &russh::keys::pkcs8::encode_pkcs8_encrypted(b" test passphrase ", 1000, &key)
@@ -52,6 +56,7 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
                 Some(" test passphrase "),
             ),
             (
+                "encrypted OpenSSH",
                 key.encrypt(&mut russh::keys::key::safe_rng(), " test passphrase ")
                     .unwrap()
                     .to_openssh(ssh_key::LineEnding::LF)
@@ -64,22 +69,34 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
             use rsa::pkcs1::EncodeRsaPrivateKey;
             let rsa = rsa::RsaPrivateKey::try_from(pair).unwrap();
             encodings.push((
+                "PKCS1",
                 pem("RSA PRIVATE KEY", rsa.to_pkcs1_der().unwrap().as_bytes()),
                 None,
             ));
         }
-        for (text, passphrase) in encodings {
+        for (index, (container, text, passphrase)) in encodings.into_iter().enumerate() {
             let mut credential = h.credential(true);
             credential["privateKey"] = json!(text);
             credential["passphrase"] = json!(passphrase);
             let resolve = h.resolve(credential).await;
             let frames = h.request(params()).await;
+            resolve.assert_calls_async(1).await;
             assert_eq!(
                 terminal(&frames)["type"],
                 "finished",
-                "{algorithm}: {frames:?}"
+                "{algorithm} {container}: {frames:?}"
+            );
+            assert_eq!(output(&frames, "stdout"), b"hello\0\xff");
+            assert_eq!(terminal(&frames)["exit"], json!({"type":"status","code":7}));
+            assert_eq!(terminal(&frames)["effects"], "completed");
+            assert_eq!(
+                h.observed.auth.load(Ordering::SeqCst),
+                index + 1,
+                "{algorithm} {container} must authenticate independently"
             );
             resolve.delete_async().await;
+            // Each format must prepare its own credential and authenticated transport.
+            h.restart(h.run).await;
         }
     }
 }
