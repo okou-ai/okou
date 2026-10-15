@@ -5,7 +5,8 @@ use runner_lifecycle::home_image_cache::{
 };
 use runner_lifecycle::home_mount::ensure_home_drive_mounted;
 use runner_lifecycle::host_memory_operations::{
-    HostMemoryOperations, MemoryOperationError, MemoryOperationPolicy, ProcMemoryObservationSource,
+    HostMemoryOperations, MemoryObservationSource, MemoryOperationError, MemoryOperationPolicy,
+    ProcMemoryObservationSource,
 };
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
 use runner_lifecycle::host_memory_pressure::HostPressurePolicy;
@@ -65,6 +66,13 @@ impl Inputs {
     }
 
     pub fn operations(&self) -> Result<HostMemoryOperations, MemoryOperationError> {
+        self.operations_with_source(Arc::new(ProcMemoryObservationSource))
+    }
+
+    pub fn operations_with_source(
+        &self,
+        source: Arc<dyn MemoryObservationSource>,
+    ) -> Result<HostMemoryOperations, MemoryOperationError> {
         HostMemoryOperations::new(
             MemoryOperationPolicy {
                 bounds: self.bounds(),
@@ -72,7 +80,7 @@ impl Inputs {
                 max_operations: self.max_operations,
                 max_cleanup_inflight: self.max_cleanup_inflight,
             },
-            Arc::new(ProcMemoryObservationSource),
+            source,
         )
     }
 
