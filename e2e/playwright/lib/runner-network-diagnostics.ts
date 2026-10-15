@@ -3,8 +3,106 @@ import type { CDPSession, Page } from "@playwright/test";
 const MAX_REQUESTS = 64;
 const SESSION_DEADLINE_MS = 1_000;
 
+type BuildIdentity =
+  | { readonly kind: "valid"; readonly sha: string }
+  | { readonly kind: "missing" | "invalid" };
+
+interface DocumentBuildObservation {
+  observed: BuildIdentity | { readonly kind: "unavailable" };
+  comparison: "match" | "mismatch" | "not-comparable";
+  reason?:
+    | "response-unavailable"
+    | "ineligible-response"
+    | "expected-missing"
+    | "expected-invalid"
+    | "observed-missing"
+    | "observed-invalid";
+}
+
+interface BuildContext {
+  readonly appOrigin: string;
+  readonly expected: BuildIdentity;
+}
+
+export function expectedAppBuild(value: string | undefined): BuildIdentity {
+  if (value === undefined) return { kind: "missing" };
+  return /^[0-9a-f]{40}$/u.test(value)
+    ? { kind: "valid", sha: value }
+    : { kind: "invalid" };
+}
+
+function eligibleDocument(
+  url: string,
+  method: string,
+  type: string | undefined,
+  appOrigin: string,
+) {
+  const parsed = new URL(url);
+  return (
+    type === "Document" &&
+    method === "GET" &&
+    parsed.origin === appOrigin &&
+    !parsed.username &&
+    !parsed.password &&
+    parsed.pathname === "/sign-in"
+  );
+}
+
+function documentBuild(
+  response: ResponseMetadata,
+  build: BuildContext,
+): DocumentBuildObservation {
+  if (
+    response.status !== 200 ||
+    response.mimeType !== "text/html" ||
+    new URL(response.url).origin !== build.appOrigin
+  ) {
+    return {
+      observed: { kind: "unavailable" },
+      comparison: "not-comparable",
+      reason: "ineligible-response",
+    };
+  }
+  const values = Object.entries(response.headers).filter(
+    ([name]) => name.toLowerCase() === "x-okou-preview-build-sha",
+  );
+  const value = values[0]?.[1];
+  const observed: BuildIdentity =
+    values.length === 0
+      ? { kind: "missing" }
+      : values.length === 1 &&
+          typeof value === "string" &&
+          /^[0-9a-f]{40}$/u.test(value)
+        ? { kind: "valid", sha: value }
+        : { kind: "invalid" };
+  if (build.expected.kind !== "valid") {
+    return {
+      observed,
+      comparison: "not-comparable",
+      reason:
+        build.expected.kind === "missing"
+          ? "expected-missing"
+          : "expected-invalid",
+    };
+  }
+  if (observed.kind !== "valid") {
+    return {
+      observed,
+      comparison: "not-comparable",
+      reason:
+        observed.kind === "missing" ? "observed-missing" : "observed-invalid",
+    };
+  }
+  return {
+    observed,
+    comparison: observed.sha === build.expected.sha ? "match" : "mismatch",
+  };
+}
+
 interface TransferObservation {
   readonly requestId: string;
+  readonly redirectHop: number;
+  documentBuild?: DocumentBuildObservation;
   readonly url: string;
   readonly resourceType: string;
   readonly startedMs: number;
@@ -38,6 +136,8 @@ interface TransferObservation {
 }
 
 interface ResponseMetadata {
+  url: string;
+  mimeType: string;
   status: number;
   protocol?: string;
   headers: Record<string, string>;
@@ -74,7 +174,11 @@ function recordResponse(
   observation: TransferObservation,
   response: ResponseMetadata,
   elapsedMs: number,
+  build: BuildContext,
 ) {
+  if (observation.documentBuild) {
+    observation.documentBuild = documentBuild(response, build);
+  }
   observation.status = response.status;
   observation.responseMs = elapsedMs;
   if (response.protocol !== undefined) {
@@ -134,6 +238,7 @@ async function detachSession(session: CDPSession): Promise<void> {
 function observeNetwork(
   session: CDPSession,
   elapsed: () => number,
+  build: BuildContext,
 ): NetworkDiagnostics {
   const requests: TransferObservation[] = [];
   const active = new Map<string, TransferObservation>();
@@ -148,7 +253,7 @@ function observeNetwork(
     if (!recording) return;
     const redirected = active.get(event.requestId);
     if (redirected && event.redirectResponse) {
-      recordResponse(redirected, event.redirectResponse, elapsed());
+      recordResponse(redirected, event.redirectResponse, elapsed(), build);
       redirected.outcome = "redirected";
       redirected.endedMs = elapsed();
     }
@@ -159,6 +264,20 @@ function observeNetwork(
     }
     const observation: TransferObservation = {
       requestId: event.requestId,
+      redirectHop: requests.filter((item) => item.requestId === event.requestId)
+        .length,
+      documentBuild: eligibleDocument(
+        event.request.url,
+        event.request.method,
+        event.type,
+        build.appOrigin,
+      )
+        ? {
+            observed: { kind: "unavailable" },
+            comparison: "not-comparable",
+            reason: "response-unavailable",
+          }
+        : undefined,
       url: safeNetworkUrl(event.request.url),
       resourceType: event.type?.toLowerCase() ?? "other",
       startedMs: elapsed(),
@@ -172,7 +291,8 @@ function observeNetwork(
   });
   session.on("Network.responseReceived", (event) => {
     const observation = observationFor(event.requestId);
-    if (observation) recordResponse(observation, event.response, elapsed());
+    if (observation)
+      recordResponse(observation, event.response, elapsed(), build);
   });
   session.on("Network.dataReceived", (event) => {
     const observation = observationFor(event.requestId);
@@ -233,6 +353,7 @@ function unavailable(
 export async function startRunnerNetworkDiagnostics(
   page: Page,
   elapsed: () => number,
+  build: BuildContext,
 ): Promise<NetworkDiagnostics> {
   let acceptingSession = true;
   let collector: NetworkDiagnostics | undefined;
@@ -243,7 +364,7 @@ export async function startRunnerNetworkDiagnostics(
       await detachSession(session);
       return unavailable("setup-deadline");
     }
-    collector = observeNetwork(session, elapsed);
+    collector = observeNetwork(session, elapsed, build);
     await session.send("Network.enable");
     return collector;
   })().catch(async () => {

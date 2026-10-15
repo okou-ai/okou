@@ -21,6 +21,10 @@ export default [
     },
   },
   {
+    files: ["src/preview-response.js"],
+    languageOptions: { globals: { URL: "readonly" } },
+  },
+  {
     files: ["src/worker.js"],
     languageOptions: {
       globals: {
