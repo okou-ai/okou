@@ -20,6 +20,8 @@ on:
         required: false
       AGENTPHONE_WEBHOOK_SECRET:
         required: false
+      ATOM_SUBSCRIPTION_GRANT_SECRET_DEV:
+        required: false
       AWS_ACCESS_KEY_ID:
         required: false
       AWS_METAL_RUNNER_HOSTS:

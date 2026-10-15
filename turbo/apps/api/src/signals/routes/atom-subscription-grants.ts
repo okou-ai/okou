@@ -35,6 +35,85 @@ function receipt(grantId: string) {
   };
 }
 
+function existingGrantResult(
+  session: typeof modelProviderAuthSessions.$inferSelect,
+  args: Grant,
+) {
+  const type =
+    args.tokens.provider === "codex"
+      ? "codex-oauth-token"
+      : "claude-code-oauth-token";
+  if (
+    session.source !== SOURCE ||
+    session.orgId !== args.orgId ||
+    session.userId !== args.userId ||
+    session.connectorType !== type
+  ) {
+    return conflict(
+      "Grant ID is already bound to another recipient or provider",
+    );
+  }
+  if (session.status === "imported") {
+    return receipt(args.grantId);
+  }
+  if (session.status !== "completing" || session.expiresAt <= nowDate()) {
+    return conflict("Grant expired; start a new authorization in Atom");
+  }
+  return undefined;
+}
+
+const publishCredentials$ = command(
+  async ({ get, set }, args: Grant, signal: AbortSignal) => {
+    const featureSwitchContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    const common = {
+      orgId: args.orgId,
+      userId: args.userId,
+      featureSwitchContext,
+      authSession: { id: args.grantId, userId: args.userId, source: SOURCE },
+      mode: { kind: "add" as const },
+    } as const;
+    if (args.tokens.provider === "claude-code") {
+      return await set(
+        upsertPersonalModelProviderAccount$,
+        {
+          ...common,
+          type: "claude-code-oauth-token",
+          authMethod: null,
+          secretValues: {
+            CLAUDE_CODE_OAUTH_TOKEN: args.tokens.accessToken,
+          },
+        },
+        signal,
+      );
+    }
+    return await handleCodexAuthJsonPaste(
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        rawAuthJson: JSON.stringify({
+          tokens: {
+            access_token: args.tokens.accessToken,
+            refresh_token: args.tokens.refreshToken,
+            account_id: "atom-grant",
+            id_token: args.tokens.idToken,
+          },
+        }),
+        upsert: async (parsed) => {
+          return await set(
+            upsertPersonalModelProviderAccount$,
+            { ...common, ...parsed, type: "codex-oauth-token" },
+            signal,
+          );
+        },
+      },
+      signal,
+    );
+  },
+);
+
 const deliver$ = command(
   async ({ get, set }, args: Grant, signal: AbortSignal) => {
     const db = set(writeDb$);
@@ -49,19 +128,10 @@ const deliver$ = command(
       .where(eq(modelProviderAuthSessions.id, args.grantId));
     signal.throwIfAborted();
     if (existing) {
-      if (
-        existing.source !== SOURCE ||
-        existing.orgId !== args.orgId ||
-        existing.userId !== args.userId ||
-        existing.connectorType !== type
-      ) {
-        return conflict(
-          "Grant ID is already bound to another recipient or provider",
-        );
+      const response = existingGrantResult(existing, args);
+      if (response) {
+        return response;
       }
-      if (existing.status === "imported") return receipt(args.grantId);
-      if (existing.status !== "completing" || existing.expiresAt <= nowDate())
-        return conflict("Grant expired; start a new authorization in Atom");
     }
 
     const memberships = await get(
@@ -74,7 +144,10 @@ const deliver$ = command(
     signal.throwIfAborted();
     if (
       !memberships.data.some((member) => {
-        return member.publicUserData?.userId === args.userId && member.organization.id === args.orgId;
+        return (
+          member.publicUserData?.userId === args.userId &&
+          member.organization.id === args.orgId
+        );
       })
     ) {
       return {
@@ -108,72 +181,16 @@ const deliver$ = command(
       .from(modelProviderAuthSessions)
       .where(eq(modelProviderAuthSessions.id, args.grantId));
     signal.throwIfAborted();
-    if (
-      !claimed ||
-      claimed.source !== SOURCE ||
-      claimed.orgId !== args.orgId ||
-      claimed.userId !== args.userId ||
-      claimed.connectorType !== type
-    ) {
+    if (!claimed) {
       return conflict(
         "Grant ID is already bound to another recipient or provider",
       );
     }
-    if (claimed.status === "imported") return receipt(args.grantId);
-    if (claimed.status !== "completing" || claimed.expiresAt <= nowDate())
-      return conflict("Grant expired; start a new authorization in Atom");
-    const featureSwitchContext = await get(
-      userFeatureSwitchContext(args.orgId, args.userId),
-    );
-    signal.throwIfAborted();
-    const common = {
-      orgId: args.orgId,
-      userId: args.userId,
-      featureSwitchContext,
-      authSession: { id: args.grantId, userId: args.userId, source: SOURCE },
-      mode: { kind: "add" as const },
-    } as const;
-    const result = await settle(
-      (async () => {
-        if (args.tokens.provider === "claude-code") {
-          return await set(
-            upsertPersonalModelProviderAccount$,
-            {
-              ...common,
-              type: "claude-code-oauth-token",
-              authMethod: null,
-              secretValues: {
-                CLAUDE_CODE_OAUTH_TOKEN: args.tokens.accessToken,
-              },
-            },
-            signal,
-          );
-        }
-        return await handleCodexAuthJsonPaste(
-          {
-            orgId: args.orgId,
-            userId: args.userId,
-            rawAuthJson: JSON.stringify({
-              tokens: {
-                access_token: args.tokens.accessToken,
-                refresh_token: args.tokens.refreshToken,
-                account_id: "atom-grant",
-                id_token: args.tokens.idToken,
-              },
-            }),
-            upsert: async (parsed) => {
-              return await set(
-                upsertPersonalModelProviderAccount$,
-                { ...common, ...parsed, type: "codex-oauth-token" },
-                signal,
-              );
-            },
-          },
-          signal,
-        );
-      })(),
-      signal,
-    );
+    const response = existingGrantResult(claimed, args);
+    if (response) {
+      return response;
+    }
+    const result = await settle(set(publishCredentials$, args, signal), signal);
     signal.throwIfAborted();
 
     // Also covers a response lost after commit or a concurrent successful writer.
@@ -182,7 +199,9 @@ const deliver$ = command(
       .from(modelProviderAuthSessions)
       .where(eq(modelProviderAuthSessions.id, args.grantId));
     signal.throwIfAborted();
-    if (published?.status === "imported") return receipt(args.grantId);
+    if (published?.status === "imported") {
+      return receipt(args.grantId);
+    }
     if (result.ok && "status" in result.value && result.value.status >= 400) {
       return badRequestMessage(
         "Subscription could not be added; check the plan and account limit",
@@ -198,8 +217,9 @@ const deliverAtomSubscription$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
     const secret = optionalEnv("ATOM_SUBSCRIPTION_GRANT_SECRET");
-    if (!secret || secret.length < 32)
+    if (!secret || secret.length < 32) {
       return providerUnavailable("Atom subscription grants are not configured");
+    }
     const supplied = Buffer.from(get(authorization$) ?? "");
     const expected = Buffer.from(`Bearer ${secret}`);
     if (
@@ -220,7 +240,9 @@ const deliverAtomSubscription$ = command(
       bodyResultOf(atomSubscriptionGrantsContract.deliver),
     );
     signal.throwIfAborted();
-    if (!body.ok) return body.response;
+    if (!body.ok) {
+      return body.response;
+    }
     return await set(deliver$, body.data, signal);
   },
 );

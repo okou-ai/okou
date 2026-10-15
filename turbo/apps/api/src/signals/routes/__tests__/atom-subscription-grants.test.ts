@@ -129,11 +129,11 @@ describe("Atom subscription grants", () => {
         );
       };
       const delivered = await deliver();
-      expect(delivered.body).toEqual({
+      expect(delivered.body).toStrictEqual({
         grantId: body.grantId,
         status: "delivered",
       });
-      expect((await deliver()).body).toEqual(delivered.body);
+      expect((await deliver()).body).toStrictEqual(delivered.body);
       const listed = await accept(
         client()(personalModelProvidersMainContract).list({
           headers: { authorization: "Bearer clerk-session" },
