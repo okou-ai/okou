@@ -55,7 +55,7 @@ import {
 } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { safeJsonParse, settle } from "../utils";
 import { isUniqueViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { googleFormsAccountProjectionStatement } from "./google-forms-automation-account.service";
@@ -378,38 +378,6 @@ function connectorAccountSummaryGroups(
         hasAutomaticOAuthBinding,
       );
   });
-}
-
-async function customTargetIsVisible(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly customConnectorId: string;
-  },
-): Promise<boolean> {
-  const [definition] = await db
-    .select({ providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter })
-    .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorOauthConfigs,
-      and(
-        eq(orgCustomConnectorOauthConfigs.connectorId, orgCustomConnectors.id),
-        eq(orgCustomConnectorOauthConfigs.orgId, orgCustomConnectors.orgId),
-      ),
-    )
-    .where(
-      and(
-        eq(orgCustomConnectors.id, args.customConnectorId),
-        eq(orgCustomConnectors.orgId, args.orgId),
-      ),
-    )
-    .limit(1);
-  return (
-    definition !== undefined &&
-    !isIntegrationManagedCustomConnectorProviderAdapter(
-      definition.providerAdapter,
-    )
-  );
 }
 
 function builtinConnection(
@@ -1546,14 +1514,40 @@ export const setDefaultConnectorAccount$ = command(
     return await settleDefaultChange(
       // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0112; new non-billing transactions are prohibited.
       db.transaction(async (tx) => {
-        if (
-          args.target.kind === "custom" &&
-          !(await customTargetIsVisible(tx, {
-            orgId: args.orgId,
-            customConnectorId: args.target.customConnectorId,
-          }))
-        ) {
-          throw new DefaultConnectorAccountMissing();
+        if (args.target.kind === "custom") {
+          const [definition] = await tx
+            .select({
+              providerAdapter: orgCustomConnectorOauthConfigs.providerAdapter,
+            })
+            .from(orgCustomConnectors)
+            .leftJoin(
+              orgCustomConnectorOauthConfigs,
+              and(
+                eq(
+                  orgCustomConnectorOauthConfigs.connectorId,
+                  orgCustomConnectors.id,
+                ),
+                eq(
+                  orgCustomConnectorOauthConfigs.orgId,
+                  orgCustomConnectors.orgId,
+                ),
+              ),
+            )
+            .where(
+              and(
+                eq(orgCustomConnectors.id, args.target.customConnectorId),
+                eq(orgCustomConnectors.orgId, args.orgId),
+              ),
+            )
+            .limit(1);
+          if (
+            !definition ||
+            isIntegrationManagedCustomConnectorProviderAdapter(
+              definition.providerAdapter,
+            )
+          ) {
+            throw new DefaultConnectorAccountMissing();
+          }
         }
         const owner = connectorAccountOwnerCondition(args);
         await tx

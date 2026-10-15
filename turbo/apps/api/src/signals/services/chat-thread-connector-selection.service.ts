@@ -17,7 +17,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { command, computed, type Computed } from "ccstate";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import {
   readAgentConnectorScope$,
@@ -34,10 +34,6 @@ import {
   connectorCatalogSlugJoin,
 } from "./connector-catalog-slug-source.service";
 import { reprojectWorkflowAutomationsForOwner } from "./workflow-automation-account-projection.service";
-
-interface OwnedChatThread {
-  readonly agentId: string;
-}
 
 interface ConnectorSelectionRow {
   readonly connectorId: string;
@@ -145,31 +141,6 @@ function targetIsAuthorized(
   return target.kind === "builtin"
     ? scope.allowedConnectorSlugs.includes(target.connectorSlug)
     : scope.allowedCustomConnectorIds.includes(target.customConnectorId);
-}
-
-async function loadOwnedChatThread(
-  db: ReadonlyDb,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-  },
-): Promise<OwnedChatThread | undefined> {
-  const [thread] = await db
-    .select({ agentId: agents.id })
-    .from(chatThreads)
-    .innerJoin(
-      agents,
-      and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-    )
-    .where(
-      and(
-        eq(chatThreads.id, args.chatThreadId),
-        eq(chatThreads.userId, args.userId),
-      ),
-    )
-    .limit(1);
-  return thread?.agentId ? { agentId: thread.agentId } : undefined;
 }
 
 const connectorTargetOwnershipColumns = Object.freeze({
@@ -552,9 +523,22 @@ export const updateChatThreadConnectorSelection$ = command(
   ): Promise<UpdateChatThreadConnectorSelectionResult> => {
     signal.throwIfAborted();
     const db = set(writeDb$);
-    const thread = await loadOwnedChatThread(db, args);
+    const [thread] = await db
+      .select({ agentId: agents.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
     signal.throwIfAborted();
-    if (!thread) {
+    if (!thread?.agentId) {
       return { kind: "not_found" };
     }
     const prepared = await set(
@@ -639,8 +623,21 @@ export async function clearChatThreadConnectorSelection(
 ): Promise<ClearChatThreadConnectorSelectionResult> {
   // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0093; new non-billing transactions are prohibited.
   return await db.transaction(async (tx) => {
-    const thread = await loadOwnedChatThread(tx, args);
-    if (!thread) {
+    const [thread] = await tx
+      .select({ agentId: agents.id })
+      .from(chatThreads)
+      .innerJoin(
+        agents,
+        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+      )
+      .where(
+        and(
+          eq(chatThreads.id, args.chatThreadId),
+          eq(chatThreads.userId, args.userId),
+        ),
+      )
+      .limit(1);
+    if (!thread?.agentId) {
       return { kind: "not_found" };
     }
     // Only event sources also change the owner's automation projections.
