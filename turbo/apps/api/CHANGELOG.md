@@ -9,6 +9,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.740.1](https://github.com/okou-ai/okou/compare/api-v1.740.0...api-v1.740.1) (2026-10-15)
+
+
+### Refactoring
+
+* **api:** retire concurrency projection transaction (tx-0328) ([#40202](https://github.com/okou-ai/okou/issues/40202)) ([588e07a](https://github.com/okou-ai/okou/commit/588e07a88bd8f0a6534453084febdc9ef337d0f0))
+
 ## [1.740.0](https://github.com/okou-ai/okou/compare/api-v1.739.0...api-v1.740.0) (2026-10-15)
 
 
