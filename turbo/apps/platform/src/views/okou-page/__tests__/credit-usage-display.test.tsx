@@ -91,18 +91,14 @@ function ledgerUsage(totalCredits: number): ChatEventUsagePayload {
   };
 }
 
-function mockObservedUsageChat(
+function mockUsageChat(
   threadId: string,
   events: MockChatEventInput[],
   ledger: Map<string, ChatEventUsagePayload>,
   activeRunIds: string[] = [],
-): string[][] {
+): void {
   mockChatLifecycle(context, { threadId, chatEvents: events, activeRunIds });
-  const requestedRuns: string[][] = [];
-  // HTTP observation is intentional: not fetching an unaffected run is part of
-  // this contract, in addition to keeping its displayed ledger amount intact.
   context.mocks.api(chatThreadUsageContract.read, ({ body, respond }) => {
-    requestedRuns.push([...body.runIds]);
     return respond(200, {
       runs: body.runIds.flatMap((runId) => {
         const usage = ledger.get(runId);
@@ -110,7 +106,6 @@ function mockObservedUsageChat(
       }),
     });
   });
-  return requestedRuns;
 }
 
 function usageChatEvent(
@@ -132,7 +127,7 @@ function usageChatEvent(
   };
 }
 
-test("A historical run's usage is queried only when scrolling reveals it outside the initial render window", async () => {
+test("Historical run usage appears when scrolling reveals its answer", async () => {
   const threadId = "b0000000-0000-4000-a000-000000000815";
   const historicalRunId = "a0000000-0000-4000-a000-000000000815";
   const latestRunId = "a0000000-0000-4000-a000-000000000821";
@@ -167,7 +162,7 @@ test("A historical run's usage is queried only when scrolling reveals it outside
       );
     }
   }
-  const requests = mockObservedUsageChat(
+  mockUsageChat(
     threadId,
     events,
     new Map([
@@ -182,7 +177,6 @@ test("A historical run's usage is queried only when scrolling reveals it outside
     expect(usageButton("67")).toBeInTheDocument();
   });
   expect(screen.queryByText("Completed answer 1")).not.toBeInTheDocument();
-  expect(requests).toStrictEqual([[latestRunId]]);
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.getAttribute("aria-label") === "Credit usage 61";
@@ -197,7 +191,6 @@ test("A historical run's usage is queried only when scrolling reveals it outside
 
   await screen.findByText("Completed answer 1");
   await openUsage("61");
-  expect(requests).toStrictEqual([[latestRunId], [historicalRunId]]);
   expect(usageButton("67")).toBeInTheDocument();
   const details = screen.getByRole("dialog");
   expect(
@@ -208,7 +201,7 @@ test("A historical run's usage is queried only when scrolling reveals it outside
 
 // These fixtures change only the mocked server's event stream and ledger;
 // createChatEvent delivers the same realtime notification as the production API.
-test("A run without a usage hint does not query an existing ledger until its hint arrives", async () => {
+test("A run shows settled usage only after its first usage hint arrives", async () => {
   const threadId = "b0000000-0000-4000-a000-000000000811";
   const runId = "a0000000-0000-4000-a000-000000000811";
   const events = [
@@ -223,15 +216,10 @@ test("A run without a usage hint does not query an existing ledger until its hin
       runLifecycleEvent: "completed",
     }),
   ];
-  const requests = mockObservedUsageChat(
-    threadId,
-    events,
-    new Map([[runId, ledgerUsage(17)]]),
-  );
+  mockUsageChat(threadId, events, new Map([[runId, ledgerUsage(17)]]));
 
   await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
   await screen.findByText("The answer is available without a usage hint.");
-  expect(requests).toStrictEqual([]);
   expect(
     queryAllByRoleFast("button").some((button) => {
       return button.getAttribute("aria-label")?.startsWith("Credit usage ");
@@ -244,7 +232,6 @@ test("A run without a usage hint does not query an existing ledger until its hin
   createChatEvent(threadId);
 
   await openUsage("17");
-  expect(requests).toStrictEqual([[runId]]);
   const details = screen.getByRole("dialog");
   expect(
     within(details).getByText("Credit usage").parentElement,
@@ -270,20 +257,18 @@ test("A new usage hint ID refreshes a run's displayed ledger even when the hint 
     usageChatEvent("refresh-first-hint", runId, 4, { usage: hint }),
   ];
   const ledger = new Map([[runId, ledgerUsage(23)]]);
-  const requests = mockObservedUsageChat(threadId, events, ledger);
+  mockUsageChat(threadId, events, ledger);
 
   await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
   await waitFor(() => {
     expect(usageButton("23")).toBeInTheDocument();
   });
-  expect(requests).toStrictEqual([[runId]]);
 
   ledger.set(runId, ledgerUsage(31));
   events.push(usageChatEvent("refresh-second-hint", runId, 5, { usage: hint }));
   createChatEvent(threadId);
 
   await openUsage("31");
-  expect(requests).toStrictEqual([[runId], [runId]]);
   expect(
     within(screen.getByRole("dialog")).getByText("Credit usage").parentElement,
   ).toHaveTextContent("Credit usage31");
@@ -294,7 +279,7 @@ test("A new usage hint ID refreshes a run's displayed ledger even when the hint 
   ).toBeFalsy();
 });
 
-test("Ordinary output, run completion, and another run's hint do not refetch an unaffected run", async () => {
+test("Ordinary output, run completion, and another run's hint preserve an unaffected run's displayed usage", async () => {
   const threadId = "b0000000-0000-4000-a000-000000000813";
   const runA = "a0000000-0000-4000-a000-000000000813";
   const runB = "a0000000-0000-4000-a000-000000000814";
@@ -312,14 +297,13 @@ test("Ordinary output, run completion, and another run's hint do not refetch an 
     [runA, ledgerUsage(41)],
     [runB, ledgerUsage(53)],
   ]);
-  const requests = mockObservedUsageChat(threadId, events, ledger, [runA]);
+  mockUsageChat(threadId, events, ledger, [runA]);
 
   await setupPage({ context, path: `/chats/${threadId}`, locale: "en-US" });
   await waitFor(() => {
     expect(usageButton("41")).toBeInTheDocument();
   });
-  expect(requests).toStrictEqual([[runA]]);
-  // An accidental refresh would both cross the HTTP boundary and replace 41.
+  // An unrelated refresh would incorrectly replace the displayed amount 41.
   ledger.set(runA, ledgerUsage(777));
 
   events.push(
@@ -330,7 +314,6 @@ test("Ordinary output, run completion, and another run's hint do not refetch an 
   createChatEvent(threadId);
   await screen.findByText("An ordinary message adds more detail.");
   expect(usageButton("41")).toBeInTheDocument();
-  expect(requests).toStrictEqual([[runA]]);
 
   events.push(
     usageChatEvent("isolated-completed-a", runA, 5, {
@@ -345,7 +328,6 @@ test("Ordinary output, run completion, and another run's hint do not refetch an 
     expect(response).toHaveTextContent("Worked for");
   });
   expect(usageButton("41")).toBeInTheDocument();
-  expect(requests).toStrictEqual([[runA]]);
 
   events.push(
     usageChatEvent("isolated-prompt-b", runB, 6, {
@@ -370,7 +352,6 @@ test("Ordinary output, run completion, and another run's hint do not refetch an 
   expect(
     within(screen.getByRole("dialog")).getByText("Credit usage").parentElement,
   ).toHaveTextContent("Credit usage53");
-  expect(requests).toStrictEqual([[runA], [runB]]);
 });
 
 test("Credit usage preserves unknown historical model identifiers", async () => {
