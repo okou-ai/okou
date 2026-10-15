@@ -372,12 +372,14 @@ measures the interval after controlled Agent launch until confirmed
 runtime-descriptor adoption. Fresh pre-spawn admission remains held until the
 ready event rather than process creation.
 
-The production-path benchmark lives in
-`crates/runner/tests/behavior/runner-behavior-process-containment.sh`. It submits the
+The manual production-path benchmark lives in
+`crates/runner/tests/behavior/runner-behavior-agent-ready.sh`. It submits the
 deterministic mock CLI through the same-metal runner and Guest Agent path, then
 measures fresh sandbox, home-cache reuse, and exact sandbox reuse samples
-under one service profile. Routine lane C measures one sample per path, using
-six local submissions without contention, including warmups and home-cache
+under one service profile. It runs explicitly on a provisioned host reserved for
+measurement; required per-PR CI does not assume uncontended optional home-cache
+publication on a host shared by multiple PRs. The default is one sample per path,
+using six local submissions without contention, including warmups and home-cache
 eviction. Set `AGENT_READY_BENCHMARK_SAMPLES` (1..100) explicitly for repeated
 measurements. The script retains bounded raw JSONL evidence and reports local
 submission attempts, sample counts, failures, and observed min/nearest-rank
