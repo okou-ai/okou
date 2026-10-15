@@ -272,6 +272,7 @@ final class DesktopModel: ObservableObject {
     drainTask = nil
     guard !preparing, wantsOnline, ready, !online else { return }
     await executor.configureShell(enabled: shellEnabled, policyRevision: shellPolicyRevision)
+    guard !preparing, wantsOnline, ready, !online else { return }
     await host.start()
   }
   func retryRequiredUpgrade() {
