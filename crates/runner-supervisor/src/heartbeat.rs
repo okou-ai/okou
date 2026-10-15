@@ -489,15 +489,15 @@ async fn refresh_home_cache_snapshot_after_change(
         && change.selection_release_only
         && snapshot.home_cache_loaded()
         && let Some(cache) = home_cache
-    {
-        let before = snapshot.loaded_home_cache_snapshot();
-        for state in cache
+        && let Some(states) = cache
             .held_home_states_for_released_selections(
                 &profile_home_sizes(profiles),
                 &change.committed_cache_keys,
             )
             .await
-        {
+    {
+        let before = snapshot.loaded_home_cache_snapshot();
+        for state in states {
             snapshot.upsert_home_cache_state(state);
         }
         let mut after = snapshot.loaded_home_cache_snapshot();
@@ -1217,6 +1217,10 @@ mod tests {
                 runner_lifecycle::home_image_cache::HomeCacheWatcher::new(cache.clone())
                     .await
                     .unwrap();
+            let profiles = test_profiles();
+            let snapshot = HomeCacheStateSnapshot::new();
+            refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
+            assert_eq!(snapshot.loaded_home_cache_snapshot().states.len(), 2);
             let lease = cache.prepare(HomeImagePrepareRequest { identity: HomeImageLeaseIdentity {
                 run_id: runner_types::ids::RunId::new_v4(), sandbox_id: SandboxId::new_v4(),
                 profile_name: "vm0/default", rootfs_hash: "current-rootfs", reuse_key: Some("released"),
@@ -1224,10 +1228,6 @@ mod tests {
                 image_size_bytes: 1024 * 1024,
             }, home_drive_required: true }).await;
             assert!(lease.is_cache_hit());
-            let profiles = test_profiles();
-            let snapshot = HomeCacheStateSnapshot::new();
-            refresh_initial_home_cache_snapshot(&snapshot, Some(&cache), &profiles).await;
-            assert_eq!(snapshot.loaded_home_cache_snapshot().states.len(), 1);
             if replace_source {
                 let identity = lease.source_identity().unwrap();
                 let image = cache
@@ -1274,15 +1274,9 @@ mod tests {
                 &hb,
                 RunnerMode::Running,
                 1,
-                HeartbeatRequest::home_cache(change),
+                HeartbeatRequest::home_cache(change).merge(HeartbeatRequest::ordinary()),
             )
             .await;
-            if replace_source {
-                // Rejected advisory evidence changes nothing and need not
-                // trigger a send. The next ordinary heartbeat still excludes it.
-                assert!(provider.heartbeats.lock().unwrap().is_empty());
-                send_heartbeat(&hb, RunnerMode::Running, 2, HeartbeatRequest::ordinary()).await;
-            }
             let sent = provider.heartbeats.lock().unwrap();
             assert_eq!(sent.len(), 1);
             let keys = sent[0]
@@ -1296,7 +1290,10 @@ mod tests {
                 BTreeSet::from(["independent", "released"])
             };
             assert_eq!(keys, expected);
-            assert_eq!(cache.held_state_root_scan_count(), 0);
+            assert_eq!(
+                cache.held_state_root_scan_count(),
+                usize::from(replace_source)
+            );
         }
     }
 

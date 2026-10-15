@@ -974,7 +974,7 @@ mod tests {
                     &change.committed_cache_keys,
                 )
                 .await
-                .is_empty()
+                .is_none()
         );
     }
 }

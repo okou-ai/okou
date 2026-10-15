@@ -251,7 +251,8 @@ async fn unused_selection_release_revalidates_same_generation_without_a_root_sca
             &std::collections::BTreeMap::from([(PROFILE, SIZE)]),
             &change.committed_cache_keys,
         )
-        .await;
+        .await
+        .unwrap();
     assert_eq!(states.len(), 1);
     assert_eq!(states[0].reuse_key, "thread");
     assert_eq!(f.cache.held_state_root_scan_count(), 0);

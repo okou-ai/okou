@@ -945,31 +945,33 @@ impl HomeImageCache {
         .states
     }
 
-    /// Revalidate released selections without walking unrelated entries. This
-    /// supplies positive upserts only; ordinary reconciliation owns removals.
+    /// Revalidate released selections without walking unrelated entries. Only
+    /// a complete result authorizes positive upserts. Unknown/invalid/busy keys
+    /// return None so the caller reconciles any previously advertised state.
     pub async fn held_home_states_for_released_selections(
         &self,
         profiles: &BTreeMap<&str, u64>,
         keys: &BTreeSet<String>,
-    ) -> Vec<HeldHomeState> {
+    ) -> Option<Vec<HeldHomeState>> {
+        if keys.len() > MAX_HELD_HOME_STATES {
+            return None;
+        }
         let mut states = Vec::new();
-        for key in keys.iter().take(MAX_HELD_HOME_STATES) {
+        for key in keys {
             if !is_cache_key_name(key) {
-                continue;
+                return None;
             }
             let Ok(runner_host::lock::TryLock::Acquired(lock)) =
                 runner_host::lock::try_acquire_or_busy(self.entry_lock_path(key)).await
             else {
-                continue;
+                return None;
             };
-            if let Some(state) = self
+            let state = self
                 .publishable_held_home_state(key, Some(profiles), &lock)
-                .await
-            {
-                states.push(state);
-            }
+                .await?;
+            states.push(state);
         }
-        cap_held_home_states(states)
+        Some(cap_held_home_states(states))
     }
 
     /// Inspect cache state without a running profile configuration in tests.
