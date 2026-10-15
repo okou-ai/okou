@@ -6,7 +6,7 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
 use tokio::sync::oneshot;
-use tokio::task::{JoinError, JoinHandle};
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tracing::info;
 
 use super::RuntimeProfile;
@@ -19,7 +19,7 @@ use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, PreClaimOutcome, PreClaimRequest, admit_and_claim,
 };
-use runner_provider::JobCandidate;
+use runner_provider::{JobCandidate, RunCancellationRegistration};
 use runner_types::ids::RunId;
 
 // A conservative request-pressure bound, independent of the stricter local
@@ -138,6 +138,48 @@ impl ClaimTasks {
             self.in_flight.remove(&result.run_id);
         }
         Some(result)
+    }
+
+    // Share handoff and failure classification, leaving runtime continuation,
+    // pending candidates and teardown's first-error policy with their callers.
+    pub(super) async fn consume(
+        &self,
+        result: Result<ClaimTaskResult, JoinError>,
+        jobs: &mut JoinSet<RunCancellationRegistration>,
+    ) -> Result<DiscoveredJobResult, ClaimConsumptionError> {
+        let result = result.map_err(|_| ClaimConsumptionError::AdmissionTask)?;
+        let context = &self.context;
+        let spawn_ctx = &context.spawn_ctx;
+        result
+            .handle(DiscoveredJobContext {
+                runner_identity: context.runner_identity,
+                budget: &spawn_ctx.budget,
+                idle_pool: &spawn_ctx.idle_pool,
+                status: &spawn_ctx.status,
+                mode_rx: &context.mode_rx,
+                cancel_tokens: &context.cancel_tokens,
+                spawn_ctx,
+                jobs,
+            })
+            .await
+            .map_err(ClaimConsumptionError::Ownership)
+    }
+}
+
+pub(super) enum ClaimConsumptionError {
+    AdmissionTask,
+    Ownership(ReactorError),
+}
+
+impl ClaimConsumptionError {
+    pub(super) fn into_stopping_failure(self) -> (&'static str, ReactorError) {
+        match self {
+            Self::AdmissionTask => (
+                "claim admission task failure",
+                ReactorError::Internal("claim admission task failed".to_owned()),
+            ),
+            Self::Ownership(error) => ("claim result ownership failure", error),
+        }
     }
 }
 

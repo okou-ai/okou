@@ -1,7 +1,7 @@
 use super::super::super::*;
 use super::super::support::{
     assert_run_exits_within, minimal_context, mock_run_config, push_job, shutdown, test_profiles,
-    wait_budget_count, wait_cancel_token_removed, wait_status_mode,
+    wait_budget_count, wait_cancel_token, wait_cancel_token_removed, wait_status_mode,
 };
 use crate::reactor::claim_tasks::MAX_IN_FLIGHT_CLAIMS;
 
@@ -294,6 +294,76 @@ async fn hard_stop_joins_parallel_claims_before_provider_shutdown_and_completes_
         runner,
         Duration::from_secs(10),
         "hard stop must not abandon successful claims",
+    )
+    .await;
+    wait_budget_count(&budget, 0, Duration::from_secs(10)).await;
+    for &run_id in &runs {
+        wait_cancel_token_removed(&env.cancel_tokens, run_id, Duration::from_secs(10)).await;
+    }
+    assert_eq!(env.handle.completions.lock().unwrap().len(), 2);
+    assert!(!env.handle.shutdown_with_claim_in_flight());
+}
+
+#[tokio::test]
+async fn discovery_end_settles_parallel_claims_without_hard_cancellation() {
+    let (mut config, mut env) = mock_run_config(test_profiles(), 8, 32768, 4);
+    config.capacity.max_idle = 0;
+    let status_path = env._temp_dir.path().join("status.json");
+    let budget = Arc::clone(&config.capacity.budget);
+    let runs = [RunId::new_v4(), RunId::new_v4()];
+    for &run_id in &runs {
+        env.handle.block_claim(run_id);
+    }
+    let runner = tokio::spawn(run(config));
+    for &run_id in &runs {
+        push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
+        assert!(
+            env.handle
+                .wait_run_claim_in_flight(run_id, Duration::from_secs(10))
+                .await
+        );
+    }
+    let first_token = wait_cancel_token(&env.cancel_tokens, runs[0], Duration::from_secs(10)).await;
+    let second_token =
+        wait_cancel_token(&env.cancel_tokens, runs[1], Duration::from_secs(10)).await;
+
+    // Close the actual discovery channel while retaining the claim controls.
+    env.handle.discover_tx = tokio::sync::mpsc::unbounded_channel().0;
+    wait_status_mode(&status_path, "stopping", Duration::from_secs(10)).await;
+    assert!(!first_token.is_cancelled());
+    assert!(!second_token.is_cancelled());
+    assert!(!runner.is_finished());
+    assert_eq!(env.handle.claim_candidates().len(), 2);
+
+    env.handle.unblock_claim(runs[0]);
+    let first = env
+        .handle
+        .wait_completion(runs[0], Duration::from_secs(10))
+        .await
+        .expect("teardown must activate a successful accepted claim");
+    assert_eq!(first.exit_code, 0);
+    assert!(first.error.is_none());
+    assert!(
+        env.handle
+            .wait_run_claim_in_flight(runs[1], Duration::from_secs(10))
+            .await
+    );
+    assert!(!second_token.is_cancelled());
+    assert!(!runner.is_finished(), "teardown must join every admission");
+    assert!(!env.handle.shutdown_with_claim_in_flight());
+
+    env.handle.unblock_claim(runs[1]);
+    let second = env
+        .handle
+        .wait_completion(runs[1], Duration::from_secs(10))
+        .await
+        .expect("the remaining accepted claim must also finish normally");
+    assert_eq!(second.exit_code, 0);
+    assert!(second.error.is_none());
+    assert_run_exits_within(
+        runner,
+        Duration::from_secs(10),
+        "natural discovery exhaustion must drain all accepted claims",
     )
     .await;
     wait_budget_count(&budget, 0, Duration::from_secs(10)).await;
