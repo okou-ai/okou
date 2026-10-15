@@ -1,3 +1,9 @@
+import {
+  authorizeBankingAccess$,
+  recordBankingAudit$,
+  type BankingAuth,
+  type BankingAccountRow,
+} from "./banking-access.service";
 import type {
   BankingAccount,
   BankingAccountsResponse,
@@ -8,38 +14,19 @@ import type {
   BankingTransactionsRequest,
   BankingTransactionsResponse,
 } from "@okouai/api-contracts/contracts/banking";
-import {
-  bankingAccessAuditEvents,
-  bankingAccounts,
-  bankingAgentEnablements,
-  bankingConnections,
-  type BankingOperationScope,
-} from "@okouai/db/schema/banking";
-import { agentRuns } from "@okouai/db/runtime/agent-run";
+
 import { command } from "ccstate";
-import {
-  and,
-  eq,
-  gt,
-  inArray,
-  isNull,
-  or,
-  type InferSelectModel,
-} from "drizzle-orm";
 
 import { env } from "../../lib/env";
 import { singleton } from "../../lib/singleton";
-import { now, nowDate } from "../../lib/time";
-import type { AgentAuthContext } from "../../types/auth";
-import { type Db, writeDb$ } from "../external/db";
+import { now } from "../../lib/time";
+
+import { writeDb$ } from "../external/db";
 import { safeJsonParse } from "../utils";
 
 const APP_TOKEN_REFRESH_MS = 90 * 60 * 1000;
 const FINICITY_BASE_URL = "https://api.finicity.com";
 const PROVIDER = "finicity";
-
-type BankingAuth = Extract<AgentAuthContext, { readonly orgId: string }>;
-type BankingAccountRow = InferSelectModel<typeof bankingAccounts>;
 
 interface CachedFinicityAppToken {
   readonly token: string;
@@ -61,33 +48,6 @@ export interface BankingErrorResponse {
       readonly code: string;
     };
   };
-}
-
-interface AuthorizedBankingAccess {
-  readonly connectionId: string;
-  readonly providerCustomerId: string;
-  readonly runId: string;
-  readonly agentId: string;
-  readonly accounts: readonly BankingAccountRow[];
-  readonly account?: BankingAccountRow;
-}
-
-type BankingAccessResult =
-  | { readonly ok: true; readonly access: AuthorizedBankingAccess }
-  | { readonly ok: false; readonly response: BankingErrorResponse };
-
-interface BankingRunContext {
-  readonly runId: string;
-  readonly agentId: string;
-  readonly triggerSource: string | null;
-}
-
-interface BankingGrantContext {
-  readonly connectionId: string;
-  readonly providerCustomerId: string;
-  readonly accountProviderIds: readonly string[];
-  readonly operationScopes: readonly BankingOperationScope[];
-  readonly allowAutomationRuns: boolean;
 }
 
 const finicityAppTokenCache = singleton(
@@ -118,13 +78,6 @@ function badGateway(message: string, code = "FINICITY_ERROR") {
 
 function serviceUnavailable(message: string, code = "NOT_CONFIGURED") {
   return errorResponse(503, code, message);
-}
-
-function isUnattendedTriggerSource(triggerSource: string | null): boolean {
-  return (
-    triggerSource === "automation-schedule" ||
-    triggerSource === "automation-event"
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -372,260 +325,15 @@ function epochSecondsForDateOnly(value: string, endOfDay: boolean): number {
   return endOfDay ? seconds + 86_399 : seconds;
 }
 
-async function recordBankingAudit(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly runId: string;
-    readonly action: BankingOperationScope;
-    readonly status: "allowed" | "denied";
-    readonly agentId?: string;
-    readonly connectionId?: string;
-    readonly providerAccountId?: string;
-    readonly failureCode?: string;
-  },
-): Promise<void> {
-  await db.insert(bankingAccessAuditEvents).values({
-    orgId: args.orgId,
-    userId: args.userId,
-    runId: args.runId,
-    agentId: args.agentId ?? null,
-    connectionId: args.connectionId ?? null,
-    providerAccountId: args.providerAccountId ?? null,
-    action: args.action,
-    status: args.status,
-    failureCode: args.failureCode ?? null,
-  });
-}
-
-async function findBankingRun(
-  db: Db,
-  auth: BankingAuth,
-): Promise<BankingRunContext | null> {
-  const [run] = await db
-    .select({
-      runId: agentRuns.id,
-      agentId: agentRuns.agentId,
-      triggerSource: agentRuns.triggerSource,
-    })
-    .from(agentRuns)
-
-    .where(
-      and(
-        eq(agentRuns.id, auth.runId),
-        eq(agentRuns.orgId, auth.orgId),
-        eq(agentRuns.userId, auth.userId),
-      ),
-    )
-    .limit(1);
-
-  return run?.agentId ? { ...run, agentId: run.agentId } : null;
-}
-
-async function findBankingGrant(
-  db: Db,
-  auth: BankingAuth,
-  agentId: string,
-): Promise<BankingGrantContext | null> {
-  const nowValue = nowDate();
-  const [grant] = await db
-    .select({
-      connectionId: bankingConnections.id,
-      providerCustomerId: bankingConnections.providerCustomerId,
-      accountProviderIds: bankingAgentEnablements.accountProviderIds,
-      operationScopes: bankingAgentEnablements.operationScopes,
-      allowAutomationRuns: bankingAgentEnablements.allowAutomationRuns,
-    })
-    .from(bankingConnections)
-    .innerJoin(
-      bankingAgentEnablements,
-      eq(bankingAgentEnablements.connectionId, bankingConnections.id),
-    )
-    .where(
-      and(
-        eq(bankingConnections.orgId, auth.orgId),
-        eq(bankingConnections.userId, auth.userId),
-        eq(bankingConnections.provider, PROVIDER),
-        or(
-          eq(bankingConnections.status, "active"),
-          eq(bankingConnections.status, "repair_required"),
-        ),
-        isNull(bankingConnections.revokedAt),
-        isNull(bankingConnections.deletedAt),
-        or(
-          isNull(bankingConnections.consentExpiresAt),
-          gt(bankingConnections.consentExpiresAt, nowValue),
-        ),
-        eq(bankingAgentEnablements.orgId, auth.orgId),
-        eq(bankingAgentEnablements.userId, auth.userId),
-        eq(bankingAgentEnablements.agentId, agentId),
-        isNull(bankingAgentEnablements.revokedAt),
-        gt(bankingAgentEnablements.expiresAt, nowValue),
-      ),
-    )
-    .limit(1);
-
-  return grant ?? null;
-}
-
-async function denyBankingAccess(
-  db: Db,
-  auth: BankingAuth,
-  action: BankingOperationScope,
-  providerAccountId: string | undefined,
-  args: {
-    readonly failureCode: string;
-    readonly message: string;
-    readonly agentId?: string;
-    readonly connectionId?: string;
-  },
-): Promise<BankingAccessResult> {
-  await recordBankingAudit(db, {
-    orgId: auth.orgId,
-    userId: auth.userId,
-    runId: auth.runId,
-    action,
-    status: "denied",
-    agentId: args.agentId,
-    connectionId: args.connectionId,
-    providerAccountId,
-    failureCode: args.failureCode,
-  });
-  return {
-    ok: false,
-    response: forbidden(args.message),
-  };
-}
-
-async function enabledBankingAccounts(
-  db: Db,
-  auth: BankingAuth,
-  grant: BankingGrantContext,
-): Promise<readonly BankingAccountRow[]> {
-  return await db
-    .select()
-    .from(bankingAccounts)
-    .where(
-      and(
-        eq(bankingAccounts.connectionId, grant.connectionId),
-        eq(bankingAccounts.orgId, auth.orgId),
-        eq(bankingAccounts.userId, auth.userId),
-        eq(bankingAccounts.enabled, true),
-        isNull(bankingAccounts.repairRequiredAt),
-        inArray(bankingAccounts.providerAccountId, grant.accountProviderIds),
-      ),
-    );
-}
-
-async function authorizeBankingAccess(
-  db: Db,
-  auth: BankingAuth,
-  action: BankingOperationScope,
-  providerAccountId: string | undefined,
-): Promise<BankingAccessResult> {
-  const run = await findBankingRun(db, auth);
-  if (!run) {
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      failureCode: "RUN_NOT_FOUND",
-      message: "Banking access requires a current Okou run",
-    });
-  }
-
-  const grant = await findBankingGrant(db, auth, run.agentId);
-  if (!grant) {
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      agentId: run.agentId,
-      failureCode: "NO_ACTIVE_GRANT",
-      message: "Banking is not enabled for this agent",
-    });
-  }
-
-  if (!grant.operationScopes.includes(action)) {
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      agentId: run.agentId,
-      connectionId: grant.connectionId,
-      failureCode: "SCOPE_NOT_ALLOWED",
-      message: `Banking operation is not enabled: ${action}`,
-    });
-  }
-
-  if (
-    isUnattendedTriggerSource(run.triggerSource) &&
-    !grant.allowAutomationRuns
-  ) {
-    // Historical audit rows persist the former "SCHEDULE_NOT_ALLOWED" code;
-    // nothing filters on the literal, so new denials emit the automation name.
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      agentId: run.agentId,
-      connectionId: grant.connectionId,
-      failureCode: "AUTOMATION_NOT_ALLOWED",
-      message: "Banking is not enabled for automation runs",
-    });
-  }
-
-  if (
-    providerAccountId &&
-    !grant.accountProviderIds.includes(providerAccountId)
-  ) {
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      agentId: run.agentId,
-      connectionId: grant.connectionId,
-      failureCode: "ACCOUNT_NOT_ALLOWED",
-      message: "Banking account is not enabled for this agent",
-    });
-  }
-
-  if (grant.accountProviderIds.length === 0) {
-    return {
-      ok: true,
-      access: {
-        connectionId: grant.connectionId,
-        providerCustomerId: grant.providerCustomerId,
-        runId: run.runId,
-        agentId: run.agentId,
-        accounts: [],
-      },
-    };
-  }
-
-  const accounts = await enabledBankingAccounts(db, auth, grant);
-  const account = providerAccountId
-    ? accounts.find((row) => {
-        return row.providerAccountId === providerAccountId;
-      })
-    : undefined;
-  if (providerAccountId && !account) {
-    return await denyBankingAccess(db, auth, action, providerAccountId, {
-      agentId: run.agentId,
-      connectionId: grant.connectionId,
-      failureCode: "ACCOUNT_NOT_ACTIVE",
-      message: "Banking account is not active",
-    });
-  }
-
-  return {
-    ok: true,
-    access: {
-      connectionId: grant.connectionId,
-      providerCustomerId: grant.providerCustomerId,
-      runId: run.runId,
-      agentId: run.agentId,
-      accounts,
-      account,
-    },
-  };
-}
-
 export const bankingAccounts$ = command(
   async (
     { set },
     args: BankingGatewayArgs<Record<string, never>>,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const auth = await authorizeBankingAccess(
-      db,
+    set(writeDb$);
+    const auth = await set(
+      authorizeBankingAccess$,
       args.auth,
       "accounts.read",
       undefined,
@@ -641,7 +349,7 @@ export const bankingAccounts$ = command(
         accounts: [],
       };
 
-      await recordBankingAudit(db, {
+      await set(recordBankingAudit$, {
         orgId: args.auth.orgId,
         userId: args.auth.userId,
         runId: auth.access.runId,
@@ -687,7 +395,7 @@ export const bankingAccounts$ = command(
       }),
     };
 
-    await recordBankingAudit(db, {
+    await set(recordBankingAudit$, {
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       runId: auth.access.runId,
@@ -707,9 +415,9 @@ export const bankingBalances$ = command(
     args: BankingGatewayArgs<BankingBalancesRequest>,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const auth = await authorizeBankingAccess(
-      db,
+    set(writeDb$);
+    const auth = await set(
+      authorizeBankingAccess$,
       args.auth,
       "balances.read",
       args.body.accountId,
@@ -747,7 +455,7 @@ export const bankingBalances$ = command(
       balance: toBankingBalance(auth.access.account, providerAccount),
     };
 
-    await recordBankingAudit(db, {
+    await set(recordBankingAudit$, {
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       runId: auth.access.runId,
@@ -768,9 +476,9 @@ export const bankingTransactions$ = command(
     args: BankingGatewayArgs<BankingTransactionsRequest>,
     signal: AbortSignal,
   ) => {
-    const db = set(writeDb$);
-    const auth = await authorizeBankingAccess(
-      db,
+    set(writeDb$);
+    const auth = await set(
+      authorizeBankingAccess$,
       args.auth,
       "transactions.read",
       args.body.accountId,
@@ -820,7 +528,7 @@ export const bankingTransactions$ = command(
       ),
     };
 
-    await recordBankingAudit(db, {
+    await set(recordBankingAudit$, {
       orgId: args.auth.orgId,
       userId: args.auth.userId,
       runId: auth.access.runId,
