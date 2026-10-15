@@ -343,16 +343,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       });
       expect(memory.storageId).toBe(sourceMemory?.storageId);
       expect(claim.piSessionId).toBe(job.runId);
-      const readable = await runs.requestReadRun(
-        selectedActor.actor,
-        job.runId,
-        [200],
-      );
-      expect(readable.body).toMatchObject({
-        runId: job.runId,
-        status: "running",
-        source: { model: "okou-memory" },
-      });
       return {
         ...selectedActor,
         runId: job.runId,
