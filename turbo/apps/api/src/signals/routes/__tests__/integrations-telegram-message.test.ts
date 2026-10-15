@@ -152,6 +152,66 @@ describe("POST /api/integrations/telegram/message", () => {
       error: { message: "Telegram bot not found", code: "NOT_FOUND" },
     });
   });
+
+  it("appends the claimed Run's agent label to an official message", async () => {
+    const orgId = `org_${randomUUID()}`;
+    const userId = `user_${randomUUID()}`;
+    const token = await credentials.okouToken({ userId, orgId });
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", OFFICIAL_BOT_TOKEN);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "official_okou_bot");
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+    });
+    const chatId = String(randomInt(1, 2 ** 48));
+    let telegramBody: unknown;
+    const apiBase =
+      optionalEnv("TELEGRAM_API_URL") || "https://api.telegram.org/bot";
+    server.use(
+      http.post(
+        `${apiBase}${OFFICIAL_BOT_TOKEN}/sendMessage`,
+        async ({ request }) => {
+          const body = z
+            .object({
+              chat_id: z.string(),
+              text: z.string(),
+              parse_mode: z.literal("HTML"),
+            })
+            .strict()
+            .parse(await request.json());
+          telegramBody = body;
+          return HttpResponse.json({
+            ok: true,
+            result: {
+              message_id: 325,
+              chat: { id: Number(chatId) },
+              text: body.text,
+            },
+          });
+        },
+      ),
+    );
+    const client = setupApp({
+      context,
+      routes: integrationsTelegramMessageRoutes,
+    })(integrationsTelegramMessageContract);
+    const response = await accept(
+      client.sendMessage({
+        headers: { authorization: `Bearer ${token}` },
+        body: {
+          botId: OFFICIAL_TELEGRAM_BOT_ID,
+          chatId,
+          text: "Hello from this Run",
+        },
+      }),
+      [200],
+    );
+    expect(telegramBody).toStrictEqual({
+      chat_id: chatId,
+      text: "Hello from this Run\n\n<i>Sent via API caller credential</i>",
+      parse_mode: "HTML",
+    });
+    expect(response.body).toStrictEqual({ ok: true, messageId: 325, chatId });
+  });
 });
 
 function publicMessageActors() {
