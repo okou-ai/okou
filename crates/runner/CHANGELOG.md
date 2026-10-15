@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.233.3](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.2...runner-rs-v0.233.3) (2026-10-15)
+
+
+### Refactoring
+
+* **remote:** share assignment-owned native network resources ([#40243](https://github.com/okou-ai/okou/issues/40243)) ([4cbbd49](https://github.com/okou-ai/okou/commit/4cbbd4991faf6a1771c2f4cab6e187cc3e544e17))
+
+
+### Performance Improvements
+
+* **runner:** bound auth.base response parser allocations ([#40288](https://github.com/okou-ai/okou/issues/40288)) ([9840723](https://github.com/okou-ai/okou/commit/984072379527b471856609fc3b79c88a3ec2fc78))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.233.2](https://github.com/okou-ai/okou/compare/runner-rs-v0.233.1...runner-rs-v0.233.2) (2026-10-15)
 
 ### Release Dependencies

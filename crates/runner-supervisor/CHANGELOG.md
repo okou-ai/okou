@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.2...runner-supervisor-v0.16.3) (2026-10-15)
+
+
+### Refactoring
+
+* **runner:** consolidate home reuse observations ([#40207](https://github.com/okou-ai/okou/issues/40207)) ([2511826](https://github.com/okou-ai/okou/commit/25118260fc61ef6317a98dda0194b0fb9a11f5fa))
+
 ## [0.16.2](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.1...runner-supervisor-v0.16.2) (2026-10-15)
 
 ## [0.16.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.0...runner-supervisor-v0.16.1) (2026-10-15)

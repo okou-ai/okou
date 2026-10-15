@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.2...runner-provider-v0.8.3) (2026-10-15)
+
+
+### Documentation
+
+* **rust:** correct completion reuse metadata documentation ([#40278](https://github.com/okou-ai/okou/issues/40278)) ([2534320](https://github.com/okou-ai/okou/commit/25343206017d857cb6dc473d15f7a0be3ec48a61))
+
 ## [0.8.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.1...runner-provider-v0.8.2) (2026-10-15)
 
 ## [0.8.1](https://github.com/okou-ai/okou/compare/runner-provider-v0.8.0...runner-provider-v0.8.1) (2026-10-15)
