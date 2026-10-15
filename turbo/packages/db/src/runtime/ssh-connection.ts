@@ -11,5 +11,5 @@ export const sshConnections = pgTable(
 // the PostgreSQL boolean decoder, without reading its stored value.
 export const sshConnectionNeedsRebind = sql<boolean>`
   (${sshConnections.transport} = 'cloudflare_access' AND ${sshConnections.cloudflareAccessId} IS NULL)
-  OR (${sshConnections.transport} = 'tailscale' AND ${sshConnections.tailscaleId} IS NULL)
+  OR (${sshConnections.transport} IN ('tailscale', 'tailscale_ssh') AND ${sshConnections.tailscaleId} IS NULL)
 `.mapWith(sshConnections.defaultEnabledForChats);

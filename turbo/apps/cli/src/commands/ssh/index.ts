@@ -91,7 +91,7 @@ const list = new Command("list")
         for (const host of inventory.data.hosts) {
           const availability =
             host.availability.status === "blocked"
-              ? "blocked: needs_rebind (ask the owner to rebind Cloudflare Access or explicitly choose Direct in Connectors)"
+              ? "blocked: needs_rebind (ask the owner to rebind the saved network in Connectors)"
               : "ready to attempt (connectivity not checked)";
           console.log(
             `${host.id}  ${host.displayName}  ${host.host}:${host.port}  ${host.learnedHostKey ? "host key learned" : "host key not learned"}  ${availability}`,
@@ -167,7 +167,7 @@ export const sshCommand = new Command("ssh")
   .addHelpText(
     "after",
     `
-Connections use the owner's saved Direct or Cloudflare Access settings; credentials stay outside the sandbox and no proxy or token options are needed. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
+Connections use the owner's saved Direct SSH, Cloudflare Access, SSH over Tailscale or Tailscale SSH settings; credentials stay outside the sandbox and no proxy or token options are needed. Both Tailscale modes reuse saved network configurations. Tailscale SSH uses the tagged source identity, destination OS username and port 22, without an SSH password or private key. For Access hosts, the listed hostname and port 443 identify the gateway, not the origin SSH port.
 
 Command guide (read the relevant subcommand's --help before use):
   - Find authorized execution hosts: okou ssh host list --json
@@ -183,7 +183,7 @@ Command guide (read the relevant subcommand's --help before use):
   - Download: okou ssh download <connection-id> <remote-file> <local-file> --json
 
 Operational safety:
-  - Start with okou ssh host list --json and use an exact current ID only when availability.status=ready. A blocked needs_rebind host must be explicitly rebound to permitted Cloudflare Access or changed to Direct by its owner. Ready means configured to attempt, not connectivity-tested. Never invent an ID or automatically replay an uncertain command.
+  - Start with okou ssh host list --json and use an exact current ID only when availability.status=ready. A blocked needs_rebind host must have its network explicitly rebound by its owner. Ready means configured to attempt, not connectivity-tested. Never invent an ID or automatically replay an uncertain command.
   - The owner controls SSH host access with each host's chat default and per-chat host selection; agents cannot grant themselves access. Ask for a least-privilege remote SSH user.
   - First contact learns a host key (TOFU). An unexpected key requires owner verification and an explicit reset in SSH settings, never automatic acceptance.
   - Inspect structured failure_reason and effects instead of matching error text. effects=unknown means the remote operation may have run.

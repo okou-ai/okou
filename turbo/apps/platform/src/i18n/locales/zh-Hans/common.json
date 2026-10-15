@@ -5397,8 +5397,13 @@
     "summary_one": "已配置 {{count}} 台主机",
     "summary_other": "已配置 {{count}} 台主机",
     "tailscale": {
+      "authenticationFailed": "Tailscale SSH 身份认证失败。请检查系统用户名，在带标签的目标设备上启用 Tailscale SSH，并在 tailnet 的 SSH accept 策略中允许此登录。",
       "editUnavailable": "此主机现已使用 Tailscale。此处尚未提供 Tailscale 编辑和重新绑定功能。请取消此次编辑以保留已保存的传输方式。",
-      "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。"
+      "needsRebind": "此主机需要新的 Tailscale 配置。此处尚未提供 Tailscale 设置和重新绑定功能。",
+      "overTitle": "SSH over Tailscale",
+      "sshHelp": "使用所选 Tailscale 网络的身份认证，无需 SSH 密码或私钥。请在带标签的目标设备上启用 Tailscale SSH，并通过 SSH accept 策略允许此系统用户名。",
+      "sshTitle": "Tailscale SSH",
+      "username": "系统用户名"
     },
     "unavailable": "该账号无法使用 SSH 访问。",
     "username": "SSH 用户名"

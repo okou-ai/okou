@@ -290,13 +290,17 @@ export const sshTransportEditor$ = computed((get) => {
   return get(transportEditor$);
 });
 export const chooseSshTransport$ = command(({ get, set }, mode: string) => {
-  if (mode === "tailscale" && !get(tailscaleEnabled$)) {
+  if (
+    (mode === "tailscale" || mode === "tailscale_ssh") &&
+    !get(tailscaleEnabled$)
+  ) {
     return;
   }
   if (
     mode === "direct" ||
     mode === "cloudflare_access" ||
-    mode === "tailscale"
+    mode === "tailscale" ||
+    mode === "tailscale_ssh"
   ) {
     set(transportEditor$, (current) => {
       return { ...current, mode };
@@ -414,7 +418,8 @@ export const sshDialog$ = computed(async (get) => {
   const tailscale =
     dialog?.connection &&
     "transport" in dialog.connection &&
-    dialog.connection.transport.type === "tailscale";
+    (dialog.connection.transport.type === "tailscale" ||
+      dialog.connection.transport.type === "tailscale_ssh");
   if (hostEditor && tailscale && !get(tailscaleEnabled$)) {
     return null;
   }
@@ -596,6 +601,18 @@ export const subscribeSshChanged$ = command(({ set }, signal: AbortSignal) => {
     signal,
   );
 });
+export function usesTailscaleTransport(
+  connection: SshConnectionResponse | null | undefined,
+) {
+  return (
+    connection !== null &&
+    connection !== undefined &&
+    "transport" in connection &&
+    (connection.transport.type === "tailscale" ||
+      connection.transport.type === "tailscale_ssh")
+  );
+}
+
 export const openSshDialog$ = command(
   async (
     { get, set },
@@ -605,9 +622,7 @@ export const openSshDialog$ = command(
   ) => {
     if (
       kind === "edit" &&
-      connection &&
-      "transport" in connection &&
-      connection.transport.type === "tailscale" &&
+      usesTailscaleTransport(connection) &&
       !get(tailscaleEnabled$)
     ) {
       return;
@@ -621,7 +636,10 @@ export const openSshDialog$ = command(
     set(reviewedVersion$, null);
     set(cancelSshPrivateKeyFile$);
     set(credentialEditor$, {
-      selection: connection?.credentialId ?? null,
+      selection:
+        connection && "credentialId" in connection
+          ? connection.credentialId
+          : null,
       method: "private_key",
       replace: false,
     });
@@ -641,7 +659,8 @@ export const openSshDialog$ = command(
       tailscaleConfigId:
         connection &&
         "transport" in connection &&
-        connection.transport.type === "tailscale"
+        (connection.transport.type === "tailscale" ||
+          connection.transport.type === "tailscale_ssh")
           ? "configId" in connection.transport
             ? connection.transport.configId
             : ""
@@ -744,10 +763,9 @@ export const acceptSshConflictReview$ = command(
       get(dialog$) !== current ||
       reviewed.sessionKey !== get(authenticatedSessionKey$) ||
       (current.kind === "edit" &&
-        reviewed.connection !== null &&
-        "transport" in reviewed.connection &&
-        reviewed.connection.transport.type === "tailscale" &&
-        (!get(tailscaleEnabled$) || get(transportEditor$).mode !== "tailscale"))
+        usesTailscaleTransport(reviewed.connection) &&
+        (!get(tailscaleEnabled$) ||
+          !["tailscale", "tailscale_ssh"].includes(get(transportEditor$).mode)))
     ) {
       return;
     }
@@ -876,7 +894,9 @@ function hostFieldsFromForm(
     port:
       transport.mode === "cloudflare_access"
         ? 443
-        : Number(textField(form, "port")),
+        : transport.mode === "tailscale_ssh"
+          ? 22
+          : Number(textField(form, "port")),
     transport:
       transport.mode === "cloudflare_access"
         ? {
@@ -890,18 +910,22 @@ function hostFieldsFromForm(
                 }
               : { configId: transport.configId }),
           }
-        : transport.mode === "tailscale"
+        : transport.mode === "tailscale" || transport.mode === "tailscale_ssh"
           ? {
-              type: "tailscale",
+              type: transport.mode,
               ...(transport.tailscaleConfigId === "new"
                 ? { create: tailscaleFieldsFromForm(form) }
                 : { configId: transport.tailscaleConfigId }),
             }
           : { type: "direct" },
-    credential:
-      editor.selection === "new"
-        ? { create: credentialFromForm(form, editor) }
-        : { id: editor.selection },
+    ...(transport.mode === "tailscale_ssh"
+      ? { username: textField(form, "tailscaleSshUsername") }
+      : {
+          credential:
+            editor.selection === "new"
+              ? { create: credentialFromForm(form, editor) }
+              : { id: editor.selection },
+        }),
   };
 }
 
@@ -966,7 +990,7 @@ const saveSshHost$ = command(
     const transport = get(transportEditor$);
     if (
       (dialog.kind === "create" || dialog.kind === "edit") &&
-      transport.mode === "tailscale" &&
+      (transport.mode === "tailscale" || transport.mode === "tailscale_ssh") &&
       !get(tailscaleEnabled$)
     ) {
       return false;

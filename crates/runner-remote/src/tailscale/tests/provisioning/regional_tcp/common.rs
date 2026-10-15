@@ -127,6 +127,23 @@ async fn native_common_password_login_preserves_binary_output_and_idle_reuse() {
 }
 
 #[tokio::test]
+async fn native_common_tailscale_ssh_none_auth_exec_and_reuse() {
+    run_case(Case::Identity).await;
+}
+#[tokio::test]
+async fn native_common_tailscale_ssh_none_auth_sessions() {
+    run_case(Case::IdentitySessions).await;
+}
+#[tokio::test]
+async fn native_common_tailscale_ssh_none_auth_sftp() {
+    run_case(Case::IdentityFiles).await;
+}
+#[tokio::test]
+async fn native_common_tailscale_ssh_rejected_identity_never_falls_back() {
+    run_case(Case::RejectedIdentity).await;
+}
+
+#[tokio::test]
 async fn native_common_wrong_host_pin_never_sends_login_or_command() {
     run_case(Case::WrongPin).await;
 }
@@ -153,6 +170,10 @@ async fn native_common_tofu_configuration_race_never_sends_login_or_command() {
 
 #[derive(Clone, Copy)]
 enum Case {
+    Identity,
+    IdentitySessions,
+    IdentityFiles,
+    RejectedIdentity,
     Exec,
     Sessions,
     TargetedSessions,
@@ -170,6 +191,13 @@ fn credential(h: &Harness, id: uuid::Uuid, case: Case) -> Value {
         "username":"test-user", "generation":7, "learnedHostKey":direct["learnedHostKey"],
         "authentication":{"method":"private_key","privateKey":direct["privateKey"],"passphrase":null},
         "tailscale":{"configId":id,"generation":1,"clientId":"synthetic-client","clientSecret":"synthetic-secret","tags":["tag:ssh"]}});
+    if matches!(
+        case,
+        Case::Identity | Case::IdentitySessions | Case::IdentityFiles | Case::RejectedIdentity
+    ) {
+        value["outcome"] = "resolved_tailscale_ssh".into();
+        value.as_object_mut().unwrap().remove("authentication");
+    }
     if matches!(
         case,
         Case::Password | Case::WrongPin | Case::BadPassword | Case::Tofu | Case::TofuChanged
@@ -208,11 +236,18 @@ fn output(frames: &[Value], stream: &str) -> Vec<u8> {
 
 async fn run_case(case: Case) {
     let mut h = Harness::new(match case {
-        Case::Sessions | Case::TargetedSessions => Reply::Process,
-        Case::Files => Reply::Sftp("normal"),
+        Case::Sessions | Case::TargetedSessions | Case::IdentitySessions => Reply::Process,
+        Case::Files | Case::IdentityFiles => Reply::Sftp("normal"),
         _ => Reply::default(),
     })
     .await;
+    h.observed.allow_none_auth.store(
+        matches!(
+            case,
+            Case::Identity | Case::IdentitySessions | Case::IdentityFiles
+        ),
+        Ordering::SeqCst,
+    );
     let api = Api::secure(None).await;
     let home = Server::secure().await;
     let key = NodeKeyPair::random();
@@ -318,10 +353,10 @@ async fn run_case(case: Case) {
     });
     let opened = peers.finish(&mut opening).await;
     match case {
-        Case::WrongPin | Case::BadPassword | Case::TofuChanged => {
+        Case::WrongPin | Case::BadPassword | Case::TofuChanged | Case::RejectedIdentity => {
             let expected = if matches!(case, Case::WrongPin) {
                 crate::ssh::FailureReason::HostKeyMismatch
-            } else if matches!(case, Case::BadPassword) {
+            } else if matches!(case, Case::BadPassword | Case::RejectedIdentity) {
                 crate::ssh::FailureReason::AuthenticationFailed
             } else {
                 crate::ssh::FailureReason::ConfigurationChanged
@@ -329,7 +364,7 @@ async fn run_case(case: Case) {
             assert!(matches!(opened, Err(failure) if failure == expected));
             assert_eq!(
                 h.observed.auth.load(Ordering::SeqCst),
-                usize::from(matches!(case, Case::BadPassword))
+                usize::from(matches!(case, Case::BadPassword | Case::RejectedIdentity))
             );
             assert!(h.observed.commands.lock().unwrap().is_empty());
         }
@@ -337,6 +372,15 @@ async fn run_case(case: Case) {
             forwarding(&mut peers, &h, opened.unwrap()).await;
             exercise(&mut peers, &h, case).await;
         }
+    }
+    if matches!(
+        case,
+        Case::Identity | Case::IdentitySessions | Case::IdentityFiles | Case::RejectedIdentity
+    ) {
+        assert_eq!(
+            h.observed.none_auth.load(Ordering::SeqCst),
+            h.observed.auth.load(Ordering::SeqCst)
+        );
     }
     assert!(h.observed.queries.lock().unwrap().is_empty());
     resolve.assert_calls_async(1).await;
@@ -377,7 +421,7 @@ async fn forwarding(peers: &mut Peers, h: &Harness, mut forward: crate::ssh::Dir
 
 async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
     match case {
-        Case::Exec | Case::Password | Case::Tofu => {
+        Case::Exec | Case::Password | Case::Tofu | Case::Identity => {
             for _ in 0..2 {
                 let frames = peers.finish(h.request(params())).await;
                 assert_eq!(
@@ -393,7 +437,7 @@ async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
             // one later physical SSH transport, within the same native node.
             assert_eq!(h.observed.auth.load(Ordering::SeqCst), 2);
         }
-        Case::Sessions | Case::TargetedSessions => {
+        Case::Sessions | Case::TargetedSessions | Case::IdentitySessions => {
             let a = peers
                 .finish(sessions::start(h, json!({"type":"shell"}), false))
                 .await;
@@ -466,7 +510,7 @@ async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
             assert_eq!(sessions::bytes(&read), b"original-b-survives");
             peers.finish(sessions::state(h, &b, "running")).await;
         }
-        Case::Files => {
+        Case::Files | Case::IdentityFiles => {
             let dir = tempfile::tempdir().unwrap();
             let path = dir.path().join("native binary file");
             let bytes: Vec<_> = (0..65539).map(|n| (n % 256) as u8).collect();
@@ -477,7 +521,7 @@ async fn exercise(peers: &mut Peers, h: &Harness, case: Case) {
             assert_eq!(downloaded["type"], "completed", "{downloaded}");
             assert_eq!(received, bytes);
         }
-        Case::WrongPin | Case::BadPassword | Case::TofuChanged => {
+        Case::WrongPin | Case::BadPassword | Case::TofuChanged | Case::RejectedIdentity => {
             panic!("early SSH failure must return before session assertions")
         }
     }

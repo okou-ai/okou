@@ -5397,8 +5397,13 @@
     "summary_one": "호스트 {{count}}개 구성됨",
     "summary_other": "호스트 {{count}}개 구성됨",
     "tailscale": {
+      "authenticationFailed": "Tailscale SSH 인증에 실패했습니다. 시스템 사용자 이름을 확인하고, 태그가 지정된 대상에서 Tailscale SSH를 활성화한 뒤 tailnet의 SSH accept 정책에서 이 로그인을 허용하세요.",
       "editUnavailable": "이 호스트는 이제 Tailscale을 사용합니다. 여기서는 아직 Tailscale 편집 및 재연결을 사용할 수 없습니다. 저장된 연결 방식을 유지하려면 이 편집을 취소하세요.",
-      "needsRebind": "이 호스트에는 새 Tailscale 구성이 필요합니다. 여기서는 아직 Tailscale 설정 및 재바인딩을 지원하지 않습니다."
+      "needsRebind": "이 호스트에는 새 Tailscale 구성이 필요합니다. 여기서는 아직 Tailscale 설정 및 재바인딩을 지원하지 않습니다.",
+      "overTitle": "Tailscale을 통한 SSH",
+      "sshHelp": "선택한 Tailscale 네트워크 ID로 인증하므로 SSH 비밀번호나 개인 키가 필요하지 않습니다. 태그가 지정된 대상에서 Tailscale SSH를 활성화하고 SSH accept 정책에서 이 시스템 사용자 이름을 허용하세요.",
+      "sshTitle": "Tailscale SSH",
+      "username": "시스템 사용자 이름"
     },
     "unavailable": "이 계정에서는 SSH 접근을 사용할 수 없습니다.",
     "username": "SSH 사용자 이름"

@@ -1067,6 +1067,21 @@ pub mod runners {
                 /// Private network authority, never guest data or an SSH login.
                 tailscale: ResolveResponseResolvedTailscaleTailscale,
             },
+            /// Tailscale identity authentication over the native carrier on port 22.
+            ResolvedTailscaleSsh {
+                /// Current destination, private to Runner.
+                host: String,
+                /// Current destination port.
+                port: u64,
+                /// Current login identity.
+                username: String,
+                /// Current configuration generation.
+                generation: i64,
+                /// Existing pin, or first-use trust required.
+                learned_host_key: Option<ResolveResponseResolvedLearnedHostKey>,
+                /// Private network authority, never guest data or an SSH login.
+                tailscale: ResolveResponseResolvedTailscaleTailscale,
+            },
         }
 
         impl<'de> serde::Deserialize<'de> for ResolveResponse {
@@ -1084,6 +1099,8 @@ pub mod runners {
                     ResolvedAccess,
                     #[serde(rename = "resolved_tailscale")]
                     ResolvedTailscale,
+                    #[serde(rename = "resolved_tailscale_ssh")]
+                    ResolvedTailscaleSsh,
                 }
                 #[derive(serde::Deserialize)]
                 #[serde(field_identifier)]
@@ -1353,6 +1370,27 @@ pub mod runners {
                                 generation,
                                 learned_host_key,
                                 authentication,
+                                tailscale,
+                            }),
+                            (
+                                Some(Kind::ResolvedTailscaleSsh),
+                                Some(host),
+                                Some(port),
+                                Some(username),
+                                Some(generation),
+                                Some(learned_host_key),
+                                None,
+                                None,
+                                None,
+                                None,
+                                None,
+                                Some(tailscale),
+                            ) => Ok(ResolveResponse::ResolvedTailscaleSsh {
+                                host,
+                                port,
+                                username,
+                                generation,
+                                learned_host_key,
                                 tailscale,
                             }),
                             _ => Err(serde::de::Error::custom("invalid authority outcome fields")),

@@ -5421,8 +5421,13 @@
     "summary_one": "{{count}} Host konfiguriert",
     "summary_other": "{{count}} Hosts konfiguriert",
     "tailscale": {
+      "authenticationFailed": "Die Tailscale-SSH-Authentifizierung ist fehlgeschlagen. Prüfe den Systembenutzernamen, aktiviere Tailscale SSH auf dem getaggten Zielgerät und erlaube diese Anmeldung in der SSH-accept-Richtlinie des Tailnets.",
       "editUnavailable": "Dieser Host verwendet jetzt Tailscale. Das Bearbeiten und erneute Zuordnen von Tailscale ist hier noch nicht verfügbar. Brich diese Bearbeitung ab, um die gespeicherte Verbindungsart beizubehalten.",
-      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar."
+      "needsRebind": "Dieser Host benötigt eine neue Tailscale-Konfiguration. Die Einrichtung und erneute Zuordnung von Tailscale sind hier noch nicht verfügbar.",
+      "overTitle": "SSH über Tailscale",
+      "sshHelp": "Authentifiziert über die Identität des ausgewählten Tailscale-Netzwerks, ohne SSH-Passwort oder privaten Schlüssel. Aktiviere Tailscale SSH auf einem getaggten Zielgerät und erlaube diesen Systembenutzernamen in einer SSH-accept-Richtlinie.",
+      "sshTitle": "Tailscale SSH",
+      "username": "Systembenutzername"
     },
     "unavailable": "SSH-Zugriff ist für dieses Konto nicht verfügbar.",
     "username": "SSH-Benutzername"

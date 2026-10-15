@@ -173,7 +173,7 @@ describe("remote control CLI management authorization", () => {
       }),
       [201],
     );
-    expect(host.body.credentialId).toBe(created.body.id);
+    expect(host.body).toMatchObject({ credentialId: created.body.id });
     const omittedVersion = await accept(
       connections().delete({
         headers,

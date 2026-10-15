@@ -71,6 +71,7 @@ import {
   prepareTailscaleConfig,
   requestedTailscaleId,
   prepareInlineTailscaleConfig,
+  selectedSshTailscaleTransport,
 } from "./tailscale.service";
 import { canonicalTailscaleDestination } from "./tailscale-destination";
 import {
@@ -240,7 +241,7 @@ function canonicalizeSshHost(host: string): SshConnectionResult<string> {
 
 function toSshConnectionResponse(
   row: SshConnectionResponseRow,
-  credential: { readonly name: string; readonly username: string },
+  credential: { readonly name: string; readonly username: string } | null,
 ): SshConnectionResponse {
   const hasAlgorithm = row.learnedHostKeyAlgorithm !== null;
   const hasFingerprint = row.learnedHostKeyFingerprint !== null;
@@ -248,6 +249,43 @@ function toSshConnectionResponse(
     throw new Error("SSH connection has an incomplete learned host-key pair");
   }
 
+  const common = {
+    id: row.id,
+    displayName: row.displayName,
+    host: row.host,
+    port: row.port,
+    generation: row.generation,
+    learnedHostKey:
+      row.learnedHostKeyAlgorithm === null ||
+      row.learnedHostKeyFingerprint === null
+        ? null
+        : {
+            algorithm: row.learnedHostKeyAlgorithm,
+            fingerprint: row.learnedHostKeyFingerprint,
+          },
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+  if (row.transport === "tailscale_ssh") {
+    if (
+      row.tailscaleSshUsername === null ||
+      row.credentialId !== null ||
+      row.port !== 22
+    ) {
+      throw new Error("Invalid stored Tailscale SSH login");
+    }
+    return {
+      ...common,
+      username: row.tailscaleSshUsername,
+      transport:
+        row.tailscaleId === null
+          ? { type: "tailscale_ssh", needsRebind: true }
+          : { type: "tailscale_ssh", configId: row.tailscaleId },
+    };
+  }
+  if (!credential || row.credentialId === null) {
+    throw new Error("SSH connection credential is missing");
+  }
   return {
     ...(row.transport === "direct"
       ? {}
@@ -270,24 +308,10 @@ function toSshConnectionResponse(
                     configId: row.cloudflareAccessId,
                   },
           }),
-    id: row.id,
-    displayName: row.displayName,
-    host: row.host,
-    port: row.port,
+    ...common,
     username: credential.username,
     credentialId: row.credentialId,
     credentialName: credential.name,
-    generation: row.generation,
-    learnedHostKey:
-      row.learnedHostKeyAlgorithm === null ||
-      row.learnedHostKeyFingerprint === null
-        ? null
-        : {
-            algorithm: row.learnedHostKeyAlgorithm,
-            fingerprint: row.learnedHostKeyFingerprint,
-          },
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt.toISOString(),
   };
 }
 
@@ -317,7 +341,7 @@ export const listSshConnections$ = command(
         },
       })
       .from(sshConnections)
-      .innerJoin(
+      .leftJoin(
         sshCredentials,
         eq(sshCredentials.id, sshConnections.credentialId),
       )
@@ -355,15 +379,16 @@ export const summarizeSshConnections$ = command(
 );
 
 export interface PreparedSshConnectionCreation extends CreateSshConnectionArgs {
+  readonly transportType: SshConnectionRow["transport"];
+  readonly tailscaleSshUsername: string | null;
   readonly canonicalHost: string;
   readonly accessId: string | null;
   readonly tailscaleId: string | null;
   readonly preparedTailscale:
     Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined;
   readonly preparedAccess: Awaited<ReturnType<typeof prepareAccessCreation>>;
-  readonly preparedCredential: Awaited<
-    ReturnType<typeof prepareSshCredentialSelection>
-  >;
+  readonly preparedCredential:
+    Awaited<ReturnType<typeof prepareSshCredentialSelection>> | undefined;
 }
 
 // Pure sessionless SQL construction; execution remains in the owning command.
@@ -399,7 +424,7 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
       ),
   );
   const credentialPredicate = and(
-    args.preparedCredential.id === undefined
+    args.preparedCredential?.id === undefined
       ? sql`false`
       : ownedSshCredential(args, args.preparedCredential.id),
     exists(reads.qb.select({ id: networkReady.id }).from(networkReady)),
@@ -417,7 +442,7 @@ function sshConnectionCreationAdmission(args: PreparedSshConnectionCreation) {
       .select({ id: networkReady.id })
       .from(networkReady)
       .where(
-        args.preparedCredential.id === undefined
+        args.preparedCredential?.id === undefined
           ? sql`true`
           : exists(
               reads.qb.select({ id: credentialStamp.id }).from(credentialStamp),
@@ -453,7 +478,7 @@ const commitSshConnectionCreationAttempt$ = command(
     } = sshConnectionCreationAdmission(args);
     const prepared = args.preparedCredential;
     const credential =
-      prepared.id === undefined
+      prepared !== undefined && prepared.id === undefined
         ? db.$with("inline_ssh_creation_credential").as(
             db
               .insert(sshCredentials)
@@ -500,7 +525,9 @@ const commitSshConnectionCreationAttempt$ = command(
           sshConnectionCreationSource(
             args,
             ready,
-            sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
+            args.transportType === "tailscale_ssh"
+              ? sql`NULL::uuid`
+              : sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
             accessId,
             tailscaleId,
           ),
@@ -518,14 +545,16 @@ const commitSshConnectionCreationAttempt$ = command(
         networkReady,
         credentialStamp,
         ready,
-        ...(prepared.id === undefined ? [credential] : []),
+        ...(prepared !== undefined && prepared.id === undefined
+          ? [credential]
+          : []),
         ...(access === undefined ? [] : [access]),
         ...(tailscale === undefined ? [] : [tailscale]),
         written,
       )
       .select({
         existing: { ...reads.current._.selectedFields },
-        credentialAvailable: (prepared.id === undefined
+        credentialAvailable: (prepared?.id === undefined
           ? sql`true`
           : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
         ).mapWith(pgBooleanDecoder),
@@ -597,10 +626,9 @@ export const createSshConnection$ = command(
     { set },
     args: CreateSshConnectionArgs,
   ): Promise<SshConnectionResult<SshConnectionResponse | undefined>> => {
-    const tailscaleTransport =
-      args.body.transport?.type === "tailscale"
-        ? args.body.transport
-        : undefined;
+    const tailscaleTransport = selectedSshTailscaleTransport(
+      args.body.transport,
+    );
     const canonicalHost = canonicalizeSelectedSshHost(
       args.body.host,
       tailscaleTransport !== undefined,
@@ -629,14 +657,19 @@ export const createSshConnection$ = command(
       args.featureContext,
     );
 
-    const preparedCredential = await prepareSshCredentialSelection(
-      args.body.credential,
-      args.featureContext,
-    );
+    const preparedCredential =
+      args.body.credential === undefined
+        ? undefined
+        : await prepareSshCredentialSelection(
+            args.body.credential,
+            args.featureContext,
+          );
 
     const result = await set(commitSshConnectionCreation$, {
       ...args,
+      tailscaleSshUsername: args.body.username ?? null,
       canonicalHost: canonicalHost.value,
+      transportType: args.body.transport?.type ?? "direct",
       preparedAccess,
       preparedCredential,
       accessId,
@@ -647,10 +680,7 @@ export const createSshConnection$ = command(
       ),
     });
     if (result.ok && result.value) {
-      if (
-        args.body.transport?.type === "tailscale" &&
-        "create" in args.body.transport
-      ) {
+      if (tailscaleTransport !== undefined && "create" in tailscaleTransport) {
         await publishTailscaleClientInvalidation(args);
       }
       await set(publishSshRuntimeInvalidation$, {
@@ -667,6 +697,8 @@ export const createSshConnection$ = command(
 );
 
 export interface PreparedSshConnectionUpdate extends UpdateSshConnectionArgs {
+  readonly transportType: SshConnectionRow["transport"];
+  readonly tailscaleSshUsername: string | null;
   readonly tailscaleId: string | null;
   readonly preparedTailscale:
     Awaited<ReturnType<typeof prepareTailscaleConfig>> | undefined;
@@ -803,7 +835,9 @@ const commitSshConnectionUpdateAttempt$ = command(
           sshBindingUpdateValues(
             args,
             reads.current,
-            sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
+            args.transportType === "tailscale_ssh"
+              ? sql`NULL::uuid`
+              : sql`(${reads.qb.select({ id: credential.id }).from(credential)})`,
             accessId,
             tailscaleId,
           ),
@@ -842,8 +876,8 @@ const commitSshConnectionUpdateAttempt$ = command(
       )
       .select({
         current: { ...reads.current._.selectedFields },
-        credentialAvailable: (prepared !== undefined &&
-        prepared.id === undefined
+        credentialAvailable: (args.transportType === "tailscale_ssh" ||
+        (prepared !== undefined && prepared.id === undefined)
           ? sql`true`
           : sql`${exists(reads.qb.select({ id: credential.id }).from(credential))}`
         ).mapWith(pgBooleanDecoder),
@@ -946,6 +980,10 @@ const prepareSshConnectionUpdate$ = command(
     }
     const host = selectedHost.value;
     const port = args.body.port ?? current.port;
+    const login = validateSshLoginUpdate(current, args.body, port);
+    if (!login.ok) {
+      return login;
+    }
     const rejected = validateSshHostUpdate(current, {
       body: args.body,
       host,
@@ -974,6 +1012,7 @@ const prepareSshConnectionUpdate$ = command(
       ok: true,
       value: {
         ...args,
+        ...login.value,
         host,
         port,
         accessId,
@@ -1000,7 +1039,8 @@ export const updateSshConnection$ = command(
     const result = await set(commitSshConnectionUpdate$, prepared.value);
     if (result.ok) {
       if (
-        args.body.transport?.type === "tailscale" &&
+        (args.body.transport?.type === "tailscale" ||
+          args.body.transport?.type === "tailscale_ssh") &&
         "create" in args.body.transport
       ) {
         await publishTailscaleClientInvalidation(args);
@@ -1100,8 +1140,12 @@ export const resetSshConnectionHostKey$ = command(
     const [credential] = await db
       .select(credentialSelection)
       .from(sshCredentials)
-      .where(ownedSshCredential(args, current.credentialId));
-    if (!credential) {
+      .where(
+        current.credentialId === null
+          ? sql`false`
+          : ownedSshCredential(args, current.credentialId),
+      );
+    if (!credential && current.transport !== "tailscale_ssh") {
       throw new Error("SSH connection credential is missing");
     }
     const [updated] = await db
@@ -1134,7 +1178,10 @@ export const resetSshConnectionHostKey$ = command(
       userId: args.userId,
       connectionId: args.connectionId,
     });
-    return { ok: true, value: toSshConnectionResponse(updated, credential) };
+    return {
+      ok: true,
+      value: toSshConnectionResponse(updated, credential ?? null),
+    };
   },
 );
 
@@ -1151,6 +1198,36 @@ function requestedSshAccessId(
 }
 function invalidSshAccessEndpoint(host: string, port: number) {
   return isIP(host) !== 0 || !host.includes(".") || port !== 443;
+}
+function validateSshLoginUpdate(
+  current: SshConnectionRow,
+  body: UpdateSshConnectionRequest,
+  port: number,
+): SshConnectionResult<{
+  readonly transportType: SshConnectionRow["transport"];
+  readonly tailscaleSshUsername: string | null;
+}> {
+  const transportType = body.transport?.type ?? current.transport;
+  const tailscaleSshUsername =
+    transportType === "tailscale_ssh"
+      ? (body.username ?? current.tailscaleSshUsername)
+      : null;
+  if (
+    transportType === "tailscale_ssh"
+      ? body.credential !== undefined ||
+        tailscaleSshUsername === null ||
+        port !== 22
+      : body.username !== undefined ||
+        (current.credentialId === null && body.credential === undefined)
+  ) {
+    return {
+      ok: false,
+      kind: "bad_request",
+      code: SSH_ERROR_CODES.INVALID_INPUT,
+      message: "Choose a valid login for the selected SSH connection type",
+    };
+  }
+  return { ok: true, value: { transportType, tailscaleSshUsername } };
 }
 function validateSshHostUpdate(
   current: SshConnectionRow,
@@ -1173,7 +1250,7 @@ function validateSshHostUpdate(
   }
   if (
     current.transport !== "direct" &&
-    (current.transport === "tailscale"
+    (current.transport === "tailscale" || current.transport === "tailscale_ssh"
       ? current.tailscaleId === null
       : current.cloudflareAccessId === null) &&
     args.body.transport === undefined
@@ -1236,7 +1313,10 @@ function sshCreationOutcome(
   if (selectedId !== null && !captured.tailscale) {
     return tailscaleFailure("notFound");
   }
-  if (!captured.changed || !captured.credential) {
+  if (
+    !captured.changed ||
+    (!captured.credential && args.transportType !== "tailscale_ssh")
+  ) {
     throw new Error("SSH connection creation returned no row");
   }
   return {
@@ -1274,7 +1354,10 @@ function sshUpdateOutcome(
   if (selectedId !== null && !captured.tailscale) {
     return tailscaleFailure("notFound");
   }
-  if (!captured.changed || !captured.credential) {
+  if (
+    !captured.changed ||
+    (!captured.credential && args.transportType !== "tailscale_ssh")
+  ) {
     throw new Error("SSH connection update returned no row");
   }
   return {
@@ -1301,7 +1384,10 @@ function canonicalizeUpdatedSshHost(
 ): SshConnectionResult<string> {
   const tailscale =
     body.transport?.type === "tailscale" ||
-    (body.transport === undefined && current.transport === "tailscale");
+    body.transport?.type === "tailscale_ssh" ||
+    (body.transport === undefined &&
+      (current.transport === "tailscale" ||
+        current.transport === "tailscale_ssh"));
   return tailscale
     ? canonicalizeSelectedSshHost(body.host ?? current.host, true)
     : { ok: true, value: canonicalHost ?? current.host };

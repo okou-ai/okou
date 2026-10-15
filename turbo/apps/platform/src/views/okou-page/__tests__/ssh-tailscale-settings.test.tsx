@@ -19,7 +19,10 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { getAction } from "./connector-integrations-test-helpers.ts";
+import {
+  getAction,
+  chooseSshConnectionType,
+} from "./connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const auth = Object.freeze({
@@ -111,7 +114,7 @@ async function addHost() {
     }),
   );
   const dialog = await screen.findByRole("dialog");
-  click(getAction("radio", "Tailscale", dialog));
+  await chooseSshConnectionType(dialog, "SSH over Tailscale");
   await within(dialog).findByLabelText("Tailscale");
   await fill(within(dialog).getByLabelText("Display name"), "New private host");
   await fill(
@@ -121,6 +124,135 @@ async function addHost() {
   await fill(within(dialog).getByLabelText("Port"), "2022");
   return dialog;
 }
+
+test("Tailscale SSH reuses the selected network, preserves drafts and saves only an OS username", async () => {
+  const requests: unknown[] = [];
+  context.mocks.api(sshConnectionsContract.create, ({ body, respond }) => {
+    requests.push(body);
+    return respond(201, {
+      id: body.id,
+      displayName: body.displayName,
+      host: body.host,
+      port: 22,
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh", configId: config.id },
+      generation: 1,
+      learnedHostKey: null,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+  });
+  await page();
+  const dialog = await addHost();
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  expect(within(dialog).getByLabelText("Tailscale")).toHaveTextContent(
+    config.name,
+  );
+  expect(
+    within(dialog).queryByRole("combobox", { name: "Credential" }),
+  ).toBeNull();
+  const username = within(dialog).getByRole("textbox", {
+    name: "System username",
+  });
+  await fill(username, "ubuntu");
+  await chooseSshConnectionType(dialog, "SSH over Tailscale");
+  expect(within(dialog).getByLabelText("Port")).toHaveValue(2022);
+  expect(within(dialog).getByLabelText("Credential")).toHaveTextContent(
+    "SSH login",
+  );
+  await chooseSshConnectionType(dialog, "Tailscale SSH");
+  expect(
+    within(dialog).getByRole("textbox", { name: "System username" }),
+  ).toHaveValue("ubuntu");
+  click(getAction("button", "Save", dialog));
+  await waitFor(() => {
+    return expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  expect(requests).toStrictEqual([
+    {
+      id: expect.any(String),
+      displayName: "New private host",
+      host: "100.64.0.2",
+      port: 22,
+      username: "ubuntu",
+      transport: { type: "tailscale_ssh", configId: config.id },
+    },
+  ]);
+});
+
+test("The connection selector supports keyboard selection and Escape returns focus", async () => {
+  await page();
+  click(getAction("button", "Add host"));
+  const dialog = await screen.findByRole("dialog");
+  const mode = within(dialog).getByRole("combobox", { name: "Connection" });
+  await userEvent.click(mode);
+  await screen.findByRole("option", { name: "Tailscale SSH" });
+  await userEvent.keyboard("{Escape}");
+  expect(mode).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("option", { name: "Tailscale SSH" });
+  await userEvent.keyboard("{End}{Enter}");
+  expect(
+    within(dialog).getByRole("textbox", { name: "System username" }),
+  ).toBeVisible();
+});
+
+test.each(["tailscale_ssh", "tailscale"] as const)(
+  "A %s authentication warning explains its own login type",
+  async (type) => {
+    context.mocks.api(sshConnectionsContract.list, ({ respond }) => {
+      const common = {
+        id: host.id,
+        displayName: "Failed host",
+        host: host.host,
+        port: 22,
+        username: credential.username,
+        generation: host.generation,
+        learnedHostKey: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      return type === "tailscale_ssh"
+        ? respond(200, {
+            connections: [
+              {
+                ...common,
+                transport: { type: "tailscale_ssh", configId: config.id },
+              },
+            ],
+          })
+        : respond(200, {
+            connections: [
+              {
+                ...common,
+                credentialId: credential.id,
+                credentialName: credential.name,
+                transport: { type: "tailscale", configId: config.id },
+              },
+            ],
+          });
+    });
+    context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
+      return respond(200, {
+        observations: [
+          {
+            connectionId: host.id,
+            connectionCreatedAt: timestamp,
+            generation: host.generation,
+            observedAt: timestamp,
+            failureReason: "authentication_failed",
+          },
+        ],
+      });
+    });
+    await page();
+    const expected =
+      type === "tailscale_ssh"
+        ? "Tailscale SSH authentication failed. Check the system username, enable Tailscale SSH on the tagged destination and allow this login in the tailnet's SSH accept policy."
+        : "SSH authentication failed. Check the selected credential's username, private key or password and the server's authorization. Edit the credential or select another one for this host.";
+    await expect(screen.findByText(expected)).resolves.toBeVisible();
+  },
+);
 
 test.each([
   { inlineNetwork: false, newCredential: false },
@@ -354,7 +486,13 @@ test("The default-off UI preserves existing Tailscale metadata and its reader-on
   expect(getAction("button", "Edit host")).toBeDisabled();
   click(getAction("button", "Add host"));
   const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).queryByRole("radio", { name: "Tailscale" })).toBeNull();
+  await userEvent.click(
+    within(dialog).getByRole("combobox", { name: "Connection" }),
+  );
+  expect(
+    screen.queryByRole("option", { name: "SSH over Tailscale" }),
+  ).toBeNull();
+  expect(screen.queryByRole("option", { name: "Tailscale SSH" })).toBeNull();
 });
 
 test("Changing carriers preserves endpoint drafts and the independently selected network", async () => {
@@ -365,14 +503,14 @@ test("Changing carriers preserves endpoint drafts and the independently selected
       config.name,
     );
   });
-  click(getAction("radio", "Direct", dialog));
+  await chooseSshConnectionType(dialog, "Direct");
   expect(within(dialog).getByLabelText("Display name")).toHaveValue(
     "New private host",
   );
   expect(
     within(dialog).getByLabelText("Public hostname or IP address"),
   ).toHaveValue("100.64.0.2");
-  click(getAction("radio", "Tailscale", dialog));
+  await chooseSshConnectionType(dialog, "SSH over Tailscale");
   await expect(
     within(dialog).findByLabelText("Tailnet hostname or IP address"),
   ).resolves.toHaveValue("100.64.0.2");

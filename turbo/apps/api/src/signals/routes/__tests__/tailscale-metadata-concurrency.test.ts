@@ -95,7 +95,7 @@ async function config() {
   ).body;
 }
 async function host(configId: string) {
-  return (
+  const created = (
     await accept(
       hosts().create({
         headers,
@@ -120,6 +120,10 @@ async function host(configId: string) {
       [201],
     )
   ).body;
+  if (!("credentialId" in created)) {
+    throw new Error("Expected a credential-backed test host");
+  }
+  return created;
 }
 async function latest(id: string): Promise<SshConnectionResponse> {
   const value = (

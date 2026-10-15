@@ -5397,8 +5397,13 @@
     "summary_one": "{{count}} host dikonfigurasi",
     "summary_other": "{{count}} host dikonfigurasi",
     "tailscale": {
+      "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
       "editUnavailable": "Host ini kini menggunakan Tailscale. Pengeditan dan pengikatan ulang Tailscale belum tersedia di sini. Batalkan pengeditan ini untuk mempertahankan transport yang tersimpan.",
-      "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini."
+      "needsRebind": "Host ini memerlukan konfigurasi Tailscale baru. Penyiapan dan pengikatan ulang Tailscale belum tersedia di sini.",
+      "overTitle": "SSH melalui Tailscale",
+      "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
+      "sshTitle": "Tailscale SSH",
+      "username": "Nama pengguna sistem"
     },
     "unavailable": "Akses SSH tidak tersedia untuk akun ini.",
     "username": "Nama pengguna SSH"

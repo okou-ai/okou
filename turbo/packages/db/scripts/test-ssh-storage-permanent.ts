@@ -163,6 +163,48 @@ export async function validatePermanentSshStorage(databaseUrl: string) {
         .returning();
       assert.deepEqual(removed, host);
     }
+    const [identity] = await db
+      .insert(sshConnections)
+      .values({
+        ...owner,
+        displayName: "Tailscale identity",
+        host: "100.64.0.2",
+        port: 22,
+        transport: "tailscale_ssh",
+        tailscaleId: tailscale.id,
+        tailscaleSshUsername: "ubuntu",
+      })
+      .returning();
+    assert.ok(identity);
+    assert.equal(identity.credentialId, null);
+    for (const change of [
+      "port=2222",
+      "tailscale_ssh_username=NULL",
+      "tailscale_ssh_username=' '",
+      "transport='tailscale'",
+      `credential_id='${credential.id}'`,
+    ]) {
+      await assert.rejects(
+        client.query(`UPDATE ssh_connections SET ${change} WHERE id=$1`, [
+          identity.id,
+        ]),
+        { code: "23514", constraint: "chk_ssh_connections_login" },
+      );
+    }
+    await db
+      .update(sshConnections)
+      .set({ tailscaleId: null })
+      .where(eq(sshConnections.id, identity.id));
+    assert.deepEqual(
+      await db
+        .select({
+          transport: sshConnections.transport,
+          needsRebind: sshConnectionNeedsRebind,
+        })
+        .from(sshConnections)
+        .where(eq(sshConnections.id, identity.id)),
+      [{ transport: "tailscale_ssh", needsRebind: true }],
+    );
   } finally {
     try {
       if (connected) {

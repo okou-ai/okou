@@ -19,7 +19,7 @@ import {
   sshConnections,
 } from "@okouai/db/runtime/ssh-connection";
 import { sshCredentials } from "@okouai/db/schema/ssh-credential";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql, isNotNull } from "drizzle-orm";
 
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
@@ -47,7 +47,10 @@ const connectionFields = Object.freeze({
   userId: agentRuns.userId,
   host: sshConnections.host,
   port: sshConnections.port,
-  username: sshCredentials.username,
+  username:
+    sql`CASE WHEN ${sshConnections.transport} = 'tailscale_ssh' THEN ${sshConnections.tailscaleSshUsername} ELSE ${sshCredentials.username} END`.mapWith(
+      sshCredentials.username,
+    ),
   authMethod: sshCredentials.authMethod,
   encryptedPassword: sshCredentials.encryptedPassword,
   generation: sshConnections.generation,
@@ -142,10 +145,18 @@ export function createCurrentRunnerSshConnection(
 
       .innerJoin(agents, agentAuthority)
       .innerJoin(sshConnections, connectionAuthority(input))
-      .innerJoin(sshCredentials, credentialAuthority)
+      .leftJoin(sshCredentials, credentialAuthority)
       .leftJoin(cloudflareAccessConfigs, cloudflareAuthority)
       .leftJoin(tailscaleConfigs, tailscaleAuthority)
-      .where(runAuthority(input));
+      .where(
+        and(
+          runAuthority(input),
+          or(
+            eq(sshConnections.transport, "tailscale_ssh"),
+            isNotNull(sshCredentials.id),
+          ),
+        ),
+      );
     return row ?? null;
   });
 }
@@ -160,7 +171,7 @@ function availableConnection(row: Connection | null | undefined) {
     return null;
   }
   if (
-    row.transport === "tailscale" &&
+    (row.transport === "tailscale" || row.transport === "tailscale_ssh") &&
     (row.tailscale === null || row.tailscaleId === null)
   ) {
     throw new Error("SSH Tailscale configuration is missing");
@@ -186,6 +197,23 @@ function learnedHostKey(row: {
   });
 }
 
+async function decryptTailscaleAuthority(row: Connection) {
+  if (row.transport !== "tailscale" && row.transport !== "tailscale_ssh") {
+    return null;
+  }
+  const network = row.tailscale;
+  if (network === null) {
+    throw new Error("SSH Tailscale configuration is missing");
+  }
+  return {
+    configId: network.id,
+    generation: network.generation,
+    tags: network.tags,
+    clientId: await decryptStoredSecretValue(network.encryptedClientId),
+    clientSecret: await decryptStoredSecretValue(network.encryptedClientSecret),
+  };
+}
+
 // Decryption follows the request's cancellation, so this semantic handoff stays
 // in a command. Its only input is the captured joined record, never a DB handle.
 export const resolveRunnerSsh$ = command(
@@ -207,20 +235,23 @@ export const resolveRunnerSsh$ = command(
       generation: row.generation,
       learnedHostKey: hostKey,
     };
-    const network = row.transport === "tailscale" ? row.tailscale : null;
-    const tailscaleCredentials =
-      network === null
-        ? null
-        : {
-            configId: network.id,
-            generation: network.generation,
-            tags: network.tags,
-            clientId: await decryptStoredSecretValue(network.encryptedClientId),
-            clientSecret: await decryptStoredSecretValue(
-              network.encryptedClientSecret,
-            ),
-          };
+    const tailscaleCredentials = await decryptTailscaleAuthority(row);
     signal.throwIfAborted();
+    if (row.transport === "tailscale_ssh") {
+      if (
+        row.port !== 22 ||
+        tailscaleCredentials === null ||
+        row.authMethod !== null
+      ) {
+        throw new Error("Invalid Tailscale SSH identity");
+      }
+      return {
+        outcome: "resolved_tailscale_ssh",
+        ...common,
+        port: 22,
+        tailscale: tailscaleCredentials,
+      };
+    }
     const access = row.transport === "cloudflare_access" ? row.access : null;
     const accessCredentials =
       access === null

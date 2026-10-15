@@ -357,6 +357,27 @@ impl SshRuntime {
             .await??;
         observation.created_at = Some(credential.created_at);
         let (private_key, passphrase) = match credential.auth {
+            CredentialAuth::Tailscale => {
+                if credential.port != 22
+                    || !matches!(&credential.transport, authority::Transport::Tailscale(_))
+                {
+                    return Err(FailureReason::AuthorityFailure);
+                }
+                scope.check()?;
+                observation.generation = Some(credential.generation);
+                return Ok(PreparedCredential {
+                    created_at: credential.created_at,
+                    host: credential.host,
+                    port: credential.port,
+                    username: credential.username,
+                    trust: Mutex::new(Trust {
+                        generation: credential.generation,
+                        pin: credential.pin,
+                    }),
+                    auth: PreparedAuth::Tailscale,
+                    transport: credential.transport,
+                });
+            }
             CredentialAuth::PrivateKey {
                 private_key,
                 passphrase,

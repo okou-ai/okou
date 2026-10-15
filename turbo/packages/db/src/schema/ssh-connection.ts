@@ -31,11 +31,15 @@ export const sshConnections = pgTable(
       index("idx_ssh_connections_tailscale").on(table.tailscaleId, table.id),
       check(
         "chk_ssh_connections_transport",
-        sql`${table.transport} IN ('direct', 'cloudflare_access', 'tailscale')`,
+        sql`${table.transport} IN ('direct', 'cloudflare_access', 'tailscale', 'tailscale_ssh')`,
       ),
       check(
         "chk_ssh_connections_transport_binding",
-        sql`(${table.transport} = 'direct' AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'cloudflare_access' AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'tailscale' AND ${table.cloudflareAccessId} IS NULL)`,
+        sql`(${table.transport} = 'direct' AND ${table.cloudflareAccessId} IS NULL AND ${table.tailscaleId} IS NULL) OR (${table.transport} = 'cloudflare_access' AND ${table.tailscaleId} IS NULL) OR (${table.transport} IN ('tailscale', 'tailscale_ssh') AND ${table.cloudflareAccessId} IS NULL)`,
+      ),
+      check(
+        "chk_ssh_connections_login",
+        sql`(${table.transport} = 'tailscale_ssh' AND ${table.credentialId} IS NULL AND ${table.tailscaleSshUsername} IS NOT NULL AND char_length(btrim(${table.tailscaleSshUsername})) BETWEEN 1 AND 255 AND ${table.port} = 22) OR (${table.transport} <> 'tailscale_ssh' AND ${table.credentialId} IS NOT NULL AND ${table.tailscaleSshUsername} IS NULL)`,
       ),
       index("idx_ssh_connections_cloudflare_access").on(
         table.cloudflareAccessId,

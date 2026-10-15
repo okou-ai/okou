@@ -25,7 +25,8 @@ export function availableRunnerMutationAuthority(
     return null;
   }
   if (
-    current.transport === "tailscale" &&
+    (current.transport === "tailscale" ||
+      current.transport === "tailscale_ssh") &&
     (current.tailscaleId === null || current.tailscaleConfigId === null)
   ) {
     throw new Error("SSH Tailscale configuration is missing");

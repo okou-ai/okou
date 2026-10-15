@@ -7,6 +7,7 @@ import { createTailscaleRequestSchema } from "./tailscale";
 import { sshConnectionObservationSchema } from "./ssh-connection-observations";
 import {
   SSH_DISPLAY_NAME_MAX_LENGTH,
+  SSH_USERNAME_MAX_LENGTH,
   sshCredentialSelectionSchema,
 } from "./ssh-credentials";
 export {
@@ -27,6 +28,7 @@ const displayNameSchema = z
   .max(SSH_DISPLAY_NAME_MAX_LENGTH);
 const hostSchema = z.string().trim().min(1).max(SSH_HOST_MAX_LENGTH);
 const portSchema = z.int().min(1).max(65_535);
+const usernameSchema = z.string().trim().min(1).max(SSH_USERNAME_MAX_LENGTH);
 const accessTransportSchema = z
   .object({ type: z.literal("cloudflare_access"), configId: z.uuid() })
   .strict();
@@ -37,6 +39,13 @@ const transportSchema = z.union([
   z.object({ type: z.literal("direct") }).strict(),
   accessTransportSchema,
   tailscaleTransportSchema,
+  z.object({ type: z.literal("tailscale_ssh"), configId: z.uuid() }).strict(),
+  z
+    .object({
+      type: z.literal("tailscale_ssh"),
+      create: createTailscaleRequestSchema,
+    })
+    .strict(),
   z
     .object({
       type: z.literal("tailscale"),
@@ -56,10 +65,24 @@ export const createSshConnectionRequestSchema = z
     displayName: displayNameSchema,
     host: hostSchema,
     port: portSchema.default(22),
-    credential: sshCredentialSelectionSchema,
+    credential: sshCredentialSelectionSchema.optional(),
+    username: usernameSchema.optional(),
     transport: transportSchema.optional(),
   })
   .strict()
+  .refine(
+    (body) => {
+      return body.transport?.type === "tailscale_ssh"
+        ? body.credential === undefined &&
+            body.username !== undefined &&
+            body.port === 22
+        : body.credential !== undefined && body.username === undefined;
+    },
+    {
+      message:
+        "Tailscale SSH requires a username, port 22 and no SSH credential; other modes require an SSH credential",
+    },
+  )
   .refine(
     (body) => {
       return body.transport?.type !== "cloudflare_access" || body.port === 443;
@@ -74,6 +97,7 @@ export const updateSshConnectionRequestSchema = z
     host: hostSchema.optional(),
     port: portSchema.optional(),
     credential: sshCredentialSelectionSchema.optional(),
+    username: usernameSchema.optional(),
     transport: transportSchema.optional(),
   })
   .strict()
@@ -84,6 +108,7 @@ export const updateSshConnectionRequestSchema = z
         body.host !== undefined ||
         body.port !== undefined ||
         body.credential !== undefined ||
+        body.username !== undefined ||
         body.transport !== undefined
       );
     },
@@ -127,6 +152,21 @@ export const sshConnectionMetadataSchema = z
   .strict();
 
 export const sshConnectionResponseSchema = z.union([
+  sshConnectionMetadataSchema
+    .omit({ credentialId: true, credentialName: true })
+    .extend({
+      transport: z.union([
+        z
+          .object({ type: z.literal("tailscale_ssh"), configId: z.uuid() })
+          .strict(),
+        z
+          .object({
+            type: z.literal("tailscale_ssh"),
+            needsRebind: z.literal(true),
+          })
+          .strict(),
+      ]),
+    }),
   sshConnectionMetadataSchema,
   sshConnectionMetadataSchema.extend({ transport: accessTransportSchema }),
   sshConnectionMetadataSchema.extend({
