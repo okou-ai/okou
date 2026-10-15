@@ -8,6 +8,7 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { imageModelIdSchema } from "@okouai/api-contracts/contracts/image-models";
+import { builtInGenerationResponseSchema } from "@okouai/api-contracts/contracts/built-in-generation";
 import { usageRecordContract } from "@okouai/api-contracts/contracts/usage-record";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 
@@ -39,6 +40,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 
 import {
   createChatEventsFixture,
@@ -454,16 +456,40 @@ async function createClaimedImageRun(
       // The mock provider owns any unfinished accepted image. Settle it through
       // the exact callback URL emitted by the real submission, including on failure.
       const pendingWork = await settleIncludingAbort(flushWaitUntilForTest);
+      const terminalIds = new Set<string>();
+      for (const [eventName, payload] of context.mocks.ably.publish.mock
+        .calls) {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
+        ) {
+          continue;
+        }
+        const snapshot = builtInGenerationResponseSchema.safeParse(payload);
+        if (
+          snapshot.success &&
+          eventName === `built-in-generation:${snapshot.data.generationId}` &&
+          ["completed", "failed"].includes(snapshot.data.status)
+        ) {
+          terminalIds.add(snapshot.data.generationId);
+        }
+      }
       const results = await Promise.all(
-        [...providerRequests].map((requestUrl) => {
-          return settleIncludingAbort(() => {
-            return postFalWebhookEnvelope(
-              createImageIoTestApp(),
-              requestUrl,
-              providerCleanupBody,
-            );
-          });
-        }),
+        [...providerRequests]
+          .filter((requestUrl) => {
+            const callback = new URL(readWebhookUrl(requestUrl));
+            const generationId = callback.pathname.split("/").at(-1);
+            return !generationId || !terminalIds.has(generationId);
+          })
+          .map((requestUrl) => {
+            return settleIncludingAbort(() => {
+              return postFalWebhookEnvelope(
+                createImageIoTestApp(),
+                requestUrl,
+                providerCleanupBody,
+              );
+            });
+          }),
       );
       const flushed = await settleIncludingAbort(flushWaitUntilForTest);
       const errors = [pendingWork, ...results, flushed].flatMap((result) => {
@@ -505,49 +531,81 @@ async function createClaimedImageRun(
     });
   });
   restoreSetupExternalState = undefined;
-  await run(() => {
-    return chat.api.ensurePersonalSubscriptionModel(actor);
-  });
-  const { agentId } = await run(() => {
-    return chat.bdd.createAgent(actor, {
-      displayName: "BDD chat messages agent",
-      description: "Exercises the web chat send route.",
-      visibility: "private",
+  await run(async () => {
+    mockClaudeCodeTokenEndpoint();
+    await chat.api.createPersonalModelProvider(actor, {
+      type: "claude-code-oauth-token",
+      secret: "bdd-personal-claude-token",
     });
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    // The native Run and image model are both chosen by this fixture. Store
+    // them together through the ordinary member preference endpoint.
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: "claude-fable-5-1",
+          serviceTier: null,
+          selectedImageModel:
+            imageModel === null ? null : imageModelIdSchema.parse(imageModel),
+        },
+      }),
+      [200],
+    );
   });
-  await run(() => {
-    return chat.api.updateUserModelPreference(actor, "claude-fable-5-1");
-  });
-  await run(() => {
-    return useImageModel(fixture, imageModel);
-  });
-  // Normal Pro activation grants 20,000 credits before the separate purchase.
+  // Normal Pro activation grants 20,000 credits before an optional purchase.
   await expect(
     run(() => {
       return orgCredits(fixture);
     }),
   ).resolves.toBe(20_000);
   const initialCredits = 20_000 + credits;
-  await run(() => {
-    return purchaseToolCredits(context, actor, {
-      credits,
-      customerId,
-      invoiceId: `in_image_${randomUUID()}`,
-      onExternalStateReady: (restore) => {
-        restoreSetupExternalState = restore;
-      },
-    });
-  });
-  restoreSetupExternalState = undefined;
-  await expect(
+  // Use the genuine agent created by paid onboarding. An optional credit
+  // purchase is independent of this read; settle both before cleanup.
+  const [agent, purchase] = await Promise.allSettled([
     run(() => {
-      return orgCredits(fixture);
+      return chat.bdd.readOnboardingStatus(actor);
     }),
-  ).resolves.toBe(initialCredits);
+    credits === 0
+      ? Promise.resolve()
+      : run(() => {
+          return purchaseToolCredits(context, actor, {
+            credits,
+            customerId,
+            invoiceId: `in_image_${randomUUID()}`,
+            onExternalStateReady: (restore) => {
+              restoreSetupExternalState = restore;
+            },
+          });
+        }),
+  ] as const);
+  if (agent.status === "rejected") {
+    throw agent.reason;
+  }
+  if (purchase.status === "rejected") {
+    throw purchase.reason;
+  }
+  const agentId = agent.value.defaultAgentId;
+  if (!agentId) {
+    throw new Error("Expected paid onboarding to create the image Run's agent");
+  }
+  restoreSetupExternalState = undefined;
+  if (credits !== 0) {
+    await expect(
+      run(() => {
+        return orgCredits(fixture);
+      }),
+    ).resolves.toBe(initialCredits);
+  }
   const sent = await run(() => {
     return chat.sendChatRun(actor, {
       agentId,
       prompt: "Generate an image for this Run",
+      model: "claude-fable-5-1",
     });
   });
   const claimedRunnerGroup = runnerGroup;
@@ -1354,12 +1412,21 @@ describe("POST /api/image-io/generate", () => {
 
   it("keeps the run lifetime limit after fifty successful image generations", async () => {
     mockEnv("OKOU_API_BACKEND_URL", API_ORIGIN);
-    const fixture = await createFundedImageRun("gpt-image-1", 10_000);
+    const fixture = await createFundedImageRun("gpt-image-1", 0);
     await fixture.run(async () => {
       const requestUrls: string[] = [];
+      const requestUrlsByGenerationId = new Map<string, string>();
       server.use(
         http.post(FAL_GPT_IMAGE_1_URL, ({ request }) => {
           requestUrls.push(request.url);
+          const callback = new URL(readWebhookUrl(request.url));
+          const generationId = callback.pathname.split("/").at(-1);
+          if (!generationId) {
+            throw new Error(
+              "Expected the provider's genuine generation callback URL",
+            );
+          }
+          requestUrlsByGenerationId.set(generationId, request.url);
           return HttpResponse.json(
             falQueueHandle(`lifetime-${requestUrls.length}`),
           );
@@ -1394,59 +1461,125 @@ describe("POST /api/image-io/generate", () => {
         ],
         prompt: "A small robot paints a sunflower.",
       };
-      await expect(orgCredits(fixture)).resolves.toBe(30_000);
+      // The Pro fixture already verifies its sufficient starting balance.
       const generationIds = new Set<string>();
-      for (let start = 0; start < 50; start += 3) {
-        const group: { generationId: string; requestUrl: string | null }[] = [];
-        for (
-          let submission = start;
-          submission < Math.min(start + 3, 50);
-          submission++
+      const completionScope = new AbortController();
+      const completions = new Map<
+        string,
+        ReturnType<typeof createDeferredPromise<void>>
+      >();
+      // Release observers before the fixture owner drains timed-out work.
+      onTestFinished(() => {
+        completionScope.abort(new DOMException("Case finished", "AbortError"));
+      });
+      context.mocks.ably.publish.mockImplementation((eventName, payload) => {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
         ) {
-          const response = await fixture.request(app, path, request);
-          expect(response.status).toBe(202);
-          const generationId = readAcceptedGenerationId(
-            await response.json(),
-            "image",
-            fixture.userId,
-          );
-          expect(generationIds.has(generationId)).toBeFalsy();
-          generationIds.add(generationId);
-          expect(requestUrls).toHaveLength(submission + 1);
-          group.push({
-            generationId,
-            requestUrl: requestUrls[submission] ?? null,
-          });
+          return Promise.resolve(undefined);
         }
-        await Promise.all(
-          group.map(({ requestUrl }) => {
-            return fixture.run(() => {
-              return postFalWebhook(app, requestUrl, completionPayload);
-            });
-          }),
+        const completion = completions.get(
+          eventName.slice("built-in-generation:".length),
         );
-        await flushWaitUntilForTest();
-        await Promise.all(
-          group.map(({ generationId }) => {
-            return fixture.run(async () => {
-              const completed = await fixture.request(
-                app,
-                `/api/built-in-generations/${generationId}`,
-                { headers: request.headers },
-              );
-              expect(completed.status).toBe(200);
-              const statusBody: unknown = await completed.json();
-              expect(statusBody).toMatchObject({
-                generationId,
-                status: "completed",
-              });
-              expect(readGenerationResult(statusBody)).toMatchObject({
-                creditsCharged: 50,
-              });
-            });
-          }),
-        );
+        if (!completion || completion.settled()) {
+          return Promise.resolve(undefined);
+        }
+        const snapshot = builtInGenerationResponseSchema.parse(payload);
+        if (snapshot.status === "completed") {
+          completion.resolve();
+        } else if (snapshot.status === "failed") {
+          completion.reject(
+            new Error("Expected a successful image completion"),
+          );
+        }
+        return Promise.resolve(undefined);
+      });
+      // Three owned streams keep each released quota slot busy without waiting
+      // for the slowest sibling. Start its next request only after the actual
+      // public completion snapshot; at most three generations remain active.
+      const results = await Promise.allSettled(
+        Array.from({ length: 3 }, async (_, stream) => {
+          for (let index = stream; index < 50; index += 3) {
+            const response = await app.request(path, request);
+            expect(response.status).toBe(202);
+            const generationId = readAcceptedGenerationId(
+              await response.json(),
+              "image",
+              fixture.userId,
+            );
+            expect(generationIds.has(generationId)).toBeFalsy();
+            generationIds.add(generationId);
+            const completion = createDeferredPromise<void>(
+              completionScope.signal,
+            );
+            completions.set(generationId, completion);
+            const observed = settleIncludingAbort(completion.promise);
+            await postFalWebhook(
+              app,
+              requestUrlsByGenerationId.get(generationId) ?? null,
+              completionPayload,
+            );
+            const completed = await observed;
+            if (!completed.ok) {
+              throw completed.error;
+            }
+          }
+        }),
+      );
+      for (const result of results) {
+        if (result.status === "rejected") {
+          throw result.reason;
+        }
       }
+      await flushWaitUntilForTest();
+      // Clients receive these same public result snapshots through realtime.
+      // Validate every completion and charge without fifty repeated auth reads.
+      const completedIds = new Set<string>();
+      for (const [eventName, payload] of context.mocks.ably.publish.mock
+        .calls) {
+        if (
+          typeof eventName !== "string" ||
+          !eventName.startsWith("built-in-generation:")
+        ) {
+          continue;
+        }
+        const generationId = eventName.slice("built-in-generation:".length);
+        if (!generationIds.has(generationId)) {
+          continue;
+        }
+        const completed = builtInGenerationResponseSchema.parse(payload);
+        expect(completed).toMatchObject({
+          generationId,
+          type: "image",
+          status: "completed",
+        });
+        expect(readGenerationResult(completed)).toMatchObject({
+          creditsCharged: 50,
+        });
+        expect(completedIds.has(generationId)).toBeFalsy();
+        completedIds.add(generationId);
+      }
+      expect(completedIds).toStrictEqual(generationIds);
+      const finalId = [...generationIds].at(-1);
+      if (!finalId) {
+        throw new Error("Expected a completed generation to read");
+      }
+      const completed = await app.request(
+        `/api/built-in-generations/${finalId}`,
+        { headers: request.headers },
+      );
+      expect(completed.status).toBe(200);
+      const finalResult = builtInGenerationResponseSchema.parse(
+        await completed.json(),
+      );
+      expect(finalResult).toMatchObject({
+        generationId: finalId,
+        status: "completed",
+      });
+      expect(readGenerationResult(finalResult)).toMatchObject({
+        creditsCharged: 50,
+      });
       expect(generationIds.size).toBe(50);
       expect(requestUrls).toHaveLength(50);
       await expect(orgCredits(fixture)).resolves.toBe(

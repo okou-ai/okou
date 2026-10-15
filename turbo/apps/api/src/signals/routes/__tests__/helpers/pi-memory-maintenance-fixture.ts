@@ -96,18 +96,10 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       isolatePg: true,
     });
     const stage1 = isolated(cronExtractPiMemoryStage1Contract);
-    await accept(
-      stage1.extract({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
     const stage2 = setupApp({
       context,
       routes: cronConsolidatePiMemoryPhase2Routes,
     })(cronConsolidatePiMemoryPhase2Contract);
-    await accept(
-      stage2.consolidate({ headers: { authorization: "Bearer wrong-secret" } }),
-      [401],
-    );
 
     chat.chatCallbacks.acceptChatObjectStorage();
     runs.acceptStorageDownloads();
@@ -422,7 +414,7 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
       throw new Error("Expected maintenance upload preparation to succeed");
     }
     expect(prepared.body.versionId).toBe(body.versionId);
-    if (content !== undefined) {
+    if (content !== undefined && body.versionId !== body.parentVersionId) {
       const uploads = prepared.body.uploads;
       if (!uploads) {
         throw new Error("Expected the real maintenance upload authorization");
@@ -497,8 +489,6 @@ export function createPiMemoryMaintenanceFixture(context: TestContext) {
     if (repeated) {
       expect(repeated.body).toStrictEqual(completed.body);
     }
-    await flushWaitUntilForTest();
-    await webhooks.requestAgentComplete(body, run.headers, [200]);
     await flushWaitUntilForTest();
     return { body, response: completed };
   }

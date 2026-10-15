@@ -90,7 +90,7 @@ function taskChip(task: "Presentation" | "Image"): HTMLElement {
  */
 async function closeTemplatePicker(): Promise<void> {
   const dialog = await screen.findByRole("dialog");
-  await userEvent.setup({ delay: null }).click(button("Close", dialog));
+  click(button("Close", dialog));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -276,7 +276,7 @@ const createTemplateScenarios = [
 
 test.each(createTemplateScenarios)(
   "$commandLabel adds a template without replacing the existing text",
-  async ({ mode, pickerLabel, selectLabel, templates }) => {
+  async ({ mode, selectLabel, templates }) => {
     setupModels();
     mockChatLifecycle(context);
     const editor = await setupComposer();
@@ -284,9 +284,11 @@ test.each(createTemplateScenarios)(
     if (!first) {
       throw new Error(`Expected a ${mode} template`);
     }
-    await chooseCommand(editor, "Our launch /", mode);
-    expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
-    await clickComposerAddMenuItem(pickerLabel);
+    await fill(editor, "Our launch /");
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    await userEvent
+      .setup({ delay: null })
+      .click(button(CREATE_MODE_ROWS[mode].row, menu));
     await screen.findByRole("dialog");
     click(await screen.findByLabelText(`${selectLabel} ${first.title}`));
     await waitFor(() => {
@@ -294,6 +296,7 @@ test.each(createTemplateScenarios)(
       expect(screen.queryByRole("dialog")).toBeNull();
     });
     expect(composerInlineTemplates()[0]).toHaveTextContent(first.title);
+    expect(queryComposerModelTrigger("Claude Fable 5.1")).toBeInTheDocument();
     expect(editor).toHaveTextContent("Our launch");
     expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
   },
@@ -342,11 +345,13 @@ async function setupEditedDraftTemplate(
   await waitFor(() => {
     expect(composerInlineTemplates()).toHaveLength(2);
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(editor);
-  await user.paste(" /");
-  const menu = await screen.findByTestId("slash-workflow-menu");
-  await enterCreateMode(mode, menu);
+  const taskChoices = await screen.findByRole("group", {
+    name: "Choose a task",
+  });
+  click(button(CREATE_MODE_ROWS[mode].task, taskChoices));
+  await waitFor(() => {
+    expect(taskChip(CREATE_MODE_ROWS[mode].task)).toBeInTheDocument();
+  });
 
   const firstChip = composerInlineTemplates()[0];
   if (!firstChip) {

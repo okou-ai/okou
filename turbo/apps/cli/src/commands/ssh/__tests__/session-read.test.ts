@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sshCommand } from "../index";
 
@@ -23,22 +24,14 @@ vi.mock("node:child_process", async (importOriginal) => {
         const reply = helper.replies.shift();
         if (!reply) throw new Error("Unexpected SSH page request");
         const child = original.spawn(
-          process.execPath,
+          "python3",
           [
-            "-e",
-            `
-        let input = '';
-        process.stdin.setEncoding('utf8');
-        process.stdin.on('data', chunk => input += chunk);
-        process.stdin.on('end', () => {
-          process.send(input);
-          if (process.env.SSH_READ_MODE === 'hang') { setInterval(() => {}, 1000); return; }
-          const response = Buffer.from(process.env.SSH_READ_RESPONSE, 'base64');
-          process.stdout.write(response);
-          if (process.env.SSH_READ_MODE === 'extra') process.stdout.write(response);
-          process.stdout.end(() => process.exit(Number(process.env.SSH_READ_EXIT)));
-        });
-      `,
+            fileURLToPath(
+              new URL(
+                "../../../test/fixtures/ssh-read-helper.py",
+                import.meta.url,
+              ),
+            ),
           ],
           {
             stdio: ["pipe", "pipe", "pipe", "ipc"],
