@@ -3537,14 +3537,28 @@
         "workspaceMismatchTitle": "Lo spazio di lavoro Slack non corrisponde"
       },
       "teams": {
+        "authorize": "Autorizza Microsoft Teams",
         "connectDescription": "Collega il tuo account Teams per poter interagire con il tuo agente direttamente da Microsoft Teams.",
-        "connectDescriptionNamed": "{{displayName}}, collega il tuo account Teams in modo da poter interagire con il tuo agente direttamente da Microsoft Teams.",
+        "connectedDescription": "Il tuo account Teams è connesso.",
         "connectTitle": "Connetti Microsoft Teams",
-        "invalidDescription": "Questa pagina deve essere aperta da un collegamento di connessione di Microsoft Teams.",
+        "currentState": "Stato attuale di Teams",
+        "existingConnection": "È disponibile una connessione Teams esistente. Questo non conferma l’account richiesto dal link.",
+        "identityMismatch": "L’account o l’area di lavoro Teams richiesti non corrispondono alla connessione attuale.",
+        "identityUnknown": "Non possiamo confermare l’account Teams di questo link. Aggiorna la pagina oppure apri Teams per verificare il tuo account.",
+        "install": "Installa in Teams",
+        "invalidContext": "Il link non contiene tutti i dati dell’account Teams. Apri un nuovo link di connessione da Teams.",
         "open": "Apri Microsoft Teams",
+        "orgMismatch": "Questo link appartiene a un’altra organizzazione. Passa a tale organizzazione e riprova.",
+        "pendingDescription": "Il tuo account è pronto. Installa l’app in Teams, poi aggiorna questa pagina per confermare la connessione.",
+        "pendingTitle": "Installa in Teams per completare",
         "providerName": "Microsoft Teams",
+        "refresh": "Aggiorna stato Teams",
+        "reinstall": "Reinstalla in Teams",
+        "requestedAccount": "Account indicato nel link: {{name}}",
+        "statusFailed": "Impossibile verificare la connessione Teams. Riprova.",
         "successDescription": "Sei connesso a {{team}}. Menziona @{{botName}} in Teams per iniziare a chattare.",
-        "successTitle": "Connesso a Microsoft Teams"
+        "successTitle": "Connesso a Microsoft Teams",
+        "unavailable": "La configurazione Teams non è disponibile. Contatta l’amministratore della tua organizzazione."
       },
       "telegram": {
         "alreadyTitle": "Già connesso a Telegram",

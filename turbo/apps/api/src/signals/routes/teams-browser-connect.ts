@@ -1,3 +1,4 @@
+import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command } from "ccstate";
 import { teamsBrowserConnectContract } from "@okouai/api-contracts/contracts/teams-browser-connect";
 import { teamsOrgInstallations } from "@okouai/db/schema/teams-org-installation";
@@ -119,7 +120,9 @@ function connectError(
   query: Parameters<typeof teamsSettingsParams>[0] = {},
 ): Response {
   const params = teamsSettingsParams(query, { error: message });
-  return appRedirect(`/settings/teams?${params.toString()}`);
+  return appRedirect(
+    `${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`,
+  );
 }
 
 function connectSuccess(
@@ -136,7 +139,9 @@ function connectSuccess(
     teamName: installation.teamsTeamName,
     botName: teamsBotDisplayName(installation.botName),
   });
-  return appRedirect(`/settings/teams?${params.toString()}`);
+  return appRedirect(
+    `${INTEGRATION_SETTINGS_PATHS.teams}?${params.toString()}`,
+  );
 }
 
 function signInRedirect(requestUrl: string): Response {

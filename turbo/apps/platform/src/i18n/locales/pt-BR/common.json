@@ -3537,14 +3537,28 @@
         "workspaceMismatchTitle": "O workspace do Slack não corresponde"
       },
       "teams": {
+        "authorize": "Autorizar Microsoft Teams",
         "connectDescription": "Vincule sua conta do Teams para interagir com seu agente diretamente pelo Microsoft Teams.",
-        "connectDescriptionNamed": "{{displayName}}, vincule sua conta do Teams para interagir com seu agente diretamente pelo Microsoft Teams.",
+        "connectedDescription": "Sua conta do Teams está conectada.",
         "connectTitle": "Conectar o Microsoft Teams",
-        "invalidDescription": "Esta página deve ser aberta por um link de conexão do Microsoft Teams.",
+        "currentState": "Status atual do Teams",
+        "existingConnection": "Já existe uma conexão com o Teams. Isso não confirma a conta solicitada por este link.",
+        "identityMismatch": "A conta ou o espaço de trabalho do Teams solicitado não corresponde à conexão atual.",
+        "identityUnknown": "Não podemos confirmar a conta do Teams neste link. Atualize a página ou abra o Teams para verificar sua conta.",
+        "install": "Instalar no Teams",
+        "invalidContext": "Faltam dados da conta do Teams neste link. Abra um novo link de conexão no Teams.",
         "open": "Abrir Teams",
+        "orgMismatch": "Este link pertence a outra organização. Mude para ela e tente novamente.",
+        "pendingDescription": "Sua conta está preparada. Instale o aplicativo no Teams e atualize esta página para confirmar a conexão.",
+        "pendingTitle": "Instale no Teams para concluir",
         "providerName": "Microsoft Teams",
+        "refresh": "Atualizar status do Teams",
+        "reinstall": "Reinstalar no Teams",
+        "requestedAccount": "Conta indicada neste link: {{name}}",
+        "statusFailed": "Não foi possível verificar sua conexão com o Teams. Tente novamente.",
         "successDescription": "Você está conectado a {{team}}. Mencione @{{botName}} no Teams para começar a conversar.",
-        "successTitle": "Conectado ao Microsoft Teams"
+        "successTitle": "Conectado ao Microsoft Teams",
+        "unavailable": "A configuração do Teams está indisponível. Peça ajuda ao administrador da organização."
       },
       "telegram": {
         "alreadyTitle": "Já conectado ao Telegram",

@@ -3458,14 +3458,28 @@
         "workspaceMismatchTitle": "Slack 워크스페이스가 일치하지 않음"
       },
       "teams": {
+        "authorize": "Microsoft Teams 승인",
         "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
-        "connectDescriptionNamed": "{{displayName}}님, Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
+        "connectedDescription": "Teams 계정이 연결되었습니다.",
         "connectTitle": "Microsoft Teams 연결하기",
-        "invalidDescription": "이 페이지는 Microsoft Teams 연결 링크에서 열어야 합니다.",
+        "currentState": "현재 Teams 상태",
+        "existingConnection": "기존 Teams 연결이 있습니다. 이 링크에서 요청한 계정이 확인된 것은 아닙니다.",
+        "identityMismatch": "요청한 Teams 계정 또는 작업 공간이 현재 연결과 일치하지 않습니다.",
+        "identityUnknown": "이 링크의 Teams 계정을 확인할 수 없습니다. 페이지를 새로고침하거나 Teams를 열어 계정을 확인하세요.",
+        "install": "Teams에 설치",
+        "invalidContext": "이 링크에 Teams 계정 정보가 부족합니다. Teams에서 새 연결 링크를 여세요.",
         "open": "Teams 열기",
+        "orgMismatch": "다른 조직의 링크입니다. 해당 조직으로 전환한 후 다시 시도하세요.",
+        "pendingDescription": "계정이 준비되었습니다. Teams에 앱을 설치한 다음 이 페이지를 새로 고쳐 연결을 확인하세요.",
+        "pendingTitle": "Teams에 설치하여 완료",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams 상태 새로 고침",
+        "reinstall": "Teams에 다시 설치",
+        "requestedAccount": "링크에 표시된 계정: {{name}}",
+        "statusFailed": "Teams 연결을 확인할 수 없습니다. 다시 시도하세요.",
         "successDescription": "{{team}}에 연결되었습니다. Teams에서 @{{botName}}를 언급하여 대화를 시작하세요.",
-        "successTitle": "Microsoft Teams에 연결되었습니다"
+        "successTitle": "Microsoft Teams에 연결되었습니다",
+        "unavailable": "Teams 설정을 사용할 수 없습니다. 조직 관리자에게 문의하세요."
       },
       "telegram": {
         "alreadyTitle": "Telegram에 이미 연결됨",

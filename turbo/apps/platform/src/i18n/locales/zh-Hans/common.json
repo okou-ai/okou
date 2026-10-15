@@ -3458,14 +3458,28 @@
         "workspaceMismatchTitle": "Slack 工作区不匹配"
       },
       "teams": {
+        "authorize": "授权 Microsoft Teams",
         "connectDescription": "关联你的 Teams 账号，就可以直接在 Microsoft Teams 里与你的智能体交流。",
-        "connectDescriptionNamed": "{{displayName}}，关联你的 Teams 账号，就可以直接在 Microsoft Teams 里与你的智能体交流。",
+        "connectedDescription": "你的 Teams 账号已连接。",
         "connectTitle": "连接 Microsoft Teams",
-        "invalidDescription": "此页面需要从 Microsoft Teams 连接链接打开。",
+        "currentState": "当前 Teams 状态",
+        "existingConnection": "已有 Teams 连接可用，但这不代表已连接此链接指定的账号。",
+        "identityMismatch": "此链接指定的 Teams 账号或工作区与当前连接不一致。",
+        "identityUnknown": "无法确认此链接中的 Teams 账号。请刷新页面，或打开 Teams 检查你的账号。",
+        "install": "在 Teams 中安装",
+        "invalidContext": "此链接缺少 Teams 账号信息。请从 Teams 获取新的连接链接。",
         "open": "打开 Teams",
+        "orgMismatch": "此链接属于其他组织。请切换到该组织后重试此链接。",
+        "pendingDescription": "账号已准备就绪。请在 Teams 中安装应用，然后刷新此页面确认连接。",
+        "pendingTitle": "在 Teams 中安装以完成连接",
         "providerName": "Microsoft Teams",
+        "refresh": "刷新 Teams 状态",
+        "reinstall": "在 Teams 中重新安装",
+        "requestedAccount": "链接中的账号名称：{{name}}",
+        "statusFailed": "无法检查 Teams 连接，请重试。",
         "successDescription": "你已连接到{{team}}。在 Teams 中@{{botName}}，即可开始对话。",
-        "successTitle": "已连接到 Microsoft Teams"
+        "successTitle": "已连接到 Microsoft Teams",
+        "unavailable": "Teams 设置暂不可用，请联系组织管理员。"
       },
       "telegram": {
         "alreadyTitle": "已连接到 Telegram",

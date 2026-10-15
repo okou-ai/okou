@@ -3469,14 +3469,28 @@
         "workspaceMismatchTitle": "Slack workspace doesn't match"
       },
       "teams": {
+        "authorize": "Authorize Microsoft Teams",
         "connectDescription": "Link your Teams account so you can interact with your agent directly from Microsoft Teams.",
-        "connectDescriptionNamed": "{{displayName}}, link your Teams account so you can interact with your agent directly from Microsoft Teams.",
+        "connectedDescription": "Your Teams account is connected.",
         "connectTitle": "Connect Microsoft Teams",
-        "invalidDescription": "This page is meant to be opened from a Microsoft Teams connect link.",
+        "currentState": "Current Teams state",
+        "existingConnection": "An existing Teams connection is available. This does not confirm the account requested by this link.",
+        "identityMismatch": "The requested Teams account or workspace does not match the current connection.",
+        "identityUnknown": "We cannot confirm the Teams account in this link. Refresh, or open Teams to check your account.",
+        "install": "Install in Teams",
+        "invalidContext": "This link has incomplete Teams account context. Open a new connect link from Teams.",
         "open": "Open Teams",
+        "orgMismatch": "This link is for another organization. Switch to that organization, then retry this link.",
+        "pendingDescription": "Your account is prepared. Install the app in Teams, then refresh this page to confirm the connection.",
+        "pendingTitle": "Install in Teams to finish",
         "providerName": "Microsoft Teams",
+        "refresh": "Refresh Teams status",
+        "reinstall": "Reinstall in Teams",
+        "requestedAccount": "Account named in this link: {{name}}",
+        "statusFailed": "Unable to check your Teams connection. Try again.",
         "successDescription": "You are connected to {{team}}. Mention @{{botName}} in Teams to start chatting.",
-        "successTitle": "Connected to Microsoft Teams"
+        "successTitle": "Connected to Microsoft Teams",
+        "unavailable": "Teams setup is unavailable. Ask your organization administrator for help."
       },
       "telegram": {
         "alreadyTitle": "Already connected to Telegram",

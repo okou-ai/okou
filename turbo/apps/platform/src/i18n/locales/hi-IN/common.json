@@ -3477,14 +3477,28 @@
         "workspaceMismatchTitle": "Slack वर्कस्पेस मेल नहीं खाता"
       },
       "teams": {
+        "authorize": "Microsoft Teams को अधिकृत करें",
         "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
-        "connectDescriptionNamed": "{{displayName}}, अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectedDescription": "आपका Teams खाता कनेक्ट है।",
         "connectTitle": "Microsoft Teams कनेक्ट करें",
-        "invalidDescription": "यह पेज Microsoft Teams कनेक्ट लिंक से खोला जाना है।",
+        "currentState": "वर्तमान Teams स्थिति",
+        "existingConnection": "एक मौजूदा Teams कनेक्शन उपलब्ध है। इससे इस लिंक में अनुरोधित खाते की पुष्टि नहीं होती।",
+        "identityMismatch": "अनुरोधित Teams खाता या कार्यक्षेत्र वर्तमान कनेक्शन से मेल नहीं खाता।",
+        "identityUnknown": "हम इस लिंक के Teams खाते की पुष्टि नहीं कर सकते। पेज रीफ़्रेश करें या अपना खाता जाँचने के लिए Teams खोलें।",
+        "install": "Teams में इंस्टॉल करें",
+        "invalidContext": "इस लिंक में Teams खाते की पूरी जानकारी नहीं है। Teams से नया कनेक्शन लिंक खोलें।",
         "open": "टीमें खोलें",
+        "orgMismatch": "यह लिंक दूसरे संगठन का है। उस संगठन में स्विच करके फिर प्रयास करें।",
+        "pendingDescription": "आपका खाता तैयार है। Teams में ऐप इंस्टॉल करें, फिर कनेक्शन की पुष्टि के लिए इस पेज को रीफ़्रेश करें।",
+        "pendingTitle": "पूरा करने के लिए Teams में इंस्टॉल करें",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams स्थिति रीफ़्रेश करें",
+        "reinstall": "Teams में फिर से इंस्टॉल करें",
+        "requestedAccount": "इस लिंक में दिया गया खाता: {{name}}",
+        "statusFailed": "Teams कनेक्शन की जाँच नहीं हो सकी। फिर से प्रयास करें।",
         "successDescription": "आप {{team}} से जुड़े हैं। चैटिंग शुरू करने के लिए Teams में @{{botName}} का उल्लेख करें।",
-        "successTitle": "Microsoft Teams से जुड़ा"
+        "successTitle": "Microsoft Teams से जुड़ा",
+        "unavailable": "Teams सेटअप उपलब्ध नहीं है। अपने संगठन के व्यवस्थापक से सहायता लें।"
       },
       "telegram": {
         "alreadyTitle": "पहले से ही Telegram से जुड़ा है",
