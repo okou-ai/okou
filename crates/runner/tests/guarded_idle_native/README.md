@@ -13,7 +13,9 @@ The real pool and status ownership waits and an invocation-owned blocking Unix
 read preserve their dependencies. Independent observer and API-backed heartbeat
 work must complete at the applicable held boundaries. Foreground completion
 records a positively polled real pool/status wait before measuring progress and
-requires actual Guest RPC and P2 phase settlement. Required original saving
+requires actual Guest RPC and P2 phase settlement. Heartbeat delivery and readiness
+reads start only after the foreground status wait has positively polled Pending.
+Required original saving
 retains its full lease through positive backing exit and the blocked kernel
 read, then still writes and verifies the complete durable 64 MiB tail. The
 ordinary bounded-child and HTTP tests run without KVM; default Cargo also runs

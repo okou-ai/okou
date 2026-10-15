@@ -66,6 +66,7 @@ class ForegroundReportTests(unittest.TestCase):
                  "heartbeat": heartbeat(1,start+120_000_000), "observer": observation(start+150_000_000),
                  "reads": dict(runtime), "runtime_drained": True, "status_held_ns": start+30_000_000,
                  "pool_released_ns": start+110_000_000, "samples": samples,
+                 "status_wait_polled_ns": start+115_000_000,
                  "foreground_status_wait_polled": True},
                 {"kind": kind, "sandbox_id": str(uuid.uuid4()) if kind == "Fresh" else terminal[1]["sandbox_id"],
                  "run_id": str(uuid.uuid4()), "operation_id": str(uuid.uuid4()), "guest_rpc_completed": True,
@@ -159,6 +160,15 @@ class ForegroundReportTests(unittest.TestCase):
     def test_spawned_work_without_a_polled_real_wait_is_refused(self):
         self.refused((lambda:self.witnesses[1]["evidence"].update(foreground_pool_wait_polled=False),
             lambda:self.witnesses[2]["evidence"].update(foreground_status_wait_polled=False)))
+
+    def test_progress_before_the_actual_status_wait_is_refused(self):
+        status = self.witnesses[2]["evidence"]
+        early = status["status_wait_polled_ns"]-1
+        self.refused((lambda:self.witnesses[2]["evidence"].pop("status_wait_polled_ns"),
+            lambda:self.witnesses[2]["evidence"].update(status_wait_polled_ns=True),
+            lambda:self.witnesses[2]["evidence"]["heartbeat"]["receipt"].update(received_ns=early),
+            lambda:self.witnesses[2]["evidence"]["observer"].update(started_ns=early),
+            lambda:self.witnesses[2]["evidence"]["samples"][0].update(started_ns=early)))
 
     def test_ready_requires_distinct_fresh_actual_pressure_observations(self):
         def expired():

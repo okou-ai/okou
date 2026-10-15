@@ -123,7 +123,6 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
     let mut foreground = None;
     let outcome = tokio::time::timeout(Duration::from_secs(90), async {
         source.wait_for_readers(1).await;
-        probe.request()?;
         let (pool_wait, pool_entered) = tokio::sync::oneshot::channel();
         let (status_wait, status_entered) = tokio::sync::oneshot::channel();
         foreground = Some(tokio::spawn(foreground_growth::exercise(
@@ -169,8 +168,10 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
         )?;
         drop(pool_hold.take());
         let pool_released_ns = evidence::clocks()?.0;
-        source.resume();
         status_entered.await?;
+        let status_wait_polled_ns = evidence::clocks()?.0;
+        probe.request()?;
+        source.resume();
         let heartbeat = probe.complete().await?;
         runtime.drain().await;
         runtime_complete(&reads.borrow(), original.bytes)?;
@@ -188,6 +189,7 @@ pub async fn exercise(request: Request<'_>) -> TestResult<()> {
             "status_held": true, "heartbeat": heartbeat, "observer": observed,
             "foreground_status_wait_polled": true,
             "status_held_ns": status_held_ns, "pool_released_ns": pool_released_ns,
+            "status_wait_polled_ns": status_wait_polled_ns,
             "samples": source.samples()?,
                 "reads": critical::read_evidence(&reads.borrow()), "runtime_drained": true,
             }),

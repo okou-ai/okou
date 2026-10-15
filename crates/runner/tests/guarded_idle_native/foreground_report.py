@@ -98,8 +98,10 @@ def validate(directory):
         startup.complete(pool.get("startup"))
         critical_report.no_reads(pool.get("reads"), False)
         held, status_held, released = pool.get("pool_held_ns"), pool.get("status_held_ns"), status.get("pool_released_ns")
-        if (not all(report.positive_integer(n) for n in (held, status_held, released))
+        polled = status.get("status_wait_polled_ns")
+        if (not all(report.positive_integer(n) for n in (held, status_held, released, polled))
                 or not events[0]["monotonic_ns"] < held <= status_held < events[1]["monotonic_ns"] < released
+                or not released < polled < events[2]["monotonic_ns"]
                 or status.get("status_held_ns") != status_held):
             raise ValueError("foreground wait ownership clocks missing")
         startup.exact(pool, {"startup": pool["startup"], "startup_drained": True,
@@ -109,8 +111,8 @@ def validate(directory):
             "observer": pool.get("observer")}, "foreground held pool/Unknown contract changed")
         observer(pool.get("observer"), status_held, events[1]["monotonic_ns"])
         runtime(status.get("reads"))
-        first = heartbeat(status.get("heartbeat"), 1, released, events[2]["monotonic_ns"])
-        observer(status.get("observer"), released, events[2]["monotonic_ns"])
+        first = heartbeat(status.get("heartbeat"), 1, polled, events[2]["monotonic_ns"])
+        observer(status.get("observer"), polled, events[2]["monotonic_ns"])
         available = status.get("available_bytes")
         samples = status.get("samples")
         if (not pressure_report.integer(available, policy["recovery_available_bytes"])
@@ -122,7 +124,7 @@ def validate(directory):
             if (not isinstance(sample, dict) or set(sample) != {"started_ns", "finished_ns", "read_start_offset_ns",
                     "available_bytes", "age_ns", "read_duration_ns"}
                     or any(not pressure_report.integer(sample[k]) for k in sample if k != "available_bytes")
-                    or not released < sample["started_ns"] < sample["finished_ns"] < events[2]["monotonic_ns"]
+                    or not polled < sample["started_ns"] < sample["finished_ns"] < events[2]["monotonic_ns"]
                     or sample["started_ns"] <= previous or sample["read_start_offset_ns"] <= previous_offset
                     or not sample["read_duration_ns"] <= sample["age_ns"] <= sample["finished_ns"]-sample["started_ns"]
                     or sample["available_bytes"] is not None and (
@@ -139,6 +141,7 @@ def validate(directory):
         startup.exact(status, {"state": "Ready", "available_bytes": available, "status_held": True,
             "heartbeat": status["heartbeat"], "observer": status["observer"], "reads": status["reads"],
             "runtime_drained": True, "status_held_ns": status_held, "pool_released_ns": released,
+            "status_wait_polled_ns": polled,
             "foreground_status_wait_polled": True,
             "samples": samples}, "foreground status-wait contract changed")
         if (not identifier(prepared.get("sandbox_id")) or not identifier(prepared.get("run_id"))
