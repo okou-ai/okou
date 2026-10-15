@@ -124,7 +124,7 @@ def test_model_buffered_json_requires_complete_capture(
 
 @pytest.mark.parametrize("body_format", ["json", "ndjson"])
 @pytest.mark.parametrize("interrupted", [False, True], ids=["response", "error"])
-def test_x_incremental_billing_after_forensic_capture_truncates(
+async def test_x_incremental_billing_after_forensic_capture_truncates(
     tmp_path, real_flow, usage_webhook_api, body_format, interrupted
 ):
     first_post = {"id": "1", "text": "x" * STREAM_BUFFER_LIMIT}
@@ -149,7 +149,9 @@ def test_x_incremental_billing_after_forensic_capture_truncates(
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)
         assert callback(body[:STREAM_BUFFER_LIMIT]) == body[:STREAM_BUFFER_LIMIT]
+        await mitm_addon.responseinspection(flow)
         assert callback(body[STREAM_BUFFER_LIMIT:]) == body[STREAM_BUFFER_LIMIT:]
+        await mitm_addon.responseinspection(flow)
         assert flow.metadata[metadata_keys.STREAM_BUFFER_STATE]["truncated"] is True
 
         if interrupted:
