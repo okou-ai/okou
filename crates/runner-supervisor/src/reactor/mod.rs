@@ -93,8 +93,7 @@ mod startup;
 use crate::blank_pool::{BlankPoolReplenisher, BlankProfile};
 use crate::heartbeat::{
     HEARTBEAT_PERIOD, HeartbeatContext, HeartbeatContextInit, HeartbeatController,
-    HeartbeatSnapshotMetadata, WssIngressServiceProbe, collect_heartbeat_state,
-    refresh_initial_home_cache_snapshot,
+    WssIngressServiceProbe, refresh_initial_home_cache_snapshot,
 };
 use crate::idle_lifecycle::{IdleDestroyTracker, SharedIdlePool, drain_idle_pool};
 #[cfg(test)]
@@ -1795,7 +1794,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         error!(%error, "failed to drain heartbeat task");
         terminal_error.get_or_insert(error.into());
     }
-    let final_heartbeat_sequence = heartbeat.into_next_snapshot_sequence();
+    let terminal_heartbeat = heartbeat.into_terminal_heartbeat();
     teardown.phase_complete("heartbeat_drain", phase);
 
     let phase = teardown.phase_start("maintenance_drain");
@@ -1829,22 +1828,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Send final heartbeat with Stopping so the server stops routing jobs
     // to this runner immediately, without waiting for TTL expiry.
     let phase = teardown.phase_start("final_heartbeat");
-    {
-        let pool = shared.idle_pool.lock().await;
-        let state = collect_heartbeat_state(
-            HeartbeatSnapshotMetadata {
-                runner_identity: runner.identity,
-                group: &runner.group,
-                sequence: final_heartbeat_sequence,
-            },
-            &projected_heartbeat_profiles,
-            &capacity.budget,
-            &pool,
-            RunnerMode::Stopping,
-        );
-        drop(pool);
-        provider_state.provider.heartbeat(&state).await;
-    }
+    terminal_heartbeat.send().await;
     teardown.phase_complete("final_heartbeat", phase);
 
     let remaining = jobs.len();
