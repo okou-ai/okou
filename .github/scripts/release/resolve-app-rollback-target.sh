@@ -12,7 +12,7 @@ for name in TARGET_COMMIT APP_VERSION_ID CONFIRMED_COMPATIBLE GITHUB_REPOSITORY 
   CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
   [[ -n "${!name:-}" ]] || fail "Missing required environment variable: $name"
 done
-[[ "$CONFIRMED_COMPATIBLE" == yes ]] || fail "Confirm App compatibility with the serving API and retained signed links."
+[[ "$CONFIRMED_COMPATIBLE" == yes ]] || fail "Confirm App compatibility with the serving API, signed Telegram links, and bare Slack links."
 [[ "$TARGET_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "target_commit must be an exact lowercase artifact SHA."
 [[ "$APP_VERSION_ID" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$ ]] || fail "app_version_id must be a Cloudflare version UUID."
 [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]] || fail "Invalid Cloudflare account ID."
@@ -46,20 +46,24 @@ policy_main=$(git rev-parse origin/main)
 floor=$(git show "$policy_main:.github/rollback-floors/telegram-settings-app")
 [[ "$floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid explicit Telegram App floor."
 git merge-base --is-ancestor "$floor" "$policy_main" || fail "App floor is not on main."
+slack_floor=$(git show "$policy_main:.github/rollback-floors/slack-settings-app")
+[[ "$slack_floor" =~ ^[0-9a-f]{40}$ ]] || fail "Missing or invalid explicit Slack App floor."
+git merge-base --is-ancestor "$slack_floor" "$policy_main" || fail "Slack App floor is not on main."
 git cat-file -e "$TARGET_COMMIT^{commit}"
 git merge-base --is-ancestor "$TARGET_COMMIT" "$policy_main" || fail "App artifact is not reachable from main."
 git merge-base --is-ancestor "$floor" "$TARGET_COMMIT" || fail "App artifact predates the signed Telegram reader floor ($floor)."
+git merge-base --is-ancestor "$slack_floor" "$TARGET_COMMIT" || fail "App artifact predates the authenticated bare Slack reader floor ($slack_floor)."
 
-# Fail closed if a later release removes either entry into the signed reader.
+# Fail closed if a later release removes a retained reader or its entry point.
 # Target source is data; no code from a rollback target is executed.
-python3 - "$TARGET_COMMIT" <<'PY'
+python3 - "$TARGET_COMMIT" "$slack_floor" <<'PY'
 import re
 import subprocess
 import sys
 
 sha = sys.argv[1]
-def source(path):
-    return subprocess.check_output(["git", "show", f"{sha}:{path}"], text=True)
+def source(path, revision=sha):
+    return subprocess.check_output(["git", "show", f"{revision}:{path}"], text=True)
 
 bootstrap = source("turbo/apps/platform/src/signals/bootstrap.ts")
 paths = source("turbo/apps/platform/src/signals/route-paths.ts")
@@ -69,6 +73,22 @@ for route in ("settingsTelegram", "telegramConnect"):
         sys.exit(f"Missing signed Telegram reader registration: {route}")
 if not re.search(r'settingsTelegram:\s*INTEGRATION_SETTINGS_PATHS\.telegram', paths) or not re.search(r'telegramConnect:\s*"/telegram/connect"', paths) or not re.search(r'telegram:\s*"/settings/telegram"', canonical):
     sys.exit("Telegram signed reader paths do not match the supported contract")
+if not re.search(r"path:\s*ROUTES\.settingsSlack,\s*setup:\s*setupAuthSidebarPageWrapper\(setupSlackConnectPage\$\)", bootstrap) or not re.search(r'import\s*\{\s*setupSlackConnectPage\$\s*\}\s*from\s*"\./okou-page/slack-connect-page\.ts"', bootstrap):
+    sys.exit("Missing authenticated canonical Slack reader registration")
+if not re.search(r'settingsSlack:\s*INTEGRATION_SETTINGS_PATHS\.slack', paths) or not re.search(r'slack:\s*"/settings/slack"', canonical):
+    sys.exit("Slack reader path does not match the supported contract")
+
+# Ancestry and path strings cannot prove that a descendant kept the bare reader.
+# Require the reviewed signal/setup/view source: absent w/u reads slackOrgData$
+# and renders overview actions. Any later reader edit needs a reviewed floor
+# update; do not guess semantic equivalence or execute historical App code.
+for path in (
+    "turbo/apps/platform/src/signals/okou-page/slack-connect-signals.ts",
+    "turbo/apps/platform/src/signals/okou-page/slack-connect-page.ts",
+    "turbo/apps/platform/src/views/okou-page/slack-connect-page.tsx",
+):
+    if source(path) != source(path, sys.argv[2]):
+        sys.exit(f"Slack reader differs from the reviewed floor; review compatibility before updating the floor: {path}")
 PY
 
 app_version=$(git show "$TARGET_COMMIT:turbo/apps/platform/package.json" | jq -er '.version')
@@ -158,6 +178,7 @@ PY
 # mutation helper. A queue wait/build/policy change cannot reuse old evidence.
 refresh_main
 git diff --quiet "$policy_main" origin/main -- .github/rollback-floors/telegram-settings-app \
+  .github/rollback-floors/slack-settings-app \
   .github/scripts/release/resolve-app-rollback-target.sh .github/scripts/release/rollback-app-production.sh \
   .github/workflows/rollback-production.yml || fail "App rollback policy changed during validation; rerun from current main."
 git diff --quiet HEAD origin/main -- .github/scripts/release/resolve-app-rollback-target.sh \
@@ -168,7 +189,7 @@ jq -e --arg id "$api_deployment_id" --arg project "$VERCEL_PROJECT_ID" \
   '.deploymentId == $id and .projectId == $project and .alias == "api.okou.ai" and .redirect == null and .microfrontends == null' \
   <<< "$current_alias" >/dev/null || fail "Serving API changed during App validation; rerun."
 jq -n --arg artifact "$TARGET_COMMIT" --arg version "$APP_VERSION_ID" --arg app "$app_version" \
-  --arg floor "$floor" --arg api_floor "$api_floor" --arg api_sha "$api_sha" --arg api_deployment "$api_deployment_id" \
+  --arg floor "$floor" --arg slack_floor "$slack_floor" --arg api_floor "$api_floor" --arg api_sha "$api_sha" --arg api_deployment "$api_deployment_id" \
   --arg cf_deployment "$cf_deployment_id" --arg github_deployment "$github_deployment_id" \
-  '{artifact_sha:$artifact, version_id:$version, app_version:$app, reader_floor:$floor, api_floor:$api_floor,
+  '{artifact_sha:$artifact, version_id:$version, app_version:$app, reader_floor:$floor, slack_reader_floor:$slack_floor, api_floor:$api_floor,
     api_sha:$api_sha, api_deployment_id:$api_deployment, cf_deployment_id:$cf_deployment, github_deployment_id:$github_deployment}'
