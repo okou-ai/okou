@@ -68,7 +68,7 @@ use runner_host::paths::RunnerPaths;
 use runner_host::runner_process_identity::RunnerProcessIdentity;
 #[cfg(test)]
 use runner_provider::JobCandidate;
-use runner_provider::{JobProvider, RunCancellationRegistration, RunCancellationRegistry};
+use runner_provider::{JobProvider, RunCancellationRegistry};
 #[cfg(test)]
 use runner_types::ids::RunId;
 
@@ -105,7 +105,7 @@ use home_cache_observation::{
     HomeCacheObservation, HomeCacheObservationEvent, InitialHomeCacheObservation,
 };
 use job_discovery::{AdmissionContext, DiscoveredJob};
-use job_spawn::{SpawnContext, handle_job_result};
+use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
 use pending_candidate::PendingCandidate;
 use runner_lifecycle::active_runs::ActiveRuns;
@@ -1048,7 +1048,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         startup_mode,
     } = started;
 
-    let mut jobs: JoinSet<RunCancellationRegistration> = JoinSet::new();
+    let mut jobs: JoinSet<JobResult> = JoinSet::new();
 
     if startup_mode == RunnerMode::Running {
         info!(

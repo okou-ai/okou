@@ -15,11 +15,12 @@ use super::job_discovery::{
     AdmissionContext, DiscoveredJob, DiscoveredJobContext, DiscoveredJobProfile,
     DiscoveredJobResult, handle_admitted_job, prepare_discovered_job, recover_unconsumed_admission,
 };
+use super::job_spawn::JobResult;
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, PreClaimOutcome, PreClaimRequest, admit_and_claim,
 };
-use runner_provider::{JobCandidate, RunCancellationRegistration};
+use runner_provider::JobCandidate;
 use runner_types::ids::RunId;
 
 // A conservative request-pressure bound, independent of the stricter local
@@ -145,7 +146,7 @@ impl ClaimTasks {
     pub(super) async fn consume(
         &self,
         result: Result<ClaimTaskResult, JoinError>,
-        jobs: &mut JoinSet<RunCancellationRegistration>,
+        jobs: &mut JoinSet<JobResult>,
     ) -> Result<DiscoveredJobResult, ClaimConsumptionError> {
         let result = result.map_err(|_| ClaimConsumptionError::AdmissionTask)?;
         let context = &self.context;
@@ -202,7 +203,7 @@ impl ClaimTaskResult {
     ) -> ReactorResult<DiscoveredJobResult> {
         Ok(match self.outcome {
             ClaimTaskOutcome::Claimed(claim) => {
-                handle_admitted_job(claim.into_admission()?, self.profile, context).await
+                handle_admitted_job(claim.into_admission()?, self.profile, context).await?
             }
             ClaimTaskOutcome::Pending(candidate) => DiscoveredJobResult::pending(*candidate),
             ClaimTaskOutcome::Deferred => DiscoveredJobResult::completed(false),

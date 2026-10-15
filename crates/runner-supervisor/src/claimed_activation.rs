@@ -4,7 +4,6 @@
 //! guard owns the claim, cancellation registration, sandbox lease and active-run registration.
 //! Dropping it starts recovery rather than silently abandoning provider or sandbox ownership.
 
-use std::mem::ManuallyDrop;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -67,10 +66,33 @@ pub struct ClaimedActivationResources {
     pub idle_destroy_tracker: IdleDestroyTracker,
 }
 
+/// Checked ownership/publication failures before executor handoff.
+#[derive(Debug, thiserror::Error)]
+pub enum ClaimedActivationError {
+    #[error("claimed activation setup was already transferred")]
+    SetupAlreadyTransferred,
+    #[error("active status was already published")]
+    StatusAlreadyPublished,
+    #[error("claimed activation cannot transfer before active status is published")]
+    StatusNotPublished,
+    #[error("persist active runner ownership: {0}")]
+    StatusPersistence(#[from] StatusPersistenceError),
+}
+
+impl ClaimedActivationError {
+    pub fn recovery_reason(&self) -> &'static str {
+        match self {
+            Self::StatusPersistence(_) => "active_status_persistence_failed",
+            Self::SetupAlreadyTransferred
+            | Self::StatusAlreadyPublished
+            | Self::StatusNotPublished => "activation_ownership_failed",
+        }
+    }
+}
+
 /// Owns a provider claim and sandbox until active status is published and the caller takes it.
 pub struct ClaimedActivationGuard {
-    setup: ManuallyDrop<ClaimedJobSetup>,
-    armed: bool,
+    setup: Option<ClaimedJobSetup>,
     status_published: bool,
     sandbox_id: SandboxId,
     recovery: ClaimedActivationResources,
@@ -83,8 +105,7 @@ impl ClaimedActivationGuard {
             None => SandboxId::new_v4(),
         };
         Self {
-            setup: ManuallyDrop::new(setup),
-            armed: true,
+            setup: Some(setup),
             status_published: false,
             sandbox_id,
             recovery,
@@ -96,23 +117,31 @@ impl ClaimedActivationGuard {
     }
 
     /// Borrow the still-owned setup to build a session restore plan.
-    pub fn setup(&mut self) -> &mut ClaimedJobSetup {
-        &mut self.setup
+    pub fn setup(&mut self) -> Result<&mut ClaimedJobSetup, ClaimedActivationError> {
+        self.setup
+            .as_mut()
+            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)
     }
 
-    pub fn record_resource_budget_occupancy(&mut self, budget: &ResourceBudget) {
-        self.setup
+    pub fn record_resource_budget_occupancy(
+        &mut self,
+        budget: &ResourceBudget,
+    ) -> Result<(), ClaimedActivationError> {
+        self.setup()?
             .pre_spawn_timing
             .record_resource_budget_occupancy(budget);
+        Ok(())
     }
 
     /// Commit the matching pool snapshot and active status before executor ownership transfer.
-    pub async fn publish_active_status(&mut self) -> Result<(), StatusPersistenceError> {
-        assert!(
-            !self.status_published,
-            "active status was already published"
-        );
-        let setup = &mut *self.setup;
+    pub async fn publish_active_status(&mut self) -> Result<(), ClaimedActivationError> {
+        let setup = self
+            .setup
+            .as_mut()
+            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)?;
+        if self.status_published {
+            return Err(ClaimedActivationError::StatusAlreadyPublished);
+        }
         let started_at = Instant::now();
         let result = publish_active_run_status(
             &self.recovery.status,
@@ -131,11 +160,10 @@ impl ClaimedActivationGuard {
     }
 
     /// Transfer only after status publication succeeds; a panic while preparing stays recoverable.
-    pub fn take_setup_after_status(&mut self) -> ClaimedJobSetup {
-        assert!(
-            self.status_published,
-            "claimed activation cannot transfer before active status is published"
-        );
+    pub fn take_setup_after_status(&mut self) -> Result<ClaimedJobSetup, ClaimedActivationError> {
+        if !self.status_published {
+            return Err(ClaimedActivationError::StatusNotPublished);
+        }
         self.take_setup()
     }
 
@@ -143,31 +171,30 @@ impl ClaimedActivationGuard {
         mut self,
         reason: &'static str,
         error: String,
-    ) -> ClaimedActivationRecovery {
-        recover_claimed_activation_failure(
-            self.take_setup(),
+    ) -> Result<ClaimedActivationRecovery, ClaimedActivationError> {
+        let setup = self.take_setup()?;
+        Ok(recover_claimed_activation_failure(
+            setup,
             self.sandbox_id,
             reason,
             error,
             &self.recovery,
         )
-        .await
+        .await)
     }
 
-    fn take_setup(&mut self) -> ClaimedJobSetup {
-        self.armed = false;
-        // SAFETY: `armed` is true exactly while `setup` has not been taken.
-        // Every take clears it first, and `Drop` only takes while it is true.
-        unsafe { ManuallyDrop::take(&mut self.setup) }
+    fn take_setup(&mut self) -> Result<ClaimedJobSetup, ClaimedActivationError> {
+        self.setup
+            .take()
+            .ok_or(ClaimedActivationError::SetupAlreadyTransferred)
     }
 }
 
 impl Drop for ClaimedActivationGuard {
     fn drop(&mut self) {
-        if !self.armed {
+        let Some(setup) = self.setup.take() else {
             return;
-        }
-        let setup = self.take_setup();
+        };
         let sandbox_id = self.sandbox_id;
         let recovery = self.recovery.clone();
         let cleanup = recovery.idle_destroy_tracker.clone();
