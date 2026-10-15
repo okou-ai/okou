@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.107.5](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.4...guest-agent-v0.107.5) (2026-10-15)
+
+
+### Performance Improvements
+
+* **test:** group guest-agent integration targets by domain ([#40386](https://github.com/okou-ai/okou/issues/40386)) ([66a9dd6](https://github.com/okou-ai/okou/commit/66a9dd690800a3fc4ca44b7dbfa8abad04aabd08))
+* **test:** share compiled cli integration fixtures ([#40427](https://github.com/okou-ai/okou/issues/40427)) ([c35f267](https://github.com/okou-ai/okou/commit/c35f2679843e586d00142bc7ff4d0250e4c52ab9))
+
 ## [0.107.4](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.3...guest-agent-v0.107.4) (2026-10-15)
 
 ## [0.107.3](https://github.com/okou-ai/okou/compare/guest-agent-v0.107.2...guest-agent-v0.107.3) (2026-10-15)

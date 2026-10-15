@@ -9,6 +9,45 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.743.0](https://github.com/okou-ai/okou/compare/api-v1.742.0...api-v1.743.0) (2026-10-15)
+
+
+### Features
+
+* **cli:** retain same-run ssh and vnc failure diagnostics ([#40358](https://github.com/okou-ai/okou/issues/40358)) ([4e5cd58](https://github.com/okou-ai/okou/commit/4e5cd5836d1f051a85ca076d170cc2e30e3a8177))
+
+
+### Bug Fixes
+
+* **api:** send private telegram connect links to settings ([#40384](https://github.com/okou-ai/okou/issues/40384)) ([d48569c](https://github.com/okou-ai/okou/commit/d48569cbcb44041a9d368e3e818b40378d55edc5))
+* **api:** use read dependencies for invoice preparation ([#40439](https://github.com/okou-ai/okou/issues/40439)) ([b01d7cc](https://github.com/okou-ai/okou/commit/b01d7ccf3dda207075f1ad73adcb218528c89676))
+* **slack:** stage uninstalled app home links for compatible rollout ([#40389](https://github.com/okou-ai/okou/issues/40389)) ([655d20e](https://github.com/okou-ai/okou/commit/655d20e6a0708a83af97cbc6dcc14ea7f60dae69))
+
+
+### Refactoring
+
+* **api:** inline runtime slug catalog reads ([#40387](https://github.com/okou-ai/okou/issues/40387)) ([dfa3c05](https://github.com/okou-ai/okou/commit/dfa3c05b488b82a07e27f6853b9c6d6918480ee8))
+* **api:** inline stripe projection owner lookup ([#40370](https://github.com/okou-ai/okou/issues/40370)) ([4cbe330](https://github.com/okou-ai/okou/commit/4cbe330e6c076a653e6d59ea0bc18e6c4530ac64))
+* **api:** inline stripe reprojection credential reads ([#40398](https://github.com/okou-ai/okou/issues/40398)) ([df566d0](https://github.com/okou-ai/okou/commit/df566d04e71357ca1743957802d5a2b216823e20))
+* **api:** keep plan replacement read in its transaction owner ([#40395](https://github.com/okou-ai/okou/issues/40395)) ([5663b52](https://github.com/okou-ai/okou/commit/5663b52d9238151c283a0b7375792df2e4096737))
+* **api:** own connector connect-item catalog reads ([#40380](https://github.com/okou-ai/okou/issues/40380)) ([e47ca21](https://github.com/okou-ai/okou/commit/e47ca212140671344313b27f331f23c98c9fc735))
+* **api:** own feishu account mutation intent reads ([#40402](https://github.com/okou-ai/okou/issues/40402)) ([97387cb](https://github.com/okou-ai/okou/commit/97387cb319918bbf5d612e3e8ee77a0894b81e98))
+* **api:** own github active installation reads ([#40413](https://github.com/okou-ai/okou/issues/40413)) ([4462bd8](https://github.com/okou-ai/okou/commit/4462bd837ef188603555f8ea352b3c66b7679738))
+* **api:** own github user oauth state creation ([#40424](https://github.com/okou-ai/okou/issues/40424)) ([e3aa419](https://github.com/okou-ai/okou/commit/e3aa419ac0847d9338e78f2b0e3bc9c66a10d787))
+* **api:** own telegram agent label read in computed ([#40407](https://github.com/okou-ai/okou/issues/40407)) ([ec7c422](https://github.com/okou-ai/okou/commit/ec7c4225bcf6844d7582b6e01c132a0765b84eb2))
+* **api:** publish connector refresh in one statement ([#40406](https://github.com/okou-ai/okou/issues/40406)) ([d26f430](https://github.com/okou-ai/okou/commit/d26f4303daf0e6adf0786b847478a830cd63132d))
+* **api:** retire tx-0271 upgrade invoice transaction ([#40415](https://github.com/okou-ai/okou/issues/40415)) ([c8d3356](https://github.com/okou-ai/okou/commit/c8d3356ae343d0e5207aca54224664d5b6d6012e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.568.0
+    * @okouai/core bumped to 8.761.0
+    * @okouai/db bumped to 1.342.1
+    * @okouai/pi-agent-runtime bumped to 1.50.8
+
 ## [1.742.0](https://github.com/okou-ai/okou/compare/api-v1.741.2...api-v1.742.0) (2026-10-15)
 
 
