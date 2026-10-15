@@ -122,6 +122,52 @@ async fn streams_more_than_four_mib_in_both_directions_with_bounded_backpressure
 }
 
 #[tokio::test]
+async fn versioned_file_method_keeps_opaque_payload_binary_end_and_one_connection() {
+    let method = "ssh.file.download.diagnostics.v2";
+    let params = json!({"sshConnectionId":"a0000000-0000-4000-8000-000000000001","remotePath":"literal $path"});
+    let request = runner_rpc_proto::parse_request(
+        &serde_json::to_vec(&json!({"version":1,"method":method,"params":params})).unwrap(),
+    )
+    .unwrap();
+    let mut input = Vec::new();
+    runner_rpc_proto::write_request(&mut input, &request)
+        .await
+        .unwrap();
+    Writer::input(&mut input).send(&Frame::End).await.unwrap();
+    let (client, mut server) = UnixStream::pair().unwrap();
+    let calls = AtomicUsize::new(0);
+    let mut output = Vec::new();
+    let helper = runner_rpc_client::stream::run_with_io(input.as_slice(), &mut output, || async {
+        calls.fetch_add(1, Ordering::SeqCst);
+        Ok(client)
+    });
+    let host = async {
+        let request = runner_rpc_proto::read_request(&mut server).await.unwrap();
+        assert_eq!(request.method, method);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(request.params.get()).unwrap(),
+            params
+        );
+        let (read, write) = tokio::io::split(server);
+        let mut reader = Reader::input(read);
+        assert!(matches!(reader.next().await.unwrap(), Some(Frame::End)));
+        assert!(reader.next().await.unwrap().is_none());
+        let mut writer = Writer::responses(write);
+        writer.send(&Frame::End).await.unwrap();
+        writer
+            .send(&Frame::Control(Response::Result {
+                data: request.params,
+            }))
+            .await
+            .unwrap();
+    };
+    let (success, ()) = tokio::join!(helper, host);
+    assert!(success.unwrap());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(matches!(terminal(&output).await, Response::Result { .. }));
+}
+
+#[tokio::test]
 async fn legacy_rejection_completes_even_when_stream_input_never_arrives() {
     let (mut producer, input_reader) = tokio::io::duplex(1024);
     producer.write_all(&input().await).await.unwrap();

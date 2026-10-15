@@ -1,6 +1,7 @@
 //! Run-local processes. Records, host work and short guest RPCs have separate owners.
 
 mod buffer;
+mod diagnostics;
 mod process;
 mod protocol;
 mod read;
@@ -50,6 +51,7 @@ pub(super) struct Manager {
 }
 
 struct Entry {
+    trace: crate::diagnostics::trace::Trace,
     id: Uuid,
     connection: Uuid,
     scope: Scope,
@@ -61,6 +63,7 @@ struct Entry {
 }
 
 struct Data {
+    diagnostic: Option<crate::diagnostics::Report>,
     state: State,
     effects: Effects,
     generation: Option<i64>,
@@ -172,7 +175,6 @@ impl Manager {
     }
 
     fn start(&self, params: protocol::Start, scope: &Scope) -> Response {
-        let connection = params.ssh_connection_id;
         let result = (|| {
             scope.check()?;
             let permit = Arc::clone(&self.capacity)
@@ -181,6 +183,9 @@ impl Manager {
             let access = self.registration.lookup(params.ssh_connection_id)?;
             let (commands, receiver) = mpsc::channel(CAPACITY);
             let entry = Arc::new(Entry {
+                trace: crate::diagnostics::trace::Trace::new(
+                    self.registration.diagnostics().enabled(),
+                ),
                 id: Uuid::new_v4(),
                 connection: params.ssh_connection_id,
                 scope: Scope {
@@ -193,6 +198,7 @@ impl Manager {
                 commands,
                 changed: Notify::new(),
                 data: Mutex::new(Data {
+                    diagnostic: None,
                     state: State::Starting,
                     effects: Effects::NotStarted,
                     generation: None,
@@ -217,16 +223,7 @@ impl Manager {
         })();
         match result {
             Ok(session_id) => Response::Started { session_id },
-            Err(reason) => {
-                super::observation::Attempt::default().record(
-                    &self.registration.diagnostics(),
-                    connection,
-                    crate::diagnostics::Operation::Session,
-                    None,
-                    Some(reason),
-                );
-                Response::failed(reason, Effects::NotStarted)
-            }
+            Err(reason) => Response::failed(reason, Effects::NotStarted),
         }
     }
 
@@ -363,26 +360,38 @@ impl Manager {
         &self,
         method: &str,
         raw: &str,
+        diagnosed: bool,
         scope: &Scope,
         terminal: &Scope,
         writer: &mut ResponseWriter<GuestIo>,
     ) {
         let response = match scope.wait(self.handle(method, raw, scope)).await {
-            Ok(Ok(data)) => serde_json::value::to_raw_value(&data)
-                .map(|data| runner_rpc_proto::Response::Result { data })
-                .unwrap_or_else(|_| {
-                    runner_rpc_proto::Response::error(
-                        ErrorCode::Protocol,
-                        runner_rpc_proto::Delivery::Unknown,
-                    )
-                }),
+            Ok(Ok(data)) => crate::diagnostics::version2::result(
+                &data,
+                diagnosed,
+                self.diagnostic_report(raw, &data).as_ref(),
+                &self.registration.diagnostics(),
+            )
+            .map(|data| runner_rpc_proto::Response::Result { data })
+            .unwrap_or_else(|_| {
+                runner_rpc_proto::Response::error(
+                    ErrorCode::Protocol,
+                    runner_rpc_proto::Delivery::Unknown,
+                )
+            }),
             Ok(Err(code)) => {
                 runner_rpc_proto::Response::error(code, runner_rpc_proto::Delivery::NotDispatched)
             }
             Err(reason) => {
-                let Ok(data) =
-                    serde_json::value::to_raw_value(&Response::failed(reason, Effects::Unknown))
-                else {
+                let Ok(data) = ({
+                    let response = Response::failed(reason, Effects::Unknown);
+                    crate::diagnostics::version2::result(
+                        &response,
+                        diagnosed,
+                        self.diagnostic_report(raw, &response).as_ref(),
+                        &self.registration.diagnostics(),
+                    )
+                }) else {
                     return;
                 };
                 runner_rpc_proto::Response::Result { data }

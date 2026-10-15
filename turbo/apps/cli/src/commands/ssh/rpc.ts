@@ -1,8 +1,8 @@
 import type { Writable } from "node:stream";
 import { z } from "zod";
+import { invokeDiagnosedSsh } from "../../lib/ssh-diagnostics";
 
 import {
-  invokeRunnerRpc,
   RunnerRpcProtocolError,
   type RunnerRpcLocalFailure,
 } from "../../lib/runner-rpc";
@@ -298,7 +298,7 @@ export async function executeSsh(
   command: string,
   json: boolean,
 ) {
-  return invokeRunnerRpc(
+  return invokeDiagnosedSsh(
     "ssh.exec",
     { sshConnectionId: connectionId, command },
     new SshResponse(),
@@ -306,4 +306,4 @@ export async function executeSsh(
   );
 }
 
-export const invokeSshRpc = invokeRunnerRpc;
+export const invokeSshRpc = invokeDiagnosedSsh;

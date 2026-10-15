@@ -23,7 +23,7 @@ vi.mock("node:child_process", async (importOriginal) => {
           return original.spawn("/nonexistent/diagnostic-test-helper", [], {
             stdio: ["pipe", "pipe", "pipe"],
           });
-        const reply = helper.replies.shift();
+        const reply = helper.replies[0];
         if (!reply) throw new Error("Unexpected helper invocation");
         const child = original.spawn(
           process.execPath,
@@ -35,6 +35,7 @@ vi.mock("node:child_process", async (importOriginal) => {
       process.stdin.on('data', chunk => request += chunk);
       process.stdin.on('end', () => {
         process.send(request);
+        if (JSON.parse(request).method === 'ssh.diagnostics.capabilities') { process.stdout.end(JSON.stringify({type:'error',code:'unknown_method',delivery:'not_dispatched'})+String.fromCharCode(10),()=>process.exit(1)); return; }
         process.stdout.end(Buffer.from(process.env.DIAGNOSTIC_TEST_REPLY, 'base64'), () => process.exit(Number(process.env.DIAGNOSTIC_TEST_EXIT)));
       });
     `,
@@ -49,7 +50,13 @@ vi.mock("node:child_process", async (importOriginal) => {
           },
         );
         child.on("message", (message: unknown) => {
-          if (typeof message === "string") helper.requests.push(message);
+          if (
+            typeof message === "string" &&
+            JSON.parse(message).method !== "ssh.diagnostics.capabilities"
+          ) {
+            helper.requests.push(message);
+            helper.replies.shift();
+          }
         });
         return child;
       },
@@ -211,7 +218,7 @@ it("stops at disabled capability negotiation", async () => {
   capabilities(false);
   await invoke("ssh", "--json");
   expect(result()).toEqual({ status: "unavailable", reason: "disabled" });
-  expect(spawn).toHaveBeenCalledTimes(1);
+  expect(spawn).toHaveBeenCalledTimes(2);
 });
 it("reports an old owner without trying business methods", async () => {
   helper.replies.push({

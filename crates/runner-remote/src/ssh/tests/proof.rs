@@ -8,7 +8,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 #[tokio::test]
 async fn corrupt_host_proof_never_pins_or_authenticates_even_with_matching_key_identity() {
     for pinned in [false, true] {
-        let h = Harness::new(Reply::default()).await;
+        let mut h = Harness::new(Reply::default()).await;
+        h.enable_diagnostics().await;
         let destination = *h.network.target.lock().unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         *h.network.target.lock().unwrap() = listener.local_addr().unwrap();
@@ -60,11 +61,25 @@ async fn corrupt_host_proof_never_pins_or_authenticates_even_with_matching_key_i
                     .json_body(serde_json::json!({"outcome":"pinned","generation":8}));
             })
             .await;
-        let frames = h.request(params()).await;
+        let frames = h.raw(serde_json::json!({"version":1,"method":"ssh.exec.diagnostics.v2","remaining_ms":60000,"params":params()}).to_string()).await;
         assert_eq!(terminal(&frames)["failure_reason"], "protocol");
         assert_eq!(terminal(&frames)["effects"], "not_started");
         pin.assert_calls_async(0).await;
         assert_eq!(h.observed.auth.load(Ordering::SeqCst), 0);
+        let stages = terminal(&frames)["diagnostics"]["report"]["ssh"]["stages"]
+            .as_array()
+            .unwrap();
+        for (stage, status) in [
+            ("ssh_proof", "failed"),
+            ("ssh_trust", "not_reached"),
+            ("authentication", "not_reached"),
+        ] {
+            assert!(
+                stages
+                    .iter()
+                    .any(|entry| entry["stage"] == stage && entry["status"] == status)
+            );
+        }
         tokio::time::timeout(Duration::from_secs(5), proxy)
             .await
             .unwrap()

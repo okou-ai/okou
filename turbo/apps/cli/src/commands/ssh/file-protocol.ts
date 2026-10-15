@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { failureReasonSchema, rpcErrorSchema } from "./rpc";
+import type {
+  Diagnosed,
+  SshDiagnosticContext,
+} from "../../lib/ssh-diagnostics";
 
 export const FILE_LIMITS = {
   max_file_bytes: 1_073_741_824,
@@ -65,7 +69,7 @@ export const outcomeSchema = z
             (value.direction === "upload" ? "completed" : "not_started")
       : value.failure_reason !== null && value.effects !== "completed";
   });
-export type FileOutcome = z.infer<typeof outcomeSchema>;
+export type FileOutcome = Diagnosed<z.infer<typeof outcomeSchema>>;
 const envelopeSchema = z.union([
   z.object({ type: z.literal("result"), data: outcomeSchema }).strict(),
   rpcErrorSchema,
@@ -106,6 +110,7 @@ export function frame(bytes: Buffer): Buffer {
 /** One bounded allocation per validated length; no concatenation of arbitrary
  * stdout chunks, no whole-file buffering, no terminal accepted without EOF. */
 export class FileFrames {
+  constructor(private readonly diagnostics?: SshDiagnosticContext) {}
   private header = Buffer.alloc(4);
   private headerSize = 0;
   private payload: Buffer | undefined;
@@ -167,6 +172,10 @@ export class FileFrames {
       }
       return;
     }
+    this.control(payload);
+  }
+
+  private control(payload: Buffer) {
     if (payload.length > 24576) throw new FileError("protocol");
     let decoded: unknown;
     try {
@@ -176,7 +185,9 @@ export class FileFrames {
     } catch {
       throw new FileError("protocol");
     }
-    const parsed = envelopeSchema.safeParse(decoded);
+    const parsed = envelopeSchema.safeParse(
+      this.diagnostics?.strip(decoded) ?? decoded,
+    );
     if (!parsed.success) throw new FileError("protocol");
     if (
       (parsed.data.type === "result" && this.bytes > 0 && !this.ended) ||

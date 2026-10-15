@@ -132,6 +132,8 @@ fn unbound(cause: super::Cause) -> bool {
                 | V::TimedOut
                 | V::InvalidInput
                 | V::UnsupportedProfile
+        ) | super::Cause::File(
+            crate::ssh::FileFailure::TransferLimit | crate::ssh::FileFailure::FileTooLarge
         )
     )
 }
@@ -150,7 +152,7 @@ enum Status {
 struct Query {
     schema_version: u8,
     status: Status,
-    report: Option<super::Report>,
+    report: Option<serde_json::Value>,
     retention: Retention,
 }
 #[derive(Serialize)]
@@ -161,14 +163,26 @@ struct Retention {
 }
 
 impl Handle {
+    #[cfg(test)]
     async fn query(
         &self,
         protocol: Protocol,
         selector: Selector,
         authority: Option<&Authority>,
     ) -> Query {
+        self.query_versioned(protocol, selector, authority, false)
+            .await
+    }
+
+    async fn query_versioned(
+        &self,
+        protocol: Protocol,
+        selector: Selector,
+        authority: Option<&Authority>,
+        version2: bool,
+    ) -> Query {
         let mut query = Query {
-            schema_version: 1,
+            schema_version: if version2 { 2 } else { 1 },
             status: Status::Unavailable,
             report: None,
             retention: Retention {
@@ -237,7 +251,16 @@ impl Handle {
         } else {
             Status::NoFailure
         };
-        query.report = report;
+        query.report = report.as_ref().and_then(|report| {
+            if version2 {
+                report.version2()
+            } else {
+                report.legacy()
+            }
+        });
+        if report.is_some() && query.report.is_none() {
+            query.status = Status::Unavailable;
+        }
         query.retention.evicted = self
             .store
             .state
@@ -251,6 +274,7 @@ impl Handle {
         &self,
         request: super::super::guest_rpc::Request,
         authority: Option<Arc<Authority>>,
+        ssh_available: bool,
     ) {
         let super::super::guest_rpc::Request {
             input,
@@ -267,18 +291,25 @@ impl Handle {
             sandbox_cancelled,
             deadline,
         };
-        let data = if request.method == "remote.diagnostics.capabilities" {
+        let data = if matches!(
+            request.method.as_str(),
+            "remote.diagnostics.capabilities" | super::version2::CAPABILITIES
+        ) {
             if serde_json::from_str::<Empty>(request.params.get()).is_err() {
                 scope
                     .error(input, runner_rpc_proto::ErrorCode::InvalidRequest)
                     .await;
                 return;
             }
-            serde_json::value::to_raw_value(&Capabilities {
-                schema_version: 1,
-                passive_query: self.enabled() && self.current(),
-                active_check: false,
-            })
+            if request.method == super::version2::CAPABILITIES {
+                serde_json::value::to_raw_value(&super::version2::capabilities(self, ssh_available))
+            } else {
+                serde_json::value::to_raw_value(&Capabilities {
+                    schema_version: 1,
+                    passive_query: self.enabled() && self.current(),
+                    active_check: false,
+                })
+            }
         } else {
             let Ok(selector) = serde_json::from_str::<Selector>(request.params.get()) else {
                 scope
@@ -286,13 +317,14 @@ impl Handle {
                     .await;
                 return;
             };
-            let protocol = if request.method == "ssh.diagnose" {
+            let version2 = request.method == super::version2::QUERY;
+            let protocol = if request.method == "ssh.diagnose" || version2 {
                 Protocol::Ssh
             } else {
                 Protocol::Vnc
             };
             let Some(query) = scope
-                .wait(self.query(protocol, selector, authority.as_deref()))
+                .wait(self.query_versioned(protocol, selector, authority.as_deref(), version2))
                 .await
             else {
                 return;
@@ -356,7 +388,7 @@ mod tests {
             })
             .await;
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
-        handle.record(super::super::Record {
+        let _ = handle.record(super::super::Record {
             protocol: Protocol::Vnc,
             connection: vnc,
             operation: Operation::Start,
@@ -374,6 +406,7 @@ mod tests {
                 configuration_generation: Some(7),
             }),
             native: None,
+            ssh: None,
         });
         let hidden = handle
             .query(Protocol::Vnc, Selector::default(), Some(&authority))
@@ -426,7 +459,7 @@ mod tests {
         );
         let host = Uuid::new_v4();
         let handle = Handle::new(runner_types::ids::RunId::new_v4(), true);
-        handle.record(super::super::Record {
+        let _ = handle.record(super::super::Record {
             protocol: Protocol::Ssh,
             connection: host,
             operation: Operation::Exec,
@@ -438,6 +471,7 @@ mod tests {
             cause: Cause::Ssh(crate::ssh::FailureReason::HostKeyMismatch),
             dependency: None,
             native: None,
+            ssh: None,
         });
         for created_at in ["2026-09-01T00:00:00.123457Z", CREATED_AT] {
             let inventory = api

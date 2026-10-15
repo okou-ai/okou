@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DiagnosticSupport } from "../../lib/ssh-diagnostics";
 import {
   failureReasonSchema,
   remoteExitSchema,
@@ -264,6 +265,7 @@ export async function sessionRpc(
   method: Method,
   params: Readonly<Record<string, unknown>>,
   signal?: AbortSignal,
+  support?: DiagnosticSupport,
 ) {
   return invokeSshRpc(
     `ssh.session.${method}`,
@@ -271,5 +273,6 @@ export async function sessionRpc(
     new SessionResponse(method, params),
     true,
     signal,
+    support,
   );
 }

@@ -1,7 +1,7 @@
 use super::*;
 
 fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
-    handle.record(Record {
+    let _ = handle.record(Record {
         protocol,
         connection,
         operation: Operation::Exec,
@@ -12,6 +12,7 @@ fn failure(handle: &Handle, protocol: Protocol, connection: Uuid) {
         },
         dependency: None,
         native: None,
+        ssh: None,
     });
 }
 

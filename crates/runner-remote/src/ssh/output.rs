@@ -137,6 +137,9 @@ impl Output {
         &mut self,
         writer: &mut ResponseWriter<GuestIo>,
         terminal: Terminal,
+        diagnostics: &crate::diagnostics::Handle,
+        diagnosed: bool,
+        report: Option<&crate::diagnostics::Report>,
     ) -> Result<(), FailureReason> {
         self.flush(writer).await?;
         #[derive(Serialize)]
@@ -154,14 +157,19 @@ impl Output {
             Terminal::Failed { .. } if self.attempted => Effects::Unknown,
             Terminal::Failed { .. } => Effects::NotStarted,
         };
-        let data = serde_json::value::to_raw_value(&ResultData {
-            terminal,
-            effects,
-            stdout_bytes: self.stdout.bytes,
-            stderr_bytes: self.stderr.bytes,
-            stdout_truncated: self.stdout.truncated,
-            stderr_truncated: self.stderr.truncated,
-        })
+        let data = crate::diagnostics::version2::result(
+            &ResultData {
+                terminal,
+                effects,
+                stdout_bytes: self.stdout.bytes,
+                stderr_bytes: self.stderr.bytes,
+                stdout_truncated: self.stdout.truncated,
+                stderr_truncated: self.stderr.truncated,
+            },
+            diagnosed,
+            report,
+            diagnostics,
+        )
         .map_err(|_| FailureReason::Protocol)?;
         writer
             .send(&Response::Result { data })

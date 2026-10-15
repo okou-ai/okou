@@ -51,7 +51,7 @@ describe("okou ssh session", () => {
         },
       },
     ]);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("requests an explicit persistent shell", async () => {
@@ -133,8 +133,9 @@ describe("okou ssh session", () => {
       type: "rpc_error",
       code: "unknown_method",
       delivery: "not_dispatched",
+      diagnostics: { status: "unavailable", reason: "unsupported" },
     });
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("does not accept a duplicate terminal or retry a possibly admitted start", async () => {
@@ -148,7 +149,7 @@ describe("okou ssh session", () => {
       failure_reason: "protocol",
       effects: "unknown",
     });
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("requires execution capability for retained session access", async () => {
@@ -204,6 +205,7 @@ vi.mock("node:child_process", async (importOriginal) => {
       process.stdin.on('data', chunk => request += chunk);
       process.stdin.on('end', () => {
         process.send(request);
+        if (JSON.parse(request).method === 'ssh.diagnostics.capabilities') { process.stdout.end(JSON.stringify({type:'error',code:'unknown_method',delivery:'not_dispatched'})+String.fromCharCode(10),()=>process.exit(1)); return; }
         if (process.env.SSH_TEST_MODE === 'hang') { setInterval(() => {}, 1000); return; }
         if (process.env.SSH_TEST_MODE === 'invalid-utf8') { process.stdout.end(Buffer.from([255, 10])); return; }
         if (['large', 'excess', 'aggregate'].includes(process.env.SSH_TEST_MODE)) {
@@ -239,7 +241,11 @@ vi.mock("node:child_process", async (importOriginal) => {
                 },
               });
         child.on("message", (message: unknown) => {
-          if (typeof message === "string") helper.requests.push(message);
+          if (
+            typeof message === "string" &&
+            JSON.parse(message).method !== "ssh.diagnostics.capabilities"
+          )
+            helper.requests.push(message);
         });
         return child;
       },
@@ -368,7 +374,7 @@ describe("okou ssh command", () => {
       effects: "completed",
     });
     expect(process.exitCode).toBe(0);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("lists live hosts through the canonical API", async () => {
@@ -646,7 +652,7 @@ describe("okou ssh command", () => {
       effects: "not_started",
     });
     expect(process.exitCode).toBe(1);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("retains uncertain delivery from generic helper errors", async () => {
@@ -675,7 +681,7 @@ describe("okou ssh command", () => {
       delivery: "not_dispatched",
     });
     expect(process.exitCode).toBe(1);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -739,7 +745,7 @@ describe("okou ssh command", () => {
       });
       expect(JSON.stringify(result())).not.toContain("secret-canary");
       expect(process.exitCode).toBe(1);
-      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(2);
     },
   );
 
@@ -761,7 +767,7 @@ describe("okou ssh command", () => {
     helper.mode = "missing";
     await execute();
     expect(result()).toMatchObject({ type: "failed", effects: "not_started" });
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("kills and awaits the owned helper on Ctrl-C, preserving uncertainty", async () => {
@@ -777,7 +783,7 @@ describe("okou ssh command", () => {
       failure_reason: "cancelled",
       effects: "unknown",
     });
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("bounds a hung helper with a deadline and does not replay", async () => {
@@ -794,7 +800,7 @@ describe("okou ssh command", () => {
       failure_reason: "timed_out",
       effects: "unknown",
     });
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("retains two independent bounded streams and truncation flags", async () => {
@@ -820,7 +826,7 @@ describe("okou ssh command", () => {
         failure_reason: "protocol",
         effects: "unknown",
       });
-      expect(spawn).toHaveBeenCalledTimes(1);
+      expect(spawn).toHaveBeenCalledTimes(2);
     },
   );
 

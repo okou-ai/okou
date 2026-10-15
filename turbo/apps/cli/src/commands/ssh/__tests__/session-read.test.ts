@@ -21,7 +21,7 @@ vi.mock("node:child_process", async (importOriginal) => {
         expect(file).toBe("/usr/local/bin/runner-rpc-client");
         expect(args).toEqual([]);
         expect(options).toEqual({ stdio: ["pipe", "pipe", "pipe"] });
-        const reply = helper.replies.shift();
+        const reply = helper.replies[0];
         if (!reply) throw new Error("Unexpected SSH page request");
         const child = original.spawn(
           "python3",
@@ -46,7 +46,13 @@ vi.mock("node:child_process", async (importOriginal) => {
           },
         );
         child.on("message", (message: unknown) => {
-          if (typeof message === "string") helper.requests.push(message);
+          if (
+            typeof message === "string" &&
+            JSON.parse(message).method !== "ssh.diagnostics.capabilities"
+          ) {
+            helper.requests.push(message);
+            helper.replies.shift();
+          }
         });
         return child;
       },

@@ -67,6 +67,47 @@ The switch controls history publication and passive queries. Native first-cause
 lifecycle handling and the inventory identity projection are shared paths that
 also apply when diagnostics are disabled.
 
+## SSH automatic output, version 2
+
+`ssh.diagnostics.capabilities` accepts an empty object in the legacy request
+envelope and returns schema version 2, `passive_query`, a finite list of
+`automatic_methods` and `query_method` (`ssh.diagnostics.query.v2`). It advertises
+only the live enabled assignment. The old capability response stays unchanged.
+
+The advertised automatic methods append `.diagnostics.v2` to SSH exec,
+file upload/download, and session start/status/read/write/signal/close. Their
+parameters and business execution use the existing handlers; the method label
+is the explicit version opt-in. Generic framing and both bundled-helper modes
+remain opaque. No new envelope/parameter field, helper fallback or replay is
+introduced. Non-opt-in methods retain their strict result shapes.
+
+An opted-in failure terminal may add `diagnostics` with `found` and the exact
+owner-published report, or `unavailable` without invented association. Process
+status/read use that session's retained terminal receipt. Later failures from
+other operations cannot change this reference. Completed remote nonzero exits
+and intentional close do not generate failures. Lost or corrupt helper delivery
+does not establish a diagnostic association; no business operation is retried.
+
+Version-2 reports keep the same identity/retention/authority bounds and add
+finite SSH consumer stages, a cause-specific next action, actual route, fresh
+versus reused transport and the selected address/family when observed. A pooled
+connection retains its original selected address and marks observed setup as
+reused. Incomplete/cancelled stages remain unknown. Public-route selection
+exposes only the one policy-approved address, never a DNS answer set. Native
+source receipts keep their existing cause; finer native stages remain unobserved.
+The current trace has 12 fixed stage entries, below the 32-stage ceiling.
+
+File-operation failures retain a distinct finite `file` cause rather than a
+guessed SSH network failure. Version-1 queries retain their original projection
+for representable records and return unavailable for new-only categories;
+they never emit a malformed version-1 report or substitute an older incident.
+The new CLI negotiates version 2 for passive SSH queries. Collection and
+diagnostic decoding failures remain secondary to valid original business,
+effect, delivery, output, file publication/residue and truncation outcomes.
+The same typed report supplies immediate output, exact passive queries and safe
+structured failure logs. It owns no physical resources and contains no business
+output, file paths, credentials or raw provider/peer text.
+
 SSH-routed Kerberos KDC failures retain their source cause and creation identity
 before Kerberos error conversion. The native RPC regression uses a real packaged
 Kerberos worker, controlled RFB/TLS peer and SSH trust refusal. It requires a

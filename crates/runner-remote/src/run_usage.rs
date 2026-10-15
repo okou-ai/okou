@@ -52,6 +52,7 @@ impl Run {
 
     pub(crate) async fn dispatch(&self, request: guest_rpc::Request) {
         let guest_rpc::Request {
+            diagnostics: _,
             input,
             lease,
             run: _,

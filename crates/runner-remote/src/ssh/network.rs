@@ -36,7 +36,9 @@ pub(super) async fn destination(
     network: Arc<dyn Network>,
     host: &str,
     port: u16,
+    trace: &crate::diagnostics::trace::Trace,
 ) -> Result<SocketAddr, FailureReason> {
+    use crate::diagnostics::trace::{Progress, Stage};
     let literal = host.parse::<IpAddr>();
     let addresses = if let Ok(ip) = literal {
         vec![SocketAddr::new(ip, port)]
@@ -58,12 +60,19 @@ pub(super) async fn destination(
                         .all(|b| b.is_ascii_alphanumeric() || b == b'-')
             })
         {
+            trace.set(Stage::DestinationPolicy, Progress::Failed);
             return Err(FailureReason::UnsafeDestination);
         }
-        network
+        trace.set(Stage::Dns, Progress::Running);
+        let addresses = network
             .resolve(&format!("{host}."), port)
             .await
-            .map_err(|_| FailureReason::NetworkFailure)?
+            .map_err(|_| {
+                trace.set(Stage::Dns, Progress::Failed);
+                FailureReason::NetworkFailure
+            })?;
+        trace.set(Stage::Dns, Progress::Passed);
+        addresses
     };
     if addresses.is_empty()
         || addresses.len() > 64
@@ -73,10 +82,14 @@ pub(super) async fn destination(
                 || matches!(address, SocketAddr::V6(v6) if v6.scope_id() != 0 || v6.flowinfo() != 0)
         })
     {
+        trace.set(Stage::DestinationPolicy, Progress::Failed);
         return Err(FailureReason::UnsafeDestination);
     }
-    addresses
+    trace.set(Stage::DestinationPolicy, Progress::Passed);
+    let selected = addresses
         .first()
         .copied()
-        .ok_or(FailureReason::UnsafeDestination)
+        .ok_or(FailureReason::UnsafeDestination)?;
+    trace.selected(selected.ip());
+    Ok(selected)
 }

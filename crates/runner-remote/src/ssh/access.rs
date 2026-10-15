@@ -42,7 +42,7 @@ pub(super) async fn connect(
         access.client_secret.expose(),
     )
     .ok_or(Reason::AccessProtocolFailure)?;
-    let (stream, failed) = cloudflare::connect(stream, configuration, tls)
+    let (stream, failed) = cloudflare::connect(stream, configuration, tls, &attempt.trace)
         .await
         .map_err(|failure| match failure {
             Failure::Tls => Reason::AccessTlsFailure,

@@ -8,148 +8,14 @@ import {
   type RunnerRpcResponseReader,
 } from "./runner-rpc";
 
-const nativeFailure = z.enum([
-  "resource_exhausted",
-  "cancelled",
-  "domain_failed",
-  "cleanup_timed_out",
-]);
-const sshFailure = z.enum([
-  "unavailable",
-  "authority_failure",
-  "invalid_credential",
-  "unsupported_credential",
-  "credential_resource_limit",
-  "unsafe_destination",
-  "network_failure",
-  "host_key_mismatch",
-  "unsupported_host_key",
-  "configuration_changed",
-  "authentication_failed",
-  "protocol",
-  "exec_rejected",
-  "disconnected",
-  "timed_out",
-  "cancelled",
-  "resource_exhausted",
-  "transport",
-]);
-const vncFailure = z.enum([
-  "unavailable",
-  "authority_failure",
-  "configuration_changed",
-  "unsupported_profile",
-  "invalid_credential",
-  "unsafe_destination",
-  "network_failure",
-  "protocol",
-  "timed_out",
-  "cancelled",
-  "resource_exhausted",
-  "session_not_found",
-  "invalid_input",
-  "stale_geometry",
-  "disconnected",
-  "authentication_failed",
-  "delivery_unknown",
-  "kerberos_expired",
-  "kerberos_non_renewable",
-  "kerberos_renewal_exhausted",
-]);
-const cause = z.discriminatedUnion("source", [
-  z.strictObject({ source: z.literal("ssh"), code: sshFailure }),
-  z.strictObject({ source: z.literal("vnc"), code: vncFailure }),
-  z.strictObject({ source: z.literal("native"), code: nativeFailure }),
-]);
-const protocolSchema = z.enum(["ssh", "vnc"]);
-type Protocol = z.infer<typeof protocolSchema>;
-const generation = z.number().int().min(1).max(0x7fffffff);
-const reportSchema = z.strictObject({
-  schema_version: z.literal(1),
-  run_id: z.uuid(),
-  assignment_id: z.uuid(),
-  attempt_id: z.uuid(),
-  sequence: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  observed_at: z.iso.datetime(),
-  protocol: protocolSchema,
-  connection_id: z.uuid(),
-  session_id: z.uuid().nullable(),
-  configuration_created_at: z.iso.datetime().nullable(),
-  configuration_generation: generation.nullable(),
-  operation: z.enum([
-    "exec",
-    "session",
-    "file",
-    "forwarding",
-    "start",
-    "capture",
-    "input",
-    "retirement",
-    "native",
-  ]),
-  stage: z.enum(["ssh_operation", "vnc_operation", "native_runtime"]),
-  cause,
-  dependencies: z
-    .array(
-      z.strictObject({
-        protocol: z.literal("ssh"),
-        connection_id: z.uuid(),
-        cause: cause.nullable(),
-        configuration_created_at: z.iso.datetime().nullable(),
-        configuration_generation: generation.nullable(),
-      }),
-    )
-    .max(1),
-  native: z
-    .strictObject({
-      configuration_id: z.uuid(),
-      generation,
-      resource_id: z.uuid(),
-      evidence: z.strictObject({
-        ready: z.boolean(),
-        terminal: nativeFailure.nullable(),
-        cleanup_complete: z.boolean(),
-        cleanup_failure: nativeFailure.nullable(),
-      }),
-    })
-    .nullable(),
-  detail: z.literal("not_observed"),
-  truncated: z.boolean(),
-});
-const querySchema = z.strictObject({
-  schema_version: z.literal(1),
-  status: z.enum([
-    "found",
-    "no_failure",
-    "not_retained",
-    "authority_unavailable",
-    "unavailable",
-  ]),
-  report: reportSchema.nullable(),
-  retention: z.strictObject({
-    capacity: z.literal(64),
-    evicted: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-    latest_failure_pinned: z.literal(true),
-  }),
-});
-const capabilitiesSchema = z.strictObject({
-  schema_version: z.literal(1),
-  passive_query: z.boolean(),
-  active_check: z.boolean(),
-});
-const rpcErrorSchema = z.strictObject({
-  type: z.literal("error"),
-  code: z.enum([
-    "invalid_request",
-    "unknown_method",
-    "unavailable",
-    "protocol",
-    "transport",
-    "timed_out",
-    "resource_exhausted",
-  ]),
-  delivery: z.enum(["not_dispatched", "unknown"]),
-});
+import {
+  querySchema,
+  capabilitiesSchema,
+  rpcErrorSchema,
+  type Protocol,
+  sshCapabilitiesSchema,
+  queryV2Schema,
+} from "./remote-diagnostic-schema";
 type LocalFailure = {
   status: "unavailable";
   reason:
@@ -163,12 +29,15 @@ type LocalFailure = {
     | "cancelled";
 };
 
-class Reader<T> implements RunnerRpcResponseReader<T | LocalFailure> {
+class DiagnosticReader<T> implements RunnerRpcResponseReader<T | LocalFailure> {
   private pending = Buffer.alloc(0);
   private total = 0;
   private terminal: T | LocalFailure | undefined;
   private rpcError = false;
-  constructor(private readonly schema: z.ZodType<T>) {}
+  constructor(
+    private readonly schema: z.ZodType<T>,
+    private readonly version = 1,
+  ) {}
   async read(chunk: unknown, _json: boolean, signal: AbortSignal) {
     signal.throwIfAborted();
     if (!Buffer.isBuffer(chunk) || this.total + chunk.length > 24 * 1024)
@@ -205,7 +74,10 @@ class Reader<T> implements RunnerRpcResponseReader<T | LocalFailure> {
             data: z.object({ schema_version: z.number().int() }),
           })
           .safeParse(value);
-        if (version.success && version.data.data.schema_version !== 1) {
+        if (
+          version.success &&
+          version.data.data.schema_version !== this.version
+        ) {
           this.terminal = {
             status: "unavailable",
             reason: "unsupported_version",
@@ -256,37 +128,74 @@ interface Selector {
   attemptId?: string;
   sessionId?: string;
 }
-async function diagnose(protocol: Protocol, selector: Selector, runId: string) {
-  const capabilities = await invokeRunnerRpc(
-    "remote.diagnostics.capabilities",
-    {},
-    new Reader(capabilitiesSchema),
-    true,
+
+function matchesQuery(
+  query: z.infer<typeof queryV2Schema> | z.infer<typeof querySchema>,
+  protocol: Protocol,
+  selector: Selector,
+  runId: string,
+) {
+  const report = query.report;
+  return (
+    (query.status === "found") === (report !== null) &&
+    (!report ||
+      (Buffer.byteLength(JSON.stringify(report)) <= 8192 &&
+        report.protocol === protocol &&
+        report.run_id === runId &&
+        (!selector.connectionId ||
+          report.connection_id === selector.connectionId) &&
+        (!selector.attemptId || report.attempt_id === selector.attemptId) &&
+        (!selector.sessionId || report.session_id === selector.sessionId)))
   );
+}
+
+async function diagnose(protocol: Protocol, selector: Selector, runId: string) {
+  const support = protocol === "ssh" ? await discoverSshDiagnostics() : null;
+  if (
+    support &&
+    "status" in support &&
+    !["unsupported", "unsupported_version"].includes(support.reason)
+  )
+    return support;
+  const version2 = support && !("status" in support);
+  if (version2 && !support.passive_query)
+    return { status: "unavailable", reason: "disabled" } as const;
+  // Keep #40311's explicit old-owner query contract until #40283's GA review
+  // establishes that captured CLI/owner consumers and rollback builds drained.
+  const capabilities = version2
+    ? { passive_query: support.passive_query }
+    : await invokeRunnerRpc(
+        "remote.diagnostics.capabilities",
+        {},
+        new DiagnosticReader(capabilitiesSchema),
+        true,
+      );
   if ("status" in capabilities) return capabilities;
   if (!capabilities.passive_query)
     return { status: "unavailable", reason: "disabled" } as const;
   const query = await invokeRunnerRpc(
-    `${protocol}.diagnose`,
+    version2 ? support.query_method : `${protocol}.diagnose`,
     { ...selector },
-    new Reader(querySchema),
+    new DiagnosticReader<
+      z.infer<typeof queryV2Schema> | z.infer<typeof querySchema>
+    >(version2 ? queryV2Schema : querySchema, version2 ? 2 : 1),
     true,
   );
   if ("reason" in query) return query;
-  const report = query.report;
-  if (
-    (query.status === "found") !== (report !== null) ||
-    (report &&
-      (Buffer.byteLength(JSON.stringify(report)) > 8192 ||
-        report.protocol !== protocol ||
-        report.run_id !== runId ||
-        (selector.connectionId &&
-          report.connection_id !== selector.connectionId) ||
-        (selector.attemptId && report.attempt_id !== selector.attemptId) ||
-        (selector.sessionId && report.session_id !== selector.sessionId)))
-  )
+  if (!matchesQuery(query, protocol, selector, runId))
     return { status: "unavailable", reason: "protocol" } as const;
   return query;
+}
+
+export function discoverSshDiagnostics(signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(2000);
+  return invokeRunnerRpc(
+    "ssh.diagnostics.capabilities",
+    {},
+    new DiagnosticReader(sshCapabilitiesSchema, 2),
+    true,
+    signal ? AbortSignal.any([signal, timeout]) : timeout,
+  );
 }
 
 function printHuman(
@@ -307,7 +216,9 @@ function printHuman(
         `Native resource ${report.native.resource_id}: terminal=${report.native.evidence.terminal ?? "not observed"}; cleanup=${report.native.evidence.cleanup_complete ? (report.native.evidence.cleanup_failure ?? "complete") : "pending"}.`,
       );
     console.log(
-      "Finer network stages were not observed. This is retained evidence; current connectivity has not been checked.",
+      report.schema_version === 2
+        ? `SSH stages: ${JSON.stringify(report.ssh)}; next action: ${report.next_action}. Finer native stages were not observed. This is retained evidence; current connectivity has not been checked.`
+        : "Finer network stages were not observed. This is retained evidence; current connectivity has not been checked.",
     );
   } else
     console.log(

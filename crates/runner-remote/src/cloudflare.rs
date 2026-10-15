@@ -69,7 +69,8 @@ impl<'a> Configuration<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum Failure {
     Tls,
     Protocol,
@@ -85,13 +86,22 @@ pub(crate) async fn connect<S: ByteIo>(
     stream: S,
     configuration: Configuration<'_>,
     tls: Arc<ClientConfig>,
+    trace: &crate::diagnostics::trace::Trace,
 ) -> Result<(impl ByteIo + use<S>, Arc<AtomicBool>), Failure> {
+    use crate::diagnostics::trace::{Progress, Stage};
+    trace.set(Stage::AccessTls, Progress::Running);
     let host = configuration.host;
     let server_name = ServerName::try_from(host.to_owned()).map_err(|_| Failure::Tls)?;
     let stream = TlsConnector::from(tls)
         .connect(server_name, stream)
         .await
-        .map_err(|_| Failure::Tls)?;
+        .map_err(|_| {
+            trace.set(Stage::AccessTls, Progress::Failed);
+            trace.access_failure(Failure::Tls);
+            Failure::Tls
+        })?;
+    trace.set(Stage::AccessTls, Progress::Passed);
+    trace.set(Stage::AccessWebsocket, Progress::Running);
     // The caller already opened one policy-validated IP. This function never resolves,
     // follows redirects, consults proxy variables or sends to a different recipient.
     let mut request = format!("wss://{host}/")
@@ -119,27 +129,39 @@ pub(crate) async fn connect<S: ByteIo>(
         Some(config),
     )
     .await
-    .map_err(|error| match error {
-        tungstenite::Error::Http(response) if matches!(response.status().as_u16(), 401 | 403) => {
-            Failure::Rejected
-        }
-        tungstenite::Error::Http(response)
-            if response.status().is_server_error() || response.status().as_u16() == 429 =>
-        {
-            Failure::Network
-        }
-        tungstenite::Error::Io(error) if error.kind() != io::ErrorKind::UnexpectedEof => {
-            Failure::Network
-        }
-        _ => Failure::Protocol,
+    .map_err(|error| {
+        trace.set(Stage::AccessWebsocket, Progress::Failed);
+        let failure = match error {
+            tungstenite::Error::Http(response)
+                if matches!(response.status().as_u16(), 401 | 403) =>
+            {
+                Failure::Rejected
+            }
+            tungstenite::Error::Http(response)
+                if response.status().is_server_error() || response.status().as_u16() == 429 =>
+            {
+                Failure::Network
+            }
+            tungstenite::Error::Io(error) if error.kind() != io::ErrorKind::UnexpectedEof => {
+                Failure::Network
+            }
+            _ => Failure::Protocol,
+        };
+        trace.access_failure(failure);
+        failure
     })?;
     // Tungstenite 0.30 does not reject unsolicited extensions itself.
     if response.headers().contains_key("sec-websocket-extensions") {
+        trace.set(Stage::AccessWebsocket, Progress::Failed);
+        trace.access_failure(Failure::Protocol);
         return Err(Failure::Protocol);
     }
     websocket.get_mut().0.set_limit(u64::MAX);
     let failed = Arc::new(AtomicBool::new(false));
-    Ok((ByteStream::new(websocket, Arc::clone(&failed)), failed))
+    trace.set(Stage::AccessWebsocket, Progress::Passed);
+    let mut stream = ByteStream::new(websocket, Arc::clone(&failed));
+    stream.trace = trace.clone();
+    Ok((stream, failed))
 }
 
 /// Tokio's read limiter deliberately has no AsyncWrite implementation.
@@ -173,6 +195,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for UpgradeIo<S> {
 /// No pump tasks or unbounded queues: one bounded incoming message plus the
 /// library's explicitly bounded write buffer. The caller retains IO/capacity ownership.
 pub(crate) struct ByteStream<S> {
+    trace: crate::diagnostics::trace::Trace,
     websocket: WebSocketStream<S>,
     pending: Bytes,
     flush_control: bool,
@@ -183,6 +206,7 @@ pub(crate) struct ByteStream<S> {
 impl<S: AsyncRead + AsyncWrite + Unpin> ByteStream<S> {
     pub(crate) fn new(websocket: WebSocketStream<S>, failed: Arc<AtomicBool>) -> Self {
         Self {
+            trace: crate::diagnostics::trace::Trace::default(),
             websocket,
             pending: Bytes::new(),
             flush_control: false,
@@ -192,6 +216,22 @@ impl<S: AsyncRead + AsyncWrite + Unpin> ByteStream<S> {
     }
 
     fn error(&self, error: tungstenite::Error) -> io::Error {
+        self.trace.set(
+            crate::diagnostics::trace::Stage::AccessWebsocket,
+            crate::diagnostics::trace::Progress::Failed,
+        );
+        self.trace.access_failure(
+            if matches!(
+                &error,
+                tungstenite::Error::Protocol(_)
+                    | tungstenite::Error::Capacity(_)
+                    | tungstenite::Error::Utf8(_)
+            ) {
+                Failure::Protocol
+            } else {
+                Failure::Network
+            },
+        );
         if matches!(
             error,
             tungstenite::Error::Protocol(_)
@@ -252,10 +292,20 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ByteStream<S> {
                 Some(Ok(Message::Ping(_))) => this.flush_control = true,
                 Some(Ok(Message::Pong(_))) => (),
                 Some(Ok(Message::Close(_))) => {
+                    this.trace.set(
+                        crate::diagnostics::trace::Stage::AccessWebsocket,
+                        crate::diagnostics::trace::Progress::Failed,
+                    );
+                    this.trace.access_failure(Failure::Network);
                     this.closed = true;
                     this.flush_control = true;
                 }
                 Some(Ok(_)) => {
+                    this.trace.set(
+                        crate::diagnostics::trace::Stage::AccessWebsocket,
+                        crate::diagnostics::trace::Progress::Failed,
+                    );
+                    this.trace.access_failure(Failure::Protocol);
                     this.failed.store(true, Ordering::Release);
                     return Poll::Ready(Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -264,6 +314,11 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for ByteStream<S> {
                 }
                 Some(Err(error)) => return Poll::Ready(Err(this.error(error))),
                 None => {
+                    this.trace.set(
+                        crate::diagnostics::trace::Stage::AccessWebsocket,
+                        crate::diagnostics::trace::Progress::Failed,
+                    );
+                    this.trace.access_failure(Failure::Network);
                     this.closed = true;
                     return Poll::Ready(Ok(()));
                 }
