@@ -1295,11 +1295,15 @@ pub(super) async fn write_commands(
 
 #[cfg(test)]
 mod tests {
+    use std::future::Future;
     use std::process::Stdio;
+    use std::time::Duration;
 
+    use httpmock::prelude::*;
     use tokio::io::{AsyncBufReadExt, BufReader};
 
     use crate::active_input::{ActiveInputControlOutcome, ActiveInputRuntime};
+    use crate::http::HttpClient;
 
     use super::*;
 
@@ -1969,12 +1973,18 @@ mod tests {
         assert!(output_rx.try_recv().is_err());
     }
 
-    async fn next_command(reader: &mut BufReader<tokio::process::ChildStdout>) -> Value {
+    async fn next_command(
+        writer: &mut (impl Future<Output = Result<(), AgentError>> + Unpin),
+        reader: &mut BufReader<tokio::process::ChildStdout>,
+    ) -> Value {
         let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .await
-            .expect("mock Pi stdout should be readable");
+        tokio::select! {
+            biased;
+            result = writer => panic!("writer ended before the next command: {result:?}"),
+            result = reader.read_line(&mut line) => {
+                assert!(result.expect("mock Pi stdout should be readable") > 0);
+            }
+        }
         serde_json::from_str(&line).expect("Pi command should be JSON")
     }
 
@@ -2459,31 +2469,114 @@ mod tests {
         );
     }
 
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn writer_uses_steer_ack_for_active_input() {
+    #[tokio::test]
+    async fn writer_requires_startup_boundary_before_prompt() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let mut child = tokio::process::Command::new("cat")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .kill_on_drop(true)
+                .spawn()
+                .expect("cat should spawn");
+            let stdin = child.stdin.take().expect("cat stdin should exist");
+            let mut stdout = BufReader::new(child.stdout.take().expect("cat stdout should exist"));
+            let (response_tx, response_rx) = response_channel();
+            let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
+            let writer = write_commands(
+                stdin,
+                "run",
+                "initial prompt",
+                ActiveInputRuntime::new_disabled("run", "initial prompt").into_writer(),
+                response_rx,
+                startup_rx,
+                CancellationToken::new(),
+            );
+            tokio::pin!(writer);
+            let state = next_command(&mut writer, &mut stdout).await;
+            assert_eq!(state["type"], "get_state");
+            response_tx
+                .try_send(
+                    json!({
+                        "id": state["id"],
+                        "type": "response",
+                        "command": "get_state",
+                        "success": true,
+                    }),
+                    1,
+                )
+                .expect("state response should route");
+            drop(startup_tx);
+            let error = writer
+                .await
+                .expect_err("a missing startup boundary must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("startup boundary closed before it was installed")
+            );
+            let mut unexpected = String::new();
+            assert_eq!(
+                stdout.read_line(&mut unexpected).await.expect("cat stdout"),
+                0,
+                "no prompt may be written without the startup boundary: {unexpected}"
+            );
+            assert!(child.wait().await.expect("cat should exit").success());
+        })
+        .await
+        .expect("missing startup boundary should fail promptly");
+    }
+
+    #[tokio::test]
+    async fn writer_declares_active_input_only_after_successful_steer_ack() {
+        tokio::time::timeout(Duration::from_secs(5), assert_steer_ack_outcome(true))
+            .await
+            .expect("successful steer should finish promptly");
+    }
+
+    #[tokio::test]
+    async fn writer_rejects_active_input_after_failed_steer_ack() {
+        tokio::time::timeout(Duration::from_secs(5), assert_steer_ack_outcome(false))
+            .await
+            .expect("rejected steer should finish promptly");
+    }
+
+    async fn assert_steer_ack_outcome(success: bool) {
+        let server = MockServer::start();
+        let event_id = "11111111-1111-4111-8111-111111111111";
+        let steered = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!(
+                    "/api/runners/runs/run/steerable-inputs/{event_id}/steered"
+                ))
+                .header("Authorization", "Bearer test-token")
+                .header("Content-Type", "application/json")
+                .json_body(json!({}));
+            then.status(200).json_body(json!({"outcome": "steered"}));
+        });
         let mut child = tokio::process::Command::new("cat")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .expect("cat should spawn");
         let stdin = child.stdin.take().expect("cat stdin should exist");
         let stdout = child.stdout.take().expect("cat stdout should exist");
         let mut stdout = BufReader::new(stdout);
-        let active_input = ActiveInputRuntime::new_for_test("run", "initial prompt");
+        let http =
+            HttpClient::with_api_config(server.base_url(), "test-token", "", "run", Duration::ZERO)
+                .expect("declaration HTTP client should build");
+        let active_input = ActiveInputRuntime::new_enabled("run", "initial prompt", http);
         let controller = active_input.controller();
-        let event_id = "11111111-1111-4111-8111-111111111111";
-        let payload = json!({
-            "type": "active-input",
-            "eventId": event_id,
-            "text": "steer this turn",
-        });
+        let payload =
+            guest_contracts::active_input::encode_active_input(event_id, "steer this turn")
+                .expect("active input should encode");
         assert_eq!(
-            controller.handle_control_payload(&serde_json::to_vec(&payload).expect("payload")),
+            controller.handle_control_payload(&payload),
             ActiveInputControlOutcome::Accepted
         );
         let (response_tx, response_rx) = response_channel();
         let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
-        let writer = tokio::spawn(write_commands(
+        let writer = write_commands(
             stdin,
             "run",
             "initial prompt",
@@ -2491,9 +2584,10 @@ mod tests {
             response_rx,
             startup_rx,
             CancellationToken::new(),
-        ));
+        );
+        tokio::pin!(writer);
 
-        let state = next_command(&mut stdout).await;
+        let state = next_command(&mut writer, &mut stdout).await;
         assert_eq!(state["type"], "get_state");
         response_tx
             .try_send(json!({
@@ -2508,19 +2602,14 @@ mod tests {
             }), 1)
             .expect("state response should route");
         assert!(
-            tokio::time::timeout(
-                std::time::Duration::from_millis(50),
-                next_command(&mut stdout)
-            )
-            .await
-            .is_err(),
+            futures_util::poll!(&mut writer).is_pending(),
             "initial prompt must wait for boundary installation"
         );
         startup_tx
             .send(())
             .expect("startup installation should route");
 
-        let initial = next_command(&mut stdout).await;
+        let initial = next_command(&mut writer, &mut stdout).await;
         assert_eq!(initial["type"], "prompt");
         assert_eq!(initial["message"], "initial prompt");
         assert!(initial.get("streamingBehavior").is_none());
@@ -2536,32 +2625,63 @@ mod tests {
             )
             .expect("initial prompt response should route");
 
-        let steer = next_command(&mut stdout).await;
+        let steer = next_command(&mut writer, &mut stdout).await;
         assert_eq!(steer["id"], event_id);
         assert_eq!(steer["type"], "steer");
         assert_eq!(steer["message"], "steer this turn");
         assert!(steer.get("streamingBehavior").is_none());
+
+        // The child has received the complete command. Closing future input
+        // makes a writer that bypasses the ACK finish on its next poll.
+        controller.close_terminal();
+        assert!(
+            futures_util::poll!(&mut writer).is_pending(),
+            "a completed steer write must still wait for its ACK"
+        );
+        steered.assert_calls(0);
+
+        let rejection = "Agent is settling after cancellation";
         response_tx
             .try_send(
                 json!({
                     "id": event_id,
                     "type": "response",
                     "command": "steer",
-                    "success": true,
+                    "success": success,
+                    "error": if success { Value::Null } else { json!(rejection) },
                 }),
                 1,
             )
             .expect("steer response should route");
-        controller.close_terminal();
 
-        writer
-            .await
-            .expect("writer task should join")
-            .expect("writer should succeed");
+        let result = writer.await;
+        if success {
+            result.expect("writer should succeed after the matching steer ACK");
+        } else {
+            let error = result.expect_err("a rejected steer must fail the writer");
+            assert_eq!(
+                error.to_string(),
+                format!("execution: Pi RPC steer failed: {rejection}")
+            );
+        }
         controller
             .finalize_steered_declarations()
             .await
             .expect("steered declarations should finalize");
-        child.wait().await.expect("cat should exit");
+        steered.assert_calls(usize::from(success));
+        if success {
+            assert_eq!(
+                controller.handle_control_payload(&payload),
+                ActiveInputControlOutcome::Accepted,
+                "an accepted delivery should remain idempotent after close"
+            );
+        } else {
+            assert!(matches!(
+                controller.handle_control_payload(&payload),
+                ActiveInputControlOutcome::Rejected { diagnostic }
+                    if diagnostic == "active input delivery previously failed"
+            ));
+        }
+        assert!(child.wait().await.expect("cat should exit").success());
     }
 }
