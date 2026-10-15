@@ -218,8 +218,8 @@ export interface ThreadSidebarSignals {
   readonly editingAutomationId$: Computed<string | null>;
   readonly setEditingAutomationId$: Command<void, [string | null]>;
   /**
-   * Sidebar fullscreen. Only the `artifacts` list and `artifact` detail render
-   * a fullscreen toggle; the state belongs to the current sidebar session and
+   * Sidebar fullscreen. Artifacts and Files render a fullscreen toggle;
+   * the state belongs to the current sidebar session and
    * clears whenever the target type changes or the sidebar closes.
    */
   readonly fullscreen$: Computed<boolean>;

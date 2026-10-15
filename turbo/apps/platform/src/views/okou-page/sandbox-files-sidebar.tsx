@@ -83,12 +83,12 @@ function FilesRow({
     const { entry } = row;
     if (entry.kind === "directory") {
       return (
-        <div className="group/files-row flex h-11 min-w-0 items-center gap-1">
+        <div className="group/files-row flex h-11 min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-state-hover has-[:focus-visible]:bg-state-hover has-[:active]:bg-state-pressed">
           <Button
             type="button"
             variant="quiet"
             size="sm"
-            className="h-11 min-w-0 flex-1 justify-start gap-2"
+            className="h-11 min-w-0 flex-1 justify-start gap-2 hover:bg-transparent active:bg-transparent"
             aria-expanded={row.expanded}
             disabled={navigating}
             focusableWhenDisabled
@@ -114,7 +114,7 @@ function FilesRow({
             variant="quiet"
             size="icon-sm"
             showTooltip
-            className="shrink-0 [@media(pointer:coarse)]:size-10 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-focus-within/files-row:opacity-100"
+            className="shrink-0 hover:bg-transparent active:bg-transparent [@media(pointer:coarse)]:size-10 [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/files-row:opacity-100 group-has-[:focus-visible]/files-row:opacity-100"
             aria-label={t(
               ($) => {
                 return $.chat.files.enterFolder;
