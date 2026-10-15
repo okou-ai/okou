@@ -1,6 +1,8 @@
 import { command } from "ccstate";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { onDomEventFn } from "../utils.ts";
 import { setChatThreadMuted$ } from "./chat-event.ts";
@@ -38,6 +40,15 @@ export const setChatThreadMutedWithFeedback$ = command(
     ]);
     signal.throwIfAborted();
 
+    // Unmuting stays available after the switch goes off; muting again does
+    // not, so there is nothing to undo.
+    if (
+      !muted &&
+      get(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] !== true
+    ) {
+      toast.success(muteToastMessage(muted));
+      return;
+    }
     toast.success(muteToastMessage(muted), {
       ...TEXT_TOAST_ACTION,
       action: {

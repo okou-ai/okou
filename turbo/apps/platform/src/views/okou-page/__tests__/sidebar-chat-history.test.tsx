@@ -665,9 +665,10 @@ test("Hide muting when the switch is off but keep Unmute for chats already muted
 
   openThreadMenu("Quiet task");
   click(menuItemByText("Unmute chat"));
-  await waitFor(() => {
-    expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
-  });
+  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
+  expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
+  // Muting is off, so the toast offers no Undo that would fail.
+  expect(screen.queryByText("Undo")).not.toBeInTheDocument();
 });
 
 async function prepareMutedChatFilter() {
