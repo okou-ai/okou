@@ -837,9 +837,9 @@ pub trait JobProvider: Send + Sync {
 
     /// Report job completion. Called concurrently from spawned executor tasks.
     ///
-    /// The request carries the exit status and optional sandbox/home reuse
-    /// outcomes. Reuse fields remain optional for failures that happen before
-    /// the corresponding decision is final.
+    /// The `CompleteRequest` identifies the run and carries its exit code,
+    /// optional failure reason and error, and optional sandbox identity. Reuse
+    /// outcomes are not part of the completion payload.
     ///
     /// `completion_auth` is returned by [`claim()`](JobProvider::claim) and
     /// carried by the claimed job lifecycle until completion.
