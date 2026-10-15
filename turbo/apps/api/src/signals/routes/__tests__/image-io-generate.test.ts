@@ -1463,15 +1463,13 @@ describe("POST /api/image-io/generate", () => {
       };
       // The Pro fixture already verifies its sufficient starting balance.
       const generationIds = new Set<string>();
-      const completionScope = new AbortController();
+      // Capture this case's original signal: afterEach replaces context.signal
+      // for API cleanup only after aborting foreground work and its observers.
+      const completionSignal = context.signal;
       const completions = new Map<
         string,
         ReturnType<typeof createDeferredPromise<void>>
       >();
-      // Release observers before the fixture owner drains timed-out work.
-      onTestFinished(() => {
-        completionScope.abort(new DOMException("Case finished", "AbortError"));
-      });
       context.mocks.ably.publish.mockImplementation((eventName, payload) => {
         if (
           typeof eventName !== "string" ||
@@ -1510,9 +1508,7 @@ describe("POST /api/image-io/generate", () => {
             );
             expect(generationIds.has(generationId)).toBeFalsy();
             generationIds.add(generationId);
-            const completion = createDeferredPromise<void>(
-              completionScope.signal,
-            );
+            const completion = createDeferredPromise<void>(completionSignal);
             completions.set(generationId, completion);
             const observed = settleIncludingAbort(completion.promise);
             await postFalWebhook(
