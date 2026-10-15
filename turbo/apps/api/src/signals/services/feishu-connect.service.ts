@@ -12,7 +12,7 @@ import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
 import { logger } from "../../lib/log";
-import { db$, writeDb$, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
 import {
   fetchFeishuBotInfo,
@@ -33,133 +33,6 @@ import { feishuCallbackUrl, feishuOAuthAppCallbackUrl } from "./feishu-config";
 import { buildFeishuOAuthConnectUrl } from "./feishu-oauth-state";
 
 const L = logger("FeishuConnect");
-
-async function loadFeishuInstallations(
-  db: ReadonlyDb,
-  orgId: string,
-  platform: FeishuPlatform,
-) {
-  return await db
-    .select({
-      id: feishuOrgInstallations.id,
-      appId: feishuOrgInstallations.appId,
-      platform: feishuOrgInstallations.platform,
-      botName: feishuOrgInstallations.botName,
-      botAvatarUrl: feishuOrgInstallations.botAvatarUrl,
-      tenantKey: feishuOrgInstallations.feishuTenantKey,
-      tenantName: feishuOrgInstallations.feishuTenantName,
-      callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
-      setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
-      messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
-      defaultAgentId: agents.id,
-      defaultAgentName: agents.name,
-      defaultAgentDisplayName: agents.displayName,
-    })
-    .from(feishuOrgInstallations)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, feishuOrgInstallations.orgId))
-    .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
-    .where(
-      and(
-        eq(feishuOrgInstallations.orgId, orgId),
-        eq(feishuOrgInstallations.platform, platform),
-      ),
-    )
-    .orderBy(asc(feishuOrgInstallations.createdAt));
-}
-
-type FeishuInstallationRow = Awaited<
-  ReturnType<typeof loadFeishuInstallations>
->[number];
-
-async function loadConnectedFeishuUsers(
-  db: ReadonlyDb,
-  installations: readonly FeishuInstallationRow[],
-  orgId: string,
-  userId: string,
-): Promise<Map<string, string | null>> {
-  if (installations.length === 0) {
-    return new Map();
-  }
-  const rows = await db
-    .select({
-      installationId: feishuOrgConnections.installationId,
-      userName: feishuOrgConnections.feishuUserName,
-      connectorId: feishuOrgConnections.connectorId,
-      feishuOpenId: feishuOrgConnections.feishuOpenId,
-    })
-    .from(feishuOrgConnections)
-    .where(
-      and(
-        inArray(
-          feishuOrgConnections.installationId,
-          installations.map((installation) => {
-            return installation.id;
-          }),
-        ),
-        eq(feishuOrgConnections.userId, userId),
-      ),
-    );
-  const connectedRows = await Promise.all(
-    rows.map(async (connection) => {
-      const connected = await hasFeishuCustomConnectorOAuthConnection(db, {
-        orgId,
-        userId,
-        installationId: connection.installationId,
-        memberConnectorId: connection.connectorId,
-        feishuOpenId: connection.feishuOpenId,
-      });
-      return connected ? connection : null;
-    }),
-  );
-  return new Map(
-    connectedRows.flatMap((connection) => {
-      return connection
-        ? [[connection.installationId, connection.userName] as const]
-        : [];
-    }),
-  );
-}
-
-function toFeishuInstallationStatus(
-  installation: FeishuInstallationRow,
-  connectedUserNameByInstallationId: ReadonlyMap<string, string | null>,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-  },
-): FeishuInstallationStatus {
-  return {
-    id: installation.id,
-    platform: installation.platform,
-    isConnected: connectedUserNameByInstallationId.has(installation.id),
-    connectedUserName:
-      connectedUserNameByInstallationId.get(installation.id) ?? null,
-    appId: installation.appId,
-    botName: installation.botName,
-    botAvatarUrl: installation.botAvatarUrl,
-    callbackUrl: feishuCallbackUrl(installation.id),
-    oauthRedirectUrl: feishuOAuthAppCallbackUrl(installation.platform),
-    oauthScopes: [...FEISHU_OAUTH_SCOPES],
-    connectUrl: installation.setupCompletedAt
-      ? buildFeishuOAuthConnectUrl({
-          installationId: installation.id,
-          platform: installation.platform,
-          orgId: args.orgId,
-          userId: args.userId,
-        })
-      : null,
-    callbackVerified: Boolean(installation.callbackVerifiedAt),
-    setupCompleted: Boolean(installation.setupCompletedAt),
-    messageReceived: Boolean(installation.messageReceivedAt),
-    tenantKey: installation.tenantKey,
-    tenantName: installation.tenantName,
-    defaultAgentId: installation.defaultAgentId,
-    defaultAgentName:
-      installation.defaultAgentDisplayName ??
-      installation.defaultAgentName ??
-      null,
-  };
-}
 
 function feishuStatusResponse(
   installations: readonly FeishuInstallationStatus[],
@@ -230,24 +103,116 @@ export const feishuConnectStatus = (args: {
 }) => {
   return computed(async (get) => {
     const db = get(db$);
-    const rows = await loadFeishuInstallations(
-      db,
-      args.orgId,
-      args.platform ?? "feishu",
+    const installations = await db
+      .select({
+        id: feishuOrgInstallations.id,
+        appId: feishuOrgInstallations.appId,
+        platform: feishuOrgInstallations.platform,
+        botName: feishuOrgInstallations.botName,
+        botAvatarUrl: feishuOrgInstallations.botAvatarUrl,
+        tenantKey: feishuOrgInstallations.feishuTenantKey,
+        tenantName: feishuOrgInstallations.feishuTenantName,
+        callbackVerifiedAt: feishuOrgInstallations.callbackVerifiedAt,
+        setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
+        messageReceivedAt: feishuOrgInstallations.messageReceivedAt,
+        defaultAgentId: agents.id,
+        defaultAgentName: agents.name,
+        defaultAgentDisplayName: agents.displayName,
+      })
+      .from(feishuOrgInstallations)
+      .leftJoin(
+        orgMetadata,
+        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
+      )
+      .leftJoin(agents, eq(agents.id, orgMetadata.defaultAgentId))
+      .where(
+        and(
+          eq(feishuOrgInstallations.orgId, args.orgId),
+          eq(feishuOrgInstallations.platform, args.platform ?? "feishu"),
+        ),
+      )
+      .orderBy(asc(feishuOrgInstallations.createdAt));
+    const orgId = args.orgId;
+    const userId = args.userId;
+    let connectedUserNameByInstallationId: Map<string, string | null>;
+    if (installations.length === 0) {
+      connectedUserNameByInstallationId = new Map();
+    } else {
+      const rows = await db
+        .select({
+          installationId: feishuOrgConnections.installationId,
+          userName: feishuOrgConnections.feishuUserName,
+          connectorId: feishuOrgConnections.connectorId,
+          feishuOpenId: feishuOrgConnections.feishuOpenId,
+        })
+        .from(feishuOrgConnections)
+        .where(
+          and(
+            inArray(
+              feishuOrgConnections.installationId,
+              installations.map((installation) => {
+                return installation.id;
+              }),
+            ),
+            eq(feishuOrgConnections.userId, userId),
+          ),
+        );
+      const connectedRows = await Promise.all(
+        rows.map(async (connection) => {
+          const connected = await hasFeishuCustomConnectorOAuthConnection(db, {
+            orgId,
+            userId,
+            installationId: connection.installationId,
+            memberConnectorId: connection.connectorId,
+            feishuOpenId: connection.feishuOpenId,
+          });
+          return connected ? connection : null;
+        }),
+      );
+      connectedUserNameByInstallationId = new Map(
+        connectedRows.flatMap((connection) => {
+          return connection
+            ? [[connection.installationId, connection.userName] as const]
+            : [];
+        }),
+      );
+    }
+    const statuses = installations.map(
+      (installation): FeishuInstallationStatus => {
+        return {
+          id: installation.id,
+          platform: installation.platform,
+          isConnected: connectedUserNameByInstallationId.has(installation.id),
+          connectedUserName:
+            connectedUserNameByInstallationId.get(installation.id) ?? null,
+          appId: installation.appId,
+          botName: installation.botName,
+          botAvatarUrl: installation.botAvatarUrl,
+          callbackUrl: feishuCallbackUrl(installation.id),
+          oauthRedirectUrl: feishuOAuthAppCallbackUrl(installation.platform),
+          oauthScopes: [...FEISHU_OAUTH_SCOPES],
+          connectUrl: installation.setupCompletedAt
+            ? buildFeishuOAuthConnectUrl({
+                installationId: installation.id,
+                platform: installation.platform,
+                orgId: args.orgId,
+                userId: args.userId,
+              })
+            : null,
+          callbackVerified: Boolean(installation.callbackVerifiedAt),
+          setupCompleted: Boolean(installation.setupCompletedAt),
+          messageReceived: Boolean(installation.messageReceivedAt),
+          tenantKey: installation.tenantKey,
+          tenantName: installation.tenantName,
+          defaultAgentId: installation.defaultAgentId,
+          defaultAgentName:
+            installation.defaultAgentDisplayName ??
+            installation.defaultAgentName ??
+            null,
+        };
+      },
     );
-    const connectedUsers = await loadConnectedFeishuUsers(
-      db,
-      rows,
-      args.orgId,
-      args.userId,
-    );
-    const installations = rows.map((installation) => {
-      return toFeishuInstallationStatus(installation, connectedUsers, {
-        orgId: args.orgId,
-        userId: args.userId,
-      });
-    });
-    return feishuStatusResponse(installations, args);
+    return feishuStatusResponse(statuses, args);
   });
 };
 
