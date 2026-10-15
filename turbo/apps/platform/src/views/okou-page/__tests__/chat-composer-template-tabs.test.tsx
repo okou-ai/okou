@@ -1,6 +1,6 @@
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
 import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
-import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
+import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
@@ -24,7 +24,7 @@ import {
   openTemplatePicker,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 
-test("Illustration stays usable while uploaded presentations load after switching categories", async () => {
+test("Website stays usable while uploaded presentations load after switching categories", async () => {
   mockNow(1_785_542_400_000, context.signal);
   mockTemplateChat();
   const uploaded = createUploadedTemplate({
@@ -39,15 +39,15 @@ test("Illustration stays usable while uploaded presentations load after switchin
   });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat?templatePicker=illustration`,
+    path: `/agents/${AGENT_ID}/chat?templatePicker=website`,
     featureSwitches: { [FeatureSwitchKey.CustomTemplates]: false },
   });
   const dialog = await screen.findByRole("dialog");
-  const illustration = ILLUSTRATION_TEMPLATE_ITEMS[0]!;
+  const website = WEBSITE_TEMPLATE_ITEMS[0]!;
   const presentation = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
   expect(
-    within(selectedPanel(dialog, "Illustration")).getByLabelText(
-      `Select template ${illustration.title}`,
+    within(selectedPanel(dialog, "Website")).getByLabelText(
+      `Select website template ${website.title}`,
     ),
   ).toBeEnabled();
   click(tabNamed(dialog, "Presentation"));
