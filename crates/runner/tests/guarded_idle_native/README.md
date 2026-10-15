@@ -1,5 +1,46 @@
 # Guarded idle terminal fixture
 
+## Critical multiwave suppression
+
+`native_critical_records_bounded_waves_and_suppressed_snapshot_reads` runs fresh
+and matching snapshot factories with one original exact Guest and two newly
+prepared tenant-free blanks. All share the original P2 authority and full logical
+leases, with capacity for a fitting spare profile. Set the supplied policy's
+`pressure_max_wave_entries` to one and provide actual host headroom classified
+Critical by its explicit watermark; the fixture never changes host availability.
+Supply the optional JSON input described below with the original immutable
+4 GiB `memory.bin` and a positive overhead covering its retained read buffer.
+
+The real guarded runtime reader is armed under initial Unknown. Three distinct
+single-entry pressure waves must finish without refusal, skip or uncertainty,
+while the pending reader reports zero accepted operations or bytes throughout.
+Each wave must receive a new actual Critical read after its completion is
+observed; the controller's deliberate post-wave Unknown state cannot supply it.
+The independent sampler records actual `/proc` clocks and availability. Both
+additional original backing generations must positively exit; the original exact
+home retains its full lease through the required durable 64 MiB tail and restores
+every byte of its 64 KiB payload. Cancellation drains the pending reader, then
+joins the controller and sampler before P2/tracker/factory teardown. All failed
+case directories and raw evidence remain available for diagnosis.
+
+Use the exact-source binary, manifest, packaged inputs and bounded P1 invocation
+below, selecting this test by its exact name. Metadata additionally requires
+`native_critical_policy_json`, `native_critical_inputs_json` (the exact UTF-8 input
+files) and `native_critical_snapshot_bytes` (4294967296). Then validate:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/critical_report.py "$P1_OUTPUT_DIRECTORY"
+```
+
+Ordinary Cargo/default Crates CI runs the real-file/CLI refusal regressions through
+`native_critical_report_requires_bounded_waves_and_suppressed_reads`; the actual
+KVM/NBD entry remains explicitly ignored. The report proves supplied Critical
+classification and bounded cleanup, not numerical host shortage, physical RAM
+relief, cold-cache behavior or OOM protection. Startup/foreground/heartbeat and
+accepted provider/read cancellation or late-result composition remain separate
+acceptance; unknown template producer, complete residency and calibrated envelopes
+are still unverified.
+
 ## Ordinary verification
 
 ```sh

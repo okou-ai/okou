@@ -174,7 +174,7 @@ pub async fn exercise(
     Ok(())
 }
 
-async fn prepare_incoming(
+pub(super) async fn prepare_incoming(
     context: &Context,
     inputs: &fixture::Inputs,
     blank: bool,
