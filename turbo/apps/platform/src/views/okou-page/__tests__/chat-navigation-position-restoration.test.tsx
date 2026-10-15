@@ -723,14 +723,16 @@ test("Open a conversation safely when a linked message is unavailable", async ()
 test("Return to the latest message after sending from history", async () => {
   const user = userEvent.setup();
   context.mocks.data.availableRunModels([]);
-  const events = conversationEvents("send-history", "History");
+  // Two exchanges plus the active message leave a real middle anchor without
+  // rendering four unrelated exchanges before testing a queued send.
+  const events = conversationEvents("send-history", "History", 2);
   events.push({
     id: "send-history-active-user",
     role: "user",
     content: "Continue the active investigation",
     runId: "send-history-active-run",
-    seqId: 19,
-    createdAt: "2026-07-01T10:03:19Z",
+    seqId: 7,
+    createdAt: "2026-07-01T10:03:07Z",
   });
   mockChatLifecycleWithoutBrowserSession({
     threadId: SEND_FROM_HISTORY_THREAD_ID,
@@ -745,7 +747,7 @@ test("Return to the latest message after sending from history", async () => {
     path: `/chats/${SEND_FROM_HISTORY_THREAD_ID}`,
   });
 
-  const targetText = "History message 3";
+  const targetText = "History message 2";
   await waitForThreadMessage(SEND_FROM_HISTORY_THREAD_ID, targetText);
   const geometry = installChatScrollGeometry(
     threadContainer(SEND_FROM_HISTORY_THREAD_ID),
@@ -755,6 +757,7 @@ test("Return to the latest message after sending from history", async () => {
     expect(geometry.atBottom()).toBeTruthy();
   });
   await chooseReadingPosition(geometry, targetText);
+  expect(geometry.atBottom()).toBeFalsy();
 
   const composer = await waitFor(() => {
     return screen.getByRole("textbox", { name: "Message" });
