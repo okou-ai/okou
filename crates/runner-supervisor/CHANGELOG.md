@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.6...runner-supervisor-v0.16.7) (2026-10-15)
+
+
+### Refactoring
+
+* **runner-supervisor:** represent claimed activation ownership safely ([#40405](https://github.com/okou-ai/okou/issues/40405)) ([de20d41](https://github.com/okou-ai/okou/commit/de20d41e607323a1973e6234f22b8dd0d8bd60d2))
+
 ## [0.16.6](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.16.5...runner-supervisor-v0.16.6) (2026-10-15)
 
 
