@@ -133,14 +133,14 @@ export function PwaAgentSwitcher() {
         <span className="min-w-0 truncate text-base font-semibold">
           {agentDisplayName ?? assistantName}
         </span>
-        <span className="relative flex shrink-0">
-          <ChevronDown size={16} aria-hidden="true" />
-          {otherAgentsUnread && (
-            <span className="absolute -right-1 -top-1 flex">
-              <AgentUnreadIndicator />
-            </span>
-          )}
-        </span>
+        <ChevronDown size={16} aria-hidden="true" />
+        {/* The chevron's ink sits 4px inside its box, so -ml-1 leaves the dot
+            8px from the ink, on the same centre line as the name. */}
+        {otherAgentsUnread && (
+          <span className="-ml-1 flex shrink-0">
+            <AgentUnreadIndicator />
+          </span>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="start"
