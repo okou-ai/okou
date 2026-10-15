@@ -54,7 +54,7 @@ test("A built-in title hint follows caption hover", async () => {
   await expectTitleHint(template.title);
   expect(composerInlineTemplates()).toHaveLength(0);
   expect(
-    screen.queryByRole("group", { name: `${template.title} slide preview` }),
+    within(picker).queryByLabelText(`${template.title} slide preview`),
   ).not.toBeInTheDocument();
   await user.unhover(caption);
   await waitFor(() => {

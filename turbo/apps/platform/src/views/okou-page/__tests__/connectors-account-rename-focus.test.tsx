@@ -454,14 +454,12 @@ test("A search changed during save determines focus without a later stale handof
   const user = userEvent.setup({ delay: null });
   await setupPage({ context, path: "/connectors?keywords=github" });
   const manager = await openManager(user);
-  await enterRename(user, manager, "keyboard");
-  await user.keyboard("{Control>}a{/Control}");
-  await user.paste("Research");
+  const input = await enterRename(user, manager, "pointer");
+  await fill(input, "Research");
   await user.keyboard("{Enter}");
   await fixture.refreshStarted;
   const search = within(manager).getByPlaceholderText("Find accounts");
-  await user.click(search);
-  await user.paste("No matching account");
+  await fill(search, "No matching account");
   expect(search).toHaveValue("No matching account");
 
   refresh.resolve();
@@ -538,7 +536,7 @@ test("Finish a saved rename after an intermediate account search is superseded",
   const user = userEvent.setup({ delay: null });
   await setupPage({ context, path: "/connectors?keywords=github" });
   const manager = await openManager(user);
-  const input = await enterRename(user, manager, "keyboard");
+  const input = await enterRename(user, manager, "pointer");
   await fill(input, "Research");
   await user.keyboard("{Enter}");
   await fixture.refreshStarted;

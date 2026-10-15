@@ -211,7 +211,7 @@ function composerEditor(): HTMLElement {
   return editor;
 }
 
-test("Changing language preserves the open conversation and draft", async () => {
+async function openLocalizedChatWithDraft() {
   const title = "Planejamento semanal";
   const draft = "Rascunho ainda não enviado";
 
@@ -225,23 +225,27 @@ test("Changing language preserves the open conversation and draft", async () => 
     path: `/chats/${THREAD_ID}?settings=preference`,
   });
 
-  const titleCopies = await screen.findAllByText(title);
-  const visibleTitle = titleCopies.find((element) => {
-    return element.closest("header") !== null;
-  });
-  expect(visibleTitle).toBeInTheDocument();
-  const originalComposer = composerEditor();
-  expect(originalComposer).toHaveTextContent(draft);
+  return { title, draft };
+}
+
+test("Changing language preserves the open conversation", async () => {
+  const { title } = await openLocalizedChatWithDraft();
+  await screen.findByText(title, { selector: "header *" });
   const originalUrl = pathname();
 
   await changeLanguage(english);
 
-  const translatedComposer = composerEditor();
   expect(`${pathname()}${search()}`).toBe(originalUrl);
-  expect(translatedComposer).toHaveTextContent(draft);
-  const translatedTitleCopies = screen.getAllByText(title);
-  const translatedVisibleTitle = translatedTitleCopies.find((element) => {
-    return element.closest("header") !== null;
+  expect(screen.getByText(title, { selector: "header *" })).toBeInTheDocument();
+});
+
+test("Changing language preserves an unsent draft", async () => {
+  const { draft } = await openLocalizedChatWithDraft();
+  await waitFor(() => {
+    expect(composerEditor()).toHaveTextContent(draft);
   });
-  expect(translatedVisibleTitle).toBeInTheDocument();
+
+  await changeLanguage(english);
+
+  expect(composerEditor()).toHaveTextContent(draft);
 });

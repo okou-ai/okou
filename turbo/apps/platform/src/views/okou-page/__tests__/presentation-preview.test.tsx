@@ -165,8 +165,12 @@ test("Selecting a slide preserves its authored layout", async () => {
     path: `/agents/${AGENT_ID}/chat`,
   });
 
-  await openPresentationDetail();
-  click(await waitForNamedButton("Preview slide 2"));
+  const initialFrame = await openPresentationDetail();
+  const dialog = initialFrame.closest('[role="dialog"]');
+  if (!(dialog instanceof HTMLElement)) {
+    throw new Error("Presentation preview dialog not found");
+  }
+  click(await waitForNamedButton("Preview slide 2", dialog));
   await waitFor(() => {
     expect(activePreviewFrame().srcdoc).toContain("Selected slide");
   });
@@ -188,7 +192,7 @@ test("Selecting a slide preserves its authored layout", async () => {
   expect(selectedSlide).toHaveAttribute("aria-hidden", "false");
   expect(computedStyle(wrapper).display).toBe("grid");
   expect(computedStyle(selectedSlide).display).toBe("flex");
-  expect(requireNamedButton("Preview slide 2")).toHaveAttribute(
+  expect(requireNamedButton("Preview slide 2", dialog)).toHaveAttribute(
     "aria-pressed",
     "true",
   );
