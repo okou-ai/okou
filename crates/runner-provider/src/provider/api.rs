@@ -57,8 +57,6 @@ use runner_types::types::{
     CompleteRequest, ConnectorRuntimeSyncBatchResponse, ConnectorRuntimeTargetRegistration,
     ExecutionContext, HeartbeatState, Job, PollResponse,
 };
-#[cfg(test)]
-use runner_types::types::{HomeReuseResult, SandboxReuseResult};
 
 fn supports_thread_active_input(reuse_key: Option<&str>) -> bool {
     reuse_key.is_some_and(|key| key.starts_with("thread:"))
@@ -2895,8 +2893,6 @@ mod tests {
             failure_reason: None,
             error: None,
             sandbox_id: None,
-            sandbox_reuse_result: None,
-            home_reuse_result: None,
         }
     }
 
@@ -5755,8 +5751,6 @@ mod tests {
                     failure_reason: None,
                     error: Some("boom".to_string()),
                     sandbox_id: None,
-                    sandbox_reuse_result: None,
-                    home_reuse_result: None,
                 },
             )
             .await
@@ -5772,9 +5766,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn api_client_complete_serializes_no_reuse_key() {
+    async fn api_client_complete_serializes_sandbox_identity() {
         let server = MockServer::start_async().await;
         let run_id = RunId::from(uuid::Uuid::nil());
+        let sandbox_id = sandbox::SandboxId::new_v4();
         let mock = server
             .mock_async(|when, then| {
                 when.method(POST)
@@ -5783,8 +5778,7 @@ mod tests {
                     .json_body(serde_json::json!({
                         "runId": run_id,
                         "exitCode": 0,
-                        "sandboxReuseResult": "noReuseKey",
-                        "homeReuseResult": "noReuseKey",
+                        "sandboxId": sandbox_id,
                     }));
                 then.status(200);
             })
@@ -5798,9 +5792,7 @@ mod tests {
                 exit_code: 0,
                 failure_reason: None,
                 error: None,
-                sandbox_id: None,
-                sandbox_reuse_result: Some(SandboxReuseResult::NoReuseKey),
-                home_reuse_result: Some(HomeReuseResult::NoReuseKey),
+                sandbox_id: Some(sandbox_id),
             },
         )
         .await

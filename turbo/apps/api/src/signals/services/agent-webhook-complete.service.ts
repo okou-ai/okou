@@ -320,16 +320,6 @@ async function applyCancelledCompletionMetadata(
           sandboxId: sql`coalesce(${agentRuns.sandboxId}, ${input.body.sandboxId})`,
         }
       : {}),
-    ...(input.body.sandboxReuseResult !== undefined
-      ? {
-          sandboxReuseResult: sql`coalesce(${agentRuns.sandboxReuseResult}, ${input.body.sandboxReuseResult})`,
-        }
-      : {}),
-    ...(input.body.homeReuseResult !== undefined
-      ? {
-          homeReuseResult: sql`coalesce(${agentRuns.homeReuseResult}, ${input.body.homeReuseResult})`,
-        }
-      : {}),
   };
   if (Object.keys(update).length > 0) {
     await tx
@@ -360,8 +350,6 @@ async function applyTerminalCompletion(
       failureReason: prepared.failureReason ?? null,
       ...(prepared.result !== undefined ? { result: prepared.result } : {}),
       sandboxId: input.body.sandboxId,
-      sandboxReuseResult: input.body.sandboxReuseResult,
-      homeReuseResult: input.body.homeReuseResult,
     },
     conditions: [
       eq(agentRuns.id, input.body.runId),

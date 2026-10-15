@@ -296,10 +296,6 @@ async fn run_pi_guest_agent(
             "00000000-0000-4000-8000-000000000abc",
         )
         .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
-        .env(
             guest_contracts::runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
             runtime_dir,
         )

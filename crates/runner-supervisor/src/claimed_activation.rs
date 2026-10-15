@@ -254,7 +254,7 @@ async fn recover_claimed_activation_failure(
     let ReadyClaimedResource {
         reuse_entry,
         active_lease,
-        reuse_result,
+        reuse_result: _,
         idle_snapshot: _,
     } = resource;
     let (context, completion_auth, active_input_source) = claimed.into_parts();
@@ -283,8 +283,6 @@ async fn recover_claimed_activation_failure(
                 failure_reason: None,
                 error: Some(execution_failure.error),
                 sandbox_id: None,
-                sandbox_reuse_result: Some(reuse_result),
-                home_reuse_result: None,
             },
             completion_auth,
         )

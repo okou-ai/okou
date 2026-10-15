@@ -327,14 +327,6 @@ export const webhookBuiltInGenerationFalContract = c.router({
   },
 });
 
-const currentSandboxReuseMissSchema = z.enum([
-  "noReuseKey",
-  "poolMiss",
-  "profileMismatch",
-  "deviceLimitMismatch",
-  "unparkFailed",
-]);
-
 /**
  * Artifact snapshots schema — canonical
  * `Array<{name, version, mountPath, missingRootPolicy?}>` form. Legacy
@@ -385,41 +377,18 @@ export const runCompletionMetadataSchema = z
   .strict()
   .superRefine(requireCompletionHistory);
 
-const webhookCompleteBodySchema = z
-  .object({
-    runId: z.string().min(1, "runId is required"),
-    exitCode: z.number(),
-    error: z.string().optional(),
-    failureReason: runFailureReasonTokenSchema.optional(),
-    lastEventSequence: eventSequenceNumberSchema.optional(),
-    // Sandbox id the run executed against. Optional because a run that fails
-    // before sandbox creation has no sandbox. Persisted to agent_runs.sandbox_id;
-    // the 255-char cap matches the DB column (defense in depth).
-    sandboxId: z.string().max(255).optional(),
-    sandboxReuseResult: sandboxReuseResultSchema.optional(),
-    homeReuseResult: homeReuseResultSchema.optional(),
-    completion: runCompletionMetadataSchema.optional(),
-  })
-  .superRefine((body, context) => {
-    const homeResult = body.homeReuseResult;
-    if (homeResult === undefined) {
-      return;
-    }
-    const sandboxResult = body.sandboxReuseResult;
-    const coherentSandboxReuse =
-      sandboxResult === "reused" && homeResult === "sandboxReused";
-    const coherentSandboxMiss =
-      sandboxResult !== undefined &&
-      currentSandboxReuseMissSchema.safeParse(sandboxResult).success &&
-      homeResult !== "sandboxReused";
-    if (!coherentSandboxReuse && !coherentSandboxMiss) {
-      context.addIssue({
-        code: "custom",
-        path: ["homeReuseResult"],
-        message: "home reuse result does not match sandbox reuse result",
-      });
-    }
-  });
+const webhookCompleteBodySchema = z.object({
+  runId: z.string().min(1, "runId is required"),
+  exitCode: z.number(),
+  error: z.string().optional(),
+  failureReason: runFailureReasonTokenSchema.optional(),
+  lastEventSequence: eventSequenceNumberSchema.optional(),
+  // Sandbox id the run executed against. Optional because a run that fails
+  // before sandbox creation has no sandbox. Persisted to agent_runs.sandbox_id;
+  // the 255-char cap matches the DB column (defense in depth).
+  sandboxId: z.string().max(255).optional(),
+  completion: runCompletionMetadataSchema.optional(),
+});
 
 /**
  * Agent event schema for webhook events

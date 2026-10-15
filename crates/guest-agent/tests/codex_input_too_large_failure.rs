@@ -84,10 +84,6 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
                 guest_contracts::env::CANONICAL_SANDBOX_ID_ENV,
                 "00000000-0000-4000-8000-000000000abc",
             )
-            .env(
-                guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-                "reused",
-            )
             .env(guest_contracts::env::CLI_AGENT_TYPE_ENV, "codex")
             .env("OKOU_TEST_CODEX_HOME_DIR", home.join(".codex"))
             .env(guest_contracts::env::USE_MOCK_CODEX_ENV, "true")

@@ -978,8 +978,6 @@ async fn complete_execution(
             http,
             &config.run_id,
             &config.sandbox_id,
-            &config.sandbox_reuse_result,
-            &config.home_reuse_result,
             state.last_event_sequence,
         )
         .await;

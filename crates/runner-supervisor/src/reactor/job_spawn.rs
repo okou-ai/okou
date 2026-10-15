@@ -667,10 +667,8 @@ pub(super) async fn run_job(
             failure_reason,
             executor_result.err.take(),
             sandbox_id,
-            reuse_result,
             completion_auth,
-        )
-        .with_home_reuse_result(executor_result.outcome.home_reuse_result);
+        );
         // Structural guarantee: claim (in provider) is always paired with complete.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload

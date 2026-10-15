@@ -2880,8 +2880,6 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
         context,
         &config.api_url,
         sandbox.id(),
-        start.reuse_result,
-        start.home_reuse_result,
     ) {
         Ok(env_map) => env_map,
         Err(error) => {

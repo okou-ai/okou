@@ -123,7 +123,6 @@ fi
         api_url: server.base_url.clone(),
         api_token: "test-token".into(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".into(),
-        sandbox_reuse_result: "reused".into(),
         cli_agent_type: "pi".into(),
         home: Some(tmp.path().to_string_lossy().into_owned()),
         run_payload_file: payload_path.to_string_lossy().into_owned(),

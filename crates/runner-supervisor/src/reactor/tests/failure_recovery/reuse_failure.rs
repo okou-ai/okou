@@ -6,8 +6,6 @@ use super::super::support::{
     wait_discover_entered, wait_idle_pool_len, wait_status_idle_empty_with_active_run,
 };
 
-use runner_types::types::SandboxReuseResult;
-
 fn reusable_candidate(run_id: RunId, session_id: &str) -> runner_provider::JobCandidate {
     runner_provider::JobCandidate::new(run_id, "vm0/default".into())
         .with_reuse_key(Some(session_id.to_string()))
@@ -70,11 +68,6 @@ async fn unpark_failure_destroys_idle_entry_and_falls_through() {
         .await;
     let c = c.expect("fresh-create job should still complete");
     assert_eq!(c.exit_code, 0);
-    assert_eq!(
-        c.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed),
-        "completion must tag the unpark-failure branch",
-    );
 
     // Wait for resource ownership to settle: the failed idle entry has been
     // destroyed and the fresh-create sandbox is parked as the single idle lease.
@@ -148,15 +141,10 @@ async fn unpark_failure_status_switches_from_idle_to_active_while_job_runs() {
     wait_status_idle_empty_with_active_run(&status_path, run_id, Duration::from_secs(5)).await;
 
     gate.notify_one();
-    let completion = env
-        .handle
+    env.handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fresh-create job should still complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed),
-    );
 
     shutdown(&env, run_handle).await;
 }
@@ -197,7 +185,6 @@ async fn unpark_panic_destroys_idle_entry_and_falls_through() {
         .await
         .expect("fresh-create job should still complete");
     assert_eq!(c.exit_code, 0);
-    assert_eq!(c.reuse_result, Some(SandboxReuseResult::UnparkFailed));
 
     wait_budget_count(&budget, 1, Duration::from_secs(2)).await;
     assert_eq!(counter.unpark_call_count(), 1);
@@ -248,10 +235,6 @@ async fn uncertain_reserved_cleanup_fails_claim_without_starting_replacement() {
         .expect("uncertain cleanup should fail the claimed run");
     assert_eq!(completion.exit_code, 1);
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed)
-    );
     assert_eq!(
         completion.error.as_deref(),
         Some("reserved idle sandbox cleanup was uncertain; fresh replacement was not started")
@@ -330,10 +313,6 @@ async fn uncertain_post_claim_pool_reuse_keeps_active_status_without_starting_re
         .expect("uncertain late pool cleanup should fail the claimed run");
     assert_eq!(completion.exit_code, 1);
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(
-        completion.reuse_result,
-        Some(SandboxReuseResult::UnparkFailed)
-    );
     assert_eq!(
         completion.error.as_deref(),
         Some("idle sandbox cleanup was uncertain; fresh replacement was not started")

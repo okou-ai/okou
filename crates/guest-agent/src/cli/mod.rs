@@ -2516,8 +2516,6 @@ mod tests {
             api_url: "https://runner.example".to_string(),
             api_token: "test-token".to_string(),
             sandbox_id: String::new(),
-            sandbox_reuse_result: String::new(),
-            home_reuse_result: String::new(),
             prompt: "prompt".to_string(),
             append_system_prompt: String::new(),
             native_continuation: None,

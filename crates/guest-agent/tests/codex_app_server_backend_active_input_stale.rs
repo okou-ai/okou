@@ -54,10 +54,6 @@ async fn codex_app_server_backend_fails_visible_on_stale_active_turn()
             "00000000-0000-4000-8000-000000000abc",
         )
         .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
-        .env(
             guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
             payload_path,
         )

@@ -281,8 +281,6 @@ type TerminalRunValues = Readonly<
       | "failureReason"
       | "result"
       | "sandboxId"
-      | "sandboxReuseResult"
-      | "homeReuseResult"
     >
   >
 >;

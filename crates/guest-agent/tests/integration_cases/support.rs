@@ -131,7 +131,6 @@ pub(crate) fn shared_guest_config() -> Result<guest_agent::env::GuestConfig, Str
         api_url: server.base_url(),
         api_token: "test-token-abc123".to_string(),
         sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
-        sandbox_reuse_result: "reused".to_string(),
         vercel_bypass: "test-bypass-value".to_string(),
         cli_agent_type: "claude-code".to_string(),
         home: Some(shared_guest_home_dir().to_string_lossy().into_owned()),

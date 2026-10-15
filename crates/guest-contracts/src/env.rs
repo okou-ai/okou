@@ -27,15 +27,6 @@ pub const CANONICAL_API_TOKEN_ENV: &str = "OKOU_API_TOKEN";
 /// Sandbox identifier assigned and written by the runner.
 pub const CANONICAL_SANDBOX_ID_ENV: &str = "OKOU_SANDBOX_ID";
 
-/// Wire value for the runner's sandbox-reuse decision.
-///
-/// `reused` means an idle sandbox was unparked. Other values describe why reuse did
-/// not happen, such as `poolMiss` or `noReuseKey`.
-pub const CANONICAL_SANDBOX_REUSE_RESULT_ENV: &str = "OKOU_SANDBOX_REUSE_RESULT";
-
-/// Wire value for the runner's final home-reuse decision.
-pub const CANONICAL_HOME_REUSE_RESULT_ENV: &str = "OKOU_HOME_REUSE_RESULT";
-
 /// Wire value for the actual sandbox startup resource after preparation settles.
 pub const CANONICAL_SANDBOX_STARTUP_PATH_ENV: &str = "OKOU_SANDBOX_STARTUP_PATH";
 
@@ -575,8 +566,6 @@ pub const CANONICAL_MOCK_CODEX_PATH_ENV: &str = "OKOU_MOCK_CODEX_PATH";
 const EXPLICIT_RUNNER_OWNED_ENV_KEYS: &[&str] = &[
     RUN_ID_ENV,
     CANONICAL_SANDBOX_ID_ENV,
-    CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-    CANONICAL_HOME_REUSE_RESULT_ENV,
     CANONICAL_SANDBOX_STARTUP_PATH_ENV,
     CANONICAL_API_START_TIME_ENV,
     PI_SESSION_ID_ENV,
@@ -736,11 +725,6 @@ mod tests {
         assert_eq!(RUN_ID_ENV, "OKOU_RUN_ID");
         assert_eq!(CANONICAL_API_TOKEN_ENV, "OKOU_API_TOKEN");
         assert_eq!(CANONICAL_SANDBOX_ID_ENV, "OKOU_SANDBOX_ID");
-        assert_eq!(
-            CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "OKOU_SANDBOX_REUSE_RESULT"
-        );
-        assert_eq!(CANONICAL_HOME_REUSE_RESULT_ENV, "OKOU_HOME_REUSE_RESULT");
         assert_eq!(CANONICAL_RESUME_SESSION_ID_ENV, "OKOU_RESUME_SESSION_ID");
         assert_eq!(CANONICAL_API_START_TIME_ENV, "OKOU_API_START_TIME");
         assert_eq!(PI_SESSION_ID_ENV, "OKOU_PI_SESSION_ID");
@@ -988,8 +972,6 @@ mod tests {
             RUN_ID_ENV,
             CANONICAL_API_TOKEN_ENV,
             CANONICAL_SANDBOX_ID_ENV,
-            CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            CANONICAL_HOME_REUSE_RESULT_ENV,
             CANONICAL_RESUME_SESSION_ID_ENV,
             CANONICAL_API_START_TIME_ENV,
             PI_SESSION_ID_ENV,

@@ -7,6 +7,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
 import { nowDate } from "../../../lib/time";
 import { runnersStartupRoutes } from "../runners-startup";
+import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
@@ -71,7 +72,7 @@ function completionBody(
 }
 
 test.each(["sandbox", "home", "blank", "cold"] as const)(
-  "dedicated startup API persists %s while running and after completion",
+  "dedicated startup API persists %s through a pre-cleanup completion",
   async (path) => {
     const owned = await publicChatActor(context);
     await owned.run(async () => {
@@ -94,27 +95,34 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
           : path === "home"
             ? "reused"
             : "cacheMiss";
-      await callbacks.requestAgentComplete(
-        {
+      const request = setupRawAppRequest({
+        context,
+        routes: webhooksAgentCompleteRoutes,
+      });
+      const response = await request("/api/webhooks/agent/complete", {
+        method: "POST",
+        headers: { ...sandboxHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
           ...completionBody(run, claim.cliAgentType),
           sandboxReuseResult,
           homeReuseResult,
-        },
-        sandboxHeaders,
-        [200],
-      );
+        }),
+      });
+      expect(response.status).toBe(200);
+      expect(response.body).toStrictEqual({
+        success: true,
+        status: "completed",
+      });
       expect(
         (await runs.requestRunRunner(owned.actor, run.runId, [200])).body,
       ).toMatchObject({
         sandboxStartupPath: path,
-        sandboxReuseResult,
-        homeReuseResult,
       });
     });
   },
 );
 
-test("telemetry and completion reuse diagnostics cannot manufacture a startup path", async () => {
+test("telemetry and completion leave startup unknown until an authenticated report", async () => {
   const owned = await publicChatActor(context);
   await owned.run(async () => {
     const run = await owned.sendChatRun(owned.actor, {
@@ -141,8 +149,6 @@ test("telemetry and completion reuse diagnostics cannot manufacture a startup pa
     await callbacks.requestAgentComplete(
       {
         ...completionBody(run, claim.cliAgentType),
-        sandboxReuseResult: "poolMiss",
-        homeReuseResult: "cacheMiss",
       },
       sandboxHeaders,
       [200],
@@ -151,11 +157,9 @@ test("telemetry and completion reuse diagnostics cannot manufacture a startup pa
       (await runs.requestRunRunner(owned.actor, run.runId, [200])).body,
     ).toMatchObject({
       sandboxStartupPath: null,
-      sandboxReuseResult: "poolMiss",
-      homeReuseResult: "cacheMiss",
     });
     // A delayed authenticated report can still provide the actual fact after
-    // completion; the legacy miss pair alone was not enough to populate it.
+    // completion; only the dedicated startup report supplies this fact.
     await writeStartupPath(run.runId, "cold", sandboxHeaders);
     await expect(readStartupPath(owned.actor, run.runId)).resolves.toBe("cold");
   });

@@ -71,7 +71,6 @@ fn runtime(
         api_url: server.base_url.clone(),
         api_token: "test-token".into(),
         sandbox_id: uuid::Uuid::new_v4().to_string(),
-        sandbox_reuse_result: "reused".into(),
         cli_agent_type: framework.into(),
         use_mock_claude: (framework == "claude-code").to_string(),
         mock_claude_path: Some(binary.to_string_lossy().into_owned()),

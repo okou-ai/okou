@@ -91,10 +91,6 @@ async fn codex_app_server_backend_closes_input_before_ingesting_queued_terminal(
             "00000000-0000-4000-8000-000000000abc",
         )
         .env(
-            guest_contracts::env::CANONICAL_SANDBOX_REUSE_RESULT_ENV,
-            "reused",
-        )
-        .env(
             guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
             payload_path,
         )

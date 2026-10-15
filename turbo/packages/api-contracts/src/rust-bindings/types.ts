@@ -763,40 +763,6 @@ export const rustTypeBindings = [
     },
     declarations: [
       {
-        rustTypeName: "RequestSandboxReuseResult",
-        rustDoc: ["Outcome of the sandbox reuse decision."],
-        variants: {
-          reused: ["An idle sandbox was reused."],
-          featureDisabled: ["Legacy outcome from the removed feature gate."],
-          noSessionId: ["Legacy outcome for an unavailable reuse identity."],
-          noReuseKey: ["The run had no sandbox reuse key."],
-          poolMiss: ["No matching idle sandbox was available."],
-          profileMismatch: ["The idle sandbox profile did not match."],
-          deviceLimitMismatch: [
-            "The idle sandbox device limits did not match.",
-          ],
-          unparkFailed: ["The selected idle sandbox could not be unparked."],
-        },
-      },
-      {
-        rustTypeName: "RequestHomeReuseResult",
-        rustDoc: ["Final outcome of home reuse preparation."],
-        variants: {
-          reused: ["A cached home directory was reused."],
-          sandboxReused: ["The home directory remained in a reused sandbox."],
-          cacheMiss: ["No matching home cache was available."],
-          noReuseKey: ["The run had no home reuse key."],
-          invalidWorkingDir: ["The home working directory was invalid."],
-          lockBusy: ["The cached home was locked by another run."],
-          invalidMetadata: ["The cached home metadata was invalid."],
-          diskPressure: ["Home reuse was disabled by disk pressure."],
-          notConfigured: ["Home reuse was not configured."],
-          sandboxPrepareFallback: [
-            "Home preparation fell back after sandbox setup.",
-          ],
-        },
-      },
-      {
         rustTypeName: "RequestCompletion",
         rustDoc: ["Final Run output metadata included with completion."],
         fields: {
@@ -878,10 +844,6 @@ export const rustTypeBindings = [
             "Highest contiguous agent event sequence delivered before completion.",
           ],
           sandboxId: ["Optional sandbox identifier used by the run."],
-          sandboxReuseResult: [
-            "Optional outcome of the sandbox reuse decision.",
-          ],
-          homeReuseResult: ["Optional outcome of the home reuse decision."],
           completion: [
             "Native history and published file outputs saved with completion.",
           ],

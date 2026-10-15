@@ -256,7 +256,7 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
         mock_run_config_with_api_url(test_profiles(), 8, 32768, 4, &server.base_url());
     let idle_pool = config.shared.idle_pool.clone();
     let budget = config.capacity.budget.clone();
-    seed_idle_pool(
+    let reused_sandbox_id = seed_idle_pool(
         &idle_pool,
         &budget,
         "sess-reuse-claim-timing",
@@ -280,10 +280,9 @@ async fn telemetry_flush_includes_reuse_hit_claim_phase_spans() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("job should complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::Reused)
-    );
+    assert_eq!(completion.sandbox_id, Some(reused_sandbox_id));
+
+    assert_eq!(completion.exit_code, 0);
 
     shutdown(&env, run_handle).await;
 
@@ -336,7 +335,6 @@ async fn invalid_resume_session_flushes_blank_selection_without_reuse_telemetry(
         .await
         .expect("job should complete");
     assert_eq!(completion.exit_code, 1);
-    assert_eq!(completion.reuse_result, None);
 
     shutdown(&env, run_handle).await;
 
@@ -620,10 +618,8 @@ async fn finalizing_handoff_activation_failure_is_not_reported_as_accepted() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fresh fallback should complete");
-    assert_eq!(
-        completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
-    );
+
+    assert_eq!(completion.exit_code, 0);
 
     shutdown(&env, run_handle).await;
     telemetry_mock.assert_calls_async(1).await;
@@ -716,10 +712,8 @@ async fn published_exact_activation_failure_is_reported_as_activation_failed() {
         .wait_completion(run_id, Duration::from_secs(5))
         .await
         .expect("fresh fallback should complete after exact activation fails");
-    assert_eq!(
-        completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
-    );
+
+    assert_eq!(completion.exit_code, 0);
 
     drop(predecessor_guard);
     shutdown(&env, run_handle).await;
@@ -845,10 +839,6 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
         .await
         .expect("uncertain activation cleanup should complete without an executor");
     assert_eq!(completion.sandbox_id, None);
-    assert_eq!(
-        completion.reuse_result,
-        Some(runner_types::types::SandboxReuseResult::UnparkFailed)
-    );
     assert!(
         completion
             .error
