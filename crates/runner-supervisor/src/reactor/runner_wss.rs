@@ -5,6 +5,7 @@
 
 use std::io;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use api_contracts::generated::{
@@ -207,7 +208,6 @@ impl Admission {
 
 pub(super) struct StartedListener {
     pub task: AcceptTask,
-    pub failed: Arc<std::sync::atomic::AtomicBool>,
     pub started: tokio::sync::oneshot::Receiver<()>,
 }
 
@@ -237,7 +237,7 @@ pub(super) fn start(
     let (started_tx, started) = tokio::sync::oneshot::channel();
     let stop = CancellationToken::new();
     let stop_in_task = stop.clone();
-    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failed = Arc::new(AtomicBool::new(false));
     let failed_in_task = Arc::clone(&failed);
     let failure_cancel = provider.cancel.clone();
     let failure_tokens = provider.cancel_tokens.clone();
@@ -271,7 +271,7 @@ pub(super) fn start(
                 Ok(Some(stream)) => admission.accept(stream),
                 Ok(None) => {}
                 Err(error) => {
-                    failed_in_task.store(true, std::sync::atomic::Ordering::SeqCst);
+                    failed_in_task.store(true, Ordering::SeqCst);
                     super::signals::handle_stopping_signal(
                         "wss-accept-failure",
                         &failure_cancel,
@@ -287,8 +287,7 @@ pub(super) fn start(
         result
     });
     Ok(StartedListener {
-        task: AcceptTask::new(task, stop),
-        failed,
+        task: AcceptTask::new(task, stop, failed),
         started,
     })
 }
@@ -299,19 +298,30 @@ pub(super) fn start(
 pub(super) struct AcceptTask {
     task: tokio::task::JoinHandle<io::Result<()>>,
     stop: CancellationToken,
+    failed: Arc<AtomicBool>,
     joined: bool,
 }
 
 impl AcceptTask {
-    pub fn new(task: tokio::task::JoinHandle<io::Result<()>>, stop: CancellationToken) -> Self {
+    pub fn new(
+        task: tokio::task::JoinHandle<io::Result<()>>,
+        stop: CancellationToken,
+        failed: Arc<AtomicBool>,
+    ) -> Self {
         Self {
             task,
             stop,
+            failed,
             joined: false,
         }
     }
-    pub fn is_finished(&self) -> bool {
-        self.task.is_finished()
+    /// Failure is published before the task finishes joining its connections.
+    pub fn has_failed(&self) -> bool {
+        self.failed.load(Ordering::SeqCst)
+    }
+    /// Startup cannot publish readiness after any listener exit.
+    pub fn failed_or_finished(&self) -> bool {
+        self.has_failed() || self.task.is_finished()
     }
     pub async fn wait(&mut self) -> Result<io::Result<()>, tokio::task::JoinError> {
         let result = (&mut self.task).await;

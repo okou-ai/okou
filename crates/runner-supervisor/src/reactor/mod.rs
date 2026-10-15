@@ -1020,7 +1020,6 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 handler_task: mut signal_handler_task,
             },
         mut wss_task,
-        wss_failed,
         mut factories,
         prune_listener,
         prune_admission,
@@ -1203,9 +1202,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
-        if wss_failed
+        if wss_task
             .as_ref()
-            .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+            .is_some_and(runner_wss::AcceptTask::has_failed)
         {
             terminal_error = Some(RunnerError::Internal(
                 "required Runner WSS accept loop failed".into(),
@@ -1385,7 +1384,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             // The future is pinned outside the loop so other reactor branches
             // do not cancel and restart its internal wait timer. See #8747.
             discovered = &mut discover_fut, if can_discover => {
-                if wss_failed.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst)) {
+                if wss_task.as_ref().is_some_and(runner_wss::AcceptTask::has_failed) {
                     terminal_error = Some(RunnerError::Internal("required Runner WSS accept loop failed".into()));
                     break;
                 }
@@ -1640,9 +1639,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Shutdown — drain idle pool, release discovery resources, then drain running jobs
     // -----------------------------------------------------------------------
     // Discovery may observe listener-triggered cancellation before its join.
-    if wss_failed
+    if wss_task
         .as_ref()
-        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::SeqCst))
+        .is_some_and(runner_wss::AcceptTask::has_failed)
     {
         terminal_error.get_or_insert_with(|| {
             RunnerError::Internal("required Runner WSS accept loop failed".into())
