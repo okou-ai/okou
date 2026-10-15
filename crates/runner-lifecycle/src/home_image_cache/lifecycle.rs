@@ -1386,29 +1386,24 @@ impl HomeImageCache {
         };
         let source_identity = source.identity();
         let active_allocated = allocated_bytes(&source.validate_path(input.active_image)?);
-        let total = self.total_cache_allocated_bytes().await?;
-        if total
-            .saturating_add(active_allocated)
-            .saturating_add(metadata_peak)
-            > budget.max_cache_bytes
+        let pending_cache_bytes = active_allocated.saturating_add(metadata_peak);
+        let mut total = self.total_cache_allocated_bytes().await?;
+        // Evict older images only when this candidate can fit on its own.
+        if pending_cache_bytes <= budget.max_cache_bytes
+            && total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes
         {
-            self.gc_locked(false).await?;
-            if self
-                .total_cache_allocated_bytes()
-                .await?
-                .saturating_add(active_allocated)
-                .saturating_add(metadata_peak)
-                > budget.max_cache_bytes
-            {
-                self.observe_publication(
-                    &input,
-                    HomeObservationOutcome::Skipped,
-                    "cache_budget",
-                    None,
-                    None,
-                );
-                return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
-            }
+            self.gc_locked(false, pending_cache_bytes).await?;
+            total = self.total_cache_allocated_bytes().await?;
+        }
+        if total.saturating_add(pending_cache_bytes) > budget.max_cache_bytes {
+            self.observe_publication(
+                &input,
+                HomeObservationOutcome::Skipped,
+                "cache_budget",
+                None,
+                None,
+            );
+            return Ok(HomeImagePromotionOutcome::SkippedUnpublished);
         }
         self.ensure_home_cache_entry_dir(input.cache_key).await?;
         sync_directory(self.home_image_cache_dir()).await?;
