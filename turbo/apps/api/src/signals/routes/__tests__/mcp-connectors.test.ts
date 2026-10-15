@@ -185,6 +185,22 @@ describe("GET /api/mcp-connectors", () => {
         },
       ]);
 
+      const initialSelected = await accept(
+        client().list({ headers: headers(run.token) }),
+        [200],
+      );
+      expect(initialSelected.body.connectors).toStrictEqual([
+        {
+          target: { kind: "custom", customConnectorId: selected.id },
+          connectionId: selectedAccountId,
+          slug: "_selected-mcp",
+          displayName: "Selected MCP",
+          transport: "streamable-http",
+          endpoint: "https://selected-mcp.example.test/server",
+          connected: true,
+        },
+      ]);
+
       await connectors.updateCustomConnector(actor, selected.id, {
         ...manualMcpConnectorBody({
           slug: "_selected-mcp",
@@ -265,10 +281,15 @@ describe("GET /api/mcp-connectors", () => {
         [200],
       );
       expect(currentSelected.body.connectors).toStrictEqual([
-        expect.objectContaining({
+        {
           target: { kind: "custom", customConnectorId: selected.id },
+          connectionId: selectedAccountId,
+          slug: "_selected-mcp",
+          displayName: "Selected MCP",
+          transport: "streamable-http",
+          endpoint: "https://selected-mcp.example.test/server",
           connected: true,
-        }),
+        },
       ]);
     });
   });

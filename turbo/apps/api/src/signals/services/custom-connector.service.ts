@@ -68,7 +68,7 @@ import { encryptStoredSecretValue } from "./crypto.utils";
 import {
   customConnectorDefinitionConnectedAccount,
   customConnectorConnectedConnections,
-  loadCurrentCustomConnectorStoredValues,
+  customConnectorRuntimeStorageReadQuery,
   customConnectorRuntimeStorageSnapshot,
   customConnectorValueMarkers,
   type CustomConnectorCredentialAccess,
@@ -3363,13 +3363,38 @@ export async function loadCustomConnectorRuntimeData(
         storageVersion: row.connector.storageVersion,
       };
     });
-    const runtimeStorage = await loadCurrentCustomConnectorStoredValues(db, {
+    const connectorIds = definitions.map((definition) => {
+      return definition.id;
+    });
+    const memberConnectorIds = definitions.flatMap((definition) => {
+      const memberConnectorId = args.memberConnectorIdsByCustomConnectorId.get(
+        definition.id,
+      );
+      return memberConnectorId ? [memberConnectorId] : [];
+    });
+    if (memberConnectorIds.length === 0) {
+      return customConnectorRuntimeDataFromRows(
+        connectorRows,
+        customConnectorRuntimeStorageSnapshot(
+          definitions,
+          [],
+          args.memberConnectorIdsByCustomConnectorId,
+        ),
+      );
+    }
+    const query = customConnectorRuntimeStorageReadQuery({
       orgId: args.orgId,
       userId: args.userId,
-      definitions,
-      memberConnectorIdsByCustomConnectorId:
-        args.memberConnectorIdsByCustomConnectorId,
+      connectorIds,
+      memberConnectorIds,
     });
+    const captured = db.$with("captured_custom_runtime_storage").as(query);
+    const rows = await db.with(captured).select().from(captured);
+    const runtimeStorage = customConnectorRuntimeStorageSnapshot(
+      definitions,
+      rows,
+      args.memberConnectorIdsByCustomConnectorId,
+    );
     return customConnectorRuntimeDataFromRows(connectorRows, runtimeStorage);
   });
 }
