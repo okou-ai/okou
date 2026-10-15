@@ -202,11 +202,25 @@ struct CacheTarget {
 
 #[derive(Clone)]
 struct CacheTargetGroup {
-    targets: Vec<CacheTarget>,
+    representative: CacheTarget,
+    additional_targets: Vec<CacheTarget>,
     archive_size: Option<u64>,
     // This plan already validated positive decoded contents. Only a hint for
     // optional warming of archive hits; never suppress missing archive fills.
     decoded_ready_observed: bool,
+}
+
+impl CacheTargetGroup {
+    fn targets(&self) -> impl Iterator<Item = &CacheTarget> {
+        std::iter::once(&self.representative).chain(&self.additional_targets)
+    }
+
+    fn key(&self) -> (String, String) {
+        (
+            self.representative.name.clone(),
+            self.representative.version.clone(),
+        )
+    }
 }
 
 struct FreshDeliveryScanSummary {
@@ -519,10 +533,7 @@ impl StorageCacheBackgroundFillCoordinator {
         reporter: SandboxOpReporter,
         action: BackgroundFillAction,
     ) -> BackgroundFillAdmission {
-        let Some(key) = group_key(&group) else {
-            warn!("storage_cache: refusing empty background fill group");
-            return BackgroundFillAdmission::Closed;
-        };
+        let key = group.key();
         let mut state = inner
             .state
             .lock()
@@ -626,9 +637,7 @@ impl StorageCacheBackgroundFillCoordinator {
         let Some((_, BackgroundFillAction::WarmDecoded(cache))) = groups.first() else {
             return Err(groups);
         };
-        let Some(keys) = groups.iter().map(|(group, _)| group_key(group)).collect() else {
-            return Err(groups);
-        };
+        let keys = groups.iter().map(|(group, _)| group.key()).collect();
         let inner = &self.lifecycle.inner;
         let state = inner
             .state
@@ -1463,9 +1472,7 @@ impl FreshArchiveDelivery {
                         true,
                         None,
                     );
-                    let target = group.targets.first().ok_or_else(|| {
-                        RunnerError::Internal("empty runner-owned archive target group".to_string())
-                    })?;
+                    let target = &group.representative;
                     let cache_dir = home.storage_cache_dir(&target.name, &target.version);
                     let phase_records = self.phase_records.clone();
                     self.publications.spawn(async move {
@@ -1745,10 +1752,9 @@ async fn prepare_decoded_storage(
         let keys = batch
             .iter()
             .map(|group| {
-                group.targets.first().and_then(|target| {
-                    has_decoded_download_target(group, plan)
-                        .then_some((target.name.as_str(), target.version.as_str()))
-                })
+                let target = &group.representative;
+                has_decoded_download_target(group, plan)
+                    .then_some((target.name.as_str(), target.version.as_str()))
             })
             .collect::<Vec<_>>();
         let started = Instant::now();
@@ -1765,7 +1771,7 @@ async fn prepare_decoded_storage(
         for (group, files) in batch.iter_mut().zip(ready) {
             group.decoded_ready_observed = files.is_some();
             let decoded_reused = reuse_decoded(plan, group, files)?;
-            if group.targets.iter().any(|target| {
+            if group.targets().any(|target| {
                 target.handle.is_artifact()
                     && !plan.has_decoded(target.handle)
                     && (!plan.is_decoded_download(target.handle)
@@ -1800,8 +1806,7 @@ fn reuse_decoded(
     // such as an instruction storage. Admit its ordinary targets without
     // changing archive delivery for that other consumer.
     let eligible = group
-        .targets
-        .iter()
+        .targets()
         .filter(|target| plan.is_decoded_download(target.handle))
         .collect::<Vec<_>>();
     if eligible.is_empty() {
@@ -2182,9 +2187,7 @@ async fn stage_fresh_archives(
     };
     for FreshArchiveResolved { group, archive } in resolved {
         let FreshArchivePublished { bytes, permit } = archive;
-        let target = group.targets.first().ok_or_else(|| {
-            RunnerError::Internal("empty runner-owned archive target group".to_string())
-        })?;
+        let target = &group.representative;
         let write = GuestStageWrite {
             guest_path: guest_archive_path(&target.name, &target.version),
             bytes,
@@ -2342,11 +2345,11 @@ pub async fn populate_cache_with_fresh_delivery(
     };
     let owned_keys = outcomes
         .iter()
-        .filter_map(|(group, _)| group_key(group))
+        .map(|(group, _)| group.key())
         .collect::<HashSet<_>>();
     let target_groups = target_groups
         .into_iter()
-        .filter(|group| group_key(group).is_none_or(|key| !owned_keys.contains(&key)))
+        .filter(|group| !owned_keys.contains(&group.key()))
         .filter_map(|group| {
             if group_has_decoded(&group, plan) {
                 outcomes.push((group, TargetOutcome::Decoded));
@@ -2432,26 +2435,16 @@ pub async fn populate_cache_with_fresh_delivery(
     Ok(deferred)
 }
 
-fn group_key(group: &CacheTargetGroup) -> Option<(String, String)> {
-    group
-        .targets
-        .first()
-        .map(|target| (target.name.clone(), target.version.clone()))
-}
-
 fn has_decoded_download_target(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
     group
-        .targets
-        .iter()
+        .targets()
         .any(|target| plan.is_decoded_download(target.handle))
 }
 
 fn group_has_decoded(group: &CacheTargetGroup, plan: &StoragePlan) -> bool {
-    !group.targets.is_empty()
-        && group
-            .targets
-            .iter()
-            .all(|target| plan.has_decoded(target.handle))
+    group
+        .targets()
+        .all(|target| plan.has_decoded(target.handle))
 }
 
 fn defer_background_fill_groups(
@@ -2469,8 +2462,7 @@ fn defer_background_fill_groups(
                 .filter(|_| has_decoded_download_target(group, plan));
             let action = if matches!(outcome, TargetOutcome::Decoded) {
                 if !group
-                    .targets
-                    .iter()
+                    .targets()
                     .any(|target| plan.decoded_archive_retirement_candidate(target.handle))
                 {
                     return None;
@@ -2543,7 +2535,7 @@ async fn run_background_fill_groups(
         let home = home.clone();
         fills.spawn(async move {
             let work = BackgroundFillWork {
-                key: group_key(&group).unwrap(),
+                key: group.key(),
                 group,
                 home,
                 action,
@@ -2576,39 +2568,39 @@ async fn join_next_background_fill(
 
 fn group_targets(targets: Vec<CacheTarget>) -> Vec<CacheTargetGroup> {
     let mut group_order = Vec::new();
-    let mut groups_by_key: HashMap<(String, String), Vec<CacheTarget>> = HashMap::new();
+    let mut groups_by_key: HashMap<(String, String), CacheTargetGroup> = HashMap::new();
 
     for target in targets {
         let key = (target.name.clone(), target.version.clone());
         match groups_by_key.entry(key.clone()) {
             Entry::Occupied(mut entry) => {
-                entry.get_mut().push(target);
+                entry.get_mut().additional_targets.push(target);
             }
             Entry::Vacant(entry) => {
                 group_order.push(key);
-                entry.insert(vec![target]);
+                entry.insert(CacheTargetGroup {
+                    representative: target,
+                    additional_targets: Vec::new(),
+                    archive_size: None,
+                    decoded_ready_observed: false,
+                });
             }
         }
     }
 
     let mut groups = Vec::with_capacity(group_order.len());
     for key in group_order {
-        if let Some(targets) = groups_by_key.remove(&key) {
-            let archive_size = reconcile_archive_size(&targets);
-            groups.push(CacheTargetGroup {
-                targets,
-                archive_size,
-                decoded_ready_observed: false,
-            });
+        if let Some(mut group) = groups_by_key.remove(&key) {
+            group.archive_size = reconcile_archive_size(group.targets());
+            groups.push(group);
         }
     }
     groups
 }
 
-fn reconcile_archive_size(targets: &[CacheTarget]) -> Option<u64> {
+fn reconcile_archive_size<'a>(targets: impl Iterator<Item = &'a CacheTarget>) -> Option<u64> {
     let mut known_size = None;
     for size in targets
-        .iter()
         .filter_map(|target| target.archive_size)
         .filter(|size| *size > 0)
     {
@@ -2750,9 +2742,7 @@ async fn classify_fresh_archives(
                 {
                     return Ok((position, index, false));
                 }
-                let target = group.targets.first().ok_or_else(|| {
-                    RunnerError::Internal("empty runner-owned archive target group".into())
-                })?;
+                let target = &group.representative;
                 let path = home
                     .storage_cache_dir(&target.name, &target.version)
                     .join("archive.tar.gz");
@@ -2942,10 +2932,7 @@ async fn claim_fresh_archive(
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
 ) -> RunnerResult<FreshArchiveClaim> {
-    let target = group
-        .targets
-        .first()
-        .ok_or_else(|| RunnerError::Internal("empty runner-owned archive target group".into()))?;
+    let target = &group.representative;
     let writer =
         match lock::try_acquire_or_busy(home.storage_lock(&target.name, &target.version)).await? {
             lock::TryLock::Acquired(writer) => writer,
@@ -3002,9 +2989,7 @@ impl FreshArchiveRequests {
         cancel: &CancellationToken,
         metrics: &mut CacheProcessMetrics,
     ) -> RunnerResult<()> {
-        let target = group.targets.first().ok_or_else(|| {
-            RunnerError::Internal("empty runner-owned archive target group".into())
-        })?;
+        let target = &group.representative;
         let http = admission.client_for_archive(&target.archive_url)?;
         let archive_url = target.archive_url.clone();
         let representative = target.handle;
@@ -3250,10 +3235,7 @@ async fn process_group_background_fill(
     if group.archive_size.is_some_and(|size| size > CACHE_MAX_SIZE) {
         return Ok(BackgroundFillOutcome::Skipped);
     }
-    let target = group
-        .targets
-        .first()
-        .ok_or_else(|| RunnerError::Internal("empty storage cache target group".into()))?;
+    let target = &group.representative;
     process_one_background_fill(target, group.archive_size, http, home).await
 }
 
@@ -3262,10 +3244,7 @@ async fn process_group_hit_or_passthrough(
     home: &HomePaths,
     metrics: &mut CacheProcessMetrics,
 ) -> RunnerResult<ProcessedGroup> {
-    let target = group
-        .targets
-        .first()
-        .ok_or_else(|| RunnerError::Internal("empty storage cache target group".into()))?;
+    let target = &group.representative;
     let ProcessedTarget {
         outcome,
         stage_write,
@@ -4083,7 +4062,7 @@ fn apply_group_outcome(
     outcome: &TargetOutcome,
     telemetry: &mut JobTelemetry,
 ) {
-    for target in &group.targets {
+    for target in group.targets() {
         if plan.has_decoded(target.handle) {
             apply_outcome(plan, target, &TargetOutcome::Decoded, telemetry);
         } else {
@@ -4167,7 +4146,7 @@ fn record_passthrough_summary(
 ) {
     let mut summary = PassthroughSummary::default();
     for (group, outcome) in outcomes {
-        for target in &group.targets {
+        for target in group.targets() {
             if plan.has_decoded(target.handle) {
                 add_passthrough_summary(&mut summary, &TargetOutcome::Decoded, 1);
             } else {
@@ -5346,13 +5325,14 @@ mod tests {
     ) -> CacheTargetGroup {
         CacheTargetGroup {
             decoded_ready_observed: false,
-            targets: vec![CacheTarget {
+            representative: CacheTarget {
                 handle: ArchiveHandle::storage(0),
                 name: name.to_string(),
                 version: version.to_string(),
                 archive_url: url,
                 archive_size,
-            }],
+            },
+            additional_targets: Vec::new(),
             archive_size,
         }
     }
