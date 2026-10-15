@@ -471,7 +471,8 @@ test("A search changed during save determines focus without a later stale handof
     ).not.toBeInTheDocument();
     expect(search).toHaveFocus();
   });
-  await fill(search, "Research");
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste("Research");
   await within(manager).findByRole("group", { name: "Research" });
   expect(search).toHaveFocus();
   await user.keyboard("{End}x");

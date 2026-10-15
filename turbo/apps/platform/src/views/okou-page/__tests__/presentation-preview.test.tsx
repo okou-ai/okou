@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -170,8 +170,7 @@ test("Selecting a slide preserves its authored layout", async () => {
   if (!(dialog instanceof HTMLElement)) {
     throw new Error("Presentation preview dialog not found");
   }
-  const slideTwo = await within(dialog).findByLabelText("Preview slide 2");
-  click(slideTwo);
+  click(await waitForNamedButton("Preview slide 2", dialog));
   await waitFor(() => {
     expect(activePreviewFrame().srcdoc).toContain("Selected slide");
   });
@@ -193,7 +192,7 @@ test("Selecting a slide preserves its authored layout", async () => {
   expect(selectedSlide).toHaveAttribute("aria-hidden", "false");
   expect(computedStyle(wrapper).display).toBe("grid");
   expect(computedStyle(selectedSlide).display).toBe("flex");
-  expect(within(dialog).getByLabelText("Preview slide 2")).toHaveAttribute(
+  expect(requireNamedButton("Preview slide 2", dialog)).toHaveAttribute(
     "aria-pressed",
     "true",
   );

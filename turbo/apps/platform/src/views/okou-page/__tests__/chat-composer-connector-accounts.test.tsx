@@ -50,13 +50,9 @@ async function loadComposer(): Promise<void> {
 }
 
 async function openConnectors(
-  container: HTMLElement = document.body,
+  container: ParentNode = document.body,
 ): Promise<void> {
-  click(
-    await within(container).findByLabelText("Connectors", {
-      selector: "button",
-    }),
-  );
+  click(await findFastControl("button", "Connectors", container));
   await expect(
     findFastControl("button", "Add connectors"),
   ).resolves.toBeEnabled();
@@ -125,10 +121,10 @@ async function openAgentScopedConnectors(pendingAuthorization: boolean) {
   const scoutPane = pane(SCOUT_THREAD_ID);
   const otherPane = pane(OTHER_THREAD_ID);
   await expect(
-    within(scoutPane).findByLabelText("Connectors", { selector: "button" }),
+    findFastControl("button", "Connectors", scoutPane),
   ).resolves.toBeEnabled();
   await expect(
-    within(otherPane).findByLabelText("Connectors", { selector: "button" }),
+    findFastControl("button", "Connectors", otherPane),
   ).resolves.toBeEnabled();
   return { user, fixture, scoutPane, otherPane, otherAuthorization };
 }
