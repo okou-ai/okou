@@ -21,6 +21,21 @@ use super::{FailureReason, Run, Scope, invalidates_access, observation, pool};
 
 const SETUP_TIMEOUT: Duration = Duration::from_secs(60);
 
+pub(crate) struct ForwardingFailure {
+    pub(crate) reason: FailureReason,
+    pub(crate) native: Option<crate::diagnostics::NativeSource>,
+    pub(crate) identity: crate::diagnostics::Identity,
+}
+
+struct Target<'a> {
+    connection: Uuid,
+    expected_generation: i64,
+    host: &'a str,
+    port: u16,
+    cancelled: CancellationToken,
+    deadline: Instant,
+}
+
 /// One direct-tcpip channel and the exclusive physical SSH transport carrying it.
 ///
 /// Field order is deliberate: normal drop closes the logical channel before the
@@ -30,9 +45,17 @@ pub(crate) struct DirectTcpIpStream {
     generation: i64,
     monitor_done: CancellationToken,
     lease: Option<pool::Lease>,
+    native: Option<crate::diagnostics::NativeSource>,
+    identity: crate::diagnostics::Identity,
 }
 
 impl DirectTcpIpStream {
+    pub(crate) fn diagnostic_identity(&self) -> crate::diagnostics::Identity {
+        self.identity.clone()
+    }
+    pub(crate) fn diagnostic_source(&self) -> Option<crate::diagnostics::NativeSource> {
+        self.native.clone()
+    }
     pub(crate) fn generation(&self) -> i64 {
         self.generation
     }
@@ -110,6 +133,72 @@ impl Run {
         cancelled: CancellationToken,
         deadline: Instant,
     ) -> Result<DirectTcpIpStream, FailureReason> {
+        self.open_direct_tcpip_diagnosed(
+            connection,
+            expected_generation,
+            host,
+            port,
+            cancelled,
+            deadline,
+        )
+        .await
+        .map_err(|failure| failure.reason)
+    }
+
+    pub(crate) async fn open_direct_tcpip_diagnosed(
+        &self,
+        connection: Uuid,
+        expected_generation: i64,
+        host: &str,
+        port: u16,
+        cancelled: CancellationToken,
+        deadline: Instant,
+    ) -> Result<DirectTcpIpStream, ForwardingFailure> {
+        let mut attempt = observation::Attempt::default();
+        let result = self
+            .open_direct_tcpip_inner(
+                Target {
+                    connection,
+                    expected_generation,
+                    host,
+                    port,
+                    cancelled,
+                    deadline,
+                },
+                &mut attempt,
+            )
+            .await;
+        attempt.record(
+            &self.sessions.registration.diagnostics(),
+            connection,
+            crate::diagnostics::Operation::Forwarding,
+            None,
+            result.as_ref().err().copied(),
+        );
+        result.map_err(|reason| ForwardingFailure {
+            reason,
+            native: attempt.native,
+            identity: crate::diagnostics::Identity {
+                created_at: attempt.created_at,
+                generation: attempt.generation,
+                session: None,
+            },
+        })
+    }
+
+    async fn open_direct_tcpip_inner(
+        &self,
+        target: Target<'_>,
+        attempt: &mut observation::Attempt,
+    ) -> Result<DirectTcpIpStream, FailureReason> {
+        let Target {
+            connection,
+            expected_generation,
+            host,
+            port,
+            cancelled,
+            deadline,
+        } = target;
         validate_target(host, port)?;
         let operation = Arc::new(
             Arc::clone(&self.sessions.forwarding)
@@ -124,7 +213,6 @@ impl Run {
         };
         scope.check()?;
         let access = self.sessions.registration.lookup(connection)?;
-        let mut attempt = observation::Attempt::default();
         let result = async {
             let credential = scope
                 .wait(access.prepare(self.runtime.prepare(
@@ -132,7 +220,7 @@ impl Run {
                     self.sessions.run,
                     connection,
                     &scope,
-                    &mut attempt,
+                    attempt,
                 )))
                 .await??;
             let (generation, pinned) = {
@@ -160,7 +248,7 @@ impl Run {
                         operation,
                     },
                     &scope,
-                    &mut attempt,
+                    attempt,
                 )
                 .await?;
             let actual_generation = {
@@ -200,6 +288,12 @@ impl Run {
                 generation: actual_generation,
                 monitor_done,
                 lease: Some(lease),
+                native: attempt.native.clone(),
+                identity: crate::diagnostics::Identity {
+                    created_at: attempt.created_at,
+                    generation: Some(actual_generation),
+                    session: None,
+                },
             })
         }
         .await;
@@ -209,7 +303,7 @@ impl Run {
         {
             access.invalidate();
         }
-        self.report(connection, &attempt, result.as_ref().err().copied());
+        self.report(connection, attempt, result.as_ref().err().copied());
         result
     }
 

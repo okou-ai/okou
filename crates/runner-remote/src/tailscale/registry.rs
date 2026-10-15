@@ -15,11 +15,28 @@ pub(crate) struct Key {
     pub(super) generation: i64,
 }
 
+impl Key {
+    pub(crate) fn diagnostic_identity(&self) -> (uuid::Uuid, i64) {
+        (self.configuration, self.generation)
+    }
+}
+
 pub(crate) struct Node {
     completion: Arc<Completion>,
 }
 
 impl Node {
+    pub(crate) fn diagnostic_source(&self, key: Key) -> crate::diagnostics::NativeSource {
+        crate::diagnostics::NativeSource {
+            configuration_id: key.configuration,
+            generation: key.generation,
+            resource_id: self.completion.evidence.resource_id,
+            evidence: Arc::clone(&self.completion.evidence),
+        }
+    }
+    pub(crate) fn observe(&self, watch: crate::diagnostics::NativeWatch) {
+        self.completion.observe(watch);
+    }
     pub(crate) fn start(&self) {
         self.completion.start();
     }
@@ -212,6 +229,9 @@ impl Registry {
             return Err(Failure::Cancelled);
         }
         if let Some(node) = state.nodes.get(&key).and_then(Weak::upgrade) {
+            if let Some(failure) = node.completion.terminal_failure() {
+                return Err(failure);
+            }
             if node.completion.is_cancelled() {
                 return Err(Failure::Cancelled);
             }

@@ -2,6 +2,7 @@ mod access;
 mod admission;
 mod cache;
 mod credentials;
+mod diagnostics;
 pub(crate) mod files;
 mod forwarding;
 mod framing;

@@ -3,6 +3,10 @@ import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { sshHostAvailabilitySchema } from "./ssh-access";
+import {
+  remoteHostInventoryQuerySchema,
+  remoteInventoryDiagnosticsSchema,
+} from "./remote-host-identity";
 import { vncConnectionMetadataSchema } from "./vnc-connections";
 import {
   VNC_RSA_AES_SECURITY_TYPES,
@@ -111,8 +115,14 @@ export const vncHostsContract = c.router({
     method: "GET",
     path: "/api/vnc/hosts",
     headers: authHeadersSchema,
+    query: remoteHostInventoryQuerySchema,
     responses: {
-      200: z.object({ hosts: z.array(vncHostSchema) }).strict(),
+      200: z
+        .object({
+          hosts: z.array(vncHostSchema),
+          diagnostics: remoteInventoryDiagnosticsSchema.optional(),
+        })
+        .strict(),
       ...errors,
     },
     summary: "List current VNC hosts authorized for a running Agent",

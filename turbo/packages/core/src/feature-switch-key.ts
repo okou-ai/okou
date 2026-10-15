@@ -49,6 +49,7 @@ export enum FeatureSwitchKey {
   LarkIntegration = "larkIntegration",
   DiscordIntegration = "discordIntegration",
   VncAccess = "vncAccess",
+  RemoteConnectionDiagnostics = "remoteConnectionDiagnostics",
   PiMemory = "piMemory",
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",

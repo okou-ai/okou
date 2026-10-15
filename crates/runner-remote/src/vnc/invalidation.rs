@@ -71,7 +71,11 @@ impl Entries {
                 connection.is_none_or(|connection| connection == session.info.connection_id)
             };
             if affected {
-                session.cancel.cancel();
+                session.failed(
+                    crate::diagnostics::Operation::Retirement,
+                    Failure::ConfigurationChanged,
+                );
+                session.retire();
             }
         }
     }

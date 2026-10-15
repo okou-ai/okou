@@ -29,6 +29,13 @@ pub(super) async fn run(
         () = cancelled.cancelled() => Err(FailureReason::ConfigurationChanged),
         result = execute(&runtime, &pool, run, &entry, start, receiver, &mut observation) => result,
     };
+    observation.record(
+        &entry.access.diagnostics(),
+        entry.connection,
+        crate::diagnostics::Operation::Session,
+        Some(entry.id),
+        result.as_ref().err().copied(),
+    );
     {
         let mut data = entry.data.lock().unwrap_or_else(|p| p.into_inner());
         data.generation = observation.generation;

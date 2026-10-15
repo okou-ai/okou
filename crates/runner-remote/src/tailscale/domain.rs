@@ -16,7 +16,8 @@ use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
 const NODE_CAPACITY: usize = 4;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Failure {
     ResourceExhausted,
     Cancelled,
@@ -91,10 +92,21 @@ pub(super) struct Completion {
     physical_changed: Notify,
     client: Mutex<Option<super::node_root::Client>>,
     journal: Option<Arc<super::provisioning_effect::Journal>>,
+    pub(super) evidence: Arc<crate::diagnostics::NativeEvidence>,
+}
+
+struct TerminalGuard(Arc<Completion>);
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        self.0.terminate(Failure::DomainFailed);
+    }
 }
 
 impl Completion {
     pub(super) fn client(&self) -> Result<super::node_root::Client, Failure> {
+        if let Some(failure) = self.terminal_failure() {
+            return Err(failure);
+        }
         if self.cancel.is_cancelled() {
             return Err(Failure::Cancelled);
         }
@@ -111,21 +123,37 @@ impl Completion {
     }
 
     pub(super) fn cancel(&self) {
-        self.cancel.cancel();
+        self.terminate(Failure::Cancelled);
         if let Some(start) = self.start.lock().unwrap_or_else(|p| p.into_inner()).take() {
             let _ = start.send(false);
         }
-        self.publish_ready(Err(Failure::Cancelled));
     }
 
     pub(super) fn is_cancelled(&self) -> bool {
         self.cancel.is_cancelled()
     }
 
+    pub(super) fn terminal_failure(&self) -> Option<Failure> {
+        self.evidence.terminal()
+    }
+
+    pub(super) fn observe(&self, watch: crate::diagnostics::NativeWatch) {
+        self.evidence.observe(watch);
+    }
+
+    fn terminate(&self, failure: Failure) {
+        let failure = self.evidence.terminate(failure);
+        self.publish_ready(Err(failure));
+        self.cancel.cancel();
+    }
+
     fn publish_ready(&self, value: Result<(), Failure>) {
         let mut ready = self.ready.lock().unwrap_or_else(|p| p.into_inner());
         if ready.is_none() {
             *ready = Some(value);
+            if value.is_ok() {
+                self.evidence.ready();
+            }
             drop(ready);
             self.ready_changed.notify_waiters();
         }
@@ -151,6 +179,9 @@ impl Completion {
             // Retirement seals success adoption, but must not erase an already
             // published fixed startup failure with a generic Cancelled reason.
             if let Some(Err(failure)) = ready {
+                return Err(failure);
+            }
+            if let Some(failure) = self.terminal_failure() {
                 return Err(failure);
             }
             if self.cancel.is_cancelled() {
@@ -264,6 +295,7 @@ impl Pool {
             physical_changed: Notify::new(),
             client: Mutex::new(None),
             journal,
+            evidence: Arc::new(crate::diagnostics::NativeEvidence::new()),
         });
         let owned = Arc::clone(&completion);
         let dispatch = super::diagnostics::private_dispatch();
@@ -286,7 +318,7 @@ impl Pool {
                         .map_err(|_| Failure::DomainFailed)?;
                     // Unwinding must seal adoption before Runtime Drop can block
                     // on a descendant. This guard drops first during a panic.
-                    let _cancel_on_return = owned.cancel.clone().drop_guard();
+                    let _terminal_on_return = TerminalGuard(Arc::clone(&owned));
                     let finalizer = Rc::new(RefCell::new(None));
                     let control = Control {
                         completion: Arc::clone(&owned),
@@ -307,9 +339,8 @@ impl Pool {
                         // asynchronous finalizer or blocking runtime destruction.
                         if let Err(failure) = result {
                             super::diagnostics::failed(failure);
-                            owned.publish_ready(Err(failure));
                         }
-                        owned.cancel.cancel();
+                        owned.terminate(result.err().unwrap_or(Failure::Cancelled));
                         let retained = finalizer.borrow_mut().take();
                         let cleanup = if let Some(retained) = retained {
                             std::panic::AssertUnwindSafe(retained)
@@ -329,10 +360,10 @@ impl Pool {
                     drop(sdk_runtime);
                     Ok::<_, Failure>((result, cleanup, panicked))
                 }));
-                owned.publish_ready(match &result {
-                    Ok(Ok((Err(failure), _, _))) | Ok(Err(failure)) => Err(*failure),
-                    Ok(Ok((Ok(()), _, _))) => Err(Failure::Cancelled),
-                    Err(_) => Err(Failure::DomainFailed),
+                owned.terminate(match &result {
+                    Ok(Ok((Err(failure), _, _))) | Ok(Err(failure)) => *failure,
+                    Ok(Ok((Ok(()), _, _))) => Failure::Cancelled,
+                    Err(_) => Failure::DomainFailed,
                 });
                 // A panic is a required-cleanup failure even after its thread physically ends.
                 match result {
@@ -387,11 +418,14 @@ fn reap(shared: Arc<Shared>) {
                 Ok(Some(failure)) => Err(failure),
                 Err(_) => Err(Failure::DomainFailed),
             };
-            entry.completion.publish_ready(Err(Failure::Cancelled));
+            entry
+                .completion
+                .terminate(result.err().unwrap_or(Failure::Cancelled));
             if let Some(journal) = &entry.completion.journal {
                 journal.finished(result);
             }
             drop(entry.permit);
+            entry.completion.evidence.cleanup(result);
             *entry
                 .completion
                 .physical

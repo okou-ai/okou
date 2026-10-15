@@ -45,7 +45,7 @@ async fn lock<'a>(session: &'a Session, scope: &Scope) -> Result<MutexGuard<'a, 
         Ok(engine) if !engine.is_closed() => Ok(engine),
         Ok(_) => Err(Failure::Disconnected),
         Err(error) => {
-            session.cancel.cancel();
+            session.retire();
             Err(error)
         }
     }
@@ -129,7 +129,7 @@ impl Run {
                         )
                         .await;
                         if !delivered {
-                            session.cancel.cancel();
+                            session.retire();
                         }
                     }
                     Err(error) => {
@@ -184,7 +184,7 @@ impl Run {
                     let params = parse::<protocol::SessionId>(raw)?;
                     let session = self.lookup(params.session_id)?;
                     if request.method == "vnc.session.close" {
-                        session.cancel.cancel();
+                        session.retire();
                         scope.wait(session.closed.cancelled()).await?;
                         Ok(json!({"outcome":"closed"}))
                     } else {
@@ -212,9 +212,11 @@ impl Run {
 
     async fn capture(&self, raw: &str, scope: &Scope, writer: &mut Output) {
         let mut streaming = false;
+        let mut subject = None;
         let result = async {
             let params = parse::<protocol::SessionId>(raw)?;
             let session = self.lookup(params.session_id)?;
+            subject = Some(Arc::clone(&session));
             let operation = session_scope(scope, &session);
             let mut engine = lock(&session, &operation).await?;
             self.authorize(&session, &operation)?;
@@ -255,12 +257,15 @@ impl Run {
                 Ok::<_, Failure>(())
             }.await;
             if result.is_err() {
-                session.cancel.cancel();
+                session.retire();
                 engine.close();
             }
             result
         }.await;
         if let Err(error) = result {
+            if let Some(session) = subject {
+                session.failed(crate::diagnostics::Operation::Capture, error);
+            }
             if streaming {
                 // A Result requires End after binary data. Error is the explicit
                 // incomplete-stream terminal, including cancellation between
@@ -286,10 +291,12 @@ impl Run {
 
     async fn input(&self, raw: &str, scope: &Scope, writer: &mut Output) {
         let mut outcome = InputOutcome::NotStarted;
+        let mut subject = None;
         let result = async {
             let params = parse::<protocol::InputRequest>(raw)?;
             let keys = params.input.keys()?;
             let session = self.lookup(params.session_id)?;
+            subject = Some(Arc::clone(&session));
             let operation = session_scope(scope, &session);
             let mut engine = lock(&session, &operation).await?;
             self.authorize(&session, &operation)?;
@@ -301,11 +308,14 @@ impl Run {
                 ))
                 .await
                 .and_then(|r| r.map_err(Failure::from));
+            if let Err(error) = result {
+                session.failed(crate::diagnostics::Operation::Input, error);
+            }
             if result.is_err()
                 && (engine.is_closed()
                     || !matches!(result, Err(Failure::InvalidInput | Failure::StaleGeometry)))
             {
-                session.cancel.cancel();
+                session.retire();
                 engine.close();
             }
             // Retain session and serialization until the terminal is attempted.
@@ -316,13 +326,16 @@ impl Run {
             )
             .await;
             if !delivered {
-                session.cancel.cancel();
+                session.retire();
                 engine.close();
             }
             Ok::<_, Failure>(())
         }
         .await;
         if let Err(error) = result {
+            if let Some(session) = subject {
+                session.failed(crate::diagnostics::Operation::Input, error);
+            }
             terminal(writer, scope, input_result(outcome, Some(error))).await;
         }
     }

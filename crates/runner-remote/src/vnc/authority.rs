@@ -62,7 +62,7 @@ fn client_identity(
 }
 
 pub(super) struct Authority {
-    http: HttpClient,
+    pub(super) http: HttpClient,
     transport: reqwest::Client,
     token: Zeroizing<String>,
     identity: RunnerProcessIdentity,

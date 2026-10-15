@@ -518,6 +518,23 @@ impl Harness {
             &self.cancel,
         ));
     }
+
+    pub(super) async fn enable_diagnostics(&mut self) {
+        self.shutdown().await;
+        let (incoming, receiver) = mpsc::channel(32);
+        self.incoming = incoming;
+        self.dispatcher = Some(self.rpc.start_with_diagnostics(
+            Arc::new(Acceptor(tokio::sync::Mutex::new(receiver))),
+            "sandbox-authoritative".into(),
+            self.run,
+            &self.cancel,
+            None,
+            Some(Arc::new(crate::diagnostics::Authority::new(
+                self.runtime.http_client(),
+                "diagnostic-agent-token",
+            ))),
+        ));
+    }
 }
 
 pub(crate) struct TestNotifications {

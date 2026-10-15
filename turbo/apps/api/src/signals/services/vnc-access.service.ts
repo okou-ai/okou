@@ -1,4 +1,5 @@
 import { vncHostSchema } from "@okouai/api-contracts/contracts/vnc-access";
+import { remoteHostIdentitySchema } from "@okouai/api-contracts/contracts/remote-host-identity";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
 import {
@@ -13,9 +14,11 @@ import { command } from "ccstate";
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
 import { visibleJoinedAgentCondition } from "./agent-data.service";
+import { vncCreationTimestamp } from "./remote-connection-creation-timestamp.utils";
 import type { VncOwner } from "./vnc-owner-lifecycle.service";
 import {
   runThreadExists,
@@ -35,6 +38,12 @@ export const listRunVncHosts$ = command(
     const rows = await db
       .select({
         id: vncConnections.id,
+        createdAt: sql`${vncCreationTimestamp}`.mapWith(
+          nullableDriverValueDecoder(
+            zodDriverValueDecoder(remoteHostIdentitySchema.shape.createdAt),
+          ),
+        ),
+        generation: vncConnections.generation,
         transportType: vncConnections.transportType,
         sshNeedsRebind: sql`${sshConnectionNeedsRebind}`.mapWith(
           nullableDriverValueDecoder(pgBooleanDecoder),
@@ -101,26 +110,26 @@ export const listRunVncHosts$ = command(
     if (rows.length === 0) {
       return null;
     }
-    return {
-      hosts: rows.flatMap((row) => {
-        if (row.id === null) {
-          return [];
-        }
-        if (row.kdcTransportType === "ssh" && !row.kdcAllowed) {
-          return [];
-        }
-        if (row.kdcTransportType === "ssh" && row.kdcNeedsRebind === null) {
-          throw new Error("VNC KDC SSH reference is missing");
-        }
-        if (row.transportType === "ssh" && !row.sshAllowed) {
-          return [];
-        }
-        // The owner-scoped FK and transport check require this join to exist.
-        if (row.transportType === "ssh" && row.sshNeedsRebind === null) {
-          throw new Error("VNC SSH connection reference is missing");
-        }
-        return [
-          vncHostSchema.parse({
+    const admitted = rows.flatMap((row) => {
+      if (row.id === null) {
+        return [];
+      }
+      if (row.kdcTransportType === "ssh" && !row.kdcAllowed) {
+        return [];
+      }
+      if (row.kdcTransportType === "ssh" && row.kdcNeedsRebind === null) {
+        throw new Error("VNC KDC SSH reference is missing");
+      }
+      if (row.transportType === "ssh" && !row.sshAllowed) {
+        return [];
+      }
+      // The owner-scoped FK and transport check require this join to exist.
+      if (row.transportType === "ssh" && row.sshNeedsRebind === null) {
+        throw new Error("VNC SSH connection reference is missing");
+      }
+      return [
+        {
+          host: vncHostSchema.parse({
             id: row.id,
             displayName: row.displayName,
             host: row.host,
@@ -133,7 +142,20 @@ export const listRunVncHosts$ = command(
                 ? { status: "blocked", reason: "needs_rebind" }
                 : { status: "ready" },
           }),
-        ];
+          identity: remoteHostIdentitySchema.parse({
+            id: row.id,
+            createdAt: row.createdAt,
+            generation: row.generation,
+          }),
+        },
+      ];
+    });
+    return {
+      hosts: admitted.map((entry) => {
+        return entry.host;
+      }),
+      identities: admitted.map((entry) => {
+        return entry.identity;
       }),
     };
   },

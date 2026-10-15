@@ -23,6 +23,7 @@ struct Inner {
 struct Registration {
     registry: Arc<Registry>,
     cancel: CancellationToken,
+    diagnostics: crate::diagnostics::Handle,
 }
 
 pub(crate) struct Run {
@@ -30,6 +31,7 @@ pub(crate) struct Run {
     run: RunId,
     pub(crate) registry: Arc<Registry>,
     cancel: CancellationToken,
+    pub(crate) diagnostics: crate::diagnostics::Handle,
 }
 
 impl Runtime {
@@ -42,8 +44,17 @@ impl Runtime {
         }
     }
 
-    pub(crate) fn register(&self, run: RunId, cancel: &CancellationToken) -> Arc<Run> {
+    pub(crate) fn register_with_diagnostics(
+        &self,
+        run: RunId,
+        cancel: &CancellationToken,
+        enabled: bool,
+    ) -> Arc<Run> {
         let mut runs = self.inner.runs.lock().unwrap_or_else(|p| p.into_inner());
+        let diagnostics = match runs.get(&run) {
+            Some(previous) => previous.diagnostics.replacement(enabled),
+            None => crate::diagnostics::Handle::new(run, enabled),
+        };
         let registry = Arc::new(match runs.get(&run) {
             Some(previous) => {
                 previous.cancel.cancel();
@@ -56,6 +67,7 @@ impl Runtime {
             Registration {
                 registry: Arc::clone(&registry),
                 cancel: cancel.clone(),
+                diagnostics: diagnostics.clone(),
             },
         );
         Arc::new(Run {
@@ -63,6 +75,7 @@ impl Runtime {
             run,
             registry,
             cancel: cancel.clone(),
+            diagnostics,
         })
     }
 }

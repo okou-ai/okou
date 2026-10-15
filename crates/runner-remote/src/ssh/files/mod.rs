@@ -186,6 +186,16 @@ pub(super) async fn dispatch(runtime: &SshRuntime, sessions: &sessions::Manager,
         Some(Failure::Ssh(reason)) => Some(reason),
         _ => None,
     });
+    observation.record(
+        &sessions.registration.diagnostics(),
+        request.connection,
+        crate::diagnostics::Operation::File,
+        None,
+        match outcome.failure_reason {
+            Some(Failure::Ssh(reason)) => Some(reason),
+            _ => None,
+        },
+    );
     let terminal = Scope {
         cancelled: CancellationToken::new(),
         deadline: scope
