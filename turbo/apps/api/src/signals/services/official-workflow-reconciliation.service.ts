@@ -873,11 +873,7 @@ interface PauseForReconfigurationArgs {
   readonly bindings: readonly OfficialWorkflowParameterBinding[];
 }
 const persistPausedReconfiguration$ = command(
-  async (
-    { set },
-    args: PauseForReconfigurationArgs,
-    signal: AbortSignal,
-  ): Promise<PersistedReconfiguration | null> => {
+  async ({ set }, args: PauseForReconfigurationArgs, signal: AbortSignal) => {
     const db = set(writeDb$);
     const [catalogRow] = parseRawRows(
       acceptedCatalogRowSchema,
