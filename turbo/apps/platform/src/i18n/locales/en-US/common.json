@@ -350,6 +350,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "Could not load agents",
+      "back": "Back",
       "backToChats": "Back to chats",
       "chatListUnavailable": "Could not load chats",
       "chats": "Chats",

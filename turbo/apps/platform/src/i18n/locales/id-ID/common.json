@@ -350,6 +350,7 @@
   "appShell": {
     "pwaNavigation": {
       "agentsUnavailable": "Tidak dapat memuat agen",
+      "back": "Kembali",
       "backToChats": "Kembali ke obrolan",
       "chatListUnavailable": "Tidak dapat memuat obrolan",
       "chats": "Obrolan",
