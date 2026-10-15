@@ -85,23 +85,28 @@ async function deleteBuiltinAccountPage(
   connections: readonly { readonly id: string }[],
 ): Promise<void> {
   const accountsApi = accountClient();
-  for (let offset = 0; offset < connections.length; offset += 4) {
-    const deleted = await Promise.allSettled(
-      connections.slice(offset, offset + 4).map(async (account) => {
-        await accept(
-          accountsApi.delete({
-            headers: authHeaders(),
-            params: { connectionId: account.id },
-            body: { target: { kind: "builtin", connectorSlug } },
-          }),
-          [200, 404],
-        );
-      }),
-    );
-    for (const result of deleted) {
-      if (result.status === "rejected") {
-        throw result.reason;
-      }
+  // Keep four owned streams moving without waiting for a whole batch, and
+  // settle every stream before fixture cleanup reports a failure.
+  const deleted = await Promise.allSettled(
+    Array.from(
+      { length: Math.min(4, connections.length) },
+      async (_, stream) => {
+        for (let index = stream; index < connections.length; index += 4) {
+          await accept(
+            accountsApi.delete({
+              headers: authHeaders(),
+              params: { connectionId: connections[index]!.id },
+              body: { target: { kind: "builtin", connectorSlug } },
+            }),
+            [200, 404],
+          );
+        }
+      },
+    ),
+  );
+  for (const result of deleted) {
+    if (result.status === "rejected") {
+      throw result.reason;
     }
   }
 }
