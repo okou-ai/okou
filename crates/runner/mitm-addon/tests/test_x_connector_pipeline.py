@@ -554,7 +554,7 @@ class TestXConnectorResponsePipeline:
             ),
         ],
     )
-    def test_full_streaming_pipeline_continues_after_uninspectable_json_row(
+    async def test_full_streaming_pipeline_continues_after_uninspectable_json_row(
         self, tmp_path, real_flow, mitm_ctx, headers, failed_line
     ):
         """A hostile NDJSON row must not stop later valid rows from billing."""
@@ -565,6 +565,7 @@ class TestXConnectorResponsePipeline:
             callback = response_stream(flow)
 
             callback(failed_line + b'\n{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n')
+            await mitm_addon.responseinspection(flow)
 
             state = flow.metadata[metadata_keys.X_NDJSON_STATE]
             assert state["lines_failed"] == 1
