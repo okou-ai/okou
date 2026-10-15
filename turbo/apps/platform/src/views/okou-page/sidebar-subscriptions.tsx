@@ -17,7 +17,11 @@ import {
   type AccountMenuSubscriptionUsageWindow,
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
-import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
+import {
+  limitingSubscriptionUsageWindow,
+  subscriptionUsageWindowRemainingPercent,
+  subscriptionUsageWindows,
+} from "../../lib/subscription-usage-windows.ts";
 import { now } from "../../lib/time.ts";
 import {
   CodexResetCreditsButton,
@@ -115,10 +119,16 @@ function AccountMenuSubscriptionsSkeleton() {
             <div className="flex h-5 items-center">
               <div className="h-3 w-28 animate-skeleton-pulse rounded bg-skeleton" />
             </div>
-            <div className="flex h-4 items-center gap-2">
-              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
-              <div className="h-1 flex-1 animate-skeleton-pulse rounded-full bg-skeleton" />
-              <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+            <div className="flex flex-col gap-1.5">
+              {["fiveHour", "week"].map((kind) => {
+                return (
+                  <div key={kind} className="flex h-4 items-center gap-2">
+                    <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+                    <div className="h-1 flex-1 animate-skeleton-pulse rounded-full bg-skeleton" />
+                    <div className="h-3 w-8 animate-skeleton-pulse rounded bg-skeleton" />
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -128,9 +138,10 @@ function AccountMenuSubscriptionsSkeleton() {
 }
 
 /**
- * One plan: its name with the Codex reset control top right, then the window
- * that limits it right now. Every line is 12px; weight and colour carry the
- * hierarchy, so the panel reads as one block inside the 14px menu.
+ * One plan: its name with the Codex reset control top right, then one row per
+ * window, 5h and Week. Once the limiting window runs low, a line under them
+ * names it with its reset time. Every line is 12px; weight and colour carry
+ * the hierarchy, so the panel reads as one block inside the 14px menu.
  */
 function AccountMenuSubscriptionProviderSection({
   type,
@@ -152,6 +163,7 @@ function AccountMenuSubscriptionProviderSection({
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
 }) {
   const { t } = useTranslation();
+  const windows = subscriptionUsageWindows(usage);
   const limiting = limitingSubscriptionUsageWindow(usage);
   const remaining = limiting?.remainingPercent ?? null;
   const low = remaining !== null && remaining < LOW_REMAINING_PERCENT;
@@ -159,6 +171,15 @@ function AccountMenuSubscriptionProviderSection({
     low && limiting !== null
       ? formatSubscriptionUsageReset(limiting.window.resetAt)
       : null;
+  const windowLabel = (kind: "fiveHour" | "week") => {
+    return kind === "fiveHour"
+      ? t(($) => {
+          return $.settings.models.personal.status.fiveHour;
+        })
+      : t(($) => {
+          return $.settings.models.personal.status.week;
+        });
+  };
 
   return (
     <section
@@ -185,25 +206,28 @@ function AccountMenuSubscriptionProviderSection({
           />
         )}
       </div>
-      {limiting === null ? null : (
-        <AccountMenuSubscriptionUsageBar
-          providerLabel={label}
-          windowLabel={
-            limiting.kind === "fiveHour"
-              ? t(($) => {
-                  return $.settings.models.personal.status.fiveHour;
-                })
-              : t(($) => {
-                  return $.settings.models.personal.status.week;
-                })
-          }
-          window={limiting.window}
-          remainingPercent={limiting.remainingPercent}
-        />
+      {windows.length === 0 ? null : (
+        <div className="flex flex-col gap-1.5">
+          {windows.map(({ kind, window }) => {
+            return (
+              <AccountMenuSubscriptionUsageBar
+                key={kind}
+                providerLabel={label}
+                windowLabel={windowLabel(kind)}
+                window={window}
+                remainingPercent={subscriptionUsageWindowRemainingPercent(
+                  window,
+                )}
+              />
+            );
+          })}
+        </div>
       )}
-      {reset === null ? null : (
+      {reset === null || limiting === null ? null : (
         <p className="pl-10 text-xs leading-4 tabular-nums text-muted-foreground">
-          {"fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle}
+          {`${windowLabel(limiting.kind)} · ${
+            "fallbackText" in reset ? reset.fallbackText : reset.tooltipTitle
+          }`}
         </p>
       )}
     </section>

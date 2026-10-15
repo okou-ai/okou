@@ -62,21 +62,28 @@ interface LimitingSubscriptionUsageWindow {
   readonly remainingPercent: number | null;
 }
 
+/** A window's remaining share, clamped to 0-100; null while it reports none. */
+export function subscriptionUsageWindowRemainingPercent(
+  window: SubscriptionUsageWindow,
+): number | null {
+  const raw = remainingPercent(window);
+  return raw !== null && Number.isFinite(raw)
+    ? Math.min(100, Math.max(0, raw))
+    : null;
+}
+
 /**
  * The window that limits the account right now: the one with the least left.
  * A tie goes to the week, because it takes longer to come back. The account
- * menu draws only this window, and the composer names it beside its percent.
+ * menu names it with its reset time once the plan runs low, and the composer
+ * names it beside its percent.
  */
 export function limitingSubscriptionUsageWindow(
   usage: SubscriptionUsage | null | undefined,
 ): LimitingSubscriptionUsageWindow | null {
   let limiting: LimitingSubscriptionUsageWindow | null = null;
   for (const { kind, window } of subscriptionUsageWindows(usage)) {
-    const raw = remainingPercent(window);
-    const remaining =
-      raw !== null && Number.isFinite(raw)
-        ? Math.min(100, Math.max(0, raw))
-        : null;
+    const remaining = subscriptionUsageWindowRemainingPercent(window);
     if (
       limiting === null ||
       (remaining !== null &&
