@@ -1,11 +1,21 @@
 import { ConnectedIndicator } from "./components/connected-indicator.tsx";
+import { ROUTES } from "../../signals/route-paths.ts";
 import type { ReactNode } from "react";
-import { useGet, useSet, useLastLoadable, useLoadable } from "ccstate-react";
+import {
+  useGet,
+  useSet,
+  useLastLoadable,
+  useLoadable,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { AlertTriangle, EllipsisVertical, Download } from "lucide-react";
 import { surfaceVariants, Button, buttonVariants, cn } from "@okouai/ui";
-import { OFFICIAL_TELEGRAM_BOT_ID } from "@okouai/api-contracts/contracts/integrations-telegram";
+import {
+  OFFICIAL_TELEGRAM_BOT_ID,
+  type TelegramBot,
+} from "@okouai/api-contracts/contracts/integrations-telegram";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Popover,
@@ -840,10 +850,53 @@ function GithubCard() {
   );
 }
 
+function TelegramConnectionFeedback({
+  connected,
+  connection,
+}: {
+  connected: boolean;
+  connection: Loadable<unknown> | { state: "idle" };
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {" "}
+      {!connected &&
+      (connection.state === "hasError" ||
+        (connection.state === "hasData" && !connection.data)) ? (
+        <p role="status" className="px-4 pb-2 text-sm text-muted-foreground">
+          {t(($) => {
+            return $.connectors.providerConnect.telegram.interrupted;
+          })}
+        </p>
+      ) : null}
+      <a
+        href={ROUTES.settingsTelegram}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-4 pb-4 text-sm text-primary underline-offset-4 hover:underline"
+      >
+        {t(($) => {
+          return $.connectors.providerConnect.telegram.viewSettings;
+        })}
+      </a>
+    </>
+  );
+}
+
+function telegramConnectedDetail(bot: TelegramBot | undefined) {
+  const connectedUser = bot?.connectedUser;
+  const username = connectedUser?.telegramUsername?.trim().replace(/^@+/, "");
+  return username
+    ? `@${username}`
+    : connectedUser?.telegramDisplayName?.trim() ||
+        connectedUser?.telegramUserId;
+}
+
 function TelegramCard() {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const botsLoadable = useLastLoadable(telegramBots$);
+  const botsLoadable = useLoadable(telegramBots$);
   const bot =
     botsLoadable.state === "hasData"
       ? botsLoadable.data.find((entry) => {
@@ -858,12 +911,7 @@ function TelegramCard() {
   const disconnecting = disconnectLoadable.state === "loading";
   const loading = botsLoadable.state === "loading";
   const configured = bot && bot.official?.configured !== false;
-  const connectedUser = bot?.connectedUser;
-  const username = connectedUser?.telegramUsername?.trim().replace(/^@+/, "");
-  const connectedDetail = username
-    ? `@${username}`
-    : connectedUser?.telegramDisplayName?.trim() ||
-      connectedUser?.telegramUserId;
+  const connectedDetail = telegramConnectedDetail(bot);
 
   return (
     <div
@@ -966,6 +1014,10 @@ function TelegramCard() {
           </Button>
         )}
       </div>
+      <TelegramConnectionFeedback
+        connected={bot?.isConnected === true}
+        connection={connectLoadable}
+      />
     </div>
   );
 }

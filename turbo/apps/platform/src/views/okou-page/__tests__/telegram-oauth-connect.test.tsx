@@ -18,6 +18,7 @@ import {
 
 const context = testContext();
 const BOT_ID = OFFICIAL_TELEGRAM_BOT_ID;
+const LOGIN_BOT_ID = "123456789";
 const AUTH = Object.freeze({
   id: 99_003,
   first_name: "Ada",
@@ -65,7 +66,7 @@ function readyLinkStatus(): TelegramLinkStatusResponse {
     installation: {
       id: BOT_ID,
       botUsername: "support_bot",
-      loginBotId: BOT_ID,
+      loginBotId: LOGIN_BOT_ID,
       domainConfigured: true,
     },
   };
@@ -112,7 +113,7 @@ async function expectAuthorization(popup: Window): Promise<URL> {
   return await waitFor(() => {
     const url = new URL(popup.location.href);
     expect(url.origin + url.pathname).toBe(`${OAUTH_ORIGIN}/auth`);
-    expect(url.searchParams.get("bot_id")).toBe(BOT_ID);
+    expect(url.searchParams.get("bot_id")).toBe(LOGIN_BOT_ID);
     return url;
   });
 }
@@ -261,7 +262,7 @@ test.each([
       installation: {
         id: BOT_ID,
         botUsername: "support_bot",
-        loginBotId: BOT_ID,
+        loginBotId: LOGIN_BOT_ID,
         domainConfigured: false,
       },
     },
@@ -288,7 +289,7 @@ test.each([
       installation: {
         id: BOT_ID,
         botUsername: "support_bot",
-        loginBotId: BOT_ID,
+        loginBotId: LOGIN_BOT_ID,
         domainConfigured: false,
       },
     },
@@ -303,7 +304,7 @@ test.each([
       installation: {
         id: BOT_ID,
         botUsername: "support_bot",
-        loginBotId: BOT_ID,
+        loginBotId: LOGIN_BOT_ID,
         domainConfigured: false,
       },
     },
@@ -341,7 +342,7 @@ test.each(["/telegram/connect", "/settings/telegram"])(
       installation: {
         id: BOT_ID,
         botUsername: "support_bot",
-        loginBotId: BOT_ID,
+        loginBotId: LOGIN_BOT_ID,
         domainConfigured: false,
       },
     });
@@ -420,11 +421,10 @@ test("A failed account link can be retried from Works", async () => {
   });
 
   shouldReject = false;
-  popup.closed = false;
-  popup.location.href = "";
+  const { popup: retryPopup } = authorizationWindow();
   click(getAction("button", "Connect", getIntegrationCard("Telegram")));
-  await expectAuthorization(popup);
-  authorize(popup);
+  await expectAuthorization(retryPopup);
+  authorize(retryPopup);
 
   await expect(
     screen.findByText("Connected (@ada_telegram)"),
@@ -445,7 +445,7 @@ test("Leaving Works cancels authorization and ignores a later tab result", async
     screen.findByRole("heading", { name: "Agents" }),
   ).resolves.toBeInTheDocument();
   expect(pathname()).toBe("/agents");
-  expect(popup.closed).toBeTruthy();
+  expect({ value: popup.closed }).toStrictEqual({ value: false });
   authorize(popup);
   act(() => {
     window.history.back();
@@ -460,4 +460,29 @@ test("Leaving Works cancels authorization and ignores a later tab result", async
   expect(
     screen.queryByText("Connected (@ada_telegram)"),
   ).not.toBeInTheDocument();
+});
+
+test("Works refreshes after the Telegram subscription attaches past its first status read", async () => {
+  mockBot();
+  const gate = context.mocks.ably.deferSubscribeOnChannel(
+    "user:test-user-123",
+    "telegram:changed",
+  );
+  await setupPage({
+    context,
+    path: "/works",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await gate.started;
+  await waitFor(() => {
+    expect(
+      getAction("button", "Connect", getIntegrationCard("Telegram")),
+    ).toBeEnabled();
+  });
+  context.mocks.data.telegramIntegration({ statuses: [botStatus(true)] });
+  gate.attach();
+  await expect(
+    screen.findByText("Connected (@ada_telegram)"),
+  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/works");
 });

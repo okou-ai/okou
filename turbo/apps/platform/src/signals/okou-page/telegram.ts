@@ -5,6 +5,7 @@ import {
   type TelegramBot,
 } from "@okouai/api-contracts/contracts/integrations-telegram";
 import { apiClient$ } from "../api-client.ts";
+import { telegramClient$ } from "./telegram-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { i18n } from "../../i18n/index.ts";
@@ -13,8 +14,9 @@ const internalReload$ = state(0);
 
 export const telegramBots$ = computed(async (get): Promise<TelegramBot[]> => {
   get(internalReload$);
-  const client = get(apiClient$)(integrationsTelegramContract);
-  const result = await accept(client.list({ headers: {} }), [200]);
+  const owner = await get(telegramClient$);
+  const result = await accept(owner.client.list({ headers: {} }), [200]);
+  owner.assertCurrent();
   return result.body.bots;
 });
 
@@ -31,11 +33,23 @@ const onTelegramChanged$ = command(({ set }) => {
 
 export const watchTelegramConnection$ = command(
   ({ set }, signal: AbortSignal) => {
+    const refresh = () => {
+      if (!document.hidden) {
+        set(reloadTelegramBots$);
+      }
+    };
+    window.addEventListener("focus", refresh, { signal });
+    document.addEventListener("visibilitychange", refresh, { signal });
     set(
       setAblyLoop$,
       {
         topic: "telegram:changed",
         loopCommand$: onTelegramChanged$,
+        options: {
+          onSubscribed: () => {
+            set(reloadTelegramBots$);
+          },
+        },
       },
       signal,
     );
