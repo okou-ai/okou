@@ -360,3 +360,50 @@ cases remain ignored/opt-in and require separate submitted-source/binary/artifac
 verification. Terminal12 and pressure4 contracts remain unchanged. The remaining
 optional/recovery/full failure/race, provenance/residency/conservative-envelope,
 parent aggregation and P4 activation gates remain #39997/#39998 and the parents.
+
+## Guarded Ready optional preparation and snapshot reads
+
+`native_optional_records_ready_preparation_prefetch_and_required_saving` selects
+ordinary and aged optional preparation, each with fresh and snapshot factories.
+It exercises the concrete blank/prefetch owners under one shared pressure and
+P2 authority, verifies actual fresh Ready/headroom observations, and requires
+successful preparation/publication and complete original snapshot reads. The
+original home/backing/full logical lease and durable 64 MiB post-exit tail remain
+required even while independent optional inventory exists. All accepted readers,
+blank producers and pressure sampling join before inventory/factory teardown.
+
+Use the existing packaged artifact and supplied P2 policy inputs. The separate
+`OKOU_TEST_OPTIONAL_MEMORY_POLICY` JSON keeps the three fields `snapshot_path`,
+`snapshot_memory_mb` and `prefetch_overhead_bytes`. Its snapshot must be the
+original `memory.bin` in `OKOU_TEST_RPC_SNAPSHOT_DIR`, with the manifest's complete
+SHA-256, positive complete byte length within the supplied memory shape, and
+overhead covering at least the 1 MiB read buffer. Verification hashes the original
+file; a positive partial read is insufficient. Preserve immutable inputs and
+their original creation paths throughout native execution.
+
+Select this exact ignored entry through bounded P1. Include these metadata fields:
+
+- `native_optional_policy_json`: exact raw supplied P2 policy file text.
+- `native_optional_inputs_json`: exact raw optional input file text.
+- `native_optional_snapshot_bytes`: original `memory.bin` byte length.
+- `native_terminal_artifacts`: the existing source/binary/kernel/Firecracker/
+  rootfs/snapshot/policy/profile/tail manifest.
+
+Validate the resulting files with:
+
+```sh
+python3 crates/runner/tests/guarded_idle_native/optional_report.py <p1-directory>
+```
+
+The strict four-case report requires ordered, original-generation input,
+preparation, publication and producer-join witnesses in addition to all shared
+terminal/P1 data, backing wait, tail and cleanup checks. Its eleven real-file/CLI
+regressions run through a non-ignored Rust wrapper in default Crates CI. Actual
+KVM/NBD execution remains opt-in and requires separate final-source proof.
+
+This report establishes the guarded Ready component success contract. Startup
+prefetch, fitting foreground/progress under contention, Critical/Unknown/stale
+suppression, paced recovery and cancellation/late-result integration remain
+#40173 under #39997. Full native failures and provenance/residency/envelopes remain
+#39998 and the parents/P4. No calibrated RAM relief, OOM protection or production
+composition-root activation follows from these supplied test-policy observations.
