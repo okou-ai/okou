@@ -7,9 +7,20 @@ import { resolveConnectorAuthClient } from "@okouai/connectors/connector-auth-me
 import { connectors } from "@okouai/db/schema/connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
-import { and, eq, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  DrizzleQueryError,
+  eq,
+  isNotNull,
+  min,
+  ne,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 
+import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
 import { optionalEnv } from "../../lib/env";
 import { logger } from "../../lib/log";
@@ -394,6 +405,204 @@ function connectorOwnershipCondition(args: {
   );
 }
 
+interface ConnectorRefreshWriteGroup {
+  readonly kind: "secret" | "variable";
+  readonly name: string;
+  readonly description: string | null;
+  value: string;
+  updatedAt: Date;
+  multiplicity: number;
+}
+
+type ConnectorRefreshStorageFailure =
+  | {
+      readonly kind: "declaration";
+      readonly ordinal: number;
+      readonly error: Error;
+    }
+  | { readonly kind: "native-text"; readonly hex: string };
+
+/** Plan only after all encryption, retaining logical failures before folding aliases. */
+function planConnectorRefreshStorage(args: {
+  readonly connection: BuiltinConnectorCredentialConnection;
+  readonly orgId: string;
+  readonly userId: string;
+  readonly prepared: readonly PreparedConnectorRefreshOutput[];
+}) {
+  const storage = args.connection.runtimeMethod.method.storage;
+  const groups: ConnectorRefreshWriteGroup[] = [];
+  const byKind = {
+    secret: new Map<string, ConnectorRefreshWriteGroup>(),
+    variable: new Map<string, ConnectorRefreshWriteGroup>(),
+  };
+  let failure: ConnectorRefreshStorageFailure | undefined;
+  for (const [ordinal, output] of args.prepared.entries()) {
+    const identity = {
+      connectorId: args.connection.connectorId,
+      storage,
+      name: output.name,
+      orgId: args.orgId,
+      userId: args.userId,
+    };
+    const declared = (
+      output.kind === "secret" ? storage.secrets : storage.variables
+    ).includes(output.name);
+    if (!declared) {
+      // Retain the original declaration Error, rather than throwing before the parent.
+      failure = {
+        kind: "declaration",
+        ordinal,
+        error: new Error(
+          `Connector auth method does not declare ${output.kind} ${output.name}`,
+        ),
+      };
+      break;
+    }
+    // The ordinary writers own insertion metadata and each logical application sample.
+    const logical =
+      output.kind === "secret"
+        ? connectorOwnedSecretWrite({
+            ...identity,
+            description: `Connector token output for ${args.connection.connectorSlug}: ${output.name}`,
+            encryptedValue: output.encryptedValue,
+          })
+        : connectorOwnedVariableWrite({
+            ...identity,
+            description: null,
+            value: output.value,
+          });
+    if (output.kind === "variable" && output.value.includes("\u0000")) {
+      // Raw NUL must not reach Bind before the actual parent-zero branch can suppress it.
+      failure = {
+        kind: "native-text",
+        hex: Buffer.from(output.value, "utf8").toString("hex"),
+      };
+      break;
+    }
+    const value =
+      output.kind === "secret" ? output.encryptedValue : output.value;
+    const previous = byKind[output.kind].get(output.name);
+    if (previous) {
+      previous.value = value;
+      previous.updatedAt = logical.conflict.set.updatedAt;
+      previous.multiplicity += 1;
+    } else {
+      const group: ConnectorRefreshWriteGroup = {
+        kind: output.kind,
+        name: output.name,
+        description: logical.values.description,
+        value,
+        updatedAt: logical.conflict.set.updatedAt,
+        multiplicity: 1,
+      };
+      groups.push(group);
+      byKind[output.kind].set(output.name, group);
+    }
+  }
+  return { groups, failure };
+}
+
+/** Partial INSERT SELECT keeps native UUID/creation/singleton audit defaults. */
+function connectorRefreshChildSql(
+  group: ConnectorRefreshWriteGroup,
+  index: number,
+): SQL {
+  const table = group.kind === "secret" ? secrets : variables;
+  const valueColumn =
+    group.kind === "secret" ? secrets.encryptedValue : variables.value;
+  const name = sql.identifier(table.name.name);
+  const value = sql.identifier(valueColumn.name);
+  const description = sql.identifier(table.description.name);
+  const type = sql.identifier(table.type.name);
+  const connectorId = sql.identifier(table.connectorId.name);
+  const orgId = sql.identifier(table.orgId.name);
+  const userId = sql.identifier(table.userId.name);
+  const updatedAt = sql.identifier(table.updatedAt.name);
+  const id = sql.identifier(table.id.name);
+  const write = sql.identifier(`w${index}`);
+  const receipt = sql.identifier(`r${index + 1}`);
+  const predecessor = sql.identifier(`r${index}`);
+  const auditColumn =
+    group.multiplicity > 1 ? sql`, ${updatedAt}` : sql.empty();
+  const auditValue =
+    group.multiplicity > 1
+      ? sql`, ${sql.param(group.updatedAt, table.updatedAt)}::timestamp`
+      : sql.empty();
+  return sql`${write} AS (
+    INSERT INTO ${table} (${name}, ${value}, ${description}, ${type}, ${connectorId}, ${orgId}, ${userId}${auditColumn})
+    SELECT ${sql.param(group.name, table.name)}, ${sql.param(group.value, valueColumn)},
+      ${sql.param(group.description, table.description)}, 'connector',
+      parent.id, parent.org_id, parent.user_id${auditValue}
+    FROM parent CROSS JOIN ${predecessor}
+    WHERE ${eq(sql`${predecessor}.n`, sql`1`)}
+    ON CONFLICT (${connectorId}, ${name}) WHERE ${isNotNull(connectorId)}
+    DO UPDATE SET ${value} = EXCLUDED.${value},
+      ${updatedAt} = ${sql.param(group.updatedAt, table.updatedAt)}::timestamp
+    RETURNING ${id}, ${connectorId}, ${orgId}, ${userId}, ${name}, ${type}
+  ), ${receipt} AS MATERIALIZED (SELECT ${count()}::int AS n FROM ${write})`;
+}
+
+function connectorRefreshReceipts(
+  groups: readonly ConnectorRefreshWriteGroup[],
+  failure: ConnectorRefreshStorageFailure | undefined,
+) {
+  const errors = new Map<string, Error>();
+  const missingBranches = groups.map((group, index) => {
+    const marker = `TX0082_MISS_${index}`;
+    errors.set(
+      `invalid input syntax for type integer: "${marker}"`,
+      new Error(
+        `Connector ${group.kind} ${group.name} is owned by another row`,
+      ),
+    );
+    return sql`WHEN ${ne(sql`${sql.identifier(`r${index + 1}`)}.n`, sql`1`)} THEN ${marker}`;
+  });
+  let finalOutcome = sql`'0'`;
+  if (failure?.kind === "declaration") {
+    const marker = `TX0082_DECL_${failure.ordinal}`;
+    errors.set(
+      `invalid input syntax for type integer: "${marker}"`,
+      failure.error,
+    );
+    finalOutcome = sql`${marker}`;
+  } else if (failure?.kind === "native-text") {
+    // Actual RETURNING data prevents planning-time evaluation of the native 22021 failure.
+    finalOutcome = sql`convert_from(decode(${failure.hex}::text || left(r0.parent_id, 0), 'hex'), 'UTF8')`;
+  }
+  const receipts = groups.map((_, index) => {
+    return sql`${sql.identifier(`r${index + 1}`)}`;
+  });
+  const childCount =
+    receipts.length === 0
+      ? sql`0`
+      : sql.join(
+          receipts.map((receipt) => {
+            return sql`${receipt}.n`;
+          }),
+          sql` + `,
+        );
+  return { errors, missingBranches, finalOutcome, receipts, childCount };
+}
+
+function connectorRefreshAssertionError(
+  error: unknown,
+  errors: ReadonlyMap<string, Error>,
+): Error | undefined {
+  // db.execute currently wraps the native pg error in DrizzleQueryError.cause.
+  const native = error instanceof DrizzleQueryError ? error.cause : error;
+  if (
+    typeof native !== "object" ||
+    native === null ||
+    !("code" in native) ||
+    native.code !== "22P02" ||
+    !("message" in native) ||
+    typeof native.message !== "string"
+  ) {
+    return undefined;
+  }
+  return errors.get(native.message);
+}
+
 /**
  * Plainly writes refreshed tokens for the owned account. Concurrent refreshes
  * are last-writer-wins; a lost rotation surfaces as a reconnect.
@@ -423,74 +632,83 @@ const persistConnectorRefresh$ = command(
       args.expiresIn,
       args.defaultExpiresInMs,
     );
-    // Encryption may call KMS, so it runs before the transaction opens.
+    // Encryption may call KMS, so it completes before storage planning and publication.
     const prepared = await prepareConnectorRefreshOutputs(
       { access, connection: args.connection, outputs: args.outputs },
       signal,
     );
-    const storage = args.connection.runtimeMethod.method.storage;
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0082; new non-billing transactions are prohibited.
-    const persisted = await set(writeDb$).transaction(async (tx) => {
-      const [updated] = await tx
-        .update(connectors)
-        .set({
-          ...(args.scopes === undefined
-            ? {}
-            : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
-          tokenExpiresAt,
-          needsReconnect: false,
-          reconnectReason: null,
-          updatedAt: sql`clock_timestamp()`,
-        })
-        .where(connectorOwnershipCondition(args))
-        .returning({ id: connectors.id });
-      if (!updated) {
-        return false;
-      }
-      for (const output of prepared) {
-        const identity = {
-          connectorId: args.connection.connectorId,
-          storage,
-          name: output.name,
-          orgId: args.orgId,
-          userId: args.userId,
-        };
-        if (output.kind === "secret") {
-          const write = connectorOwnedSecretWrite({
-            ...identity,
-            description: `Connector token output for ${args.connection.connectorSlug}: ${output.name}`,
-            encryptedValue: output.encryptedValue,
-          });
-          const [row] = await tx
-            .insert(secrets)
-            .values(write.values)
-            .onConflictDoUpdate(write.conflict)
-            .returning({ id: secrets.id });
-          if (!row) {
-            throw new Error(
-              `Connector secret ${output.name} is owned by another row`,
-            );
-          }
-        } else {
-          const write = connectorOwnedVariableWrite({
-            ...identity,
-            description: null,
-            value: output.value,
-          });
-          const [row] = await tx
-            .insert(variables)
-            .values(write.values)
-            .onConflictDoUpdate(write.conflict)
-            .returning({ id: variables.id });
-          if (!row) {
-            throw new Error(
-              `Connector variable ${output.name} is owned by another row`,
-            );
-          }
-        }
-      }
-      return true;
+    const { groups, failure } = planConnectorRefreshStorage({
+      connection: args.connection,
+      orgId: args.orgId,
+      userId: args.userId,
+      prepared,
     });
+    const db = set(writeDb$);
+    const parentUpdate = db
+      .update(connectors)
+      .set({
+        ...(args.scopes === undefined
+          ? {}
+          : { oauthGrantedScopes: JSON.stringify(args.scopes) }),
+        tokenExpiresAt,
+        needsReconnect: false,
+        reconnectReason: null,
+        updatedAt: sql`clock_timestamp()`,
+      })
+      .where(connectorOwnershipCondition(args))
+      .returning({
+        id: connectors.id,
+        orgId: connectors.orgId,
+        userId: connectors.userId,
+      });
+    const stages = groups.map(connectorRefreshChildSql);
+    const { errors, missingBranches, finalOutcome, receipts, childCount } =
+      connectorRefreshReceipts(groups, failure);
+    const statement = sql`WITH parent AS (${parentUpdate.getSQL()}),
+      r0 AS MATERIALIZED (SELECT ${count()}::int AS n, ${min(sql`id::text`)} AS parent_id FROM parent)
+      ${stages.length === 0 ? sql.empty() : sql`, ${sql.join(stages, sql`, `)}`}
+      SELECT r0.n AS parent_count, (${childCount})::int AS child_count,
+        (CASE WHEN ${eq(sql`r0.n`, sql`0`)} THEN '0'
+          ${sql.join(missingBranches, sql` `)} ELSE ${finalOutcome} END)::integer AS assertion
+      FROM r0 ${sql.join(
+        receipts.map((receipt) => {
+          return sql`CROSS JOIN ${receipt}`;
+        }),
+        sql` `,
+      )}`;
+    const receiptSchema = z
+      .object({
+        parent_count: z.union([z.literal(0), z.literal(1)]),
+        child_count: z.int().min(0).max(groups.length),
+        assertion: z.literal(0),
+      })
+      .strict();
+    // Invoke both local scopes here: no query-executing closure or handle leaves the owner.
+    // Decode/translate before the original final Abort observation, including on parent zero.
+    const persisted = await (async () => {
+      const execution = await settleIncludingAbort(
+        (async () => {
+          return parseRawRows(receiptSchema, await db.execute(statement));
+        })(),
+      );
+      if (!execution.ok) {
+        throw (
+          connectorRefreshAssertionError(execution.error, errors) ??
+          execution.error
+        );
+      }
+      const [receipt] = execution.value;
+      if (
+        execution.value.length !== 1 ||
+        receipt === undefined ||
+        (receipt.parent_count === 0
+          ? receipt.child_count !== 0
+          : receipt.child_count !== groups.length)
+      ) {
+        throw new Error("Invalid connector refresh publication receipt");
+      }
+      return receipt.parent_count === 1;
+    })();
     signal.throwIfAborted();
     return persisted
       ? { kind: "ok", tokenExpiresAt }
