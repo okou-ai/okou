@@ -39,9 +39,8 @@ const SUGGESTION_CARD = [
   "motion-safe:animate-composer-panel-in",
 ].join(" ");
 /**
- * The pager stays focusable at either end, so a keyboard user who pages onto
- * the first or last card keeps focus on the button they pressed. `:disabled`
- * no longer matches such a button, so its disabled look is restated here.
+ * The pager stays focusable when only one card remains. `:disabled` no longer
+ * matches such a button, so its disabled look is restated here.
  */
 const PAGER = "data-disabled:pointer-events-none data-disabled:opacity-50";
 /** One sliver per card waiting behind this one, up to two. */
@@ -84,13 +83,13 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={index === 0}
+          disabled={total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.previous;
           })}
           onClick={() => {
-            show(index - 1);
+            show((index + total - 1) % total);
           }}
         >
           <ChevronLeft />
@@ -101,13 +100,13 @@ function AgentSuggestionHeader({
           size="icon-xs"
           showTooltip
           focusableWhenDisabled
-          disabled={index === total - 1}
+          disabled={total <= 1}
           className={PAGER}
           aria-label={t(($) => {
             return $.chat.agentSuggestions.next;
           })}
           onClick={() => {
-            show(index + 1);
+            show((index + 1) % total);
           }}
         >
           <ChevronRight />
