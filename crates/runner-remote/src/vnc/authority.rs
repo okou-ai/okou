@@ -956,6 +956,7 @@ impl Authority {
             std::sync::Arc<dyn kerberos_worker::WorkOwner>,
             tokio::time::Instant,
         )>,
+        diagnostic_identity: &mut crate::diagnostics::Identity,
     ) -> Result<Credential, Failure> {
         let mut supported_profiles = vec![
             ResolveRequestSupportedProfile {
@@ -1088,6 +1089,21 @@ impl Authority {
                 &request,
             )
             .await?;
+        // Credential parsing can fail after the API has identified the exact
+        // configuration. Preserve that identity for the passive failure report.
+        diagnostic_identity.created_at = created_at;
+        diagnostic_identity.generation = match &response {
+            ResolveResponse::ResolvedKerberos { generation, .. }
+            | ResolveResponse::ResolvedRsaAes { generation, .. }
+            | ResolveResponse::ResolvedAppleVncPassword { generation, .. }
+            | ResolveResponse::ResolvedAppleDh { generation, .. }
+            | ResolveResponse::ResolvedAppleSrp { generation, .. }
+            | ResolveResponse::ResolvedAppleRsaSrp { generation, .. }
+            | ResolveResponse::ResolvedTransport { generation, .. } => (1..=i64::from(i32::MAX))
+                .contains(generation)
+                .then_some(*generation),
+            ResolveResponse::Unavailable | ResolveResponse::UnsupportedProfile => None,
+        };
         let (host, port, generation, server_name, transport, authentication, security) =
             match response {
                 ResolveResponse::Unavailable => return Err(Failure::Unavailable),

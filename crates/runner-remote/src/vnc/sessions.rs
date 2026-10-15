@@ -320,10 +320,9 @@ impl Run {
                 request.connection_id,
                 self.ssh.is_some(),
                 Some((&private_root, Arc::clone(&native_owner), scope.deadline)),
+                &mut evidence.identity,
             ))
             .await??;
-        evidence.identity.created_at = Some(credential.created_at);
-        evidence.identity.generation = Some(credential.generation);
         admission.bind(
             credential.transport,
             match &credential.authentication {
