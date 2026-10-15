@@ -5,6 +5,10 @@ import {
   walletSpendSchema,
   walletSpendCredentialsSchema,
   type WalletCreateSpend,
+  type WalletConnect,
+  type WalletSpendListQuery,
+  type WalletTransactionsQuery,
+  walletAuthorizationDetailsSchema,
 } from "@okouai/api-contracts/contracts/wallet";
 
 import { ApiRequestError, getClientConfig } from "../core/client-factory";
@@ -48,12 +52,46 @@ export async function walletStatus() {
   }
   return walletContract.status.responses[200].parse(response.body);
 }
-export async function walletConnect() {
-  const response = await (await client()).connect({ body: {} });
+export async function walletConnect(body: WalletConnect = {}) {
+  const response = await (await client()).connect({ body });
   if (response.status !== 200) {
     walletError(response, "Could not connect the Link wallet", "connect");
   }
-  return walletContract.connect.responses[200].parse(response.body);
+  const value = walletContract.connect.responses[200].parse(response.body);
+  if (body.readOnly || body.transactions) {
+    // Older API deployments ignore the newly introduced body fields. Never
+    // show a payment-consent URL as though it were read-only authorization.
+    const url = new URL(value.url);
+    const scopes = url.searchParams.get("scope")?.split(/[ ,]+/) ?? [];
+    let details: unknown;
+    try {
+      details = JSON.parse(
+        url.searchParams.get("authorization_details") ?? "null",
+      );
+    } catch {
+      details = null;
+    }
+    const parsed = walletAuthorizationDetailsSchema.safeParse(details);
+    const hasTransactions =
+      parsed.success &&
+      parsed.data.some((detail) => {
+        return (
+          detail.type === "source" &&
+          detail.actions.includes("read_link_transactions")
+        );
+      });
+    if (
+      !hasTransactions ||
+      (body.readOnly &&
+        (scopes.includes("payment_methods.agentic") ||
+          !scopes.includes("userinfo:read")))
+    ) {
+      throw new Error(
+        "The wallet server does not support the requested read authorization yet; update the server before reconnecting",
+      );
+    }
+  }
+  return value;
 }
 export async function walletDisconnect() {
   const response = await (await client()).disconnect({ body: {} });
@@ -142,4 +180,58 @@ export async function walletSpendCredentials(id: string) {
     );
   }
   return parsed.data;
+}
+
+export async function walletListSpends(query: WalletSpendListQuery) {
+  const response = await (await client()).listSpends({ query });
+  if (response.status !== 200)
+    walletError(
+      response,
+      "Could not read wallet purchase history",
+      "spend_list",
+    );
+  return walletContract.listSpends.responses[200].parse(response.body);
+}
+export async function walletTransactions(query: WalletTransactionsQuery) {
+  const response = await (await client()).transactions({ query });
+  if (response.status !== 200)
+    walletError(
+      response,
+      "Could not read Link transactions",
+      "transactions_read",
+    );
+  return walletContract.transactions.responses[200].parse(response.body);
+}
+export async function walletPaymentMethods() {
+  const response = await (await client()).paymentMethods({ query: {} });
+  if (response.status !== 200)
+    walletError(
+      response,
+      "Could not read Link payment methods",
+      "payment_methods_read",
+    );
+  return walletContract.paymentMethods.responses[200].parse(response.body);
+}
+export async function walletPaymentMethod(id: string) {
+  const response = await (
+    await client()
+  ).paymentMethod({ params: { id }, query: {} });
+  if (response.status !== 200)
+    walletError(
+      response,
+      "Could not read the Link payment method",
+      "payment_method_read",
+      id,
+    );
+  return walletContract.paymentMethod.responses[200].parse(response.body);
+}
+export async function walletUserInfo() {
+  const response = await (await client()).userInfo({ query: {} });
+  if (response.status !== 200)
+    walletError(
+      response,
+      "Could not read Link user information",
+      "user_info_read",
+    );
+  return walletContract.userInfo.responses[200].parse(response.body);
 }

@@ -24,6 +24,8 @@ import {
   walletRunOwner$,
   walletStatus$,
   walletConnectStatus$,
+  listWalletSpends$,
+  readWallet$,
 } from "../services/link-wallet.service";
 import { settle } from "../utils";
 
@@ -51,6 +53,25 @@ const agentOwner$ = computed(async (get) => {
   return await get(walletRunOwner$);
 });
 
+// Payment-capable runs may also inspect their wallet. Read access alone never
+// authorizes payment operations, which continue to require wallet:write.
+const readOwner$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  if (
+    auth.tokenType !== "agent" ||
+    !auth.capabilities.some((capability) => {
+      return capability === "wallet:read" || capability === "wallet:write";
+    })
+  ) {
+    throw new LinkWalletError(
+      403,
+      "MISSING_CAPABILITY",
+      "This operation requires wallet:read",
+    );
+  }
+  return await get(agentOwner$);
+});
+
 function walletError(error: unknown) {
   if (!(error instanceof LinkWalletError)) {
     throw error;
@@ -67,6 +88,10 @@ function walletResponse<T>(
     ? { status: 200 as const, body: result.value }
     : walletError(result.error);
 }
+const connectBody$ = bodyResultOf(walletContract.connect);
+const spendListQuery$ = queryOf(walletContract.listSpends);
+const transactionsQuery$ = queryOf(walletContract.transactions);
+const paymentMethodParams$ = pathParamsOf(walletContract.paymentMethod);
 const createBody$ = bodyResultOf(walletContract.createSpend);
 const getParams$ = pathParamsOf(walletContract.getSpend);
 const cancelParams$ = pathParamsOf(walletContract.cancelSpend);
@@ -95,8 +120,9 @@ const connectStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body };
 });
 
-const status$ = command(async ({ get }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+const status$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -106,20 +132,40 @@ const status$ = command(async ({ get }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
   }
+  const input = await get(connectBody$);
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const auth = get(organizationAuthContext$);
+  if (
+    !input.data.readOnly &&
+    (auth.tokenType !== "agent" || !auth.capabilities.includes("wallet:write"))
+  ) {
+    return walletError(
+      new LinkWalletError(
+        403,
+        "MISSING_CAPABILITY",
+        "Use okou wallet connect --read-only with wallet:read; payment consent requires wallet:write",
+      ),
+    );
+  }
   const result = await settle(
-    set(startWalletOAuth$, owner.value, signal),
+    set(startWalletOAuth$, owner.value, input.data, signal),
     signal,
   );
   signal.throwIfAborted();
   return walletResponse(result);
 });
 const disconnect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -150,7 +196,8 @@ const createSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 const getSpend$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const owner = await settle(get(agentOwner$), signal);
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
   signal.throwIfAborted();
   if (!owner.ok) {
     return walletError(owner.error);
@@ -226,6 +273,138 @@ const callback$ = command(async ({ get, set }, signal: AbortSignal) => {
   return walletResponse(result);
 });
 
+const listSpends$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(listWalletSpends$, owner.value, get(spendListQuery$), signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletContract.listSpends.responses[200].parse(result.value),
+  };
+});
+const transactions$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const query = get(transactionsQuery$);
+  const result = await settle(
+    set(
+      readWallet$,
+      owner.value,
+      {
+        operation: "transactions_read",
+        query: {
+          limit: query.limit ?? 20,
+          starting_after: query.startingAfter,
+          start_date: query.startDate,
+          end_date: query.endDate,
+          category: query.category,
+        },
+      },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletContract.transactions.responses[200].parse(result.value),
+  };
+});
+const paymentMethods$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(
+      readWallet$,
+      owner.value,
+      { operation: "payment_methods_read" },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletContract.paymentMethods.responses[200].parse(result.value),
+  };
+});
+const paymentMethod$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(
+      readWallet$,
+      owner.value,
+      { operation: "payment_method_read", id: get(paymentMethodParams$).id },
+      signal,
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletContract.paymentMethod.responses[200].parse(result.value),
+  };
+});
+const userInfo$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "no-store");
+  const owner = await settle(get(readOwner$), signal);
+  signal.throwIfAborted();
+  if (!owner.ok) {
+    return walletError(owner.error);
+  }
+  const result = await settle(
+    set(readWallet$, owner.value, { operation: "user_info_read" }, signal),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    return walletError(result.error);
+  }
+  return {
+    status: 200 as const,
+    body: walletContract.userInfo.responses[200].parse(result.value),
+  };
+});
+
+const readAuth = {
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+  acceptAnySandboxCapability: true,
+  accept: ["agent"],
+} as const;
 const agentAuth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
@@ -240,20 +419,37 @@ const userAuth = {
 
 export const walletRoutes: readonly RouteEntry[] = [
   {
+    route: walletContract.listSpends,
+    handler: authRoute(readAuth, listSpends$),
+  },
+  {
+    route: walletContract.transactions,
+    handler: authRoute(readAuth, transactions$),
+  },
+  {
+    route: walletContract.paymentMethods,
+    handler: authRoute(readAuth, paymentMethods$),
+  },
+  {
+    route: walletContract.paymentMethod,
+    handler: authRoute(readAuth, paymentMethod$),
+  },
+  { route: walletContract.userInfo, handler: authRoute(readAuth, userInfo$) },
+  {
     route: walletUserContract.connectStatus,
     handler: authRoute(userAuth, connectStatus$),
   },
-  { route: walletContract.status, handler: authRoute(agentAuth, status$) },
-  { route: walletContract.connect, handler: authRoute(agentAuth, connect$) },
+  { route: walletContract.status, handler: authRoute(readAuth, status$) },
+  { route: walletContract.connect, handler: authRoute(readAuth, connect$) },
   {
     route: walletContract.disconnect,
-    handler: authRoute(agentAuth, disconnect$),
+    handler: authRoute(readAuth, disconnect$),
   },
   {
     route: walletContract.createSpend,
     handler: authRoute(agentAuth, createSpend$),
   },
-  { route: walletContract.getSpend, handler: authRoute(agentAuth, getSpend$) },
+  { route: walletContract.getSpend, handler: authRoute(readAuth, getSpend$) },
   {
     route: walletContract.cancelSpend,
     handler: authRoute(agentAuth, cancelSpend$),

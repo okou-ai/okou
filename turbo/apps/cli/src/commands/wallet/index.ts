@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import {
   walletCreateSpendSchema,
   type WalletSpend,
+  type WalletConnect,
 } from "@okouai/api-contracts/contracts/wallet";
 import { LINK_WALLET_GUIDE } from "@okouai/core/link-wallet-guide";
 
@@ -17,6 +18,13 @@ import {
   walletSpendCredentials,
 } from "../../lib/api/domains/wallet";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+
+import {
+  walletSpendListCommand,
+  walletTransactionsCommand,
+  walletPaymentMethodsCommand,
+  walletUserInfoCommand,
+} from "./reads";
 
 interface JsonOptions {
   readonly json?: boolean;
@@ -56,6 +64,11 @@ function renderSpend(value: WalletSpend, options: JsonOptions): void {
   console.log(`Merchant: ${value.merchantName}`);
   console.log(`Total: ${value.amount} ${value.currency.toUpperCase()} cents`);
   console.log(`Next action: ${value.nextAction}`);
+  if (value.createdAt) console.log(`Requested at: ${value.createdAt}`);
+  if (value.payment)
+    console.log(`Latest payment: ${JSON.stringify(value.payment)}`);
+  if (value.paymentHistory)
+    console.log(`Payment history: ${JSON.stringify(value.paymentHistory)}`);
   if (value.approvalUrl) {
     console.log(value.approvalUrl);
     console.log(
@@ -105,6 +118,7 @@ async function saveCredentials(id: string, outputFile: string) {
 
 const spend = new Command("spend")
   .description("Create and inspect a per-purchase Link approval request")
+  .addCommand(walletSpendListCommand)
   .addCommand(
     new Command("create")
       .requiredOption(
@@ -194,7 +208,7 @@ const spend = new Command("spend")
 
 export const walletCommand = new Command("wallet")
   .description(
-    "Connect Link, request purchase approval and retrieve one-time payment credentials",
+    "Connect Link, read authorized activity and request purchase approval",
   )
   .addCommand(
     new Command("status")
@@ -202,20 +216,51 @@ export const walletCommand = new Command("wallet")
       .action(
         withErrorHandler(async (options: JsonOptions) => {
           const value = await walletStatus();
+          const nextAction =
+            value.connected &&
+            value.authorization &&
+            !value.authorization.capabilities.payments
+              ? "read_wallet"
+              : value.nextAction;
           console.log(
             options.json
               ? JSON.stringify(value)
-              : `Link wallet: ${value.connected ? "connected" : "not connected"}. Next: ${value.nextAction}. Checkout unavailable.`,
+              : `Link wallet: ${value.connected ? "connected" : "not connected"}. Next: ${nextAction}. Checkout unavailable.`,
           );
+          if (!options.json && value.authorization) {
+            console.log(
+              `Granted scopes: ${value.authorization.scopes.join(", ") || "not recorded; reconnect or refresh to inspect"}`,
+            );
+            console.log(
+              `Source actions: ${value.authorization.sourceActions.join(", ") || "none"}`,
+            );
+            console.log(
+              `Available reads: ${JSON.stringify(value.authorization.capabilities)}`,
+            );
+            console.log(
+              `Missing permissions: ${value.authorization.missingPermissions.join(", ") || "none"}`,
+            );
+          }
         }),
       ),
   )
   .addCommand(
     new Command("connect")
+      .option(
+        "--read-only",
+        "Authorize Link transaction and profile reads without payment access",
+      )
+      .option(
+        "--transactions",
+        "Add Link transaction reads while retaining existing granted access",
+      )
       .option("--json", "Print the hosted consent URL as JSON")
       .action(
-        withErrorHandler(async (options: JsonOptions) => {
-          const value = await walletConnect();
+        withErrorHandler(async (options: JsonOptions & WalletConnect) => {
+          const value = await walletConnect({
+            ...(options.readOnly ? { readOnly: true } : {}),
+            ...(options.transactions ? { transactions: true } : {}),
+          });
           if (options.json) {
             console.log(JSON.stringify(value));
             return;
@@ -250,7 +295,10 @@ export const walletCommand = new Command("wallet")
       }),
   )
   .addCommand(spend)
+  .addCommand(walletTransactionsCommand)
+  .addCommand(walletPaymentMethodsCommand)
+  .addCommand(walletUserInfoCommand)
   .addHelpText(
     "after",
-    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. No polling or checkout commands are provided. Requires wallet:write and the default-off linkWallet feature switch.",
+    "\nOAuth credentials stay on the backend. Payment credentials are written only to a new private file. No polling or checkout commands are provided. Reads require wallet:read (existing wallet:write tokens are also accepted). Spending requires wallet:write and Link payment consent. All operations require the linkWallet feature switch. Use connect --read-only for financial queries, or connect --transactions to add transaction access.",
   );

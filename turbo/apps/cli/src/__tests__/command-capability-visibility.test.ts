@@ -730,10 +730,11 @@ describe("registerCommands", () => {
   });
 
   it("advertises the wallet only with its capability and hides it without that capability", () => {
-    for (const enabled of [false, true]) {
+    for (const capability of ["file:write", "wallet:read", "wallet:write"]) {
+      const enabled = capability.startsWith("wallet:");
       const token = buildOkouToken({
         scope: "okou",
-        capabilities: enabled ? ["wallet:write"] : ["file:write"],
+        capabilities: [capability],
       });
       vi.stubEnv("OKOU_TOKEN", token);
       const names = visibleCommandNames(buildProgram());
