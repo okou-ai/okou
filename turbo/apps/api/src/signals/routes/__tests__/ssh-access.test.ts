@@ -263,7 +263,11 @@ describe("live chat SSH Run inventory", () => {
     expect(originalIdentity?.createdAt).toMatch(/\.\d{6}Z$/);
     expect(JSON.stringify(diagnostic.body)).not.toContain("test-private-key");
     await accept(
-      config().delete({ headers, params: { connectionId: first.body.id } }),
+      config().delete({
+        headers,
+        params: { connectionId: first.body.id },
+        body: { expectedGeneration: first.body.generation },
+      }),
       [204],
     );
     const replacement = await accept(

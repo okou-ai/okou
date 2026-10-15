@@ -26,16 +26,12 @@ import {
   runThreadVncAccess,
 } from "./run-thread-remote-access.service";
 
-export const listRunVncHosts$ = command(
-  async (
-    { set },
-    owner: VncOwner & { readonly runId: string },
-    signal: AbortSignal,
-  ) => {
+const loadRunVncHostRows$ = command(
+  async ({ set }, owner: VncOwner & { readonly runId: string }) => {
     const db = set(writeDb$);
     const kdcSsh = alias(sshConnections, "inventory_vnc_kdc_ssh");
     // The left joins preserve an authorized empty inventory in the same snapshot.
-    const rows = await db
+    return await db
       .select({
         id: vncConnections.id,
         createdAt: sql`${vncCreationTimestamp}`.mapWith(
@@ -106,6 +102,16 @@ export const listRunVncHosts$ = command(
         ),
       )
       .orderBy(asc(vncConnections.displayName), asc(vncConnections.id));
+  },
+);
+
+export const listRunVncHosts$ = command(
+  async (
+    { set },
+    owner: VncOwner & { readonly runId: string },
+    signal: AbortSignal,
+  ) => {
+    const rows = await set(loadRunVncHostRows$, owner);
     signal.throwIfAborted();
     if (rows.length === 0) {
       return null;
