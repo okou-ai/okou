@@ -414,6 +414,21 @@ composition-root activation follows from these supplied test-policy observations
 
 ## Native observation gaps and recovery
 
+For a bounded native run using the local profile, optimize the verification hash
+dependency while retaining complete artifact and snapshot byte checks:
+
+```sh
+OKOU_TEST_BUILD_SOURCE_SHA="$(git rev-parse HEAD)" \
+  cargo test --manifest-path crates/Cargo.toml --profile local --locked -j 1 \
+  --config 'profile.local.package."sha2@0.11.0".opt-level=3' \
+  -p runner --test guarded_idle_native --no-run --message-format=json
+```
+
+Record this package override and the returned compiler artifacts with the frozen
+binary. Unoptimized hashing of complete rootfs/COW/memory inputs can exhaust the
+P1 window before optional work starts. Keep the supplied P2 limits, full reads,
+test assertions and collector guards when preparing the verification build.
+
 `native_recovery_records_stale_revocation_and_paced_snapshot_reads` selects
 `Recovery-fresh` and `Recovery-snapshot`. It delays the external observation
 source before real `/proc/meminfo` reads, retaining the unchanged independent
