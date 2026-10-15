@@ -855,7 +855,8 @@ pub async fn execute_job_reuse_with_hooks(
                 telemetry,
             );
         }
-    };
+    }
+    .map(|lease| lease.with_first_run(context.is_first_run));
 
     if let Some(error) = resume_session_error {
         return (
@@ -885,7 +886,8 @@ pub async fn execute_job_reuse_with_hooks(
                     },
                     home_drive_available: true,
                 })
-                .await,
+                .await
+                .with_first_run(context.is_first_run),
         ),
         (None, None) => None,
     };

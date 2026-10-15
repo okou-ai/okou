@@ -1124,6 +1124,12 @@ const sandboxOperationSchema = z.object({
   runner_startup_path: runnerStartupPathSchema.optional(),
   is_first_run: z.boolean().optional(),
   reuse_key: z.string().optional(),
+  run_id: z.uuid().optional(),
+  cache_key: z.string().max(4096).optional(),
+  profile_name: z.string().max(4096).optional(),
+  image_generation: z.string().max(4096).optional(),
+  allocated_bytes: z.number().int().nonnegative().optional(),
+  handoff_path: z.string().max(64).optional(),
   home_reuse_result: homeReuseResultSchema.optional(),
   sandbox_reuse_result: sandboxReuseResultSchema.optional(),
   runner_pre_spawn_concurrency_bucket:
@@ -1200,14 +1206,15 @@ const sandboxOperationSchema = z.object({
 export const webhookTelemetryContract = c.router({
   /**
    * POST /api/webhooks/agent/telemetry
-   * Receive telemetry data (system log, metrics, network logs, and sandbox operations) from sandbox
+   * Receive sandbox telemetry or authenticated Runner operation-only batches.
+   * Runless requests cannot carry system logs, metrics, network logs or OOM evidence.
    */
   send: {
     method: "POST",
     path: "/api/webhooks/agent/telemetry",
     headers: authHeadersSchema,
     body: z.object({
-      runId: z.string().min(1, "runId is required"),
+      runId: z.string().min(1, "runId is required").optional(),
       runnerHostname: runnerHostnameSchema.optional(),
       runnerVersion: runnerVersionSchema.optional(),
       systemLog: z.string().optional(),
@@ -1220,7 +1227,7 @@ export const webhookTelemetryContract = c.router({
     responses: {
       200: z.object({
         success: z.boolean(),
-        id: z.string(),
+        id: z.string().optional(),
         oomEvidenceVersion: z.literal(1).optional(),
       }),
       400: apiErrorSchema,
