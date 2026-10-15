@@ -35,9 +35,17 @@ import {
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  getTableColumns,
+  isNull,
+  sql,
+} from "drizzle-orm";
 
-import { nowDate } from "../../lib/time";
+import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
 
 import {
   webhookTierLockStatement,
@@ -865,54 +873,41 @@ interface PauseForReconfigurationArgs {
   readonly bindings: readonly OfficialWorkflowParameterBinding[];
 }
 const persistPausedReconfiguration$ = command(
-  async ({ set }, args: PauseForReconfigurationArgs, signal: AbortSignal) => {
+  async (
+    { set },
+    args: PauseForReconfigurationArgs,
+    signal: AbortSignal,
+  ): Promise<PersistedReconfiguration | null> => {
     const db = set(writeDb$);
-    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0200; new non-billing transactions are prohibited.
-    return await db.transaction(async (tx) => {
-      // SHARE fences the accepted pointer against the publisher's non-key UPDATE.
-      await tx.execute(acceptedCatalogLockStatement());
-      const [catalogRow] = parseRawRows(
-        acceptedCatalogRowSchema,
-        await tx.execute(acceptedCatalogReadStatement()),
-      );
-      signal.throwIfAborted();
-      const catalogIdentity = blueprintAuthorityIdentity(args);
-      const acceptedDefinition = matchingAcceptedBlueprintDefinition(
-        acceptedCatalogFromRow(catalogRow),
-        catalogIdentity,
-      );
-      if (!acceptedDefinition) {
-        return null;
-      }
-      const [revisionRow] = parseRawRows(
-        acceptedRevisionRowSchema,
-        await tx.execute(acceptedRevisionReadStatement(acceptedDefinition)),
-      );
-      signal.throwIfAborted();
-      if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
-        return null;
-      }
-      const [installationLockedRow] = await tx
-        .select({ id: workflows.id })
-        .from(workflows)
-        .where(installedWorkflowCondition(args, args.automation.workflowId))
-        .for("update")
-        .limit(1);
-      const installationLocked = installationLockedRow !== undefined;
-      if (!installationLocked) {
-        return null;
-      }
-      const [current] = await tx
-        .select(workflowAutomationColumns())
-        .from(workflowAutomations)
-        .where(observedWorkflowAutomationCondition(args.automation))
-        .for("update")
-        .limit(1);
-      if (!current || !sameAutomationBaseline(args.automation, current)) {
-        return null;
-      }
-      const currentTime = nowDate();
-      const [paused] = await tx
+    const [catalogRow] = parseRawRows(
+      acceptedCatalogRowSchema,
+      await db.execute(acceptedCatalogReadStatement()),
+    );
+    signal.throwIfAborted();
+    const catalogIdentity = blueprintAuthorityIdentity(args);
+    const acceptedDefinition = matchingAcceptedBlueprintDefinition(
+      acceptedCatalogFromRow(catalogRow),
+      catalogIdentity,
+    );
+    if (!acceptedDefinition) {
+      return null;
+    }
+    const [revisionRow] = parseRawRows(
+      acceptedRevisionRowSchema,
+      await db.execute(acceptedRevisionReadStatement(acceptedDefinition)),
+    );
+    signal.throwIfAborted();
+    if (!acceptedRevisionBlueprintMatches(revisionRow, catalogIdentity)) {
+      return null;
+    }
+    const expected = args.automation;
+    if (!Number.isFinite(expected.updatedAt.getTime())) {
+      return null;
+    }
+    const currentTime = nowDate();
+    const columns = workflowAutomationColumns();
+    const paused = db.$with("paused_official_automation").as(
+      db
         .update(workflowAutomations)
         .set({
           enabled: false,
@@ -921,20 +916,95 @@ const persistPausedReconfiguration$ = command(
           officialReconciliationStatus: "needs_reconfiguration",
           updatedAt: currentTime,
         })
-        .where(eq(workflowAutomations.id, current.id))
-        .returning(workflowAutomationColumns());
-      if (!paused) {
-        return null;
-      }
-      await tx
+        .where(
+          and(
+            observedWorkflowAutomationCondition(expected),
+            eq(
+              sql`date_trunc('milliseconds', ${workflowAutomations.updatedAt})`,
+              sql`${timestampWithoutTimeZone(expected.updatedAt)}::timestamp`,
+            ),
+            expected.officialBlueprintKey === null
+              ? isNull(workflowAutomations.officialBlueprintKey)
+              : eq(
+                  workflowAutomations.officialBlueprintKey,
+                  expected.officialBlueprintKey,
+                ),
+            expected.officialAppliedFingerprint === null
+              ? isNull(workflowAutomations.officialAppliedFingerprint)
+              : eq(
+                  workflowAutomations.officialAppliedFingerprint,
+                  expected.officialAppliedFingerprint,
+                ),
+            expected.officialReconciliationStatus === null
+              ? isNull(workflowAutomations.officialReconciliationStatus)
+              : eq(
+                  workflowAutomations.officialReconciliationStatus,
+                  expected.officialReconciliationStatus,
+                ),
+            eq(workflowAutomations.enabled, expected.enabled),
+            expected.officialIntendedEnabled === null
+              ? isNull(workflowAutomations.officialIntendedEnabled)
+              : eq(
+                  workflowAutomations.officialIntendedEnabled,
+                  expected.officialIntendedEnabled,
+                ),
+            exists(
+              db
+                .select({ id: workflows.id })
+                .from(workflows)
+                .where(installedWorkflowCondition(args, expected.workflowId)),
+            ),
+          ),
+        )
+        .returning({
+          ...columns,
+          observedUpdatedAt: columns.observedUpdatedAt.as("observedUpdatedAt"),
+          observedXmin: columns.observedXmin.as("observedXmin"),
+        }),
+    );
+    const identity = db.$with("paused_official_identity").as(
+      db
         .insert(officialWorkflowAutomationIdentities)
-        .values(activeIdentityValues(paused, currentTime))
-        .onConflictDoUpdate(activeIdentityConflict(paused, currentTime));
-      return {
-        previous: current,
-        current: paused,
-      };
-    });
+        .select(
+          sql`
+          SELECT ${paused.id}, ${paused.workflowId}, ${paused.id},
+            ${paused.officialBlueprintKey}, 'active', NULL, NULL, NULL,
+            ${sql.param(currentTime, officialWorkflowAutomationIdentities.createdAt)},
+            ${sql.param(currentTime, officialWorkflowAutomationIdentities.updatedAt)}
+          FROM ${paused}
+        `,
+        )
+        .onConflictDoUpdate({
+          target: [
+            officialWorkflowAutomationIdentities.workflowId,
+            officialWorkflowAutomationIdentities.blueprintKey,
+          ],
+          set: {
+            automationId: sql`excluded.${sql.identifier(officialWorkflowAutomationIdentities.automationId.name)}`,
+            state: "active",
+            retainedParameterBindings: null,
+            retainedIntendedEnabled: null,
+            retainedAppliedFingerprint: null,
+            updatedAt: currentTime,
+          },
+        })
+        .returning({
+          automationId: officialWorkflowAutomationIdentities.automationId,
+        }),
+    );
+    const [current] = await db
+      .with(paused, identity)
+      .select()
+      .from(paused)
+      .where(
+        exists(
+          db.select({ automationId: identity.automationId }).from(identity),
+        ),
+      );
+    signal.throwIfAborted();
+    // The exact target observation rejects intervening writes, including account
+    // projections that leave updatedAt unchanged. Keep its full runtime snapshot.
+    return current ? { previous: expected, current } : null;
   },
 );
 const pauseForReconfiguration$ = command(
