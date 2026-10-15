@@ -5105,17 +5105,14 @@
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "permissionsUnknown": "Hubungkan kembali Link untuk meninjau dan mengonfirmasi izin saat ini.",
       "retry": "Coba lagi",
-      "scope": "Dompet Link Anda, digunakan bersama oleh agen Anda di ruang kerja ini.",
+      "scope": "Biarkan Okou berbelanja untuk Anda melalui Link.",
       "title": "Dompet",
       "transactions": {
-        "description": "Permintaan pembelian Link Anda di ruang kerja ini, dengan status terbaru yang diterima Okou.",
+        "description": "Permintaan pembelian Link terbaru Anda di Okou.",
         "empty": "Belum ada transaksi Link",
         "loadError": "Tidak dapat memuat transaksi. Coba lagi.",
         "loading": "Memuat transaksi",
-        "next": "Berikutnya",
-        "page": "Halaman {{value}}",
-        "previous": "Sebelumnya",
-        "refresh": "Muat ulang transaksi",
+        "merchant": "Penjual",
         "status": {
           "approved": "Disetujui, menunggu pembayaran",
           "canceled": "Dibatalkan",
@@ -5129,6 +5126,7 @@
           "submitted": "Pembayaran diproses",
           "succeeded": "Pembayaran berhasil"
         },
+        "statusLabel": "Status",
         "test": "Uji coba",
         "title": "Transaksi Link"
       },

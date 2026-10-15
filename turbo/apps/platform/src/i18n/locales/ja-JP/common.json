@@ -5105,17 +5105,14 @@
       "loadError": "ウォレットを読み込めませんでした。",
       "permissionsUnknown": "Link に再接続して、現在の権限を確認し承認してください。",
       "retry": "再試行",
-      "scope": "このワークスペース内のあなたのエージェントで共有する Link ウォレット。",
+      "scope": "Link を使って、Okou に買い物を任せましょう。",
       "title": "ウォレット",
       "transactions": {
-        "description": "このワークスペースでの Link 購入リクエストと、Okou が受信した最新のステータス。",
+        "description": "Okou で最近リクエストした Link での購入。",
         "empty": "Link の取引履歴はまだありません",
         "loadError": "取引履歴を読み込めませんでした。もう一度お試しください。",
         "loading": "取引履歴を読み込み中",
-        "next": "次へ",
-        "page": "{{value}} ページ",
-        "previous": "前へ",
-        "refresh": "取引履歴を更新",
+        "merchant": "販売店",
         "status": {
           "approved": "承認済み・支払い待ち",
           "canceled": "キャンセル済み",
@@ -5129,6 +5126,7 @@
           "submitted": "支払い処理中",
           "succeeded": "支払い成功"
         },
+        "statusLabel": "ステータス",
         "test": "テスト",
         "title": "Link の取引履歴"
       },

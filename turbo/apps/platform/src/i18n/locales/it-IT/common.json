@@ -5194,17 +5194,14 @@
       "loadError": "Impossibile caricare il tuo portafoglio.",
       "permissionsUnknown": "Ricollega Link per esaminare e confermare le autorizzazioni attuali.",
       "retry": "Riprova",
-      "scope": "Il tuo portafoglio Link, condiviso dai tuoi agenti in questo spazio di lavoro.",
+      "scope": "Lascia che Okou faccia acquisti per te con Link.",
       "title": "Portafoglio",
       "transactions": {
-        "description": "Le tue richieste di acquisto Link in questo spazio, con l’ultimo stato ricevuto da Okou.",
+        "description": "Le tue richieste di acquisto recenti con Link in Okou.",
         "empty": "Nessuna transazione Link",
         "loadError": "Impossibile caricare le transazioni. Riprova.",
         "loading": "Caricamento delle transazioni",
-        "next": "Successiva",
-        "page": "Pagina {{value}}",
-        "previous": "Precedente",
-        "refresh": "Aggiorna transazioni",
+        "merchant": "Commerciante",
         "status": {
           "approved": "Approvata, in attesa di pagamento",
           "canceled": "Annullata",
@@ -5218,6 +5215,7 @@
           "submitted": "Pagamento in corso",
           "succeeded": "Pagamento riuscito"
         },
+        "statusLabel": "Stato",
         "test": "Test",
         "title": "Transazioni Link"
       },

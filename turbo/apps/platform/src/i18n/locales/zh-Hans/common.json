@@ -5105,17 +5105,14 @@
       "loadError": "无法加载钱包。",
       "permissionsUnknown": "请重新连接 Link，查看并确认当前授权权限。",
       "retry": "重试",
-      "scope": "你的 Link 钱包，由你在此工作区的所有 Agent 共用。",
+      "scope": "让 Okou 通过 Link 为你完成购买。",
       "title": "钱包",
       "transactions": {
-        "description": "你在此工作区发起的 Link 购买请求，以及 Okou 收到的最新状态。",
+        "description": "你最近通过 Okou 发起的 Link 购买请求。",
         "empty": "暂无 Link 交易记录",
         "loadError": "无法加载交易记录，请重试。",
         "loading": "正在加载交易记录",
-        "next": "下一页",
-        "page": "第 {{value}} 页",
-        "previous": "上一页",
-        "refresh": "刷新交易记录",
+        "merchant": "商家",
         "status": {
           "approved": "已批准，待支付",
           "canceled": "已取消",
@@ -5129,6 +5126,7 @@
           "submitted": "支付处理中",
           "succeeded": "支付成功"
         },
+        "statusLabel": "状态",
         "test": "测试",
         "title": "Link 交易记录"
       },

@@ -5105,17 +5105,14 @@
       "loadError": "지갑을 불러오지 못했습니다.",
       "permissionsUnknown": "Link에 다시 연결하여 현재 권한을 검토하고 확인하세요.",
       "retry": "다시 시도",
-      "scope": "이 워크스페이스의 내 에이전트가 함께 사용하는 Link 지갑입니다.",
+      "scope": "Link로 Okou에게 구매를 맡기세요.",
       "title": "지갑",
       "transactions": {
-        "description": "이 워크스페이스의 Link 구매 요청과 Okou가 받은 최신 상태입니다.",
+        "description": "Okou에서 최근에 요청한 Link 구매 내역입니다.",
         "empty": "아직 Link 거래 내역이 없습니다",
         "loadError": "거래 내역을 불러오지 못했습니다. 다시 시도하세요.",
         "loading": "거래 내역 로딩 중",
-        "next": "다음",
-        "page": "{{value}}페이지",
-        "previous": "이전",
-        "refresh": "거래 내역 새로고침",
+        "merchant": "판매자",
         "status": {
           "approved": "승인됨, 결제 대기 중",
           "canceled": "취소됨",
@@ -5129,6 +5126,7 @@
           "submitted": "결제 처리 중",
           "succeeded": "결제 성공"
         },
+        "statusLabel": "상태",
         "test": "테스트",
         "title": "Link 거래 내역"
       },

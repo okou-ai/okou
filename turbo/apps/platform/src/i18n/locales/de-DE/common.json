@@ -5126,17 +5126,14 @@
       "loadError": "Dein Wallet konnte nicht geladen werden.",
       "permissionsUnknown": "Verbinde Link erneut, um die aktuellen Berechtigungen zu prüfen und zu bestätigen.",
       "retry": "Erneut versuchen",
-      "scope": "Dein Link-Wallet für alle deine Agenten in diesem Workspace.",
+      "scope": "Lass Okou mit Link für dich einkaufen.",
       "title": "Wallet",
       "transactions": {
-        "description": "Deine Link-Kaufanfragen in diesem Workspace mit dem zuletzt von Okou empfangenen Status.",
+        "description": "Deine letzten Link-Kaufanfragen in Okou.",
         "empty": "Noch keine Link-Transaktionen",
         "loadError": "Transaktionen konnten nicht geladen werden. Versuche es erneut.",
         "loading": "Transaktionen werden geladen",
-        "next": "Weiter",
-        "page": "Seite {{value}}",
-        "previous": "Zurück",
-        "refresh": "Transaktionen aktualisieren",
+        "merchant": "Händler",
         "status": {
           "approved": "Genehmigt, Zahlung ausstehend",
           "canceled": "Storniert",
@@ -5150,6 +5147,7 @@
           "submitted": "Zahlung wird verarbeitet",
           "succeeded": "Zahlung erfolgreich"
         },
+        "statusLabel": "Status",
         "test": "Test",
         "title": "Link-Transaktionen"
       },

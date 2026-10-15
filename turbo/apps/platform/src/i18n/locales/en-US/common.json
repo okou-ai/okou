@@ -5118,17 +5118,14 @@
       "loadError": "Couldn’t load your wallet.",
       "permissionsUnknown": "Reconnect Link to review and confirm its current permissions.",
       "retry": "Retry",
-      "scope": "Your Link wallet, shared by your agents in this workspace.",
+      "scope": "Let Okou make purchases for you with Link.",
       "title": "Wallet",
       "transactions": {
-        "description": "Your Link purchase requests in this workspace, with the latest status received by Okou.",
+        "description": "Your recent Link purchase requests in Okou.",
         "empty": "No Link transactions yet",
         "loadError": "Couldn’t load transactions. Try again.",
         "loading": "Loading transactions",
-        "next": "Next",
-        "page": "Page {{value}}",
-        "previous": "Previous",
-        "refresh": "Refresh transactions",
+        "merchant": "Merchant",
         "status": {
           "approved": "Approved, awaiting payment",
           "canceled": "Canceled",
@@ -5142,6 +5139,7 @@
           "submitted": "Payment processing",
           "succeeded": "Payment succeeded"
         },
+        "statusLabel": "Status",
         "test": "Test",
         "title": "Link transactions"
       },

@@ -116,9 +116,7 @@ test("lets a member connect their workspace wallet and disconnect after consent 
   });
   await openWallet();
   await expect(
-    screen.findByText(
-      "Your Link wallet, shared by your agents in this workspace.",
-    ),
+    screen.findByText("Let Okou make purchases for you with Link."),
   ).resolves.toBeInTheDocument();
   click(await button("Connect"));
   await waitFor(() => {
@@ -375,7 +373,7 @@ function transaction(
   };
 }
 
-test("shows purchase amounts and distinct approval/payment states, paginates, and retains history when disconnected", async () => {
+test("shows recent purchases with distinct approval/payment states and retains history when disconnected", async () => {
   const first = transaction();
   const second = transaction({
     id: "00000000-0000-4000-8000-000000000002",
@@ -386,33 +384,30 @@ test("shows purchase amounts and distinct approval/payment states, paginates, an
   context.mocks.api(walletUserContract.status, ({ respond }) => {
     return respond(200, connection(false));
   });
-  context.mocks.api(walletUserContract.transactions, ({ query, respond }) => {
-    return respond(
-      200,
-      query.cursor
-        ? { transactions: [second], nextCursor: null }
-        : { transactions: [first], nextCursor: first.id },
-    );
+  context.mocks.api(walletUserContract.transactions, ({ respond }) => {
+    return respond(200, {
+      transactions: [first, second],
+      nextCursor: second.id,
+    });
   });
   await openWallet();
   const list = await screen.findByRole("region", { name: "Link transactions" });
   await within(list).findByText("Example Books");
-  expect(within(list).getByText("$35.00")).toBeInTheDocument();
+  expect(within(list).getAllByText("$35.00")).toHaveLength(2);
   expect(
     within(list).getByText("Approved, awaiting payment"),
   ).toBeInTheDocument();
   await expect(button("Connect")).resolves.toBeEnabled();
-  click(await button("Next"));
-  await within(list).findByText("Example Stationery");
-  expect(within(list).getByText("Payment succeeded")).toBeInTheDocument();
-  expect(within(list).getByText("Test")).toBeInTheDocument();
-  expect(within(list).queryByText("Example Books")).not.toBeInTheDocument();
-  await expect(button("Next")).resolves.toBeDisabled();
-  click(await button("Previous"));
-  await within(list).findByText("Example Books");
+  const table = within(list).getByRole("table", { name: "Link transactions" });
   expect(
-    within(list).queryByText("Example Stationery"),
-  ).not.toBeInTheDocument();
+    queryAllByRoleFast("columnheader", table).map((cell) => {
+      return cell.textContent;
+    }),
+  ).toStrictEqual(["Merchant", "Date", "Amount", "Status"]);
+  expect(within(table).getByText("Example Stationery")).toBeInTheDocument();
+  expect(within(table).getByText("Payment succeeded")).toBeInTheDocument();
+  expect(within(table).getByText("Test")).toBeInTheDocument();
+  expect(queryAllByRoleFast("button", list)).toHaveLength(0);
 });
 
 test("shows a transaction error separately from connection status and retries to an empty list", async () => {

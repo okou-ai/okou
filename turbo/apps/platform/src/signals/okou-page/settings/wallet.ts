@@ -44,38 +44,22 @@ export const walletScopeReviewReturnFocus$ = computed((get) => {
   return get(scopeReviewReturnFocus$);
 });
 const transactionsVersion$ = state(0);
-const transactionCursors$ = state<string[]>([]);
-export const walletTransactionPage$ = computed((get) => {
-  return get(transactionCursors$).length + 1;
-});
 export const walletTransactions$ = computed(async (get) => {
   get(transactionsVersion$);
   if (!get(walletSettingsEnabled$)) {
     return null;
   }
-  const cursor = get(transactionCursors$).at(-1);
   const result = await accept(
     get(apiClient$)(walletUserContract).transactions({
-      query: { cursor, limit: 20 },
+      query: { limit: 24 },
     }),
     [200],
   );
   return result.body;
 });
 export const refreshWalletTransactions$ = command(({ set }) => {
-  set(transactionCursors$, []);
   set(transactionsVersion$, (version) => {
     return version + 1;
-  });
-});
-export const nextWalletTransactionPage$ = command(({ set }, cursor: string) => {
-  set(transactionCursors$, (cursors) => {
-    return [...cursors, cursor];
-  });
-});
-export const previousWalletTransactionPage$ = command(({ set }) => {
-  set(transactionCursors$, (cursors) => {
-    return cursors.slice(0, -1);
   });
 });
 export const walletConnection$ = computed(async (get) => {
