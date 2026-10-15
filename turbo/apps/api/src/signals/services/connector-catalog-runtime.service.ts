@@ -33,12 +33,10 @@ import type {
   ConnectorCatalogSkill,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { singleton } from "../../lib/singleton";
-import type { ReadonlyDb } from "../external/db";
 import {
   authMethodDetailForCatalog,
   getConnectorCatalogResolutionDetail,
   listAcceptedConnectorCatalogAvailableSlugs,
-  loadAcceptedConnectorCatalogSnapshot,
   type AcceptedConnectorCatalogSnapshot,
 } from "./connector-catalog-external-reader.service";
 import type { ConnectorFeatureStates } from "./connector-catalog-feature-states";
@@ -812,10 +810,9 @@ export function materializeConnectorRuntimeLookup(args: {
   };
 }
 
-export async function loadConnectorRuntimeSnapshot(
-  db: ReadonlyDb,
-): Promise<ConnectorRuntimeSnapshot> {
-  const acceptedSnapshot = await loadAcceptedConnectorCatalogSnapshot(db);
+export function materializeConnectorRuntimeSnapshot(
+  acceptedSnapshot: AcceptedConnectorCatalogSnapshot,
+): ConnectorRuntimeSnapshot {
   const { state } = connectorRuntimeState(acceptedSnapshot, undefined);
   if (state.snapshot !== undefined) {
     return state.snapshot;
