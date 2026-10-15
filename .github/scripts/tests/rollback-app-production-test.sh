@@ -4,8 +4,8 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 work_dir=$(mktemp -d)
 trap 'rm -rf "$work_dir"' EXIT
 mkdir -p "$work_dir/bin" "$work_dir/source"
-# Real Git history: incompatible release -> reader preparation -> compatible
-# releases -> later policy marker. The marker's own commit must not be the floor.
+# Real Git history: incompatible -> Telegram reader -> pre-A02 release -> Slack
+# reader -> compatible release -> later policy. Neither policy marker is a floor.
 git -C "$work_dir/source" init -q -b main
 git -C "$work_dir/source" config user.email fixture@example.test
 git -C "$work_dir/source" config user.name fixture
@@ -38,10 +38,43 @@ reader_sha=$(git -C "$work_dir/source" rev-parse HEAD)
 git -C "$work_dir/source" tag app-v0.1027.1
 printf '{"version":"0.1029.0"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
 git -C "$work_dir/source" commit -qam 'fixture release'
-target_sha=$(git -C "$work_dir/source" rev-parse HEAD)
+telegram_only_sha=$(git -C "$work_dir/source" rev-parse HEAD)
 git -C "$work_dir/source" tag app-v0.1029.0
+
+# The reviewed Slack reader is input to the real resolver, not a copied oracle.
+slack_reader_paths=(
+  turbo/apps/platform/src/signals/okou-page/slack-connect-signals.ts
+  turbo/apps/platform/src/signals/okou-page/slack-connect-page.ts
+  turbo/apps/platform/src/views/okou-page/slack-connect-page.tsx
+)
+for path in "${slack_reader_paths[@]}"; do
+  mkdir -p "$work_dir/source/$(dirname "$path")"
+  cp "$repo_root/$path" "$work_dir/source/$path"
+done
+cat > "$work_dir/source/turbo/apps/platform/src/signals/bootstrap.ts" <<'TS'
+import { setupSlackConnectPage$ } from "./okou-page/slack-connect-page.ts";
+const routes = [
+  { path: ROUTES.settingsTelegram, setup: setupAuthPageWrapper(setupTelegramConnectPage$) },
+  { path: ROUTES.telegramConnect, setup: setupAuthPageWrapper(setupTelegramConnectPage$) },
+  { path: ROUTES.settingsSlack, setup: setupAuthSidebarPageWrapper(setupSlackConnectPage$) },
+];
+TS
+cat > "$work_dir/source/turbo/apps/platform/src/signals/route-paths.ts" <<'TS'
+const ROUTES = { settingsTelegram: INTEGRATION_SETTINGS_PATHS.telegram, telegramConnect: "/telegram/connect", settingsSlack: INTEGRATION_SETTINGS_PATHS.slack };
+TS
+printf 'const paths = { telegram: "/settings/telegram", slack: "/settings/slack" };\n' > "$work_dir/source/turbo/packages/core/src/integration-routes.ts"
+printf '{"version":"0.1029.1"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
+git -C "$work_dir/source" add .
+git -C "$work_dir/source" commit -qm 'fixture authenticated bare Slack reader preparation'
+slack_reader_sha=$(git -C "$work_dir/source" rev-parse HEAD)
+git -C "$work_dir/source" tag app-v0.1029.1
+printf '{"version":"0.1030.0"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
+git -C "$work_dir/source" commit -qam 'fixture compatible release before policy'
+target_sha=$(git -C "$work_dir/source" rev-parse HEAD)
+git -C "$work_dir/source" tag app-v0.1030.0
 printf '%s\n' "$reader_sha" > "$work_dir/source/.github/rollback-floors/telegram-settings-app"
-printf '{"minimumSupportedVersion":"0.1028.0"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
+printf '%s\n' "$slack_reader_sha" > "$work_dir/source/.github/rollback-floors/slack-settings-app"
+printf '{"minimumSupportedVersion":"0.1029.2"}\n' > "$work_dir/source/turbo/apps/api/src/lib/web-client-compatibility.json"
 git -C "$work_dir/source" add .
 git -C "$work_dir/source" commit -qm 'fixture later main policy and unreleased API floor'
 policy_sha=$(git -C "$work_dir/source" rev-parse HEAD)
@@ -135,9 +168,10 @@ if "api.vercel.com" in url:
     if "/aliases/api.okou.ai?" in url:
         counts["alias"] = counts.get("alias",0)+1
         counts_path.write_text(json.dumps(counts))
-        if case == "policy-changed" and counts["alias"] == 1:
+        if case in ("policy-changed", "slack-policy-changed") and counts["alias"] == 1:
             source = root / "source"
-            (source / ".github/rollback-floors/telegram-settings-app").write_text(policy+"\n")
+            provider = "slack" if case == "slack-policy-changed" else "telegram"
+            (source / f".github/rollback-floors/{provider}-settings-app").write_text(policy+"\n")
             subprocess.run(["git","-C",str(source),"commit","-qam","fixture policy changes during validation"],check=True,stdout=subprocess.DEVNULL)
         answer({"alias":"api.okou.ai","projectId":"prj_fixture","deploymentId":"dpl_changed" if case == "api-changed" and counts["alias"] > 1 else "dpl_fixture"})
     if "/deployments/dpl_fixture?" in url:
@@ -170,10 +204,21 @@ run_case() {
   echo "$name: $expected, mutations=$mutations"
 }
 run_case accepted pass 1
-# 0.1027.1 remains eligible against SERVING 0.1018, despite main's 0.1028.
-TARGET_COMMIT="$reader_sha" run_case older-compatible pass 1
-TARGET_COMMIT="$reader_sha" run_case api-floor-mismatch fail 0
+python3 - "$work_dir/output" "$reader_sha" "$slack_reader_sha" <<'PY'
+import json
+import sys
+from pathlib import Path
+output = Path(sys.argv[1]).read_text()
+result, _ = json.JSONDecoder().raw_decode(output[output.index("{"):])
+assert result["reader_floor"] == sys.argv[2]
+assert result["slack_reader_floor"] == sys.argv[3]
+PY
+# Both reader-capable releases predate the marker. Serving API, not main's
+# unreleased 0.1029.2 floor, decides whether App 0.1029.1 remains eligible.
+TARGET_COMMIT="$slack_reader_sha" run_case older-compatible pass 1
+TARGET_COMMIT="$slack_reader_sha" run_case api-floor-mismatch fail 0
 TARGET_COMMIT="$old_sha" run_case incompatible-0.1025 fail 0
+TARGET_COMMIT="$telegram_only_sha" run_case telegram-only-0.1029 fail 0
 TARGET_COMMIT="$branch_sha" run_case non-main-release fail 0
 for scenario in missing-annotation bad-annotation annotation-mismatch unknown-release release-mismatch \
   moving-main-only failed-only no-cf-deployment cf-lookup-failure github-lookup-failure \
@@ -185,19 +230,78 @@ for scenario in mutation-failure mutation-envelope-failure wrong-readback split-
   run_case "$scenario" fail 1
 done
 run_case policy-changed fail 0
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
+run_case slack-policy-changed fail 0
 # Missing current-main policy must reject even when the checkout still has it.
+git -C "$work_dir/source" reset -q --hard "$policy_sha"
 git -C "$work_dir/source" rm -q .github/rollback-floors/telegram-settings-app
 git -C "$work_dir/source" commit -qm 'fixture missing policy'
 run_case missing-policy fail 0
-# A descendant of the floor still cannot retire the legacy signed reader.
+for scenario in missing-slack-policy invalid-slack-policy non-main-slack-policy; do
+  git -C "$work_dir/source" reset -q --hard "$policy_sha"
+  case "$scenario" in
+    missing-slack-policy) git -C "$work_dir/source" rm -q .github/rollback-floors/slack-settings-app ;;
+    invalid-slack-policy) printf 'not-a-commit\n' > "$work_dir/source/.github/rollback-floors/slack-settings-app" ;;
+    non-main-slack-policy) printf '%s\n' "$branch_sha" > "$work_dir/source/.github/rollback-floors/slack-settings-app" ;;
+  esac
+  git -C "$work_dir/source" commit -qam "fixture $scenario"
+  run_case "$scenario" fail 0
+done
+
+# Descendants with valid releases and deployment evidence still cannot retire
+# either Telegram route or the registered authenticated bare Slack reader.
+for scenario in removed-telegram-canonical removed-telegram-legacy removed-slack-route \
+  unauthenticated-slack-route changed-slack-path reverted-slack-signal \
+  removed-slack-view removed-slack-setup; do
+  git -C "$work_dir/source" reset -q --hard "$policy_sha"
+  python3 - "$work_dir/source" "$scenario" <<'PY'
+from pathlib import Path
+import sys
+root, scenario = Path(sys.argv[1]), sys.argv[2]
+bootstrap = root / "turbo/apps/platform/src/signals/bootstrap.ts"
+routes = {
+    "removed-telegram-canonical": "settingsTelegram",
+    "removed-telegram-legacy": "telegramConnect",
+    "removed-slack-route": "settingsSlack",
+}
+if scenario in routes:
+    bootstrap.write_text("\n".join(line for line in bootstrap.read_text().splitlines() if f"path: ROUTES.{routes[scenario]}" not in line) + "\n")
+elif scenario == "unauthenticated-slack-route":
+    bootstrap.write_text(bootstrap.read_text().replace("setupAuthSidebarPageWrapper(setupSlackConnectPage$)", "setupSlackConnectPage$"))
+elif scenario == "changed-slack-path":
+    paths = root / "turbo/packages/core/src/integration-routes.ts"
+    paths.write_text(paths.read_text().replace('"/settings/slack"', '"/works"'))
+elif scenario == "reverted-slack-signal":
+    signal = root / "turbo/apps/platform/src/signals/okou-page/slack-connect-signals.ts"
+    # A legacy-style reader rejects bare links despite retaining the route.
+    signal.write_text('export const slackConnectStatus$ = computed(async (get) => {\n'
+                      '  const params = get(searchParams$);\n'
+                      '  if (!params.get("w") || !params.get("u")) return { kind: "invalid" };\n'
+                      '  return get(slackLinkStatus$);\n'
+                      '});\n')
+elif scenario == "removed-slack-view":
+    (root / "turbo/apps/platform/src/views/okou-page/slack-connect-page.tsx").write_text('export function SlackConnectPage() { return <div>Invalid link</div>; }\n')
+elif scenario == "removed-slack-setup":
+    (root / "turbo/apps/platform/src/signals/okou-page/slack-connect-page.ts").unlink()
+else:
+    raise AssertionError(scenario)
+PY
+  printf '{"version":"0.1031.0"}\n' > "$work_dir/source/turbo/apps/platform/package.json"
+  git -C "$work_dir/source" add .
+  git -C "$work_dir/source" commit -qm "fixture $scenario release"
+  candidate_sha=$(git -C "$work_dir/source" rev-parse HEAD)
+  git -C "$work_dir/source" tag -f app-v0.1031.0 "$candidate_sha" >/dev/null
+  TARGET_COMMIT="$candidate_sha" run_case "$scenario" fail 0
+done
+
+# A current policy cannot authorize a checkout still running stale tooling.
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
-printf 'const routes = [];\n' > "$work_dir/source/turbo/apps/platform/src/signals/bootstrap.ts"
-git -C "$work_dir/source" commit -qam 'fixture removed signed routes'
-removed_reader_sha=$(git -C "$work_dir/source" rev-parse HEAD)
-TARGET_COMMIT="$removed_reader_sha" run_case removed-reader fail 0
+printf '\n# New current-main validator revision\n' >> "$work_dir/source/.github/scripts/release/resolve-app-rollback-target.sh"
+git -C "$work_dir/source" commit -qam 'fixture stale checkout tooling'
+run_case stale-tooling fail 0
 # A valid release record cannot override a mismatched immutable release tag.
 git -C "$work_dir/source" reset -q --hard "$policy_sha"
-git -C "$work_dir/source" tag -f app-v0.1029.0 "$reader_sha" >/dev/null
+git -C "$work_dir/source" tag -f app-v0.1030.0 "$reader_sha" >/dev/null
 run_case mismatched-tag fail 0
 
 echo 'App rollback command tests passed'

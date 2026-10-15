@@ -142,6 +142,8 @@ PATH="${fake_bin}:$PATH" \
 grep -Fqx -- "[Rollback Runner and API](${rollback_url})" "$output_file"
 grep -Fq -- "[App-only rollback](${rollback_url})" "$output_file"
 grep -Fq -- 'select `component=app`' "$output_file"
+grep -Fq -- 'signed Telegram readers (canonical and legacy)' "$output_file"
+grep -Fq -- 'authenticated bare Slack reader, both reader floors' "$output_file"
 grep -Fq -- 'serving API client floor' "$output_file"
 grep -Fq -- 'Historical entries are not an allowlist' "$output_file"
 grep -Fqx -- "<summary>07-23-2026 07:39:40 SGT</summary>" "$output_file"

@@ -34,7 +34,7 @@ on:
           - emergency
         default: graceful
       confirmed_compatible:
-        description: "I confirm target compatibility: Runner/API/guest/on-disk state, or App/serving API/retained signed links"
+        description: "I confirm target compatibility: Runner/API/guest/on-disk state, or App/serving API/retained signed Telegram and bare Slack links"
         required: true
         type: choice
         options:
