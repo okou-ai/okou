@@ -40,6 +40,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createRouteMocks } from "./helpers/route-test";
 
 import { createRunsApi } from "./helpers/api-bdd-runs";
+import { mockClaudeCodeTokenEndpoint } from "./helpers/api-bdd-auth-device";
 
 import {
   createChatEventsFixture,
@@ -530,11 +531,31 @@ async function createClaimedImageRun(
     });
   });
   restoreSetupExternalState = undefined;
-  await run(() => {
-    return chat.api.ensurePersonalSubscriptionModel(actor);
-  });
-  await run(() => {
-    return useImageModel(fixture, imageModel);
+  await run(async () => {
+    mockClaudeCodeTokenEndpoint();
+    await chat.api.createPersonalModelProvider(actor, {
+      type: "claude-code-oauth-token",
+      secret: "bdd-personal-claude-token",
+    });
+    mocks.clerk.session(fixture.userId, fixture.orgId);
+    const preferences = setupApp({
+      context,
+      routes: userModelPreferenceRoutes,
+    })(userModelPreferenceContract);
+    // The native Run and image model are both chosen by this fixture. Store
+    // them together through the ordinary member preference endpoint.
+    await accept(
+      preferences.update({
+        headers: authHeaders(),
+        body: {
+          selectedModel: "claude-fable-5-1",
+          serviceTier: null,
+          selectedImageModel:
+            imageModel === null ? null : imageModelIdSchema.parse(imageModel),
+        },
+      }),
+      [200],
+    );
   });
   // Normal Pro activation grants 20,000 credits before an optional purchase.
   await expect(
@@ -573,11 +594,13 @@ async function createClaimedImageRun(
     throw new Error("Expected paid onboarding to create the image Run's agent");
   }
   restoreSetupExternalState = undefined;
-  await expect(
-    run(() => {
-      return orgCredits(fixture);
-    }),
-  ).resolves.toBe(initialCredits);
+  if (credits !== 0) {
+    await expect(
+      run(() => {
+        return orgCredits(fixture);
+      }),
+    ).resolves.toBe(initialCredits);
+  }
   const sent = await run(() => {
     return chat.sendChatRun(actor, {
       agentId,

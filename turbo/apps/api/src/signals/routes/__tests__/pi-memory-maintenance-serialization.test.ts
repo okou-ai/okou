@@ -43,9 +43,13 @@ describe("Serial private Pi maintenance", () => {
     expect(independent.memory.storageId).not.toBe(run.memory.storageId);
     const output = await publish(independent);
     await completeMaintenance(independent, output.versionId);
+    await expect(
+      runs.readRun(independent.actor, independent.runId),
+    ).resolves.toMatchObject({
+      status: "completed",
+      result: { storageOutputs: [{ version: output.versionId }] },
+    });
     expect((await runs.readRun(run.actor, run.runId)).status).toBe("running");
-    const first = await publish(run);
-    await completeMaintenance(run, first.versionId);
   });
 
   it.each(["published", "no-diff"])(
