@@ -20,6 +20,55 @@ fn resolved() -> Value {
 }
 
 #[test]
+fn native_transport_handoff_keeps_origin_identity_and_bounded_secrets_private() {
+    let mut value = resolved();
+    value["transport"] = json!({
+        "type": "cloudflare_access", "configId": "10000000-0000-4000-8000-000000000001",
+        "generation": 7,
+        "credentials": {"clientId":"private-client", "clientSecret":"private-secret"},
+        "originTls": {"serverName":"origin.internal", "trust":{"mode":"custom_ca","caBundle":"origin-ca"}}
+    });
+    let response: ResolveResponse = serde_json::from_value(value.clone()).unwrap();
+    let ResolveResponse::ResolvedTransport { transport, .. } = response else {
+        panic!("expected private native handoff");
+    };
+    let ResolveResponseResolvedTransportTransport::CloudflareAccess {
+        credentials,
+        origin_tls,
+        generation,
+        ..
+    } = transport
+    else {
+        panic!("native route must remain explicit");
+    };
+    assert_eq!(credentials.client_id.expose(), "private-client");
+    assert_eq!(credentials.client_secret.expose(), "private-secret");
+    assert_eq!(generation, 7);
+    assert_eq!(origin_tls.unwrap().server_name, "origin.internal");
+
+    value["transport"]["credentials"]["clientSecret"] = json!("SENSITIVE_CANARY".repeat(400));
+    let error = serde_json::from_value::<ResolveResponse>(value)
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(!error.contains("SENSITIVE_CANARY"));
+    assert!(!error.contains("private-client"));
+}
+
+#[test]
+fn native_authority_snapshots_remain_secret_free() {
+    let request = json!({
+        "connectionId":"10000000-0000-4000-8000-000000000001",
+        "runnerIdentity":{"runnerId":"10000000-0000-4000-8000-000000000002","heartbeatGeneration":1},
+        "expectedGeneration":4,
+        "expectedTransport":{"type":"cloudflare_access","configId":"10000000-0000-4000-8000-000000000003","generation":7},
+        "expectedKdcTransport":{"type":"tailscale","configId":"10000000-0000-4000-8000-000000000004","generation":8}
+    });
+    let decoded: CheckRequest = serde_json::from_value(request.clone()).unwrap();
+    assert_eq!(serde_json::to_value(decoded).unwrap(), request);
+}
+
+#[test]
 fn credential_handoff_preserves_explicit_authentication_and_trust() {
     let response: ResolveResponse = serde_json::from_str(&resolved().to_string()).unwrap();
     let ResolveResponse::ResolvedTransport {

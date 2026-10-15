@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { vncNetworkHostReferenceSchema } from "./vnc-transport";
 
 export const tailscaleChangedPayloadSchema = z
   .object({ orgId: z.string().min(1) })
@@ -52,6 +53,8 @@ export const tailscaleConfigSchema = z
     sshHosts: z.array(
       z.object({ id: z.uuid(), displayName: z.string() }).strict(),
     ),
+    // B reader preparation; G emits this canonically and H (#40229) requires it.
+    vncHosts: z.array(vncNetworkHostReferenceSchema).optional(),
   })
   .strict();
 const updateBody = z

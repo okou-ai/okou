@@ -3,6 +3,7 @@ import {
   runnerVncInvalidateSchema,
 } from "../contracts/runner-vnc";
 import { VNC_USERNAME_PASSWORD_MAX_BYTES } from "../contracts/vnc-credentials";
+import { CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH } from "../contracts/cloudflare-access";
 import type { RustTypeBinding, RustTypeDeclarationDoc } from "./types";
 
 function identityDocs(name: string): RustTypeDeclarationDoc {
@@ -36,11 +37,26 @@ function kdcTransportDocs(name: string): RustTypeDeclarationDoc {
     rustDoc: ["Independently authorized exact KDC transport snapshot."],
     fields: {
       connectionId: ["Exact separately granted saved SSH UUID."],
-      generation: ["Current SSH generation, independently fenced from RFB."],
+      configId: [
+        "Exact separately authorized native network configuration UUID.",
+      ],
+      generation: [
+        "Current carrier configuration generation, independent of RFB.",
+      ],
+      ...(name.startsWith("Resolve")
+        ? {
+            credentials: [
+              "Private bounded provider credentials; never guest-visible.",
+            ],
+            tags: ["Exact saved Tailscale node tags."],
+          }
+        : {}),
     },
     variants: {
       direct: ["Exact saved public-network KDC route."],
       ssh: ["Exact independently authorized SSH-to-loopback KDC route."],
+      cloudflare_access: ["Exact authorized Cloudflare Access TCP route."],
+      tailscale: ["Exact authorized Tailscale peer TCP route."],
     },
   };
 }
@@ -103,11 +119,16 @@ export const vncTypeBindings = [
         ],
         fields: {
           connectionId: ["Exact saved SSH UUID for the RFB route."],
-          generation: ["Resolved SSH configuration generation."],
+          generation: ["Resolved carrier configuration generation."],
+          configId: ["Exact saved native network configuration UUID."],
         },
         variants: {
           direct: ["Expected direct RFB route."],
           ssh: ["Expected verified saved SSH carrier for RFB."],
+          cloudflare_access: [
+            "Expected Cloudflare configuration and generation.",
+          ],
+          tailscale: ["Expected Tailscale configuration and generation."],
         },
       },
       kdcTransportDocs("ObservationRequestExpectedKdcTransport"),
@@ -123,6 +144,15 @@ export const vncTypeBindings = [
           disconnected: ["Peer disconnected during connection setup."],
           authentication_failed: [
             "Client authentication or server identity verification failed.",
+          ],
+          access_rejected: ["Cloudflare Access rejected the service token."],
+          access_tls_failure: ["Cloudflare gateway TLS verification failed."],
+          access_protocol_failure: ["Cloudflare carrier protocol failed."],
+          origin_tls_failure: [
+            "Independent server-local origin TLS verification failed.",
+          ],
+          tailscale_unavailable: [
+            "The exact authorized Tailscale peer is unavailable.",
           ],
           unsupported_profile: [
             "Peer does not support the selected security profile.",
@@ -166,7 +196,7 @@ export const vncTypeBindings = [
           securityType: ["Supported security policy."],
           transportType: ["Supported transport for this exact tuple."],
           kdcTransportType: [
-            "Absent for legacy, none for offline tickets, exact direct/ssh for online sources.",
+            "Absent for legacy, none for offline tickets, exact independently authorized route for online sources.",
           ],
         },
       },
@@ -221,19 +251,23 @@ export const vncTypeBindings = [
           rsa_aes_ra2_256: [
             "Pinned RSA-AES type 129; full-session AES-256 EAX.",
           ],
-          rsa_aes_ra2ne: ["Pinned RSA-AES type 6; verified SSH-loopback only."],
+          rsa_aes_ra2ne: [
+            "Pinned RSA-AES type 6; requires verified full-stream protection.",
+          ],
           rsa_aes_ra2ne_256: [
-            "Pinned RSA-AES type 130; verified SSH-loopback only.",
+            "Pinned RSA-AES type 130; requires verified full-stream protection.",
           ],
           apple_vnc_password: [
-            "Apple bare type 2, requiring SSH to Mac loopback.",
+            "Apple bare type 2, requiring verified protection to the selected Mac.",
           ],
-          apple_dh: ["Apple DH type 30, requiring SSH to Mac loopback."],
+          apple_dh: [
+            "Apple DH type 30, requiring verified protection to the selected Mac.",
+          ],
           apple_srp: [
-            "Apple Direct SRP type 36, requiring SSH to Mac loopback.",
+            "Apple Direct SRP type 36, requiring verified protection to the selected Mac.",
           ],
           apple_rsa_srp: [
-            "Apple RSA/SRP type 33, requiring SSH to Mac loopback.",
+            "Apple RSA/SRP type 33, requiring verified protection to the selected Mac.",
           ],
         },
       },
@@ -244,6 +278,8 @@ export const vncTypeBindings = [
           none: ["Offline service ticket; no KDC operation."],
           direct: ["Separate exact public KDC route."],
           ssh: ["Separate authorized SSH-loopback KDC route."],
+          cloudflare_access: ["Separate authorized Cloudflare KDC route."],
+          tailscale: ["Separate authorized Tailscale KDC route."],
         },
       },
       {
@@ -252,6 +288,10 @@ export const vncTypeBindings = [
         variants: {
           direct: ["Connect directly under the VNC public-network policy."],
           ssh: ["Connect through the verified Run-owned SSH transport."],
+          cloudflare_access: [
+            "Native Cloudflare; raw profiles require verified origin TLS.",
+          ],
+          tailscale: ["Native verified Tailscale peer stream."],
         },
       },
     ],
@@ -267,6 +307,8 @@ export const vncTypeBindings = [
       privateKeyPkcs8Der: "crate::SecretUtf8Text<24576>",
       ticketCache: "crate::SecretUtf8Text<87384>",
       keytab: "crate::SecretUtf8Text<87384>",
+      clientId: `crate::SecretText<${CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}>`,
+      clientSecret: `crate::SecretText<${CLOUDFLARE_ACCESS_TOKEN_MAX_LENGTH}>`,
     },
     declarations: [
       principalDocs(
@@ -281,6 +323,48 @@ export const vncTypeBindings = [
       kdcTransportDocs(
         "ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransport",
       ),
+      ...[
+        "ResolveResponseResolvedTransportTransportCloudflareAccessCredentials",
+        "ResolveResponseResolvedTransportSecurityQemuX509GssapiKdcTransportCloudflareAccessCredentials",
+      ].map((rustTypeName) => {
+        return {
+          rustTypeName,
+          rustDoc: ["Private bounded zeroizing provider credentials."],
+          fields: {
+            clientId: ["Bounded zeroizing provider client ID."],
+            clientSecret: ["Bounded zeroizing provider client secret."],
+          },
+        };
+      }),
+      {
+        rustTypeName:
+          "ResolveResponseResolvedTransportTransportCloudflareAccessOriginTls",
+        rustDoc: [
+          "Independent certificate-verified TLS ending on the selected VNC server.",
+        ],
+        fields: {
+          serverName: [
+            "Explicit origin identity, never the gateway identity by default.",
+          ],
+          trust: ["Independent origin TLS roots, not inner VNC trust."],
+        },
+      },
+      {
+        rustTypeName:
+          "ResolveResponseResolvedTransportTransportCloudflareAccessOriginTlsTrust",
+        rustDoc: [
+          "Independent certificate verification roots for the origin stream.",
+        ],
+        fields: {
+          caBundle: [
+            "Bounded PEM origin CA roots; never an insecure verification mode.",
+          ],
+        },
+        variants: {
+          system: ["Verify the origin against system roots."],
+          custom_ca: ["Verify the origin against explicitly saved CA roots."],
+        },
+      },
       {
         rustTypeName:
           "ResolveResponseResolvedTransportSecurityQemuX509GssapiKdc",
@@ -315,7 +399,7 @@ export const vncTypeBindings = [
             "Certificate identity for X509 transport handoffs; absent for Apple DH.",
           ],
           transport: [
-            "Explicit direct or generation-bound SSH transport snapshot.",
+            "Explicit generation-bound route with resolve-only provider credentials for native networks.",
           ],
           authentication: [
             "Exact saved method, with no credential for X509None.",
@@ -338,34 +422,48 @@ export const vncTypeBindings = [
             "Current credential, policy and explicit generation-bound transport.",
           ],
           resolved_apple_vnc_password: [
-            "Apple classic VNC password with verified SSH-to-Mac-loopback transport only.",
+            "Apple classic VNC password requiring verified protective transport to the Mac.",
           ],
           resolved_apple_dh: [
-            "Apple DH credential and verified SSH-to-Mac-loopback transport only.",
+            "Apple DH credential requiring verified protective transport to the Mac.",
           ],
           resolved_apple_srp: [
-            "Apple Direct SRP credential and verified SSH-to-Mac-loopback transport only.",
+            "Apple Direct SRP credential requiring verified protective transport to the Mac.",
           ],
           resolved_rsa_aes: [
             "Exact RSA-AES mode, independent wire pin and bounded credential.",
           ],
           resolved_apple_rsa_srp: [
-            "Apple RSA/SRP credential and verified SSH-to-Mac-loopback transport only.",
+            "Apple RSA/SRP credential requiring verified protective transport to the Mac.",
           ],
         },
       },
       {
         rustTypeName: "ResolveResponseResolvedTransportTransport",
         rustDoc: [
-          "Secret-free transport snapshot selected by an exact capability tuple.",
+          "Private transport handoff selected by an exact capability tuple.",
         ],
         fields: {
           connectionId: ["Exact saved SSH connection UUID."],
-          generation: ["Current saved SSH configuration generation."],
+          generation: ["Current saved carrier configuration generation."],
+          configId: ["Exact authorized native network configuration UUID."],
+          credentials: [
+            "Private bounded provider credentials; never guest-visible.",
+          ],
+          tags: ["Saved Tailscale node tags."],
+          originTls: [
+            "Independent server-local origin protection for Cloudflare RFB.",
+          ],
         },
         variants: {
           direct: ["Connect directly under the VNC public-network policy."],
           ssh: ["Connect through this exact SSH authority snapshot."],
+          cloudflare_access: [
+            "Authorized Cloudflare WSS carrier with independent RFB trust.",
+          ],
+          tailscale: [
+            "Authorized exact Tailscale peer stream with independent RFB trust.",
+          ],
         },
       },
       {
@@ -449,10 +547,10 @@ export const vncTypeBindings = [
           rsa_aes_ra2: ["Pinned type 5; full-session AES-128 EAX."],
           rsa_aes_ra2_256: ["Pinned type 129; full-session AES-256 EAX."],
           rsa_aes_ra2ne: [
-            "Pinned type 6; authentication-only over verified SSH-loopback.",
+            "Pinned type 6; authentication-only over verified protective transport.",
           ],
           rsa_aes_ra2ne_256: [
-            "Pinned type 130; authentication-only over verified SSH-loopback.",
+            "Pinned type 130; authentication-only over verified protective transport.",
           ],
           x509_none: ["Verified TLS without inner RFB client authentication."],
           x509_vnc: ["VeNCrypt X509Vnc with verified TLS."],
@@ -518,14 +616,21 @@ export const vncTypeBindings = [
       kdcTransportDocs("CheckRequestExpectedKdcTransport"),
       {
         rustTypeName: "CheckRequestExpectedTransport",
-        rustDoc: ["Expected secret-free SSH authority snapshot."],
+        rustDoc: ["Expected secret-free route authority snapshot."],
         fields: {
           connectionId: ["Exact saved SSH connection UUID."],
-          generation: ["Expected saved SSH configuration generation."],
+          generation: ["Expected saved carrier configuration generation."],
+          configId: ["Exact saved native network configuration UUID."],
         },
         variants: {
           direct: ["Expect the saved direct transport."],
           ssh: ["Expect this exact saved SSH connection and generation."],
+          cloudflare_access: [
+            "Expect this exact Cloudflare configuration and generation.",
+          ],
+          tailscale: [
+            "Expect this exact Tailscale configuration and generation.",
+          ],
         },
       },
     ],

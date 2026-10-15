@@ -335,21 +335,22 @@ export function vncCredentialMatchesProfile(
   );
 }
 
-type SshRoutedVncConnection = Extract<
-  VncConnectionResponse,
-  { readonly transport: unknown }
->;
-
-function isSshRoutedVncConnection(
-  connection: VncConnectionResponse,
-): connection is SshRoutedVncConnection {
-  return "transport" in connection;
-}
-
 export function vncSshConnectionId(connection: VncConnectionResponse) {
-  return isSshRoutedVncConnection(connection)
+  return connection.transport?.type === "ssh"
     ? connection.transport.connectionId
     : null;
+}
+
+/** Temporary owner-input subset until G (#40228) supplies the native editor. */
+export function hasNativeVncRoute(connection: VncConnectionResponse) {
+  const native = (type: string | undefined) => {
+    return type === "cloudflare_access" || type === "tailscale";
+  };
+  return (
+    native(connection.transport?.type) ||
+    (connection.security.type === "qemu_x509_gssapi" &&
+      native(connection.security.kdc?.transport.type))
+  );
 }
 
 export function vncProfileForConnection(
@@ -551,6 +552,7 @@ export const acceptVncConflictReview$ = command(
         reviewed.credential?.authMethod !== current.credential?.authMethod) ||
       (reviewed.kind === "delete-credential" &&
         reviewed.credential.hosts.length > 0) ||
+      (reviewed.kind === "edit" && hasNativeVncRoute(reviewed.connection)) ||
       !isVncReviewableConflict(current, message)
     ) {
       return;
@@ -1011,6 +1013,9 @@ export const openVncDialog$ = command(
     }
     const connection = resource && "host" in resource ? resource : null;
     const credential = resource && "authMethod" in resource ? resource : null;
+    if (kind === "edit" && connection && hasNativeVncRoute(connection)) {
+      return;
+    }
     set(closeVncDialog$);
     set(editor$, initialVncEditor(kind, connection, credential));
     const dialog: VncDialogState = {
@@ -1357,6 +1362,9 @@ function connectionRequest(
         fetchOptions: { signal },
       });
     };
+  }
+  if (hasNativeVncRoute(connection)) {
+    return null;
   }
   const body = updateVncConnectionRequestSchema.safeParse({
     ...connectionFields(form, editor),
