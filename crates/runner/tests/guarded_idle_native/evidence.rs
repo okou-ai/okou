@@ -216,6 +216,10 @@ impl Case {
         self.write_event("NATIVE_RECOVERY_WITNESS ", phase, evidence)
     }
 
+    pub fn critical_witness(&self, phase: &str, evidence: Value) -> io::Result<()> {
+        self.write_event("NATIVE_CRITICAL_WITNESS ", phase, evidence)
+    }
+
     pub fn snapshot_memory_hash(&self) -> io::Result<&str> {
         self.artifacts
             .snapshot_files

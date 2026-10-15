@@ -4,6 +4,7 @@
 
 mod continuation;
 mod continuation_api;
+mod critical;
 mod evidence;
 mod finalizing;
 mod fixture;
@@ -114,6 +115,22 @@ fn native_recovery_report_requires_real_gaps_pacing_and_joined_reads() {
     assert!(
         output.status.success(),
         "native recovery report failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn native_critical_report_requires_bounded_waves_and_suppressed_reads() {
+    let output = std::process::Command::new("python3")
+        .arg(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/guarded_idle_native/critical_report_test.py"
+        ))
+        .output()
+        .expect("native Critical contract tests require Python 3");
+    assert!(
+        output.status.success(),
+        "native Critical report failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
@@ -246,6 +263,7 @@ enum NativeScope {
     OptionalOrdinary,
     OptionalAged,
     Recovery,
+    Critical,
     CallerOwned,
     SpeculativeGuestFailure,
     FinalizingParked,
@@ -318,6 +336,12 @@ async fn native_optional_records_ready_preparation_prefetch_and_required_saving(
 #[ignore = "requires owned KVM/NBD artifacts, real observation gaps, complete reads and exact-source P1 proof"]
 async fn native_recovery_records_stale_revocation_and_paced_snapshot_reads() -> TestResult<()> {
     measured_corpus(&[NativeScope::Recovery]).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned KVM/NBD artifacts, real supplied-Critical samples and exact-source P1 proof"]
+async fn native_critical_records_bounded_waves_and_suppressed_snapshot_reads() -> TestResult<()> {
+    measured_corpus(&[NativeScope::Critical]).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -549,14 +573,15 @@ async fn exercise_retirement(
     if rootfs_hash.is_empty() {
         return Err(io::Error::other("packaged rootfs hash must be supplied").into());
     }
-    let recovery_source =
-        matches!(scope, NativeScope::Recovery).then(|| Arc::new(recovery_source::Source::new()));
+    let recovery_source = matches!(scope, NativeScope::Recovery | NativeScope::Critical)
+        .then(|| Arc::new(recovery_source::Source::new()));
     let operations = match &recovery_source {
         Some(source) => inputs.operations_with_source(source.clone())?,
         None => inputs.operations()?,
     };
     let (vcpu, memory) = match scope {
         NativeScope::Pressure => (6, 12288),
+        NativeScope::Critical => (8, 16384),
         NativeScope::Replacement | NativeScope::Restore => (6, 12288),
         NativeScope::Aged | NativeScope::OptionalOrdinary | NativeScope::OptionalAged => {
             (12, 24576)
@@ -728,14 +753,15 @@ async fn exercise_retirement(
         return Err(io::Error::other("native fixture could not own home saving").into());
     };
     let mut pool = IdlePool::new(IdlePoolConfig {
-        max_idle: if matches!(scope, NativeScope::OptionalOrdinary) {
-            2
-        } else {
-            1
+        max_idle: match scope {
+            NativeScope::Critical => 3,
+            NativeScope::OptionalOrdinary => 2,
+            _ => 1,
         },
     });
     let tracker = IdleDestroyTracker::new(Arc::new(Notify::new()));
-    if (corpus == Corpus::Optional || matches!(scope, NativeScope::Recovery))
+    if (corpus == Corpus::Optional
+        || matches!(scope, NativeScope::Recovery | NativeScope::Critical))
         && let Some(proof) = proof
     {
         proof.bind_original_lease(&lease)?;
@@ -817,6 +843,14 @@ async fn exercise_retirement(
     }
     let retirement: TestResult<_> = async {
         match scope {
+            NativeScope::Critical => {
+                critical::exercise(transitions::Context {
+                    factory: factory.clone(), pool: pool.clone(), status: status.clone(),
+                    operations: operations.clone(), budget: budget.clone(), tracker: tracker.clone(),
+                    rootfs_hash: rootfs_hash.clone(), reuse_key: reuse_key.clone(),
+                }, inputs, recovery_source.as_ref().ok_or_else(|| io::Error::other("native Critical source missing"))?, proof).await?;
+                Ok(None)
+            }
             NativeScope::Recovery => {
                 recovery::exercise(transitions::Context {
                     factory: factory.clone(), pool: pool.clone(), status: status.clone(),
