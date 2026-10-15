@@ -127,10 +127,30 @@ function InstatusIssueNotice({
   );
 }
 
+type InstatusNoticePlacement = "floating" | "sidebar" | "list";
+
+function placementClassName(placement: InstatusNoticePlacement): string {
+  switch (placement) {
+    case "floating": {
+      return "pointer-events-none fixed inset-x-3 bottom-safe-offset-4 z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]";
+    }
+    case "sidebar": {
+      return "mx-2 mt-2 flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain";
+    }
+    case "list": {
+      // The mobile chat list replaces the drawer, so the notice sits above
+      // its rows and shares their inset. The inset is padding, not margin:
+      // this element scrolls, and the card's shadow needs room inside it or
+      // the scroller cuts it to a hard edge.
+      return "flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain px-3 pt-2 pb-3";
+    }
+  }
+}
+
 export function InstatusStatusNotice({
   placement = "floating",
 }: {
-  readonly placement?: "floating" | "sidebar";
+  readonly placement?: InstatusNoticePlacement;
 }) {
   const { t } = useTranslation();
   const issues = useLastResolved(visibleInstatusIssues$) ?? [];
@@ -150,11 +170,7 @@ export function InstatusStatusNotice({
       aria-label={t(($) => {
         return $.serviceStatus.label;
       })}
-      className={
-        placement === "sidebar"
-          ? "mx-2 mt-2 flex max-h-[min(40dvh,320px)] shrink-0 flex-col gap-2 overflow-y-auto overscroll-contain"
-          : "pointer-events-none fixed inset-x-3 bottom-safe-offset-4 z-[2147483646] flex max-h-[calc(100dvh-32px)] flex-col gap-3 overflow-y-auto sm:left-6 sm:right-auto sm:w-[390px]"
-      }
+      className={placementClassName(placement)}
     >
       {issues.map((issue) => {
         return (
@@ -162,7 +178,7 @@ export function InstatusStatusNotice({
             <InstatusIssueNotice
               issue={issue}
               onDismiss={dismissIssue}
-              compact={placement === "sidebar"}
+              compact={placement !== "floating"}
               pageBaseUrl={config.pageBaseUrl}
             />
           </div>

@@ -1,5 +1,5 @@
 {
-  "id": "87d52190-d50d-4b8c-9716-f21fa437f039",
+  "id": "ffe21506-d93e-4b9d-812d-e370f465e104",
   "prevId": "a85fa318-35fa-441e-942b-16144887071b",
   "version": "7",
   "dialect": "postgresql",
@@ -828,18 +828,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "continued_from_session_id": {
-          "name": "continued_from_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -913,21 +901,6 @@
               "expression": "created_at",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_runs_session": {
-          "name": "idx_agent_runs_session",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
               "nulls": "last"
             }
           ],
@@ -1023,19 +996,6 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "agent_runs_session_id_agent_sessions_id_fk": {
-          "name": "agent_runs_session_id_agent_sessions_id_fk",
-          "tableFrom": "agent_runs",
-          "tableTo": "agent_sessions",
-          "columnsFrom": [
-            "session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1091,237 +1051,6 @@
           "value": "(\n          \"agent_runs\".\"official_workflow_provenance\" IS NULL OR (\n            jsonb_typeof(\"agent_runs\".\"official_workflow_provenance\") = 'object' AND\n            \"agent_runs\".\"official_workflow_provenance\" ?& ARRAY[\n              'schemaVersion',\n              'definitions'\n            ] AND\n            (\n              \"agent_runs\".\"official_workflow_provenance\" -\n              'schemaVersion' -\n              'definitions'\n            ) = '{}'::jsonb AND\n            \"agent_runs\".\"official_workflow_provenance\" -> 'schemaVersion' = '1'::jsonb AND\n            jsonb_typeof(\n              \"agent_runs\".\"official_workflow_provenance\" -> 'definitions'\n            ) = 'array' AND\n            jsonb_array_length(\n              \"agent_runs\".\"official_workflow_provenance\" -> 'definitions'\n            ) > 0 AND\n            NOT jsonb_path_exists(\n              \"agent_runs\".\"official_workflow_provenance\",\n              '$.definitions[*] ? (\n                @.type() != \"object\" ||\n                !exists(@.name) ||\n                @.name.type() != \"string\" ||\n                !(@.name like_regex \"^[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$\") ||\n                !exists(@.revision) ||\n                @.revision.type() != \"string\" ||\n                !(@.revision like_regex \"^[0-9a-f]{64}$\") ||\n                !exists(@.artifact) ||\n                @.artifact.type() != \"object\" ||\n                exists(\n                  @.keyvalue() ? (\n                    @.key != \"name\" &&\n                    @.key != \"revision\" &&\n                    @.key != \"artifact\"\n                  )\n                ) ||\n                !exists(@.artifact.orgId) ||\n                @.artifact.orgId != \"__system__\" ||\n                !exists(@.artifact.userId) ||\n                @.artifact.userId != \"__org__\" ||\n                !exists(@.artifact.storageName) ||\n                @.artifact.storageName.type() != \"string\" ||\n                !(@.artifact.storageName like_regex \"^.{1,255}.?$\") ||\n                !exists(@.artifact.storageId) ||\n                @.artifact.storageId.type() != \"string\" ||\n                !(@.artifact.storageId like_regex \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$\") ||\n                !exists(@.artifact.storageVersion) ||\n                @.artifact.storageVersion.type() != \"string\" ||\n                !(@.artifact.storageVersion like_regex \"^[0-9a-f]{64}$\") ||\n                exists(\n                  @.artifact.keyvalue() ? (\n                    @.key != \"orgId\" &&\n                    @.key != \"userId\" &&\n                    @.key != \"storageName\" &&\n                    @.key != \"storageId\" &&\n                    @.key != \"storageVersion\"\n                  )\n                )\n              )'\n            )\n          )\n        )"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.agent_sessions": {
-      "name": "agent_sessions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "conversation_id": {
-          "name": "conversation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "idx_agent_sessions_user_agent": {
-          "name": "idx_agent_sessions_user_agent",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_sessions_org": {
-          "name": "idx_agent_sessions_org",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_sessions_agent": {
-          "name": "idx_agent_sessions_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_agent_sessions_conversation": {
-          "name": "idx_agent_sessions_conversation",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "agent_sessions_agent_id_agents_id_fk": {
-          "name": "agent_sessions_agent_id_agents_id_fk",
-          "tableFrom": "agent_sessions",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "agent_sessions_conversation_id_conversations_id_fk": {
-          "name": "agent_sessions_conversation_id_conversations_id_fk",
-          "tableFrom": "agent_sessions",
-          "tableTo": "conversations",
-          "columnsFrom": [
-            "conversation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.conversations": {
-      "name": "conversations",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "run_id": {
-          "name": "run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cli_agent_type": {
-          "name": "cli_agent_type",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cli_agent_session_id": {
-          "name": "cli_agent_session_id",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cli_agent_session_history": {
-          "name": "cli_agent_session_history",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cli_agent_session_history_hash": {
-          "name": "cli_agent_session_history_hash",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "conversations_run_id_agent_runs_id_fk": {
-          "name": "conversations_run_id_agent_runs_id_fk",
-          "tableFrom": "conversations",
-          "tableTo": "agent_runs",
-          "columnsFrom": [
-            "run_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "conversations_run_id_unique": {
-          "name": "conversations_run_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "run_id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.agent_suggestions": {
@@ -8969,36 +8698,9 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "agent_session_id": {
-          "name": "agent_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "agent_session_run_id": {
-          "name": "agent_session_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
-        "chat_threads_agent_session_unique": {
-          "name": "chat_threads_agent_session_unique",
-          "columns": [
-            {
-              "expression": "agent_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_chat_threads_user_agent_pinned": {
           "name": "idx_chat_threads_user_agent_pinned",
           "columns": [
@@ -17397,7 +17099,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "authorization_id": {
           "name": "authorization_id",
@@ -17455,28 +17157,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_link_wallet_connections_owner": {
-          "name": "idx_link_wallet_connections_owner",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"link_wallet_connections\".\"agent_id\" IS NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -17543,14 +17223,7 @@
           "name": "agent_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "scope": {
-          "name": "scope",
-          "type": "varchar(16)",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'agent'"
+          "notNull": true
         },
         "encrypted_verifier": {
           "name": "encrypted_verifier",

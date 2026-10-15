@@ -17,7 +17,7 @@ const journal = z
     ),
   );
 const migration = journal.entries.find((entry) => {
-  return entry.tag === "1401_link_wallet_workspace_owner";
+  return entry.tag === "1402_link_wallet_workspace_owner";
 });
 assert.ok(migration);
 const adminUrl = new URL(databaseUrl);

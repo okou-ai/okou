@@ -9,6 +9,44 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [1.741.0](https://github.com/okou-ai/okou/compare/api-v1.740.2...api-v1.741.0) (2026-10-15)
+
+
+### Features
+
+* **api:** prepare opt-in telegram callback bridge ([#40219](https://github.com/okou-ai/okou/issues/40219)) ([e4c5d37](https://github.com/okou-ai/okou/commit/e4c5d37ad3a84ff846f43a13c29f3078393874ff))
+* **ssh:** support tailscale ssh with saved networks ([#40212](https://github.com/okou-ai/okou/issues/40212)) ([31db119](https://github.com/okou-ai/okou/commit/31db1195d86e33e52a576e0b50286312366d198e))
+
+
+### Bug Fixes
+
+* **api:** deduplicate discord ingress reads and start typing earlier ([#40256](https://github.com/okou-ai/okou/issues/40256)) ([b232713](https://github.com/okou-ai/okou/commit/b232713ddddd39a02e142b741d28a45e6fa5e6ee))
+* **api:** use clerk m2m authorization for atom grants ([#40252](https://github.com/okou-ai/okou/issues/40252)) ([f837ead](https://github.com/okou-ai/okou/commit/f837ead8511336f568009e38924e01adfb351002))
+* **chat:** give thread muting feedback, header entry points and a clean unmute ([#40253](https://github.com/okou-ai/okou/issues/40253)) ([59d7408](https://github.com/okou-ai/okou/commit/59d74089e1e28403b00b04f2aeef146a5f448333))
+* **maps:** log citation validation failure reasons ([#40203](https://github.com/okou-ai/okou/issues/40203)) ([66b5dea](https://github.com/okou-ai/okou/commit/66b5dea710f3fe85e40a04282d8b1a5d693252b4))
+
+
+### Refactoring
+
+* **api:** narrow invitation payment publication transaction ([#40216](https://github.com/okou-ai/okou/issues/40216)) ([a44cee5](https://github.com/okou-ai/okou/commit/a44cee5a4133e6c3edaab212e3d9ae8b3e6707b6))
+* **api:** own browser user-action maintenance in commands ([#40264](https://github.com/okou-ai/okou/issues/40264)) ([468bad3](https://github.com/okou-ai/okou/commit/468bad381bd1dd84a29ca0be0fc4b386f1fde428))
+* **api:** own feishu connection status reads ([#40247](https://github.com/okou-ai/okou/issues/40247)) ([8f0d719](https://github.com/okou-ai/okou/commit/8f0d719e0de025aab5b0e026fc5344deea59ad2e))
+* **api:** own management reads and diagnose preview build identity ([#39515](https://github.com/okou-ai/okou/issues/39515)) ([d66780f](https://github.com/okou-ai/okou/commit/d66780f2e6e74546791e45cb7177cbc1e3ac2e86))
+* **api:** remove dead pi resume session plumbing ([#40257](https://github.com/okou-ai/okou/issues/40257)) ([8afbe4e](https://github.com/okou-ai/okou/commit/8afbe4e727a6c593b12abadc40fa54b1c6500a95))
+* **api:** remove unused official workflow parameter overrides ([#40248](https://github.com/okou-ai/okou/issues/40248)) ([7932be8](https://github.com/okou-ai/okou/commit/7932be8124317db49285a683303b8a2fb507acf3))
+* **api:** retire usage pack confirmation preparation transaction ([#40242](https://github.com/okou-ai/okou/issues/40242)) ([0981ebb](https://github.com/okou-ai/okou/commit/0981ebb46fdfc526636e83fd16167ae4405e093d))
+* **runner:** consolidate home reuse observations ([#40207](https://github.com/okou-ai/okou/issues/40207)) ([2511826](https://github.com/okou-ai/okou/commit/25118260fc61ef6317a98dda0194b0fb9a11f5fa))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+    * @okouai/db bumped to 1.341.0
+    * @okouai/pi-agent-runtime bumped to 1.50.4
+
 ## [1.740.2](https://github.com/okou-ai/okou/compare/api-v1.740.1...api-v1.740.2) (2026-10-15)
 
 

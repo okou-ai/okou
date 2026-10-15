@@ -109,10 +109,10 @@ export const startDiscordAuthorization$ = command(
         resultNotifier = createDiscordOauthResultNotifier(
           popup,
           attemptState,
-          flowSignal,
           () => {
             flowSignal.removeEventListener("abort", closePopup);
           },
+          flowSignal,
         );
         popup.location.href = result.body.authorizationUrl;
         // Callback verification alone cannot bind an account. Complete under
@@ -121,6 +121,7 @@ export const startDiscordAuthorization$ = command(
         const completed = await settle(
           waitLoopUntil(
             async () => {
+              const closedBeforeRequest = popup.closed;
               const completion = await accept(
                 client.complete({
                   body: { state: attemptState, completionToken },
@@ -134,7 +135,10 @@ export const startDiscordAuthorization$ = command(
                 completion.status === 409 &&
                 completion.body.error.code ===
                   "DISCORD_OAUTH_APPROVAL_REQUIRED" &&
-                !popup.closed
+                // A 0.1018 consent tab can approve and close while an older
+                // pending response is in flight. Check once more under the
+                // private proof before treating closure as cancellation.
+                (!popup.closed || !closedBeforeRequest)
               ) {
                 return false;
               }

@@ -206,8 +206,13 @@ function ChatThreadMarkUnreadMenuItem({
   signals: SidebarChatThreadItemSignals;
 }) {
   const { t } = useTranslation();
+  const muted = useGet(signals.muted$);
   const markUnread = useSet(signals.markUnread$);
   const pageSignal = useGet(pageSignal$);
+  // A muted chat never shows as unread, so the action would change nothing.
+  if (muted) {
+    return null;
+  }
 
   return (
     <DropdownMenuItem
@@ -274,7 +279,9 @@ function ChatThreadMuteMenuItem({
   const pageSignal = useGet(pageSignal$);
   const enabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
-  if (!enabled) {
+  // The API keeps suppressing a chat muted before the switch went off, so
+  // unmuting stays available for as long as one exists.
+  if (!enabled && !muted) {
     return null;
   }
   const label = muted

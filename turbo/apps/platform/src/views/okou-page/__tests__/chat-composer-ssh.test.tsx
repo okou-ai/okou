@@ -27,19 +27,24 @@ async function chooseRemoteHost(trigger: HTMLElement, optionName: string) {
   click(await screen.findByRole("option", { name: optionName }));
 }
 
-async function prepareRemoteDefaults(operation: "override" | "restore") {
+async function prepareRemoteDefaults(
+  operation: "override-first" | "override-second" | "restore",
+) {
   const hostIds = [
     "b0000000-0000-4000-8000-000000000001",
     "b0000000-0000-4000-8000-000000000002",
   ];
   installComposerConnectorFixture({ threadId: SCOUT_THREAD_ID });
+  context.mocks.data.availableRunModels([]);
   const overrides = new Map<string, boolean>(
     operation === "restore"
       ? [
           [hostIds[0]!, false],
           [hostIds[1]!, true],
         ]
-      : [],
+      : operation === "override-second"
+        ? [[hostIds[0]!, false]]
+        : [],
   );
   const host = (connectionId: string, index: number) => {
     const overrideEnabled = overrides.get(connectionId) ?? null;
@@ -117,7 +122,9 @@ async function prepareRemoteDefaults(operation: "override" | "restore") {
       return button.textContent?.startsWith("Remote access");
     });
   };
-  expect(remoteTrigger()).toHaveTextContent("1 enabled");
+  expect(remoteTrigger()).toHaveTextContent(
+    operation === "override-second" ? "0 enabled" : "1 enabled",
+  );
   expect(screen.queryByRole("combobox", { name: "SSH SSH host 1" })).toBeNull();
   click(remoteAccess);
   const first = await screen.findByRole("combobox", {
@@ -127,24 +134,54 @@ async function prepareRemoteDefaults(operation: "override" | "restore") {
   return { hostIds, overrides, remoteTrigger, first, second };
 }
 
-test("A chat can override multiple SSH host defaults independently", async () => {
-  const { hostIds, overrides, remoteTrigger, first, second } =
-    await prepareRemoteDefaults("override");
-  expect(first).toHaveTextContent("Default (On)");
-  expect(second).toHaveTextContent("Default (Off)");
-  await chooseRemoteHost(first, "Off");
-  await waitFor(() => {
-    expect(overrides.get(hostIds[0]!)).toBeFalsy();
-    expect(second).not.toBeDisabled();
-    expect(remoteTrigger()).toHaveTextContent("0 enabled");
-  });
-  await chooseRemoteHost(second, "On");
-  await waitFor(() => {
-    expect(overrides.get(hostIds[0]!)).toBeFalsy();
-    expect(overrides.get(hostIds[1]!)).toBeTruthy();
-    expect(remoteTrigger()).toHaveTextContent("1 enabled");
-  });
-});
+test.each([
+  {
+    behavior: "Disabling an SSH host preserves the other host's default",
+    operation: "override-first",
+    initialFirst: "Default (On)",
+    selection: "Off",
+    secondOverride: undefined,
+    finalSecond: "Default (Off)",
+    enabledCount: "0 enabled",
+  },
+  {
+    behavior:
+      "Enabling an SSH host preserves the other host's disabled override",
+    operation: "override-second",
+    initialFirst: "Off",
+    selection: "On",
+    secondOverride: true,
+    finalSecond: "On",
+    enabledCount: "1 enabled",
+  },
+] as const)(
+  "$behavior",
+  async ({
+    operation,
+    initialFirst,
+    selection,
+    secondOverride,
+    finalSecond,
+    enabledCount,
+  }) => {
+    const { hostIds, overrides, remoteTrigger, first, second } =
+      await prepareRemoteDefaults(operation);
+    expect(first).toHaveTextContent(initialFirst);
+    expect(second).toHaveTextContent("Default (Off)");
+    await chooseRemoteHost(
+      operation === "override-first" ? first : second,
+      selection,
+    );
+    await waitFor(() => {
+      expect(overrides.get(hostIds[0]!)).toBeFalsy();
+      expect(second).not.toBeDisabled();
+      expect(overrides.get(hostIds[1]!)).toBe(secondOverride);
+      expect(first).toHaveTextContent("Off");
+      expect(second).toHaveTextContent(finalSecond);
+      expect(remoteTrigger()).toHaveTextContent(enabledCount);
+    });
+  },
+);
 
 test("A chat can restore multiple SSH host defaults independently", async () => {
   const { hostIds, overrides, remoteTrigger, first, second } =

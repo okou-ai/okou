@@ -174,8 +174,44 @@ describe("chat-thread connector account ownership", () => {
       );
       expect(denied.body).toStrictEqual(missing.body);
       expect(denied.body.error.message).toBe("Chat thread not found");
+
+      const deniedUpdate = await accept(
+        selections.update({
+          headers,
+          params,
+          body: { connectionId: builtin.id, target: builtinTarget },
+        }),
+        [404],
+      );
+      const missingUpdate = await accept(
+        selections.update({
+          headers,
+          params: { id: randomUUID() },
+          body: { connectionId: builtin.id, target: builtinTarget },
+        }),
+        [404],
+      );
+      expect(deniedUpdate.body).toStrictEqual(missingUpdate.body);
+      expect(deniedUpdate.body).toStrictEqual(missing.body);
+
+      const deniedClear = await accept(
+        selections.clear({ headers, params, body: builtinTarget }),
+        [404],
+      );
+      const missingClear = await accept(
+        selections.clear({
+          headers,
+          params: { id: randomUUID() },
+          body: builtinTarget,
+        }),
+        [404],
+      );
+      expect(deniedClear.body).toStrictEqual(missingClear.body);
+      expect(deniedClear.body).toStrictEqual(missing.body);
     }
     mocks.clerk.session(owner.userId, owner.orgId, owner.orgRole);
+    const retained = await accept(selections.get({ headers, params }), [200]);
+    expect(retained.body).toStrictEqual(initial.body);
 
     const renamed = await accept(
       accounts.rename({

@@ -41,7 +41,6 @@ mod event_delivery_budget_tests;
 mod exec_boundary;
 mod jsonl_result;
 mod line_reader;
-mod okou_cli_launch;
 mod pi_event_delivery;
 mod pi_memory_citation;
 mod pi_preparation_timing;
@@ -77,11 +76,8 @@ use guest_contracts::diagnostics::{
     CliObservedExitDiagnostic, CliTerminationDiagnostic, EventDeliveryDiagnostic,
     FailureDetailSource, FailureReason, HeartbeatFailureDiagnostic,
 };
-use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
 use guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES;
-use guest_telemetry::telemetry::{
-    SandboxOpDimensions, record_sandbox_op, record_sandbox_op_with_dimensions,
-};
+use guest_telemetry::telemetry::record_sandbox_op;
 use guest_telemetry::{log_info, log_warn};
 use process_group::ChildProcessGroup;
 use std::borrow::Cow;
@@ -104,7 +100,6 @@ const OPENAI_BASE_URL_ENV_KEY: &str = "OPENAI_BASE_URL";
 const OKOU_AGENT_ID_ENV_KEY: &str = "OKOU_AGENT_ID";
 const ENABLE_FRAMEWORK_WEB_SEARCH_ENV_KEY: &str = "OKOU_ENABLE_FRAMEWORK_WEB_SEARCH";
 const CODEX_SERVICE_TIER_CANONICAL_ENV: &str = "OKOU_CODEX_SERVICE_TIER";
-const CLI_PACKAGE_URL_ENV_KEY: &str = "CLI_PKG_URL";
 const WEB_SEARCH_TOOL_NAME: &str = "WebSearch";
 const MAX_EVENT_SEQUENCE_NUMBER: u32 = i32::MAX as u32;
 const CODEX_FIXED_STARTUP_CONFIGS: [&str; 5] = [
@@ -383,7 +378,8 @@ pub(super) struct CliRuntimeConfig<'a> {
     pi_launch_config: Cow<'a, str>,
     pi_launch_payload_file: Cow<'a, str>,
     pi_model_config: Cow<'a, str>,
-    pi_installed_cli_requirement: Cow<'a, str>,
+    #[cfg(debug_assertions)]
+    test_pi_cli_path: Option<&'a str>,
     user_env: &'a HashMap<String, String>,
 }
 
@@ -478,7 +474,8 @@ impl<'a> CliRuntimeConfig<'a> {
             pi_launch_config: Cow::Borrowed(&config.pi_launch_config),
             pi_launch_payload_file: Cow::Borrowed(paths.pi_launch_payload_file()),
             pi_model_config: Cow::Borrowed(&config.pi_model_config),
-            pi_installed_cli_requirement: Cow::Borrowed(&config.pi_installed_cli_requirement),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: config.test_pi_cli_path.as_deref(),
             user_env: &config.user_env,
         })
     }
@@ -531,16 +528,21 @@ impl<'a> CliRuntimeConfig<'a> {
         }
         Cow::Owned(user_env)
     }
+
+    fn pi_cli_path(&self) -> &str {
+        #[cfg(debug_assertions)]
+        if let Some(path) = self.test_pi_cli_path {
+            return path;
+        }
+        guest_contracts::okou_cli::OKOU_CLI_LAUNCHER_PATH
+    }
 }
 
 fn user_env_value<'a>(user_env: &'a HashMap<String, String>, key: &str) -> &'a str {
     user_env.get(key).map(String::as_str).unwrap_or("")
 }
 
-fn build_pi_command_for_runtime(
-    runtime: &CliRuntimeConfig<'_>,
-    installed_okou_cli: Option<&InstalledOkouCli>,
-) -> Result<Vec<String>, AgentError> {
+fn build_pi_command_for_runtime(runtime: &CliRuntimeConfig<'_>) -> Result<Vec<String>, AgentError> {
     for (name, value) in [
         ("Pi session id", runtime.pi_session_id.as_ref()),
         ("Pi launch config", runtime.pi_launch_config.as_ref()),
@@ -552,76 +554,8 @@ fn build_pi_command_for_runtime(
             )));
         }
     }
-    let installed_cli_requirement: Option<serde_json::Value> = if runtime
-        .pi_installed_cli_requirement
-        .is_empty()
-    {
-        None
-    } else {
-        Some(
-            serde_json::from_str(runtime.pi_installed_cli_requirement.as_ref()).map_err(|_| {
-                AgentError::Execution("Pi installed CLI requirement is invalid".to_string())
-            })?,
-        )
-    };
-    let requirement =
-        okou_cli_launch::PiRuntimeRequirement::from_value(installed_cli_requirement.as_ref());
-    let decision = okou_cli_launch::select_pi_cli_launch(&requirement, installed_okou_cli);
-    record_sandbox_op_with_dimensions(
-        "pi_cli_launch_select",
-        Duration::ZERO,
-        true,
-        None,
-        SandboxOpDimensions {
-            outcome: Some(decision.source.as_str()),
-            reason: Some(decision.reason),
-        },
-    );
-    log_info!(
-        LOG_TAG,
-        "Pi CLI launch: source={} reason={} required_runtime={} installed_runtime={} installed_cli={} required_session_construction={} installed_session_construction={}",
-        decision.source.as_str(),
-        decision.reason,
-        requirement
-            .required_pi_agent_runtime_version
-            .unwrap_or("<none>"),
-        installed_okou_cli
-            .map(|installed| installed.versions.pi_agent_runtime.as_str())
-            .unwrap_or("<none>"),
-        installed_okou_cli
-            .map(|installed| installed.versions.cli.as_str())
-            .unwrap_or("<none>"),
-        requirement
-            .required_pi_session_construction_digest
-            .unwrap_or("<none>"),
-        installed_okou_cli
-            .and_then(|installed| installed.session_construction.as_ref())
-            .map(|session_construction| session_construction.digest.as_str())
-            .unwrap_or("<none>"),
-    );
-    if decision.source == okou_cli_launch::PiCliLaunchSource::Installed {
-        return Ok(vec![
-            OKOU_CLI_LAUNCHER_PATH.to_string(),
-            "__agent-loop".to_string(),
-        ]);
-    }
-    // Keep the task's API-captured package identity on a parity miss; never
-    // substitute a moving latest package or execute the incompatible install.
-    let package_url = runtime
-        .user_env
-        .get(CLI_PACKAGE_URL_ENV_KEY)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            AgentError::Execution(format!(
-                "{CLI_PACKAGE_URL_ENV_KEY} is required for Pi execution"
-            ))
-        })?;
     Ok(vec![
-        "npx".to_string(),
-        "--yes".to_string(),
-        "--no-audit".to_string(),
-        format!("--package={package_url}"),
-        "okou".to_string(),
+        runtime.pi_cli_path().to_string(),
         "__agent-loop".to_string(),
     ])
 }
@@ -1173,7 +1107,7 @@ async fn execute_cli_inner(
     }
 
     let cmd = if matches!(runtime.framework, env::Framework::Pi) {
-        build_pi_command_for_runtime(runtime, okou_cli_launch::load_installed_okou_cli().as_ref())?
+        build_pi_command_for_runtime(runtime)?
     } else {
         command::build_claude_command_for_runtime(runtime, replay_user_messages)
     };
@@ -2475,10 +2409,10 @@ fn with_carried_failure_reason(
 mod tests {
     use super::termination::{CliTerminationRuntime, PostResultCleanupPolicy};
     use super::{
-        CliExitObservation, CliFailureDiagnostic, CliRuntimeConfig, build_pi_command_for_runtime,
-        child_env, claude_initial_prompt_frame, cli_exit_summary_from_status, command,
-        exec_boundary, pi_child_env_values, record_cli_exit, select_failure_diagnostic,
-        set_cli_current_dir, with_carried_failure_reason, write_pi_launch_payload_file,
+        CliExitObservation, CliFailureDiagnostic, CliRuntimeConfig, child_env,
+        claude_initial_prompt_frame, cli_exit_summary_from_status, command, exec_boundary,
+        pi_child_env_values, record_cli_exit, select_failure_diagnostic, set_cli_current_dir,
+        with_carried_failure_reason, write_pi_launch_payload_file,
     };
     use crate::active_input::ActiveInputRuntime;
     use crate::paths;
@@ -2486,7 +2420,6 @@ mod tests {
     use crate::{constants, env};
     use api_contracts::generated::types::runners::runs::CodexRuntimeConfig;
     use guest_contracts::diagnostics::{FailureDetailSource, FailureReason};
-    use guest_contracts::okou_cli::{InstalledOkouCli, OKOU_CLI_LAUNCHER_PATH};
     use std::borrow::Cow;
     use std::collections::HashMap;
     #[cfg(unix)]
@@ -2543,7 +2476,8 @@ mod tests {
             pi_launch_config: String::new(),
             pi_model_config: String::new(),
             pi_session_id: String::new(),
-            pi_installed_cli_requirement: String::new(),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: None,
             stuck_tool_timeout_secs: constants::STUCK_TOOL_TIMEOUT_SECS,
             post_result_sigterm_grace: Duration::from_secs(
                 constants::POST_RESULT_SIGTERM_GRACE_SECS,
@@ -2630,156 +2564,10 @@ mod tests {
             pi_launch_config: Cow::Borrowed(""),
             pi_launch_payload_file: Cow::Borrowed("/tmp/pi-launch-payload/payload.json"),
             pi_model_config: Cow::Borrowed(""),
-            pi_installed_cli_requirement: Cow::Borrowed(""),
+            #[cfg(debug_assertions)]
+            test_pi_cli_path: None,
             user_env,
         }
-    }
-
-    fn installed_okou_cli_for_test(cli: &str, runtime: &str) -> InstalledOkouCli {
-        InstalledOkouCli {
-            schema_version: 1,
-            versions: guest_contracts::okou_cli::OkouCliVersions {
-                cli: cli.to_string(),
-                pi_agent_runtime: runtime.to_string(),
-                pi_sdk: "0.86.1+okou.0123456789ab".to_string(),
-            },
-            package: guest_contracts::okou_cli::OkouCliInstalledPackage {
-                sha256: "a".repeat(64),
-                size: 1,
-            },
-            entrypoint: InstalledOkouCli::entrypoint_for(cli),
-            session_construction: None,
-        }
-    }
-
-    #[test]
-    fn pi_command_execs_installed_cli_from_the_execution_context_requirement() {
-        let user_env = HashMap::from([(
-            "CLI_PKG_URL".to_string(),
-            "https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
-        )]);
-        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
-        runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
-        runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
-        runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
-        );
-        let mut installed = installed_okou_cli_for_test("9.353.0", "1.36.0");
-        installed.session_construction =
-            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
-                digest: "d".repeat(64),
-            });
-
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
-            vec![
-                OKOU_CLI_LAUNCHER_PATH.to_string(),
-                "__agent-loop".to_string()
-            ]
-        );
-
-        installed.session_construction.as_mut().unwrap().digest = "e".repeat(64);
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&installed)).unwrap(),
-            vec![
-                "npx".to_string(),
-                "--yes".to_string(),
-                "--no-audit".to_string(),
-                "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
-                "okou".to_string(),
-                "__agent-loop".to_string()
-            ]
-        );
-
-        runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.387.0","requiredPiSessionConstructionDigest":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"}"#,
-        );
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&installed))
-                .unwrap()
-                .last()
-                .unwrap(),
-            "__agent-loop"
-        );
-        let mut current = installed_okou_cli_for_test("9.387.0", "1.36.0");
-        current.session_construction =
-            Some(guest_contracts::okou_cli::OkouCliSessionConstruction {
-                digest: "d".repeat(64),
-            });
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&current)).unwrap(),
-            vec![
-                OKOU_CLI_LAUNCHER_PATH.to_string(),
-                "__agent-loop".to_string()
-            ]
-        );
-
-        runtime.pi_installed_cli_requirement = Cow::Borrowed("not json");
-        assert!(build_pi_command_for_runtime(&runtime, Some(&installed)).is_err());
-    }
-
-    #[test]
-    fn pi_command_execs_installed_cli_only_for_matching_runtime_version() {
-        let user_env = HashMap::from([(
-            "CLI_PKG_URL".to_string(),
-            "https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
-        )]);
-        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &user_env);
-        runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
-        runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
-        runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
-        );
-        let fallback = vec![
-            "npx".to_string(),
-            "--yes".to_string(),
-            "--no-audit".to_string(),
-            "--package=https://static.okou.io/okou-cli/abc/package.tgz".to_string(),
-            "okou".to_string(),
-            "__agent-loop".to_string(),
-        ];
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, None).unwrap(),
-            fallback
-        );
-        let matching = installed_okou_cli_for_test("9.353.0", "1.36.0");
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
-            vec![
-                OKOU_CLI_LAUNCHER_PATH.to_string(),
-                "__agent-loop".to_string()
-            ]
-        );
-        let mismatched = installed_okou_cli_for_test("9.353.0", "1.35.9");
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&mismatched)).unwrap(),
-            fallback
-        );
-
-        // Legacy URL-bearing contexts keep their API-captured package.
-        runtime.pi_installed_cli_requirement = Cow::Borrowed("");
-        assert_eq!(
-            build_pi_command_for_runtime(&runtime, Some(&matching)).unwrap(),
-            fallback
-        );
-
-        let no_url = HashMap::new();
-        let mut runtime = runtime_for_command_test(env::Framework::Pi, "prompt", "", &no_url);
-        runtime.pi_session_id = Cow::Borrowed("11111111-1111-4111-8111-111111111111");
-        runtime.pi_model_config = Cow::Borrowed("{}");
-        runtime.pi_launch_config = Cow::Borrowed(r#"{"schemaVersion":2}"#);
-        runtime.pi_installed_cli_requirement = Cow::Borrowed(
-            r#"{"requiredPiAgentRuntimeVersion":"1.36.0","minCliVersion":"9.352.7"}"#,
-        );
-        assert!(build_pi_command_for_runtime(&runtime, Some(&matching)).is_ok());
-        assert!(
-            build_pi_command_for_runtime(&runtime, None)
-                .unwrap_err()
-                .to_string()
-                .contains("CLI_PKG_URL is required")
-        );
     }
 
     #[test]

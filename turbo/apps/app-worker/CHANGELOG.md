@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.9.41](https://github.com/okou-ai/okou/compare/app-worker-v1.9.40...app-worker-v1.9.41) (2026-10-15)
+
+
+### Refactoring
+
+* **api:** own management reads and diagnose preview build identity ([#39515](https://github.com/okou-ai/okou/issues/39515)) ([d66780f](https://github.com/okou-ai/okou/commit/d66780f2e6e74546791e45cb7177cbc1e3ac2e86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 1.566.0
+    * @okouai/core bumped to 8.759.1
+
 ## [1.9.40](https://github.com/okou-ai/okou/compare/app-worker-v1.9.39...app-worker-v1.9.40) (2026-10-15)
 
 

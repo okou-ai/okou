@@ -1,9 +1,11 @@
 mod support;
 
 use std::os::unix::fs::MetadataExt as _;
+use std::path::Path;
 
-use nbd_cow::BLOCK_SIZE;
+use nbd_cow::cow::CowLayer;
 use nbd_cow::cow_io::CowIo;
+use nbd_cow::{BLOCK_SIZE, DEFAULT_FLUSH_THRESHOLD};
 use support::dispatch_client::{
     Command, TestResult, assert_error, assert_error_code, assert_success, create_base_file,
     create_cow_with_full_device, create_test_cow, request, request_with_type_flags, spawn_dispatch,
@@ -231,12 +233,12 @@ async fn dispatch_write_flush_failure_returns_error() -> TestResult<()> {
 }
 
 #[tokio::test]
-async fn dispatch_sync_failure_returns_error() -> TestResult<()> {
+async fn dispatch_flush_buffered_write_failure_returns_error() -> TestResult<()> {
     let base_data = vec![0xAA; 2 * BLOCK_SIZE];
     let base = create_base_file(&base_data)?;
     let cow = CowIo::new(create_cow_with_full_device(&base, 4 * 1024 * 1024)?);
 
-    let (mut client, task, _shutdown) = spawn_dispatch(cow).await?;
+    let (mut client, task, _shutdown) = spawn_dispatch(cow.clone()).await?;
 
     let write_data = vec![0xBB; BLOCK_SIZE];
     let reply = client.write(1, 0, &write_data).await?;
@@ -245,6 +247,53 @@ async fn dispatch_sync_failure_returns_error() -> TestResult<()> {
     let reply = client.flush(2).await?;
     assert_error_code(&reply, 2, libc::EIO as u32);
 
+    let status = cow.status().await?;
+    assert_eq!(status.buffered_blocks, 1);
+    assert_eq!(status.dirty_blocks, 0);
+    assert_eq!(client.read(3, 0, BLOCK_SIZE as u32).await?, write_data);
+
+    drop(client);
+    wait_for_dispatch(task).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn dispatch_flush_data_file_fsync_failure_returns_error() -> TestResult<()> {
+    let base_data = vec![0xAA; 2 * BLOCK_SIZE];
+    let base = create_base_file(&base_data)?;
+    // /dev/null accepts positioned writes but rejects fsync with EINVAL.
+    // Unlike /dev/full, it lets FLUSH reach the data-file sync after draining.
+    let cow = CowIo::new(CowLayer::new(
+        base.path(),
+        Path::new("/dev/null"),
+        base_data.len() as u64,
+        BLOCK_SIZE,
+        DEFAULT_FLUSH_THRESHOLD,
+    )?);
+
+    let (mut client, task, _shutdown) = spawn_dispatch(cow.clone()).await?;
+
+    let reply = client.write(1, 0, &vec![0xBB; BLOCK_SIZE]).await?;
+    assert_success(&reply, 1);
+    let status = cow.status().await?;
+    assert_eq!(status.buffered_blocks, 1);
+    assert_eq!(status.dirty_blocks, 0);
+
+    let reply = client.flush(2).await?;
+    assert_error_code(&reply, 2, libc::EIO as u32);
+    let status = cow.status().await?;
+    assert_eq!(status.buffered_blocks, 0);
+    assert_eq!(status.dirty_blocks, 1);
+
+    // The sink cannot preserve written bytes; untouched blocks still use base.
+    let data = client.read(3, BLOCK_SIZE as u64, BLOCK_SIZE as u32).await?;
+    assert_eq!(data, vec![0xAA; BLOCK_SIZE]);
+
+    // An empty write buffer must not make a later FLUSH acknowledge success.
+    let reply = client.flush(4).await?;
+    assert_error_code(&reply, 4, libc::EIO as u32);
+
+    // EOF avoids DISCONNECT's additional, permanently failing shutdown sync.
     drop(client);
     wait_for_dispatch(task).await?;
     Ok(())

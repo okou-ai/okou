@@ -85,29 +85,10 @@ export const PI_MODEL_CONFIG_DIALECT_TIER_GENERATION = 3;
 // removal may still advertise it, so OpenRouter Chat Completions skips to 5.
 export const PI_MODEL_CONFIG_CHAT_COMPLETIONS_GENERATION = 5;
 export const RUNNER_CLAIM_PI_MODEL_CONFIG_GENERATIONS_MAX = 8;
-/**
- * Minimum `@okouai/cli` version boundary for Pi launch-payload
- * compatibility and subagent commands. The API records it in every Pi run's
- * installed-CLI requirement; a rootfs whose installed CLI is older keeps
- * launching the commit-addressed package. Raise it whenever the launch payload changes in a
- * way an older CLI rejects. Version 9.387.0 introduces Pi subagent commands.
- * All versions use the same `__agent-loop` main entry.
- */
-export const PI_SANDBOX_INSTALLED_CLI_MIN_VERSION = "9.387.0";
 /** Release versions are exact `MAJOR.MINOR.PATCH`; nothing here is a range. */
 export const releaseVersionSchema = z
   .string()
   .regex(/^\d+\.\d+\.\d+$/, "Release versions are MAJOR.MINOR.PATCH");
-/**
- * Lowercase hex SHA-256 of the code-determined Pi session construction: the
- * system prompt template and ordered tool schemas the runtime produces for
- * fixed inputs. `@okouai/pi-agent-runtime` computes it at build time and
- * commits it; it changes only when code that feeds the constructed session
- * changes, in whichever package that code lives.
- */
-export const piSessionConstructionDigestSchema = z
-  .string()
-  .regex(/^[a-f0-9]{64}$/, "Session construction digests are 64 lowercase hex");
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_CANDIDATES = 256;
 export const PI_MEMORY_PHASE2_MAINTENANCE_MAX_SELECTED_UTF8_BYTES = 21_036_800;
 export const sessionHistoryEncodingSchema = z.enum([
@@ -173,18 +154,23 @@ export const runnerClaimCapabilitiesSchema = z
   .readonly();
 
 /**
- * Versions of the Okou CLI bundle installed into a runner's rootfs at build
- * time. Advertised on claim so the API can observe (and, once the npx launch
- * path is retired, gate) installed-CLI parity. `piSdk` is informational.
- * `piSessionConstructionDigest` is the parity key the guest compares. It stays
- * optional for runners with an older installed CLI artifact.
+ * Versions of the Okou CLI bundled into a Runner and installed into its rootfs.
+ * Advertised on claim for attribution. The optional digest is accepted only
+ * until Runners built before bundled-only Pi execution and their rollback
+ * builds have drained. It no longer participates in CLI selection.
  */
 export const runnerInstalledVersionsSchema = z
   .object({
     cli: releaseVersionSchema,
     piAgentRuntime: releaseVersionSchema,
     piSdk: z.string().min(1).max(64),
-    piSessionConstructionDigest: piSessionConstructionDigestSchema.optional(),
+    piSessionConstructionDigest: z
+      .string()
+      .regex(
+        /^[a-f0-9]{64}$/,
+        "Session construction digests are 64 lowercase hex",
+      )
+      .optional(),
   })
   .strict()
   .readonly();
@@ -843,22 +829,6 @@ export const piResourceSnapshotSchema = z.discriminatedUnion("schemaVersion", [
   piResourceSnapshotV2Schema,
 ]);
 
-/**
- * Installed-CLI launch requirements the API captured for a Pi run. The guest
- * execs the rootfs-installed CLI only when it matches the session
- * construction (or runtime version) and meets the CLI floor; otherwise it uses
- * the commit-addressed package. Carried in the execution context, not the
- * launch config, because the Pi CLI parses the launch config strictly.
- */
-export const piInstalledCliRequirementSchema = z
-  .object({
-    requiredPiAgentRuntimeVersion: releaseVersionSchema,
-    minCliVersion: releaseVersionSchema,
-    requiredPiSessionConstructionDigest: piSessionConstructionDigestSchema,
-  })
-  .strict()
-  .readonly();
-
 const piApiKeyCredentialSecretNameSchema = z.enum(["OPENROUTER_API_KEY"]);
 
 const piModelCredentialBindingSchema = z.discriminatedUnion("kind", [
@@ -1249,7 +1219,6 @@ const storedExecutionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
-  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 /** Reads persisted execution contexts while stripping unknown writer metadata. */
@@ -1359,7 +1328,6 @@ const executionContextObjectSchema = z.object({
   piSessionId: z.uuid().optional(),
   piLaunchConfig: piLaunchConfigSchema.optional(),
   piModelConfig: piModelConfigSchema.optional(),
-  piInstalledCliRequirement: piInstalledCliRequirementSchema.optional(),
 });
 
 export const executionContextSchema = executionContextObjectSchema.superRefine(
@@ -1689,9 +1657,6 @@ export type PiMemoryPhase2Maintenance = z.infer<
 >;
 export type PiMemoryRecallSelection = z.infer<
   typeof piMemoryRecallSelectionSchema
->;
-export type PiInstalledCliRequirement = z.infer<
-  typeof piInstalledCliRequirementSchema
 >;
 export type PiResourceSnapshot = z.infer<typeof piResourceSnapshotSchema>;
 export type PiLaunchPayload = z.infer<typeof piLaunchPayloadSchema>;

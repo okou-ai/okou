@@ -343,8 +343,8 @@ export function createPublicDiscordBinding(
     const approvalProof = fragment.get("approval_proof");
     if (
       landing.origin !== new URL(env("APP_URL")).origin ||
-      landing.pathname !== "/works" ||
-      landing.searchParams.get("discord") !== "pending" ||
+      landing.pathname !== "/settings/discord" ||
+      landing.searchParams.get("status") !== "pending" ||
       fragment.get("discord_oauth") !== "approve" ||
       fragment.get("state") !== state ||
       !approvalProof

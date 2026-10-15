@@ -392,10 +392,12 @@ async function callback(
   );
   const location = result.headers.get("location");
   if (!location) {
-    throw new Error("Expected fixed works redirect");
+    throw new Error("Expected fixed Discord settings redirect");
   }
   const url = new URL(location);
-  expect(url.origin + url.pathname).toBe("https://app.okou.ai/works");
+  expect(url.origin + url.pathname).toBe(
+    "https://app.okou.ai/settings/discord",
+  );
   expect(result.headers.get("cache-control")).toBe("no-store");
   expect(result.headers.get("referrer-policy")).toBe("no-referrer");
   expect(hasSecret(location, [started.completionToken])).toBeFalsy();
@@ -462,7 +464,7 @@ async function finish(
   options: Partial<Grant> = {},
 ) {
   const landing = await verified(f, started, options);
-  if (landing.searchParams.get("discord") !== "pending") {
+  if (landing.searchParams.get("status") !== "pending") {
     return {
       stage: "callback" as const,
       status: "error" as const,
@@ -1430,7 +1432,10 @@ describe("Discord product OAuth", () => {
     const started = await start(actor, "install", f.guildId);
     expect((await complete(started)).status).toBe(409);
     const landing = await verified(f, started);
-    expect(landing.searchParams.get("discord")).toBe("pending");
+    expect(Object.fromEntries(landing.searchParams)).toStrictEqual({
+      status: "pending",
+      guild_id: f.guildId,
+    });
     await expect(status(actor)).resolves.toMatchObject({
       isConnected: false,
     });
@@ -1743,7 +1748,7 @@ describe("Discord product OAuth", () => {
     });
     const started = await start(actor, "install", f.guildId);
     const landing = await verified(f, started);
-    expect(landing.searchParams.get("discord")).toBe("pending");
+    expect(landing.searchParams.get("status")).toBe("pending");
     const proof = approvalProof(started, landing);
     const codes = [...f.grants.keys()];
     expect((await approve(started, landing)).status).toBe(200);

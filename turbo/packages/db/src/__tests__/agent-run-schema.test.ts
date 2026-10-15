@@ -17,18 +17,10 @@ function foreignKeyReference(
   return { foreignKey, reference: foreignKey.reference() };
 }
 
-describe("agentRuns circular foreign keys", () => {
-  it("resolves physical circular foreign keys and the runtime projection from the root schema", async () => {
-    const referenceRegistry = await import("../schema/agent-run-reference");
-    expect(() => {
-      return referenceRegistry.resolveAgentSessionId();
-    }).toThrow(
-      "Agent-run schema references were resolved before schema initialization",
-    );
-
+describe("agentRuns ownership", () => {
+  it("resolves retained ownership foreign keys and the runtime projection from the root schema", async () => {
     const { schema } = await import("../index");
-    const { agentRuns, agentSessions } =
-      await import("../schema/agent-run-session-conversation");
+    const { agentRuns } = await import("../schema/agent-run");
     const { chatThreads } = await import("../schema/chat-thread");
     const { orgMembersMetadata } =
       await import("../schema/org-members-metadata");
@@ -42,12 +34,6 @@ describe("agentRuns circular foreign keys", () => {
     expect(schema).not.toHaveProperty("agentSessions");
     expect(schema).not.toHaveProperty("conversations");
     expect(runtimeAgentRuns).not.toHaveProperty("sessionId");
-    const retainedSession = foreignKeyReference(agentRuns, "session_id");
-    expect(retainedSession.foreignKey.onDelete).toBe("set null");
-    expect(retainedSession.reference.foreignTable).toBe(agentSessions);
-    expect(retainedSession.reference.foreignColumns).toEqual([
-      agentSessions.id,
-    ]);
     const runtimeThread = foreignKeyReference(
       runtimeAgentRuns,
       "chat_thread_id",

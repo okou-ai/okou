@@ -4,6 +4,8 @@ import { useTranslation } from "react-i18next";
 import {
   Archive,
   ArchiveRestore,
+  Bell,
+  BellOff,
   Clock,
   Ellipsis,
   Folder,
@@ -31,6 +33,7 @@ import {
   openThreadFiles$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
+import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -90,6 +93,79 @@ export function ChatThreadPinButton({
         },
       ]}
     />
+  );
+}
+
+// The header has no menu on desktop, so a muted chat says so here, next to
+// Pin, and the same button unmutes it. An unmuted chat adds nothing.
+export function ChatThreadMutedButton({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const muted = useGet(thread.threadMeta$)?.muted === true;
+  const setMuted = useSet(setChatThreadMutedWithFeedback$);
+  if (!muted) {
+    return null;
+  }
+
+  return (
+    <Button
+      showTooltip
+      type="button"
+      variant="quiet"
+      size="icon-sm"
+      iconSize="md"
+      className="shrink-0 text-gray-600 duration-150"
+      aria-label={t(($) => {
+        return $.chat.sidebar.unmute;
+      })}
+      onClick={() => {
+        detach(
+          setMuted({ threadId: thread.threadId, muted: false }, pageSignal),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      <BellOff size={18} strokeWidth={1.75} />
+    </Button>
+  );
+}
+
+function MobileMuteMenuItem({ thread }: { readonly thread: ChatPanelSignals }) {
+  const { t } = useTranslation();
+  const pageSignal = useGet(pageSignal$);
+  const enabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
+  const muted = useGet(thread.threadMeta$)?.muted === true;
+  const setMuted = useSet(setChatThreadMutedWithFeedback$);
+  // As in the row menu, a chat muted before the switch went off can still be
+  // unmuted.
+  if (!enabled && !muted) {
+    return null;
+  }
+
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      onClick={() => {
+        detach(
+          setMuted({ threadId: thread.threadId, muted: !muted }, pageSignal),
+          Reason.DomCallback,
+        );
+      }}
+    >
+      {muted ? <Bell size={16} /> : <BellOff size={16} />}
+      {muted
+        ? t(($) => {
+            return $.chat.sidebar.unmute;
+          })
+        : t(($) => {
+            return $.chat.sidebar.mute;
+          })}
+    </DropdownMenuItem>
   );
 }
 
@@ -207,6 +283,7 @@ export function MobileChatThreadMoreMenu({
             return $.chat.sidebar.rename;
           })}
         </DropdownMenuItem>
+        <MobileMuteMenuItem thread={thread} />
         {archiveEnabled && (
           <DropdownMenuItem
             className="min-h-11"

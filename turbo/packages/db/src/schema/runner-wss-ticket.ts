@@ -7,7 +7,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 
-import { agentRuns } from "./agent-run-session-conversation";
+import { agentRuns } from "./agent-run";
 
 /** Pending one-use credentials; redeem by atomic deletion within 30 seconds. */
 export const runnerWssTickets = pgTable(

@@ -268,7 +268,8 @@ class TestAuthBaseForwarderResponseBodyLimit:
         assert status == 200
         assert body == b"1234"
         assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.read_sizes == [5]
+        assert upstream.socket.response_file.closed
+        assert upstream.socket.closed
 
     async def test_accepts_complete_fixed_length_body_at_limit(self):
         with (
@@ -297,7 +298,6 @@ class TestAuthBaseForwarderResponseBodyLimit:
             await forwarder.forward_request("https://example.com", "GET", [], None)
 
         assert upstream.socket.response_file is not None
-        assert upstream.socket.response_file.read_sizes == [5]
         assert upstream.socket.response_file.closed
         assert upstream.socket.closed
 

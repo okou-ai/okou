@@ -87,6 +87,7 @@ test.each([true, false])(
       screen.getByRole("heading", { name: "Add Okou to a server" }),
     ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).toBeNull();
+    expect(screen.getByText("Server: Design team")).toBeInTheDocument();
     expect(requestBody).toBeUndefined();
     click(getAction("button", "Join new server"));
     await waitFor(() => {

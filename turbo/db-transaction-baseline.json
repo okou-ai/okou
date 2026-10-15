@@ -652,16 +652,6 @@
       "owner": "fulfillUsagePackSubscriptionChangeInvoice"
     },
     {
-      "id": "TX-0274",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "insertPendingInvitationPurchase$"
-    },
-    {
-      "id": "TX-0275",
-      "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
-      "owner": "persistSuccessfulPayment$"
-    },
-    {
       "id": "TX-0277",
       "file": "turbo/apps/api/src/signals/services/usage-pack-invitation-purchase.service.ts",
       "owner": "persistInvitation$"
@@ -849,11 +839,6 @@
     {
       "id": "TX-0380",
       "file": "turbo/packages/db/scripts/test-connector-catalog-entry-columns.ts",
-      "owner": "<module>"
-    },
-    {
-      "id": "TX-0390",
-      "file": "turbo/packages/db/scripts/test-historical-session-blob-audit.ts",
       "owner": "<module>"
     },
     {

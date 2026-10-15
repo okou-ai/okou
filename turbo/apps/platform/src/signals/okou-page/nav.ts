@@ -26,7 +26,9 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
   });
 });
 
-const navigateToNewChat$ = command(
+// With mobile navigation the bare agent chat URL is the chat list, so a new
+// chat asks for the composer explicitly.
+export const navigateToNewChat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const agentId = await get(currentChatAgentId$);
     signal.throwIfAborted();

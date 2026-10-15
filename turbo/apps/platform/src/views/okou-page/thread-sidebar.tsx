@@ -494,22 +494,30 @@ function ThreadFilesPanel({ thread }: { readonly thread: ChatPanelSignals }) {
     return null;
   }
   return (
-    <section
-      ref={mount}
-      className="flex h-full min-h-0 flex-col"
-      aria-label={t(($) => {
-        return $.chat.files.title;
-      })}
+    <FullscreenPanel
+      fullscreen={fullscreen}
+      className={cn(
+        "min-w-0",
+        fullscreen && "h-viewport max-h-viewport min-h-viewport",
+      )}
     >
-      <ThreadSidebarHeader
-        title={t(($) => {
+      <section
+        ref={mount}
+        className="flex h-full w-full min-h-0 min-w-0 flex-col"
+        aria-label={t(($) => {
           return $.chat.files.title;
         })}
-        onClose={close}
-        fullscreen={fullscreen}
-        onToggleFullscreen={toggleFullscreen}
-      />
-      <SandboxFilesSidebarBody signals={thread.sidebar.files} />
-    </section>
+      >
+        <ThreadSidebarHeader
+          title={t(($) => {
+            return $.chat.files.title;
+          })}
+          onClose={close}
+          fullscreen={fullscreen}
+          onToggleFullscreen={toggleFullscreen}
+        />
+        <SandboxFilesSidebarBody signals={thread.sidebar.files} />
+      </section>
+    </FullscreenPanel>
   );
 }

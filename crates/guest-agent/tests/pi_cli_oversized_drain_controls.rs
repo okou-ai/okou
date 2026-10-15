@@ -49,9 +49,9 @@ impl OpenRecordFixture {
                 "x".repeat(ORDINARY_CLI_STDOUT_MAX_LINE_BYTES + 1024 * 1024),
             ),
         )?;
-        let npx = bin_dir.join("npx");
+        let okou = bin_dir.join("okou");
         std::fs::write(
-            &npx,
+            &okou,
             r#"#!/bin/sh
 set -eu
 printf '%s\n' "$$" > "$PI_CHILD_PID_PATH"
@@ -88,9 +88,9 @@ case "$PI_DRAIN_MODE" in
 esac
 "#,
         )?;
-        let mut permissions = std::fs::metadata(&npx)?.permissions();
+        let mut permissions = std::fs::metadata(&okou)?.permissions();
         permissions.set_mode(0o700);
-        std::fs::set_permissions(&npx, permissions)?;
+        std::fs::set_permissions(&okou, permissions)?;
 
         let run_id = format!("pi-oversized-drain-{mode}");
         let paths = GuestPaths::from_home(tmp.path(), &run_id)?;
@@ -107,6 +107,7 @@ esac
         let mut config = GuestConfig::from_raw(GuestConfigRaw {
             run_id,
             cli_agent_type: "pi".into(),
+            test_pi_cli_path: Some(okou.to_string_lossy().into_owned()),
             home: Some(tmp.path().to_string_lossy().into_owned()),
             run_payload_file: payload_path.to_string_lossy().into_owned(),
             guest_runtime_dir: Some(paths.runtime_dir().into()),
@@ -122,10 +123,6 @@ esac
             (
                 "PATH".into(),
                 format!("{}:/usr/bin:/bin", bin_dir.display()),
-            ),
-            (
-                "CLI_PKG_URL".into(),
-                "https://example.invalid/current-okou-cli.tgz".into(),
             ),
             ("PI_DRAIN_MODE".into(), mode.into()),
             (

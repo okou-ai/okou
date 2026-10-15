@@ -10,7 +10,7 @@ const context = testContext();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 
-async function fixture(enabled = true) {
+async function fixture() {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   await bdd.readOnboardingStatus(actor);
@@ -29,7 +29,7 @@ async function fixture(enabled = true) {
     context,
     { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
     {
-      [FeatureSwitchKey.ChatThreadMuting]: enabled,
+      [FeatureSwitchKey.ChatThreadMuting]: true,
       [FeatureSwitchKey.ChatThreadArchiving]: true,
     },
   );
@@ -84,15 +84,28 @@ describe("chat thread muting", () => {
     );
   });
 
-  it("gates mute and unmute and does not expose threads across user or organization boundaries", async () => {
-    const { actor, thread } = await fixture(false);
+  it("gates mute but keeps unmute available after the switch goes off", async () => {
+    const { actor, thread } = await fixture();
+    await chat.requestSetThreadMuted(actor, thread.id, true, [204]);
+    if (!actor.orgId) {
+      throw new Error("Expected organization");
+    }
+    await updateFeatureSwitchesForUser(
+      context,
+      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
+      { [FeatureSwitchKey.ChatThreadMuting]: false },
+    );
+    await chat.requestSetThreadMuted(actor, thread.id, false, [204]);
     await chat.requestSetThreadMuted(actor, thread.id, true, [404]);
-    await chat.requestSetThreadMuted(actor, thread.id, false, [404]);
     await expect(
       chat.readThreadMetadata(actor, thread.id),
     ).resolves.toMatchObject({
       muted: false,
     });
+  });
+
+  it("does not expose threads across user or organization boundaries", async () => {
+    const { actor, thread } = await fixture();
     await chat.requestSetThreadMuted(null, thread.id, true, [401]);
     for (const outsider of [
       bdd.user({ orgId: actor.orgId }),
@@ -114,5 +127,10 @@ describe("chat thread muting", () => {
       await chat.requestSetThreadMuted(outsider, thread.id, true, [404]);
       await chat.requestSetThreadMuted(outsider, thread.id, false, [404]);
     }
+    await expect(
+      chat.readThreadMetadata(actor, thread.id),
+    ).resolves.toMatchObject({
+      muted: false,
+    });
   });
 });

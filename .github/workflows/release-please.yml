@@ -1092,48 +1092,28 @@ jobs:
                   type: mrkdwn
                   text: "*Host Worker* ❌ Deploy failed\n⏱️ `${{ steps.duration.outputs.text }}`\n🔗 <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
 
-  # Publish the release commit's CLI artifact under its version so runner
-  # rootfs builds install the CLI by version (#35967). Fails the release when
-  # the version is already published with different bytes: one version must
-  # identify exactly one runtime build for API-first handoff parity.
-  publish-cli-versioned-artifact:
+  # Both Runner architectures embed the release commit's canonical CLI bytes.
+  prepare-runner-cli:
     needs: release-please
-    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-    outputs:
-      cli-version: ${{ steps.publish.outputs.cli-version }}
-      pi-agent-runtime-version: ${{ steps.publish.outputs.pi-agent-runtime-version }}
-      package-url: ${{ steps.publish.outputs.package-url }}
-      manifest-url: ${{ steps.publish.outputs.manifest-url }}
-      package-sha256: ${{ steps.publish.outputs.package-sha256 }}
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.R2_STATIC_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_STATIC_SECRET_ACCESS_KEY }}
-      AWS_DEFAULT_REGION: auto
       CLI_STATIC_BASE_URL: https://static.okou.io
-      R2_ACCOUNT_ID: ${{ vars.R2_ACCOUNT_ID }}
-      R2_BUCKET_NAME: ${{ vars.R2_STATIC_BUCKET_NAME }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.release-please.outputs.release_target }}
 
-      - name: Publish versioned CLI artifact
-        id: publish
+      - name: Fetch canonical CLI build input
         shell: bash
         env:
           ARTIFACT_SHA: ${{ needs.release-please.outputs.release_target }}
-          RELEASE_MANIFEST_PATH: .release-please-manifest.json
-          OUTPUT_DIR: runner-cli-intermediate
-        run: bash .github/scripts/release/publish-okou-cli-versioned-artifact.sh
+        run: bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh "$ARTIFACT_SHA" runner-cli-intermediate
 
-      # Reuse the verified canonical bytes downloaded by the publisher; do not
-      # rebuild CLI separately for Runner or use an older versioned manifest.
       - name: Upload canonical CLI build input for Runner
-        if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: runner-release-cli-${{ github.run_id }}
@@ -1161,7 +1141,7 @@ jobs:
       - build-runner-production
       - sbom
       - resolve-image-cache
-      - publish-cli-versioned-artifact
+      - prepare-runner-cli
     # Use always() so this job runs even when upstream build jobs are skipped.
     # !cancelled() is insufficient — it still propagates "skipped" from needs
     # dependencies, which causes builds-complete (and transitively
@@ -1274,39 +1254,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ ! "$ARTIFACT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "CLI artifact commit must be a full lowercase SHA-1: $ARTIFACT_SHA" >&2
-            exit 1
-          fi
-
-          artifact_base_url="${CLI_STATIC_BASE_URL}/okou-cli/${ARTIFACT_SHA}"
           artifact_dir="$(mktemp -d)"
-          for attempt in $(seq 1 60); do
-            if curl -fsSL \
-              "${artifact_base_url}/ready.json" \
-              --output "${artifact_dir}/ready.json"; then
-              break
-            fi
-            if (( attempt == 60 )); then
-              echo "CLI artifact was not ready after 10 minutes: $artifact_base_url" >&2
-              exit 1
-            fi
-            echo "Waiting for CLI artifact: $artifact_base_url (attempt $attempt/60)"
-            sleep 10
-          done
-
-          curl -fsSL \
-            "${artifact_base_url}/manifest.json" \
-            --output "${artifact_dir}/manifest.json"
-          curl -fsSL \
-            "${artifact_base_url}/package.tgz" \
-            --output "${artifact_dir}/package.tgz"
-          bash .github/scripts/artifacts/verify-okou-cli-artifact.sh \
-            "$artifact_dir" \
-            "$ARTIFACT_SHA"
+          trap 'rm -rf "$artifact_dir"' EXIT
+          bash .github/scripts/artifacts/fetch-okou-cli-artifact.sh "$ARTIFACT_SHA" "$artifact_dir"
           bash .github/scripts/artifacts/smoke-okou-cli-artifact.sh \
             "$artifact_dir/package.tgz"
-          echo "package-url=${artifact_base_url}/package.tgz" >> "$GITHUB_OUTPUT"
+          echo "package-url=${CLI_STATIC_BASE_URL}/okou-cli/${ARTIFACT_SHA}/package.tgz" >> "$GITHUB_OUTPUT"
 
       - name: Resolve API production environment
         id: api-production-env
@@ -1997,9 +1950,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   # Both architectures embed the same verified canonical CLI input retained
-  # by publish-cli-versioned-artifact, without a second CLI compilation.
+  # by prepare-runner-cli, without a second CLI compilation.
   build-runner-release-assets:
-    needs: [release-please, publish-cli-versioned-artifact]
+    needs: [release-please, prepare-runner-cli]
     if: ${{ needs.release-please.outputs.runner_rs_release_created == 'true' }}
     runs-on: ubuntu-latest-8-cores
     container:

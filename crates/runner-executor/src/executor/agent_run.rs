@@ -1198,10 +1198,11 @@ fn append_process_diagnostic(stderr: &mut String, diagnostic: &str) {
     stderr.push_str(diagnostic);
 }
 
-/// How this run is entering its sandbox. Each field feeds a distinct step:
-/// `restore_guest_state` gates clock/entropy repair, `prev_storage` enables
-/// the download-skip optimization on reuse, and both reuse outcomes are
-/// forwarded to the guest for /complete metadata.
+/// How this run is entering its sandbox. `restore_guest_state` gates clock/entropy
+/// repair and `prev_storage` enables the download-skip optimization on reuse. The
+/// reuse outcomes guide execution preparation and label detailed startup telemetry.
+/// `sandbox_startup_path` is the settled path sent separately as `sandboxStartupPath`
+/// by the startup report; completion does not carry reuse outcomes.
 pub(super) struct RunStart<'a> {
     pub(super) restore_guest_state: bool,
     pub(super) reuse_result: SandboxReuseResult,

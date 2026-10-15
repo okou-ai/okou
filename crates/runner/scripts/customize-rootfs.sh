@@ -20,8 +20,8 @@
 #
 # `--okou-cli` installs one versioned Okou CLI bundle (the published npm pack
 # tarball) under /usr/local/lib/okou-cli/<version>, records the installed
-# manifest, and writes the /usr/local/bin/okou launcher. Without it the rootfs
-# carries no CLI and the guest keeps launching the commit-addressed package.
+# manifest, and writes the /usr/local/bin/okou launcher. Local builds may omit
+# the bundle; Pi execution requires the installed launcher.
 
 set -euo pipefail
 

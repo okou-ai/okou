@@ -27,6 +27,7 @@ import {
 import { ROUTES } from "../route-paths.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setupDiscordConnectPage$ } from "../okou-page/discord-connect-page.ts";
+import { discordConnectParams } from "../okou-page/discord-connect-params.ts";
 import { i18n } from "../../i18n/index.ts";
 
 const initWorksRedirect$ = command(({ get, set }) => {
@@ -67,7 +68,7 @@ export const setupWorksPage$ = command(
         replacePathSilently$,
         ROUTES.settingsDiscord,
         undefined,
-        new URLSearchParams({ status: discordStatus }),
+        discordConnectParams(get(searchParams$), "discord"),
       );
       await set(setupDiscordConnectPage$, signal);
       return;
