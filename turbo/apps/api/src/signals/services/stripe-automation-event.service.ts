@@ -31,7 +31,7 @@ import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { logger } from "../../lib/log";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$, type Db, type ReadonlyDb } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import {
@@ -519,51 +519,45 @@ function eventMode(event: unknown): "live" | "test" | "unknown" {
   return parsed.data.livemode ? "live" : "test";
 }
 
-async function loadMissingStripeProjectionOwners(
-  db: ReadonlyDb,
-  accountId: string,
-  signal: AbortSignal,
-): Promise<readonly StripeAutomationOwner[]> {
-  const owners = await db
-    .selectDistinct({
-      automationId: workflowAutomations.id,
-      orgId: workflowAutomations.orgId,
-      userId: workflowAutomations.ownerUserId,
-    })
-    .from(connectors)
-    .innerJoin(
-      workflowAutomations,
-      and(
-        eq(workflowAutomations.orgId, connectors.orgId),
-        eq(workflowAutomations.ownerUserId, connectors.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(connectors.connectorSlug, "stripe"),
-        eq(connectors.authMethod, "oauth"),
-        eq(connectors.externalId, accountId),
-        eq(workflowAutomations.kind, "event"),
-        eq(workflowAutomations.eventType, "stripe-invoice-paid"),
-        eq(workflowAutomations.enabled, true),
-        isNull(workflowAutomations.eventConnectorId),
-      ),
-    )
-    .orderBy(
-      asc(workflowAutomations.orgId),
-      asc(workflowAutomations.ownerUserId),
-      asc(workflowAutomations.id),
-    );
-  signal.throwIfAborted();
-  return owners;
-}
-
 async function repairMissingStripeIngressProjections(
   db: Db,
   accountId: string,
   signal: AbortSignal,
 ): Promise<void> {
-  const owners = await loadMissingStripeProjectionOwners(db, accountId, signal);
+  const owners = await (async (): Promise<readonly StripeAutomationOwner[]> => {
+    const owners = await db
+      .selectDistinct({
+        automationId: workflowAutomations.id,
+        orgId: workflowAutomations.orgId,
+        userId: workflowAutomations.ownerUserId,
+      })
+      .from(connectors)
+      .innerJoin(
+        workflowAutomations,
+        and(
+          eq(workflowAutomations.orgId, connectors.orgId),
+          eq(workflowAutomations.ownerUserId, connectors.userId),
+        ),
+      )
+      .where(
+        and(
+          eq(connectors.connectorSlug, "stripe"),
+          eq(connectors.authMethod, "oauth"),
+          eq(connectors.externalId, accountId),
+          eq(workflowAutomations.kind, "event"),
+          eq(workflowAutomations.eventType, "stripe-invoice-paid"),
+          eq(workflowAutomations.enabled, true),
+          isNull(workflowAutomations.eventConnectorId),
+        ),
+      )
+      .orderBy(
+        asc(workflowAutomations.orgId),
+        asc(workflowAutomations.ownerUserId),
+        asc(workflowAutomations.id),
+      );
+    signal.throwIfAborted();
+    return owners;
+  })();
   for (const owner of owners) {
     // No row lock: the repair publishes only while the automation is still
     // unbound (conditional UPDATE). A reprojection that binds it first wins;
