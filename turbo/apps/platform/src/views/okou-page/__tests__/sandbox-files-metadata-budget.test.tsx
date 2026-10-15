@@ -23,7 +23,7 @@ test("Encoded metadata reaches its limit before the entry count and releases the
           ? Number(request.params.cursor.slice(5))
           : 0;
       return listing(
-        Array.from({ length: 72 }, (_unused, index) => {
+        Array.from({ length: 75 }, (_unused, index) => {
           return entry(
             `file-${String(page).padStart(3, "0")}-${String(index).padStart(2, "0")}-${"x".repeat(243)}`,
           );
@@ -45,11 +45,11 @@ test("Encoded metadata reaches its limit before the entry count and releases the
   expect(more).toHaveFocus();
   // Valid 255-byte basenames also retain their 340-byte raw tokens and virtual
   // row keys. Each page stays below 48 KiB; retained metadata reaches 4 MiB
-  // before 4096 entries. Even all 56 pages contain only 4032 entries, so the
+  // before 4096 entries. Even all 54 pages contain only 4050 entries, so the
   // entry cap cannot satisfy this assertion. Stop on the user-visible limit.
   for (
     let page = 2;
-    page < 56 &&
+    page < 54 &&
     !Array.from(panel.querySelectorAll('[role="status"]')).some((status) => {
       return status.textContent === message;
     });
