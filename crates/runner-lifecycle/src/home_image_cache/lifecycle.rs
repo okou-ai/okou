@@ -34,7 +34,7 @@ use super::types::{
     HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
     HomeImagePrepareLockPolicy, HomeImagePrepareRequest, HomeImagePromotionIdentity,
     HomeImagePromotionIdentityMismatch, HomeImagePromotionIdentityRequest,
-    HomeImagePromotionRequest,
+    HomeImagePromotionRequest, HomeImageSourceIdentity,
 };
 use super::{
     CACHE_FORMAT_VERSION, HOME_DRIVE_LAYOUT, HomeCacheLockRegistration, HomeImageCache,
@@ -1563,6 +1563,48 @@ impl HomeImageLease {
         self.result
     }
 
+    pub fn source_identity(&self) -> Option<HomeImageSourceIdentity<'_>> {
+        Some(HomeImageSourceIdentity {
+            cache_key: self.cache_key.as_deref()?,
+            profile_name: &self.profile_name,
+            image_generation: self
+                .source_image
+                .as_deref()?
+                .file_name()?
+                .to_str()
+                .and_then(super::entry::image_generation)?,
+        })
+    }
+
+    /// Candidate evidence, omitted if its lock detail is unknown. Only the
+    /// later settled startup proves use; missing telemetry never affects it.
+    pub fn checkout_observation(&self) -> Option<HomeObservation> {
+        let (outcome, reason) = match self.result {
+            HomeCacheCheckoutResult::Hit => (HomeObservationOutcome::Selected, Some("cache_hit")),
+            HomeCacheCheckoutResult::Miss => (HomeObservationOutcome::Fallback, Some("cache_miss")),
+            HomeCacheCheckoutResult::NoReuseKey => {
+                (HomeObservationOutcome::Skipped, Some("no_reuse_key"))
+            }
+            HomeCacheCheckoutResult::InvalidWorkingDir => (
+                HomeObservationOutcome::Fallback,
+                Some("invalid_working_dir"),
+            ),
+            HomeCacheCheckoutResult::InvalidMetadata => {
+                (HomeObservationOutcome::Fallback, Some("invalid_metadata"))
+            }
+            HomeCacheCheckoutResult::DiskPressure => {
+                (HomeObservationOutcome::Fallback, Some("disk_pressure"))
+            }
+            HomeCacheCheckoutResult::LockBusy => match self.lock_decision? {
+                HomeCacheLockDecision::Busy(owner) => {
+                    (HomeObservationOutcome::Busy, Some(owner.as_str()))
+                }
+                HomeCacheLockDecision::Unavailable => (HomeObservationOutcome::Unavailable, None),
+            },
+        };
+        Some(self.consumption_observation(None, outcome, reason))
+    }
+
     pub fn observe_consumption(
         &self,
         run_id: Option<RunId>,
@@ -1570,14 +1612,14 @@ impl HomeImageLease {
         reason: &str,
     ) {
         self.cache
-            .observe_home(self.consumption_observation(run_id, outcome, reason));
+            .observe_home(self.consumption_observation(run_id, outcome, Some(reason)));
     }
 
     pub fn consumption_observation(
         &self,
         run_id: Option<RunId>,
         outcome: HomeObservationOutcome,
-        reason: &str,
+        reason: Option<&str>,
     ) -> HomeObservation {
         let mut observation = HomeObservation::new(HomeObservationKind::Consumption, outcome);
         observation.run_id = run_id;
@@ -1591,14 +1633,9 @@ impl HomeImageLease {
             .and_then(|name| name.to_str())
             .and_then(super::entry::image_generation)
             .map(str::to_owned);
-        observation.reason = Some(reason.to_owned());
+        observation.reason = reason.map(str::to_owned);
         observation.is_first_run = self.cache.is_first_run;
         observation
-    }
-
-    pub fn lock_outcome_and_reason(&self) -> Option<(&'static str, Option<&'static str>)> {
-        self.lock_decision
-            .map(|decision| (decision.outcome(), decision.reason()))
     }
 
     pub fn is_cache_hit(&self) -> bool {

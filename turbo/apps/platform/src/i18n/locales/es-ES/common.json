@@ -1957,6 +1957,7 @@
       "currentFolder": "Carpeta actual",
       "empty": "Esta carpeta está vacía.",
       "enterFolder": "Abrir la carpeta {{name}}",
+      "goHome": "Ir a la carpeta personal",
       "limit": "No se cargaron algunos archivos porque se alcanzó el límite del panel. Contrae carpetas o actualiza para continuar.",
       "link": "Enlace",
       "loading": "Cargando…",

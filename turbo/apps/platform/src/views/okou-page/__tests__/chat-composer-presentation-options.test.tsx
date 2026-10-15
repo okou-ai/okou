@@ -13,6 +13,8 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import {
   AGENT_ID,
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
   context,
   findComposerEditor,
   mockAgent,
@@ -49,6 +51,19 @@ function setupModels(): void {
   });
   mockAgent();
   mockPersonalModelRoutes();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-fable-5-1",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
+  context.mocks.data.userModelPreference({
+    selectedModel: "claude-fable-5-1",
+    serviceTier: null,
+    modelSettings: {},
+    selectedImageModel: null,
+    updatedAt: null,
+  });
   mockBillingCapabilities({
     restrictedBuiltInModels: false,
   });

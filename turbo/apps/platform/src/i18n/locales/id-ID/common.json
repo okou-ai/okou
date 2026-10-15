@@ -1914,6 +1914,7 @@
       "currentFolder": "Folder saat ini",
       "empty": "Folder ini kosong.",
       "enterFolder": "Buka folder {{name}}",
+      "goHome": "Buka folder home",
       "limit": "Beberapa file tidak dimuat karena batas panel tercapai. Tutup folder atau segarkan untuk melanjutkan.",
       "link": "Tautan",
       "loading": "Memuat…",

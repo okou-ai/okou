@@ -103,16 +103,21 @@ export function createSandboxFilesVirtualListSignals(
         metrics.clientHeight || viewport?.clientHeight || FILES_ROW_HEIGHT * 12,
     });
     const focusedKey = get(focusedKey$);
+    const visibleRows = rows.filter((row) => {
+      return (
+        (row.offset + FILES_ROW_HEIGHT > range.startIndex * FILES_ROW_HEIGHT &&
+          row.offset < range.endIndex * FILES_ROW_HEIGHT) ||
+        row.key === focusedKey
+      );
+    });
     return {
       height,
-      rows: rows.filter((row) => {
-        return (
-          (row.offset + FILES_ROW_HEIGHT >
-            range.startIndex * FILES_ROW_HEIGHT &&
-            row.offset < range.endIndex * FILES_ROW_HEIGHT) ||
-          row.key === focusedKey
-        );
-      }),
+      rows: visibleRows,
+      byKey: new Map(
+        visibleRows.map((row) => {
+          return [row.key, row];
+        }),
+      ),
     };
   });
   const reset$ = command(({ get, set }) => {

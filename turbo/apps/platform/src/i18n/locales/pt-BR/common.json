@@ -1957,6 +1957,7 @@
       "currentFolder": "Pasta atual",
       "empty": "Esta pasta está vazia.",
       "enterFolder": "Abrir a pasta {{name}}",
+      "goHome": "Ir para a pasta pessoal",
       "limit": "Alguns arquivos não foram carregados porque o limite do painel foi atingido. Recolha pastas ou atualize para continuar.",
       "link": "Link",
       "loading": "Carregando…",

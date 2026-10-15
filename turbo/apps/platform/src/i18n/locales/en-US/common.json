@@ -1921,6 +1921,7 @@
       "currentFolder": "Current folder",
       "empty": "This folder is empty.",
       "enterFolder": "Open {{name}} as current folder",
+      "goHome": "Go to home folder",
       "limit": "Some files could not be loaded because the panel limit was reached. Collapse folders or refresh to continue.",
       "link": "Link",
       "loading": "Loading…",

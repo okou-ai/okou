@@ -22,6 +22,10 @@ import {
   sendComposerMessage,
   templatePart,
 } from "./chat-composer-template-gallery-test-helpers.ts";
+import {
+  buildRunModel,
+  CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+} from "./chat-composer-test-helpers.ts";
 
 function builtInTemplate(index = 0) {
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[index];
@@ -48,6 +52,12 @@ function detailGroup(title: string): HTMLElement {
 
 async function openPresentationThemePreview() {
   const capture = mockTemplateChat();
+  context.mocks.data.availableRunModels([
+    buildRunModel({
+      model: "claude-sonnet-5",
+      modelProviderId: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
+    }),
+  ]);
   const template = builtInTemplate();
   const drafts = mockSavedThemeDraft(template.colorSystemId);
   mockPresentationHtml(template.embedUrl, ["Opening"]);

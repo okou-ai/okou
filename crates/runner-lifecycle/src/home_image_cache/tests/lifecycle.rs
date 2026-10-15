@@ -143,6 +143,24 @@ async fn checkout_selects_exact_committed_generation_and_pins_it() {
     assert!(!f.cache.entry_paths(&f.key("thread-a")).metadata().exists());
     assert!(f.cache.held_home_states().await.is_empty());
     assert!(lease.source_pin.is_some());
+    let identity = lease.source_identity().expect("selected source is known");
+    assert_eq!(identity.cache_key, f.key("thread-a"));
+    assert_eq!(identity.profile_name, PROFILE);
+    assert_eq!(identity.image_generation, committed.image_generation);
+    let selected = lease.checkout_observation().unwrap();
+    assert_eq!(
+        selected.kind,
+        runner_host::home_observation::HomeObservationKind::Consumption
+    );
+    assert_eq!(
+        selected.outcome,
+        runner_host::home_observation::HomeObservationOutcome::Selected
+    );
+    assert_eq!(selected.reason.as_deref(), Some("cache_hit"));
+    assert_eq!(
+        selected.image_generation.as_deref(),
+        Some(committed.image_generation.as_str())
+    );
 }
 
 #[tokio::test]
@@ -161,6 +179,7 @@ async fn replaced_seed_is_rejected_at_consumption_and_all_image_evidence_is_disc
     assert!(config.seed_image.is_none());
     assert_eq!(config.space_reserve, HOME_IMAGE_SPACE_RESERVE);
     assert!(!lease.is_cache_hit());
+    assert!(lease.source_identity().is_none());
     assert!(lease.history_proof_binding().is_none());
     assert!(lease.previous_storage().is_none());
     assert_eq!(&std::fs::read(pinned_old).unwrap()[4096..4104], b"original");
@@ -173,10 +192,12 @@ async fn active_and_checkout_lock_owners_are_not_reusable_inventory() {
     let first = f.lease("thread").await;
     let second = f.lease("thread").await;
     assert_eq!(second.result(), HomeCacheCheckoutResult::LockBusy);
+    let observation = second.checkout_observation().unwrap();
     assert_eq!(
-        second.lock_outcome_and_reason(),
-        Some(("busy", Some("active")))
+        observation.outcome,
+        runner_host::home_observation::HomeObservationOutcome::Busy
     );
+    assert_eq!(observation.reason.as_deref(), Some("active"));
     assert!(f.cache.held_home_states().await.is_empty());
     assert!(
         second

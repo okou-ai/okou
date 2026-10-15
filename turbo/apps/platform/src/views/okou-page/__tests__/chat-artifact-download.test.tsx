@@ -30,6 +30,7 @@ test.each([
   "$filename remains downloadable when the browser reads bytes after the click",
   async ({ filename, contentType }) => {
     const url = publicArtifactUrl(filename);
+    context.mocks.data.availableRunModels([]);
     const bytes = new Uint8Array([0, 1, 2, 127, 128, 255]);
     context.mocks.browser.requestCacheMode();
     mockAttachmentChat(context, {

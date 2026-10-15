@@ -1957,6 +1957,7 @@
       "currentFolder": "Dossier actuel",
       "empty": "Ce dossier est vide.",
       "enterFolder": "Ouvrir le dossier {{name}}",
+      "goHome": "Aller au dossier personnel",
       "limit": "Certains fichiers n’ont pas été chargés car la limite du panneau a été atteinte. Replie des dossiers ou actualise pour continuer.",
       "link": "Lien",
       "loading": "Chargement…",

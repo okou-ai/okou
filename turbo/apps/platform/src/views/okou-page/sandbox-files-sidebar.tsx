@@ -3,6 +3,7 @@ import {
   ChevronRight,
   File,
   Folder,
+  House,
   Link,
   RefreshCw,
   ArrowRightToLine,
@@ -10,6 +11,7 @@ import {
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ScrollArea } from "@base-ui/react/scroll-area";
+import type { ReactNode } from "react";
 import {
   Button,
   ScrollBar,
@@ -30,7 +32,10 @@ import {
 } from "../../signals/chat-page/sandbox-files-virtual-list.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { filesLocationLabel } from "../../signals/chat-page/sandbox-files-location.ts";
+import {
+  FILES_HOME_LOCATION,
+  filesLocationLabel,
+} from "../../signals/chat-page/sandbox-files-location.ts";
 import { SandboxFilesBreadcrumb } from "./sandbox-files-breadcrumb.tsx";
 
 function FilesErrorMessage({ error }: { readonly error: FilesError }) {
@@ -203,44 +208,124 @@ function FilesDirectoryStatus({
   );
 }
 
-function FilesVirtualList({
+function equalFilesRow(
+  previous: FilesVirtualRow | undefined,
+  next: FilesVirtualRow | undefined,
+): boolean {
+  if (previous === next) {
+    return true;
+  }
+  if (
+    !previous ||
+    !next ||
+    previous.key !== next.key ||
+    previous.path !== next.path ||
+    previous.depth !== next.depth ||
+    previous.offset !== next.offset
+  ) {
+    return false;
+  }
+  if (previous.type === "entry" && next.type === "entry") {
+    return previous.entry === next.entry && previous.expanded === next.expanded;
+  }
+  return (
+    previous.type !== "entry" &&
+    next.type !== "entry" &&
+    previous.type === next.type &&
+    previous.directory === next.directory
+  );
+}
+
+function FilesVirtualListRow({
   signals,
+  rowKey,
 }: {
   readonly signals: SandboxFilesSidebarSignals;
+  readonly rowKey: string;
 }) {
-  const window = useGet(signals.virtual.window$);
+  const window = useGet(signals.virtual.window$, {
+    equalityFn: (previous, next) => {
+      return equalFilesRow(previous.byKey.get(rowKey), next.byKey.get(rowKey));
+    },
+  });
   const focus = useSet(signals.virtual.focus$);
+  const row = window.byKey.get(rowKey);
+  if (!row) {
+    return null;
+  }
+  return (
+    <li
+      data-testid="sandbox-files-virtual-row"
+      className={cn(
+        "absolute left-0 top-0 w-full pr-2",
+        DEPTH_PADDING[Math.min(row.depth, 4)],
+      )}
+      style={{
+        height: FILES_ROW_HEIGHT,
+        transform: "translateY(" + row.offset + "px)",
+      }}
+      onFocus={() => {
+        focus(row.key);
+      }}
+      onBlur={() => {
+        focus(null);
+      }}
+    >
+      <FilesRow signals={signals} row={row} />
+    </li>
+  );
+}
+
+function FilesVirtualListFrame({
+  signals,
+  children,
+}: {
+  readonly signals: SandboxFilesSidebarSignals;
+  readonly children: ReactNode;
+}) {
+  const window = useGet(signals.virtual.window$, {
+    equalityFn: (previous, next) => {
+      return previous.height === next.height;
+    },
+  });
   return (
     <ul
       className="relative w-full"
       data-testid="sandbox-files-virtual-list"
       style={{ height: window.height }}
     >
+      {children}
+    </ul>
+  );
+}
+
+function FilesVirtualList({
+  signals,
+}: {
+  readonly signals: SandboxFilesSidebarSignals;
+}) {
+  const window = useGet(signals.virtual.window$, {
+    equalityFn: (previous, next) => {
+      return (
+        previous.rows.length === next.rows.length &&
+        previous.rows.every((row, index) => {
+          return row.key === next.rows[index]?.key;
+        })
+      );
+    },
+  });
+  return (
+    <FilesVirtualListFrame signals={signals}>
       {window.rows.map((row) => {
         return (
-          <li
+          <FilesVirtualListRow
             key={row.key}
-            data-testid="sandbox-files-virtual-row"
-            className={cn(
-              "absolute left-0 top-0 w-full pr-2",
-              DEPTH_PADDING[Math.min(row.depth, 4)],
-            )}
-            style={{
-              height: FILES_ROW_HEIGHT,
-              transform: "translateY(" + row.offset + "px)",
-            }}
-            onFocus={() => {
-              focus(row.key);
-            }}
-            onBlur={() => {
-              focus(null);
-            }}
-          >
-            <FilesRow signals={signals} row={row} />
-          </li>
+            signals={signals}
+            rowKey={row.key}
+          />
         );
       })}
-    </ul>
+    </FilesVirtualListFrame>
   );
 }
 
@@ -350,6 +435,8 @@ export function SandboxFilesSidebarBody({
   const runId = useGet(signals.activeRunId$);
   const pending = useGet(signals.pending$);
   const phase = useGet(signals.phase$);
+  const signal = useGet(pageSignal$);
+  const navigate = useSet(signals.navigate$);
   const viewport = useSet(signals.virtual.scroll.setScrollViewport$);
   const metrics = useSet(signals.virtual.scroll.setScrollMetrics$);
   const errorId = "sandbox-files-error-" + runId;
@@ -370,6 +457,23 @@ export function SandboxFilesSidebarBody({
     <>
       <div className="flex items-center gap-2 px-4 py-2">
         <SandboxFilesBreadcrumb signals={signals} />
+        <Button
+          type="button"
+          variant="quiet"
+          size="icon-sm"
+          className="shrink-0"
+          showTooltip
+          aria-label={t(($) => {
+            return $.chat.files.goHome;
+          })}
+          disabled={phase !== "ready"}
+          focusableWhenDisabled
+          onClick={() => {
+            detach(navigate(FILES_HOME_LOCATION, signal), Reason.DomCallback);
+          }}
+        >
+          <House size={16} />
+        </Button>
         <FilesRefreshControl signals={signals} errorId={errorId} />
       </div>
       {phase === "ready" ? (

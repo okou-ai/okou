@@ -16,6 +16,7 @@ use crate::resource_budget::ResourceBudget;
 use runner_host::home_observation::{
     HomeObservation, HomeObservationLocalDetails, HomeObservationOutcome,
 };
+use runner_lifecycle::home_image_cache::HomeImageSourceIdentity;
 use runner_provider::http::HttpClient;
 use runner_storage::ArchiveConnectionAttempt;
 use runner_types::ids::RunId;
@@ -267,10 +268,26 @@ pub struct JobTelemetry {
     runner_hostname: Option<String>,
     sandbox_startup_path: Option<RunnerStartupPath>,
     is_first_run: Option<bool>,
+    home_startup_source: Option<HomeStartupSource>,
     runner_pre_spawn_attribution: Option<RunnerPreSpawnAttribution>,
     pending_ops: Vec<SandboxOp>,
     oldest_pending: Option<Instant>,
     in_flight_flushes: Vec<JoinHandle<()>>,
+}
+
+#[derive(Clone)]
+struct HomeStartupSource {
+    cache_key: String,
+    profile_name: String,
+    image_generation: String,
+}
+
+fn bounded_home_identity(value: &str) -> String {
+    let mut end = value.len().min(4096);
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value[..end].to_owned()
 }
 
 #[derive(Serialize, Clone)]
@@ -291,6 +308,12 @@ struct SandboxOp {
     is_first_run: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reuse_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_key: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    image_generation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     home_reuse_result: Option<HomeReuseResult>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,6 +431,7 @@ impl JobTelemetry {
             runner_hostname,
             sandbox_startup_path: None,
             is_first_run: None,
+            home_startup_source: None,
             runner_pre_spawn_attribution: None,
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -431,6 +455,14 @@ impl JobTelemetry {
         self.is_first_run = is_first_run;
     }
 
+    pub(crate) fn set_home_startup_source(&mut self, source: Option<HomeImageSourceIdentity<'_>>) {
+        self.home_startup_source = source.map(|source| HomeStartupSource {
+            cache_key: bounded_home_identity(source.cache_key),
+            profile_name: bounded_home_identity(source.profile_name),
+            image_generation: bounded_home_identity(source.image_generation),
+        });
+    }
+
     pub fn new_runner(
         http: HttpClient,
         token: String,
@@ -443,6 +475,7 @@ impl JobTelemetry {
             runner_hostname: hostname,
             sandbox_startup_path: None,
             is_first_run: None,
+            home_startup_source: None,
             runner_pre_spawn_attribution: None,
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -487,6 +520,13 @@ impl JobTelemetry {
         op.sandbox_reuse_result = Some(sandbox_reuse_result);
         op.home_reuse_result = Some(home_reuse_result);
         op.reuse_key = reuse_key.map(str::to_owned);
+        if path == RunnerStartupPath::Home
+            && let Some(source) = &self.home_startup_source
+        {
+            op.cache_key = Some(source.cache_key.clone());
+            op.profile_name = Some(source.profile_name.clone());
+            op.image_generation = Some(source.image_generation.clone());
+        }
         phase.push_operation(op);
         phase.start_auto_flush();
         self.merge_concurrent_phase(phase);
@@ -505,6 +545,7 @@ impl JobTelemetry {
             runner_hostname: self.runner_hostname.clone(),
             sandbox_startup_path: self.sandbox_startup_path,
             is_first_run: self.is_first_run,
+            home_startup_source: self.home_startup_source.clone(),
             runner_pre_spawn_attribution: self.runner_pre_spawn_attribution.clone(),
             pending_ops: Vec::new(),
             oldest_pending: None,
@@ -1018,6 +1059,9 @@ impl JobTelemetry {
                     home.run_id = self.run_id.or(home.run_id);
                     home.is_first_run = op.is_first_run;
                     home.reuse_key = op.reuse_key.clone();
+                    home.cache_key = op.cache_key.clone();
+                    home.profile_name = op.profile_name.clone();
+                    home.image_generation = op.image_generation.clone();
                     home.reason = op.reason.clone();
                     home
                 })
@@ -1238,6 +1282,9 @@ fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> San
         operation.outcome = Some(home.outcome.to_string());
         operation.reason = home.reason.take();
         operation.reuse_key = home.reuse_key.take();
+        operation.cache_key = home.cache_key.take();
+        operation.profile_name = home.profile_name.take();
+        operation.image_generation = home.image_generation.take();
         operation.is_first_run = home.is_first_run;
         if run_id.is_some() {
             home.run_id = None;
@@ -1245,9 +1292,9 @@ fn sandbox_op_from_record(record: SandboxOpRecord, run_id: Option<RunId>) -> San
         // API contract bounds only metadata introduced by resource records.
         for (field, limit) in [
             (&mut operation.reuse_key, 4096),
-            (&mut home.cache_key, 4096),
-            (&mut home.profile_name, 4096),
-            (&mut home.image_generation, 4096),
+            (&mut operation.cache_key, 4096),
+            (&mut operation.profile_name, 4096),
+            (&mut operation.image_generation, 4096),
             (&mut operation.reason, 64),
             (&mut home.handoff_path, 64),
         ] {
@@ -1284,6 +1331,9 @@ fn sandbox_op_at(
         runner_startup_path: None,
         is_first_run: None,
         reuse_key: None,
+        cache_key: None,
+        profile_name: None,
+        image_generation: None,
         home_reuse_result: None,
         sandbox_reuse_result: None,
         runner_pre_spawn_concurrency_bucket: None,
@@ -1724,6 +1774,9 @@ mod tests {
             runner_startup_path: None,
             is_first_run: None,
             reuse_key: None,
+            cache_key: None,
+            profile_name: None,
+            image_generation: None,
             home_reuse_result: None,
             sandbox_reuse_result: None,
             runner_pre_spawn_concurrency_bucket: None,
@@ -2225,6 +2278,9 @@ mod tests {
                 runner_startup_path: None,
                 is_first_run: None,
                 reuse_key: None,
+                cache_key: None,
+                profile_name: None,
+                image_generation: None,
                 home_reuse_result: None,
                 sandbox_reuse_result: None,
                 runner_pre_spawn_concurrency_bucket: None,
@@ -3140,13 +3196,16 @@ mod tests {
             );
             telemetry.set_first_run(Some(false));
             telemetry.set_sandbox_startup_path(path);
+            let generation = uuid::Uuid::new_v4().to_string();
+            telemetry.set_home_startup_source(Some(HomeImageSourceIdentity {
+                cache_key: "selected-cache",
+                profile_name: "vm0/default",
+                image_generation: &generation,
+            }));
+            let mut phase = telemetry.fork_concurrent_phase();
             telemetry.record("preparation", Duration::ZERO, true, None);
-            telemetry.record_sandbox_startup(
-                path,
-                sandbox_result,
-                home_result,
-                Some("thread:tracked"),
-            );
+            phase.record_sandbox_startup(path, sandbox_result, home_result, Some("thread:tracked"));
+            telemetry.merge_concurrent_phase(phase);
 
             let request = server.next_request("startup fact before final flush").await;
             let (_, body) = request.split_once("\r\n\r\n").unwrap();
@@ -3159,6 +3218,15 @@ mod tests {
             assert_eq!(operation["is_first_run"], false);
             assert_eq!(operation["success"], true);
             assert_eq!(operation["reuse_key"], "thread:tracked");
+            if path == RunnerStartupPath::Home {
+                assert_eq!(operation["cache_key"], "selected-cache");
+                assert_eq!(operation["profile_name"], "vm0/default");
+                assert_eq!(operation["image_generation"], generation);
+            } else {
+                for field in ["cache_key", "profile_name", "image_generation"] {
+                    assert!(operation.get(field).is_none(), "{wire_path}: {field}");
+                }
+            }
             assert_eq!(
                 operation["home_reuse_result"],
                 serde_json::to_value(home_result).unwrap()

@@ -17,14 +17,14 @@ use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 use super::super::env::guest_connector_account_context_file_path;
 use super::super::telemetry::{
     RunnerPreSpawnPhase, RunnerSpawnTiming, elapsed_since_api_start_ms,
-    record_api_startup_boundaries, record_reuse_result,
+    record_api_startup_boundaries,
 };
 use super::super::{
     BlankPoolSelection, BlankPoolSelectionReason, ExactReuseSpeculationTiming, ExecutionHooks,
     FinalizingHandoffOutcome, FinalizingHandoffReason, NewSandboxDispatch,
     RunnerPreSpawnConcurrency, RunnerPreSpawnOperationTiming, RunnerPreSpawnTiming,
     SandboxReuseDisposition, SandboxReuseRejection, SessionHistoryRestorePlan, execute_job,
-    execute_job_reuse, execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
+    execute_job_reuse_with_hooks, execute_job_with_prepared_notifier,
 };
 use super::support::{
     context_with_env, default_params, make_reusable_idle_sandbox, minimal_context,
@@ -934,35 +934,8 @@ fn pre_spawn_timing_with_exact_reuse_speculation() -> RunnerPreSpawnTiming {
     timing
 }
 
-#[test]
-fn record_reuse_result_emits_hit_for_reuse() {
-    let mut telemetry = new_telemetry();
-    record_reuse_result(&mut telemetry, SandboxReuseResult::Reused);
-    let ops = telemetry.pending_ops_snapshot();
-    assert_eq!(ops.len(), 1);
-    assert_eq!(ops[0].0, "sandbox_reuse_hit");
-}
-
-#[test]
-fn record_reuse_result_emits_miss_for_every_miss_variant() {
-    let variants = [
-        SandboxReuseResult::NoReuseKey,
-        SandboxReuseResult::PoolMiss,
-        SandboxReuseResult::ProfileMismatch,
-        SandboxReuseResult::DeviceLimitMismatch,
-        SandboxReuseResult::UnparkFailed,
-    ];
-    for variant in variants {
-        let mut telemetry = new_telemetry();
-        record_reuse_result(&mut telemetry, variant);
-        let ops = telemetry.pending_ops_snapshot();
-        assert_eq!(ops.len(), 1, "{variant:?}");
-        assert_eq!(ops[0].0, "sandbox_reuse_miss", "{variant:?}");
-    }
-}
-
 #[tokio::test]
-async fn execute_job_records_sandbox_reuse_miss_in_telemetry() {
+async fn execute_job_fresh_path_preserves_preparation_telemetry() {
     let dir = tempfile::tempdir().unwrap();
     let config = test_executor_config(dir.path()).await;
     let factory = MockSandboxFactory::new();
@@ -981,13 +954,6 @@ async fn execute_job_records_sandbox_reuse_miss_in_telemetry() {
     )
     .await;
 
-    let ops = telemetry.pending_ops_snapshot();
-    let reuse_events: Vec<_> = ops
-        .iter()
-        .filter(|op| op.0.starts_with("sandbox_reuse_"))
-        .collect();
-    assert_eq!(reuse_events.len(), 1);
-    assert_eq!(reuse_events[0].0, "sandbox_reuse_miss");
     assert_lacks_action(&telemetry, "runner_claim_to_executor_start");
     assert_lacks_api_claim_timing(&telemetry);
     assert_lacks_action(&telemetry, "runner_claim_resume_session_validation");
@@ -998,49 +964,6 @@ async fn execute_job_records_sandbox_reuse_miss_in_telemetry() {
     for action in FRESH_SANDBOX_START_STAGE_ACTIONS {
         assert_lacks_action(&telemetry, action);
     }
-}
-
-#[tokio::test]
-async fn execute_job_reuse_records_sandbox_reuse_hit_in_telemetry() {
-    let dir = tempfile::tempdir().unwrap();
-    let config = test_executor_config(dir.path()).await;
-    let factory = MockSandboxFactory::new();
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    let (outcome, _telemetry) = execute_job(
-        &factory,
-        minimal_context(),
-        NewSandboxDispatch {
-            id: SandboxId::new_v4(),
-            reuse_result: SandboxReuseResult::NoReuseKey,
-        },
-        &config,
-        &default_params(),
-        cancel,
-    )
-    .await;
-    let sandbox = outcome.sandbox.expect("sandbox should be alive");
-
-    let cancel = tokio_util::sync::CancellationToken::new();
-    cancel.cancel();
-    let (idle_sandbox, _lease) =
-        make_reusable_idle_sandbox(sandbox, outcome.source_ip, "test-session").await;
-    let (_outcome, telemetry) = execute_job_reuse(
-        idle_sandbox,
-        minimal_context(),
-        &config,
-        &default_params(),
-        cancel,
-    )
-    .await;
-
-    let ops = telemetry.pending_ops_snapshot();
-    let reuse_events: Vec<_> = ops
-        .iter()
-        .filter(|op| op.0.starts_with("sandbox_reuse_"))
-        .collect();
-    assert_eq!(reuse_events.len(), 1);
-    assert_eq!(reuse_events[0].0, "sandbox_reuse_hit");
 }
 
 #[tokio::test]
@@ -1099,7 +1022,6 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "runner_agent_shell_spawn",
         "runner_agent_bootstrap_ready_wait",
         "api_to_sandbox_start",
-        "sandbox_reuse_miss",
         "sandbox_create",
         "home_drive_mount",
         "home_drive_mount_guest_exec",
@@ -1717,7 +1639,6 @@ async fn execute_job_reuse_records_runner_pre_spawn_and_reuse_path_timing() {
         "runner_agent_shell_spawn",
         "runner_agent_bootstrap_ready_wait",
         "api_to_sandbox_start",
-        "sandbox_reuse_hit",
         "agent_execute",
     ] {
         assert_has_action(&telemetry, action);
@@ -1930,8 +1851,6 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
         outcome.home_reuse_result,
         Some(HomeReuseResult::NotConfigured)
     );
-    assert_has_action(&telemetry, "sandbox_reuse_miss");
-    assert_has_action(&telemetry, "sandbox_blank_pool_hit");
     let startup = telemetry.pending_ops_with_runner_startup_snapshot();
     assert!(startup.iter().any(|operation| {
         operation.action_type == "runner_agent_start_to_ready"
@@ -1943,7 +1862,6 @@ async fn execute_job_claims_blank_sandbox_with_distinct_startup_attribution() {
             && operation.2.as_deref() == Some("hit")
             && operation.3.is_none()
     }));
-    assert_lacks_action(&telemetry, "sandbox_reuse_hit");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_factory_create");
     assert_lacks_action(&telemetry, "runner_fresh_sandbox_start");
     assert_lacks_action(&telemetry, "runner_guest_state_restore");

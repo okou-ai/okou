@@ -1921,6 +1921,7 @@
       "currentFolder": "Aktueller Ordner",
       "empty": "Dieser Ordner ist leer.",
       "enterFolder": "{{name}} als aktuellen Ordner öffnen",
+      "goHome": "Zum Home-Verzeichnis",
       "limit": "Einige Dateien konnten wegen des Panel-Limits nicht geladen werden. Klappe Ordner zu oder aktualisiere die Ansicht.",
       "link": "Link",
       "loading": "Wird geladen…",
