@@ -17,7 +17,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import type { Tx } from "../../lib/db-types";
 import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { command, computed, type Computed } from "ccstate";
-import { db$, writeDb$, type Db } from "../external/db";
+import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import {
   readAgentConnectorScope$,
@@ -611,57 +611,60 @@ export const updateChatThreadConnectorSelection$ = command(
   },
 );
 
-export async function clearChatThreadConnectorSelection(
-  db: Db,
-  args: {
-    readonly orgId: string;
-    readonly userId: string;
-    readonly chatThreadId: string;
-    readonly target: ConnectorAccountTarget;
+export const clearChatThreadConnectorSelection$ = command(
+  async function clearChatThreadConnectorSelection(
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly chatThreadId: string;
+      readonly target: ConnectorAccountTarget;
+    },
+    signal: AbortSignal,
+  ): Promise<ClearChatThreadConnectorSelectionResult> {
+    const db = set(writeDb$);
+    // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0093; new non-billing transactions are prohibited.
+    return await db.transaction(async (tx) => {
+      const [thread] = await tx
+        .select({ agentId: agents.id })
+        .from(chatThreads)
+        .innerJoin(
+          agents,
+          and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
+        )
+        .where(
+          and(
+            eq(chatThreads.id, args.chatThreadId),
+            eq(chatThreads.userId, args.userId),
+          ),
+        )
+        .limit(1);
+      if (!thread?.agentId) {
+        return { kind: "not_found" };
+      }
+      // Only event sources also change the owner's automation projections.
+      // The reprojection recomputes from current rows.
+      await tx
+        .delete(chatThreadConnectorSelections)
+        .where(
+          and(
+            eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
+            args.target.kind === "builtin"
+              ? eq(
+                  chatThreadConnectorSelections.connectorSlug,
+                  args.target.connectorSlug,
+                )
+              : eq(
+                  chatThreadConnectorSelections.customConnectorId,
+                  args.target.customConnectorId,
+                ),
+          ),
+        );
+      await reprojectWorkflowAutomationsForOwner(tx, args, signal);
+      return { kind: "cleared" };
+    });
   },
-  signal: AbortSignal,
-): Promise<ClearChatThreadConnectorSelectionResult> {
-  // eslint-disable-next-line api/no-db-transaction -- Legacy transaction existing on 2026-10-09; id=TX-0093; new non-billing transactions are prohibited.
-  return await db.transaction(async (tx) => {
-    const [thread] = await tx
-      .select({ agentId: agents.id })
-      .from(chatThreads)
-      .innerJoin(
-        agents,
-        and(eq(agents.id, chatThreads.agentId), eq(agents.orgId, args.orgId)),
-      )
-      .where(
-        and(
-          eq(chatThreads.id, args.chatThreadId),
-          eq(chatThreads.userId, args.userId),
-        ),
-      )
-      .limit(1);
-    if (!thread?.agentId) {
-      return { kind: "not_found" };
-    }
-    // Only event sources also change the owner's automation projections.
-    // The reprojection recomputes from current rows.
-    await tx
-      .delete(chatThreadConnectorSelections)
-      .where(
-        and(
-          eq(chatThreadConnectorSelections.chatThreadId, args.chatThreadId),
-          args.target.kind === "builtin"
-            ? eq(
-                chatThreadConnectorSelections.connectorSlug,
-                args.target.connectorSlug,
-              )
-            : eq(
-                chatThreadConnectorSelections.customConnectorId,
-                args.target.customConnectorId,
-              ),
-        ),
-      );
-    await reprojectWorkflowAutomationsForOwner(tx, args, signal);
-    return { kind: "cleared" };
-  });
-}
+);
 
 /** Pure, stably ordered statements. The creation owner executes savepoints. */
 export function initialChatThreadConnectorSelectionStatements(args: {

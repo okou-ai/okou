@@ -5,11 +5,10 @@ import { badRequestMessage, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { writeDb$ } from "../external/db";
 import { publishChatThreadDetailChangedSafely } from "../external/realtime";
 import { bestEffort } from "../utils";
 import {
-  clearChatThreadConnectorSelection,
+  clearChatThreadConnectorSelection$,
   connectorSelectionsForChatThread,
   updateChatThreadConnectorSelection$,
 } from "../services/chat-thread-connector-selection.service";
@@ -125,9 +124,8 @@ const clearSelectionInner$ = command(
     if (!body.ok) {
       return body.response;
     }
-    const writeDb = set(writeDb$);
-    const result = await clearChatThreadConnectorSelection(
-      writeDb,
+    const result = await set(
+      clearChatThreadConnectorSelection$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
