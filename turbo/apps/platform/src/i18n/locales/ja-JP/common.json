@@ -3454,14 +3454,28 @@
         "workspaceMismatchTitle": "Slackワークスペースが一致しません"
       },
       "teams": {
+        "authorize": "Microsoft Teams を承認",
         "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
-        "connectDescriptionNamed": "{{displayName}} の場合は、Teams アカウントをリンクして、Microsoft Teams からエージェントと直接やり取りできるようにします。",
+        "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
-        "invalidDescription": "このページは、Microsoft Teams 接続リンクから開かれるように設計されています。",
+        "currentState": "現在の Teams の状態",
+        "existingConnection": "既存の Teams 接続がありますが、このリンクが指定するアカウントの確認にはなりません。",
+        "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
+        "identityUnknown": "このリンクの Teams アカウントを確認できません。ページを更新するか、Teams を開いてアカウントを確認してください。",
+        "install": "Teams にインストール",
+        "invalidContext": "このリンクには Teams アカウント情報が不足しています。Teams から新しい接続リンクを開いてください。",
         "open": "オープンチーム",
+        "orgMismatch": "このリンクは別の組織用です。その組織に切り替えて再試行してください。",
+        "pendingDescription": "アカウントの準備ができました。Teams にアプリをインストールし、このページを更新して接続を確認してください。",
+        "pendingTitle": "Teams にインストールして完了",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams の状態を更新",
+        "reinstall": "Teams に再インストール",
+        "requestedAccount": "リンクに記載されたアカウント: {{name}}",
+        "statusFailed": "Teams の接続を確認できません。再試行してください。",
         "successDescription": "{{team}} に接続されています。チャットを開始するには、Teams で @{{botName}} にメンションします。",
-        "successTitle": "Microsoft Teams に接続されました"
+        "successTitle": "Microsoft Teams に接続されました",
+        "unavailable": "Teams の設定は利用できません。組織の管理者にお問い合わせください。"
       },
       "telegram": {
         "alreadyTitle": "すでに Telegram に接続されています",

@@ -3454,14 +3454,28 @@
         "workspaceMismatchTitle": "Ruang kerja Slack tidak cocok"
       },
       "teams": {
+        "authorize": "Otorisasi Microsoft Teams",
         "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
-        "connectDescriptionNamed": "{{displayName}}, tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
+        "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
-        "invalidDescription": "Halaman ini dimaksudkan untuk dibuka dari tautan koneksi Microsoft Teams.",
+        "currentState": "Status Teams saat ini",
+        "existingConnection": "Koneksi Teams sudah tersedia. Ini tidak mengonfirmasi akun yang diminta oleh tautan ini.",
+        "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
+        "identityUnknown": "Kami tidak dapat mengonfirmasi akun Teams pada tautan ini. Muat ulang halaman atau buka Teams untuk memeriksa akun Anda.",
+        "install": "Instal di Teams",
+        "invalidContext": "Informasi akun Teams pada tautan ini tidak lengkap. Buka tautan koneksi baru dari Teams.",
         "open": "Buka Teams",
+        "orgMismatch": "Tautan ini untuk organisasi lain. Beralihlah ke organisasi tersebut, lalu coba lagi.",
+        "pendingDescription": "Akun Anda siap. Instal aplikasi di Teams, lalu segarkan halaman ini untuk mengonfirmasi koneksi.",
+        "pendingTitle": "Instal di Teams untuk menyelesaikan",
         "providerName": "Microsoft Teams",
+        "refresh": "Segarkan status Teams",
+        "reinstall": "Instal ulang di Teams",
+        "requestedAccount": "Akun yang disebut dalam tautan ini: {{name}}",
+        "statusFailed": "Tidak dapat memeriksa koneksi Teams. Coba lagi.",
         "successDescription": "Anda tersambung ke {{team}}. Sebut @{{botName}} di Teams untuk mulai mengobrol.",
-        "successTitle": "Berhasil tersambung ke Microsoft Teams"
+        "successTitle": "Berhasil tersambung ke Microsoft Teams",
+        "unavailable": "Pengaturan Teams tidak tersedia. Hubungi administrator organisasi Anda."
       },
       "telegram": {
         "alreadyTitle": "Sudah tersambung ke Telegram",

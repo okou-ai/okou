@@ -17,6 +17,8 @@ import {
 } from "../../signals/bootstrap/source-onboarding-telemetry.ts";
 import { agentPhoneLinkStatus$ } from "../../signals/okou-page/agentphone.ts";
 import { slackOrgData$ } from "../../signals/okou-page/slack.ts";
+import { teamsEntryUrl } from "../../signals/okou-page/teams-connect-context.ts";
+import { TeamsStatusRefresh } from "../okou-page/teams-status-refresh.tsx";
 import { teamsOrgData$ } from "../../signals/okou-page/teams.ts";
 import { telegramBots$ } from "../../signals/okou-page/telegram.ts";
 import { authorizeTelegramBot$ } from "../../signals/okou-page/telegram-authorization.ts";
@@ -346,13 +348,16 @@ export function OnboardingSlackPage() {
       connectUrl: status.connectUrl,
     };
   });
-  const teams = loadedChannelState(useLastLoadable(teamsOrgData$), (status) => {
+  const teams = loadedChannelState(useLoadable(teamsOrgData$), (status) => {
     return {
-      isConnected: status.isConnected,
+      isConnected:
+        status.isConnected &&
+        status.isInstalled &&
+        status.pendingInstallation !== true,
       isInstalled: status.isInstalled,
       isAdmin: status.isAdmin,
-      installUrl: status.connectUrl ?? status.installUrl,
-      connectUrl: status.connectUrl,
+      installUrl: teamsEntryUrl(status),
+      connectUrl: teamsEntryUrl(status),
     };
   });
   const phone = useLastLoadable(agentPhoneLinkStatus$);
@@ -414,6 +419,7 @@ export function OnboardingSlackPage() {
                 return $.onboarding.sourcesFirst.slack.name;
               })}
             />
+            <TeamsStatusRefresh />
             <ChannelNote
               state={teams}
               channel={t(($) => {

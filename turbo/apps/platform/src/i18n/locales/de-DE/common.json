@@ -3472,14 +3472,28 @@
         "workspaceMismatchTitle": "Slack-Arbeitsbereich stimmt nicht überein"
       },
       "teams": {
+        "authorize": "Microsoft Teams autorisieren",
         "connectDescription": "Verknüpfen Sie Ihr Teams-Konto, damit Sie direkt über Microsoft Teams mit Ihrem Agenten interagieren können.",
-        "connectDescriptionNamed": "{{displayName}}, verknüpfen Sie Ihr Teams-Konto, damit Sie direkt über Microsoft Teams mit Ihrem Agenten interagieren können.",
+        "connectedDescription": "Ihr Teams-Konto ist verbunden.",
         "connectTitle": "Verbinden Sie Microsoft Teams",
-        "invalidDescription": "Diese Seite soll über einen Microsoft Teams-Verbindungslink geöffnet werden.",
+        "currentState": "Aktueller Teams-Status",
+        "existingConnection": "Eine Teams-Verbindung besteht bereits. Sie bestätigt nicht das von diesem Link angeforderte Konto.",
+        "identityMismatch": "Das angeforderte Teams-Konto oder der Arbeitsbereich entspricht nicht der aktuellen Verbindung.",
+        "identityUnknown": "Wir können das Teams-Konto in diesem Link nicht bestätigen. Aktualisiere die Seite oder öffne Teams, um dein Konto zu prüfen.",
+        "install": "In Teams installieren",
+        "invalidContext": "Diesem Link fehlen Teams-Kontodaten. Öffnen Sie einen neuen Verbindungslink aus Teams.",
         "open": "Offene Teams",
+        "orgMismatch": "Dieser Link gehört zu einer anderen Organisation. Wechseln Sie dorthin und versuchen Sie den Link erneut.",
+        "pendingDescription": "Ihr Konto ist vorbereitet. Installieren Sie die App in Teams und aktualisieren Sie diese Seite, um die Verbindung zu bestätigen.",
+        "pendingTitle": "Zum Abschluss in Teams installieren",
         "providerName": "Microsoft Teams",
+        "refresh": "Teams-Status aktualisieren",
+        "reinstall": "In Teams neu installieren",
+        "requestedAccount": "Im Link genanntes Konto: {{name}}",
+        "statusFailed": "Die Teams-Verbindung konnte nicht geprüft werden. Bitte erneut versuchen.",
         "successDescription": "Sie sind mit {{team}} verbunden. Erwähnen Sie @{{botName}} in Teams, um mit dem Chatten zu beginnen.",
-        "successTitle": "Verbunden mit Microsoft Teams"
+        "successTitle": "Verbunden mit Microsoft Teams",
+        "unavailable": "Die Teams-Einrichtung ist nicht verfügbar. Bitten Sie Ihren Organisationsadministrator um Hilfe."
       },
       "telegram": {
         "alreadyTitle": "Bereits mit Telegram verbunden",
