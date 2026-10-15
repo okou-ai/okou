@@ -32,7 +32,7 @@ pub(super) async fn exercise(
     let cursor = result?;
     cleanup?;
     println!(
-        "FILESYSTEM_FIRECRACKER_PASS arch={} policy=openat2-beneath-no-links-no-xdev home=actual paging=complete cursor-close=owned mount=rejected cleanup=owned",
+        "FILESYSTEM_FIRECRACKER_PASS arch={} fs=2 policy=openat2-beneath-no-links-no-xdev root=actual home=canonical-mount paging=complete cursor-close=owned other-mount=rejected cleanup=owned",
         std::env::consts::ARCH
     );
     Ok(cursor)
@@ -66,7 +66,7 @@ async fn call(
 ) -> TestResult<Result<Value, String>> {
     tokio::time::timeout(Duration::from_secs(5), async {
         let id = uuid::Uuid::new_v4().to_string();
-        send(channel, json!({"schemaVersion":1,"type":"request","id":id,"category":"fs","categoryVersion":1,"operation":operation,"params":params})).await?;
+        send(channel, json!({"schemaVersion":1,"type":"request","id":id,"category":"fs","categoryVersion":2,"operation":operation,"params":params})).await?;
         match receive(channel).await? {
             Message::Response { request_id, result:Some(result), error:None, .. } if request_id == id => Ok(Ok(result)),
             Message::Response { request_id, result:None, error:Some(error), .. } if request_id == id => Ok(Err(error.code)),
@@ -90,7 +90,22 @@ async fn list(
 
 async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestResult<String> {
     let token = |name: &str| URL_SAFE_NO_PAD.encode(name);
-    let mut home = list(channel, json!({"path":[]})).await?;
+    for (path, expected) in [(vec![], "home"), (vec![token("home")], "user")] {
+        let page = list(channel, json!({"path":path})).await?;
+        if !page
+            .entries
+            .iter()
+            .any(|entry| entry.name_token == token(expected))
+        {
+            return Err(io::Error::other("actual Guest ancestor missing").into());
+        }
+        if let Some(cursor) = page.next_cursor {
+            call(channel, "list.close", json!({"cursor":cursor}))
+                .await?
+                .map_err(|_| io::Error::other("ancestor cursor close failed"))?;
+        }
+    }
+    let mut home = list(channel, json!({"path":[token("home"),token("user")]})).await?;
     let mut found = false;
     for _ in 0..32 {
         found = home
@@ -113,7 +128,7 @@ async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestRe
     if !found {
         return Err(io::Error::other("actual Guest home fixture missing").into());
     }
-    let path = vec![token(name)];
+    let path = vec![token("home"), token("user"), token(name)];
     let mut page = list(channel, json!({"path":path})).await?;
     let listing = page.listing_id.clone();
     let abandoned = page
@@ -143,7 +158,11 @@ async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestRe
     if entries.len() != 305 || pages < 3 || !entries.contains(&token(".hidden")) {
         return Err(io::Error::other("native directory silently lost entries").into());
     }
-    let nested = list(channel, json!({"path":[token(name),token("nested")]})).await?;
+    let nested = list(
+        channel,
+        json!({"path":[token("home"),token("user"),token(name),token("nested")]}),
+    )
+    .await?;
     if nested.entries.len() != 1
         || !nested
             .entries
@@ -161,7 +180,7 @@ async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestRe
         if call(
             channel,
             "list",
-            json!({"path":[token(name),token(component)]}),
+            json!({"path":[token("home"),token("user"),token(name),token(component)]}),
         )
         .await?
             != Err(code.to_owned())
@@ -172,10 +191,13 @@ async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestRe
     if call(channel, "list", json!({"cursor":abandoned})).await? != Err("cursor_expired".into()) {
         return Err(io::Error::other("EOF retained a native cursor").into());
     }
-    let cursor = list(channel, json!({"path":[token(name)]}))
-        .await?
-        .next_cursor
-        .ok_or_else(|| io::Error::other("missing owned cursor"))?;
+    let cursor = list(
+        channel,
+        json!({"path":[token("home"),token("user"),token(name)]}),
+    )
+    .await?
+    .next_cursor
+    .ok_or_else(|| io::Error::other("missing owned cursor"))?;
     let close = call(channel, "list.close", json!({"cursor":cursor}))
         .await?
         .map_err(|_| io::Error::other("native close rejected"))?;
@@ -185,10 +207,13 @@ async fn browse(channel: &mut Channel, idle: &mut Channel, name: &str) -> TestRe
     }
     // Leave an actual cursor on the exact stream retained by LiveEpoch. Run
     // retirement/park and provider stop must release it even without more IO.
-    let retained = list(idle, json!({"path":[token(name)]}))
-        .await?
-        .next_cursor
-        .ok_or_else(|| io::Error::other("missing retained native cursor"))?;
+    let retained = list(
+        idle,
+        json!({"path":[token("home"),token("user"),token(name)]}),
+    )
+    .await?
+    .next_cursor
+    .ok_or_else(|| io::Error::other("missing retained native cursor"))?;
     reject_cursor(channel, &retained).await?;
     Ok(retained)
 }

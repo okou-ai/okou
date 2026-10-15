@@ -6,6 +6,7 @@ import {
   ArchiveRestore,
   Clock,
   Ellipsis,
+  Folder,
   Package,
   Pencil,
   Pin,
@@ -25,7 +26,10 @@ import {
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
-import { openThreadAutomations$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
+import {
+  openThreadAutomations$,
+  openThreadFiles$,
+} from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -109,6 +113,28 @@ function MobileArtifactsMenuItem({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
+function MobileFilesMenuItem({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const openFiles = useSet(openThreadFiles$);
+  return (
+    <DropdownMenuItem
+      className="min-h-11"
+      onClick={() => {
+        openFiles(thread);
+      }}
+    >
+      <Folder size={16} />
+      {t(($) => {
+        return $.chat.files.title;
+      })}
+    </DropdownMenuItem>
+  );
+}
+
 export function MobileChatThreadMoreMenu({
   thread,
 }: {
@@ -132,6 +158,8 @@ export function MobileChatThreadMoreMenu({
   const automations = useLastResolved(thread.headerAutomations.automations$);
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomations = useSet(openThreadAutomations$);
+  const filesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.SandboxFilesSidebar];
 
   return (
     <DropdownMenu>
@@ -208,9 +236,9 @@ export function MobileChatThreadMoreMenu({
                 })}
           </DropdownMenuItem>
         )}
-        {(!resourcesEnabled || (automations && automations.length > 0)) && (
-          <DropdownMenuSeparator />
-        )}
+        {(!resourcesEnabled ||
+          filesEnabled ||
+          (automations && automations.length > 0)) && <DropdownMenuSeparator />}
         {automations && automations.length > 0 && (
           <DropdownMenuItem
             className="min-h-11"
@@ -226,6 +254,7 @@ export function MobileChatThreadMoreMenu({
           </DropdownMenuItem>
         )}
         {!resourcesEnabled && <MobileArtifactsMenuItem thread={thread} />}
+        {filesEnabled && <MobileFilesMenuItem thread={thread} />}
       </DropdownMenuContent>
     </DropdownMenu>
   );

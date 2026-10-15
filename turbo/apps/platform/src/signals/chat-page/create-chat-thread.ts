@@ -2238,7 +2238,7 @@ function createEventChangeEffects({
     [boolean, AbortSignal]
   >;
 }) {
-  const sidebar = createThreadSidebarSignals(threadId);
+  const sidebar = createThreadSidebarSignals(threadId, chatEvents.chatEvents$);
   const locallyMarkedReadAt$ = state<string | undefined>(undefined);
   const markThreadReadIfNeeded$ = createMarkThreadReadIfNeeded({
     threadId,

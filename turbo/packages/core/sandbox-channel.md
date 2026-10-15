@@ -129,13 +129,19 @@ resource; UI view invalidation must not silently orphan a returned cursor.
 
 ## Native readonly filesystem role
 
-The packaged Guest now installs the complete fs v1 role alongside diagnostics.
-It captures the fixed `/home/user` root for each connection's first filesystem
-job; process HOME and cwd never select the browsing root. Descendants use raw
-basename tokens and Linux openat2 with BENEATH, NO_SYMLINKS, NO_MAGICLINKS and
-NO_XDEV. The home mount is established before the descendant mount boundary.
-Unavailable kernel semantics fail closed. Links and mount directories remain
-visible metadata; their expansion fails, and no file contents are opened.
+The packaged Guest installs the complete fs v2 role alongside diagnostics.
+It captures Guest `/` for each connection's first filesystem job; process HOME
+and cwd never select that root. Paths are canonical raw basename tokens relative
+to `/`; an empty path denotes Guest root. A consumer initially displaying
+`/home/user` sends those two raw components rather than an empty path.
+
+Resolve each component from its held parent fd with Linux openat2 using BENEATH,
+NO_SYMLINKS and NO_MAGICLINKS. NO_XDEV is mandatory except at the single full
+prefix equal to canonical `/home/user`, whose authorized home mount is entered
+explicitly. Its descendants regain NO_XDEV. Other mount directories and links
+remain visible metadata but cannot expand; no file contents are opened. All
+prefix identities and timestamps are revalidated from captured Guest root before
+and after pages. Unavailable kernel semantics fail closed without weaker flags.
 
 One post-fork worker owns filesystem execution for the whole Guest, with eight
 queued jobs and 256 KiB serialized request accounting (including active work).
@@ -162,12 +168,17 @@ new identity. This detects observed changes rather than promising an atomic
 filesystem snapshot. Display labels escape control, invalid UTF-8 and directional
 characters, while raw name tokens remain the only path input.
 
-Older diagnostics-only Guests do not advertise fs. Matching diagnostics remains
-usable; fs callers report unavailable until a matching complete role exists.
+Older diagnostics-only Guests do not advertise fs. Home-rooted fs v1 peers have
+a different category revision: exact matching rejects their operations before
+interpreting paths, while schema and diagnostics remain at version 1. Matching
+diagnostics remains usable; fs callers show unsupported/update-required until a
+matching complete role exists. A web deployment cannot upgrade a running Guest.
 The owning native suite checks matching pinned images on amd64 and ARM64,
 including mount rejection and cursor retirement/park/reuse. The existing public
-Node Run suite checks actual home/nested/paged fixtures and explicit release;
-the later product UI remains a separate slice.
+Node Run suite checks actual root/home/home-user and nested/paged fixtures and
+explicit release. UI navigation owns its current location separately from the
+connection: capture that raw prefix per call, and release obsolete results on
+their original epoch without applying them to a newly selected directory.
 
 ## Evolution
 

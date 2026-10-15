@@ -63,5 +63,12 @@ export function createActiveRunSubscription(
     },
   );
 
-  return { subscribe$, runId$ };
+  /** Explicit retry; the installed visible owner still cancels this Run on teardown. */
+  const restart$ = command(({ set }, signal: AbortSignal): void => {
+    signal.throwIfAborted();
+    set(demandRunId$, null);
+    set(resetRun$);
+    set(reconcile$, signal);
+  });
+  return { subscribe$, runId$, restart$ };
 }
