@@ -210,13 +210,13 @@ class TestNdjsonExtractor:
         ],
     )
     @pytest.mark.parametrize("split_failed_row", [False, True], ids=["one-chunk", "split-row"])
-    def test_work_limited_line_forwards_and_recovers(
+    async def test_work_limited_line_forwards_and_recovers(
         self,
         real_flow,
         failed_line,
         split_failed_row,
     ):
-        parse, state = self._stream_parser(real_flow)
+        parse, state = self._cooperative_stream_parser(real_flow)
         valid_line = b'{"data":{"id":"after"},"includes":{"users":[{}]}}\n'
         body = failed_line + b"\n" + valid_line
         chunks = (
@@ -226,7 +226,7 @@ class TestNdjsonExtractor:
         )
 
         for chunk in chunks:
-            assert parse(chunk) == chunk
+            assert await parse(chunk) == chunk
 
         assert state["lines_failed"] == 1
         assert state["lines_parsed"] == 1

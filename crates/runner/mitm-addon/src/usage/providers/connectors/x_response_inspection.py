@@ -65,6 +65,9 @@ _MAX_JSON_RESPONSE_WORK_UNITS = 65_536
 # Bound dense syntax and slow scalar inspection while keeping multi-megabyte
 # ordinary discarded strings on the selective parser's bulk-scan path.
 _MAX_NDJSON_ROW_WORK_UNITS = 65_536
+# Bound slow scalar validation inside one cooperative step, independently of
+# the total-row work budget and the decoder's larger output fragments.
+_NDJSON_INSPECTION_SLICE_BYTES = 4 * 1024
 
 _X_JSON_RESULT_COUNT_FIELDS = {
     ("meta", "result_count"): ScalarField("int", max_bytes=64),
@@ -204,6 +207,7 @@ class _NdjsonExtractor:
         }
         self._unknown_include_keys: set[str] = set()
         self._line_buf = bytearray()
+        self._row_bytes_fed = 0
         self._discarding_overlong_line = False
         self._finished = False
         self._on_row = on_row
@@ -216,12 +220,13 @@ class _NdjsonExtractor:
             pass
 
     def feed_steps(self, chunk: bytes) -> Iterator[None]:
-        """Yield after each bounded row or partial/discarded line fragment.
+        """Yield between bounded row-inspection slices and line fragments.
 
         Response streaming shares a small step quantum across every decoded
         feed in a wire callback. Counting blank and invalid lines also bounds
         floods that never invoke the reporter. Each row retains its existing
-        syntax/identity limits; partial fragments are decoder-chunk bounded.
+        syntax/identity limits; validation is incremental even for a trailing
+        row without a newline, so synchronous finish never replays a full row.
         """
         start = 0
         while start < len(chunk):
@@ -240,6 +245,8 @@ class _NdjsonExtractor:
 
             if len(self._line_buf) + fragment_len > _MAX_NDJSON_LINE_BYTES:
                 self._line_buf.clear()
+                self._row_extractor.reset()
+                self._row_bytes_fed = 0
                 self.state["lines_failed"] += 1
                 if newline == -1:
                     self._discarding_overlong_line = True
@@ -249,14 +256,29 @@ class _NdjsonExtractor:
                 yield
                 continue
 
-            self._line_buf.extend(chunk[start:end])
+            fragment = chunk[start:end]
+            self._line_buf.extend(fragment)
+            # Match the existing per-row rstrip policy without charging its
+            # trailing CRs against the parser's exact total-work budget. If
+            # non-CR content arrives later, validate the withheld CRs too.
+            content = fragment.rstrip(b"\r")
+            if content:
+                inspect_end = len(self._line_buf) - fragment_len + len(content)
+                while self._row_bytes_fed < inspect_end:
+                    slice_end = min(
+                        inspect_end, self._row_bytes_fed + _NDJSON_INSPECTION_SLICE_BYTES
+                    )
+                    self._row_extractor.feed(bytes(self._line_buf[self._row_bytes_fed : slice_end]))
+                    self._row_bytes_fed = slice_end
+                    if slice_end < inspect_end:
+                        yield
             if newline == -1:
                 yield
                 return
 
             line = bytes(self._line_buf)
             self._line_buf.clear()
-            self._parse_line(line)
+            self._finish_line(line)
             start = newline + 1
             yield
 
@@ -273,16 +295,17 @@ class _NdjsonExtractor:
             return
         line = bytes(self._line_buf)
         self._line_buf.clear()
-        self._parse_line(line)
+        self._finish_line(line)
 
-    def _parse_line(self, raw_line: bytes) -> None:
+    def _finish_line(self, raw_line: bytes) -> None:
         line = raw_line.rstrip(b"\r")
+        self._row_bytes_fed = 0
         if not line:
+            self._row_extractor.reset()
             return  # keep-alive blank line
         # The observation configuration is fixed for this stream; each row
         # still gets fresh syntax, observations, and work-budget state.
         extractor = self._row_extractor
-        extractor.feed(line)
         extracted = extractor.finish()
         extractor.reset()
         if not extracted.complete:
