@@ -77,6 +77,49 @@ async fn ssh_history_survives_failed_connection_cleanup_and_later_success_withou
 }
 
 #[tokio::test]
+async fn closing_running_ssh_session_preserves_the_previous_operational_failure() {
+    use super::{sessions, wait_for};
+    use std::sync::atomic::Ordering;
+
+    let mut h = Harness::new(Reply::Hold).await;
+    h.enable_diagnostics().await;
+    let _inventory = h
+        .api
+        .mock_async(|when, then| {
+            when.method("GET").path("/api/ssh/hosts");
+            then.status(200)
+                .json_body(remote_inventory(&[(CONNECTION, 7)], CREATED_AT));
+        })
+        .await;
+    let bad = h.resolve(json!({"outcome":"unavailable"})).await;
+    assert_eq!(
+        terminal(&h.request(params()).await)["failure_reason"],
+        "unavailable"
+    );
+    let original = query(&h, json!({})).await;
+    assert_eq!(original["status"], "found");
+    bad.delete_async().await;
+
+    let resolve = h.resolve(h.credential(true)).await;
+    let session = sessions::start(&h, json!({"type":"exec","command":"hold"}), false).await;
+    sessions::state(&h, &session, "running").await;
+    assert_eq!(
+        sessions::rpc(&h, "close", json!({"sessionId":session})).await["type"],
+        "closed"
+    );
+    wait_for(|| h.observed.closed.load(Ordering::SeqCst) > 0).await;
+    assert_eq!(
+        sessions::rpc(&h, "status", json!({"sessionId":session})).await["failure_reason"],
+        "unavailable"
+    );
+    let retained = query(&h, json!({})).await;
+    assert_eq!(retained["status"], "found");
+    assert_eq!(retained["report"], original["report"]);
+    resolve.assert_calls_async(1).await;
+    h.shutdown().await;
+}
+
+#[tokio::test]
 async fn revoked_host_hides_old_evidence_and_new_run_does_not_inherit_it() {
     let mut h = Harness::new(Reply::default()).await;
     h.enable_diagnostics().await;

@@ -36,6 +36,10 @@ detail `not_observed` (below the 32-stage ceiling). Each native resource observe
 at most 64 recent subject bindings. Older unretained selectors report
 `not_retained`; ring pressure is exposed as `retention.evicted`.
 
+Closing a running SSH session intentionally does not replace a previous
+operational failure with its expected cancellation. Independent input-RPC
+failures and authority invalidation remain eligible for history.
+
 Native readiness, first terminal work cause and physical cleanup are distinct.
 A report may retain a small shared receipt whose cleanup fields settle after its
 original failure. The receipt cannot own a node, Completion, credential, stream,
