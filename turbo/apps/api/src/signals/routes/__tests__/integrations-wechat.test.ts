@@ -1,4 +1,22 @@
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { integrationsWechatMessagesContract } from "@okouai/api-contracts/contracts/integrations-wechat-messages";
+import {
+  integrationsWechatUploadInitContract,
+  integrationsWechatUploadMaterializeContract,
+  integrationsWechatUploadCompleteContract,
+  integrationsWechatDownloadFileContract,
+} from "@okouai/api-contracts/contracts/integrations-wechat-files";
+import { integrationsWechatMessagesRoutes } from "../integrations-wechat-messages";
+import { integrationsWechatFileRoutes } from "../integrations-wechat-files";
+import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
+import { sanitizeArtifactFilename } from "../../../lib/file-url";
+import type { WechatMessage } from "../../external/wechat-client";
+import {
+  createHmac,
+  createHash,
+  createCipheriv,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import { describe, expect, it, test, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -377,6 +395,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
   const connectionId = z.uuid().parse(provider.starts[0]);
   const sends: unknown[] = [];
   const delivered = createDeferredPromise<void>(context.signal);
+  let extraItems: NonNullable<WechatMessage["item_list"]> = [];
   let messageId = "18446744073709551615";
   let messageText = "Remember that the project is called Orchid";
   let senderId = `scanner-${actor.userId}`;
@@ -404,6 +423,7 @@ test("receives an owner DM once, resumes its native session and delivers the can
                   },
                 },
               },
+              ...extraItems,
             ],
           },
         ],
@@ -464,6 +484,8 @@ test("receives an owner DM once, resumes its native session and delivers the can
     "You are currently running inside: WeChat",
   );
   expect(first.appendSystemPrompt).toContain("Quoted project details");
+  expect(first.appendSystemPrompt).toContain("okou wechat message history");
+  expect(first.appendSystemPrompt).toContain(`Channel ID: ${connectionId}`);
   expect(first.appendSystemPrompt).toContain(messageId);
   expect(JSON.stringify(first)).not.toContain("private-reply-context");
   expect(JSON.stringify(first)).not.toContain("test-private-bot-token");
@@ -553,6 +575,211 @@ test("receives an owner DM once, resumes its native session and delivers the can
       item_list: [{ type: 1, text_item: { text: "I will remember Orchid." } }],
     },
   });
+  const messages = setupApp({
+    context,
+    routes: integrationsWechatMessagesRoutes,
+  })(integrationsWechatMessagesContract);
+  const agentHeaders = {
+    authorization: `Bearer ${z.string().parse(first.platformEnvironment.OKOU_TOKEN)}`,
+  };
+  const channels = await accept(
+    messages.listChannels({ headers: agentHeaders }),
+    [200],
+  );
+  expect(channels.body.channels).toStrictEqual([
+    {
+      id: connectionId,
+      name: "Your WeChat direct conversation",
+      status: "active",
+    },
+  ]);
+  await flushWaitUntilForTest();
+  const history = await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: connectionId, limit: 1 },
+    }),
+    [200],
+  );
+  expect(history.body.messages[0]).toMatchObject({
+    direction: "outbound",
+    status: "sent",
+    content: "I will remember Orchid.",
+  });
+  const older = await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: {
+        channelId: connectionId,
+        limit: 1,
+        before: z.uuid().parse(history.body.nextBefore),
+      },
+    }),
+    [200],
+  );
+  expect(older.body.messages[0]?.providerMessageId).toBe(
+    "18446744073709551613",
+  );
+  const oldest = await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: {
+        channelId: connectionId,
+        limit: 1,
+        before: z.uuid().parse(older.body.nextBefore),
+      },
+    }),
+    [200],
+  );
+  expect(oldest.body.nextBefore).toBeNull();
+  expect(oldest.body.messages[0]?.providerMessageId).toBe(
+    "18446744073709551615",
+  );
+  expect(JSON.stringify(history.body)).not.toMatch(
+    /private-reply-context|test-private-bot-token/,
+  );
+  await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: randomUUID(), limit: 1 },
+    }),
+    [404],
+  );
+  await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: connectionId, before: randomUUID(), limit: 1 },
+    }),
+    [404],
+  );
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      sends.push(await request.json());
+      return HttpResponse.json({ ret: 0 });
+    }),
+  );
+  const operation = {
+    channelId: connectionId,
+    operationId: randomUUID(),
+    text: "界".repeat(2100),
+  };
+  const sent = await accept(
+    messages.sendMessage({ headers, body: operation }),
+    [200],
+  );
+  expect(sent.body.messages).toHaveLength(2);
+  const sendCount = sends.length;
+  expect(
+    (await accept(messages.sendMessage({ headers, body: operation }), [200]))
+      .body,
+  ).toStrictEqual(sent.body);
+  expect(sends).toHaveLength(sendCount);
+  await accept(
+    messages.sendMessage({
+      headers,
+      body: { ...operation, text: "different content" },
+    }),
+    [409],
+  );
+  const concurrentEntered = createDeferredPromise<void>(context.signal);
+  const concurrentRelease = createDeferredPromise<void>(context.signal);
+  let concurrentSends = 0;
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async () => {
+      concurrentSends++;
+      concurrentEntered.resolve();
+      await concurrentRelease.promise;
+      return HttpResponse.json({ ret: 0 });
+    }),
+  );
+  const concurrentOperation = {
+    channelId: connectionId,
+    operationId: randomUUID(),
+    text: "Only once",
+  };
+  const pendingSend = messages.sendMessage({
+    headers,
+    body: concurrentOperation,
+  });
+  await concurrentEntered.promise;
+  await accept(
+    messages.sendMessage({ headers, body: concurrentOperation }),
+    [409],
+  );
+  concurrentRelease.resolve();
+  await accept(pendingSend, [200]);
+  expect(concurrentSends).toBe(1);
+  let failedAttemptCount = 0;
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, () => {
+      failedAttemptCount++;
+      return failedAttemptCount === 1
+        ? HttpResponse.json({ ret: 0 })
+        : new HttpResponse(null, { status: 503 });
+    }),
+  );
+  const partialOperation = {
+    channelId: connectionId,
+    operationId: randomUUID(),
+    text: "z".repeat(2100),
+  };
+  const partial = await accept(
+    messages.sendMessage({ headers, body: partialOperation }),
+    [502],
+  );
+  expect(partial.body.error.deliveredMessages).toHaveLength(1);
+  expect(partial.body.error.uncertainMessageId).toBeDefined();
+  const retry = await accept(
+    messages.sendMessage({ headers, body: partialOperation }),
+    [409],
+  );
+  expect(retry.body.error.deliveredMessages).toStrictEqual(
+    partial.body.error.deliveredMessages,
+  );
+  expect(failedAttemptCount).toBe(2);
+  const uncertain = await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: connectionId, limit: 1 },
+    }),
+    [200],
+  );
+  expect(uncertain.body.messages[0]).toMatchObject({
+    status: "unknown",
+    id: partial.body.error.uncertainMessageId,
+  });
+  server.use(
+    http.post(`${origin}/ilink/bot/sendmessage`, async ({ request }) => {
+      sends.push(await request.json());
+      return HttpResponse.json({ ret: 0 });
+    }),
+  );
+  const attachmentBytes = Buffer.from("a,b\n1,2\n");
+  const attachmentKey = randomBytes(16);
+  const attachmentCipher = createCipheriv("aes-128-ecb", attachmentKey, null);
+  const encryptedAttachment = Buffer.concat([
+    attachmentCipher.update(attachmentBytes),
+    attachmentCipher.final(),
+  ]);
+  extraItems = [
+    {
+      type: 4,
+      file_item: {
+        file_name: "report.csv",
+        len: String(attachmentBytes.length),
+        media: {
+          encrypt_query_param: "private-media-query",
+          aes_key: attachmentKey.toString("base64"),
+          encrypt_type: 1,
+        },
+      },
+    },
+  ];
+  server.use(
+    http.get("https://novac2c.cdn.weixin.qq.com/c2c/download", () => {
+      return new HttpResponse(new Uint8Array(encryptedAttachment));
+    }),
+  );
   senderId = `scanner-${actor.userId}`;
   messageId = "18446744073709551612";
   messageText = "What is the project called?";
@@ -563,6 +790,124 @@ test("receives an owner DM once, resumes its native session and delivers the can
   expect(second.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(threadId);
   expect(second.nativeContinuation?.sessionId).toBe("wechat-native-session");
   expect(second.prompt).toContain(messageText);
+  expect(second.prompt).toContain("report.csv");
+  expect(second.appendSystemPrompt).toContain("I will remember Orchid.");
+  const withFile = await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: connectionId, limit: 1 },
+    }),
+    [200],
+  );
+  const incomingFile = withFile.body.messages[0];
+  expect(incomingFile?.attachments).toStrictEqual([
+    {
+      id: "1",
+      kind: "file",
+      filename: "report.csv",
+      size: attachmentBytes.length,
+    },
+  ]);
+  expect(JSON.stringify(withFile.body)).not.toContain("private-media-query");
+  expect(JSON.stringify(withFile.body)).not.toContain(
+    attachmentKey.toString("base64"),
+  );
+  const fileApp = setupApp({ context, routes: integrationsWechatFileRoutes });
+  const fileQuery = {
+    channelId: connectionId,
+    messageId: z.uuid().parse(incomingFile?.id),
+    attachmentId: "1",
+  };
+  const downloaded = await accept(
+    fileApp(integrationsWechatDownloadFileContract).download({
+      headers: agentHeaders,
+      query: fileQuery,
+    }),
+    [200],
+  );
+  expect(
+    Buffer.from(await z.instanceof(Blob).parse(downloaded.body).arrayBuffer()),
+  ).toStrictEqual(attachmentBytes);
+  await accept(
+    fileApp(integrationsWechatDownloadFileContract).download({
+      headers: agentHeaders,
+      query: { ...fileQuery, channelId: randomUUID() },
+    }),
+    [404],
+  );
+  const objectStore = createChatCallbacksApi(context).acceptChatObjectStorage();
+  const fileBody = {
+    filename: "report.csv",
+    length: attachmentBytes.length,
+    contentType: "text/csv",
+    checksumSha256: createHash("sha256").update(attachmentBytes).digest("hex"),
+    operationId: randomUUID(),
+    channelId: connectionId,
+  };
+  const initialized = await accept(
+    fileApp(integrationsWechatUploadInitContract).init({
+      headers,
+      body: fileBody,
+    }),
+    [200],
+  );
+  objectStore.addObject({
+    bucket: "test-private-artifacts",
+    key: `private-artifacts/${initialized.body.assetId}/${sanitizeArtifactFilename(fileBody.filename)}`,
+    size: attachmentBytes.length,
+    body: attachmentBytes,
+    contentType: fileBody.contentType,
+    metadata: { "artifact-id": initialized.body.assetId },
+  });
+  const fileOperation = {
+    assetId: initialized.body.assetId,
+    operationId: fileBody.operationId,
+  };
+  const published = await accept(
+    fileApp(integrationsWechatUploadMaterializeContract).materialize({
+      headers,
+      body: fileOperation,
+    }),
+    [200],
+  );
+  expect(published.body.delivery.status).toBe("pending");
+  server.use(
+    http.post(`${origin}/ilink/bot/getuploadurl`, () => {
+      return HttpResponse.json({
+        ret: 0,
+        upload_param: "private-upload-query",
+      });
+    }),
+    http.post("https://novac2c.cdn.weixin.qq.com/c2c/upload", () => {
+      return new HttpResponse(null, {
+        headers: { "x-encrypted-param": "private-file-query" },
+      });
+    }),
+  );
+  const completed = await accept(
+    fileApp(integrationsWechatUploadCompleteContract).complete({
+      headers,
+      body: fileOperation,
+    }),
+    [200],
+  );
+  expect(completed.body.delivery.status).toBe("delivered");
+  expect(completed.body.url).toBe(published.body.url);
+  const fileSendCount = sends.length;
+  expect(
+    (
+      await accept(
+        fileApp(integrationsWechatUploadCompleteContract).complete({
+          headers,
+          body: fileOperation,
+        }),
+        [200],
+      )
+    ).body,
+  ).toStrictEqual(completed.body);
+  expect(sends).toHaveLength(fileSendCount);
+  extraItems = [];
+
   messageId = "18446744073709551611";
   messageText = "Do not deliver this after I disconnect";
   await receive();
@@ -572,7 +917,15 @@ test("receives an owner DM once, resumes its native session and delivers the can
     actor.orgId,
     actor.orgRole,
   );
+  const beforeDisconnectSendCount = sends.length;
   await accept(client().disconnect({ headers }), [204]);
+  await accept(
+    messages.history({
+      headers: agentHeaders,
+      query: { channelId: connectionId, limit: 1 },
+    }),
+    [404],
+  );
   await expect(
     runs.nextSteerableInput(second.sandboxToken, second.runId),
   ).resolves.toStrictEqual({ input: null });
@@ -623,5 +976,96 @@ test("receives an owner DM once, resumes its native session and delivers the can
     )
     .toBe(true);
 
-  expect(sends).toHaveLength(1);
+  expect(sends).toHaveLength(beforeDisconnectSendCount);
+});
+
+test("native WeChat commands isolate users and workspaces and honor live revocation", async () => {
+  const first = await fixture();
+  const attempt = await accept(client().connect({ headers }), [200]);
+  first.confirm();
+  await accept(
+    client().poll({ headers, body: { id: attempt.body.id } }),
+    [200],
+  );
+  const channelId = z.uuid().parse(first.provider.starts[0]);
+  const messages = setupApp({
+    context,
+    routes: integrationsWechatMessagesRoutes,
+  })(integrationsWechatMessagesContract);
+  for (const other of [
+    { ...first.actor, userId: `user_other_${randomUUID()}` },
+    { ...first.actor, orgId: `org_other_${randomUUID()}` },
+  ]) {
+    await updateFeatureSwitchesForUser(context, other, {
+      [FeatureSwitchKey.WechatIntegration]: true,
+    });
+    context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+      {
+        data: [
+          {
+            publicUserData: { userId: other.userId },
+            organization: { id: other.orgId },
+            role: "org:admin",
+          },
+        ],
+        totalCount: 1,
+      },
+    );
+    expect(
+      (await accept(messages.listChannels({ headers }), [200])).body.channels,
+    ).toStrictEqual([]);
+    await accept(
+      messages.history({ headers, query: { channelId, limit: 50 } }),
+      [404],
+    );
+    await accept(
+      messages.sendMessage({
+        headers,
+        body: { channelId, operationId: randomUUID(), text: "unauthorized" },
+      }),
+      [404],
+    );
+    await deleteFeatureSwitchesForUser(context, other);
+  }
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          publicUserData: { userId: first.actor.userId },
+          organization: { id: first.actor.orgId },
+          role: "org:admin",
+        },
+      ],
+      totalCount: 1,
+    },
+  );
+  await updateFeatureSwitchesForUser(context, first.actor, {
+    [FeatureSwitchKey.WechatIntegration]: false,
+  });
+  await accept(
+    messages.history({ headers, query: { channelId, limit: 50 } }),
+    [403],
+  );
+  await updateFeatureSwitchesForUser(context, first.actor, {
+    [FeatureSwitchKey.WechatIntegration]: true,
+  });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    { data: [], totalCount: 0 },
+  );
+  await accept(
+    messages.history({ headers, query: { channelId, limit: 50 } }),
+    [403],
+  );
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockResolvedValue(
+    {
+      data: [
+        {
+          publicUserData: { userId: first.actor.userId },
+          organization: { id: first.actor.orgId },
+          role: "org:admin",
+        },
+      ],
+      totalCount: 1,
+    },
+  );
 });

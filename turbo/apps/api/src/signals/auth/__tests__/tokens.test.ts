@@ -235,6 +235,8 @@ describe("auth tokens", () => {
   it.each([
     [FeatureSwitchKey.Banking, "banking:read"],
     [FeatureSwitchKey.LarkIntegration, "lark:write"],
+    [FeatureSwitchKey.WechatIntegration, "wechat:read"],
+    [FeatureSwitchKey.WechatIntegration, "wechat:write"],
     [FeatureSwitchKey.DiscordIntegration, "discord:read"],
     [FeatureSwitchKey.DiscordIntegration, "discord:write"],
     [FeatureSwitchKey.VncAccess, "vnc:read"],

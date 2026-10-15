@@ -16,6 +16,7 @@ import type {
   CanonicalAssetDeliveryDestination,
   CanonicalAssetDeliveryError,
   CanonicalAssetDiscordDeliveryState,
+  CanonicalAssetWechatDeliveryState,
   CanonicalAssetMaterializationError,
   CanonicalAssetProvenance,
   RunUploadedFileMetadata,
@@ -27,6 +28,7 @@ export const RUN_UPLOADED_FILE_SOURCES = [
   "web",
   "slack",
   "discord",
+  "wechat",
   "teams",
   "feishu",
   "lark",
@@ -159,8 +161,9 @@ export const canonicalAssetDeliveries = pgTable(
     destination: jsonb("destination")
       .$type<CanonicalAssetDeliveryDestination>()
       .notNull(),
-    providerState:
-      jsonb("provider_state").$type<CanonicalAssetDiscordDeliveryState>(),
+    providerState: jsonb("provider_state").$type<
+      CanonicalAssetDiscordDeliveryState | CanonicalAssetWechatDeliveryState
+    >(),
     externalId: text("external_id"),
     url: text("url"),
     lastError: jsonb("last_error").$type<CanonicalAssetDeliveryError>(),

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { sendArchivedWechatText$ } from "./wechat-message-send.service";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import {
@@ -9,8 +11,6 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { agents } from "@okouai/db/schema/agent";
 import { db$ } from "../external/db";
-import { sendWechatText } from "../external/wechat-client";
-import { decryptStoredSecretValue } from "./crypto.utils";
 import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { wechatEnabled$ } from "./wechat-config";
@@ -30,9 +30,7 @@ export const sendWechatChatReply$ = command(
     const db = get(db$);
     const [binding] = await db
       .select({
-        baseUrl: wechatConnections.baseUrl,
-        token: wechatConnections.tokenCiphertext,
-        contextToken: chatWechatContext.contextTokenCiphertext,
+        id: wechatConnections.id,
       })
       .from(wechatConnections)
       .innerJoin(
@@ -94,42 +92,29 @@ export const sendWechatChatReply$ = command(
     if (!event?.content) {
       return;
     }
-    const token = await decryptStoredSecretValue(binding.token);
-    signal.throwIfAborted();
-    const contextToken = await decryptStoredSecretValue(binding.contextToken);
-    signal.throwIfAborted();
-    // A stable client ID is supplied, but Tencent does not document an exactly-once
-    // guarantee. As with Discord, ambiguous network failures are not blindly replayed.
-    const parts = Array.from(event.content);
-    const size = 2000;
-    for (let offset = 0; offset < parts.length; offset += size) {
-      // Recheck revocation between chunks, including while KMS/network was in flight.
-      const [live] = await db
-        .select({ id: wechatConnections.id })
-        .from(wechatConnections)
-        .where(
-          and(
-            eq(wechatConnections.id, args.target.connectionId),
-            eq(wechatConnections.generation, args.target.generation),
-            eq(wechatConnections.status, "active"),
-          ),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      if (!live) {
-        return;
-      }
-      await sendWechatText(
+    const points = Array.from(event.content);
+    const requestHash = createHash("sha256")
+      .update(event.content)
+      .digest("hex");
+    for (let offset = 0; offset < points.length; offset += 2000) {
+      const result = await set(
+        sendArchivedWechatText$,
         {
-          baseUrl: binding.baseUrl,
-          token,
-          contextToken,
-          senderId: args.target.senderId,
-          clientId: `okou-${args.chatEventId}-${offset / size}`,
-          text: parts.slice(offset, offset + size).join(""),
+          orgId: args.orgId,
+          userId: args.userId,
+          channelId: args.target.connectionId,
+          generation: args.target.generation,
+          contextId: args.target.contextId,
+          operationId: args.chatEventId,
+          index: offset / 2000,
+          text: points.slice(offset, offset + 2000).join(""),
+          requestHash,
         },
         signal,
       );
+      if (result.kind === "denied") {
+        throw new Error(result.response.body.error.message);
+      }
     }
   },
 );

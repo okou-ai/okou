@@ -7,6 +7,7 @@ import {
 import type {
   CanonicalAssetDeliveryDestination,
   CanonicalAssetDiscordDeliveryDestination,
+  CanonicalAssetWechatDeliveryDestination,
   CanonicalAssetProvenance,
   CanonicalAssetSlackDeliveryDestination,
   RunUploadedFileMetadata,
@@ -1210,6 +1211,11 @@ type PrepareCanonicalPublishedAssetArgs = CanonicalPublicationFileArgs &
         readonly runId: string | null;
         readonly destination: CanonicalAssetDiscordDeliveryDestination;
       }
+    | {
+        readonly provider: "wechat";
+        readonly runId: string | null;
+        readonly destination: CanonicalAssetWechatDeliveryDestination;
+      }
   );
 
 interface PreparedCanonicalPublishedAsset {
@@ -1301,6 +1307,16 @@ function sameCanonicalDeliveryDestination(
   stored: CanonicalAssetDeliveryDestination,
   requested: CanonicalAssetDeliveryDestination,
 ): boolean {
+  if (stored.provider === "wechat" || requested.provider === "wechat") {
+    return (
+      stored.provider === "wechat" &&
+      requested.provider === "wechat" &&
+      stored.connectionId === requested.connectionId &&
+      stored.generation === requested.generation &&
+      stored.channelId === requested.channelId &&
+      stored.comment === requested.comment
+    );
+  }
   if (stored.provider === "discord" || requested.provider === "discord") {
     return (
       stored.provider === "discord" &&
@@ -1372,9 +1388,9 @@ const ensureCanonicalDelivery$ = command(
         operationId: args.operationId,
         status: "pending",
         destination: args.destination,
-        ...(args.provider === "discord"
+        ...(args.provider === "discord" || args.provider === "wechat"
           ? {
-              providerState: { provider: "discord" as const, attempt: null },
+              providerState: { provider: args.provider, attempt: null },
             }
           : {}),
       });
@@ -1385,8 +1401,9 @@ const ensureCanonicalDelivery$ = command(
 );
 
 function canonicalPublicationScope(args: PrepareCanonicalPublishedAssetArgs) {
-  return args.provider === "discord" && args.runId === null
-    ? `discord:${args.destination.connectionId}`
+  return (args.provider === "discord" || args.provider === "wechat") &&
+    args.runId === null
+    ? `${args.provider}:${args.destination.connectionId}`
     : `run:${args.runId}`;
 }
 
@@ -1491,7 +1508,7 @@ export const prepareCanonicalPublishedAsset$ = command(
     const scope = canonicalPublicationScope(args);
     const source =
       args.runId === null
-        ? "discord"
+        ? args.provider
         : await set(sourceForRun$, args.runId, args.provider, signal);
     let chatThreadId: string | null = null;
     if (args.runId !== null) {

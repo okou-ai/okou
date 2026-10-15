@@ -1,10 +1,12 @@
+import { wechatAttachments } from "../external/wechat-media";
+import { wechatEventId } from "./wechat-message-identity";
 import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import {
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
 } from "../external/realtime";
 import { touchNativeChatThread$ } from "./native-chat-event-write.service";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { command } from "ccstate";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -12,6 +14,7 @@ import {
   wechatConnections,
   wechatChatThreadRoutes,
   chatWechatContext,
+  wechatMessages,
 } from "@okouai/db/schema/wechat";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -74,16 +77,6 @@ function modelReplacementCtes(replacement: ThreadModelReplacement | null) {
     WHERE ordinal<=${count}
     RETURNING id
   )`;
-}
-export function wechatEventId(
-  connectionId: string,
-  generation: string,
-  messageId: string,
-) {
-  const hex = createHash("sha256")
-    .update(JSON.stringify(["wechat", connectionId, generation, messageId]))
-    .digest("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 const ensureThread$ = command(
   async ({ set }, connection: Connection, signal: AbortSignal) => {
@@ -159,23 +152,39 @@ const ensureThread$ = command(
     return winner.chatThreadId;
   },
 );
-function wechatMessagePrompt(message: WechatMessage) {
+function wechatMessagePrompt(
+  message: WechatMessage,
+  connectionId: string,
+  id: string,
+) {
   const text = (message.item_list ?? [])
     .filter((item) => {
-      return item.type === 1;
+      return item.type === 1 || item.type === 3;
     })
     .map((item) => {
-      return item.text_item?.text ?? "";
+      return item.text_item?.text ?? item.voice_item?.text ?? "";
     })
     .join("\n");
-  const unsupported = (message.item_list ?? []).some((item) => {
-    return item.type !== 1;
+  const attachments = wechatAttachments(message.item_list ?? []);
+  const unsupported = (message.item_list ?? []).some((item, index) => {
+    return (
+      item.type !== 1 &&
+      !item.voice_item?.text &&
+      !attachments.some((file) => {
+        return file.id === String(index);
+      })
+    );
   });
   return [
     text,
+    ...(attachments.length
+      ? [
+          `[WeChat attachments: untrusted metadata, content not yet read]\n${JSON.stringify(attachments)}\nRead with: okou wechat download-file <attachment-id> --channel ${connectionId} --message ${id} --out <path>`,
+        ]
+      : []),
     ...(unsupported
       ? [
-          "[The sender included an attachment. This WeChat connection supports text only; explain that it was not read and ask for the content as text.]",
+          "[The sender included an attachment. This item could not be retrieved; explain that it was not read and ask the sender to resend it as a supported file or text.]",
         ]
       : []),
   ]
@@ -199,7 +208,17 @@ export const receiveWechatMessage$ = command(
     ) {
       return;
     }
-    const prompt = wechatMessagePrompt(message);
+    const id = wechatEventId(
+      connection.id,
+      connection.generation,
+      message.message_id,
+    );
+    const attachments = wechatAttachments(message.item_list ?? []);
+    const mediaCiphertext = attachments.length
+      ? await encryptStoredSecretValue(JSON.stringify(message.item_list))
+      : null;
+    signal.throwIfAborted();
+    const prompt = wechatMessagePrompt(message, connection.id, id);
     if (!prompt) {
       return;
     }
@@ -211,11 +230,6 @@ export const receiveWechatMessage$ = command(
       signal,
     );
 
-    const id = wechatEventId(
-      connection.id,
-      connection.generation,
-      message.message_id,
-    );
     const quotedText =
       (message.item_list ?? [])
         .map((item) => {
@@ -270,10 +284,14 @@ export const receiveWechatMessage$ = command(
     const inserted = parseRawRows(
       z.object({ id: z.uuid() }),
       await db.execute(sql`WITH context_insert AS (${contextInsert.getSQL()}), ${canonicalChatEventAppendCtes([prepared.row], "id", sql`EXISTS(SELECT 1 FROM ${wechatConnections} WHERE id=${connection.id}::uuid AND generation=${connection.generation}::uuid AND status='active') AND EXISTS(SELECT 1 FROM context_insert)`)}
- ${modelReplacementCtes(model.threadModelReplacement)}, enqueued AS (
+ ${modelReplacementCtes(model.threadModelReplacement)}, archived AS (
+ INSERT INTO wechat_messages(id,connection_id,generation,provider_message_id,direction,status,content,quoted_text,attachments,media_ciphertext,created_at)
+ SELECT ${id}::uuid,${connection.id}::uuid,${connection.generation}::uuid,${message.message_id},'inbound','received',${prompt},${quotedText},${sql.param(attachments, wechatMessages.attachments)},${mediaCiphertext},${sql.param(currentTime, wechatMessages.createdAt)} FROM inserted
+ ON CONFLICT DO NOTHING RETURNING id
+ ), enqueued AS (
  INSERT INTO queued_chat_threads (chat_thread_id,org_id,queued_at)
  SELECT ${threadId}::uuid,${connection.orgId},${sql.param(currentTime, queuedChatThreads.queuedAt)} FROM inserted
- ${model.threadModelReplacement ? sql`WHERE (SELECT count(*) FROM replacement_events)>=0` : sql.empty()}
+ WHERE EXISTS(SELECT 1 FROM archived) ${model.threadModelReplacement ? sql`AND (SELECT count(*) FROM replacement_events)>=0` : sql.empty()}
  ON CONFLICT(chat_thread_id) DO UPDATE SET queued_at=greatest(EXCLUDED.queued_at,queued_chat_threads.queued_at+interval '1 millisecond') RETURNING chat_thread_id)
  SELECT id FROM inserted WHERE EXISTS(SELECT 1 FROM enqueued)`),
     );

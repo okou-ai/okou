@@ -28,7 +28,7 @@ const resultSchema = z.object({
   errcode: z.number().optional(),
 });
 export class WechatSessionExpiredError extends Error {}
-async function request(
+export async function wechatRequest(
   baseUrl: string,
   path: string,
   body: unknown | undefined,
@@ -79,7 +79,7 @@ const qrSchema = z.object({
 });
 export async function createWechatQr(signal: AbortSignal) {
   return qrSchema.parse(
-    await request(
+    await wechatRequest(
       WECHAT_ORIGIN,
       "/ilink/bot/get_bot_qrcode?bot_type=3",
       { local_token_list: [] },
@@ -116,7 +116,7 @@ export async function pollWechatQr(
     query.set("verify_code", verifyCode);
   }
   return qrStatusSchema.parse(
-    await request(
+    await wechatRequest(
       baseUrl,
       `/ilink/bot/get_qrcode_status?${query}`,
       undefined,
@@ -125,9 +125,41 @@ export async function pollWechatQr(
     ),
   );
 }
-const itemSchema = z.object({
+const wechatCdnMediaSchema = z.object({
+  encrypt_query_param: z.string().optional(),
+  aes_key: z.string().optional(),
+  full_url: z.string().optional(),
+  encrypt_type: z.number().optional(),
+});
+export const wechatItemSchema = z.object({
   type: z.number(),
   text_item: z.object({ text: z.string() }).optional(),
+  image_item: z
+    .object({
+      media: wechatCdnMediaSchema.optional(),
+      aeskey: z.string().optional(),
+      mid_size: z.number().optional(),
+    })
+    .optional(),
+  voice_item: z
+    .object({
+      media: wechatCdnMediaSchema.optional(),
+      text: z.string().optional(),
+    })
+    .optional(),
+  file_item: z
+    .object({
+      media: wechatCdnMediaSchema.optional(),
+      file_name: z.string().optional(),
+      len: z.string().optional(),
+    })
+    .optional(),
+  video_item: z
+    .object({
+      media: wechatCdnMediaSchema.optional(),
+      video_size: z.number().optional(),
+    })
+    .optional(),
   ref_msg: z
     .object({
       title: z.string().optional(),
@@ -148,7 +180,7 @@ export const wechatMessageSchema = z.object({
   message_type: z.number(),
   message_state: z.number().optional(),
   context_token: z.string().optional(),
-  item_list: z.array(itemSchema).optional(),
+  item_list: z.array(wechatItemSchema).optional(),
 });
 export const wechatUpdatesSchema = z.object({
   get_updates_buf: z.string().optional(),
@@ -162,7 +194,7 @@ export async function getWechatUpdates(
   signal: AbortSignal,
 ) {
   return wechatUpdatesSchema.parse(
-    await request(
+    await wechatRequest(
       baseUrl,
       "/ilink/bot/getupdates",
       { get_updates_buf: cursor, base_info: baseInfo },
@@ -171,6 +203,9 @@ export async function getWechatUpdates(
     ),
   );
 }
+export const wechatSendReceiptSchema = z.object({
+  message_id: z.string().optional(),
+});
 export async function sendWechatText(
   args: {
     baseUrl: string;
@@ -182,22 +217,24 @@ export async function sendWechatText(
   },
   signal: AbortSignal,
 ) {
-  await request(
-    args.baseUrl,
-    "/ilink/bot/sendmessage",
-    {
-      base_info: baseInfo,
-      msg: {
-        from_user_id: "",
-        to_user_id: args.senderId,
-        client_id: args.clientId,
-        message_type: 2,
-        message_state: 2,
-        context_token: args.contextToken,
-        item_list: [{ type: 1, text_item: { text: args.text } }],
+  return wechatSendReceiptSchema.parse(
+    await wechatRequest(
+      args.baseUrl,
+      "/ilink/bot/sendmessage",
+      {
+        base_info: baseInfo,
+        msg: {
+          from_user_id: "",
+          to_user_id: args.senderId,
+          client_id: args.clientId,
+          message_type: 2,
+          message_state: 2,
+          context_token: args.contextToken,
+          item_list: [{ type: 1, text_item: { text: args.text } }],
+        },
       },
-    },
-    args.token,
-    signal,
+      args.token,
+      signal,
+    ),
   );
 }

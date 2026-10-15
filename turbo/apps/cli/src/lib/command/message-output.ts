@@ -12,6 +12,7 @@ export type MessageIntegration =
   | "teams"
   | "telegram"
   | "discord"
+  | "wechat"
   | "phone"
   | "imessage"
   | "sms";

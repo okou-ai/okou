@@ -2290,6 +2290,13 @@
       "when": 1792062514680,
       "tag": "1404_validate_wechat_context_types",
       "breakpoints": true
+    },
+    {
+      "idx": 1405,
+      "version": "7",
+      "when": 1792065143404,
+      "tag": "1405_wechat_message_archive",
+      "breakpoints": true
     }
   ]
 }

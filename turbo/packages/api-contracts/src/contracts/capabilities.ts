@@ -16,6 +16,8 @@ export const CAPABILITIES = [
   "github:write",
   "slack:read",
   "slack:write",
+  "wechat:read",
+  "wechat:write",
   "discord:read",
   "discord:write",
   "feishu:write",
@@ -115,6 +117,14 @@ export const CAPABILITY_META: Record<Capability, CapabilityMeta> = {
     label: "List Slack channels and read history",
   },
   "slack:write": { group: "Integrations", label: "Send Slack messages" },
+  "wechat:read": {
+    group: "Integrations",
+    label: "Read WeChat messages and files",
+  },
+  "wechat:write": {
+    group: "Integrations",
+    label: "Send WeChat messages and files",
+  },
   "discord:read": {
     group: "Integrations",
     label: "Read Discord channels, messages and files",

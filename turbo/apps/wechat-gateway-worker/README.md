@@ -22,6 +22,20 @@ The API owns provider credentials and canonical Chat/Run processing.
 6. Exercise an expired QR, verification challenge if Tencent requests it,
    reconnect, disconnect during an active run, and member departure. Confirm
    tokens are absent from browser responses and model-visible material.
+7. Use `okou wechat channel list --json` and `message history --channel-id <id>`
+   to check received messages and confirmed replies. Follow `nextBefore` for
+   another bounded page. Verify `message send` with the same `--operation-id`
+   does not resend confirmed chunks. An unknown delivery requires inspection;
+   creating a new operation can duplicate a message that already arrived.
+8. Send an image and a file from WeChat, download them with the IDs in history,
+   and exercise `okou wechat upload-file` (maximum 10 MiB). Publication must
+   finish before delivery. A failed delivery must retain the published file.
+
+History covers this connection's recorded messages, not pre-connection personal
+WeChat history, contacts, or groups. Reconnecting retains recorded history;
+disconnecting deletes the connection's message archive and private media
+references while keeping canonical Okou conversation events. Tencent CDN
+references can expire; ask the sender to resend an unavailable attachment.
 
 The receiver requires Cloudflare SQLite Durable Objects. At scale, long polling
 creates one outstanding provider/API request per active binding; evaluate
