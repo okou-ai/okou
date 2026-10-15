@@ -1,5 +1,6 @@
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
+import { chatResourcePanelEnabled$ } from "../../signals/chat-page/chat-resources.ts";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import { ScrollArea } from "@base-ui/react/scroll-area";
@@ -3841,43 +3842,63 @@ function ChatThreadNotFound() {
   );
 }
 
-function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
-  const threadMeta = useGet(thread.threadMeta$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const resourcesEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatResourcePanel];
+  const agentId = useGet(thread.threadAgentId$);
+  const title = useGet(thread.threadTitle$);
+  if (sharingPhase !== "idle" || agentId === null) {
+    return null;
+  }
+  return (
+    <ChatFeedbackSelection
+      feedback={thread.feedback}
+      sourceAgentId={agentId}
+      sourceThreadTitle={
+        title ??
+        t(($) => {
+          return $.chat.newChat;
+        })
+      }
+    />
+  );
+}
+
+function ChatThreadResourceLayout({
+  thread,
+  children,
+}: {
+  thread: ChatPanelSignals;
+  children: ReactNode;
+}) {
+  const resourcesEnabled = useGet(chatResourcePanelEnabled$);
   const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
-  if (!threadMeta) {
+  return (
+    <div
+      className="relative min-h-0 flex-1"
+      ref={resourcesEnabled ? resourceLayoutRef : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
+  const exists = useGet(thread.threadExists$);
+  if (!exists) {
     return <ChatThreadNotFound />;
   }
 
   return (
     <>
       <ChatThreadHeader thread={thread} />
-
-      <div
-        className="relative min-h-0 flex-1"
-        ref={resourcesEnabled ? resourceLayoutRef : undefined}
-      >
+      <ChatThreadResourceLayout thread={thread}>
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
           <ChatThreadBottomBar thread={thread} />
         </div>
-      </div>
-
-      {sharingPhase === "idle" ? (
-        <ChatFeedbackSelection
-          feedback={thread.feedback}
-          sourceAgentId={threadMeta.agentId}
-          sourceThreadTitle={
-            threadMeta.title ??
-            t(($) => {
-              return $.chat.newChat;
-            })
-          }
-        />
-      ) : null}
+      </ChatThreadResourceLayout>
+      <ChatThreadFeedbackSlot thread={thread} />
     </>
   );
 }

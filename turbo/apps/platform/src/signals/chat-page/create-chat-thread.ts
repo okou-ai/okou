@@ -348,7 +348,13 @@ function createThreadMeta(threadId: string) {
   return threadMeta(threadId);
 }
 
-function createThreadTitleParts(threadMeta$: Computed<ThreadMeta | null>) {
+function createThreadMetadata(threadMeta$: Computed<ThreadMeta | null>) {
+  const threadExists$ = computed((get) => {
+    return get(threadMeta$) !== null;
+  });
+  const threadAgentId$ = computed((get) => {
+    return get(threadMeta$)?.agentId ?? null;
+  });
   const threadTitle$ = computed((get): string | null => {
     return get(threadMeta$)?.title ?? null;
   });
@@ -361,7 +367,13 @@ function createThreadTitleParts(threadMeta$: Computed<ThreadMeta | null>) {
   const threadTitleText$ = computed((get) => {
     return get(threadTitleParts$).text;
   });
-  return { threadTitle$, threadTitleEmoji$, threadTitleText$ };
+  return {
+    threadExists$,
+    threadAgentId$,
+    threadTitle$,
+    threadTitleEmoji$,
+    threadTitleText$,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -3820,7 +3832,7 @@ export function createChatPanelSignals(
   const previewCatalogReady$ = computed((get) => {
     return !get(optimisticCreateUnsettled$);
   });
-  const threadTitle = createThreadTitleParts(threadMeta$);
+  const threadMetadata = createThreadMetadata(threadMeta$);
   const sessionOutput = createSessionOutputStreamSignals(
     threadId,
     chatEvents.chatEvents$,
@@ -3895,7 +3907,7 @@ export function createChatPanelSignals(
     threadDraft$,
     threadMeta$,
     optimisticCreateUnsettled$,
-    ...threadTitle,
+    ...threadMetadata,
     scrollContainerOnRef$: messages.scroll.scrollContainerOnRef$,
     scrollContentOnRef$: messages.scroll.scrollContentOnRef$,
     composerLayoutOnRef$: createChatComposerLayoutOnRef(
