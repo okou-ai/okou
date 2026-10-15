@@ -3796,36 +3796,6 @@ async function findSubscriptionChangeForInvoice(
   return candidate ?? null;
 }
 
-async function replacesScheduledPackageChange(
-  db: Pick<Db, "select">,
-  stored: StoredSubscriptionChange,
-): Promise<boolean> {
-  if (
-    stored.allocationChanges.some((change) => {
-      return change.stripeScheduleId !== null;
-    })
-  ) {
-    return true;
-  }
-  return (
-    stored.allocationChanges.length === 0 &&
-    (
-      await db
-        .select()
-        .from(usagePackAllocationChanges)
-        .where(
-          and(
-            eq(
-              usagePackAllocationChanges.usagePackSubscriptionId,
-              stored.subscription.id,
-            ),
-            eq(usagePackAllocationChanges.status, "scheduled"),
-          ),
-        )
-    ).length > 0
-  );
-}
-
 export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
   async (
     { set },
@@ -3920,7 +3890,24 @@ export const handleUsagePackSubscriptionChangeInvoicePaid$ = command(
       });
     if (
       hasDeferredChanges ||
-      (await replacesScheduledPackageChange(db, refreshed))
+      (await (async () => {
+        if (
+          refreshed.allocationChanges.some((change) => {
+            return change.stripeScheduleId !== null;
+          })
+        ) {
+          return true;
+        }
+        return (
+          refreshed.allocationChanges.length === 0 &&
+          (
+            await db
+              .select()
+              .from(usagePackAllocationChanges)
+              .where(scheduledAllocationCondition(refreshed.subscription.id))
+          ).length > 0
+        );
+      })())
     ) {
       await set(
         scheduleDeferredSubscriptionChange$,
